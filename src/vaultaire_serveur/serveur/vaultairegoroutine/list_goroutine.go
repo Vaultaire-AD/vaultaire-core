@@ -60,7 +60,12 @@ func StartUnixSocketServer() {
 
 // boucle qui tourne pour recevoir les requetes client(utilisateur et services)
 func HandleConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	logs.Write_Log("INFO", "New connection establish :"+conn.RemoteAddr().String())
 	for {
 		headerSize := br.Read_Header_Size(conn)

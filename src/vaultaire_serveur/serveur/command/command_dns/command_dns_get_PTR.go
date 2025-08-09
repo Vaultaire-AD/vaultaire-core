@@ -1,6 +1,7 @@
 package commanddns
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -14,7 +15,12 @@ func command_dns_showReverse(commandList []string, db *sql.DB) string {
 	if err != nil {
 		return fmt.Sprintf("❌ Erreur lors de la récupération des enregistrements PTR : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var sb strings.Builder
 	sb.WriteString("🔁 Enregistrements PTR (Reverse DNS)\n")
