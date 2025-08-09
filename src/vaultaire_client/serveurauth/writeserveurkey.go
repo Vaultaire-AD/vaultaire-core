@@ -1,11 +1,11 @@
 package serveurauth
 
 import (
-	store "vaultaire_client/storage"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	store "vaultaire_client/storage"
 )
 
 func WriteToFile(content string) error {

@@ -38,7 +38,6 @@ func WriteLog(filename string, content string) error {
 	return nil
 }
 
-
 //func main() {
 //	// Exemple d'utilisation
 //	err := WriteLog("logfile.log", "Ceci est une ligne de log")
