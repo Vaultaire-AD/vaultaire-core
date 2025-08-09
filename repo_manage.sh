@@ -25,6 +25,24 @@ function create_branch() {
     git checkout -b "$branch_name"
     echo "✅ Branche '$branch_name' créée à partir de dev."
 }
+pull_request_branch() {
+    local branch
+    branch=$(git rev-parse --abbrev-ref HEAD)
+
+    if [[ "$branch" == "HEAD" ]]; then
+        echo "❌ You are in a detached HEAD state. Please checkout a branch first."
+        return 1
+    fi
+    
+    commit_changes
+
+    echo "📜 Creating pull request for '$branch'..."
+    gh pr create \
+        --base dev \
+        --head "$branch" \
+        --title "$branch" \
+        --body "Auto-created pull request for branch '$branch'."
+}
 
 function commit_changes() {
     echo "📦 Type de commit :"
@@ -44,24 +62,6 @@ function commit_changes() {
     git add .
     git commit -m "$message"
     echo "✅ Commit effectué : $message"
-}
-
-function create_merge_request() {
-    current_branch=$(git branch --show-current)
-    if [[ " ${PROTECTED_BRANCHES[*]} " =~ " ${current_branch} " ]]; then
-        echo "❌ Impossible de créer une MR depuis '${current_branch}'."
-        return
-    fi
-
-    read -rp "📍 Cible de la MR (dev/main/preprod) : " target_branch
-    if [[ ! " ${PROTECTED_BRANCHES[*]} " =~ " ${target_branch} " ]]; then
-        echo "❌ Branche cible invalide."
-        return
-    fi
-
-    git push -u origin "$current_branch"
-    echo "🌐 Créez la MR sur votre interface GitLab/GitHub :"
-    echo "   De '${current_branch}' vers '${target_branch}'"
 }
 
 function delete_branch() {
@@ -84,9 +84,10 @@ function delete_branch() {
 while true; do
     echo ""
     echo "===== 🚀 Git Manager ====="
+    echo "(Assurez-vous d'être sur la branche à utiliser)"
     echo "1) Créer une branche"
     echo "2) Commit"
-    echo "3) Créer une merge request"
+    echo "3) Crée une Pull Request"
     echo "4) Supprimer une branche"
     echo "5) Quitter"
     read -rp "Choisissez une option : " choice
@@ -94,7 +95,7 @@ while true; do
     case "$choice" in
         1) create_branch ;;
         2) commit_changes ;;
-        3) create_merge_request ;;
+        3) pull_request_branch ;;
         4) delete_branch ;;
         5) exit 0 ;;
         *) echo "❌ Option invalide" ;;
