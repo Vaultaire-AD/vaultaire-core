@@ -23,7 +23,12 @@ func isValidUserInput(input string) bool {
 
 // Fonction pour gérer la connexion socket Unix
 func handleUnixSocketConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	// Décode le message JSON
 	var message map[string]json.RawMessage

@@ -71,7 +71,7 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 	dirPath := filepath.Join(path, computeurID)
 	if err := os.MkdirAll(dirPath, 0700); err != nil {
 		logs.Write_Log("ERROR", "Error during the folder creation : "+err.Error())
-		return "", fmt.Errorf("Error during the folder creation : %v", err)
+		return "", fmt.Errorf("error during the folder creation : %v", err)
 	}
 
 	// Écriture du fichier YAML
@@ -79,7 +79,7 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 	yamlFile, err := os.Create(yamlPath)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error during the creation of the YAML file : "+err.Error())
-		return "", fmt.Errorf("Error during the creation of the YAML file : %v", err)
+		return "", fmt.Errorf("error during the creation of the YAML file : %v", err)
 	}
 	defer func() {
 		if err := yamlFile.Close(); err != nil {
@@ -92,7 +92,7 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(&clientSoftware); err != nil {
 		logs.Write_Log("ERROR", "Error during the YAML encoding : "+err.Error())
-		return "", fmt.Errorf("Error during the YAML encoding : %v", err)
+		return "", fmt.Errorf("error during the YAML encoding : %v", err)
 	}
 
 	// Écriture de la clé privée

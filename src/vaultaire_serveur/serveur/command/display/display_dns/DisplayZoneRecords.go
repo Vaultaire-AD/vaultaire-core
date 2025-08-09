@@ -2,6 +2,7 @@ package displaydns
 
 import (
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	"DUCKY/serveur/logs"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -19,14 +20,17 @@ func DisplayZoneRecords(records []dnsstorage.ZoneRecord, zone string) string {
 	sb.WriteString("------------------------------------------------------------------------\n")
 
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
-	fmt.Fprintf(w, "%-25s %-8s %-6s %-20s %-10s\n",
+	_, err := fmt.Fprintf(w, "%-25s %-8s %-6s %-20s %-10s\n",
 		header("Nom"),
 		header("Type"),
 		header("TTL"),
 		header("Données"),
 		header("Priorité"),
 	)
-
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture des en-têtes: "+err.Error())
+		return "Erreur lors de l'affichage des enregistrements DNS."
+	}
 	for _, record := range records {
 		priority := "—"
 		if record.Priority.Valid {
@@ -41,7 +45,11 @@ func DisplayZoneRecords(records []dnsstorage.ZoneRecord, zone string) string {
 		)
 	}
 
-	w.Flush()
+	err = w.Flush()
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture des enregistrements DNS: "+err.Error())
+		return "Erreur lors de l'affichage des enregistrements DNS."
+	}
 	sb.WriteString("------------------------------------------------------------------------\n")
 	return sb.String()
 }

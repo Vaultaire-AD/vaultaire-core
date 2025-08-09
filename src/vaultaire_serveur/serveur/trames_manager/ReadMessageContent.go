@@ -42,7 +42,10 @@ func MessageReader(conn net.Conn, reconstructedMessageSize int) {
 		headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
 		datatosend := append(append(headerSize, messageSize...), data...)
 		if _, err := conn.Write(datatosend); err != nil {
-			conn.Close()
+			err := conn.Close()
+			if err != nil {
+				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			}
 			logs.Write_Log("ERROR", "Error during the send of the message: "+err.Error())
 			return
 		}

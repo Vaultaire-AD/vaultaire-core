@@ -3,6 +3,7 @@ package configuration_file
 import (
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
+	"fmt"
 	"os"
 
 	yaml "gopkg.in/yaml.v3"
@@ -29,7 +30,12 @@ func LoadConfig(filePath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config storage.Config

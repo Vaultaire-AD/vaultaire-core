@@ -2,6 +2,7 @@ package dnsdatabase
 
 import (
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 )
@@ -12,7 +13,12 @@ func GetAllDNSZones(db *sql.DB) ([]dnsstorage.Zone, error) {
 	if err != nil {
 		return nil, fmt.Errorf("erreur lors de la récupération des zones DNS : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	var zones []dnsstorage.Zone
 

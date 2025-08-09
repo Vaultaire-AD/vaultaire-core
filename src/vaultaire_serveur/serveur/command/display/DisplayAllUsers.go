@@ -1,6 +1,7 @@
 package display
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"fmt"
 	"strings"
@@ -47,7 +48,11 @@ func DisplayAllUsers(users []storage.GetUsers) string {
 	}
 
 	// Vider le tampon pour s'assurer que tout est écrit dans sb
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture des utilisateurs : "+err.Error())
+		return "Erreur lors de l'affichage des utilisateurs."
+	}
 
 	// Ajouter une ligne de séparation
 	sb.WriteString("--------------------------------------------------\n")
