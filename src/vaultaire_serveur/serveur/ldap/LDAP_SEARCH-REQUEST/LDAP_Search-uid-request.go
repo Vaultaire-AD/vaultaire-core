@@ -3,6 +3,7 @@ package ldapsearchrequest
 import (
 	"DUCKY/serveur/database"
 	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
+	"DUCKY/serveur/logs"
 	"fmt"
 	"log"
 	"net"
@@ -54,7 +55,10 @@ func SendUidSearchRequest(uid string, domain string, conn net.Conn, messageID in
 	user, err := database.GetUserByUsername(uid, database.GetDatabase())
 	if err != nil {
 		log.Println("Erreur lors de la récupération de l'utilisateur :", err)
-		SendLDAPSearchFailure(conn, messageID, "Utilisateur non trouvé")
+		err := SendLDAPSearchFailure(conn, messageID, "Utilisateur non trouvé")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 
 	}

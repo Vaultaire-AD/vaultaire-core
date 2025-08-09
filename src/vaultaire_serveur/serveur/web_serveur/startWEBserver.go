@@ -1,6 +1,7 @@
 package webserveur
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"crypto/rand"
 	"crypto/rsa"
@@ -70,15 +71,21 @@ func generateSelfSignedCert(certFile, keyFile string) error {
 		return err
 	}
 	defer certOut.Close()
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
-
+	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture du certificat: "+err.Error())
+		return err
+	}
 	// Écrire key.pem
 	keyOut, err := os.Create(keyFile)
 	if err != nil {
 		return err
 	}
 	defer keyOut.Close()
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
-
+	err = pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture de la clé privée: "+err.Error())
+		return err
+	}
 	return nil
 }

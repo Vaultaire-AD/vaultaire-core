@@ -19,7 +19,7 @@ func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {
 		message = userauth.User_Auth_Manager(trames_content)
 	default:
 		fmt.Println(trames_content.Content)
-		break
+
 	}
 	sendmessage.SendMessage(message, conn)
 }

@@ -141,5 +141,4 @@ func ResolveDNSQuery(fqdn string, qType uint16) (any, error) {
 	default:
 		return "", fmt.Errorf("❌ Type de requête DNS non supporté : %d", qType)
 	}
-	return "", fmt.Errorf("❌ Type de requête DNS non supporté : %d", qType)
 }

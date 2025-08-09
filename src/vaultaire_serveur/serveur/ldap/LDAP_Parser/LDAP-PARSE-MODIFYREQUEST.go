@@ -18,7 +18,7 @@ func parseExtendedRequest(p *ber.Packet) (ldapstorage.ExtendedRequest, error) {
 	if p.Children[0].Tag != 0 {
 		return req, fmt.Errorf("expected requestName tag 0, got %d", p.Children[0].Tag)
 	}
-	req.RequestName = string(p.Children[0].Data.Bytes())
+	req.RequestName = string(p.Children[0].Data.String())
 
 	// RequestValue est optionnel (tag 1)
 	if len(p.Children) > 1 && p.Children[1].Tag == 1 {

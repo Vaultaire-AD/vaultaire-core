@@ -65,7 +65,11 @@ func loadConfig(filePath string) error {
 }
 
 func main() {
-	loadConfig("/opt/vaultaire_client/client_conf.yaml")
+	err := loadConfig("/opt/vaultaire_client/client_conf.yaml")
+	if err != nil {
+		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
+
+	}
 	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePath)
 	log.SetOutput(os.Stdout)
 	StartDailyUserCleanup()

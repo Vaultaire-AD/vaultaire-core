@@ -41,7 +41,10 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client) string {
 		lines := strings.Split(trames_content.Content, "\n")
 		fmt.Println(lines[0])
 		for i := 1; i < len(lines); i++ {
-			gpo.ApplyGPOsAsUser(lines[i], storage.Username)
+			err := gpo.ApplyGPOsAsUser(lines[i], storage.Username)
+			if err != nil {
+				fmt.Println("Erreur lors de l'application des GPOs :", err)
+			}
 		}
 
 	case "07":

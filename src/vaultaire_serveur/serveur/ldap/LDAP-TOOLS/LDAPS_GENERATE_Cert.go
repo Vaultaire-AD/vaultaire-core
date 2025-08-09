@@ -1,6 +1,7 @@
 package ldaptools
 
 import (
+	"DUCKY/serveur/logs"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -53,7 +54,10 @@ func GenerateSelfSignedCert(certPath, keyPath string) error {
 		return err
 	}
 	defer certOut.Close()
-	pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'encodage du certificat: "+err.Error())
+	}
 
 	// Écriture de la clé privée
 	keyOut, err := os.OpenFile(keyPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
@@ -61,7 +65,10 @@ func GenerateSelfSignedCert(certPath, keyPath string) error {
 		return err
 	}
 	defer keyOut.Close()
-	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	err = pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'encodage de la clé privé: "+err.Error())
+	}
 
 	log.Println("🔐 Certificat et clé générés.")
 	return nil

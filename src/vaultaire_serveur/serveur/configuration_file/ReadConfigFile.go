@@ -1,16 +1,15 @@
-package configurationfile
+package configuration_file
 
 import (
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"io/ioutil"
 	"os"
 
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func ReadConfigUser[T any](filePath string) (*T, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		logs.Write_Log("WARNING", "erreur lors de la lecture du fichier de configuration: "+err.Error())
 	}

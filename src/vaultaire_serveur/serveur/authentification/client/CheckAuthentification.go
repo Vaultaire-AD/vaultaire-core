@@ -151,7 +151,11 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 			if admin {
 				logs.Write_Log("INFO", username+" is admin for the client : "+trames_content.ClientSoftwareID)
 			}
-			gpomanager.SendGPOtoClientByUsername(username, conn, trames_content.ClientSoftwareID, trames_content.SessionIntegritykey)
+			_, err = gpomanager.SendGPOtoClientByUsername(username, conn, trames_content.ClientSoftwareID, trames_content.SessionIntegritykey)
+			if err != nil {
+				logs.Write_Log("ERROR", "Error sending GPO to client: "+err.Error())
+				return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + " you have not the authorisation for acces to this computeur")
+			}
 			return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + strconv.FormatBool(admin) + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
 		} else {
 			return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "you have not the authorisation for acces to this computeur")

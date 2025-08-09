@@ -46,38 +46,66 @@ func buildLDAPBindResponse(messageID int, resultCode byte, matchedDN string, dia
 }
 func respondBindSuccess(messageID int, conn net.Conn) {
 	res := buildLDAPBindResponse(messageID, 0x00, "", "Bind successful")
-	conn.Write(res)
+	_, err := conn.Write(res)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error sending bind success response: "+err.Error())
+		return
+	}
 }
 
 func respondInvalidCredentials(messageID int, conn net.Conn) {
 	res := buildLDAPBindResponse(messageID, 0x31, "", "Invalid credentials")
-	conn.Write(res)
+	_, err := conn.Write(res)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error sending invalid credentials response: "+err.Error())
+		return
+	}
 }
 
 func respondProtocolError(messageID int, conn net.Conn) {
 	res := buildLDAPBindResponse(messageID, 0x02, "", "Protocol error")
-	conn.Write(res)
+	_, err := conn.Write(res)
+	if err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse Bind: %s", err.Error()))
+		return
+	}
 }
 
-func respondStrongAuthRequired(messageID int, conn net.Conn) {
-	res := buildLDAPBindResponse(messageID, 0x08, "", "Strong auth required")
-	conn.Write(res)
-}
+// func respondStrongAuthRequired(messageID int, conn net.Conn) {
+// 	res := buildLDAPBindResponse(messageID, 0x08, "", "Strong auth required")
+// 	_, err := conn.Write(res)
+// 	if err != nil {
+// 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse Bind: %s", err.Error()))
+// 		return
+// 	}
+// }
 
-func respondBusy(messageID int, conn net.Conn) {
-	res := buildLDAPBindResponse(messageID, 0x33, "", "Server is busy")
-	conn.Write(res)
-}
+// func respondBusy(messageID int, conn net.Conn) {
+// 	res := buildLDAPBindResponse(messageID, 0x33, "", "Server is busy")
+// 	_, err := conn.Write(res)
+// 	if err != nil {
+// 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse Bind: %s", err.Error()))
+// 		return
+// 	}
+// }
 
-func respondUnavailable(messageID int, conn net.Conn) {
-	res := buildLDAPBindResponse(messageID, 0x34, "", "Server unavailable")
-	conn.Write(res)
-}
+// func respondUnavailable(messageID int, conn net.Conn) {
+// 	res := buildLDAPBindResponse(messageID, 0x34, "", "Server unavailable")
+// 	_, err := conn.Write(res)
+// 	if err != nil {
+// 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse Bind: %s", err.Error()))
+// 		return
+// 	}
+// }
 
-func respondUnwillingToPerform(messageID int, conn net.Conn) {
-	res := buildLDAPBindResponse(messageID, 0x35, "", "Refusing operation")
-	conn.Write(res)
-}
+// func respondUnwillingToPerform(messageID int, conn net.Conn) {
+// 	res := buildLDAPBindResponse(messageID, 0x35, "", "Refusing operation")
+// 	_, err := conn.Write(res)
+// 	if err != nil {
+// 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse Bind: %s", err.Error()))
+// 		return
+// 	}
+// }
 
 func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn) {
 	user, domain, ou := ldaptools.ExtractUsernameAndDomain(op.Name)

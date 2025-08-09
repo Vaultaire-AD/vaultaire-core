@@ -2,7 +2,7 @@ package yaml
 
 import (
 	"fmt"
-	"io/ioutil"
+	"os"
 	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 
@@ -18,7 +18,7 @@ func ReadYAMLFile(filename string) {
 }
 
 func readConfig[T any](filePath string) (*T, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		logs.WriteLog("error", "erreur lors de la lecture du fichier de configuration: %v")
 		return nil, fmt.Errorf("erreur lors de la lecture du fichier de configuration: %v", err)

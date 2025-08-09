@@ -10,7 +10,7 @@ import (
 
 func AskServerKey(conn net.Conn) bool {
 	message := []byte("askkey")
-	fmt.Println("je veux une clé serveur\n")
+	fmt.Println("je veux une clé serveur")
 	messageSize := sendmessage.CompileMessageSize(message)
 	headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
 	data := append(append(headerSize, messageSize...), message...)

@@ -44,7 +44,11 @@ func SearchGroupNameRequest(conn net.Conn, messageID int, groupName string) {
 	packet.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, uint64(messageID), "Message ID"))
 	packet.AppendChild(response)
 
-	conn.Write(packet.Bytes())
+	_, err = conn.Write(packet.Bytes())
+	if err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Failed to write SearchResultEntry for group '%s': %v", group.GroupName, err))
+		return
+	}
 
 	SendLDAPSearchResultDone(conn, messageID)
 }

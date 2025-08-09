@@ -35,7 +35,7 @@ jobs:
         working-directory: ./src/vaultaire_serveur
   
       - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions --max-same-issues=0 --verbose
+        run: golangci-lint run --out-format=line-number --out-format=github-actions --max-same-issues=0 --verbose
         working-directory: ./src/vaultaire_serveur
 
       - name: Run tests
@@ -76,7 +76,7 @@ jobs:
         working-directory: ./src/vaultaire_client
   
       - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions --max-same-issues=0 --verbose
+        run: golangci-lint run --out-format=line-number --out-format=github-actions --max-same-issues=0 --verbose
         working-directory: ./src/vaultaire_client
 
       - name: Run tests
@@ -117,7 +117,7 @@ jobs:
         working-directory: ./src/vaultaire_cli
   
       - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions --max-same-issues=0 --verbose
+        run: golangci-lint run --out-format=line-number --out-format=github-actions --max-same-issues=0 --verbose
         working-directory: ./src/vaultaire_cli
 
       - name: Run tests
