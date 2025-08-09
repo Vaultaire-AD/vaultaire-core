@@ -80,7 +80,13 @@ func ExecuteCommand(input string) string {
 
 // Fonction qui gère la communication avec les clients via le socket UNIX
 func HandleClientCLI(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
+
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
 	if err != nil {

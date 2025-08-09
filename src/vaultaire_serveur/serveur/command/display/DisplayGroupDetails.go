@@ -24,7 +24,7 @@ func DisplayGroupDetails(groupDetails []storage.GroupDetails) string {
 	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
 
 	// En-têtes
-	fmt.Fprintf(w, "%-20s %-20s %-15s %-20s %-10s %-10s\n",
+	fmt.Println(w, "%-20s %-20s %-15s %-20s %-10s %-10s\n",
 		header("Group Name"),
 		header("Domain"),
 		header("Logiciel Perm."),
@@ -35,7 +35,7 @@ func DisplayGroupDetails(groupDetails []storage.GroupDetails) string {
 
 	// Données
 	for _, group := range groupDetails {
-		fmt.Fprintf(w, "%-20s %-20s %-15d %-20d %-10d %-10d\n",
+		fmt.Println(w, "%-20s %-20s %-15d %-20d %-10d %-10d\n",
 			group.GroupName,
 			group.DomainName,
 			group.LogicielPermissionCount,
@@ -45,7 +45,10 @@ func DisplayGroupDetails(groupDetails []storage.GroupDetails) string {
 		)
 	}
 
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 	sb.WriteString("-------------------------------------------------------------------------------\n")
 

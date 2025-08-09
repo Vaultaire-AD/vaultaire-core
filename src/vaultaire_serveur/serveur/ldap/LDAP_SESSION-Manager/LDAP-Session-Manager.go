@@ -1,6 +1,7 @@
 package ldapsessionmanager
 
 import (
+	"DUCKY/serveur/logs"
 	"net"
 	"sync"
 )
@@ -51,7 +52,10 @@ func SetBindInfo(conn net.Conn, username string, userDN string) {
 
 func ClearSession(c net.Conn) {
 	DeleteLDAPSession(c)
-	c.Close()
+	err := c.Close()
+	if err != nil {
+		logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+	}
 }
 
 // Supprimer la session (à la fermeture de connexion)

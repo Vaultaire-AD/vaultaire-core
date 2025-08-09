@@ -20,7 +20,10 @@ func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {
 
 	if err != nil && messageOrder != "01_01" {
 		logs.Write_Log("ERROR", "Error during the update of the connection: "+err.Error())
-		conn.Close()
+		err := conn.Close()
+		if err != nil {
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
 	} else {
 		switch service[0] {
 		case "01":

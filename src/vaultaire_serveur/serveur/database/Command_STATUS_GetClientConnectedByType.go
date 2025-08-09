@@ -34,7 +34,12 @@ func Command_STATUS_GetClientsConnectedByLogicielType(db *sql.DB, logicielType s
 		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var clients []storage.ClientConnected
 	for rows.Next() {

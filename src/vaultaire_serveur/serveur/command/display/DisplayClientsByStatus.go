@@ -27,7 +27,7 @@ func DisplayClientsByStatus(clients []storage.ClientConnected) string {
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les entêtes du tableau
-	fmt.Fprintf(w, "%-15s %-15s %-20s %-20s %-10s %-10s %-10s %-10s\n",
+	fmt.Println(w, "%-15s %-15s %-20s %-20s %-10s %-10s %-10s %-10s\n",
 		header("Username"),
 		header("Type"),
 		header("Computeur ID"),
@@ -44,7 +44,7 @@ func DisplayClientsByStatus(clients []storage.ClientConnected) string {
 		if client.Serveur {
 			serverStatus = serverIcon("🟢 Serveur")
 		}
-		fmt.Fprintf(w, "%-15s %-15s %-20s %-20s %-10s %-10d %-10s %-10s\n",
+		fmt.Println(w, "%-15s %-15s %-20s %-20s %-10s %-10d %-10s %-10s\n",
 			client.Username,
 			client.LogicielType,
 			client.ComputeurID,
@@ -57,8 +57,10 @@ func DisplayClientsByStatus(clients []storage.ClientConnected) string {
 	}
 
 	// Vider le tampon pour s'assurer que tout est écrit dans sb
-	w.Flush()
-
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	// Ajouter une ligne de séparation
 	sb.WriteString("--------------------------------------------------\n")
 

@@ -30,7 +30,12 @@ func SavePEMKey(filename string, key *rsa.PrivateKey) error {
 		logs.Write_Log("ERROR", "Error during the save of the private key: "+err.Error())
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	// Sérialiser la clé privée en format PEM
 	privBytes := x509.MarshalPKCS1PrivateKey(key)
@@ -51,7 +56,12 @@ func SavePEMKeyPublic(filename string, pubkey *rsa.PublicKey) error {
 		logs.Write_Log("ERROR", "Error during the save of the public key: "+err.Error())
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	pubBytes, err := x509.MarshalPKIXPublicKey(pubkey)
 	if err != nil {

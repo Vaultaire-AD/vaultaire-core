@@ -3,6 +3,7 @@ package ldap
 import (
 	ldapparser "DUCKY/serveur/ldap/LDAP_Parser"
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"fmt"
 	"io"
@@ -56,7 +57,12 @@ func HandleLDAPserveur() {
 	if err != nil {
 		log.Fatalf("server: failed to listen: %s", err)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	fmt.Println("Server listening on LDAP port 389...")
 
 	for {

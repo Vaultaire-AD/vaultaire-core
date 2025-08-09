@@ -2,6 +2,7 @@ package displaydns
 
 import (
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	"DUCKY/serveur/logs"
 	"fmt"
 	"strings"
 	"text/tabwriter"
@@ -19,13 +20,24 @@ func DisplayAllZones(zones []dnsstorage.Zone) string {
 	sb.WriteString("--------------------------------------------------\n")
 
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
-	fmt.Fprintf(w, "%-30s %-30s\n", header("Zone"), header("Nom de la table"))
-
-	for _, zone := range zones {
-		fmt.Fprintf(w, "%-30s %-30s\n", zone.ZoneName, zone.TableName)
+	_, err := fmt.Fprintf(w, "%-30s %-30s\n", header("Zone"), header("Nom de la table"))
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture des en-têtes: "+err.Error())
+		return "Erreur lors de l'affichage des zones DNS."
 	}
 
-	w.Flush()
+	for _, zone := range zones {
+		_, err := fmt.Fprintf(w, "%-30s %-30s\n", zone.ZoneName, zone.TableName)
+		if err != nil {
+			logs.Write_Log("ERROR", "Erreur lors de l'écriture des zones DNS: "+err.Error())
+			return "Erreur lors de l'affichage des zones DNS."
+		}
+	}
+
+	err = w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString("--------------------------------------------------\n")
 	return sb.String()
 }

@@ -17,7 +17,13 @@ type CloseRequest struct {
 
 // Fonction pour gérer les requêtes "close"
 func handleCloseRequest(conn net.Conn, payload string) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
+
 	var closeReq CloseRequest
 	err := json.Unmarshal([]byte(payload), &closeReq)
 	if err != nil {

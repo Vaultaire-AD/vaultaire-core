@@ -34,7 +34,12 @@ func Write_Log(level string, content string) {
 	if err != nil {
 		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	// Formatte l'heure actuelle
 	timestamp := time.Now().Format("2006-01-02 15:04:56")
@@ -76,7 +81,12 @@ func WriteLog(filename string, content string) {
 	if err != nil {
 		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	// Formatte l'heure actuelle
 	timestamp := time.Now().Format("2006-01-02 15:04")

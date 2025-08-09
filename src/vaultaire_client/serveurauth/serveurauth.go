@@ -23,7 +23,7 @@ func AskServerAuthentification(conn net.Conn) string {
 		fmt.Println(err)
 	}
 	auth.ServeurAUth = randomdata
-	fmt.Println("Ask Serveur Auth\n", randomdata)
+	fmt.Println("Ask Serveur Auth\n", string(randomdata))
 	send.SendMessage(("01_01\nserver_central\n" + "INIT" + "\n" + auth.Username + "\n" + auth.Computeur_ID + "\n" + string(randomdata)), conn)
 	for {
 		headerSize := br.Read_Header_Size(conn)
@@ -41,7 +41,7 @@ func AskServerAuthentification(conn net.Conn) string {
 			if lines[0] == "01_02" {
 				sessionIntegritykey := lines[2]
 				data := strings.Join(lines[3:], "\n")
-				fmt.Println([]byte(data))
+				fmt.Println(string([]byte(data)))
 				if bytes.Equal(auth.ServeurAUth, []byte(data)) {
 					fmt.Println("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
 					auth.ServeurCheck = true

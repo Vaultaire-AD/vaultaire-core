@@ -28,7 +28,7 @@ func DisplayUsersByStatus(users []storage.UserConnected) string {
 	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-4s %-15s %-20s %-20s %-10s\n",
+	fmt.Println(w, "%-4s %-15s %-20s %-20s %-10s\n",
 		header("ID"),
 		header("Username"),
 		header("Created At"),
@@ -42,7 +42,7 @@ func DisplayUsersByStatus(users []storage.UserConnected) string {
 		status := active("✅ Active")
 
 		// Ajouter les données formatées
-		fmt.Fprintf(w, "%-4d %-15s %-20s %-20s %-10s\n",
+		fmt.Println(w, "%-4d %-15s %-20s %-20s %-10s\n",
 			user.ID,
 			user.Username,
 			user.CreatedAt,
@@ -52,7 +52,10 @@ func DisplayUsersByStatus(users []storage.UserConnected) string {
 	}
 
 	// Écrire le tableau formaté dans `sb`
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 
 	sb.WriteString("--------------------------------------------------\n")

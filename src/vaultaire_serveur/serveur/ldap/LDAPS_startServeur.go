@@ -12,6 +12,7 @@ import (
 	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
 	ldapparser "DUCKY/serveur/ldap/LDAP_Parser"
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 )
 
@@ -44,7 +45,12 @@ func HandleLDAPSserveur() {
 	if err != nil {
 		log.Fatalf("server: failed to listen on LDAPS port: %s", err)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	fmt.Println("Server listening on LDAPS port 636...")
 
 	for {
@@ -57,7 +63,12 @@ func HandleLDAPSserveur() {
 		go func(c net.Conn) {
 			defer func() {
 				ldapsessionmanager.DeleteLDAPSession(c)
-				c.Close()
+				defer func() {
+					if err := c.Close(); err != nil {
+						// Handle or log the error
+						logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+					}
+				}()
 			}()
 
 			ldapsessionmanager.InitLDAPSession(c)

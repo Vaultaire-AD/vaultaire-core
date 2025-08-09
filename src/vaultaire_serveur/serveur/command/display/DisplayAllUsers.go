@@ -1,6 +1,7 @@
 package display
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"fmt"
 	"strings"
@@ -25,7 +26,7 @@ func DisplayAllUsers(users []storage.GetUsers) string {
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-15s %-25s %-15s %-20s\n",
+	fmt.Println(w, "%-15s %-25s %-15s %-20s\n",
 		header("ID Utilisateur"),
 		header("Username"),
 		header("Date de Naissance"),
@@ -38,7 +39,7 @@ func DisplayAllUsers(users []storage.GetUsers) string {
 		dateNaissance := user.DateNaissance
 
 		// Ajouter les détails de l'utilisateur
-		fmt.Fprintf(w, "%-15d %-25s %-15s %-20s\n",
+		fmt.Println(w, "%-15d %-25s %-15s %-20s\n",
 			user.ID,
 			user.Username,
 			dateNaissance,
@@ -47,7 +48,11 @@ func DisplayAllUsers(users []storage.GetUsers) string {
 	}
 
 	// Vider le tampon pour s'assurer que tout est écrit dans sb
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture des utilisateurs : "+err.Error())
+		return "Erreur lors de l'affichage des utilisateurs."
+	}
 
 	// Ajouter une ligne de séparation
 	sb.WriteString("--------------------------------------------------\n")

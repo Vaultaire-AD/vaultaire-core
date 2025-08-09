@@ -34,7 +34,7 @@ func EncryptMessageWithClientPublic(message string, clientSoftwareID string) ([]
 	rsaPublicKey, ok := publicKey.(*rsa.PublicKey)
 	if !ok {
 		logs.Write_Log("ERROR", "The rsa key is not a valid rsa key")
-		return nil, fmt.Errorf("The rsa key is not a valid rsa key")
+		return nil, fmt.Errorf("the rsa key is not a valid rsa key")
 	}
 	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, []byte(message))
 	if err != nil {

@@ -23,8 +23,12 @@ func Command_GET_AllClientPermissions(db *sql.DB) ([]storage.ClientPermission, e
 		logs.WriteLog("db", "Erreur lors de la récupération des permissions clients : "+err.Error())
 		return nil, err
 	}
-	defer rows.Close()
-
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	for rows.Next() {
 		var permission storage.ClientPermission
 		if err := rows.Scan(&permission.ID, &permission.Name, &permission.IsAdmin); err != nil {

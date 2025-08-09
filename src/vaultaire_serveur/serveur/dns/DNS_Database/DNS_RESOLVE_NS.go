@@ -2,6 +2,7 @@ package dnsdatabase
 
 import (
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -16,7 +17,12 @@ func ResolveNSRecords(db *sql.DB, zone string) ([]dnsstorage.ZoneRecord, error) 
 	if err != nil {
 		return nil, fmt.Errorf("❌ Erreur DB lors de la récupération des NS de %s : %v", zone, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	var records []dnsstorage.ZoneRecord
 	for rows.Next() {

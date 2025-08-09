@@ -2,6 +2,7 @@ package dnsdatabase
 
 import (
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -47,7 +48,12 @@ func ResolveMXRecords(db *sql.DB, fqdn string) ([]dnsstorage.MXRecord, error) {
 			if err != nil {
 				return nil, err
 			}
-			defer rows.Close()
+			defer func() {
+				if err := rows.Close(); err != nil {
+					// Handle or log the error
+					logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+				}
+			}()
 
 			var records []dnsstorage.MXRecord
 			for rows.Next() {

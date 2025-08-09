@@ -1,6 +1,7 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -23,7 +24,12 @@ func FindUserDomainFromGroups(uid string, baseDomain string, db *sql.DB) (string
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	for rows.Next() {
 		var domain string

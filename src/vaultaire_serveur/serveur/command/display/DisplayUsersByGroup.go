@@ -29,7 +29,7 @@ func DisplayUsersByGroup(groupName string, users []storage.DisplayUsersByGroup) 
 	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-20s %-15s %-10s\n",
+	fmt.Println(w, "%-20s %-15s %-10s\n",
 		header("Username"),
 		header("Date of Birth"),
 		header("Status"),
@@ -43,7 +43,7 @@ func DisplayUsersByGroup(groupName string, users []storage.DisplayUsersByGroup) 
 		}
 
 		// Ajouter les données formatées
-		fmt.Fprintf(w, "%-20s %-15s %-10s\n",
+		fmt.Println(w, "%-20s %-15s %-10s\n",
 			user.Username,
 			user.DateOfBirth,
 			status,
@@ -51,7 +51,10 @@ func DisplayUsersByGroup(groupName string, users []storage.DisplayUsersByGroup) 
 	}
 
 	// Vider le tampon et ajouter au StringBuilder
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 
 	// Ajouter la ligne de séparation

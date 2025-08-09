@@ -18,7 +18,12 @@ func CleanUpExpiredSessions(db *sql.DB) error {
 		logs.WriteLog("db", "erreur lors de la lecture des sessions : "+err.Error())
 		return fmt.Errorf("erreur lors de la lecture des sessions : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var expiredUserIDs []int
 	for rows.Next() {
@@ -69,7 +74,13 @@ func DeleteDidLogin(db *sql.DB, Username string, computeurID string) error {
 	if err != nil {
 		return fmt.Errorf("erreur de préparation de la requête : %w", err)
 	}
-	defer stmt.Close()
+
+	defer func() {
+		if err := stmt.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	result, err := stmt.Exec(idUser, idLogiciel)
 	if err != nil {
