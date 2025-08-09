@@ -1,0 +1,21 @@
+FROM debian:latest
+
+# Mettre à jour les paquets et installer SSH
+RUN apt-get update && apt-get install -y openssh-server sudo && \
+    mkdir /var/run/sshd && \
+    echo 'root:password' | chpasswd && \
+    useradd -m -s /bin/bash user && echo 'user:userpassword' | chpasswd && \
+    echo 'user ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers
+
+RUN apt-get update && apt-get install -y ca-certificates && update-ca-certificates
+#RUN apt-get install libcurl4-openssl-dev 
+#RUN apt-get install libpam0g-dev
+#RUN apt install golang
+
+
+
+# Exposer le port SSH
+EXPOSE 22
+
+# Lancer le service SSH
+CMD [\"/usr/sbin/sshd\", \"-D\"]

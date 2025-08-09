@@ -1,0 +1,26 @@
+serveurlistenport: "6666"
+file-path:
+  socketpath: "/opt/vaultaire/vaultaire.sock"
+  privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"
+  publickeypath: "/opt/vaultaire/.ssh/public_key.pub"
+  privatekeyforlogintoclient: "/opt/vaultaire/.ssh/private_key_for_login_client_rsa"
+  publickeyforlogintoclient: "/opt/vaultaire/.ssh/public_key_for_login_client_rsa.pub"
+  clientconfpath: "/opt/vaultaire/client_conf.yaml"
+  logpath: "/var/log/vaultaire/vaultaire.log"
+  servercheckonlinetimer: 5
+database:
+  username: "root"
+  password: "root"
+  ip_database: "vaultaire-database.vaultaire.svc.cluster.local"
+  port_database: "3306"
+  databaseName: "vaultaire"
+ldap:
+  ldap_enable: true
+  ldap_debug: true
+dns:
+  dns_enable: true
+automatisation: 
+  sh_folder_path: "/opt/vaultaire/automatisation/"
+
+
+

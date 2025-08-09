@@ -1,0 +1,6 @@
+user:
+  username: "visiteur"
+  password: "it5"
+  birthdate: "06/01/2004"
+  groupe: "visiteur"
+  permission: "visiteur"

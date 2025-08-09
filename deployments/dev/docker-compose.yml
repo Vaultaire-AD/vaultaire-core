@@ -1,0 +1,54 @@
+version: '3'
+ 
+networks:
+  Ducky-network:
+    driver: bridge
+    
+services:
+  oppydoome_AD:
+    image: golang:latest
+    restart: unless-stopped
+    container_name: vaultaire
+    privileged: true
+    working_dir: /go/src/app
+    volumes:
+      - ./src:/go/src/app
+      - ./src/vaultaire_cli:/opt
+      - ./web_packet:/go/src/app
+    ports:
+      - 6666:6666
+    command: ["/bin/sh", "-c","mkdir -p /opt/vaultaire/.ssh && cp /go/src/app/serveur_conf.yaml /opt/vaultaire/serveur_conf.yaml && chmod +x /go/src/app/dockerautocreate.sh && go run main/main.go & tail -f /dev/null"]
+    networks:
+      - Ducky-network
+
+  oppidum-db:
+    image: mariadb:latest
+    container_name: OPPIDUM
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_DATABASE=vaultaire
+      - TZ=Europe/Paris
+    volumes:
+      - ./database/:/var/lib/mysql/
+    ports:
+      - 3306:3306
+    networks:
+      - Ducky-network
+
+  phpmyadmin:
+    image: phpmyadmin/phpmyadmin:latest
+    container_name: phpmyadmin
+    restart: unless-stopped
+    environment:
+      - PMA_HOST=OPPIDUM
+      - PMA_PORT=3306
+      - PMA_USER=root
+      - PMA_PASSWORD=root
+      - TZ=Europe/Paris
+    ports:
+      - 8080:80
+    depends_on:
+      - oppydoome_AD
+    networks:
+      - Ducky-network

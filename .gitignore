@@ -1,0 +1,21 @@
+/database
+/database/*
+/vaultaire_serveur
+/vaultaire_serveur/*
+/vaultaire_client
+/vaultaire_client/*
+
+
+# Cache / build
+bin/
+build/
+*.exe
+*.out
+*.o
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db

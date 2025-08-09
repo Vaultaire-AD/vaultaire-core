@@ -1,0 +1,123 @@
+package command
+
+import (
+	commandadd "DUCKY/serveur/command/command_add"
+	commandcreate "DUCKY/serveur/command/command_create"
+	commanddelete "DUCKY/serveur/command/command_delete"
+	commanddns "DUCKY/serveur/command/command_dns"
+	commandeyes "DUCKY/serveur/command/command_eyes"
+	commandget "DUCKY/serveur/command/command_get"
+	commandremove "DUCKY/serveur/command/command_remove"
+	commandstatus "DUCKY/serveur/command/command_status"
+	commandupdate "DUCKY/serveur/command/command_update"
+	"DUCKY/serveur/database"
+	"fmt"
+	"net"
+	"strings"
+)
+
+// Fonction qui exécute une commande et retourne le résultat
+func ExecuteCommand(input string) string {
+	// Nettoyer et diviser la commande
+	print("Input: ", input)
+	command_list := splitArgsPreserveBlocks(input)
+	if len(command_list) == 0 {
+		return "Erreur : commande vide."
+	}
+	if len(command_list) == 1 {
+		command_list = append(command_list, "-h")
+	}
+
+	// Récupérer la commande principale et les arguments
+	command := command_list[0]
+	args := command_list[1:]
+
+	// Buffer pour stocker la réponse
+	var response string
+
+	// Exécuter la commande
+	switch command {
+	case "status":
+		response = commandstatus.Status_Command(args)
+	case "clear":
+		database.CleanUpExpiredSessions(database.DB)
+		response = "Sessions expirées nettoyées."
+	case "create":
+		response = commandcreate.Create_Command(args)
+	case "get":
+		response = commandget.Get_Command(args)
+	case "add":
+		response = commandadd.Add_Command(args)
+	case "remove":
+		response = commandremove.Remove_Command(args)
+	case "delete":
+		response = commanddelete.Delete_Command(args)
+	case "update":
+		response = commandupdate.Update_Command(args)
+	case "eyes":
+		response = commandeyes.Eyes_Command(args)
+	case "dns":
+		response = commanddns.DNS_Command(args)
+	case "setup":
+	case "help":
+		response = "Liste des commandes disponibles :\n" +
+			"  create [OPTIONS] : crée une nouvelle entrée.\n" +
+			"  status [OPTIONS] : Vérifie l'état du serveur.\n" +
+			"  clear [OPTIONS]  : Nettoie les sessions.\n" +
+			"  help             : Affiche cette aide."
+	default:
+		response = fmt.Sprintf("Commande inconnue : %s. Tapez 'help' pour plus d'informations.", command)
+	}
+
+	return response
+}
+
+// Fonction qui gère la communication avec les clients via le socket UNIX
+func HandleClientCLI(conn net.Conn) {
+	defer conn.Close()
+	buf := make([]byte, 1024)
+	n, err := conn.Read(buf)
+	if err != nil {
+		fmt.Println("Erreur lecture commande :", err)
+		return
+	}
+
+	// Exécuter la commande et récupérer la réponse
+	command := strings.TrimSpace(string(buf[:n]))
+	result := ExecuteCommand(command)
+
+	// Envoyer la réponse au client
+	conn.Write([]byte(result + "\n"))
+}
+
+func splitArgsPreserveBlocks(input string) []string {
+	args := strings.Fields(input)
+	var result []string
+
+	i := 0
+	for i < len(args) {
+		arg := args[i]
+
+		if strings.HasPrefix(arg, "--") {
+			// Début d’un nouveau bloc
+			key := arg
+			i++
+
+			var valueParts []string
+			// Lire tous les arguments jusqu’au prochain -- ou fin
+			for i < len(args) && !strings.HasPrefix(args[i], "--") {
+				valueParts = append(valueParts, args[i])
+				i++
+			}
+
+			result = append(result, key)
+			result = append(result, strings.Join(valueParts, " "))
+		} else {
+			// Cas des options hors -- (ex: -gpo update)
+			result = append(result, arg)
+			i++
+		}
+	}
+
+	return result
+}

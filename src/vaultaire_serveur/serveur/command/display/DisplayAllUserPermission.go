@@ -1,0 +1,54 @@
+package display
+
+import (
+	"DUCKY/serveur/storage"
+	"fmt"
+	"strings"
+	"text/tabwriter"
+
+	"github.com/fatih/color"
+)
+
+func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
+	var sb strings.Builder
+
+	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
+	header := color.New(color.FgYellow, color.Bold).SprintFunc()
+
+	sb.WriteString(title("🔑 Liste de toutes les Permissions Utilisateur") + "\n")
+	sb.WriteString("--------------------------------------------------\n")
+
+	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
+
+	// En-têtes avec les colonnes pour chaque champ booléen
+	fmt.Fprintf(w, "%-5s %-20s %-30s %-6s %-6s %-8s %-8s %-6s %-6s\n",
+		header("ID"),
+		header("Nom"),
+		header("Description"),
+		header("None"),
+		header("Auth"),
+		header("Compare"),
+		header("Search"),
+		header("Read"),
+		header("Write"),
+	)
+
+	for _, p := range permissions {
+		fmt.Fprintf(w, "%-5d %-20s %-30s %-6t %-6t %-8t %-8t %-6t %-6t\n",
+			p.ID,
+			p.Name,
+			p.Description,
+			p.None,
+			p.Auth,
+			p.Compare,
+			p.Search,
+			p.Read,
+			p.Write,
+		)
+	}
+
+	w.Flush()
+	sb.WriteString("--------------------------------------------------\n")
+
+	return sb.String()
+}
