@@ -1,0 +1,40 @@
+name: Vaultaire CI
+
+on:
+  pull_request:
+    branches:
+      - dev
+
+jobs:
+  build_test:
+    runs-on: rocky-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: 1.22.9
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Run gofmt check
+      run: |
+        if ! go fmt ./... | grep -q '^'; then
+          echo "Code is not properly formatted. Please run 'go fmt ./...'"
+          exit 1
+        fi
+
+    - name: Run golangci-lint
+      uses: golangci/golangci-lint-action@v3
+      with:
+        version: v1.53.3
+
+    - name: Run tests
+      run: go test -v ./...
+      
+    - name: Build binaries
+      run: go build -v ./src/...
