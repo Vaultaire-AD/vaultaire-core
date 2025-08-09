@@ -28,7 +28,12 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 		logs.WriteLog("db", "Erreur lors de la récupération des permissions utilisateurs : "+err.Error())
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	for rows.Next() {
 		var perm storage.UserPermission

@@ -2,6 +2,7 @@ package database
 
 import (
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
+	"DUCKY/serveur/logs"
 	"database/sql"
 )
 
@@ -52,7 +53,12 @@ func GetUsersByGroup(group string, db *sql.DB) ([]ldapstorage.User, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var users []ldapstorage.User
 	for rows.Next() {

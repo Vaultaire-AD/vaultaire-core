@@ -29,7 +29,12 @@ func GET_GPOcommandByOSandGroup(db *sql.DB, groupName, osName string) ([]string,
 		logs.WriteLog("db", "Erreur lors de la récupération des GPOs: "+err.Error())
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var commands []string
 	for rows.Next() {

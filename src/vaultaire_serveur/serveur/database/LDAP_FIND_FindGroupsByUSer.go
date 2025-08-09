@@ -1,6 +1,7 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"strings"
 )
@@ -23,7 +24,12 @@ func FindGroupsByUserInDomainTree(db *sql.DB, username string, baseDomain string
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var groups []string
 	for rows.Next() {
