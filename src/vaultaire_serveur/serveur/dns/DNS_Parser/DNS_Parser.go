@@ -4,7 +4,6 @@ import (
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
 	"encoding/binary"
 	"errors"
-	"fmt"
 )
 
 // parseName lit un nom DNS, supporte compression et retourne la nouvelle position après lecture
@@ -48,9 +47,9 @@ func parseName(msg []byte, offset int) (string, int, error) {
 	}
 
 	if !jumped {
-		return fmt.Sprintf("%s", joinLabels(labels)), offset, nil
+		return joinLabels(labels), offset, nil
 	}
-	return fmt.Sprintf("%s", joinLabels(labels)), jumpOffset, nil
+	return joinLabels(labels), jumpOffset, nil
 }
 
 func joinLabels(labels []string) string {

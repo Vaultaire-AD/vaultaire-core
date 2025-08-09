@@ -57,7 +57,11 @@ func main() {
 		fmt.Println("Error For generate Server Key:", err)
 		logs.Write_Log("CRITICAL", "Error For generate Server Key: "+err.Error())
 	}
-	keymanagement.Generate_SSH_Key_For_Login_Client()
+	err = keymanagement.Generate_SSH_Key_For_Login_Client()
+	if err != nil {
+		fmt.Println("Error For generate SSH Key:", err)
+		logs.Write_Log("CRITICAL", "Error For generate SSH Key: "+err.Error())
+	}
 	listener, err := net.Listen("tcp", ":"+storage.ServeurLisetenPort)
 	if err != nil {
 		fmt.Println("Erreur lors de l'écoute sur le port : "+storage.ServeurLisetenPort, err)

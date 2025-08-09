@@ -6,7 +6,7 @@ import (
 	"time"
 )
 
-func WriteLog(filename string, content string) error {
+func WriteLog(filename string, content string) {
 	// Définir le chemin du répertoire et du fichier
 	dirPath := "/var/log/oppydoome/"
 	filepath := dirPath + filename
@@ -14,13 +14,13 @@ func WriteLog(filename string, content string) error {
 	// Créer le répertoire s'il n'existe pas
 	err := os.MkdirAll(dirPath, 0755)
 	if err != nil {
-		return fmt.Errorf("erreur lors de la création du répertoire: %v", err)
+		fmt.Printf("erreur lors de la création du répertoire: %v", err)
 	}
 
 	// Ouvre le fichier en mode append, le crée s'il n'existe pas
 	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
+		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}
 	defer file.Close()
 
@@ -32,12 +32,9 @@ func WriteLog(filename string, content string) error {
 
 	// Écrit la ligne dans le fichier
 	if _, err := file.WriteString(logLine); err != nil {
-		return fmt.Errorf("erreur lors de l'écriture dans le fichier: %v", err)
+		fmt.Printf("erreur lors de l'écriture dans le fichier: %v", err)
 	}
-
-	return nil
 }
-
 
 //func main() {
 //	// Exemple d'utilisation

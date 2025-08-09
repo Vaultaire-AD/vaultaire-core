@@ -12,7 +12,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"gopkg.in/yaml.v3"
+	yaml "gopkg.in/yaml.v3"
 )
 
 // generateRandomID génère un ID aléatoire de la longueur spécifiée, suivi de la date actuelle.
@@ -92,10 +92,16 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 
 	// Écriture de la clé privée
 	privateKeyPath := filepath.Join(dirPath, "private_key.pem")
-	keymanagement.SavePEMKey(privateKeyPath, privateKey)
+	err = keymanagement.SavePEMKey(privateKeyPath, privateKey)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error during the private key saving : "+err.Error())
+	}
 	// Écriture de la clé publique
 	publicKeyPath := filepath.Join(dirPath, "public_key.pem")
-	keymanagement.SavePEMKeyPublic(publicKeyPath, publicKey)
+	err = keymanagement.SavePEMKeyPublic(publicKeyPath, publicKey)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error during the public key saving : "+err.Error())
+	}
 
 	fmt.Printf("Client software configuration et clés générées avec succès dans : %s\n", dirPath)
 	return computeurID, nil

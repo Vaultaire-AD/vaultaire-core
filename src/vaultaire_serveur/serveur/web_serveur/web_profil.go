@@ -2,6 +2,7 @@ package webserveur
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"DUCKY/serveur/web_serveur/session"
 	"html/template"
@@ -39,7 +40,11 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Template manquant", 500)
 			return
 		}
-		tmpl.Execute(w, ProfilPageData{User: *userInfo})
+		err = tmpl.Execute(w, ProfilPageData{User: *userInfo})
+		if err != nil {
+			logs.Write_Log("ERROR", "Erreur lors de l'exécution du template de la page profil : "+err.Error())
+			http.Error(w, "Erreur lors de l'exécution du template", 500)
+		}
 		return
 	}
 

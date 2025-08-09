@@ -11,6 +11,7 @@ import (
 	commandstatus "DUCKY/serveur/command/command_status"
 	commandupdate "DUCKY/serveur/command/command_update"
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/logs"
 	"fmt"
 	"net"
 	"strings"
@@ -40,7 +41,12 @@ func ExecuteCommand(input string) string {
 	case "status":
 		response = commandstatus.Status_Command(args)
 	case "clear":
-		database.CleanUpExpiredSessions(database.DB)
+		err := database.CleanUpExpiredSessions(database.DB)
+		if err != nil {
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors du nettoyage des sessions expirées : %v", err))
+			response = "Erreur lors du nettoyage des sessions expirées."
+			break
+		}
 		response = "Sessions expirées nettoyées."
 	case "create":
 		response = commandcreate.Create_Command(args)
@@ -87,7 +93,11 @@ func HandleClientCLI(conn net.Conn) {
 	result := ExecuteCommand(command)
 
 	// Envoyer la réponse au client
-	conn.Write([]byte(result + "\n"))
+	_, err = conn.Write([]byte(result + "\n"))
+	if err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse au client : %v", err))
+		return
+	}
 }
 
 func splitArgsPreserveBlocks(input string) []string {

@@ -30,7 +30,10 @@ func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, fil
 		groups, err := database.FindGroupsByUserInDomainTree(database.GetDatabase(), uid, baseObject)
 		if err != nil {
 			log.Println("Erreur récupération groupes :", err)
-			SendLDAPSearchFailure(conn, messageID, "Erreur interne")
+			err := SendLDAPSearchFailure(conn, messageID, "Erreur interne")
+			if err != nil {
+				logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+			}
 			return
 		}
 		groupInfos, err := database.GetGroupsWithUsersByNames(database.GetDatabase(), groups)

@@ -35,7 +35,10 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 	// Vérifier les permissions en base de données
 	if !database.IsUserAuthorizedToSearch(session.Username, op.BaseObject) {
 		logs.Write_Log("WARNING", fmt.Sprintf("Utilisateur %s n'est pas autorisé à faire une recherche sur %s", session.Username, op.BaseObject))
-		SendLDAPSearchFailure(conn, messageID, "erreur au niveau du user source de l'aplpicatif contact your administrator.")
+		err := SendLDAPSearchFailure(conn, messageID, "erreur au niveau du user source de l'aplpicatif contact your administrator.")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 	filters, err := ExtractEqualityFilters(op.Filter)
@@ -70,7 +73,10 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 			domain, err := database.FindUserDomainFromGroups(filters[0].Value, op.BaseObject, database.GetDatabase())
 			if err != nil {
 				logs.Write_Log("ERROR", "Erreur lors de la recherche du domaine pour l'utilisateur "+filters[0].Value+": "+err.Error())
-				SendLDAPSearchFailure(conn, messageID, "Aucun domaine trouvé sous la forêt pour l'utilisateur")
+				err := SendLDAPSearchFailure(conn, messageID, "Aucun domaine trouvé sous la forêt pour l'utilisateur")
+				if err != nil {
+					logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+				}
 				return
 			}
 			uid := filters[0].Value
@@ -84,7 +90,10 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 			groups, err := database.FindGroupsByUserInDomainTree(database.GetDatabase(), uid, op.BaseObject)
 			if err != nil {
 				log.Println("Erreur récupération groupes :", err)
-				SendLDAPSearchFailure(conn, messageID, "Erreur interne")
+				err := SendLDAPSearchFailure(conn, messageID, "Erreur interne")
+				if err != nil {
+					logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+				}
 				return
 			}
 			for _, group := range groups {
@@ -100,14 +109,21 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 						// {Type: "dn", Vals: []string{dn}},
 					},
 				}
-				SendLDAPSearchResultEntry(conn, messageID, entry)
+				err := SendLDAPSearchResultEntry(conn, messageID, entry)
+				if err != nil {
+					logs.Write_Log("ERROR", "Error sending LDAP search result entry: "+err.Error())
+					return
+				}
 			}
 			SendLDAPSearchResultDone(conn, messageID)
 			return
 		}
 		if len(foundCategories) == 0 {
 			fmt.Println("Aucune entité correspondante détectée dans les filtres.")
-			SendLDAPSearchFailure(conn, messageID, "Aucune entité correspondante détectée dans les filtres.")
+			err := SendLDAPSearchFailure(conn, messageID, "Aucune entité correspondante détectée dans les filtres.")
+			if err != nil {
+				logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+			}
 			return
 		}
 	}

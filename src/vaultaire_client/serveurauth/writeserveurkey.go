@@ -1,11 +1,10 @@
 package serveurauth
 
 import (
-	store "vaultaire_client/storage"
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
+	store "vaultaire_client/storage"
 )
 
 func WriteToFile(content string) error {
@@ -19,7 +18,7 @@ func WriteToFile(content string) error {
 	}
 
 	// Écrire le contenu dans le fichier
-	err = ioutil.WriteFile(filePath, []byte(content), 0644)
+	err = os.WriteFile(filePath, []byte(content), 0644)
 	if err != nil {
 		return err
 	}

@@ -75,7 +75,12 @@ func CheckServeurOnline() {
 			if err != nil {
 				logs.Write_Log("ERROR", "Error during the send of the message to "+serveur.Client_ID+" : "+err.Error())
 				storage.Serveur_Online = append(storage.Serveur_Online[:i], storage.Serveur_Online[i+1:]...)
-				database.DeleteDidLogin(db.GetDatabase(), serveur.Client_ID, serveur.Client_ID)
+				err = database.DeleteDidLogin(db.GetDatabase(), serveur.Client_ID, serveur.Client_ID)
+				if err != nil {
+					logs.Write_Log("ERROR", "Error during the delete of the session for "+serveur.Client_ID+" : "+err.Error())
+				} else {
+					logs.Write_Log("INFO", "Server "+serveur.Client_ID+" is offline and removed from online list")
+				}
 			}
 		}
 	}

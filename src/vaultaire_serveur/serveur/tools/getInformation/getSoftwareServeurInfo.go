@@ -2,6 +2,7 @@ package getinformation
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"log"
 	"strconv"
@@ -14,7 +15,11 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 		log.Println("Erreur : données incomplètes dans le contenu GetSoftwareServeurInformation")
 		return
 	}
-	database.UpdateHostname(database.GetDatabase(), trames_content.ClientSoftwareID, information[0], information[1], information[2], information[3])
+	err := database.UpdateHostname(database.GetDatabase(), trames_content.ClientSoftwareID, information[0], information[1], information[2], information[3])
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de la mise à jour des informations du logiciel serveur : "+err.Error())
+		return
+	}
 	// la il faut gère les session voir la tache sur github
 	db := database.GetDatabase()
 

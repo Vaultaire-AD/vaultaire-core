@@ -10,7 +10,12 @@ import (
 )
 
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
-	templates.Execute(w, nil)
+	err := templates.Execute(w, nil)
+	if err != nil {
+		log.Printf("Erreur lors de l'exécution du template de la page de connexion : %v", err)
+		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
+		return
+	}
 }
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {

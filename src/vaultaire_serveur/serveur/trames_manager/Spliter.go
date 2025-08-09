@@ -33,7 +33,10 @@ func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {
 		if message == "" {
 
 		} else {
-			sendmessage.SendMessage(message, trames_content.ClientSoftwareID, conn)
+			err := sendmessage.SendMessage(message, trames_content.ClientSoftwareID, conn)
+			if err != nil {
+				logs.Write_Log("ERROR", "Error sending message: "+err.Error())
+			}
 		}
 	}
 }

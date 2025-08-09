@@ -3,6 +3,7 @@ package session
 // 📁 DUCKY/serveur/webserveur/session/session.go
 
 import (
+	"DUCKY/serveur/logs"
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
@@ -23,7 +24,10 @@ var (
 // Génère un token aléatoire
 func generateToken() string {
 	b := make([]byte, 32)
-	rand.Read(b)
+	_, err := rand.Read(b)
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de la lecture du nombre aleatoire lors de la generation du token dans webserver "+err.Error())
+	}
 	return hex.EncodeToString(b)
 }
 

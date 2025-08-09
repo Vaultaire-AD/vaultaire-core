@@ -21,7 +21,12 @@ import (
 // It is called when a client wants to terminate their session, ensuring that the session is properly closed and logged.
 // It is essential for maintaining the security and integrity of the client-server communication.
 func closeSession(trames_content storage.Trames_struct_client) string {
-	database.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID)
-	logs.Write_Log("INFO", "Session delete for "+trames_content.Username+" from Computeur "+trames_content.ClientSoftwareID)
+	err := database.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error deleting session for "+trames_content.Username+" from Computeur "+trames_content.ClientSoftwareID+": "+err.Error())
+		return "02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n : Error deleting session"
+	}
+	DeleteAuthByID(trames_content.ClientSoftwareID)
+	logs.Write_Log("INFO", "Session closed for "+trames_content.Username+" from Computeur "+trames_content.ClientSoftwareID)
 	return "02_06\nserveur_central\n" + trames_content.SessionIntegritykey + "\n : Session Delete"
 }

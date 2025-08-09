@@ -1,10 +1,10 @@
 package keymanagement
 
 import (
-	store "vaultaire_client/storage"
 	"fmt"
 	"os"
 	"path/filepath"
+	store "vaultaire_client/storage"
 )
 
 func GetServeurPublicKey() string {

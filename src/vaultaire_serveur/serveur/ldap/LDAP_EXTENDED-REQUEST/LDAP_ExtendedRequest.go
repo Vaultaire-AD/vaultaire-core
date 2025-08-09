@@ -66,7 +66,11 @@ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn n
 			"",   // responseOID optionnel
 			authzID,
 		)
-		conn.Write(response)
+		_, err := conn.Write(response)
+		if err != nil {
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse ExtendedRequest: %s", err.Error()))
+			return
+		}
 	} else {
 		logs.Write_Log("WARNING", fmt.Sprintf("ExtendedRequest non supportée : %s", op.RequestName))
 		// gérer autres cas ou erreur

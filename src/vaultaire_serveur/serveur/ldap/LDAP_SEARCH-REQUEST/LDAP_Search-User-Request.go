@@ -17,7 +17,10 @@ import (
 func SendUserSearchRequest(userResponses []map[string]string, conn net.Conn, messageID int) {
 	if len(userResponses) == 0 {
 		logs.Write_Log("DEBUG", "No users found for given groups")
-		SendLDAPSearchFailure(conn, messageID, "No users found for given group")
+		err := SendLDAPSearchFailure(conn, messageID, "No users found for given group")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 
@@ -152,7 +155,10 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 			user, err := database.GetUserByUsername(filtre.Value, database.GetDatabase())
 			if err != nil {
 				logs.Write_Log("WARNING", "error during the retrieval of users by groups: "+err.Error())
-				SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups")
+				err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups")
+				if err != nil {
+					logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+				}
 				return
 			}
 			responses = append(responses, PrepareUserResponse(user, attribute))
@@ -168,14 +174,20 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 	groups, err := domain.GetGroupsUnderDomain(dn, database.GetDatabase())
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the retrieval of groups under domain: "+err.Error())
-		SendLDAPSearchFailure(conn, messageID, "error during the retrieval of groups under domain")
+		err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of groups under domain")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 
 	Users, err := database.GetUsersByGroups(groups, database.GetDatabase())
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the retrieval of users by groups: "+err.Error())
-		SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups: ")
+		err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups: ")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 
