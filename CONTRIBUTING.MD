@@ -80,7 +80,8 @@ Nous utilisons un format simple inspiré de [Conventional Commits](https://www.c
 ### Bonnes pratiques
 
 - Faites un commit **par fonctionnalité ou correction**.  
-- Regroupez les changements qui vont ensemble logiquement.  
+- Regroupez les changements qui vont ensemble logiquement.
+- Ne pas oublier de crée les fichier de [test](./docs/write-test.md)
 - Évitez les commits avec des dizaines de fichiers modifiés pour des raisons très différentes.  
 - Rédigez un message clair et concis, en anglais ou français selon votre préférence d’équipe.  
 - Utilisez l’impératif dans la description (ex : "Ajoute", "Corrige", "Mets à jour").  
