@@ -36,7 +36,7 @@ func DisplayZoneRecords(records []dnsstorage.ZoneRecord, zone string) string {
 		if record.Priority.Valid {
 			priority = fmt.Sprintf("%d", record.Priority.Int64)
 		}
-		fmt.Fprintf(w, "%-25s %-8s %-6d %-20s %-10s\n",
+		fmt.Println(w, "%-25s %-8s %-6d %-20s %-10s\n",
 			record.Name,
 			record.Type,
 			record.TTL,

@@ -48,7 +48,10 @@ func DisplayUsersInfoByName(user *storage.GetUserInfoSingle) string {
 	fmt.Println(w, "\n%-20s %s\n", header("Groups:"), formatList(user.Groups, magenta))
 
 	// Écrire le contenu formaté dans `sb`
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 
 	sb.WriteString("--------------------------------------------------\n")

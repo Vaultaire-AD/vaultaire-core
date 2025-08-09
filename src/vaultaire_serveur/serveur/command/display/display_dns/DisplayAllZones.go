@@ -34,7 +34,10 @@ func DisplayAllZones(zones []dnsstorage.Zone) string {
 		}
 	}
 
-	w.Flush()
+	err = w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString("--------------------------------------------------\n")
 	return sb.String()
 }

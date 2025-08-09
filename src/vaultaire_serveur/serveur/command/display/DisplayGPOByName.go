@@ -38,7 +38,10 @@ func DisplayGPOByName(gpo *storage.LinuxGPO) string {
 	fmt.Println(w, "%-20s: %-30s\n", header("Rocky Commande"), gpo.Rocky)
 
 	// Vider le tampon et ajouter au StringBuilder
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 
 	// Ajouter la ligne de séparation
