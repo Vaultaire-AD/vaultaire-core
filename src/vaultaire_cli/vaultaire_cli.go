@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"os"
 	"os/exec"
@@ -79,7 +80,12 @@ func main() {
 			fmt.Println("Erreur connexion serveur:", err)
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				// Handle or log the error
+				log.Printf("error closing connection: %v", err)
+			}
+		}()
 
 		// Envoyer la commande au serveur
 		_, err = conn.Write([]byte(command))
@@ -140,7 +146,12 @@ func main() {
 				fmt.Println("Erreur connexion serveur:", err)
 				continue
 			}
-			defer conn.Close()
+			defer func() {
+				if err := conn.Close(); err != nil {
+					// Handle or log the error
+					log.Printf("error closing connection: %v", err)
+				}
+			}()
 
 			// Envoyer la commande au serveur
 			_, err = conn.Write([]byte(command))

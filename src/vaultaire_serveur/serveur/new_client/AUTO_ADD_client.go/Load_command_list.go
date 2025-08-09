@@ -1,6 +1,7 @@
 package autoaddclientgo
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"bufio"
 	"os"
@@ -13,7 +14,12 @@ func LoadCommandsFromShellScript(path string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	storage.AutoAddClientCommandesList = storage.AutoAddClientCommandesList[:0] // reset liste
 

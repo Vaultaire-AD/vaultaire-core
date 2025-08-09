@@ -73,7 +73,12 @@ func AddHostToKnownHosts(host string, port int) error {
 	if err != nil {
 		return fmt.Errorf("❌ Impossible d’ouvrir known_hosts : %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	if _, err := f.Write(out.Bytes()); err != nil {
 		return fmt.Errorf("❌ Impossible d’écrire dans known_hosts : %v", err)

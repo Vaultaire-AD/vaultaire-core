@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -47,7 +48,12 @@ func loadConfig(filePath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config config

@@ -36,19 +36,21 @@ func handleAuthRequest(conn net.Conn, payload string) {
 	status_rep := "timeout"
 	select {
 	case auth_res := <-storage.Authentification_PAM:
-		// Traitement de la réponse authentifiée
-		if auth_res == "success" {
+		switch auth_res {
+		case "success":
 			fmt.Println("Authentification réussie:", auth_res)
 			status_rep = "success"
-		} else if auth_res == "failed" {
-			status_rep = "failed"
+		case "failed":
 			fmt.Println("Authentification failed:", auth_res)
+			status_rep = "failed"
+		default:
+			fmt.Println("Authentification status inconnu:", auth_res)
 		}
 
 	case <-time.After(5 * time.Second):
-		// Si aucune donnée n'est reçue après 5 secondes, passez à autre chose
 		fmt.Println("Time Out")
 	}
+
 	fmt.Println("L'user est il admin ? : " + strconv.FormatBool(storage.IsAdmin))
 	// Envoyer une réponse confirmant l'authentification
 	response := Response{

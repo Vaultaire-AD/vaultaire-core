@@ -1,6 +1,7 @@
 package commandsetup
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"os"
 
@@ -34,14 +35,25 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 	if err != nil {
 		return ("Erreur de connexion SSH: %v" + err.Error())
 	}
-	defer client.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	// Création du client SFTP
 	sftpClient, err := sftp.NewClient(client)
 	if err != nil {
 		return ("Erreur de connexion SFTP: %v" + err.Error())
 	}
-	defer sftpClient.Close()
+
+	defer func() {
+		if err := sftpClient.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	// Transférer chaque fichier vers /opt/
 	for _, file := range files {
@@ -52,14 +64,25 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 		if err != nil {
 			return ("Erreur d'ouverture du fichier " + file + ": %v" + err.Error())
 		}
-		defer srcFile.Close()
+
+		defer func() {
+			if err := srcFile.Close(); err != nil {
+				// Handle or log the error
+				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			}
+		}()
 
 		// Créer le fichier distant
 		dstFile, err := sftpClient.Create(uploadPath)
 		if err != nil {
 			return ("Erreur de création du fichier distant " + uploadPath + " : " + err.Error())
 		}
-		defer dstFile.Close()
+		defer func() {
+			if err := dstFile.Close(); err != nil {
+				// Handle or log the error
+				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			}
+		}()
 
 		// Copier le contenu du fichier local vers le serveur
 		_, err = dstFile.ReadFrom(srcFile)
@@ -86,7 +109,12 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 	if err != nil {
 		return ("Erreur lors de l'ouverture de la session SSH: " + err.Error())
 	}
-	defer session.Close()
+	defer func() {
+		if err := client.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	// Exécuter les commandes une par une
 	for _, cmd := range commands {

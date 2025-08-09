@@ -2,6 +2,7 @@ package serveur
 
 import (
 	"DUCKY/serveur/database/sync"
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"net"
 )
@@ -18,7 +19,10 @@ func Serveur_Auth_Manager(trames_content storage.Trames_struct_client, conn net.
 		sessionIntegritykey, err := sync.AddConnectionToMap("01_01", trames_content.ClientSoftwareID)
 		if err != nil {
 			message = "error"
-			conn.Close()
+			err := conn.Close()
+			if err != nil {
+				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			}
 			break
 		}
 		message = Prove_Identity(trames_content.Content, sessionIntegritykey)

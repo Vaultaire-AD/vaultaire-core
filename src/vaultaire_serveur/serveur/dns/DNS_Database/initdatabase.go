@@ -46,7 +46,12 @@ func InitDatabase() bool {
 	if err != nil {
 		log.Fatalf("❌ Erreur création base de données : %v", err)
 	}
-	tempDB.Close()
+	defer func() {
+		if err := tempDB.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	// Connexion finale avec la base sélectionnée
 	dsnWithDB := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",

@@ -61,7 +61,12 @@ func UnixSocketServer() {
 	if err != nil {
 		log.Fatalf("Error creating Unix socket: %v", err)
 	}
-	defer ln.Close()
+	defer func() {
+		if err := ln.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	fmt.Println("Server listening on Unix socket:", socketPath)
 

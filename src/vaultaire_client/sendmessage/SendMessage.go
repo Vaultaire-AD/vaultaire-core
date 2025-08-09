@@ -32,7 +32,13 @@ func SendMessage(message string, conn net.Conn) {
 	headerSize := []byte{CompileHeaderSize(messageSize)}
 	data := append(append(headerSize, messageSize...), cipher_msg...)
 	if _, err := conn.Write(data); err != nil {
-		conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				// Handle or log the error
+				fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+			}
+		}()
+
 		fmt.Println("Erreur lors de l'envoi du message :", err)
 		return
 	}

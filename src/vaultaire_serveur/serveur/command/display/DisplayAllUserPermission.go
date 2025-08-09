@@ -1,6 +1,7 @@
 package display
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"fmt"
 	"strings"
@@ -47,7 +48,11 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 		)
 	}
 
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture du tableau: "+err.Error())
+		return "Erreur lors de l'affichage des permissions."
+	}
 	sb.WriteString("--------------------------------------------------\n")
 
 	return sb.String()

@@ -2,7 +2,6 @@ package vaultairegoroutine
 
 import (
 	"DUCKY/serveur/command"
-	"DUCKY/serveur/database"
 	db "DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/sendmessage"
@@ -29,14 +28,23 @@ func ClearSession() {
 // Démarre le serveur UNIX pour écouter les commandes CLI
 func StartUnixSocketServer() {
 
-	os.Remove(storage.SocketPath)
+	err := os.Remove(storage.SocketPath)
+	if err != nil && !os.IsNotExist(err) {
+		logs.Write_Log("ERROR", "Error removing existing socket file: "+err.Error())
+		fmt.Println("Erreur lors de la suppression du fichier de socket existant :", err)
+	}
 
 	listener, err := net.Listen("unix", storage.SocketPath)
 	if err != nil {
 		fmt.Println("Erreur création socket UNIX:", err)
 		os.Exit(1)
 	}
-	defer listener.Close()
+	defer func() {
+		if err := listener.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	fmt.Println("Serveur en attente de commandes...")
 
 	// Boucle pour accepter les connexions
@@ -75,7 +83,7 @@ func CheckServeurOnline() {
 			if err != nil {
 				logs.Write_Log("ERROR", "Error during the send of the message to "+serveur.Client_ID+" : "+err.Error())
 				storage.Serveur_Online = append(storage.Serveur_Online[:i], storage.Serveur_Online[i+1:]...)
-				err = database.DeleteDidLogin(db.GetDatabase(), serveur.Client_ID, serveur.Client_ID)
+				err = db.DeleteDidLogin(db.GetDatabase(), serveur.Client_ID, serveur.Client_ID)
 				if err != nil {
 					logs.Write_Log("ERROR", "Error during the delete of the session for "+serveur.Client_ID+" : "+err.Error())
 				} else {

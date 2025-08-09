@@ -70,7 +70,12 @@ func generateSelfSignedCert(certFile, keyFile string) error {
 	if err != nil {
 		return err
 	}
-	defer certOut.Close()
+	defer func() {
+		if err := certOut.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: certDER})
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur lors de l'écriture du certificat: "+err.Error())
@@ -81,7 +86,12 @@ func generateSelfSignedCert(certFile, keyFile string) error {
 	if err != nil {
 		return err
 	}
-	defer keyOut.Close()
+	defer func() {
+		if err := keyOut.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 	err = pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur lors de l'écriture de la clé privée: "+err.Error())

@@ -35,7 +35,12 @@ func SendMessage(message string, clientSoftwareID string, conn net.Conn) error {
 	headerSize := []byte{CompileHeaderSize(messageSize)}
 	data := append(append(headerSize, messageSize...), cipher_msg...)
 	if _, err := conn.Write(data); err != nil {
-		conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				// Handle or log the error
+				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			}
+		}()
 		logs.Write_Log("ERROR", "Error during the send of the message: "+err.Error())
 		return err
 	}
