@@ -35,7 +35,7 @@ jobs:
         working-directory: ./src/vaultaire_serveur
   
       - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions
+        run: golangci-lint run --out-format=github-actions --verbose
         working-directory: ./src/vaultaire_serveur
 
       - name: Run tests
@@ -48,7 +48,7 @@ jobs:
 
   build_test_client:
     runs-on: ubuntu-latest
-    name: Build & Test Client CLI
+    name: Build & Test Client 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -76,7 +76,7 @@ jobs:
         working-directory: ./src/vaultaire_client
   
       - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions
+        run: golangci-lint run --out-format=github-actions --verbose
         working-directory: ./src/vaultaire_client
 
       - name: Run tests
@@ -117,7 +117,7 @@ jobs:
         working-directory: ./src/vaultaire_cli
   
       - name: Run golangci-lint
-        run: golangci-lint run --out-format=github-actions
+        run: golangci-lint run --out-format=github-actions --verbose
         working-directory: ./src/vaultaire_cli
 
       - name: Run tests
