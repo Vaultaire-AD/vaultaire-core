@@ -26,12 +26,12 @@ func DisplayUsersByPermissionDirect(permissionsUsers map[string][]string) string
 	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-25s %-20s\n", header("Permission Name"), header("Users"))
+	fmt.Println(w, "%-25s %-20s\n", header("Permission Name"), header("Users"))
 
 	// Ajouter chaque permission et ses utilisateurs associés
 	for permission, users := range permissionsUsers {
 		// Afficher chaque permission et la liste des utilisateurs
-		fmt.Fprintf(w, "%-25s %-20s\n", permission, fmt.Sprintf("%v", users))
+		fmt.Println(w, "%-25s %-20s\n", permission, fmt.Sprintf("%v", users))
 	}
 
 	// Écrire le tableau formaté dans `sb`

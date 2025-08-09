@@ -26,7 +26,7 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	_, err := fmt.Fprintf(w, "%-15s %-25s %-15s %-15s %-10s %-10s %-15s %-10s\n",
+	_, err := fmt.Println(w, "%-15s %-25s %-15s %-15s %-10s %-10s %-15s %-10s\n",
 		header("ID Logiciel"),
 		header("Logiciel Type"),
 		header("Computeur ID"),
@@ -49,7 +49,7 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 		}
 
 		// Ajouter les détails du client (logiciel)
-		fmt.Fprintf(w, "%-15d %-25s %-15s %-15s %-10s %-10d %-15s %-10s\n",
+		_, err = fmt.Println(w, "%-15d %-25s %-15s %-15s %-10s %-10d %-15s %-10s\n",
 			client.ID,
 			client.LogicielType,
 			client.ComputeurID,
@@ -59,6 +59,10 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 			client.RAM,
 			client.OS,
 		)
+	}
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture des détails des clients: "+err.Error())
+		return "Erreur lors de l'affichage des clients."
 	}
 
 	// Vider le tampon pour s'assurer que tout est écrit dans sb

@@ -27,7 +27,7 @@ func DisplayAllClientPermissions(permissions []storage.ClientPermission) string 
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	_, err := fmt.Fprintf(w, "%-15s %-25s %-25s\n",
+	_, err := fmt.Println(w, "%-15s %-25s %-25s\n",
 		header("ID Permission Client"),
 		header("Nom de la Permission Client"),
 		header("Admin"),
@@ -39,7 +39,7 @@ func DisplayAllClientPermissions(permissions []storage.ClientPermission) string 
 
 	// Ajouter chaque permission client
 	for _, permission := range permissions {
-		_, err := fmt.Fprintf(w, "%-15d %-25s %-15t\n",
+		_, err := fmt.Println(w, "%-15d %-25s %-15t\n",
 			permission.ID,
 			permission.Name,
 			permission.IsAdmin,

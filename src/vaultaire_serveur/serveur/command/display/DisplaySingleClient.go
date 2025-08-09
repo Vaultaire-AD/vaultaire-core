@@ -37,14 +37,14 @@ func DisplaySoftware(software *storage.Software) string {
 	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
 
 	// Ajouter les informations du client
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("ID"), fmt.Sprintf("%d", software.ID))
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("Type"), software.LogicielType)
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("Computeur ID"), software.ComputeurID)
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("Hostname"), software.Hostname)
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("Serveur"), booleanStyle(software.Serveur))
-	fmt.Fprintf(w, "%-20s: %-30d\n", header("Processeur"), software.Processeur)
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("RAM"), software.RAM)
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("OS"), software.OS)
+	fmt.Println(w, "%-20s: %-30s\n", header("ID"), fmt.Sprintf("%d", software.ID))
+	fmt.Println(w, "%-20s: %-30s\n", header("Type"), software.LogicielType)
+	fmt.Println(w, "%-20s: %-30s\n", header("Computeur ID"), software.ComputeurID)
+	fmt.Println(w, "%-20s: %-30s\n", header("Hostname"), software.Hostname)
+	fmt.Println(w, "%-20s: %-30s\n", header("Serveur"), booleanStyle(software.Serveur))
+	fmt.Println(w, "%-20s: %-30d\n", header("Processeur"), software.Processeur)
+	fmt.Println(w, "%-20s: %-30s\n", header("RAM"), software.RAM)
+	fmt.Println(w, "%-20s: %-30s\n", header("OS"), software.OS)
 
 	// Afficher les groupes et permissions associés
 	groups := "Aucun"
@@ -57,8 +57,8 @@ func DisplaySoftware(software *storage.Software) string {
 		permissions = strings.Join(software.Permissions, ", ")
 	}
 
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("Groupes"), groups)
-	fmt.Fprintf(w, "%-20s: %-30s\n", header("Permissions"), permissions)
+	fmt.Println(w, "%-20s: %-30s\n", header("Groupes"), groups)
+	fmt.Println(w, "%-20s: %-30s\n", header("Permissions"), permissions)
 
 	// Vider le tampon et ajouter au StringBuilder
 	w.Flush()

@@ -26,7 +26,7 @@ func DisplayAllUsers(users []storage.GetUsers) string {
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-15s %-25s %-15s %-20s\n",
+	fmt.Println(w, "%-15s %-25s %-15s %-20s\n",
 		header("ID Utilisateur"),
 		header("Username"),
 		header("Date de Naissance"),
@@ -39,7 +39,7 @@ func DisplayAllUsers(users []storage.GetUsers) string {
 		dateNaissance := user.DateNaissance
 
 		// Ajouter les détails de l'utilisateur
-		fmt.Fprintf(w, "%-15d %-25s %-15s %-20s\n",
+		fmt.Println(w, "%-15d %-25s %-15s %-20s\n",
 			user.ID,
 			user.Username,
 			dateNaissance,

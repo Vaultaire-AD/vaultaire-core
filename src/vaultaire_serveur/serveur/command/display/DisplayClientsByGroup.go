@@ -25,7 +25,7 @@ func DisplayClientsByGroup(clients []storage.GetClientsByGroup, groupName string
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-10s %-15s %-20s %-15s %-10s %-15s %-10s\n",
+	fmt.Println(w, "%-10s %-15s %-20s %-15s %-10s %-15s %-10s\n",
 		header("Client ID"),
 		header("Type"),
 		header("Computeur ID"),
@@ -43,7 +43,7 @@ func DisplayClientsByGroup(clients []storage.GetClientsByGroup, groupName string
 		}
 
 		// Ajouter les informations du client
-		fmt.Fprintf(w, "%-10d %-15s %-20s %-15s %-10s %-15d %-10s\n",
+		fmt.Println(w, "%-10d %-15s %-20s %-15s %-10s %-15d %-10s\n",
 			client.ID,
 			client.LogicielType,
 			client.ComputeurID,
