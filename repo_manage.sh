@@ -61,6 +61,7 @@ function commit_changes() {
 
     git add .
     git commit -m "$message"
+    git push
     echo "✅ Commit effectué : $message"
 }
 
