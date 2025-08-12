@@ -13,7 +13,7 @@ Ce document détaille les prérequis nécessaires pour installer et exécuter le
 - make (pour compilation)
 - Git >= 2.30
 
-## Ressources minimales
+## Ressources minimales (serveur central)
 - CPU : 2 cœurs
 - RAM : 2 Go (4 Go recommandé)
-- Stockage : 1 Go libre
+- Stockage : 2 Go libre
