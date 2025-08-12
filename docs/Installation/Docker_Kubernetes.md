@@ -2,17 +2,11 @@
 
 ## Docker
 ```bash
-docker build -t mon-projet .
-docker run -d -p 8080:8080 mon-projet
+# Cloner le dépôt
+git clone git@votre_repo:vaultaire-core.git
+cd vaultaire-core
+
+# Lancer en mode développement
+docker-compose -f deployments/docker-compose.yml up --build
 ```
 
-## Docker Compose
-```bash
-docker-compose up -d
-```
-
-## Kubernetes
-```bash
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-```
