@@ -2,7 +2,7 @@
 
 ## Court terme (1-3 mois)
 - Amélioration de la documentation
-- Finalisation du module SSO/MFA
+- Ajout d'une API 
 - Optimisation des performances DNS
 
 ## Moyen terme (3-6 mois)
