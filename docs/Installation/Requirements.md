@@ -1,14 +1,19 @@
-# Guide de mise à jour
+# Prérequis
 
-## Avant de commencer
-- Sauvegarder la base de données
-- Vérifier la compatibilité avec la nouvelle version
+Ce document détaille les prérequis nécessaires pour installer et exécuter le projet.
 
-## Mise a jour
+## Systèmes d'exploitation supportés
+- Linux (Ubuntu 20.04+, Debian 11+, CentOS/Rocky 8+)
+- macOS (10.15+)
+- Windows Server 2019+ (support partiel)
 
-Actuellement pas de procèdure clair
-donc a part down les services et mettre a jour les binaires puis relancer (attention risque de chagnement de structure de la base de donnée Phase ALPHA)
+## Dépendances logicielles
+- Go >= 1.20
+- Docker >= 24.x (optionnel pour déploiement containerisé)
+- make (pour compilation)
+- Git >= 2.30
 
-## Après la mise à jour
-- Consulter les logs pour vérifier l'absence d'erreurs
-- Tester les fonctionnalités critiques
+## Ressources minimales
+- CPU : 2 cœurs
+- RAM : 2 Go (4 Go recommandé)
+- Stockage : 1 Go libre
