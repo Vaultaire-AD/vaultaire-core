@@ -7,20 +7,45 @@ Ce dossier contient toutes les informations nécessaires pour comprendre, instal
 
 ## 📂 Arborescence de la documentation
 
-```
+```perl
 docs/
-├── README.md                        # Ce fichier
-├── legacy/                          # Ancienne documentation (archives)
-├── Group-Permission.md              # Gestion des groupes et permissions
-├── MAN.md                           # Manuel d'utilisation
-├── SECURITY.md                      # Guide de sécurité
-├── Setup.md                         # Instructions d'installation et configuration initiale
-├── Tableau_Protocole_Réseau.md      # Tableau récapitulatif des protocoles réseau utilisés
-├── Version_History.md               # Historique des versions
-├── bug.md                           # Procédure de signalement des bugs
-├── roadmap.md                       # Feuille de route du projet
-├── vaultaireLDAP.md                 # Documentation du module LDAP
-└── write-test.md                    # Guide d'écriture de tests
+│
+├── 📖 Introduction/
+│   ├── Overview.md              # Présentation générale du projet
+│   ├── Features.md               # Liste des fonctionnalités actuelles et prévues
+│   └── Roadmap.md                # Déplacé depuis roadmap.md
+│
+├── 🛠 Installation/
+│   ├── Requirements.md           # Prérequis système, versions, dépendances
+│   ├── Setup.md                  # Installation de base (déplacé depuis Setup.md)
+│   ├── Docker_Kubernetes.md      # Installation avec Docker/K8s
+│   └── Upgrade_Guide.md          # Mise à jour vers une nouvelle version
+│
+├── 📚 Utilisation/
+│   ├── MAN.md                    # Guide d’utilisation (manuel)
+│   ├── vaultaireLDAP.md          # Documentation LDAP
+│   ├── Group-Permission.md       # Gestion des groupes et permissions
+│   ├── Examples.md               # Exemples de commandes et cas d’usage
+│   └── Troubleshooting.md        # Résolution des problèmes courants
+│
+├── 🔒 Sécurité/
+│   ├── SECURITY.md               # Déplacé
+│   ├── MFA_SSO_Config.md         # Configurer le SSO et MFA
+│   └── Security_Best_Practices.md # Bonnes pratiques pour le déploiement
+│
+├── 📊 Références/
+│   ├── Tableau_Protocole_Reseau.md
+│   ├── API_Documentation.md      # Endpoints si API REST/GraphQL
+│   └── Version_History.md        # Déplacé
+│
+├── 🧪 Développement/
+│   ├── CONTRIBUTING.md           # Comment contribuer
+│   ├── Code_Style_Guidelines.md  # Règles de code Go/C/PAM
+│   ├── write-test.md             # Déplacé ici
+│   └── bug.md                    # Déplacé ici, renommé en Bug_Reports.md
+│
+└── README.md                     # Présentation synthétique
+
 ```
 
 ---
