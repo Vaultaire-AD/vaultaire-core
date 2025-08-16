@@ -1,4 +1,4 @@
-serveurlistenport: "6666"
+serveurlistenport: "666"
 file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
   privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"
