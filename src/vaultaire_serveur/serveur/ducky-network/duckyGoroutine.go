@@ -21,7 +21,7 @@ func handleConnection(conn net.Conn) {
 	logs.Write_Log("INFO", "New connection established: "+conn.RemoteAddr().String())
 
 	for {
-		if !processIncomingMessage(conn) {
+		if processIncomingMessage(conn) {
 			break
 		}
 	}
