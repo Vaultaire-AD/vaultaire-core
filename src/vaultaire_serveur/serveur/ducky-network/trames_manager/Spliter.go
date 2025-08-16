@@ -1,11 +1,11 @@
 package tramesmanager
 
 import (
-	"DUCKY/serveur/authentification/client"
-	auts "DUCKY/serveur/authentification/serveur"
-	"DUCKY/serveur/database/sync"
+	autc "DUCKY/serveur/ducky-network/authentification/client"
+	auts "DUCKY/serveur/ducky-network/authentification/serveur"
+	"DUCKY/serveur/ducky-network/sendmessage"
+	sync "DUCKY/serveur/ducky-network/sync"
 	"DUCKY/serveur/logs"
-	"DUCKY/serveur/sendmessage"
 	"DUCKY/serveur/storage"
 	"net"
 	"strings"
@@ -29,7 +29,7 @@ func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {
 		case "01":
 			message = auts.Serveur_Auth_Manager(trames_content, conn)
 		case "02":
-			message = client.Client_Auth_Manager(trames_content, conn)
+			message = autc.Client_Auth_Manager(trames_content, conn)
 		default:
 			print("FEUR")
 		}

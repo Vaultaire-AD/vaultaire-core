@@ -2,7 +2,7 @@ package newclient
 
 import (
 	"DUCKY/serveur/database"
-	keymanagement "DUCKY/serveur/key_management"
+	keymanagement "DUCKY/serveur/ducky-network/key_management"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"crypto/rand"

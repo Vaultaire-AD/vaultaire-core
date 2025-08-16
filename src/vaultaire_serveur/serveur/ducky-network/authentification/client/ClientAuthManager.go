@@ -1,8 +1,8 @@
 package client
 
 import (
+	getinformation "DUCKY/serveur/ducky-network/ducky_tools"
 	"DUCKY/serveur/storage"
-	getinformation "DUCKY/serveur/tools/getInformation"
 	"net"
 )
 

@@ -3,9 +3,9 @@ package commandcreate
 import (
 	"DUCKY/serveur/command/display"
 	"DUCKY/serveur/database"
+	newclient "DUCKY/serveur/ducky-network/new_client"
+	autoaddclientgo "DUCKY/serveur/ducky-network/new_client/AUTO_ADD_client.go"
 	"DUCKY/serveur/logs"
-	newclient "DUCKY/serveur/new_client"
-	autoaddclientgo "DUCKY/serveur/new_client/AUTO_ADD_client.go"
 	"DUCKY/serveur/tools"
 )
 

@@ -1,8 +1,8 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/authentification/client"
 	"DUCKY/serveur/database"
+	gc "DUCKY/serveur/global/security"
 	"DUCKY/serveur/web_serveur/session"
 	"log"
 	"net/http"
@@ -42,7 +42,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !client.ComparePasswords(password, salt, Hpassword) {
+	if !gc.ComparePasswords(password, salt, Hpassword) {
 		log.Printf("❌ Mauvais mot de passe pour %s", username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return

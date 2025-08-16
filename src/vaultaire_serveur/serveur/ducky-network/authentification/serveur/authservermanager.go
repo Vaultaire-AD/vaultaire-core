@@ -1,7 +1,7 @@
 package serveur
 
 import (
-	"DUCKY/serveur/database/sync"
+	sync "DUCKY/serveur/ducky-network/sync"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"net"

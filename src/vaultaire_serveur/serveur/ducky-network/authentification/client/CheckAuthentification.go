@@ -2,7 +2,8 @@ package client
 
 import (
 	"DUCKY/serveur/database"
-	gpomanager "DUCKY/serveur/gpo_manager"
+	gpomanager "DUCKY/serveur/ducky-network/gpo_manager"
+	gc "DUCKY/serveur/global/security"
 	logs "DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"net"
@@ -11,8 +12,6 @@ import (
 	//"DUCKY/serveur/logs"
 	"bytes"
 	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"strings"
 )
 
@@ -80,7 +79,7 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		logs.Write_Log("WARNING", trames_content.Username+" try to login but error for get password")
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
-	if !ComparePasswords(trames_content.Content, salt, Hpassword) {
+	if !gc.ComparePasswords(trames_content.Content, salt, Hpassword) {
 		logs.Write_Log("WARNING", trames_content.Username+" try to login but password is not correct")
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
@@ -166,27 +165,4 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nYou are not authentificate")
 
 	}
-}
-
-// ComparePasswords compares a provided password with a stored hash using a salt.
-// It decodes the salt and hash from their hexadecimal representations, combines the salt with the password,
-// hashes the salted password using SHA-256, and then compares the resulting hash with the stored hash.
-func ComparePasswords(password, saltHex, hashHex string) bool {
-	// Decode the salt from hex
-	salt, err := hex.DecodeString(saltHex)
-	if err != nil {
-		return false
-	}
-
-	// Combine the salt and the provided password
-	saltedPassword := append(salt, []byte(password)...)
-
-	// Hash the salted password
-	hash := sha256.Sum256(saltedPassword)
-
-	// Encode the hash to hex
-	newHashHex := hex.EncodeToString(hash[:])
-
-	// Compare the new hash with the provided hash
-	return newHashHex == hashHex
 }

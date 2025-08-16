@@ -3,15 +3,12 @@ package main
 import (
 	configurationfile "DUCKY/serveur/configuration_file"
 	db "DUCKY/serveur/database"
-	"DUCKY/serveur/database/sync"
 	"DUCKY/serveur/dns"
-	keymanagement "DUCKY/serveur/key_management"
+	duckynetwork "DUCKY/serveur/ducky-network"
 	ldap "DUCKY/serveur/ldap"
-	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"DUCKY/serveur/vaultairegoroutine"
 	webserveur "DUCKY/serveur/web_serveur"
-	"fmt"
 	"log"
 	"net"
 )
@@ -47,36 +44,8 @@ func main() {
 	if storage.Dns_Enable {
 		go dns.DNS_StartServeur()
 	}
-	sync.Sync_InitMapDuckyIntegrity()
-	go vaultairegoroutine.ClearSession()
+	duckynetwork.StartDuckyServer()
 	go vaultairegoroutine.StartUnixSocketServer()
 	// go ldap.HandleLDAPserveur()
-	go vaultairegoroutine.CheckServeurOnline()
-	err = keymanagement.Generate_Serveur_Key_Pair()
-	if err != nil {
-		fmt.Println("Error For generate Server Key:", err)
-		logs.Write_Log("CRITICAL", "Error For generate Server Key: "+err.Error())
-	}
-	err = keymanagement.Generate_SSH_Key_For_Login_Client()
-	if err != nil {
-		fmt.Println("Error For generate SSH Key:", err)
-		logs.Write_Log("CRITICAL", "Error For generate SSH Key: "+err.Error())
-	}
-	listener, err := net.Listen("tcp", ":"+storage.ServeurLisetenPort)
-	if err != nil {
-		fmt.Println("Erreur lors de l'écoute sur le port : "+storage.ServeurLisetenPort, err)
-		logs.Write_Log("CRITICAL", "Error For listening on Port : "+storage.ServeurLisetenPort+" "+err.Error())
-		return
-	}
-	fmt.Println("Server Is ready and lsiten on port " + storage.ServeurLisetenPort + " ...")
-	logs.Write_Log("INFO", "Server Is ready and lsiten on port "+storage.ServeurLisetenPort+" ...")
-	for {
-		conn, err := listener.Accept()
-		if err != nil {
-			fmt.Println("Error For Accept New Connection :", err)
-			logs.Write_Log("WARNING", "Error For Accept New Connection: "+err.Error())
-			continue
-		}
-		go vaultairegoroutine.HandleConnection(conn)
-	}
+
 }
