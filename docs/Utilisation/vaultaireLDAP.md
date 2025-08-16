@@ -70,7 +70,7 @@ dc=infra,dc=it,dc=company,dc=com
 | **Bind DN**          | `cn=proxmox_ldap_account,dc=company,dc=com`           |
 | **Bind Credentials** | `<mot_de_passe_du_compte>`                            |
 
-> Le compte utilisé (`proxmox_ldap_account`) doit disposer de **droits de lecture** sur le domaine ciblé (`it.company.com` ici).  
+> Le compte utilisé (`proxmox_ldap_account`) doit disposer de **droits de lecture** sur le domaine ciblé (`company.com` ici).  
 > Une future mise à jour permettra de spécifier un chemin de droits plus précis.
 
 ---

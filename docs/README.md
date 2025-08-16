@@ -25,21 +25,15 @@ docs/
 │   ├── MAN.md                    # Guide d’utilisation (manuel)
 │   ├── vaultaireLDAP.md          # Documentation LDAP
 │   ├── Group-Permission.md       # Gestion des groupes et permissions
-│   ├── Examples.md               # Exemples de commandes et cas d’usage
 │   └── Troubleshooting.md        # Résolution des problèmes courants
 │
 ├── 🔒 Sécurité/
 │   ├── SECURITY.md               # Déplacé
-│   ├── MFA_SSO_Config.md         # Configurer le SSO et MFA
 │   └── Security_Best_Practices.md # Bonnes pratiques pour le déploiement
-│
-├── 📊 Références/
-│   ├── Tableau_Protocole_Reseau.md
-│   ├── API_Documentation.md      # Endpoints si API REST/GraphQL
-│   └── Version_History.md        # Déplacé
 │
 ├── 🧪 Développement/
 │   ├── CONTRIBUTING.md           # Comment contribuer
+|   ├── Tableau_Protocole_Reseau.md
 │   ├── Code_Style_Guidelines.md  # Règles de code Go/C/PAM
 │   ├── write-test.md             # Déplacé ici
 │   └── bug.md                    # Déplacé ici, renommé en Bug_Reports.md
