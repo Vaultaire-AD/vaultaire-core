@@ -1,8 +1,8 @@
 package ldapbindunbind
 
 import (
-	"DUCKY/serveur/authentification/client"
 	"DUCKY/serveur/database"
+	gc "DUCKY/serveur/global/security"
 	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
@@ -138,7 +138,7 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		respondProtocolError(messageID, conn)
 		return
 	}
-	if !client.ComparePasswords(string(op.Authentication), salt, Hpassword) {
+	if !gc.ComparePasswords(string(op.Authentication), salt, Hpassword) {
 		logs.Write_Log("WARNING", "Tentative de connexion échouée pour l'utilisateur "+user+" depuis : "+conn.RemoteAddr().String()+" wrong password")
 		respondInvalidCredentials(messageID, conn)
 

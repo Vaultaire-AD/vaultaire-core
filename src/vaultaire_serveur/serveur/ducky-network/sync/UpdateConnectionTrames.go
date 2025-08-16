@@ -1,7 +1,7 @@
 package sync
 
 import (
-	networksecurity "DUCKY/serveur/NetworkSecurity"
+	networksecurity "DUCKY/serveur/ducky-network/networkSecurity"
 	"DUCKY/serveur/logs"
 	"fmt"
 )

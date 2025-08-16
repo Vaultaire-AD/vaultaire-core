@@ -2,7 +2,7 @@ package gpomanager
 
 import (
 	"DUCKY/serveur/database"
-	"DUCKY/serveur/sendmessage"
+	"DUCKY/serveur/ducky-network/sendmessage"
 	"DUCKY/serveur/tools"
 	"net"
 	"strings"

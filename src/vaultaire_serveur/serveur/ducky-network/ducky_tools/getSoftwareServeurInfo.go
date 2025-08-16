@@ -1,4 +1,4 @@
-package getinformation
+package ducky_tools
 
 import (
 	"DUCKY/serveur/database"
