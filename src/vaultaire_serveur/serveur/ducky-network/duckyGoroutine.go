@@ -20,10 +20,8 @@ func handleConnection(conn net.Conn) {
 
 	logs.Write_Log("INFO", "New connection established: "+conn.RemoteAddr().String())
 
-	for {
-		if processIncomingMessage(conn) {
-			break
-		}
+	for processIncomingMessage(conn) {
+		// rien à mettre ici : processIncomingMessage gère tout
 	}
 }
 
