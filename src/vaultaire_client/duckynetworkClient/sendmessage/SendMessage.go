@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"net"
-	keyencodedecode "vaultaire_client/key_encode_decode"
-	"vaultaire_client/keymanagement"
+	keyencodedecode "vaultaire_client/duckynetworkClient/key_encode_decode"
+	"vaultaire_client/duckynetworkClient/keymanagement"
 )
 
 func CompileMessageSize(message []byte) []byte {

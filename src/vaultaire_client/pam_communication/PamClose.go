@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"vaultaire_client/sendmessage"
+	"vaultaire_client/duckynetworkClient/sendmessage"
 	serveurcommunication "vaultaire_client/serveur_communication"
 	"vaultaire_client/storage"
 )

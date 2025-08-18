@@ -9,11 +9,11 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	keyencodedecode "vaultaire_client/key_encode_decode"
-	"vaultaire_client/keymanagement"
-	send "vaultaire_client/sendmessage"
+	keyencodedecode "vaultaire_client/duckynetworkClient/key_encode_decode"
+	"vaultaire_client/duckynetworkClient/keymanagement"
+	send "vaultaire_client/duckynetworkClient/sendmessage"
+	br "vaultaire_client/duckynetworkClient/trames_manager"
 	auth "vaultaire_client/storage"
-	br "vaultaire_client/trames_manager"
 )
 
 func AskServerAuthentification(conn net.Conn) string {
