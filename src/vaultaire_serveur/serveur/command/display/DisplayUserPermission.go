@@ -24,6 +24,9 @@ func DisplayUserPermission(permission storage.UserPermission) string {
 	sb.WriteString(fmt.Sprintf("%s: %t\n", label("Search"), permission.Search))
 	sb.WriteString(fmt.Sprintf("%s: %t\n", label("Read"), permission.Read))
 	sb.WriteString(fmt.Sprintf("%s: %t\n", label("Write"), permission.Write))
+	sb.WriteString(fmt.Sprintf("%s: %t\n", label("API Read"), permission.APIRead))
+	sb.WriteString(fmt.Sprintf("%s: %t\n", label("API Write"), permission.APIWrite))
+	sb.WriteString(fmt.Sprintf("%s: %t\n", label("Web Admin"), permission.Web_admin))
 	sb.WriteString("-------------------------------------------------------------\n")
 
 	return sb.String()

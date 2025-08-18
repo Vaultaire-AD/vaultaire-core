@@ -18,21 +18,21 @@ import (
 
 func HandleLDAPSserveur() {
 	const (
-		certFile = "/opt/vaultaire/.ssh/server.crt"
-		keyFile  = "/opt/vaultaire/.ssh/server.key"
+		certFile       = "/opt/vaultaire/.ssh/ldaps_server.crt"
+		privateKeyPath = "/opt/vaultaire/.ssh/ldaps_server.key"
 	)
 
 	// Vérifie et génère les certificats s'ils n'existent pas
-	if _, err := os.Stat(certFile); os.IsNotExist(err) || ldaptools.FileEmpty(certFile) || ldaptools.FileEmpty(keyFile) {
+	if _, err := os.Stat(certFile); os.IsNotExist(err) || ldaptools.FileEmpty(certFile) || ldaptools.FileEmpty(privateKeyPath) {
 		log.Println("📜 Certificat ou clé TLS manquants — génération de certificats auto-signés...")
-		err := ldaptools.GenerateSelfSignedCert(certFile, keyFile)
+		err := ldaptools.GenerateSelfSignedCert(certFile, privateKeyPath)
 		if err != nil {
 			log.Fatalf("Erreur génération certs: %v", err)
 		}
 	}
 
 	// Charge le certificat
-	cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+	cert, err := tls.LoadX509KeyPair(certFile, privateKeyPath)
 	if err != nil {
 		log.Fatalf("Erreur chargement des clés TLS: %s", err)
 	}

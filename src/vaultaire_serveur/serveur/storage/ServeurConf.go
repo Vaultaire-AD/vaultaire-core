@@ -2,7 +2,10 @@ package storage
 
 type Config struct {
 	ServerListenPort string `yaml:"serveurlistenport"`
-
+	Api              struct {
+		API_Enable bool `yaml:"api_enable"`
+		API_Port   int  `yaml:"api_port"`
+	} `yaml:"api"`
 	Path struct {
 		SocketPath                 string `yaml:"socketpath"`
 		PrivateKeyPath             string `yaml:"privatekeypath"`
@@ -69,3 +72,6 @@ var Website_Port int = 443
 
 var Dns_Enable bool = true
 var Sh_folder_path string = "/opt/vaultaire/automatisation/"
+
+var API_Enable bool = true
+var API_Port int = 6643

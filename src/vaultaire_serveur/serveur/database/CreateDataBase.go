@@ -43,7 +43,9 @@ func Create_DataBase(db *sql.DB) {
 			compare BOOLEAN NOT NULL DEFAULT FALSE,
 			search BOOLEAN NOT NULL DEFAULT FALSE,
 			can_read BOOLEAN NOT NULL DEFAULT FALSE,
-			can_write BOOLEAN NOT NULL DEFAULT FALSE
+			can_write BOOLEAN NOT NULL DEFAULT FALSE,
+			api_read_permission BOOLEAN NOT NULL DEFAULT FALSE,
+			api_write_permission BOOLEAN NOT NULL DEFAULT FALSE
 		);`,
 
 		// ----- Groupes -----
@@ -156,6 +158,15 @@ func Create_DataBase(db *sql.DB) {
 			FOREIGN KEY (d_id_gpo) REFERENCES linux_gpo_distributions(id) ON DELETE CASCADE
 		);`,
 
+		`CREATE TABLE IF NOT EXISTS user_public_keys (
+    id_key INT AUTO_INCREMENT PRIMARY KEY,
+    id_user INT NOT NULL,
+    public_key TEXT NOT NULL,
+    label VARCHAR(100) DEFAULT NULL, -- optionnel : nom de la clé pour l'utilisateur
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_user FOREIGN KEY (id_user) REFERENCES users(id_user) ON DELETE CASCADE,
+    UNIQUE KEY unique_pubkey (public_key(255))
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 		// ----- Données initiales -----
 		`INSERT IGNORE INTO users (username, password, salt, date_naissance)
 		 VALUES ('vaultaire','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,

@@ -26,7 +26,7 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	_, err := fmt.Println(w, "%-15s %-25s %-15s %-15s %-10s %-10s %-15s %-10s\n",
+	_, err := fmt.Fprintf(w, "%-15s %-25s %-15s %-15s %-10s %-10s %-15s %-10s\n",
 		header("ID Logiciel"),
 		header("Logiciel Type"),
 		header("Computeur ID"),
@@ -49,7 +49,7 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 		}
 
 		// Ajouter les détails du client (logiciel)
-		_, err = fmt.Println(w, "%-15d %-25s %-15s %-15s %-10s %-10d %-15s %-10s\n",
+		_, err = fmt.Fprintf(w, "%-15d %-25s %-15s %-15s %-10s %-10d %-15s %-10s\n",
 			client.ID,
 			client.LogicielType,
 			client.ComputeurID,

@@ -111,6 +111,12 @@ func LoadConfig(filePath string) error {
 	if config.Website.Website_Port != 0 {
 		storage.Website_Port = config.Website.Website_Port
 	}
+	if config.Api.API_Enable {
+		storage.API_Enable = config.Api.API_Enable
+	}
+	if config.Api.API_Port != 0 {
+		storage.API_Port = config.Api.API_Port
+	}
 	// Retourner la configuration lue
 	return nil
 }

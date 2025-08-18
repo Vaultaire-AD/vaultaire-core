@@ -60,7 +60,9 @@
             - Ajout de la feature LDAPS - Lorens Viguie
             - Optimisation mineur de certain de la sanitize fonction - Lorens Viguie
             - Ajout du site internet pour que les utilisateurs puissent mettre a jour leur information personnel - Lorens Viguie
-
+        - ### 🛠️ Patch**Alpha 1.1.3** - *//* 
+            - Changement sur la table user_permission ("api_write_permission, api_read_permission)
+            - Debut de l'api REST pour vaultaire
 
 ---
 
