@@ -63,6 +63,7 @@
         - ### 🛠️ Patch**Alpha 1.1.3** - *//* 
             - Changement sur la table user_permission ("api_write_permission, api_read_permission)
             - Debut de l'api REST pour vaultaire
+            - Changement sur la gestion des clé pour les differents services cle unique mtn
 
 ---
 
