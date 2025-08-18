@@ -3,8 +3,8 @@ package serveurcommunication
 import (
 	"fmt"
 	"net"
+	br "vaultaire_client/duckynetworkClient/trames_manager"
 	"vaultaire_client/storage"
-	br "vaultaire_client/trames_manager"
 )
 
 func handleConnection(user string, conn net.Conn) {

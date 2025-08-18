@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"vaultaire_client/sendmessage"
-	br "vaultaire_client/trames_manager"
+	"vaultaire_client/duckynetworkClient/sendmessage"
+	br "vaultaire_client/duckynetworkClient/trames_manager"
 )
 
 func AskServerKey(conn net.Conn) bool {

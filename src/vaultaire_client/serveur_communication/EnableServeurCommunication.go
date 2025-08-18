@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"time"
-	serveur "vaultaire_client/serveurauth"
+	serveur "vaultaire_client/duckynetworkClient/serveurauth"
+	"vaultaire_client/duckynetworkClient/userauth"
 	"vaultaire_client/storage"
-	"vaultaire_client/userauth"
 )
 
 // Fonction pour gérer la requete au serveur central

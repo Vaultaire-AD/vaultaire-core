@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"vaultaire_client/sendmessage"
+	"vaultaire_client/duckynetworkClient/sendmessage"
+	"vaultaire_client/duckynetworkClient/userauth"
 	"vaultaire_client/storage"
-	"vaultaire_client/userauth"
 )
 
 func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {

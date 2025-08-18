@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/gpo"
-	"vaultaire_client/sendmessage"
 	"vaultaire_client/storage"
 	"vaultaire_client/tools/getlocalinformation"
 )

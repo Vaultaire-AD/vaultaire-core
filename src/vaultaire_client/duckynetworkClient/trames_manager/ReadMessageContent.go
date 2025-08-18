@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	keydecodeencode "vaultaire_client/key_encode_decode"
-	keymanagement "vaultaire_client/keymanagement"
+	keydecodeencode "vaultaire_client/duckynetworkClient/key_encode_decode"
+	keymanagement "vaultaire_client/duckynetworkClient/keymanagement"
 	"vaultaire_client/storage"
 )
 
