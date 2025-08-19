@@ -2,20 +2,12 @@ package dbuser
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/storage"
 	"fmt"
 )
 
-// PublicKey représente une clé publique d'un utilisateur
-type PublicKey struct {
-	ID        int
-	UserID    int
-	Key       string
-	Label     string
-	CreatedAt string
-}
-
 // GetUserKeys récupère toutes les clés publiques d'un utilisateur
-func GetUserKeys(userID int) ([]PublicKey, error) {
+func GetUserKeys(userID int) ([]storage.PublicKey, error) {
 	db := database.GetDatabase()
 	rows, err := db.Query("SELECT id_key, id_user, public_key, label, created_at FROM user_public_keys WHERE id_user = ?", userID)
 	if err != nil {
@@ -23,9 +15,9 @@ func GetUserKeys(userID int) ([]PublicKey, error) {
 	}
 	defer rows.Close()
 
-	var keys []PublicKey
+	var keys []storage.PublicKey
 	for rows.Next() {
-		var k PublicKey
+		var k storage.PublicKey
 		if err := rows.Scan(&k.ID, &k.UserID, &k.Key, &k.Label, &k.CreatedAt); err != nil {
 			return nil, fmt.Errorf("Erreur scan clé : %v", err)
 		}
