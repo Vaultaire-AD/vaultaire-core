@@ -1,0 +1,165 @@
+package main
+
+import (
+	"bytes"
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"encoding/pem"
+	"fmt"
+	"io/ioutil"
+	"net/http"
+	"os"
+	"os/user"
+	"path/filepath"
+)
+
+// Structure de config
+type Config struct {
+	Server     string `json:"server"`
+	Username   string `json:"username"`
+	PrivateKey string `json:"private_key"`
+}
+
+// Structure de la requête/ réponse API
+type CommandRequest struct {
+	Command   string `json:"command"`
+	Username  string `json:"username"`
+	Signature string `json:"signature"`
+}
+
+type CommandResponse struct {
+	Result string `json:"result"`
+}
+
+// Charge la config (~/.vaultaire/config.json)
+func loadConfig() (Config, error) {
+	usr, _ := user.Current()
+	defaultPath := filepath.Join(usr.HomeDir, ".vaultaire", "config.json")
+	path := defaultPath
+	if os.Getenv("VAULTAIRE_CONFIG") != "" {
+		path = os.Getenv("VAULTAIRE_CONFIG")
+	}
+
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return Config{}, fmt.Errorf("erreur lecture config: %w", err)
+	}
+
+	var cfg Config
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return Config{}, fmt.Errorf("erreur parse config: %w", err)
+	}
+	return cfg, nil
+}
+
+// Lecture clé privée RSA
+func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
+	data, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	block, _ := pem.Decode(data)
+	if block == nil || block.Type != "RSA PRIVATE KEY" {
+		return nil, fmt.Errorf("clé privée invalide")
+	}
+	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+	if err != nil {
+		return nil, err
+	}
+	return priv, nil
+}
+
+// Signe un message avec RSA
+func signMessage(priv *rsa.PrivateKey, message []byte) (string, error) {
+	hash := sha256.Sum256(message)
+	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, hash[:])
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(sig), nil
+}
+
+func main() {
+	if len(os.Args) < 2 {
+		fmt.Println("Usage: vaultairectl <commande>")
+		os.Exit(1)
+	}
+	command := os.Args[1]
+
+	// 1. Charger la config
+	cfg, err := loadConfig()
+	if err != nil {
+		fmt.Println("❌", err)
+		os.Exit(1)
+	}
+
+	// 2. Charger clé privée
+	priv, err := loadPrivateKey(cfg.PrivateKey)
+	if err != nil {
+		fmt.Println("❌ erreur clé privée:", err)
+		os.Exit(1)
+	}
+
+	// 3. Préparer le body JSON sans signature pour le signer
+	reqBodyToSign := struct {
+		Command  string `json:"command"`
+		Username string `json:"username"`
+	}{
+		Command:  command,
+		Username: cfg.Username,
+	}
+	bodyBytesToSign, _ := json.Marshal(reqBodyToSign)
+
+	// 4. Signer le JSON
+	sig, err := signMessage(priv, bodyBytesToSign)
+	if err != nil {
+		fmt.Println("❌ erreur signature:", err)
+		os.Exit(1)
+	}
+
+	// 5. Préparer le body JSON final avec signature
+	reqBody := CommandRequest{
+		Command:   command,
+		Username:  cfg.Username,
+		Signature: sig,
+	}
+	bodyBytes, _ := json.Marshal(reqBody)
+
+	// 6. Envoyer la requête HTTP
+	url := cfg.Server + "/api/command"
+	req, _ := http.NewRequest("POST", url, bytes.NewBuffer(bodyBytes))
+	req.Header.Set("Content-Type", "application/json")
+
+	client := &http.Client{
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // ⚠️ en prod remplacer par vérif réelle
+		},
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		fmt.Println("❌ erreur requête:", err)
+		os.Exit(1)
+	}
+	defer resp.Body.Close()
+
+	// 7. Lire la réponse
+	respData, _ := ioutil.ReadAll(resp.Body)
+	if resp.StatusCode != 200 {
+		fmt.Println("❌ erreur serveur:", string(respData))
+		os.Exit(1)
+	}
+
+	var result CommandResponse
+	if err := json.Unmarshal(respData, &result); err != nil {
+		fmt.Println("❌ réponse invalide:", string(respData))
+		os.Exit(1)
+	}
+
+	fmt.Println("✅ Résultat:", result.Result)
+}
