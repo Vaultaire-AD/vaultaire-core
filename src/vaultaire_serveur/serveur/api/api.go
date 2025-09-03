@@ -6,6 +6,7 @@ import (
 	dbuser "DUCKY/serveur/database/db-user"
 	"DUCKY/serveur/global/security"
 	"DUCKY/serveur/global/security/keymanagement"
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"crypto"
 	"crypto/rsa"
@@ -14,116 +15,185 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strconv"
 	"strings"
 )
 
-// Requête attendue du client
+// CommandRequest représente la requête JSON du client
 type CommandRequest struct {
 	Username  string `json:"username"`
 	Command   string `json:"command"`
+	Nonce     string `json:"nonce"`
 	Signature string `json:"signature"` // en base64
 }
 
+// CommandResponse est renvoyée au client
 type CommandResponse struct {
 	Result string `json:"result"`
 	Error  string `json:"error,omitempty"`
 }
 
-// handler REST qui appelle ton dispatcher
+// ===================== HANDLER PRINCIPAL =====================
+
 func commandHandler(w http.ResponseWriter, r *http.Request) {
-	var req CommandRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+	req, err := decodeRequest(r)
+	if err != nil {
+		logRequest(req, "", err)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	fmt.Printf("Requête reçue : %+v\n", req.Command)
-	fmt.Printf("Utilisateur : %+v\n", req.Username)
-	fmt.Printf("Signature (base64) : %+v\n", req.Signature)
-	// 1. Récupérer l'ID de l'utilisateur
-	usernameId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(req.Username))
+
+	userID, err := fetchUserID(req.Username)
 	if err != nil {
+		logRequest(req, "", err)
 		http.Error(w, "Utilisateur introuvable", http.StatusUnauthorized)
 		return
 	}
 
-	// 2. Récupérer toutes les clés publiques de l'utilisateur
-	pubKeys, err := dbuser.GetUserKeys(usernameId)
+	pubKeys, err := dbuser.GetUserKeys(userID)
 	if err != nil || len(pubKeys) == 0 {
+		logRequest(req, "", err)
 		http.Error(w, "Aucune clé publique trouvée", http.StatusUnauthorized)
 		return
 	}
 
-	// 3. Décoder la signature
-	sig, err := base64.StdEncoding.DecodeString(req.Signature)
+	sig, err := decodeSignature(req.Signature)
 	if err != nil {
+		logRequest(req, "", err)
 		http.Error(w, "Signature mal formée", http.StatusBadRequest)
 		return
 	}
 
-	// 4. Recréer le JSON exact qui a été signé côté client
-	bodyToVerify, err := json.Marshal(struct {
-		Command  string `json:"command"`
-		Username string `json:"username"`
-	}{
-		Command:  req.Command,
-		Username: req.Username,
-	})
+	bodyToVerify, err := buildSignedBody(req)
 	if err != nil {
+		logRequest(req, "", err)
 		http.Error(w, "Erreur interne", http.StatusInternalServerError)
 		return
 	}
 
-	// 5. Vérifier la signature avec toutes les clés
-	valid := false
-	hashed := sha256.Sum256(bodyToVerify)
-
-	for _, k := range pubKeys {
-		// TODO: parser la clé publique depuis k.Key en *rsa.PublicKey
-		pubKey, err := keymanagement.ParseRSAPublicKeyFromPEM(k.Key)
-		if err != nil {
-			continue // ignorer les clés invalides
-		}
-
-		if rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hashed[:], sig) == nil {
-			valid = true
-			break
-		}
-	}
-
-	if !valid {
-		http.Error(w, "Signature invalide", http.StatusUnauthorized)
+	if !verifySignature(pubKeys, bodyToVerify, sig) {
+		err = fmt.Errorf("signature invalide")
+		logRequest(req, "", err)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	// 5. Exécuter la commande si au moins une clé valide
+	// Exécution de la commande
 	result := command.ExecuteCommand(req.Command)
-	resp := CommandResponse{Result: result}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(resp)
+
+	// Log la requête avec succès
+	logRequest(req, result, nil)
+
+	writeJSON(w, CommandResponse{Result: result})
 }
 
+// logRequest enregistre la requête, le username, la commande et le résultat ou erreur
+func logRequest(req *CommandRequest, result string, err error) {
+	username := "<unknown>"
+	commandStr := "<empty>"
+	status := "SUCCESS"
+
+	if req != nil {
+		username = req.Username
+		commandStr = req.Command
+	}
+
+	if err != nil {
+		status = "ERROR: " + err.Error()
+	}
+
+	logs.Write_Log("INFO", "🕵️ User: "+username+" | Command: "+commandStr+" | Status: "+status)
+}
+
+// ===================== SOUS-FONCTIONS =====================
+
+// decodeRequest lit et parse la requête JSON
+func decodeRequest(r *http.Request) (*CommandRequest, error) {
+	var req CommandRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		logs.Write_Log("ERROR", "Erreur décodage JSON: "+err.Error())
+		return nil, err
+	}
+	return &req, nil
+}
+
+// fetchUserID retourne l’ID utilisateur depuis son username
+func fetchUserID(username string) (int, error) {
+	return database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
+}
+
+// decodeSignature décode la signature base64
+func decodeSignature(sig string) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(sig)
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur décodage signature: "+err.Error())
+		return nil, err
+	}
+	return decoded, nil
+}
+
+// buildSignedBody reconstruit le JSON que le client a signé
+func buildSignedBody(req *CommandRequest) ([]byte, error) {
+	body, err := json.Marshal(struct {
+		Command  string `json:"command"`
+		Username string `json:"username"`
+		Nonce    string `json:"nonce"`
+	}{
+		Command:  req.Command,
+		Username: req.Username,
+		Nonce:    req.Nonce,
+	})
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur génération body signé: "+err.Error())
+		return nil, err
+	}
+	return body, nil
+}
+
+// verifySignature vérifie la signature avec toutes les clés
+func verifySignature(pubKeys []storage.PublicKey, body []byte, sig []byte) bool {
+	hashed := sha256.Sum256(body)
+	for _, k := range pubKeys {
+		pubKey, err := keymanagement.ParseRSAPublicKeyFromPEM(k.Key)
+		if err != nil {
+			logs.Write_Log("ERROR", "Clé publique invalide ignorée: "+err.Error())
+			continue
+		}
+		if rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hashed[:], sig) == nil {
+			return true
+		}
+	}
+	return false
+}
+
+// writeJSON renvoie la réponse JSON
+func writeJSON(w http.ResponseWriter, resp CommandResponse) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(resp); err != nil {
+		logs.Write_Log("ERROR", "Erreur écriture JSON: "+err.Error())
+	}
+}
+
+// ===================== SERVEUR API =====================
+
 func StartAPI() {
-	// Crée un mux et ajoute ton endpoint
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/command", commandHandler)
 
 	privateKeyPath, _, err := keymanagement.Generate_Serveur_Key_Pair("api_server")
 	if err != nil {
-		log.Fatalf("Erreur génération paire de clés API : %v", err)
+		logs.Write_Log("ERROR", "Erreur génération paire de clés API: "+err.Error())
 		return
 	}
+
 	certFile, err := security.GenerateSelfSignedCert(privateKeyPath, "api-server_cert")
 	if err != nil {
-		log.Fatalf("Erreur génération certificat : %v", err)
+		logs.Write_Log("ERROR", "Erreur génération certificat: "+err.Error())
+		return
 	}
 
-	// Configuration TLS (sécurisée mais simple)
-	tlsConfig := &tls.Config{
-		MinVersion: tls.VersionTLS12,
-	}
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
 
 	server := &http.Server{
 		Addr:      ":" + strconv.Itoa(storage.API_Port),
@@ -131,6 +201,9 @@ func StartAPI() {
 		TLSConfig: tlsConfig,
 	}
 
-	fmt.Println("🚀 API REST en HTTPS sur https://localhost:" + strconv.Itoa(storage.API_Port))
-	log.Fatal(server.ListenAndServeTLS(certFile, privateKeyPath))
+	logs.Write_Log("INFO", "🚀 API REST en HTTPS sur https://localhost:"+strconv.Itoa(storage.API_Port))
+
+	if err := server.ListenAndServeTLS(certFile, privateKeyPath); err != nil {
+		logs.Write_Log("ERROR", "Erreur lancement serveur API: "+err.Error())
+	}
 }

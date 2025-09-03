@@ -13,10 +13,13 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io/ioutil"
+	"math/big"
 	"net/http"
 	"os"
 	"os/user"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // Structure de config
@@ -30,6 +33,7 @@ type Config struct {
 type CommandRequest struct {
 	Command   string `json:"command"`
 	Username  string `json:"username"`
+	Nonce     string `json:"nonce"`
 	Signature string `json:"signature"`
 }
 
@@ -85,13 +89,25 @@ func signMessage(priv *rsa.PrivateKey, message []byte) (string, error) {
 	return base64.StdEncoding.EncodeToString(sig), nil
 }
 
+// Génère un nonce : timestamp + 16 caractères aléatoires
+func generateNonce() string {
+	timestamp := time.Now().Unix()
+	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	result := make([]byte, 16)
+	for i := range result {
+		n, _ := rand.Int(rand.Reader, big.NewInt(int64(len(chars))))
+		result[i] = chars[n.Int64()]
+	}
+	return fmt.Sprintf("%d-%s", timestamp, string(result))
+}
+
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("Usage: vaultairectl <commande>")
 		os.Exit(1)
 	}
-	command := os.Args[1]
 
+	command := strings.Join(os.Args[1:], " ")
 	// 1. Charger la config
 	cfg, err := loadConfig()
 	if err != nil {
@@ -106,13 +122,18 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 3. Préparer le body JSON sans signature pour le signer
+	// 3. Générer nonce
+	nonce := generateNonce()
+
+	// 4. Préparer le body JSON sans signature pour le signer
 	reqBodyToSign := struct {
 		Command  string `json:"command"`
 		Username string `json:"username"`
+		Nonce    string `json:"nonce"`
 	}{
 		Command:  command,
 		Username: cfg.Username,
+		Nonce:    nonce,
 	}
 	bodyBytesToSign, _ := json.Marshal(reqBodyToSign)
 
@@ -127,6 +148,7 @@ func main() {
 	reqBody := CommandRequest{
 		Command:   command,
 		Username:  cfg.Username,
+		Nonce:     nonce,
 		Signature: sig,
 	}
 	bodyBytes, _ := json.Marshal(reqBody)
