@@ -32,11 +32,11 @@ func DisplayAllGPOs(gpos []*storage.LinuxGPO) string {
 
 	// Affichage des GPO
 	for _, gpo := range gpos {
-		fmt.Println(w, "%-20s: %-30s\n", header("ID"), fmt.Sprintf("%d", gpo.ID))
-		fmt.Println(w, "%-20s: %-30s\n", header("Nom de la GPO"), gpo.GPOName)
-		fmt.Println(w, "%-20s: %-30s\n", header("Ubuntu Commande"), gpo.Ubuntu)
-		fmt.Println(w, "%-20s: %-30s\n", header("Debian Commande"), gpo.Debian)
-		fmt.Println(w, "%-20s: %-30s\n", header("Rocky Commande"), gpo.Rocky)
+		fmt.Fprintf(w, "%-20s: %-30s\n", header("ID"), fmt.Sprintf("%d", gpo.ID))
+		fmt.Fprintf(w, "%-20s: %-30s\n", header("Nom de la GPO"), gpo.GPOName)
+		fmt.Fprintf(w, "%-20s: %-30s\n", header("Ubuntu Commande"), gpo.Ubuntu)
+		fmt.Fprintf(w, "%-20s: %-30s\n", header("Debian Commande"), gpo.Debian)
+		fmt.Fprintf(w, "%-20s: %-30s\n", header("Rocky Commande"), gpo.Rocky)
 		sb.WriteString(b.String())
 		b.Reset()
 	}

@@ -68,7 +68,10 @@ func Command_GET_UserPermissionByName(db *sql.DB, name string) (*storage.UserPer
 			compare, 
 			search, 
 			can_read, 
-			can_write
+			can_write,
+			api_read_permission,
+			api_write_permission,
+			web_admin
 		FROM user_permission
 		WHERE name = ?
 		LIMIT 1
@@ -85,6 +88,9 @@ func Command_GET_UserPermissionByName(db *sql.DB, name string) (*storage.UserPer
 		&permission.Search,
 		&permission.Read,
 		&permission.Write,
+		&permission.APIRead,
+		&permission.APIWrite,
+		&permission.Web_admin,
 	)
 	if err != nil {
 		logs.WriteLog("db", "Erreur lors de la récupération de la permission utilisateur par nom : "+err.Error())

@@ -28,7 +28,7 @@ func DisplayUsersByStatus(users []storage.UserConnected) string {
 	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
 
 	// Ajouter les en-têtes
-	fmt.Println(w, "%-4s %-15s %-20s %-20s %-10s\n",
+	fmt.Fprintf(w, "%-4s %-15s %-20s %-20s %-10s\n",
 		header("ID"),
 		header("Username"),
 		header("Created At"),
@@ -42,7 +42,7 @@ func DisplayUsersByStatus(users []storage.UserConnected) string {
 		status := active("✅ Active")
 
 		// Ajouter les données formatées
-		fmt.Println(w, "%-4d %-15s %-20s %-20s %-10s\n",
+		fmt.Fprintf(w, "%-4d %-15s %-20s %-20s %-10s\n",
 			user.ID,
 			user.Username,
 			user.CreatedAt,

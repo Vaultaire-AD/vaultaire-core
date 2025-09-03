@@ -9,13 +9,15 @@ import (
 func UpdateUserPermissionBooleanField(db *sql.DB, permissionName string, column string, value bool) error {
 	// Liste blanche des colonnes valides à modifier
 	validColumns := map[string]bool{
-		"none":      true,
-		"web_admin": true,
-		"auth":      true,
-		"compare":   true,
-		"search":    true,
-		"can_read":  true,
-		"can_write": true,
+		"none":                 true,
+		"web_admin":            true,
+		"auth":                 true,
+		"compare":              true,
+		"search":               true,
+		"can_read":             true,
+		"can_write":            true,
+		"api_read_permission":  true,
+		"api_write_permission": true,
 	}
 
 	// Vérifie que la colonne est bien autorisée

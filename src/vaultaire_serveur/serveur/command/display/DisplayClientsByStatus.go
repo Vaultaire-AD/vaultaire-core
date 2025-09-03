@@ -27,7 +27,7 @@ func DisplayClientsByStatus(clients []storage.ClientConnected) string {
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
 	// Ajouter les entêtes du tableau
-	fmt.Println(w, "%-15s %-15s %-20s %-20s %-10s %-10s %-10s %-10s\n",
+	fmt.Fprintf(w, "%-15s %-15s %-20s %-20s %-10s %-10s %-10s %-10s\n",
 		header("Username"),
 		header("Type"),
 		header("Computeur ID"),
@@ -44,7 +44,7 @@ func DisplayClientsByStatus(clients []storage.ClientConnected) string {
 		if client.Serveur {
 			serverStatus = serverIcon("🟢 Serveur")
 		}
-		fmt.Println(w, "%-15s %-15s %-20s %-20s %-10s %-10d %-10s %-10s\n",
+		fmt.Fprintf(w, "%-15s %-15s %-20s %-20s %-10s %-10d %-10s %-10s\n",
 			client.Username,
 			client.LogicielType,
 			client.ComputeurID,

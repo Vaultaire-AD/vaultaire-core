@@ -25,6 +25,8 @@ func main() {
 	}
 	db.InitDatabase()
 	db.Create_DataBase(db.GetDatabase())
+	go duckynetwork.StartDuckyServer()
+
 	if storage.Ldap_Enable {
 		go ldap.HandleLDAPserveur()
 	} else {
@@ -44,8 +46,13 @@ func main() {
 	if storage.Dns_Enable {
 		go dns.DNS_StartServeur()
 	}
-	duckynetwork.StartDuckyServer()
-	go vaultairegoroutine.StartUnixSocketServer()
+	if storage.API_Enable {
+		go vaultairegoroutine.StartAPI()
+	} else {
+		log.Println("API is disabled, not starting API server.")
+	}
+
+	vaultairegoroutine.StartUnixSocketServer()
 	// go ldap.HandleLDAPserveur()
 
 }

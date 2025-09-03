@@ -10,7 +10,10 @@
   <div class="profil-container">
     <h1>Profil de {{.User.Username}}</h1>
 
+    <!-- Formulaire mise à jour infos -->
     <form action="/profil" method="POST">
+      <input type="hidden" name="action" value="update_info">
+
       <label for="username">Nom d'utilisateur :</label>
       <input type="text" id="username" name="username" value="{{.User.Username}}" required>
 
@@ -37,6 +40,30 @@
       <p><strong>Groupes :</strong> {{range .User.Groups}}{{.}}, {{end}}</p>
       <p><strong>Status :</strong> {{if .User.Connected}}Connecté{{else}}Déconnecté{{end}}</p>
     </div>
+
+    <!-- 🔑 Liste des clés publiques -->
+    <h2>Clés publiques</h2>
+    <ul>
+      {{range .Keys}}
+        <li>
+          {{.Label}}
+          <form action="/profil" method="POST" style="display:inline">
+            <input type="hidden" name="action" value="delete_key">
+            <input type="hidden" name="key_id" value="{{.ID}}">
+            <button type="submit">Supprimer</button>
+          </form>
+        </li>
+      {{end}}
+    </ul>
+
+    <!-- ➕ Ajout d'une nouvelle clé -->
+    <h3>Ajouter une nouvelle clé publique</h3>
+    <form action="/profil" method="POST" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="add_key">
+      <label for="public_key_file">Fichier clé publique :</label>
+      <input type="file" id="public_key_file" name="public_key_file" accept=".pub" required>
+      <button type="submit">Ajouter</button>
+    </form>
 
     <a href="/logout">Se déconnecter</a>
   </div>

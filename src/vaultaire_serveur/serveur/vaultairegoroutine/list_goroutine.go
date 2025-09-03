@@ -1,6 +1,7 @@
 package vaultairegoroutine
 
 import (
+	"DUCKY/serveur/api"
 	"DUCKY/serveur/command"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
@@ -40,4 +41,8 @@ func StartUnixSocketServer() {
 		}
 		go command.HandleClientCLI(conn)
 	}
+}
+
+func StartAPI() {
+	api.StartAPI()
 }

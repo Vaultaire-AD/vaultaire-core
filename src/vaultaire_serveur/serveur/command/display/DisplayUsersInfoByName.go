@@ -37,15 +37,15 @@ func DisplayUsersInfoByName(user *storage.GetUserInfoSingle) string {
 	}
 
 	// Ajouter les informations principales
-	fmt.Println(w, "%-20s %-20s\n", header("Username:"), info(user.Username))
-	fmt.Println(w, "%-20s %-20s\n", header("Firstname:"), info(user.Firstname))
-	fmt.Println(w, "%-20s %-20s\n", header("Lastname:"), info(user.Lastname))
-	fmt.Println(w, "%-20s %-20s\n", header("Email:"), info(user.Email))
-	fmt.Println(w, "%-20s %-20s\n", header("Date of Birth:"), info(user.DateOfBirth))
-	fmt.Println(w, "%-20s %-20s\n", header("Status:"), status)
+	fmt.Fprintf(w, "%-20s %-20s\n", header("Username:"), info(user.Username))
+	fmt.Fprintf(w, "%-20s %-20s\n", header("Firstname:"), info(user.Firstname))
+	fmt.Fprintf(w, "%-20s %-20s\n", header("Lastname:"), info(user.Lastname))
+	fmt.Fprintf(w, "%-20s %-20s\n", header("Email:"), info(user.Email))
+	fmt.Fprintf(w, "%-20s %-20s\n", header("Date of Birth:"), info(user.DateOfBirth))
+	fmt.Fprintf(w, "%-20s %-20s\n", header("Status:"), status)
 
 	// Ajouter les groupes et permissions
-	fmt.Println(w, "\n%-20s %s\n", header("Groups:"), formatList(user.Groups, magenta))
+	fmt.Fprintf(w, "\n%-20s %s\n", header("Groups:"), formatList(user.Groups, magenta))
 
 	// Écrire le contenu formaté dans `sb`
 	err := w.Flush()

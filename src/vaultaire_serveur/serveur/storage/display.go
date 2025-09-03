@@ -67,6 +67,9 @@ type UserPermission struct {
 	Search      bool
 	Read        bool
 	Write       bool
+	APIRead     bool
+	APIWrite    bool
+	Web_admin   bool
 }
 
 type GetClientsByPermission struct {
