@@ -69,8 +69,9 @@ func UpdateHostname(db *sql.DB, computeurID, hostname, os, ram, proc string) err
 		logs.WriteLog("db", "erreur lors de la récupération du nombre de lignes affectées UpdateHostname :"+err.Error())
 	}
 	if rowsAffected == 0 {
-		logs.WriteLog("db", "aucune ligne mise à jour, vérifiez computeur_id UpdateHostname")
+		// logs.WriteLog("db", "aucune ligne mise à jour, vérifiez computeur_id UpdateHostname")
+		return nil
 	}
-	logs.WriteLog("db", "Mise à jour réussie : "+strconv.FormatInt(rowsAffected, 10)+" ligne(s) affectée(s) UpdateHostname")
+	// logs.WriteLog("db", "Mise à jour réussie : "+strconv.FormatInt(rowsAffected, 10)+" ligne(s) affectée(s) UpdateHostname")
 	return nil
 }
