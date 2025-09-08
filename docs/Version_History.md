@@ -64,6 +64,7 @@
             - Changement sur la table user_permission ("api_write_permission, api_read_permission)
             - Debut de l'api REST pour vaultaire
             - Changement sur la gestion des clé pour les differents services cle unique mtn
+            - Ajout des clé public pour les users via WebUI ou vaultaire_cli/vaultaire_ctl
 
 ---
 

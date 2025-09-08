@@ -3,7 +3,11 @@ package commandadd
 import (
 	"DUCKY/serveur/command/display"
 	"DUCKY/serveur/database"
+	dbuser "DUCKY/serveur/database/db-user"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/storage"
+	"fmt"
+	"strings"
 )
 
 // add_User_Command_Parser handles the addition of a user to a group.
@@ -11,6 +15,7 @@ import (
 // If the command is valid, it adds the user to the group and returns the updated user information.
 // If the command is invalid or an error occurs, it logs the error and returns an error message.
 func add_User_Command_Parser(command_list []string) string {
+	fmt.Println(len(command_list))
 	if len(command_list) == 4 {
 		switch command_list[2] {
 		case "-g":
@@ -29,6 +34,34 @@ func add_User_Command_Parser(command_list []string) string {
 		default:
 			return ("\nMiss Argument get -h for more information or consult man on the wiki")
 		}
+	}
+	if command_list[2] == "-k" {
+		userId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(command_list[1]))
+		if err != nil {
+			logs.Write_Log("WARNING", "error during the get of the userid "+command_list[2]+" : "+err.Error())
+			return (">> -" + err.Error())
+		}
+		pubkey := strings.Join(command_list[4:], " ")
+		if pubkey == "" || command_list[3] == "" {
+			return (">> -Miss argument : label or key is empty vlt add user <username> -k <label> <key> ")
+		}
+		// Vérifier que le contenu ressemble à une clé publique SSH
+		if !strings.HasPrefix(pubkey, "ssh-rsa") && !strings.HasPrefix(pubkey, "ssh-ed25519") {
+			return (">> -The key must start with 'ssh-rsa' or 'ssh-ed25519'")
+		}
+		err = dbuser.AddUserKey(userId, pubkey, command_list[3])
+		if err != nil {
+			logs.Write_Log("WARNING", "error during the add of the public key to the user "+command_list[2]+" : "+err.Error())
+			return (">> -" + err.Error())
+		}
+		logs.Write_Log("INFO", "Add public key to user : "+command_list[1])
+		pubKeys := []storage.PublicKey{}
+		pubKeys, err = dbuser.GetUserKeys(userId)
+		if err != nil || len(pubKeys) == 0 {
+			logs.Write_Log("WARNING", "error during the get of the public key of the user "+command_list[2]+" : "+err.Error())
+			return (">> -No public key found for this user")
+		}
+		return display.DisplayUserPublicKeys(command_list[2], pubKeys)
 	}
 	return ("\nMiss Argument get -h for more information or consult man on the wiki")
 }
