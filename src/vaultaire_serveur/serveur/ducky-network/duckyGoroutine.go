@@ -88,7 +88,7 @@ func removeOfflineServer(index int, serveur storage.Is_Serveur_Online) {
 	storage.Serveur_Online = append(storage.Serveur_Online[:index], storage.Serveur_Online[index+1:]...)
 
 	// supprimer de la DB
-	err := db.DeleteDidLogin(db.GetDatabase(), serveur.Client_ID, serveur.Client_ID)
+	err := db.DeleteDidLogin(db.GetDatabase(), serveur.Username, serveur.Client_ID)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error deleting session for "+serveur.Client_ID+": "+err.Error())
 	} else {

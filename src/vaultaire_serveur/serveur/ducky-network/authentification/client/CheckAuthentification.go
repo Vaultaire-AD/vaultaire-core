@@ -117,7 +117,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 	randomAuth, username := GetRandomAuthByAuthID(message_content.AuthID)
 	DeleteAuthByID(message_content.AuthID)
 	if username == "vaultaire" {
-		addOnlineServerToTable(trames_content.ClientSoftwareID, trames_content.SessionIntegritykey, conn)
+		addOnlineServerToTable(username, trames_content.ClientSoftwareID, trames_content.SessionIntegritykey, conn)
 		db := database.GetDatabase()
 		userID, _ := database.Get_User_ID_By_Username(db, username)
 		key := make([]byte, 8)
