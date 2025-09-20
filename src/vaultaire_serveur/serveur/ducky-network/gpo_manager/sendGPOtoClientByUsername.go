@@ -2,13 +2,11 @@ package gpomanager
 
 import (
 	"DUCKY/serveur/database"
-	"DUCKY/serveur/ducky-network/sendmessage"
 	"DUCKY/serveur/tools"
-	"net"
 	"strings"
 )
 
-func SendGPOtoClientByUsername(username string, conn net.Conn, clientsoftware string, session_key_integrity string) (string, error) {
+func Get_GPO_forClient(username string, clientsoftware string) (string, error) {
 	db := database.GetDatabase()
 	clientOS, err := database.GetClientOS(db, clientsoftware)
 	if err != nil {
@@ -24,11 +22,7 @@ func SendGPOtoClientByUsername(username string, conn net.Conn, clientsoftware st
 		return "", err
 	}
 	commands_string := strings.Join(commands, "\n")
-	err = sendmessage.SendMessage("02_06\nserveur_central\n"+session_key_integrity+"\n"+commands_string, clientsoftware, conn)
-	if err != nil {
-		return "", err
-	}
-	return "GPO sent successfully", nil
+	return commands_string, nil
 }
 
 // TODO : Send GPO to client

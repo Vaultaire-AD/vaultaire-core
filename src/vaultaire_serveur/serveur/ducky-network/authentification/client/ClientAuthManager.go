@@ -2,6 +2,7 @@ package client
 
 import (
 	getinformation "DUCKY/serveur/ducky-network/ducky_tools"
+	gpomanager "DUCKY/serveur/ducky-network/gpo_manager"
 	"DUCKY/serveur/storage"
 	"net"
 )
@@ -21,6 +22,8 @@ func Client_Auth_Manager(trames_content storage.Trames_struct_client, conn net.C
 		message = closeSession(trames_content)
 	case "12":
 		getinformation.GetSoftwareServeurInformation(trames_content)
+	case "15":
+		message = gpomanager.GPO_Manager(trames_content, conn)
 	}
 	return message
 }

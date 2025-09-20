@@ -15,7 +15,7 @@ func AskAuthentification(username string, password string, conn net.Conn, sessio
 	sendmessage.SendMessage(message, conn)
 }
 
-func User_Auth_Manager(trames_content storage.Trames_struct_client) string {
+func User_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn) string {
 	message := ""
 	switch trames_content.Message_Order[1] {
 	case "02":
@@ -24,24 +24,29 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client) string {
 	case "04":
 		//("02_04\nserveur_central\n" + strconv.FormatBool(admin) + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
 		lines := strings.Split(trames_content.Content, "\n")
-		content := strings.Join(lines[3:], "\n")
+		trames_content.Username = lines[0]
+		content := strings.Join(lines[4:], "\n")
 		storage.AES_key = []byte(content)
-		fmt.Println(lines[0])
+		fmt.Println(lines[1])
 		storage.Authentification_PAM <- "success"
-		if lines[0] == "true" {
+		if lines[1] == "true" {
 			storage.IsAdmin = true
 		} else {
 			storage.IsAdmin = false
 		}
-		fmt.Println(lines[1] + lines[2])
+		fmt.Println(lines[2] + lines[3])
 		activeSession, _ := getlocalinformation.GetActiveUsers()
+
 		message = "02_12\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\n" + getlocalinformation.GetAllLocalInfForServeur() + "\n" + strings.Join(activeSession, ",")
-	case "06":
+		sendmessage.SendMessage(message, conn)
+		message = "02_15\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\nask_gpo"
+	case "16":
 		// ("02_06\nserveur_central\n"+session_key_integrity+"\n"+commands_string)
 		lines := strings.Split(trames_content.Content, "\n")
+		username := lines[0]
 		fmt.Println(lines[0])
 		for i := 1; i < len(lines); i++ {
-			err := gpo.ApplyGPOsAsUser(lines[i], storage.Username)
+			err := gpo.ApplyGPOsAsUser(username, lines[i])
 			if err != nil {
 				fmt.Println("Erreur lors de l'application des GPOs :", err)
 			}
