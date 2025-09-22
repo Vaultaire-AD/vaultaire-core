@@ -1,3 +1,8 @@
+# Schéma de la base de données — Vaultaire
+
+## Arbre ASCII
+
+```
 DATABASE: DUCKY
 │
 ├─ users
@@ -108,3 +113,20 @@ DATABASE: DUCKY
 └─ (Insert initial data)
     └─ INSERT IGNORE INTO users (username, password, salt, date_naissance)
        VALUES ('vaultaire','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');
+```
+
+## Notes rapides / observations
+
+* Les tables **d'association** (`users_group`, `logiciel_group`, `group_user_permission`, `group_permission_logiciel`, `group_linux_gpo`, `users_logiciel`) implémentent des relations N-N et ont des PK composites — c'est correct pour l'intégrité.
+* Tous les `FOREIGN KEY` ont `ON DELETE CASCADE` → suppression propre (attention aux suppressions en cascade massives).
+* `user_public_keys` a une contrainte `UNIQUE KEY unique_pubkey (public_key(255))` — attention : indexer une préfixe peut être ok, mais si des clés dépassent 255 caractères, la partie non indexée ne sera pas incluse dans l'unicité complète (selon MySQL/MariaDB).
+* `did_login.session_key BLOB` : si ces clés ont taille limitée, préfère `VARBINARY(n)` pour pouvoir indexer si besoin.
+* `user_permission` est toujours sous forme de colonnes booléennes dans ton SQL initial — tu as évoqué les transformer en texte formaté ; ici j'ai laissé la structure telle qu'elle est dans le SQL fourni.
+
+## Prochaines actions possibles
+
+* Générer une **version visuelle (ERD)** à partir de ce schéma (export PNG/SVG).
+* Préparer un **script SQL** pour ajouter des index sur les FK.
+* Écrire la **fonction Go `HasPermission`** pour parser ton format `1(...),0(...)` et résoudre l'héritage LDAP.
+
+Dis-moi laquelle tu veux, je m'en occupe.
