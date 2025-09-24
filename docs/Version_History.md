@@ -61,10 +61,11 @@
             - Optimisation mineur de certain de la sanitize fonction - Lorens Viguie
             - Ajout du site internet pour que les utilisateurs puissent mettre a jour leur information personnel - Lorens Viguie
         - ### 🛠️ Patch**Alpha 1.1.3** - *//* 
-            - Changement sur la table user_permission ("api_write_permission, api_read_permission)
-            - Debut de l'api REST pour vaultaire
-            - Changement sur la gestion des clé pour les differents services cle unique mtn
-            - Ajout des clé public pour les users via WebUI ou vaultaire_cli/vaultaire_ctl
+            - Changement sur la table user_permission ("api_write_permission, api_read_permission) - Lorens Viguie
+            - Debut de l'api REST pour vaultaire - Lorens Viguie
+            - Changement sur la gestion des clé pour les differents services cle unique mtn - Lorens Viguie
+            - Ajout des clé public pour les users via WebUI ou vaultaire_cli/vaultaire_ctl - Lorens Viguie
+            - Ajout de la logique des permission pour l'api et ldap par encore implémenter - Lorens Viguie
 
 ---
 
