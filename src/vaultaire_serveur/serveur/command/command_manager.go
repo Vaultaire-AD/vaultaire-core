@@ -17,11 +17,18 @@ import (
 	"strings"
 )
 
+// case "get", "eyes", "status":
+// 	return "api_read_permission", nil
+// case "add", "remove", "update", "dns":
+// 	return "api_write_permission", nil
+// case "create", "clear", "delete":
+// 	return "api_admin_permission", nil
+
 // Fonction qui exécute une commande et retourne le résultat
-func ExecuteCommand(input string) string {
+func ExecuteCommand(input string, username string) string {
 	// Nettoyer et diviser la commande
 	print("Input: ", input)
-	command_list := splitArgsPreserveBlocks(input)
+	command_list := SplitArgsPreserveBlocks(input)
 	if len(command_list) == 0 {
 		return "Erreur : commande vide."
 	}
@@ -49,6 +56,7 @@ func ExecuteCommand(input string) string {
 		}
 		response = "Sessions expirées nettoyées."
 	case "create":
+		database.Get_User_ID_By_Username(database.GetDatabase(), username)
 		response = commandcreate.Create_Command(args)
 	case "get":
 		response = commandget.Get_Command(args)
@@ -96,7 +104,7 @@ func HandleClientCLI(conn net.Conn) {
 
 	// Exécuter la commande et récupérer la réponse
 	command := strings.TrimSpace(string(buf[:n]))
-	result := ExecuteCommand(command)
+	result := ExecuteCommand(command, "vaultaire")
 
 	// Envoyer la réponse au client
 	_, err = conn.Write([]byte(result + "\n"))
@@ -106,7 +114,7 @@ func HandleClientCLI(conn net.Conn) {
 	}
 }
 
-func splitArgsPreserveBlocks(input string) []string {
+func SplitArgsPreserveBlocks(input string) []string {
 	args := strings.Fields(input)
 	var result []string
 

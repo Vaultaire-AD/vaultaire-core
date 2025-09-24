@@ -48,6 +48,24 @@ func Create_DataBase(db *sql.DB) {
 			api_write_permission BOOLEAN NOT NULL DEFAULT FALSE
 		);`,
 
+		// TEST
+		`CREATE TABLE IF NOT EXISTS user_permission_test (
+    id_user_permission_scope INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) UNIQUE NOT NULL,         -- nom de la permission (ex: can_read, web_admin, etc.)
+    description TEXT,
+
+    -- au lieu de BOOLEAN → TEXT qui contiendra ton format custom
+    none TEXT DEFAULT 'nil',
+    web_admin TEXT DEFAULT 'nil',
+    auth TEXT DEFAULT 'nil',
+    compare TEXT DEFAULT 'nil',
+    search TEXT DEFAULT 'nil',
+    can_read TEXT DEFAULT 'nil',
+    can_write TEXT DEFAULT 'nil',
+    api_read_permission TEXT DEFAULT 'nil',
+    api_write_permission TEXT DEFAULT 'nil'
+);`,
+
 		// ----- Groupes -----
 		`CREATE TABLE IF NOT EXISTS groups (
 			id_group INT AUTO_INCREMENT PRIMARY KEY,

@@ -80,7 +80,7 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Exécution de la commande
-	result := command.ExecuteCommand(req.Command)
+	result := command.ExecuteCommand(req.Command, req.Username)
 
 	// Log la requête avec succès
 	logRequest(req, result, nil)

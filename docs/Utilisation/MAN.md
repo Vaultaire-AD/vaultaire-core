@@ -148,7 +148,7 @@ Ubuntu Commande     : alias vlt=vautlaire
 Debian Commande     : alias vlt=vautlaire           
 Rocky Commande      : alias vlt=vautlaire           
 --------------------------------------------------
->>create -gpo test3 --ubuntu alias vlt_ubuntu=vaultaire --debian vlt_debian=vaultaire --rocky vlt_rocky=vaultaire
+>>create -gpo test3 --ubuntu alias vlt_ubuntu=vaultaire --debian alias vlt_debian=vaultaire --rocky alias vlt_rocky=vaultaire
 🔒 GPO Information
 --------------------------------------------------
 ID                  : 23                            
