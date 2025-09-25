@@ -12,6 +12,7 @@ import (
 	commandupdate "DUCKY/serveur/command/command_update"
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
 	"fmt"
 	"net"
 	"strings"
@@ -56,7 +57,15 @@ func ExecuteCommand(input string, username string) string {
 		}
 		response = "Sessions expirées nettoyées."
 	case "create":
-		database.Get_User_ID_By_Username(database.GetDatabase(), username)
+		groupIDs, action, err := permission.PrePermissionCheck(username, command)
+		if err != nil {
+			return fmt.Sprintf("Erreur de permission : %v", err)
+		}
+		isactionlegitimate, response := permission.CheckPermission(groupIDs, action, "*")
+		if !isactionlegitimate {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", username, action, response))
+			return fmt.Sprintf("Permission refusée : %s", response)
+		}
 		response = commandcreate.Create_Command(args)
 	case "get":
 		response = commandget.Get_Command(args)
