@@ -18,6 +18,7 @@ func CheckPermission(groupIDs []int, action string, domaintocheck string) (bool,
 
 	// On itère sur chaque groupe → si un seul autorise, on return true immédiatement
 	for _, groupID := range groupIDs {
+		logs.Write_Log("DEBUG", fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domaintocheck))
 		content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
 		if err != nil {
 			// Ici on log l'erreur mais on ne bloque pas forcément (un autre groupe peut donner la permission)

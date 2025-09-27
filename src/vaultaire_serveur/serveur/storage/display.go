@@ -61,15 +61,15 @@ type UserPermission struct {
 	ID          int
 	Name        string
 	Description string
-	None        bool
-	Auth        bool
-	Compare     bool
-	Search      bool
-	Read        bool
-	Write       bool
-	APIRead     bool
-	APIWrite    bool
-	Web_admin   bool
+	None        string
+	Auth        string
+	Compare     string
+	Search      string
+	Read        string
+	Write       string
+	APIRead     string
+	APIWrite    string
+	Web_admin   string
 }
 
 type GetClientsByPermission struct {

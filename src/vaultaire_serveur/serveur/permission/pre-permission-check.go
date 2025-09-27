@@ -14,6 +14,7 @@ func PrePermissionCheck(username string, command string) ([]int, string, error) 
 		return nil, "", fmt.Errorf("Erreur lors de la récupération de l'ID utilisateur.")
 	}
 	Domain_list, err := database.GetDomainsForUser(database.DB, acUserID)
+	logs.Write_Log("DEBUG", fmt.Sprintf("Domaines pour l'utilisateur %s (ID %d) : %v", username, acUserID, Domain_list))
 	action, CheckPermission := IsValidAction("api_write_permission")
 	if !CheckPermission {
 		return nil, "", fmt.Errorf("Action non valide, contactez l'éditeur.")

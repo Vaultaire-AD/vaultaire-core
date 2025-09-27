@@ -19,7 +19,7 @@ func GetPermissionContent(db *sql.DB, groupID int, action string) (string, error
 	}
 
 	// 2. Construire dynamiquement la requête pour récupérer le champ lié à l'action
-	query := fmt.Sprintf("SELECT %s FROM user_permission_test WHERE id_user_permission_scope = ?", action)
+	query := fmt.Sprintf("SELECT %s FROM user_permission WHERE id_user_permission = ?", action)
 
 	// 3. Exécuter la requête
 	err = db.QueryRow(query, permissionID).Scan(&content)

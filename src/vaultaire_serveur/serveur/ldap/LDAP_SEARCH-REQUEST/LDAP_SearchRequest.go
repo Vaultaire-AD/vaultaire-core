@@ -2,6 +2,7 @@ package ldapsearchrequest
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/database/db_permission"
 	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
@@ -33,7 +34,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		fmt.Printf("Attributes   : %v\n", op.Attributes)
 	}
 	// Vérifier les permissions en base de données
-	if !database.IsUserAuthorizedToSearch(session.Username, op.BaseObject) {
+	if !db_permission.IsUserAuthorizedToSearch(database.GetDatabase(), session.Username, op.BaseObject) {
 		logs.Write_Log("WARNING", fmt.Sprintf("Utilisateur %s n'est pas autorisé à faire une recherche sur %s", session.Username, op.BaseObject))
 		err := SendLDAPSearchFailure(conn, messageID, "erreur au niveau du user source de l'aplpicatif contact your administrator.")
 		if err != nil {

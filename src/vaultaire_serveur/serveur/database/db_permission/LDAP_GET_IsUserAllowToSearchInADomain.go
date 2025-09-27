@@ -1,16 +1,16 @@
-package database
+package db_permission
 
 import (
+	"DUCKY/serveur/database"
 	"database/sql"
 	"log"
 )
 
-func IsUserAuthorizedToSearch(username, domain string) bool {
-	injection := SanitizeInput(username, domain)
+func IsUserAuthorizedToSearch(db *sql.DB, username, domain string) bool {
+	injection := database.SanitizeInput(username, domain)
 	if injection != nil {
 		return false
 	}
-	db := GetDatabase()
 	query := `
 		SELECT 1
 		FROM users u

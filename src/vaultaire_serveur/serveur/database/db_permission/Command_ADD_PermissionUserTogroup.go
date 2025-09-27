@@ -1,6 +1,7 @@
-package database
+package db_permission
 
 import (
+	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 
 // AddPermissionToGroup ajoute une permission à un groupe
 func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupName string) error {
-	injection := SanitizeInput(permissionName, groupName)
+	injection := database.SanitizeInput(permissionName, groupName)
 	if injection != nil {
 		return injection
 	}

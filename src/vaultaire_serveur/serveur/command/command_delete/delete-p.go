@@ -2,6 +2,7 @@ package commanddelete
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/database/db_permission"
 	"DUCKY/serveur/logs"
 )
 
@@ -14,7 +15,7 @@ func delete_Permission_Command_Parser(command_list []string) string {
 
 		switch command_list[1] {
 		case "-c":
-			err := database.Command_DELETE_ClientPermissionByName(database.GetDatabase(), command_list[2])
+			err := db_permission.Command_DELETE_ClientPermissionByName(database.GetDatabase(), command_list[2])
 			if err != nil {
 				logs.Write_Log("WARNING", "error during the deletion of the client_permission "+command_list[2]+" : "+err.Error())
 				return (">> -" + err.Error())
@@ -22,7 +23,7 @@ func delete_Permission_Command_Parser(command_list []string) string {
 			logs.Write_Log("INFO", "client_permission delete with succes with this ID : "+command_list[2])
 			return ("The client_permission :" + command_list[1] + " Has been DELETED With Succes")
 		case "-u":
-			err := database.Command_DELETE_UserPermissionByName(database.GetDatabase(), command_list[2])
+			err := db_permission.Command_DELETE_UserPermissionByName(database.GetDatabase(), command_list[2])
 			if err != nil {
 				logs.Write_Log("WARNING", "error during the deletion of the user_permission "+command_list[2]+" : "+err.Error())
 				return (">> -" + err.Error())

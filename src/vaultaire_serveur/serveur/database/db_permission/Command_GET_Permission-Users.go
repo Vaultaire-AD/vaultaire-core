@@ -1,4 +1,4 @@
-package database
+package db_permission
 
 import (
 	"DUCKY/serveur/logs"

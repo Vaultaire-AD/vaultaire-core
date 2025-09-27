@@ -2,6 +2,7 @@ package commandadd
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/database/db_permission"
 	"DUCKY/serveur/logs"
 )
 
@@ -13,7 +14,7 @@ func add_group_Command_Parser(command_list []string) string {
 	if len(command_list) == 4 {
 		switch command_list[0] {
 		case "-gu":
-			err := database.Command_ADD_UserPermissionToGroup(database.GetDatabase(), command_list[3], command_list[1])
+			err := db_permission.Command_ADD_UserPermissionToGroup(database.GetDatabase(), command_list[3], command_list[1])
 			if err != nil {
 				logs.Write_Log("WARNING", "Error for add user_permission "+command_list[3]+" to group "+command_list[1]+" : "+err.Error())
 				return (">> -" + err.Error())
