@@ -50,12 +50,12 @@ func SendUserSearchRequest(userResponses []map[string]string, conn net.Conn, mes
 		packet.AppendChild(response)
 
 		logs.Write_Log("DEBUG", fmt.Sprintf("Sending SearchResultEntry for user '%s', packet length: %d bytes", username, len(packet.Bytes())))
-		n, err := conn.Write(packet.Bytes())
+		_, err := conn.Write(packet.Bytes())
 		if err != nil {
 			logs.Write_Log("ERROR", fmt.Sprintf("Error writing SearchResultEntry for user '%s': %v", username, err))
 			return
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("Sent %d bytes for user '%s'", n, username))
+		// logs.Write_Log("DEBUG", fmt.Sprintf("Sent %d bytes for user '%s'", n, username))
 	}
 
 	// Send SearchResultDone
