@@ -1,6 +1,6 @@
 package commandget
 
-func Get_Command(command_list []string) string {
+func Get_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return (`
@@ -35,7 +35,7 @@ Lister tous les utilisateurs d'un groupe :
 
 get -g -u "group_name"`)
 	case "-u":
-		return get_User_Command_Parser(command_list)
+		return get_User_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	case "-p":
 		return get_Permission_Command_Parser(command_list)
 	case "-g":

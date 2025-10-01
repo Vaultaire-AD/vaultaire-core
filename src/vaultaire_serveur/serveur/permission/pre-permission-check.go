@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-func PrePermissionCheck(username string, command string) ([]int, string, error) {
+func PrePermissionCheck(username, action string) ([]int, string, error) {
 	// Placeholder for future pre-permission checks
 	acUserID, err := database.Get_User_ID_By_Username(database.GetDatabase(), username)
 	if err != nil {
@@ -15,7 +15,7 @@ func PrePermissionCheck(username string, command string) ([]int, string, error) 
 	}
 	Domain_list, err := database.GetDomainsForUser(database.DB, acUserID)
 	logs.Write_Log("DEBUG", fmt.Sprintf("Domaines pour l'utilisateur %s (ID %d) : %v", username, acUserID, Domain_list))
-	action, CheckPermission := IsValidAction("api_write_permission")
+	action, CheckPermission := IsValidAction(action)
 	if !CheckPermission {
 		return nil, "", fmt.Errorf("Action non valide, contactez l'éditeur.")
 	}

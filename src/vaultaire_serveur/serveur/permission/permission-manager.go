@@ -4,55 +4,89 @@ import (
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/database/db_permission"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/storage"
 	"fmt"
 	"strings"
 )
 
-// CheckPermission va vérifier si un OU plusieurs groupes ont le droit d'effectuer une action sur un domaine donné
-func CheckPermission(groupIDs []int, action string, domaintocheck string) (bool, string) {
+// CheckPermissionsMultipleDomains vérifie si un ou plusieurs groupes ont le droit d'effectuer une action
+// sur une liste de domaines donnés.
+// Retourne :
+// - bool : true si au moins un domaine est autorisé
+// - string : résumé textuel
+func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToCheck []string) (bool, string) {
+	anyAllowed := false
+	var sb strings.Builder
+
 	// Vérifier validité de l’action
 	action, ok := IsValidAction(action)
 	if !ok {
-		return false, fmt.Sprintf("Action '%s' non valide contacter l'éditeur (erreur code source)", action)
+		for _, domain := range domainsToCheck {
+			logs.Write_Log("DEBUG", fmt.Sprintf("Action '%s' non valide pour le domaine '%s'", action, domain))
+			sb.WriteString(fmt.Sprintf("Action '%s' non valide sur %s\n", action, domain))
+		}
+		return false, sb.String()
 	}
+	var parsedPermission storage.ParsedPermission
+	for _, domain := range domainsToCheck {
+		allowed := false
+		for _, groupID := range groupIDs {
+			logs.Write_Log("DEBUG", fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domain))
+			content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
+			if err != nil {
+				logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
+				continue
+			}
 
-	// On itère sur chaque groupe → si un seul autorise, on return true immédiatement
-	for _, groupID := range groupIDs {
-		logs.Write_Log("DEBUG", fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domaintocheck))
-		content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
-		if err != nil {
-			// Ici on log l'erreur mais on ne bloque pas forcément (un autre groupe peut donner la permission)
-			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la récupération du contenu de la permission pour le groupe %d: %v", groupID, err))
-			continue
-		}
+			logs.Write_Log("DEBUG", fmt.Sprintf("Permission brute pour le groupe %d, action '%s': %s", groupID, action, content))
+			parsedPermission = ParsePermissionContent(content)
 
-		parsedPermission := ParsePermissionContent(content)
+			if parsedPermission.Deny {
+				continue
+			}
 
-		// Cas deny → ce groupe ne donne aucun droit
-		if parsedPermission.Deny {
-			continue
-		}
+			if parsedPermission.All {
+				logs.Write_Log("DEBUG", fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d", action, groupID))
+				sb.WriteString(fmt.Sprintf("%s : autorisée partout (*) via groupe %d\n", domain, groupID))
+				allowed = true
+				break
+			}
 
-		// Cas all → autorisé partout
-		if parsedPermission.All {
-			return true, fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d", action, groupID)
-		}
+			for _, d := range parsedPermission.NoPropagation {
+				if domain == d {
+					logs.Write_Log("DEBUG", fmt.Sprintf("Action '%s' autorisée uniquement sur %s (sans propagation) via groupe %d", action, domain, groupID))
+					sb.WriteString(fmt.Sprintf("%s : autorisée (sans propagation) via groupe %d\n", domain, groupID))
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				break
+			}
 
-		// Vérifier NoPropagation (0) → match exact
-		for _, d := range parsedPermission.NoPropagation {
-			if domaintocheck == d {
-				return true, fmt.Sprintf("Action '%s' autorisée uniquement sur %s (sans propagation) via groupe %d", action, domaintocheck, groupID)
+			for _, d := range parsedPermission.WithPropagation {
+				if domain == d || strings.HasSuffix(domain, "."+d) {
+					logs.Write_Log("DEBUG", fmt.Sprintf("Action '%s' autorisée sur %s (avec propagation depuis %s) via groupe %d", action, domain, d, groupID))
+					sb.WriteString(fmt.Sprintf("%s : autorisée (avec propagation depuis %s) via groupe %d\n", domain, d, groupID))
+					allowed = true
+					break
+				}
+			}
+			if allowed {
+				break
 			}
 		}
 
-		// Vérifier WithPropagation (1) → domaine exact ou sous-domaine
-		for _, d := range parsedPermission.WithPropagation {
-			if domaintocheck == d || strings.HasSuffix(domaintocheck, "."+d) {
-				return true, fmt.Sprintf("Action '%s' autorisée sur %s (avec propagation depuis %s) via groupe %d", action, domaintocheck, d, groupID)
-			}
+		if !allowed {
+			logs.Write_Log("DEBUG", fmt.Sprintf(
+				"Action '%s' refusée sur le domaine '%s' (aucune règle applicable dans les groupes %v) - ParsedPermission: %+v",
+				action, domain, groupIDs, parsedPermission,
+			))
+			sb.WriteString(fmt.Sprintf("%s : refusée\n", domain))
+		} else {
+			anyAllowed = true
 		}
 	}
 
-	// Si aucun groupe n'autorise → refus
-	return false, fmt.Sprintf("Action '%s' refusée sur le domaine '%s' (aucune règle applicable dans les groupes %v)", action, domaintocheck, groupIDs)
+	return anyAllowed, sb.String()
 }

@@ -26,7 +26,7 @@ import (
 // 	return "api_admin_permission", nil
 
 // Fonction qui exécute une commande et retourne le résultat
-func ExecuteCommand(input string, username string) string {
+func ExecuteCommand(input string, sender_Username string) string {
 	// Nettoyer et diviser la commande
 	print("Input: ", input)
 	command_list := SplitArgsPreserveBlocks(input)
@@ -43,13 +43,21 @@ func ExecuteCommand(input string, username string) string {
 
 	// Buffer pour stocker la réponse
 	var response string
-
 	// Exécuter la commande
 	switch command {
 	case "status":
 		response = commandstatus.Status_Command(args)
 	case "clear":
-		err := database.CleanUpExpiredSessions(database.DB)
+		sender_groupsIDs, action, err := permission.PrePermissionCheck(sender_Username, "api_write_permission")
+		if err != nil {
+			return fmt.Sprintf("Erreur de permission : %v", err)
+		}
+		isactionlegitimate, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
+		if !isactionlegitimate {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", sender_Username, action, response))
+			return fmt.Sprintf("Permission refusée : %s", response)
+		}
+		err = database.CleanUpExpiredSessions(database.DB)
 		if err != nil {
 			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors du nettoyage des sessions expirées : %v", err))
 			response = "Erreur lors du nettoyage des sessions expirées."
@@ -57,18 +65,18 @@ func ExecuteCommand(input string, username string) string {
 		}
 		response = "Sessions expirées nettoyées."
 	case "create":
-		groupIDs, action, err := permission.PrePermissionCheck(username, command)
+		sender_groupsIDs, action, err := permission.PrePermissionCheck(sender_Username, "api_write_permission")
 		if err != nil {
 			return fmt.Sprintf("Erreur de permission : %v", err)
 		}
-		isactionlegitimate, response := permission.CheckPermission(groupIDs, action, "*")
-		if !isactionlegitimate {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", username, action, response))
-			return fmt.Sprintf("Permission refusée : %s", response)
-		}
-		response = commandcreate.Create_Command(args)
+
+		response = commandcreate.Create_Command(args, sender_groupsIDs, action, sender_Username)
 	case "get":
-		response = commandget.Get_Command(args)
+		sender_groupsIDs, action, err := permission.PrePermissionCheck(sender_Username, "api_read_permission")
+		if err != nil {
+			return fmt.Sprintf("Erreur de permission : %v", err)
+		}
+		response = commandget.Get_Command(args, sender_groupsIDs, action, sender_Username)
 	case "add":
 		response = commandadd.Add_Command(args)
 	case "remove":

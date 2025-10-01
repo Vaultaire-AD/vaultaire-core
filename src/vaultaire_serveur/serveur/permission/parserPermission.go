@@ -19,22 +19,37 @@ func ParsePermissionContent(content string) storage.ParsedPermission {
 		return result
 	}
 
-	// Split sur ":"
-	parts := strings.Split(content, ":")
-	for _, part := range parts {
-		part = strings.TrimSpace(part)
-		if strings.HasPrefix(part, "0(") && strings.HasSuffix(part, ")") {
-			// extraire ce qui est entre les parenthèses
-			domains := strings.TrimSuffix(strings.TrimPrefix(part, "0("), ")")
-			if domains != "" {
-				result.NoPropagation = append(result.NoPropagation, strings.Split(domains, ";")...)
+	// Nettoyer les parenthèses extérieures et splitter sur ")("
+	content = strings.TrimSpace(content)
+	blocks := strings.Split(content, ")(")
+	for i, b := range blocks {
+		b = strings.TrimPrefix(b, "(")
+		b = strings.TrimSuffix(b, ")")
+		blocks[i] = b
+	}
+
+	for _, b := range blocks {
+		if len(b) < 2 {
+			continue
+		}
+		switch b[:1] {
+		case "0":
+			if len(b) > 2 && b[1] == ':' {
+				result.NoPropagation = append(result.NoPropagation, strings.Split(b[2:], ",")...)
 			}
-		} else if strings.HasPrefix(part, "1(") && strings.HasSuffix(part, ")") {
-			domains := strings.TrimSuffix(strings.TrimPrefix(part, "1("), ")")
-			if domains != "" {
-				result.WithPropagation = append(result.WithPropagation, strings.Split(domains, ";")...)
+		case "1":
+			if len(b) > 2 && b[1] == ':' {
+				result.WithPropagation = append(result.WithPropagation, strings.Split(b[2:], ",")...)
 			}
 		}
+	}
+
+	// Nettoyage des espaces
+	for i, d := range result.WithPropagation {
+		result.WithPropagation[i] = strings.TrimSpace(d)
+	}
+	for i, d := range result.NoPropagation {
+		result.NoPropagation[i] = strings.TrimSpace(d)
 	}
 
 	return result

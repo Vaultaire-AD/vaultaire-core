@@ -35,7 +35,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		fmt.Printf("Attributes   : %v\n", op.Attributes)
 	}
 	// Vérifier les permissions en base de données
-	rawPerms, err := db_permission.GetUserPermissionsForAction(database.GetDatabase(), "alice", "search")
+	rawPerms, err := db_permission.GetUserPermissionsForAction(database.GetDatabase(), session.Username, "search")
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur lors de la récupération des permissions utilisateur : "+err.Error())
 		err := SendLDAPSearchFailure(conn, messageID, "erreur au niveau du user source de l'aplpicatif contact your administrator.")
