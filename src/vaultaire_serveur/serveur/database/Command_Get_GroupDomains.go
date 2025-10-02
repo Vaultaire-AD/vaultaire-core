@@ -1,6 +1,7 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 )
@@ -24,6 +25,26 @@ func Command_GET_DomainsFromGroupIDs(db *sql.DB, groupIDs []int) ([]string, erro
 			return nil, fmt.Errorf("erreur lors de la récupération du domaine pour le groupe %d : %v", id, err)
 		}
 		domains = append(domains, domain)
+	}
+
+	return domains, nil
+}
+
+func GetDomainsFromGroupName(groupName string) ([]string, error) {
+	db := GetDatabase()
+
+	// On récupère l'ID du groupe via son nom
+	groupID, err := GetGroupIDByName(db, groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", "Erreur récupération ID du groupe "+groupName+" : "+err.Error())
+		return nil, err
+	}
+
+	// On récupère les domaines associés à ce groupe
+	domains, err := Command_GET_DomainsFromGroupIDs(db, []int{groupID})
+	if err != nil {
+		logs.Write_Log("WARNING", "Erreur récupération domaines du groupe "+groupName+" : "+err.Error())
+		return nil, err
 	}
 
 	return domains, nil

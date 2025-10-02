@@ -90,7 +90,7 @@ mais sous forme **structurée et flexible** :
 -   `none` → action neutre / désactivée.\
 -   `web_admin` → accès à l'interface d'administration Web.\
 -   `auth` → autorisation d'authentification si disable l'utilisateur ne peut pas se connecter utilise pour desactiver un compte attention a bien mettre le user dans un groupe unique dédiée (groupe de quarantaine) .\
--   `compare` → comparaison LDAP/ressource.\
+-   `compare` → comparaison LDAP/ressource, Utilisé pour l'authenti.\
 -   `search` → recherche d'objets (LDAP, base de données, etc.).\
 -   `can_read` → lecture de données.\
 -   `can_write` → écriture/modification de données.\

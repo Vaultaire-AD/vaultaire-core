@@ -759,6 +759,12 @@ update -u "username" -uu "new_username"
 
 ```
 
+## update Debug var
+
+```bash
+update -debug true/false
+```
+
 ## 🔑 Update User permission
 
 Cette commande permet de mettre à jour les actions associées à une permission utilisateur.

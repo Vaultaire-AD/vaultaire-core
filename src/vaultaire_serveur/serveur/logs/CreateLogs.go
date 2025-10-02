@@ -19,6 +19,11 @@ import (
 // Elle crée le répertoire de logs s'il n'existe pas et ouvre le fichier en mode append.
 // Si une erreur survient lors de la création du répertoire, de l'ouverture du fichier ou de l'écriture dans le fichier, elle renvoie une erreur.
 func Write_Log(level string, content string) {
+	// Si c'est un log DEBUG et que le mode debug est désactivé, on ignore
+	if level == "DEBUG" && !storage.Debug {
+		return
+	}
+
 	// Définir le chemin du répertoire et du fichier
 	dirPath := storage.LogPath
 	filepath := dirPath + "vaultaire.log"
@@ -36,20 +41,22 @@ func Write_Log(level string, content string) {
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			// Handle or log the error
 			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
 		}
 	}()
 
 	// Formatte l'heure actuelle
-	timestamp := time.Now().Format("2006-01-02 15:04:56")
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-	// Formatte la ligne à écrire [date/heure:minutes/contenu]
+	// Formatte la ligne à écrire [date/heure niveau contenu]
 	logLine := fmt.Sprintf("%s [%s] %s\n", timestamp, level, content)
-	err = Print_Log(logLine)
-	if err != nil {
+
+	// Affiche dans la console
+	if err := Print_Log(logLine); err != nil {
 		fmt.Printf("erreur lors de l'impression du log: %v", err)
 	}
+
+	// Écrit dans le fichier
 	if _, err := file.WriteString(logLine); err != nil {
 		fmt.Printf("erreur lors de l'écriture dans le fichier: %v\n", err)
 	}
