@@ -40,6 +40,9 @@ type Config struct {
 	Automatisation struct {
 		Sh_folder_path string `yaml:"sh_folder_path"`
 	} `yaml:"automatisation"`
+	Debug struct {
+		Debug bool `yaml:"debug"`
+	} `yaml:"debug"`
 }
 
 var ServeurLisetenPort string = "6666"
@@ -75,3 +78,5 @@ var Sh_folder_path string = "/opt/vaultaire/automatisation/"
 
 var API_Enable bool = true
 var API_Port int = 6643
+
+var Debug bool = false

@@ -148,7 +148,7 @@ Ubuntu Commande     : alias vlt=vautlaire
 Debian Commande     : alias vlt=vautlaire           
 Rocky Commande      : alias vlt=vautlaire           
 --------------------------------------------------
->>create -gpo test3 --ubuntu alias vlt_ubuntu=vaultaire --debian vlt_debian=vaultaire --rocky vlt_rocky=vaultaire
+>>create -gpo test3 --ubuntu alias vlt_ubuntu=vaultaire --debian alias vlt_debian=vaultaire --rocky alias vlt_rocky=vaultaire
 🔒 GPO Information
 --------------------------------------------------
 ID                  : 23                            
@@ -759,32 +759,133 @@ update -u "username" -uu "new_username"
 
 ```
 
-## Update User permission
+## update Debug var
 
 ```bash
-update -pu LDAP_WriteAccess can_read yes
+update -debug true/false
 ```
+
+## 🔑 Update User permission
+
+Cette commande permet de mettre à jour les actions associées à une permission utilisateur.
+
+```bash
+vaultaire update -pu <PermissionName> <Action> <Arg> [ChildOrAll] [Domain]
+```
+### Arguments
+
+-  **PermissionName** : le nom de la permission utilisateur (ex: LDAP_AdminPanel).
+-  **Action** : le champ de la permission à modifier (auth, compare, search, canRead, canWrite, etc.).
+-  **Arg** :
+   -  nil → aucune autorisation (deny).
+   -  all → autorisation globale (tous domaines).
+   -  -a → ajouter un domaine.
+   -  -r → retirer un domaine.
+-  **ChildOrAll** (uniquement avec -a ou -r) :
+   -  0 → domaine sans propagation (uniquement ce domaine).
+   -  1 → domaine avec propagation (inclut tous les sous-domaines).
+-  **Domain** (uniquement avec -a ou -r) : le domaine concerné.
+
+
 
 ✨*example*
 ---
+1. Autoriser tous les domaines sur l'action auth (mode global)
 ```bash
-vaultaire update -pu LDAP_WriteAccess can_read yes
-👤 Permission Utilisateur : LDAP_WriteAccess
+vaultaire update -pu LDAP_AdminPanel auth all
+👤 Permission Utilisateur : LDAP_AdminPanel
 -------------------------------------------------------------
-ID: 3
-Description: Ecriture_dans_LDAP
-None: false
-Auth: true
-Compare: false
-Search: false
-Read: true
-Write: false
+ID: 9
+description: Accès_admin_LDAP
+none: nil
+auth: all
+compare: nil
+search: nil
+can_read: nil
+can_write: nil
+api_read_permission: nil
+api_write_permission: nil
+web_admin: nil
 -------------------------------------------------------------
 ```
+2. Bloquer tous les domaines (mode deny)
+```bash
+vaultaire update -pu LDAP_AdminPanel auth nil
+👤 Permission Utilisateur : LDAP_AdminPanel
+-------------------------------------------------------------
+ID: 9
+description: Accès_admin_LDAP
+none: nil
+auth: nil
+compare: nil
+search: nil
+can_read: nil
+can_write: nil
+api_read_permission: nil
+api_write_permission: nil
+web_admin: nil
+-------------------------------------------------------------
+```
+3. Ajouter un domaine sans propagation
+```bash
+vaultaire update -pu LDAP_AdminPanel auth -a 0 legacy.company.fr
+👤 Permission Utilisateur : LDAP_AdminPanel
+-------------------------------------------------------------
+ID: 9
+description: Accès_admin_LDAP
+none: nil
+auth: (0:legacy.company.fr)
+compare: nil
+search: nil
+can_read: nil
+can_write: nil
+api_read_permission: nil
+api_write_permission: nil
+web_admin: nil
+-------------------------------------------------------------
+```
+4. Ajouter un domaine avec propagation
+```bash
+vaultaire update -pu LDAP_AdminPanel auth -a 1 company.fr
+👤 Permission Utilisateur : LDAP_AdminPanel
+-------------------------------------------------------------
+ID: 9
+description: Accès_admin_LDAP
+none: nil
+auth: (1:company.fr)(0:legacy.company.fr)
+compare: nil
+search: nil
+can_read: nil
+can_write: nil
+api_read_permission: nil
+api_write_permission: nil
+web_admin: nil
+-------------------------------------------------------------
+```
+5. Retirer un domaine
+```bash
+vaultaire update -pu LDAP_AdminPanel auth -r 0 legacy.company.fr
+👤 Permission Utilisateur : LDAP_AdminPanel
+-------------------------------------------------------------
+ID: 9
+description: Accès_admin_LDAP
+none: nil
+auth: (1:company.fr)
+compare: nil
+search: nil
+can_read: nil
+can_write: nil
+api_read_permission: nil
+api_write_permission: nil
+web_admin: nil
+-------------------------------------------------------------
+```
+➡️ Retire legacy.company.fr des autorisations.  
+⚠️ Si aucun domaine ne reste après suppression → l’action repasse automatiquement en nil.
 
 # 👁️ `eyes`
 
-eyes est un module pour obtenir des inormation particuliere sur l'etat de votre controlleur de domaine
+eyes est un module pour obtenir des information particuliere sur l'etat de votre controlleur de domaine
 
 ## eyes -g
 

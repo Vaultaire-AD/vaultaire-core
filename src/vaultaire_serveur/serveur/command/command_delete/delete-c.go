@@ -3,34 +3,81 @@ package commanddelete
 import (
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 )
 
-// delete_Client_Command_Parser handles the deletion of a client by its computeur ID.
-// It expects a command list with the format: ["-c", "computeur_id"].
-// If the command is valid, it deletes the client and returns a success message.
-// If the command is invalid or an error occurs, it logs the error and returns an error message.
-func delete_Client_Command_Parser(command_list []string) string {
-	if len(command_list) == 2 {
-		if command_list[1] == "vaultaire" {
-			return (">> you cannot delete this user")
-		}
-		switch command_list[0] {
-		case "-c":
-			err := database.Command_DELETE_ClientWithComputeurID(database.GetDatabase(), command_list[1])
-			if err != nil {
-				logs.Write_Log("WARNING", "error during the deletion of the client "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			_, err = database.Command_GET_ClientByComputeurID(database.GetDatabase(), command_list[1])
-			if err != nil {
-				logs.Write_Log("WARNING", "error during the deletion of the client "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			logs.Write_Log("INFO", "client delete with succes with this ID : "+command_list[1])
-			return ("client is delete or never existing")
-		default:
-			return ("Invalid Request Try get -h for more information : " + command_list[0])
-		}
+// delete_Client_Command_Parser handles the deletion of a client by its computer ID.
+// Usage: delete -c <computer_id>
+func delete_Client_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	db := database.GetDatabase()
+
+	// 🔸 Vérification du format
+	if len(command_list) != 2 || command_list[0] != "-c" {
+		return "Requête invalide. Utilisez : delete -c <computer_id>"
 	}
-	return ("Invalid Request Try get -h for more information")
+
+	clientID := command_list[1]
+
+	// 🔸 Protection contre suppression critique
+	if clientID == "vaultaire" {
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s a tenté de supprimer le client protégé '%s'", sender_Username, clientID))
+		return ">> Suppression refusée : client 'vaultaire' protégé."
+	}
+
+	// 🔹 Étape 1 : Récupération du client
+	client, err := database.Command_GET_ClientByComputeurID(db, clientID)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération client %s : %v", clientID, err))
+		return fmt.Sprintf("Erreur récupération client %s : %v", clientID, err)
+	}
+
+	// 🔹 Étape 2 : Récupération des domaines associés à tous les groupes du client
+	var domains []string
+	for _, group := range client.Groups { // client.Groups est un slice de string
+		groupDomains, err := permission.GetDomainsFromGroupName(group)
+		if err != nil {
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s pour le client %s : %v", group, clientID, err))
+			return fmt.Sprintf("Erreur récupération domaines du client %s : %v", clientID, err)
+		}
+		domains = append(domains, groupDomains...)
+	}
+
+	// Optionnel : supprimer les doublons dans domains si besoin
+	uniqueDomains := make(map[string]struct{})
+	for _, d := range domains {
+		uniqueDomains[d] = struct{}{}
+	}
+	domains = make([]string, 0, len(uniqueDomains))
+	for d := range uniqueDomains {
+		domains = append(domains, d)
+	}
+
+	// 🔹 Étape 3 : Vérification des permissions sur les domaines liés
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"Suppression refusée : %s tente de supprimer le client %s (domaines : %v) — %s",
+			sender_Username, clientID, domains, reason,
+		))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	// 🔹 Étape 4 : Suppression du client
+	err = database.Command_DELETE_ClientWithComputeurID(db, clientID)
+	if err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Erreur suppression client %s : %v", clientID, err))
+		return fmt.Sprintf("Erreur lors de la suppression du client %s : %v", clientID, err)
+	}
+
+	// 🔹 Étape 5 : Vérification de suppression effective
+	_, err = database.Command_GET_ClientByComputeurID(db, clientID)
+	if err == nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Le client %s semble encore exister après suppression.", clientID))
+		return fmt.Sprintf("Le client %s semble encore exister après suppression.", clientID)
+	}
+
+	// 🔹 Étape 6 : Log succès
+	logs.Write_Log("INFO", fmt.Sprintf("Client '%s' supprimé avec succès par %s", clientID, sender_Username))
+	return fmt.Sprintf("Client '%s' supprimé avec succès.", clientID)
 }

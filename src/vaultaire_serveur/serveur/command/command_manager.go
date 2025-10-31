@@ -12,128 +12,144 @@ import (
 	commandupdate "DUCKY/serveur/command/command_update"
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
 	"fmt"
 	"net"
 	"strings"
 )
 
-// Fonction qui exécute une commande et retourne le résultat
-func ExecuteCommand(input string) string {
-	// Nettoyer et diviser la commande
-	print("Input: ", input)
-	command_list := splitArgsPreserveBlocks(input)
-	if len(command_list) == 0 {
+// Exécute une commande et retourne le résultat
+func ExecuteCommand(input, sender string) string {
+	input = strings.TrimSpace(input)
+	if input == "" {
 		return "Erreur : commande vide."
 	}
-	if len(command_list) == 1 {
-		command_list = append(command_list, "-h")
+
+	args := SplitArgsPreserveBlocks(input)
+	if len(args) == 0 {
+		return "Erreur : commande vide."
+	}
+	if len(args) == 1 {
+		args = append(args, "-h")
 	}
 
-	// Récupérer la commande principale et les arguments
-	command := command_list[0]
-	args := command_list[1:]
+	cmd, argv := args[0], args[1:]
 
-	// Buffer pour stocker la réponse
-	var response string
+	// Table de routage rapide
+	commandTable := map[string]struct {
+		perm   string
+		action func([]string, []int, string, string) string
+	}{
 
-	// Exécuter la commande
-	switch command {
-	case "status":
-		response = commandstatus.Status_Command(args)
-	case "clear":
-		err := database.CleanUpExpiredSessions(database.DB)
-		if err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors du nettoyage des sessions expirées : %v", err))
-			response = "Erreur lors du nettoyage des sessions expirées."
-			break
-		}
-		response = "Sessions expirées nettoyées."
-	case "create":
-		response = commandcreate.Create_Command(args)
-	case "get":
-		response = commandget.Get_Command(args)
-	case "add":
-		response = commandadd.Add_Command(args)
-	case "remove":
-		response = commandremove.Remove_Command(args)
-	case "delete":
-		response = commanddelete.Delete_Command(args)
-	case "update":
-		response = commandupdate.Update_Command(args)
-	case "eyes":
-		response = commandeyes.Eyes_Command(args)
-	case "dns":
-		response = commanddns.DNS_Command(args)
-	case "setup":
-	case "help":
-		response = "Liste des commandes disponibles :\n" +
-			"  create [OPTIONS] : crée une nouvelle entrée.\n" +
-			"  status [OPTIONS] : Vérifie l'état du serveur.\n" +
-			"  clear [OPTIONS]  : Nettoie les sessions.\n" +
-			"  help             : Affiche cette aide."
-	default:
-		response = fmt.Sprintf("Commande inconnue : %s. Tapez 'help' pour plus d'informations.", command)
+		"add":    {"api_write_permission", commandadd.Add_Command},
+		"remove": {"api_write_permission", commandremove.Remove_Command},
+		"update": {"api_write_permission", commandupdate.Update_Command},
+		"delete": {"api_write_permission", commanddelete.Delete_Command},
+		"dns":    {"api_write_permission", commanddns.DNS_Command},
+		"status": {"api_read_permission", commandstatus.Status_Command},
+		"create": {"api_write_permission", commandcreate.Create_Command},
+		"get":    {"api_read_permission", commandget.Get_Command},
+		"eyes":   {"api_write_permission", commandeyes.Eyes_Command},
 	}
 
-	return response
+	// Commande spéciale clear (plus rapide ici)
+	if cmd == "clear" {
+		return handleClear(sender)
+	}
+
+	// Commande help
+	if cmd == "help" {
+		return `Commandes disponibles :
+  create [OPTIONS] : crée une nouvelle entrée.
+  status [OPTIONS] : Vérifie l'état du serveur.
+  clear            : Nettoie les sessions.
+  help             : Affiche cette aide.`
+	}
+
+	// Recherche dans la table
+	entry, ok := commandTable[cmd]
+	if !ok {
+		return fmt.Sprintf("Commande inconnue : %s. Tapez 'help' pour plus d'informations.", cmd)
+	}
+
+	// Si aucune permission requise (ex: status)
+	if entry.perm == "" {
+		return entry.action(argv, nil, "", sender)
+	}
+
+	// Vérification des permissions
+	groupIDs, action, err := permission.PrePermissionCheck(sender, entry.perm)
+	if err != nil {
+		return "Erreur de permission : " + err.Error()
+	}
+
+	return entry.action(argv, groupIDs, action, sender)
 }
 
-// Fonction qui gère la communication avec les clients via le socket UNIX
+func handleClear(sender string) string {
+	groupIDs, action, err := permission.PrePermissionCheck(sender, "api_write_permission")
+	if err != nil {
+		return "Erreur de permission : " + err.Error()
+	}
+	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, action, []string{"*"})
+	if !ok {
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour %s : %s", sender, msg))
+		return "Permission refusée : " + msg
+	}
+	if err := database.CleanUpExpiredSessions(database.DB); err != nil {
+		logs.Write_Log("ERROR", "Erreur nettoyage sessions : "+err.Error())
+		return "Erreur lors du nettoyage des sessions expirées."
+	}
+	return "Sessions expirées nettoyées."
+}
+
+// Version optimisée : aucune copie de slice inutile
+func SplitArgsPreserveBlocks(input string) []string {
+	parts := strings.Fields(input)
+	if len(parts) == 0 {
+		return nil
+	}
+
+	res := make([]string, 0, len(parts))
+	for i := 0; i < len(parts); {
+		arg := parts[i]
+		if strings.HasPrefix(arg, "--") {
+			key := arg
+			i++
+			start := i
+			for i < len(parts) && !strings.HasPrefix(parts[i], "--") {
+				i++
+			}
+			res = append(res, key)
+			if i > start {
+				res = append(res, strings.Join(parts[start:i], " "))
+			}
+		} else {
+			res = append(res, arg)
+			i++
+		}
+	}
+	return res
+}
+
 func HandleClientCLI(conn net.Conn) {
 	defer func() {
 		if err := conn.Close(); err != nil {
-			// Handle or log the error
-			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur fermeture connexion : %v", err))
 		}
 	}()
 
 	buf := make([]byte, 1024)
 	n, err := conn.Read(buf)
 	if err != nil {
-		fmt.Println("Erreur lecture commande :", err)
+		fmt.Println("Erreur lecture :", err)
 		return
 	}
 
-	// Exécuter la commande et récupérer la réponse
 	command := strings.TrimSpace(string(buf[:n]))
-	result := ExecuteCommand(command)
+	result := ExecuteCommand(command, "vaultaire")
 
-	// Envoyer la réponse au client
-	_, err = conn.Write([]byte(result + "\n"))
-	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse au client : %v", err))
-		return
+	if _, err := conn.Write([]byte(result + "\n")); err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Erreur envoi client : %v", err))
 	}
-}
-
-func splitArgsPreserveBlocks(input string) []string {
-	args := strings.Fields(input)
-	var result []string
-
-	i := 0
-	for i < len(args) {
-		arg := args[i]
-
-		if strings.HasPrefix(arg, "--") {
-			// Début d’un nouveau bloc
-			key := arg
-			i++
-
-			var valueParts []string
-			// Lire tous les arguments jusqu’au prochain -- ou fin
-			for i < len(args) && !strings.HasPrefix(args[i], "--") {
-				valueParts = append(valueParts, args[i])
-				i++
-			}
-
-			result = append(result, key)
-			result = append(result, strings.Join(valueParts, " "))
-		} else {
-			// Cas des options hors -- (ex: -gpo update)
-			result = append(result, arg)
-			i++
-		}
-	}
-
-	return result
 }

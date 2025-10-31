@@ -1,4 +1,4 @@
-package database
+package db_permission
 
 import (
 	"DUCKY/serveur/logs"
@@ -23,15 +23,21 @@ func CreateClientPermission(db *sql.DB, permissionName string, isAdmin bool) (in
 }
 
 func CreateUserPermissionDefault(db *sql.DB, name, description string) (int64, error) {
-	return CreateUserPermission(db, name, description, false, true, false, false, false, false, false)
+	return CreateUserPermission(db, name, description, "nil", "nil", "nil", "nil", "nil", "nil", "nil", "nil", "nil")
 }
 
-// Création d'une permission utilisateur dans user_permission (LDAP)
-func CreateUserPermission(db *sql.DB, name, description string, none, web_admin, auth, compare, search, canRead, canWrite bool) (int64, error) {
+// Création d'une permission utilisateur dans user_permission (LDAP, nouveau modèle TEXT)
+func CreateUserPermission(db *sql.DB, name, description string, none, web_admin, auth, compare, search, canRead, canWrite, apiRead, apiWrite string) (int64, error) {
 	result, err := db.Exec(`
-		INSERT INTO user_permission (name, description, none, web_admin, auth, compare, search, can_read, can_write)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		name, description, none, web_admin, auth, compare, search, canRead, canWrite)
+		INSERT INTO user_permission (
+			name, description,
+			none, web_admin, auth, compare, search,
+			can_read, can_write, api_read_permission, api_write_permission
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		name, description,
+		none, web_admin, auth, compare, search,
+		canRead, canWrite, apiRead, apiWrite,
+	)
 	if err != nil {
 		logs.WriteLog("db", "erreur lors de l'insertion de la permission utilisateur CreateUserPermission : "+err.Error())
 		return 0, fmt.Errorf("erreur lors de l'insertion de la permission utilisateur : %v", err)

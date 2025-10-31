@@ -5,63 +5,80 @@ import (
 	"DUCKY/serveur/database"
 	dbuser "DUCKY/serveur/database/db-user"
 	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"DUCKY/serveur/permission"
 	"fmt"
 	"strings"
 )
 
-// add_User_Command_Parser handles the addition of a user to a group.
-// It expects a command list with the format: ["add", "username", "-g", "group_name"].
-// If the command is valid, it adds the user to the group and returns the updated user information.
-// If the command is invalid or an error occurs, it logs the error and returns an error message.
-func add_User_Command_Parser(command_list []string) string {
-	fmt.Println(len(command_list))
-	if len(command_list) == 4 {
-		switch command_list[2] {
-		case "-g":
-			err := database.Command_ADD_UserToGroup(database.GetDatabase(), command_list[1], command_list[3])
-			if err != nil {
-				logs.Write_Log("WARNING", "Error for add group "+command_list[3]+" to user : "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			user, err := database.Command_GET_UserInfo(database.GetDatabase(), command_list[1])
-			if err != nil {
-				logs.Write_Log("WARNING", "Error for get user by name "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			logs.Write_Log("INFO", "Add group : "+command_list[3]+" to user : "+command_list[1])
-			return display.DisplayUsersInfoByName(user)
-		default:
-			return ("\nMiss Argument get -h for more information or consult man on the wiki")
-		}
+func add_User_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	if len(command_list) < 4 {
+		return "\nMissing arguments: use get -h for more information or consult the wiki"
 	}
-	if command_list[2] == "-k" {
-		userId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(command_list[1]))
+
+	username := command_list[1]
+	argType := command_list[2]
+
+	// 🔹 Étape 1 : Récupération des groupes/domaines de l'utilisateur cible (si existant)
+	domains, err := permission.GetDomainListFromUsername(username)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err))
+		return fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err)
+	}
+
+	// 🔹 Étape 2 : Vérification des permissions
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter %s (domaines : %v) — %s",
+			sender_Username, username, domains, reason))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	switch argType {
+	case "-g":
+		groupName := command_list[3]
+		err := database.Command_ADD_UserToGroup(database.GetDatabase(), username, groupName)
 		if err != nil {
-			logs.Write_Log("WARNING", "error during the get of the userid "+command_list[2]+" : "+err.Error())
-			return (">> -" + err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout %s au groupe %s : %v", username, groupName, err))
+			return ">> -" + err.Error()
+		}
+		userInfo, err := database.Command_GET_UserInfo(database.GetDatabase(), username)
+		if err != nil {
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération info utilisateur %s : %v", username, err))
+			return ">> -" + err.Error()
+		}
+		logs.Write_Log("INFO", fmt.Sprintf("Utilisateur %s ajouté au groupe %s", username, groupName))
+		return display.DisplayUsersInfoByName(userInfo)
+
+	case "-k":
+		if len(command_list) < 5 {
+			return ">> -Missing argument: label or key is empty. Usage: vlt add user <username> -k <label> <key>"
+		}
+		userId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
+		if err != nil {
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération ID utilisateur %s : %v", username, err))
+			return ">> -" + err.Error()
 		}
 		pubkey := strings.Join(command_list[4:], " ")
 		if pubkey == "" || command_list[3] == "" {
-			return (">> -Miss argument : label or key is empty vlt add user <username> -k <label> <key> ")
+			return ">> -Missing argument: label or key is empty. Usage: vlt add user <username> -k <label> <key>"
 		}
-		// Vérifier que le contenu ressemble à une clé publique SSH
 		if !strings.HasPrefix(pubkey, "ssh-rsa") && !strings.HasPrefix(pubkey, "ssh-ed25519") {
-			return (">> -The key must start with 'ssh-rsa' or 'ssh-ed25519'")
+			return ">> -The key must start with 'ssh-rsa' or 'ssh-ed25519'"
 		}
 		err = dbuser.AddUserKey(userId, pubkey, command_list[3])
 		if err != nil {
-			logs.Write_Log("WARNING", "error during the add of the public key to the user "+command_list[2]+" : "+err.Error())
-			return (">> -" + err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout clé publique à %s : %v", username, err))
+			return ">> -" + err.Error()
 		}
-		logs.Write_Log("INFO", "Add public key to user : "+command_list[1])
-		pubKeys := []storage.PublicKey{}
-		pubKeys, err = dbuser.GetUserKeys(userId)
+		logs.Write_Log("INFO", fmt.Sprintf("Clé publique ajoutée à %s", username))
+		pubKeys, err := dbuser.GetUserKeys(userId)
 		if err != nil || len(pubKeys) == 0 {
-			logs.Write_Log("WARNING", "error during the get of the public key of the user "+command_list[2]+" : "+err.Error())
-			return (">> -No public key found for this user")
+			logs.Write_Log("WARNING", fmt.Sprintf("Aucune clé publique trouvée pour %s : %v", username, err))
+			return ">> -No public key found for this user"
 		}
-		return display.DisplayUserPublicKeys(command_list[2], pubKeys)
+		return display.DisplayUserPublicKeys(username, pubKeys)
+
+	default:
+		return "\nMissing arguments: use get -h for more information or consult the wiki"
 	}
-	return ("\nMiss Argument get -h for more information or consult man on the wiki")
 }

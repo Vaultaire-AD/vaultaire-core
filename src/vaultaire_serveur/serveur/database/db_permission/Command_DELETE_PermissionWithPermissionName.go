@@ -1,6 +1,7 @@
-package database
+package db_permission
 
 import (
+	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 
 // Supprime une permission via son nom
 func Command_DELETE_ClientPermissionByName(db *sql.DB, permissionName string) error {
-	injection := SanitizeInput(permissionName)
+	injection := database.SanitizeInput(permissionName)
 	if injection != nil {
 		return injection
 	}
@@ -23,7 +24,7 @@ func Command_DELETE_ClientPermissionByName(db *sql.DB, permissionName string) er
 }
 
 func Command_DELETE_UserPermissionByName(db *sql.DB, permissionName string) error {
-	injection := SanitizeInput(permissionName)
+	injection := database.SanitizeInput(permissionName)
 	if injection != nil {
 		return injection
 	}

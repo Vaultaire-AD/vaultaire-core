@@ -6,18 +6,18 @@ import (
 	"DUCKY/serveur/logs"
 )
 
-func Remove_Command(command_list []string) string {
+func Remove_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return ("LOOK MAN")
 	case "-u":
-		return remove_User_Command_Parser(command_list)
+		return remove_User_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	case "-c":
-		return remove_Client_Command_Parser(command_list)
+		return remove_Client_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	case "-g":
-		return remove_Group_Command_Parser(command_list)
+		return remove_Group_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	case "-gpo":
-		return remove_GPO_Command_Parser(command_list)
+		return remove_GPO_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	default:
 		return ("LOOK MAN")
 	}

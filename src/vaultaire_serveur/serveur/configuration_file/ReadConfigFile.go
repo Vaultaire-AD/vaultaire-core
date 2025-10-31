@@ -117,6 +117,12 @@ func LoadConfig(filePath string) error {
 	if config.Api.API_Port != 0 {
 		storage.API_Port = config.Api.API_Port
 	}
+	if config.Debug.Debug {
+		storage.Debug = config.Debug.Debug
+	}
+	if config.Path.ServerCheckOnlineTimer != 0 {
+		storage.ServerCheckOnlineTimer = config.Path.ServerCheckOnlineTimer
+	}
 	// Retourner la configuration lue
 	return nil
 }
