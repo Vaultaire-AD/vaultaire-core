@@ -4,31 +4,50 @@ import (
 	"DUCKY/serveur/command/display"
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 )
 
-// add_Client_Command_Parser handles the addition of a software to a client group.
-// It expects a command list with the format: ["add", "client_id", "-g", "group_name"].
-// If the command is valid, it adds the software to the group and returns the updated software information.
-// If the command is invalid or an error occurs, it logs the error and returns an error message.
-func add_Client_Command_Parser(command_list []string) string {
-	if len(command_list) == 4 {
-		switch command_list[2] {
-		case "-g":
-			err := database.Command_ADD_SoftwareToGroup(database.GetDatabase(), command_list[1], command_list[3])
-			if err != nil {
-				logs.Write_Log("WARNING", "Error for add group "+command_list[3]+" to software : "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			user, err := database.Command_GET_ClientByComputeurID(database.GetDatabase(), command_list[1])
-			if err != nil {
-				logs.Write_Log("WARNING", "Error for get client by id "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			logs.Write_Log("INFO", "Add group to software : "+command_list[3]+" for client : "+command_list[1])
-			return display.DisplaySoftware(user)
-		default:
-			return ("\nMiss Argument get -h for more information or consult man on the wiki")
-		}
+// add_Client_Command_Parser handles the addition of a client to a group with permission checks.
+func add_Client_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	if len(command_list) != 4 {
+		return "\nMiss Argument get -h for more information or consult man on the wiki"
 	}
-	return ("\nMiss Argument get -h for more information or consult man on the wiki")
+
+	clientID := command_list[1]
+	groupName := command_list[3]
+
+	// 🔹 Étape 1 : Récupération des domaines associés au groupe cible
+	domains, err := permission.GetDomainsFromGroupName(groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err))
+		return fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err)
+	}
+
+	// 🔹 Étape 2 : Vérification des permissions sur les domaines
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter le client %s au groupe %s (domaines : %v) — %s",
+			sender_Username, clientID, groupName, domains, reason))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	// 🔹 Étape 3 : Ajout du client au groupe
+	switch command_list[2] {
+	case "-g":
+		err := database.Command_ADD_SoftwareToGroup(database.GetDatabase(), clientID, groupName)
+		if err != nil {
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout du client %s au groupe %s : %v", clientID, groupName, err))
+			return ">> -" + err.Error()
+		}
+		client, err := database.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
+		if err != nil {
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération client %s : %v", clientID, err))
+			return ">> -" + err.Error()
+		}
+		logs.Write_Log("INFO", fmt.Sprintf("Client %s ajouté au groupe %s avec succès", clientID, groupName))
+		return display.DisplaySoftware(client)
+	default:
+		return "\nMiss Argument get -h for more information or consult man on the wiki"
+	}
 }

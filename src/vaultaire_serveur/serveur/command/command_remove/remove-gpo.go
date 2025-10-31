@@ -3,22 +3,41 @@ package commandremove
 import (
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 )
 
-func remove_GPO_Command_Parser(command_list []string) string {
-	if len(command_list) == 4 {
-		switch command_list[0] {
-		case "-gpo":
-			err := database.Command_REMOVE_GPOFromGroup(database.GetDatabase(), command_list[1], command_list[3])
-			if err != nil {
-				logs.Write_Log("WARNING", "error during the removal of the GPO "+command_list[1]+" From "+command_list[3]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			logs.Write_Log("INFO", "GPO "+command_list[1]+" removed from group "+command_list[3])
-			return post_displayGroupInfo(command_list[3])
-		default:
-			return ("Invalid Request Try remove -gpo gpo_name -g group_name or get -h for more information : " + command_list[0])
-		}
+// remove_GPO_Command_Parser gère la suppression d’un GPO d’un groupe
+func remove_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	if len(command_list) != 4 || command_list[0] != "-gpo" || command_list[2] != "-g" {
+		return "Invalid Request. Try remove -gpo gpo_name -g group_name or get -h for more information"
 	}
-	return ("Invalid Request Try get -h for more information")
+
+	gpoName := command_list[1]
+	groupName := command_list[3]
+
+	// 🔹 Étape 1 : Récupération des domaines associés au groupe
+	domains, err := permission.GetDomainsFromGroupName(groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err))
+		return fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err)
+	}
+
+	// 🔹 Étape 2 : Vérification des permissions du sender sur ces domaines
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de retirer GPO %s du groupe %s (domaines : %v) — %s",
+			sender_Username, gpoName, groupName, domains, reason))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	// 🔹 Étape 3 : Suppression du GPO du groupe
+	err = database.Command_REMOVE_GPOFromGroup(database.GetDatabase(), gpoName, groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur suppression du GPO %s du groupe %s : %v", gpoName, groupName, err))
+		return ">> -" + err.Error()
+	}
+
+	logs.Write_Log("INFO", fmt.Sprintf("GPO %s retiré du groupe %s avec succès", gpoName, groupName))
+	return post_displayGroupInfo(groupName)
 }
