@@ -1,37 +1,10 @@
+version: "3.9"
+
 networks:
   Ducky-network:
     driver: bridge
-    
-services:
-  vaultaire_AD:
-    image: rockylinux:9
-    restart: unless-stopped
-    container_name: vaultaire
-    privileged: true
-    working_dir: /opt/vaultaire
-    depends_on:
-      - vaultaire-db
-    environment:
-      - TZ=Europe/Paris
-    volumes:
-      - ./cmd/vaultaire_server/vaultaire_serveur:/opt/vaultaire/vaultaire_serveur
-      - ./cmd/vaultaire_server/vaultaire_cli:/opt/vaultaire/vaultaire_cli
-      - ./cmd/vaultaire_client/vaultaire_client:/opt/vaultaire/vaultaire_client
-      - ./web_packet:/opt/vaultaire/web_packet
-      - ./automatisation:/opt/vaultaire/automatisation
-      - ./deployements/prod/dockerautocreate.sh:/opt/vaultaire/dockerautocreate.sh
-      - ./deployements/configs/serveur_conf.yaml:/opt/vaultaire/serveur_conf.yaml
-      - ./database:/var/lib/mysql
-    ports:
-      - 666:666
-      - 443:443
-      - 389:389
-      - 636:636
-      - 8456:53/udp # DNS to be used by Vaultaire
-    command: ["/bin/sh", "-c","mkdir -p /opt/vaultaire/.ssh && chmod +x /opt/vaultaire/dockerautocreate.sh && chmod +x /opt/vaultaire/vaultaire_serveur && /opt/vaultaire/vaultaire_serveur & tail -f /dev/null"]
-    networks:
-      - Ducky-network
 
+services:
   vaultaire-db:
     image: mariadb:latest
     container_name: vaultaire-db
@@ -41,8 +14,29 @@ services:
       - MARIADB_DATABASE=vaultaire
       - TZ=Europe/Paris
     volumes:
-      - ./database/:/var/lib/mysql/
+      - ./database:/var/lib/mysql
     ports:
-      - 3306:3306
+      - "3306:3306"
+    networks:
+      - Ducky-network
+
+  vaultaire_AD:
+    build:
+      context: .
+      dockerfile: ./deployements/prod/Dockerfile
+    container_name: vaultaire
+    restart: unless-stopped
+    depends_on:
+      - vaultaire-db
+    environment:
+      - TZ=Europe/Paris
+    volumes:
+      - ./database:/var/lib/mysql
+    ports:
+      - "666:666"
+      - "443:443"
+      - "389:389"
+      - "636:636"
+      - "8456:53/udp"
     networks:
       - Ducky-network
