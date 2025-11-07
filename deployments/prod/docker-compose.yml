@@ -23,7 +23,7 @@ services:
   vaultaire_AD:
     build:
       context: .
-      dockerfile: ./deployements/prod/Dockerfile
+      dockerfile: deployements/prod/Dockerfile
     container_name: vaultaire
     restart: unless-stopped
     depends_on:
