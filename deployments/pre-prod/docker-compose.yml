@@ -1,9 +1,9 @@
-version: "3.9"
-
 networks:
   Ducky-network:
     driver: bridge
-
+volumes:
+  vaultaire_db_data:
+  
 services:
   vaultaire-db:
     image: mariadb:latest
