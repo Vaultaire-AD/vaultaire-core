@@ -14,7 +14,7 @@ services:
       - MARIADB_DATABASE=vaultaire
       - TZ=Europe/Paris
     volumes:
-      - ./database:/var/lib/mysql
+      - vaultaire_db_data:/var/lib/mysql
     ports:
       - "3306:3306"
     networks:
