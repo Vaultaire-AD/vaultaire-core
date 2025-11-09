@@ -33,5 +33,6 @@ services:
       - "443:443"
       - "389:389"
       - "636:636"
+      - "6643:6643"
     networks:
       - Ducky-network
