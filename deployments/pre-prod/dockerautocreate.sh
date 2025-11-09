@@ -16,4 +16,16 @@
 # Associer cette permission au groupe d’administration
 /opt/vaultaire/vaultaire_cli add -gu Administration_Group -p Vaultaire_Global_Admin
 
+
+/opt/vaultaire/vaultaire_cli update -p -u Vaultaire_Global_Admin auth all
+
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin auth all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin compare all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin search all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin can_read all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin can_write all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin api_read_permission all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin api_write_permission all
+/opt/vaultaire/vaultaire_cli update -pu Vaultaire_Global_Admin web_admin all
+   
 echo "✅ Utilisateur 'adm-lviguie' créé avec droits * complets dans administration.vaultaire.local"
