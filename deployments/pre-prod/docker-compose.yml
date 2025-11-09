@@ -21,7 +21,7 @@ services:
       - Ducky-network
 
   vaultaire-ad:
-    image: localhost/vaultaire-core:latest
+    image: localhost/vaultaire-ad:latest
     container_name: vaultaire
     restart: unless-stopped
     depends_on:
