@@ -82,6 +82,12 @@ function delete_branch() {
     echo "✅ Branche '$branch_to_delete' supprimée localement et sur le remote."
 }
 
+function update_image {
+    podman build -f deployments/pre-prod/Dockerfile -t vaultaire-ad:latest .
+    podman tag localhost/vaultaire-ad:latest 192.168.1.73:5000/vaultaire-ad:latest
+    podman push --tls-verify=false 192.168.1.73:5000/vaultaire-ad:latest
+}
+
 while true; do
     echo ""
     echo "===== 🚀 Git Manager ====="
@@ -91,6 +97,7 @@ while true; do
     echo "3) Crée une Pull Request"
     echo "4) Supprimer une branche"
     echo "5) Quitter"
+    echo "6) Update Image"
     read -rp "Choisissez une option : " choice
 
     case "$choice" in
@@ -99,6 +106,7 @@ while true; do
         3) pull_request_branch ;;
         4) delete_branch ;;
         5) exit 0 ;;
+        6) update_image;;
         *) echo "❌ Option invalide" ;;
     esac
 done

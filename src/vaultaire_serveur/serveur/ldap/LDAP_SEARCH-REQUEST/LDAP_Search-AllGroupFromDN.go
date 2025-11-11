@@ -6,39 +6,74 @@ import (
 	"DUCKY/serveur/logs"
 	"fmt"
 	"net"
+	"strings"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
 // SearchAllUsersFromGroups récupère tous les utilisateurs via les groupes sous un domaine
-func SearchGroupsForCNUsers(conn net.Conn, messageID int, baseDomain string) {
-	logs.Write_Log("INFO", fmt.Sprintf("Handling SearchGroupsForCNUsers for domain: %s", baseDomain))
+// SearchGroupsForCNUsers récupère les groupes LDAP sous un domaine selon le scope
+func SearchGroupsForCNUsers(conn net.Conn, messageID int, baseDomain string, scope int) {
+	logs.Write_Log("INFO", fmt.Sprintf("Handling SearchGroupsForCNUsers for domain: %s (scope=%d)", baseDomain, scope))
 
-	// 1️⃣ Récupérer tous les groupes sous le domaine
-	groups, err := domain.GetGroupsUnderDomain(baseDomain, database.GetDatabase())
-	if err != nil {
-		logs.Write_Log("WARNING", "Erreur récupération des groupes : "+err.Error())
-		_ = SendLDAPSearchFailure(conn, messageID, "Erreur interne lors de la récupération des groupes")
+	var groups []string
+	var err error
+
+	switch scope {
+	case 0: // baseObject → retourne uniquement le domaine lui-même
+		logs.Write_Log("DEBUG", "Scope = baseObject : returning only the base domain")
+		groups = []string{baseDomain}
+
+	case 1: // singleLevel → uniquement les groupes directement sous le domaine
+		logs.Write_Log("DEBUG", "Scope = singleLevel : retrieving direct child groups")
+		groups, err = domain.GetDirectGroupsDomainUnderDomain(baseDomain, database.GetDatabase())
+		if err != nil {
+			logs.Write_Log("ERROR", "Erreur récupération des groupes directs : "+err.Error())
+			_ = SendLDAPSearchFailure(conn, messageID, "Erreur interne lors de la récupération des groupes")
+			return
+		}
+
+	case 2: // wholeSubtree → tous les groupes récursivement
+		logs.Write_Log("DEBUG", "Scope = wholeSubtree : retrieving all groups recursively")
+		groups, err = domain.GetAllGroupsDomainsUnderDomain(baseDomain, database.GetDatabase())
+		if err != nil {
+			logs.Write_Log("ERROR", "Erreur récupération des groupes récursifs : "+err.Error())
+			_ = SendLDAPSearchFailure(conn, messageID, "Erreur interne lors de la récupération des groupes")
+			return
+		}
+
+	default:
+		logs.Write_Log("WARNING", fmt.Sprintf("Unknown scope value: %d", scope))
+		_ = SendLDAPSearchFailure(conn, messageID, fmt.Sprintf("Invalid scope value: %d", scope))
 		return
 	}
+
 	if len(groups) == 0 {
 		logs.Write_Log("INFO", "Aucun groupe trouvé sous le domaine "+baseDomain)
 		_ = SendLDAPSearchFailure(conn, messageID, "Aucun groupe trouvé sous le domaine")
 		return
 	}
 
-	// 2️⃣ Préparer la réponse LDAP pour chaque groupe
+	// Préparer les entrées LDAP
 	var responses []map[string]string
 	for _, g := range groups {
+		// g.GroupName n'est pas utilisé ici, seulement g.DomainName pour le DN
+		domainParts := strings.Split(g, ".")
+		dnParts := ""
+		for _, part := range domainParts {
+			dnParts += fmt.Sprintf("dc=%s,", part)
+		}
+		dnParts = strings.TrimSuffix(dnParts, ",") // retirer la dernière virgule
+
 		responses = append(responses, map[string]string{
-			"cn":          g,
+			"dn":          dnParts,
 			"objectClass": "groupOfNames",
 		})
 	}
 
-	logs.Write_Log("INFO", fmt.Sprintf("Found %d groups under domain %s", len(responses), baseDomain))
+	logs.Write_Log("INFO", fmt.Sprintf("Found %d groups (scope=%d) under domain %s", len(responses), scope, baseDomain))
 
-	// 3️⃣ Envoyer les groupes au client
+	// Envoyer les groupes au client LDAP
 	SendGroupSearchRequest(conn, messageID, responses)
 }
 
@@ -51,15 +86,11 @@ func SendGroupSearchRequest(conn net.Conn, messageID int, groups []map[string]st
 	}
 
 	for _, group := range groups {
-		groupName := group["cn"]
-		logs.Write_Log("DEBUG", fmt.Sprintf("Sending group '%s' to %s", groupName, conn.RemoteAddr().String()))
+		dn := group["dn"] // <- utiliser le DN déjà préparé
+		logs.Write_Log("DEBUG", fmt.Sprintf("Sending group with DN '%s' to %s", dn, conn.RemoteAddr().String()))
 
-		dn := fmt.Sprintf("cn=%s,dc=%s", groupName, group["dc"]) // adapte si besoin
-
-		// ✅ Convert map[string]string -> map[string][]string
-		attrs := make(map[string][]string)
-		for k, v := range group {
-			attrs[k] = []string{v}
+		attrs := map[string][]string{
+			"objectClass": {group["objectClass"]},
 		}
 
 		entry := buildSearchEntryPacket(dn, attrs)
@@ -74,12 +105,11 @@ func SendGroupSearchRequest(conn net.Conn, messageID int, groups []map[string]st
 
 		_, err := conn.Write(packet.Bytes())
 		if err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("Failed to write SearchResultEntry for group '%s': %v", groupName, err))
+			logs.Write_Log("ERROR", fmt.Sprintf("Failed to write SearchResultEntry for DN '%s': %v", dn, err))
 			continue
 		}
 	}
 
-	// Envoi final du SearchResultDone
 	sendLDAPSearchResultDone(conn, messageID)
 }
 

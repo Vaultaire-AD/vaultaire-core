@@ -141,7 +141,7 @@ func PrepareUserResponses(users []ldapstorage.User, requestedAttrs []string) []m
 	return responses
 }
 
-func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []string, filtres []ldapstorage.EqualityFilter) {
+func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []string, filtres []ldapstorage.EqualityFilter, scope int) {
 	// ici c'est pour les recherche sur 1 user precies
 
 	uidFound := false

@@ -15,7 +15,7 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
-func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, filtres []ldapstorage.EqualityFilter, baseObject string) {
+func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, filtres []ldapstorage.EqualityFilter, baseObject string, scope int) {
 
 	if filtres[0].Attribute == "cn" {
 		//ici on cherche a recup les user present dans 1 groupe
