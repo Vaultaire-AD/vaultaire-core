@@ -13,7 +13,7 @@ file-path:
 ldap:
   ldap_enable: true
   ldaps_enable: true
-  ldap_debug: false
+  ldap_debug: true
   ldap_port: 389
   ldaps_port: 636
 

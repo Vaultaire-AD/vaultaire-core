@@ -49,7 +49,7 @@ func Write_Log(level string, content string) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
 	// Formatte la ligne à écrire [date/heure niveau contenu]
-	logLine := fmt.Sprintf("%s [%s] %s\n", timestamp, level, content)
+	logLine := fmt.Sprintf("%s [%s] %s", timestamp, level, content)
 
 	// Affiche dans la console
 	if err := Print_Log(logLine); err != nil {

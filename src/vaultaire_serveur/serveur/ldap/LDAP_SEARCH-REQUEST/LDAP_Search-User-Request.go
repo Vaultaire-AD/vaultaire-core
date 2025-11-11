@@ -102,14 +102,14 @@ func buildSearchEntryPacket(dn string, attributes map[string][]string) *ber.Pack
 func PrepareUserResponse(user ldapstorage.User, requestedAttrs []string) map[string]string {
 	userMap := make(map[string]string)
 
+	// Toujours mettre uid et cn
+	userMap["uid"] = user.Username
+	userMap["cn"] = user.Firstname
+	userMap["sn"] = user.Lastname
+
+	// Ensuite ajouter les attributs demandés
 	for _, attr := range requestedAttrs {
 		switch strings.ToLower(attr) {
-		case "uid":
-			userMap["uid"] = user.Username
-		case "cn":
-			userMap["cn"] = user.Firstname
-		case "sn":
-			userMap["sn"] = user.Lastname
 		case "mail":
 			userMap["mail"] = user.Email
 		case "entryuuid":
