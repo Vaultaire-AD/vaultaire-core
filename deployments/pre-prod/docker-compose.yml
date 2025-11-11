@@ -1,9 +1,9 @@
-version: "3.9"
-
 networks:
   Ducky-network:
     driver: bridge
-
+volumes:
+  vaultaire_db_data:
+  
 services:
   vaultaire-db:
     image: mariadb:latest
@@ -14,14 +14,14 @@ services:
       - MARIADB_DATABASE=vaultaire
       - TZ=Europe/Paris
     volumes:
-      - ./database:/var/lib/mysql
+      - vaultaire_db_data:/var/lib/mysql
     ports:
       - "3306:3306"
     networks:
       - Ducky-network
 
   vaultaire-ad:
-    image: localhost/vaultaire-core:latest
+    image: localhost/vaultaire-ad:latest
     container_name: vaultaire
     restart: unless-stopped
     depends_on:
@@ -33,5 +33,6 @@ services:
       - "443:443"
       - "389:389"
       - "636:636"
+      - "6643:6643"
     networks:
       - Ducky-network
