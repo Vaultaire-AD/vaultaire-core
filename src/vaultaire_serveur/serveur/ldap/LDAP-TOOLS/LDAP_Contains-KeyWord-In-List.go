@@ -35,6 +35,12 @@ func DetectKeywordCategories(filters []ldapstorage.EqualityFilter, keywordMap ma
 		if attr == "member" {
 			found["group"] = true
 		}
+		for _, kw := range keywordMap["user"] {
+			if value == strings.ToLower(kw) {
+				found["user"] = true
+				break
+			}
+		}
 
 	}
 
