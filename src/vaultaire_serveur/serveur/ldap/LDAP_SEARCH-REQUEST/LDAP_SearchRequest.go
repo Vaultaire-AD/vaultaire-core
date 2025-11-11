@@ -62,8 +62,8 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		return
 	} else {
 		keywordMap := map[string][]string{
-			"user":  {"user", "person", "inetorgperson", "posixaccount"},
-			"group": {"group", "groupofnames", "groupofuniquenames"},
+			"user":  {"user", "users", "person", "inetorgperson", "posixaccount"},
+			"group": {"group", "groups", "groupofnames", "groupofuniquenames"},
 		}
 
 		foundCategories := ldaptools.DetectKeywordCategories(filters, keywordMap)
