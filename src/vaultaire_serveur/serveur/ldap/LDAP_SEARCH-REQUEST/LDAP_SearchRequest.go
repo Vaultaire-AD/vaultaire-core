@@ -62,7 +62,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		return
 	} else {
 		keywordMap := map[string][]string{
-			"user":  {"user", "users", "person", "inetorgperson", "posixaccount"},
+			"user":  {"user", "users", "Users", "person", "inetorgperson", "posixaccount"},
 			"group": {"group", "groups", "groupofnames", "groupofuniquenames"},
 		}
 
