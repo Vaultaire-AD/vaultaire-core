@@ -12,8 +12,9 @@ import (
 )
 
 type Response struct {
-	Status  string `json:"status"`
-	IsAdmin bool   `json:"is_admin"` // Ce champ sera ignoré si false/non défini
+	Status   string   `json:"status"`
+	IsAdmin  bool     `json:"is_admin"` // Ce champ sera ignoré si false/non défini
+	Ssh_keys []string `json:"ssh_keys"`
 }
 
 // Fonction pour gérer l'authentification
