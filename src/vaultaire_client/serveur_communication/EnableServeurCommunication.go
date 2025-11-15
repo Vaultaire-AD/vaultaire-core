@@ -19,7 +19,7 @@ func HaveServeurKey() bool {
 	return !os.IsNotExist(privateErr)
 }
 
-func EnableServerCommunication(user, pass string) {
+func EnableServerCommunication(user, pass, sshUser string) {
 	fmt.Printf("Launching Vaultaire_Client_Network: %s\n", user)
 	if user == "vaultaire" {
 		for {
@@ -45,7 +45,9 @@ func EnableServerCommunication(user, pass string) {
 
 			// Lance l'authentification (si c'est bloquant, c'est ok)
 			userauth.AskAuthentification(user, pass, conn, sessionIntegritykey)
+			if sshUser != "" {
 
+			}
 			// Attendre que la connexion soit terminée avant de continuer
 			<-done
 			fmt.Println("Connexion terminée, nouvelle tentative dans 30 secondes...")

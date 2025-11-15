@@ -48,6 +48,8 @@ func handleUnixSocketConnection(conn net.Conn) {
 		// Traitement de la commande de fermeture
 		handleCloseRequest(conn, string(close))
 
+	} else if check, exists := message["check"]; exists {
+		handleCheckRequest(conn, string(check))
 	} else {
 		log.Printf("Commande inconnue reçue: %v", message)
 	}

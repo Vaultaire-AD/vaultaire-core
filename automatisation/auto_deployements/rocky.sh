@@ -16,8 +16,10 @@ chmod 700 -R /opt/vaultaire_client/
 chmod 400 -R /opt/vaultaire_client/.ssh/*
 chmod 644 /usr/lib64/security/pam_login_custom_module.so
 chmod 644 /usr/lib64/security/pam_logout_custom_module.so
+chmod 644 /usr/lib64/security/pam_ssh_auth_module.so
 chown root:root /usr/lib64/security/pam_login_custom_module.so
 chown root:root /usr/lib64/security/pam_logout_custom_module.so
+chown root:root /usr/lib64/security/pam_ssh_auth_module.so
 
 # Service systemd
 cat > /etc/systemd/system/vaultaire_client.service <<'EOF'
@@ -112,11 +114,33 @@ session    required      pam_limits.so
 -session   optional      pam_systemd.so
 EOF
 
+cat > /etc/pam.d/sshd <<'EOF'
+#%PAM-1.0
+# --- AUTHENTICATION ---
+# TON MODULE SSH CUSTOM (exécuté AVANT l'auth par clé)
+auth     required    pam_ssh_auth_module.so
+# Auth standard (fallback si ton module accepte l’utilisateur)
+auth     include     system-auth
+# --- ACCOUNT MANAGEMENT ---
+account  include     system-auth
+# --- PASSWORD MGMT ---
+password include     system-auth
+# --- SESSION ---
+# pam_selinux.so close doit TOUJOURS être avant le session stack
+session  required    pam_selinux.so close
+session  required    pam_login_custom_module.so
+session  include     system-auth
+session  required    pam_logout_custom_module.so
+# pam_selinux.so open doit être exécuté en dernier
+session  required    pam_selinux.so open
+EOF
+
 # Permissions PAM
 chmod 644 /etc/pam.d/*
 
 # Activation du service
 systemctl daemon-reload
+systemctl relaod sshd
 systemctl enable vaultaire_client.service
 systemctl start vaultaire_client.service
 

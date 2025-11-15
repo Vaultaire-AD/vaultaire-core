@@ -22,10 +22,10 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Con
 		println("Send Proof of work for identification :", trames_content.Content)
 		return "02_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\n" + trames_content.Content
 	case "04":
-		//("02_04\nserveur_central\n" + strconv.FormatBool(admin) + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
+		//("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + publicKeys + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
 		lines := strings.Split(trames_content.Content, "\n")
 		trames_content.Username = lines[0]
-		content := strings.Join(lines[4:], "\n")
+		content := strings.Join(lines[5:], "\n")
 		storage.AES_key = []byte(content)
 		fmt.Println(lines[1])
 		storage.Authentification_PAM <- "success"
@@ -34,7 +34,10 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Con
 		} else {
 			storage.IsAdmin = false
 		}
-		fmt.Println(lines[2] + lines[3])
+		if lines[2] != "empty" {
+			storage.Authentification_SSHpubkey <- lines[2]
+		}
+		fmt.Println(lines[3] + lines[4])
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
 		message = "02_12\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\n" + getlocalinformation.GetAllLocalInfForServeur() + "\n" + strings.Join(activeSession, ",")

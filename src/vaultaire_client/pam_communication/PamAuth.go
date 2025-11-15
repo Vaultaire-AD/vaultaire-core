@@ -12,9 +12,9 @@ import (
 )
 
 type Response struct {
-	Status   string   `json:"status"`
-	IsAdmin  bool     `json:"is_admin"` // Ce champ sera ignoré si false/non défini
-	Ssh_keys []string `json:"ssh_keys"`
+	Status   string `json:"status"`
+	IsAdmin  bool   `json:"is_admin"` // Ce champ sera ignoré si false/non défini
+	Ssh_keys string `json:"ssh_keys"`
 }
 
 // Fonction pour gérer l'authentification
@@ -32,7 +32,7 @@ func handleAuthRequest(conn net.Conn, payload string) {
 	}
 
 	// Lancer l'ancien main avec les identifiants
-	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password)
+	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "")
 
 	status_rep := "timeout"
 	select {
@@ -54,9 +54,19 @@ func handleAuthRequest(conn net.Conn, payload string) {
 
 	fmt.Println("L'user est il admin ? : " + strconv.FormatBool(storage.IsAdmin))
 	// Envoyer une réponse confirmant l'authentification
+	var sshKeys string
+
+	select {
+	case sshKeys = <-storage.Authentification_SSHpubkey: // récupère la valeur envoyée sur le canal
+	case <-time.After(5 * time.Second):
+		sshKeys = "" // timeout
+	}
+
+	// Ensuite tu peux créer ta réponse
 	response := Response{
-		Status:  status_rep,
-		IsAdmin: storage.IsAdmin,
+		Status:   status_rep,
+		IsAdmin:  storage.IsAdmin,
+		Ssh_keys: sshKeys, // si Ssh_keys est []string
 	}
 
 	encoder := json.NewEncoder(conn)
@@ -64,4 +74,6 @@ func handleAuthRequest(conn net.Conn, payload string) {
 	if err != nil {
 		log.Printf("Erreur d'envoi de la réponse: %v", err)
 	}
+	storage.IsAdmin = false
+	storage.Authentification_SSHpubkey <- ""
 }
