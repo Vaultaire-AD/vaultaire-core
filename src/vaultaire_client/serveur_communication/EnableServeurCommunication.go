@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"vaultaire_client/duckynetworkClient/sendmessage"
 	serveur "vaultaire_client/duckynetworkClient/serveurauth"
 	"vaultaire_client/duckynetworkClient/userauth"
 	"vaultaire_client/storage"
@@ -46,7 +47,8 @@ func EnableServerCommunication(user, pass, sshUser string) {
 			// Lance l'authentification (si c'est bloquant, c'est ok)
 			userauth.AskAuthentification(user, pass, conn, sessionIntegritykey)
 			if sshUser != "" {
-
+				msg := "02_03\nserveur_central\n" + sessionIntegritykey + "\n" + user + "\n" + storage.Computeur_ID + "\n" + "ask_sshpubkey\n"
+				sendmessage.SendMessage(msg, conn)
 			}
 			// Attendre que la connexion soit terminée avant de continuer
 			<-done
