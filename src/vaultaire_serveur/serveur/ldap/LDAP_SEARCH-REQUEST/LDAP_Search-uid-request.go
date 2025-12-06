@@ -63,6 +63,25 @@ func SendUidSearchRequest(uid string, domain string, conn net.Conn, messageID in
 
 	}
 	createdate, _ := ldaptools.SQLDateToLDAPFormat(user.Created_at)
+	db := database.GetDatabase()
+	groupIDs, _ := database.Command_GET_UserGroupIDs(db, uid)
+	groupDNs := []string{}
+
+	for _, gid := range groupIDs {
+		gi, err := database.GetGroupInfoByID(db, gid)
+		if err != nil {
+			continue
+		}
+
+		// On construit le DN LDAP complet du groupe
+		groupDN := fmt.Sprintf(
+			"cn=%s,ou=groups,dc=%s",
+			gi.Name,
+			strings.ReplaceAll(gi.DomainName, ".", ",dc="),
+		)
+		logs.Write_Log("DEBUG", "Group DN for user: "+groupDN)
+		groupDNs = append(groupDNs, groupDN)
+	}
 
 	// Exemple simple d'attributs renvoyés, à adapter selon ta base
 	attributes := []PartialAttribute{
@@ -89,6 +108,10 @@ func SendUidSearchRequest(uid string, domain string, conn net.Conn, messageID in
 		{
 			Type: "whenCreated",
 			Vals: []string{createdate}, // Formater la date de création
+		},
+		{
+			Type: "memberOf",
+			Vals: groupDNs,
 		},
 	}
 

@@ -95,7 +95,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 			return
 		}
 		if foundCategories["member"] {
-			fmt.Println("→ Déclenchement du traitement pour les **membres du pipi**")
+			fmt.Println("→ Déclenchement du traitement pour les **membres**")
 			dn := filters[0].Value                              // "uid=fiona,dc=it,dc=company,dc=com"
 			uid, _, _ := ldaptools.ExtractUsernameAndDomain(dn) // => "fiona"
 			groups, err := database.FindGroupsByUserInDomainTree(database.GetDatabase(), uid, op.BaseObject)

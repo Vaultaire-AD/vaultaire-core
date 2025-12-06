@@ -31,7 +31,7 @@ func handleAuthRequest(conn net.Conn, payload string) {
 	}
 
 	// Lancer l'ancien main avec les identifiants
-	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password)
+	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "")
 
 	status_rep := "timeout"
 	select {

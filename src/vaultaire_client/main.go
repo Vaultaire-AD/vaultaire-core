@@ -81,7 +81,7 @@ func main() {
 	StartDailyUserCleanup()
 	// Lancer le serveur de socket Unix
 	if storage.IsServeur {
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "")
 	}
 	pamcommunication.UnixSocketServer()
 }
