@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// FindUserDomainFromGroups recherche le domaine utilisateur en fonction des groupes auxquels il appartient.
 func FindUserDomainFromGroups(uid string, baseDomain string, db *sql.DB) (string, error) {
 	injection := SanitizeInput(uid, baseDomain)
 	if injection != nil {

@@ -1,6 +1,6 @@
 package commandstatus
 
-func Status_Command(command_list []string) string {
+func Status_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return (`
@@ -37,9 +37,9 @@ Arguments :
       status -c -g "group_name"
 `)
 	case "-u":
-		return status_User_Command_Parser(command_list)
+		return status_User_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	case "-c":
-		return status_Client_Command_Parser(command_list)
+		return status_Client_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
 	default:
 		return ("Erreur de formatage status -h for help")
 	}

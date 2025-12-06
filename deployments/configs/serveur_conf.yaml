@@ -1,4 +1,4 @@
-serveurlistenport: "666"
+serveurlistenport: "6666"
 
 file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
@@ -23,9 +23,9 @@ dns:
 database:
   username: root
   password: root
-  ip_database: vaultaire-db
+  ip_database: "vaultaire-db"
   port_database: "3306"
-  databaseName: vaultaire
+  databaseName: "vaultaire"
 
 website:
   website_enable: true
@@ -33,3 +33,10 @@ website:
 
 automatisation:
   sh_folder_path: "/opt/vaultaire/automatisation/"
+
+api:
+  api_enable: true
+  api_port: 6643
+
+debug:
+  debug: false

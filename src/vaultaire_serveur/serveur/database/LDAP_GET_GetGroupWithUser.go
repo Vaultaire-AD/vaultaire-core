@@ -114,6 +114,7 @@ func GetGroupsWithUsersByNames(db *sql.DB, groupNames []string) ([]ldapstorage.G
 	return allFoundGroups, nil
 }
 
+// GetGroupWithUsersByName récupère un groupe spécifique et ses utilisateurs.
 func GetGroupWithUsersByName(db *sql.DB, groupName string) (*ldapstorage.Group, error) {
 	rows, err := fetchGroupAndUsersDataByGroupName(db, groupName)
 	if err != nil {

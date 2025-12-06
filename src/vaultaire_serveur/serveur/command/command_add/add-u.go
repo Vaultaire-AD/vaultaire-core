@@ -5,71 +5,80 @@ import (
 	"DUCKY/serveur/database"
 	dbuser "DUCKY/serveur/database/db-user"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 	"strings"
 )
 
-// add_User_Command_Parser handles the addition of a user to a group.
-// It expects a command list with the format: ["add", "username", "-g", "group_name"].
-// If the command is valid, it adds the user to the group and returns the updated user information.
-// If the command is invalid or an error occurs, it logs the error and returns an error message.
-func add_User_Command_Parser(command_list []string) string {
+func add_User_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
 	if len(command_list) < 4 {
-		return "\nMiss Argument: get -h for more information or consult man on the wiki"
+		return "\nMissing arguments: use get -h for more information or consult the wiki"
 	}
 
-	switch command_list[2] {
+	username := command_list[1]
+	argType := command_list[2]
+
+	// 🔹 Étape 1 : Récupération des groupes/domaines de l'utilisateur cible (si existant)
+	domains, err := permission.GetDomainListFromUsername(username)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err))
+		return fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err)
+	}
+
+	// 🔹 Étape 2 : Vérification des permissions
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter %s (domaines : %v) — %s",
+			sender_Username, username, domains, reason))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	switch argType {
 	case "-g":
-		// Ajouter l'utilisateur à un groupe
-		err := database.Command_ADD_UserToGroup(database.GetDatabase(), command_list[1], command_list[3])
+		groupName := command_list[3]
+		err := database.Command_ADD_UserToGroup(database.GetDatabase(), username, groupName)
 		if err != nil {
-			logs.Write_Log("WARNING", "Error adding group "+command_list[3]+" to user "+command_list[1]+": "+err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout %s au groupe %s : %v", username, groupName, err))
 			return ">> -" + err.Error()
 		}
-		user, err := database.Command_GET_UserInfo(database.GetDatabase(), command_list[1])
+		userInfo, err := database.Command_GET_UserInfo(database.GetDatabase(), username)
 		if err != nil {
-			logs.Write_Log("WARNING", "Error fetching user info for "+command_list[1]+": "+err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération info utilisateur %s : %v", username, err))
 			return ">> -" + err.Error()
 		}
-		logs.Write_Log("INFO", "Added group "+command_list[3]+" to user "+command_list[1])
-		return display.DisplayUsersInfoByName(user)
+		logs.Write_Log("INFO", fmt.Sprintf("Utilisateur %s ajouté au groupe %s", username, groupName))
+		return display.DisplayUsersInfoByName(userInfo)
 
 	case "-k":
-		// Ajouter une clé publique à l'utilisateur
 		if len(command_list) < 5 {
 			return ">> -Missing argument: label or key is empty. Usage: vlt add user <username> -k <label> <key>"
 		}
-
-		userId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(command_list[1]))
+		userId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
 		if err != nil {
-			logs.Write_Log("WARNING", "Error fetching user ID for "+command_list[1]+": "+err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération ID utilisateur %s : %v", username, err))
 			return ">> -" + err.Error()
 		}
-
 		pubkey := strings.Join(command_list[4:], " ")
 		if pubkey == "" || command_list[3] == "" {
 			return ">> -Missing argument: label or key is empty. Usage: vlt add user <username> -k <label> <key>"
 		}
-
 		if !strings.HasPrefix(pubkey, "ssh-rsa") && !strings.HasPrefix(pubkey, "ssh-ed25519") {
 			return ">> -The key must start with 'ssh-rsa' or 'ssh-ed25519'"
 		}
-
 		err = dbuser.AddUserKey(userId, pubkey, command_list[3])
 		if err != nil {
-			logs.Write_Log("WARNING", "Error adding public key to user "+command_list[1]+": "+err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout clé publique à %s : %v", username, err))
 			return ">> -" + err.Error()
 		}
-
-		logs.Write_Log("INFO", "Added public key to user "+command_list[1])
+		logs.Write_Log("INFO", fmt.Sprintf("Clé publique ajoutée à %s", username))
 		pubKeys, err := dbuser.GetUserKeys(userId)
 		if err != nil || len(pubKeys) == 0 {
-			logs.Write_Log("WARNING", "No public keys found for user "+command_list[1]+": "+err.Error())
+			logs.Write_Log("WARNING", fmt.Sprintf("Aucune clé publique trouvée pour %s : %v", username, err))
 			return ">> -No public key found for this user"
 		}
-
-		return display.DisplayUserPublicKeys(command_list[1], pubKeys)
+		return display.DisplayUserPublicKeys(username, pubKeys)
 
 	default:
-		return "\nMiss Argument: get -h for more information or consult man on the wiki"
+		return "\nMissing arguments: use get -h for more information or consult the wiki"
 	}
 }

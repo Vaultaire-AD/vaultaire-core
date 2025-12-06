@@ -25,3 +25,9 @@ type PublicKey struct {
 	Label     string
 	CreatedAt string
 }
+
+type GroupInfoLDAP struct {
+	ID         int
+	Name       string
+	DomainName string
+}

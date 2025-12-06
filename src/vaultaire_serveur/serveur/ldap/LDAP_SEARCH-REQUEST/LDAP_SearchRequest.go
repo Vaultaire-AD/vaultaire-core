@@ -52,6 +52,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		}
 		return
 	}
+
 	filters, err := ExtractEqualityFilters(op.Filter)
 	fmt.Println("Filter :")
 	for _, filtre := range filters {
@@ -62,20 +63,22 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		return
 	} else {
 		keywordMap := map[string][]string{
-			"user":  {"user", "person", "inetorgperson", "posixaccount"},
-			"group": {"group", "groupofnames", "groupofuniquenames"},
+			"user":  {"user", "users", "", "person", "inetorgperson", "posixaccount"},
+			"group": {"group", "groups", "groupofnames", "groupofuniquenames"},
+			"CN":    {"Users"},
 		}
 
 		foundCategories := ldaptools.DetectKeywordCategories(filters, keywordMap)
 
 		if foundCategories["user"] {
 			fmt.Println("→ Déclenchement du traitement pour les **utilisateurs**")
-			SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters)
+			SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters, op.Scope)
 			return
 		}
+
 		if foundCategories["group"] {
 			fmt.Println("→ Déclenchement du traitement pour les **groupes**")
-			SearchGroupRequest(conn, messageID, database.GetDatabase(), op.BaseObject, filters, op.BaseObject)
+			SearchGroupRequest(conn, messageID, database.GetDatabase(), op.BaseObject, filters, op.BaseObject, op.Scope)
 			return
 		}
 		if foundCategories["uid"] {
@@ -129,6 +132,13 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 			SendLDAPSearchResultDone(conn, messageID)
 			return
 		}
+
+		if foundCategories["CN"] { // CN=Users
+			fmt.Println("→ Déclenchement du traitement pour CN=Users (récupérer tous les groupes)")
+			SearchGroupsForCNUsers(conn, messageID, op.BaseObject, op.Scope)
+			return
+		}
+
 		if len(foundCategories) == 0 {
 			fmt.Println("Aucune entité correspondante détectée dans les filtres.")
 			err := SendLDAPSearchFailure(conn, messageID, "Aucune entité correspondante détectée dans les filtres.")

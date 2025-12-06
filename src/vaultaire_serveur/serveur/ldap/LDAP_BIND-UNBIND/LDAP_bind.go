@@ -7,11 +7,13 @@ import (
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
 	"DUCKY/serveur/storage"
 	"fmt"
 	"net"
 )
 
+// Construire une réponse LDAP Bind
 func buildLDAPBindResponse(messageID int, resultCode byte, matchedDN string, diagMsg string) []byte {
 	// Encode message ID
 	msgID := []byte{
@@ -109,45 +111,66 @@ func respondProtocolError(messageID int, conn net.Conn) {
 
 func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn) {
 	user, domain, ou := ldaptools.ExtractUsernameAndDomain(op.Name)
-	// Affichage propre et clair des infos reçues
+
 	if storage.Ldap_Debug {
-		fmt.Println("===== LDAP Bind Request Received =====")
-		fmt.Printf("Message ID : %d\n", messageID)
-		fmt.Printf("Bind DN    : %s\n", op.Name)
-		fmt.Printf("Username   : %s\n", user)
-		fmt.Printf("Ou         : %s\n", ou)
-		fmt.Printf("Domain     : %s\n", domain)
-		fmt.Printf("Authentication (Password) length: %d bytes\n", len(op.Authentication))
-		fmt.Println("=====================================")
+		logs.Write_Log("DEBUG", fmt.Sprintf(
+			"===== LDAP Bind Request =====\nMessage ID: %d\nBind DN: %s\nUsername: %s\nOU: %s\nDomain: %s\nPassword length: %d bytes\n=============================",
+			messageID, op.Name, user, ou, domain, len(op.Authentication),
+		))
 	}
+
+	// 🔒 Interdiction d'utiliser le compte système Vaultaire
 	if user == "vaultaire" {
-		logs.Write_Log("WARNING", "Tentative de connexion avec l'utilisateur 'vaultaire' depuis : "+conn.RemoteAddr().String())
+		logs.Write_Log("WARNING", fmt.Sprintf("Tentative de connexion avec l'utilisateur 'vaultaire' depuis %s", conn.RemoteAddr().String()))
 		ldapsessionmanager.ClearSession(conn)
-		return
-	}
-	user_ID, err := database.Get_User_ID_By_Username(database.GetDatabase(), user)
-	if err != nil {
-		logs.Write_Log("WARNING", "Erreur lors de la récupération de l'ID utilisateur pour "+user+": "+err.Error())
-		// 🔴 Répond avec un code d'erreur pour les identifiants invalides
 		respondInvalidCredentials(messageID, conn)
 		return
 	}
-	Hpassword, salt, err := database.Get_User_Password_By_ID(database.GetDatabase(), user_ID)
+
+	// 🔍 Vérification que l'utilisateur existe
+	userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), user)
 	if err != nil {
-		fmt.Println("Erreur lors de la récupération du mot de passe pour :", user)
+		logs.Write_Log("WARNING", fmt.Sprintf("Utilisateur inconnu (%s) depuis %s", user, conn.RemoteAddr().String()))
+		respondInvalidCredentials(messageID, conn)
+		return
+	}
+
+	// 🔐 Vérification du mot de passe
+	Hpassword, salt, err := database.Get_User_Password_By_ID(database.GetDatabase(), userID)
+	if err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la récupération du mot de passe pour %s : %v", user, err))
 		respondProtocolError(messageID, conn)
 		return
 	}
-	if !gc.ComparePasswords(string(op.Authentication), salt, Hpassword) {
-		logs.Write_Log("WARNING", "Tentative de connexion échouée pour l'utilisateur "+user+" depuis : "+conn.RemoteAddr().String()+" wrong password")
-		respondInvalidCredentials(messageID, conn)
 
+	if !gc.ComparePasswords(string(op.Authentication), salt, Hpassword) {
+		logs.Write_Log("WARNING", fmt.Sprintf("Échec de connexion pour %s (%s) : mot de passe incorrect", user, conn.RemoteAddr().String()))
+		respondInvalidCredentials(messageID, conn)
 		return
 	}
-	// ✅ Répond toujours SUCCESS (code 0)
 
-	// 🔁 Envoi de la réponse sur la connexion réseau
+	// ✅ Authentification réussie — maintenant vérification de la permission
+	groupIDs, normalizedAction, err := permission.PrePermissionCheck(user, "auth")
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Échec pré-permission pour %s : %v", user, err))
+		respondInvalidCredentials(messageID, conn)
+		return
+	}
+
+	// On vérifie s'il a le droit d'exécuter "auth" sur ce domaine
+	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, normalizedAction, []string{domain})
+	if !ok {
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour %s sur domaine %s : %s", user, domain, msg))
+		respondInvalidCredentials(messageID, conn)
+		return
+	}
+
+	// 🔁 Mise à jour de la session
 	ldapsessionmanager.SetBindInfo(conn, user, op.Name)
-	logs.Write_Log("INFO", "Bind successful for user "+user+" in domain "+domain+" from "+conn.RemoteAddr().String())
+
+	// 🟢 Log succès
+	logs.Write_Log("INFO", fmt.Sprintf("Bind réussi pour %s sur domaine %s depuis %s", user, domain, conn.RemoteAddr().String()))
+
+	// ✅ Réponse LDAP
 	respondBindSuccess(messageID, conn)
 }

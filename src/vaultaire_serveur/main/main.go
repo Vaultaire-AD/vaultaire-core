@@ -9,6 +9,7 @@ import (
 	"DUCKY/serveur/storage"
 	"DUCKY/serveur/vaultairegoroutine"
 	webserveur "DUCKY/serveur/web_serveur"
+	"fmt"
 	"log"
 	"net"
 )
@@ -46,7 +47,9 @@ func main() {
 	if storage.Dns_Enable {
 		go dns.DNS_StartServeur()
 	}
+	fmt.Printf("DEBUG: storage.API_Enable = %v", storage.API_Enable)
 	if storage.API_Enable {
+		log.Println("API TRY TO START")
 		go vaultairegoroutine.StartAPI()
 	} else {
 		log.Println("API is disabled, not starting API server.")
