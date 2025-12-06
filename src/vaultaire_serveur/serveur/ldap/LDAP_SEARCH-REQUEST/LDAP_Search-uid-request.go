@@ -79,7 +79,7 @@ func SendUidSearchRequest(uid string, domain string, conn net.Conn, messageID in
 			gi.Name,
 			strings.ReplaceAll(gi.DomainName, ".", ",dc="),
 		)
-		fmt.Println("Group DN for group ID", gid, ":", groupDN)
+		logs.Write_Log("DEBUG", "Group DN for user: "+groupDN)
 		groupDNs = append(groupDNs, groupDN)
 	}
 
