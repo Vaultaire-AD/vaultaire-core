@@ -27,7 +27,7 @@ func handleCheckRequest(conn net.Conn, payload string) {
 		log.Printf("Entrée invalide dans check: %s", req.User)
 		return
 	}
-
+	fmt.Println("PAM Check request for user :", req.User)
 	// Vérification de l'utilisateur sur ton backend
 	go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", req.User)
 

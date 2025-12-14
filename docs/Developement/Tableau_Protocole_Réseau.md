@@ -29,5 +29,6 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 |             |             |               |                              |                                                                                        |
 | SSH         | 03          |               |                              |                                                                                        |
 | server      |             | 01            | client ask if user can login | le client envoie un username et attend un reponse d'auth avec les clé public du client |
-| server      |             | 02            | server awnser                | le server renvoie une reponse succes ou failed avec les clé public du client si succes |
+| client      |             | 02            | server awnser   succes       | le server renvoie une reponse succes  avec les clé public du user                      |
+| client      |             | 03            | server anwser failed         | le server renvoie une reponse failed avec la raison de l'echec                         |
 |             |             |               |                              |                                                                                        |

@@ -17,11 +17,21 @@ func parseTrames(trames string) storage.Trames_struct_client {
 	message := strings.Join(lines[5:], "\n")
 	action := strings.Split(lines[0], "_")
 
+	username := ""
+	domain := ""
+	// Si présence de @ → split user@domain
+	if strings.Contains(lines[3], "@") {
+		parts := strings.SplitN(lines[3], "@", 2)
+		username = parts[0]
+		domain = parts[1]
+	}
+
 	return storage.Trames_struct_client{
 		Message_Order:       action,
 		Destination_Server:  lines[1],
 		SessionIntegritykey: lines[2],
-		Username:            lines[3],
+		Username:            username,
+		Domain:              domain,
 		ClientSoftwareID:    lines[4],
 		Content:             message,
 	}

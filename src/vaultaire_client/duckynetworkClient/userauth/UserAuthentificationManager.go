@@ -6,6 +6,7 @@ import (
 	"strings"
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/gpo"
+	"vaultaire_client/sessionmgr"
 	"vaultaire_client/storage"
 	"vaultaire_client/tools/getlocalinformation"
 )
@@ -17,9 +18,11 @@ func AskAuthentification(username string, password string, conn net.Conn, sessio
 
 func User_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn) string {
 	message := ""
+
 	switch trames_content.Message_Order[1] {
 	case "02":
 		println("Send Proof of work for identification :", trames_content.Content)
+
 		return "02_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\n" + trames_content.Content
 	case "04":
 		//("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + publicKeys + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
@@ -39,7 +42,6 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Con
 		}
 		fmt.Println(lines[3] + lines[4])
 		activeSession, _ := getlocalinformation.GetActiveUsers()
-
 		message = "02_12\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\n" + getlocalinformation.GetAllLocalInfForServeur() + "\n" + strings.Join(activeSession, ",")
 		sendmessage.SendMessage(message, conn)
 		message = "02_15\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\n" + storage.Computeur_ID + "\nask_gpo"
@@ -62,7 +64,13 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Con
 	case "11":
 		lines := strings.Split(trames_content.Content, "\n")
 		fmt.Println(lines[0])
+		trames_content.Username = lines[0]
 		activeSession, _ := getlocalinformation.GetActiveUsers()
+		storage.SessionsUser.AddOrUpdate(
+			trames_content.Username,
+			conn,
+			sessionmgr.SessionAuthenticated,
+		)
 		message = "02_12\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\n" + storage.Computeur_ID + "\n" + getlocalinformation.GetAllLocalInfForServeur() + "\n" + strings.Join(activeSession, ",")
 	default:
 		break

@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"vaultaire_client/storage"
 )
 
 type AuthRequest struct {
@@ -16,7 +17,7 @@ type AuthRequest struct {
 
 // Fonction pour valider les entrées de l'utilisateur
 func isValidUserInput(input string) bool {
-	validInputPattern := "^[a-zA-Z0-9._-]+$"
+	validInputPattern := "^[a-zA-Z0-9._@-]+$"
 	re := regexp.MustCompile(validInputPattern)
 	return re.MatchString(input)
 }
@@ -56,15 +57,14 @@ func handleUnixSocketConnection(conn net.Conn) {
 }
 
 func UnixSocketServer() {
-	socketPath := "/tmp/vaultaire_client.sock"
 
 	// Supprimer le fichier du socket s'il existe déjà
-	if err := os.RemoveAll(socketPath); err != nil {
+	if err := os.RemoveAll(storage.SocketPath); err != nil {
 		log.Fatalf("Error removing existing socket file: %v", err)
 	}
 
 	// Créer le socket Unix
-	ln, err := net.Listen("unix", socketPath)
+	ln, err := net.Listen("unix", storage.SocketPath)
 	if err != nil {
 		log.Fatalf("Error creating Unix socket: %v", err)
 	}
@@ -75,7 +75,7 @@ func UnixSocketServer() {
 		}
 	}()
 
-	fmt.Println("Server listening on Unix socket:", socketPath)
+	fmt.Println("Server listening on Unix socket:", storage.SocketPath)
 
 	// Boucle d'acceptation des connexions
 	for {

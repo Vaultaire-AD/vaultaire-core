@@ -140,16 +140,21 @@ static void parse_response(const char *resp, char *status_out, size_t status_sz,
         }
     }
 
-    /* ssh_keys array extraction (between first [ and ] after "ssh_keys") */
-    p = strstr(resp, "\"ssh_keys\"");
+    /* ssh_keys as raw string */
+    p = strstr(resp, "\"Ssh_keys\"");
+    if (!p) p = strstr(resp, "\"ssh_keys\"");
     if (p) {
-        char *l = strchr(p, '[');
-        char *r = strchr(p, ']');
-        if (l && r && r > l) {
-            size_t len = r - l - 1;
-            if (len >= ssh_keys_sz) len = ssh_keys_sz - 1;
-            strncpy(ssh_keys_out, l+1, len);
-            ssh_keys_out[len] = '\0';
+        char *q = strchr(p, ':');
+        if (q) {
+            q++;
+            while (*q == ' ' || *q == '"') q++;
+            char *end = strrchr(q, '"');
+            if (end && end > q) {
+                size_t len = end - q;
+                if (len >= ssh_keys_sz) len = ssh_keys_sz - 1;
+                strncpy(ssh_keys_out, q, len);
+                ssh_keys_out[len] = '\0';
+            }
         }
     }
 }
@@ -192,15 +197,11 @@ static int install_ssh_keys_for_user(const char *username, const char *ssh_keys_
     char sshdir[PATH_MAX];
     snprintf(sshdir, sizeof(sshdir), "%s/.ssh", pw->pw_dir);
 
-    if (mkdir(sshdir, 0700) != 0) {
-        if (errno != EEXIST) {
-            log_err("mkdir(%s): %s", sshdir, strerror(errno));
-            return -1;
-        }
+    if (mkdir(sshdir, 0700) != 0 && errno != EEXIST) {
+        log_err("mkdir(%s): %s", sshdir, strerror(errno));
+        return -1;
     }
-    if (chown(sshdir, pw->pw_uid, pw->pw_gid) != 0) {
-        log_err("chown(.ssh): %s", strerror(errno));
-    }
+    chown(sshdir, pw->pw_uid, pw->pw_gid);
 
     char authfile[PATH_MAX];
     snprintf(authfile, sizeof(authfile), "%s/authorized_keys", sshdir);
@@ -211,25 +212,8 @@ static int install_ssh_keys_for_user(const char *username, const char *ssh_keys_
         return -1;
     }
 
-    /* naive split by comma, trim quotes/spaces */
-    char *copy = NULL;
     if (ssh_keys_raw && ssh_keys_raw[0]) {
-        copy = strdup(ssh_keys_raw);
-        char *tok;
-        char *saveptr = NULL;
-        tok = strtok_r(copy, ",", &saveptr);
-        while (tok) {
-            /* trim spaces and quotes */
-            while (*tok == ' ' || *tok == '"' || *tok == '\'') tok++;
-            char *end = tok + strlen(tok) - 1;
-            while (end > tok && (*end == ' ' || *end == '"' || *end == '\'')) { *end = '\0'; end--; }
-
-            if (strlen(tok) > 10) {
-                fprintf(f, "%s\n", tok);
-            }
-            tok = strtok_r(NULL, ",", &saveptr);
-        }
-        free(copy);
+        fprintf(f, "%s\n", ssh_keys_raw); // écrire toutes les clés telles quelles
     }
 
     fclose(f);

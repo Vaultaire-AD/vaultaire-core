@@ -3,7 +3,6 @@ package ldapsearchrequest
 import (
 	"DUCKY/serveur/database"
 	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	"DUCKY/serveur/logs"
 	"fmt"
 	"log"
 	"net"
@@ -49,82 +48,70 @@ func SendLDAPSearchResultEntry(conn net.Conn, messageID int, entry SearchResultE
 	return err
 }
 
-func SendUidSearchRequest(uid string, domain string, conn net.Conn, messageID int) {
-	// Construction du DN complet de l'utilisateur
+func SendUidSearchRequest(uid string, domain string, Attributes []string, conn net.Conn, messageID int) {
 	userDN := fmt.Sprintf("uid=%s,dc=%s", uid, strings.ReplaceAll(domain, ".", ",dc="))
 	user, err := database.GetUserByUsername(uid, database.GetDatabase())
 	if err != nil {
 		log.Println("Erreur lors de la récupération de l'utilisateur :", err)
-		err := SendLDAPSearchFailure(conn, messageID, "Utilisateur non trouvé")
-		if err != nil {
-			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
-		}
+		SendLDAPSearchFailure(conn, messageID, "Utilisateur non trouvé")
 		return
-
 	}
+
 	createdate, _ := ldaptools.SQLDateToLDAPFormat(user.Created_at)
 	db := database.GetDatabase()
+
+	// Récupérer les DN des groupes de l'utilisateur
 	groupIDs, _ := database.Command_GET_UserGroupIDs(db, uid)
 	groupDNs := []string{}
-
 	for _, gid := range groupIDs {
 		gi, err := database.GetGroupInfoByID(db, gid)
 		if err != nil {
 			continue
 		}
-
-		// On construit le DN LDAP complet du groupe
-		groupDN := fmt.Sprintf(
-			"cn=%s,ou=groups,dc=%s",
-			gi.Name,
-			strings.ReplaceAll(gi.DomainName, ".", ",dc="),
-		)
-		logs.Write_Log("DEBUG", "Group DN for user: "+groupDN)
+		groupDN := fmt.Sprintf("cn=%s,ou=groups,dc=%s", gi.Name, strings.ReplaceAll(gi.DomainName, ".", ",dc="))
 		groupDNs = append(groupDNs, groupDN)
+
+		// Envoyer directement les groupes pour pfSense
+		// groupEntry := SearchResultEntry{
+		// 	ObjectName: groupDN,
+		// 	Attributes: []PartialAttribute{
+		// 		{Type: "cn", Vals: []string{gi.Name}},
+		// 		{Type: "objectClass", Vals: []string{"groupOfNames"}},
+		// 		{Type: "member", Vals: []string{userDN}},
+		// 	},
+		// }
+		// SendLDAPSearchResultEntry(conn, messageID, groupEntry)
 	}
 
-	// Exemple simple d'attributs renvoyés, à adapter selon ta base
-	attributes := []PartialAttribute{
-		{
-			Type: "uid",
-			Vals: []string{uid},
-		},
-		{
-			Type: "cn",
-			Vals: []string{user.Firstname}, // Récupérer le nom complet de l'utilisateur
-		},
-		{
-			Type: "sn",
-			Vals: []string{user.Lastname}, // Récupérer le nom complet de l'utilisateur
-		},
-		{
-			Type: "objectClass",
-			Vals: []string{"inetOrgPerson", "posixAccount"},
-		},
-		{
-			Type: "mail",
-			Vals: []string{user.Email}, // récupérer depuis ta base
-		},
-		{
-			Type: "whenCreated",
-			Vals: []string{createdate}, // Formater la date de création
-		},
-		{
-			Type: "memberOf",
-			Vals: groupDNs,
-		},
+	// Construction de l'entrée utilisateur
+	userAttributes := []PartialAttribute{
+		{Type: "uid", Vals: []string{uid}},
+		{Type: "cn", Vals: []string{user.Firstname}},
+		{Type: "sn", Vals: []string{user.Lastname}},
+		{Type: "objectClass", Vals: []string{"inetOrgPerson", "posixAccount"}},
+		{Type: "mail", Vals: []string{user.Email}},
+		{Type: "whenCreated", Vals: []string{createdate}},
 	}
 
-	entry := SearchResultEntry{
-		ObjectName: userDN,
-		Attributes: attributes,
+	if contains(Attributes, "memberOf") && len(groupDNs) > 0 {
+		userAttributes = append(userAttributes, PartialAttribute{Type: "memberOf", Vals: groupDNs})
 	}
 
-	err = SendLDAPSearchResultEntry(conn, messageID, entry)
-	if err != nil {
+	entry := SearchResultEntry{ObjectName: userDN, Attributes: userAttributes}
+	if err := SendLDAPSearchResultEntry(conn, messageID, entry); err != nil {
 		log.Println("Erreur en envoyant l'entrée LDAP :", err)
 		return
 	}
 
-	SendLDAPSearchResultDone(conn, messageID) // 0 = LDAPResultSuccess
+	SendLDAPSearchResultDone(conn, messageID)
+}
+
+// helper pour vérifier si un slice contient une string
+func contains(slice []string, str string) bool {
+	for _, s := range slice {
+		if strings.EqualFold(s, str) {
+			return true
+		}
+	}
+	return false
 }

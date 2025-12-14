@@ -3,6 +3,7 @@ package tramesmanager
 import (
 	autc "DUCKY/serveur/ducky-network/authentification/client"
 	auts "DUCKY/serveur/ducky-network/authentification/serveur"
+	autssh "DUCKY/serveur/ducky-network/authentification/ssh"
 	"DUCKY/serveur/ducky-network/sendmessage"
 	sync "DUCKY/serveur/ducky-network/sync"
 	"DUCKY/serveur/logs"
@@ -30,6 +31,8 @@ func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {
 			message = auts.Serveur_Auth_Manager(trames_content, conn)
 		case "02":
 			message = autc.Client_Auth_Manager(trames_content, conn)
+		case "03":
+			message = autssh.SSH_Client_Manager(trames_content, conn)
 		default:
 			print("FEUR")
 		}

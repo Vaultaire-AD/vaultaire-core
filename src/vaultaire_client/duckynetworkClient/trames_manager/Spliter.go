@@ -6,6 +6,7 @@ import (
 	"strings"
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/duckynetworkClient/userauth"
+	"vaultaire_client/duckynetworkClient/userauth/sshauth"
 	"vaultaire_client/storage"
 )
 
@@ -17,6 +18,10 @@ func Split_Action(trames_content storage.Trames_struct_client, conn net.Conn) {
 	switch service[0] {
 	case "02":
 		message = userauth.User_Auth_Manager(trames_content, conn)
+	case "03":
+		fmt.Println("SSH Client Manager")
+		message = sshauth.SSH_Auth_Manager(trames_content, conn)
+		//message = sshclient.SSH_Client_Manager(trames_content, conn)
 	default:
 		fmt.Println(trames_content.Content)
 

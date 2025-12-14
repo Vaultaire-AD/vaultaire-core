@@ -124,7 +124,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 		key := make([]byte, 8)
 		database.AddLoginEntry(db, userID, key, trames_content.ClientSoftwareID)
 		logs.Write_Log("INFO", trames_content.ClientSoftwareID+" is online and enter in the system")
-		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\nclient_giveinformation")
+		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nclient_giveinformation")
 
 	}
 

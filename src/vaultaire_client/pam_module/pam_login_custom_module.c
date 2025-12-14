@@ -262,7 +262,7 @@ int ensure_local_user(const char *username, const char *password) {
     // Sinon, création du compte local
     char cmd_useradd[256];
     snprintf(cmd_useradd, sizeof(cmd_useradd),
-             "useradd --shell /bin/bash -c 'vaultaire_user_account' %s", username);
+             "useradd --shell /bin/bash -c '%s@vaultaire' %s", username, username);
 
     if (system(cmd_useradd) != 0) {
         fprintf(stderr, "[PAM] Failed to create user %s.\n", username);
