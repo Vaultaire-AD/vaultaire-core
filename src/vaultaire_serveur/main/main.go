@@ -24,9 +24,16 @@ func main() {
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 	}
+
 	db.InitDatabase()
 	db.Create_DataBase(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
+
+	if storage.Administrateur_Enable {
+		db.CreateAdminDefaultUser(db.GetDatabase())
+	} else {
+		log.Println("[BOOTSTRAP] Default Administrateur désactivé")
+	}
 
 	if storage.Ldap_Enable {
 		go ldap.HandleLDAPserveur()

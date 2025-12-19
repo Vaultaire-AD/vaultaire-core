@@ -21,7 +21,9 @@ services:
       - Ducky-network
 
   vaultaire-ad:
-    image: localhost/vaultaire-ad:latest
+    build:
+      context: ../../   # <-- la racine du repo
+      dockerfile: deployments/pre-prod/Dockerfile
     container_name: vaultaire
     restart: unless-stopped
     depends_on:

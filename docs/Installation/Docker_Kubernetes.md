@@ -7,6 +7,6 @@ git clone git@git@github.com:Vaultaire-AD/vaultaire-core.git
 cd vaultaire-core
 
 # Lancer en mode développement
-docker-compose -f deployments/docker-compose.yml up --build
+docker compose -f deployments/docker-compose.yml up --build
 ```
 

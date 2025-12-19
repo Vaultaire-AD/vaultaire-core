@@ -8,9 +8,6 @@ import (
 	"DUCKY/serveur/global/security/keymanagement"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"crypto"
-	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
@@ -18,6 +15,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // CommandRequest représente la requête JSON du client
@@ -58,13 +57,6 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sig, err := decodeSignature(req.Signature)
-	if err != nil {
-		logRequest(req, "", err)
-		http.Error(w, "Signature mal formée", http.StatusBadRequest)
-		return
-	}
-
 	bodyToVerify, err := buildSignedBody(req)
 	if err != nil {
 		logRequest(req, "", err)
@@ -72,7 +64,7 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !verifySignature(pubKeys, bodyToVerify, sig) {
+	if !verifySignature(pubKeys, bodyToVerify, req.Signature) {
 		err = fmt.Errorf("signature invalide")
 		logRequest(req, "", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
@@ -123,16 +115,6 @@ func fetchUserID(username string) (int, error) {
 	return database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
 }
 
-// decodeSignature décode la signature base64
-func decodeSignature(sig string) ([]byte, error) {
-	decoded, err := base64.StdEncoding.DecodeString(sig)
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur décodage signature: "+err.Error())
-		return nil, err
-	}
-	return decoded, nil
-}
-
 // buildSignedBody reconstruit le JSON que le client a signé
 func buildSignedBody(req *CommandRequest) ([]byte, error) {
 	body, err := json.Marshal(struct {
@@ -152,19 +134,42 @@ func buildSignedBody(req *CommandRequest) ([]byte, error) {
 }
 
 // verifySignature vérifie la signature avec toutes les clés
-func verifySignature(pubKeys []storage.PublicKey, body []byte, sig []byte) bool {
-	hashed := sha256.Sum256(body)
-	for _, k := range pubKeys {
-		pubKey, err := keymanagement.ParseRSAPublicKeyFromPEM(k.Key)
+func verifySignature(pubKeys []storage.PublicKey, body []byte, sigB64 string) bool {
+	sigRaw, err := base64.StdEncoding.DecodeString(sigB64)
+	if err != nil {
+		logs.Write_Log("ERROR", "Impossible de décoder la signature base64: "+err.Error())
+		return false
+	}
+
+	var sig ssh.Signature
+	if err := ssh.Unmarshal(sigRaw, &sig); err != nil {
+		logs.Write_Log("ERROR", "Impossible de unmarshal la signature SSH: "+err.Error())
+		return false
+	}
+
+	success := false
+
+	for i, k := range pubKeys {
+		pub, _, _, _, err := ssh.ParseAuthorizedKey([]byte(k.Key))
 		if err != nil {
-			logs.Write_Log("ERROR", "Clé publique invalide ignorée: "+err.Error())
+			logs.Write_Log("ERROR", fmt.Sprintf("Clé publique #%d invalide, ignorée: %s", i, err))
 			continue
 		}
-		if rsa.VerifyPKCS1v15(pubKey, crypto.SHA256, hashed[:], sig) == nil {
-			return true
+
+		if err := pub.Verify(body, &sig); err != nil {
+			logs.Write_Log("WARN", fmt.Sprintf("Clé publique #%d échoue à vérifier la signature: %s", i, err))
+		} else {
+			logs.Write_Log("INFO", fmt.Sprintf("Signature valide avec la clé publique #%d", i))
+			success = true
+			break
 		}
 	}
-	return false
+
+	if !success {
+		logs.Write_Log("ERROR", "Aucune clé publique n'a validé la signature !")
+	}
+
+	return success
 }
 
 // writeJSON renvoie la réponse JSON

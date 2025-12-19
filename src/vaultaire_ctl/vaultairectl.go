@@ -2,15 +2,10 @@ package main
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"fmt"
 	"io/ioutil"
 	"math/big"
@@ -20,6 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/ssh"
 )
 
 // Structure de config
@@ -63,30 +60,31 @@ func loadConfig() (Config, error) {
 }
 
 // Lecture clé privée RSA
-func loadPrivateKey(path string) (*rsa.PrivateKey, error) {
-	data, err := ioutil.ReadFile(path)
+func loadPrivateKey(path string) (ssh.Signer, error) {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	block, _ := pem.Decode(data)
-	if block == nil || block.Type != "RSA PRIVATE KEY" {
-		return nil, fmt.Errorf("clé privée invalide")
-	}
-	priv, err := x509.ParsePKCS1PrivateKey(block.Bytes)
+
+	signer, err := ssh.ParsePrivateKey(data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("clé privée invalide: %w", err)
 	}
-	return priv, nil
+
+	return signer, nil
 }
 
 // Signe un message avec RSA
-func signMessage(priv *rsa.PrivateKey, message []byte) (string, error) {
-	hash := sha256.Sum256(message)
-	sig, err := rsa.SignPKCS1v15(rand.Reader, priv, crypto.SHA256, hash[:])
+func signMessage(signer ssh.Signer, message []byte) (string, error) {
+	sig, err := signer.Sign(rand.Reader, message)
 	if err != nil {
 		return "", err
 	}
-	return base64.StdEncoding.EncodeToString(sig), nil
+
+	// encode TOUTE la signature SSH
+	raw := ssh.Marshal(sig)
+
+	return base64.StdEncoding.EncodeToString(raw), nil
 }
 
 // Génère un nonce : timestamp + 16 caractères aléatoires
