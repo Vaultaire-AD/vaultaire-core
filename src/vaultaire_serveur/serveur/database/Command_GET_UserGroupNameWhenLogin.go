@@ -30,7 +30,7 @@ func GetUserGroupNameWhenLogin(db *sql.DB, username, computeur_id string) (strin
 
 	// Vérification si l'utilisateur et l'ordinateur partagent un groupe via `users_group` et `logiciel_group`
 	var groupName string
-	query = `SELECT groups.name FROM users_group
+	query = `SELECT groups.group_name FROM users_group
 	         JOIN groups ON users_group.d_id_group = groups.id_group
 	         JOIN logiciel_group ON groups.id_group = logiciel_group.d_id_group
 	         JOIN id_logiciels ON logiciel_group.d_id_logiciel = id_logiciels.id_logiciel

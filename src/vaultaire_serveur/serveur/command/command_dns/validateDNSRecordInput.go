@@ -61,9 +61,7 @@ func validateDNSRecordInput(db *sql.DB, name, recordType, data string) error {
 
 func isValidFQDN(fqdn string) bool {
 	// Simple FQDN validation
-	if strings.HasSuffix(fqdn, ".") {
-		fqdn = fqdn[:len(fqdn)-1]
-	}
+	fqdn = strings.TrimSuffix(fqdn, ".")
 	matched, _ := regexp.MatchString(`^([a-zA-Z0-9_-]+\.)+[a-zA-Z]{2,}$`, fqdn)
 	return matched
 }

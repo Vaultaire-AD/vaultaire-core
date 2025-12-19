@@ -46,7 +46,12 @@ func InitDatabase() bool {
 	if err != nil {
 		log.Fatalf("❌ Erreur création base de données : %v", err)
 	}
-	tempDB.Close()
+	defer func() {
+		if err := tempDB.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	// Connexion finale avec la base sélectionnée
 	dsnWithDB := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?parseTime=true",
@@ -72,8 +77,16 @@ func InitDatabase() bool {
 		fmt.Println("🔁 Nouvelle tentative dans 30 secondes...")
 		time.Sleep(30 * time.Second)
 	}
-	InitPTRTable(db)
-	InitZonesTable(db)
+	err = InitPTRTable(db)
+	if err != nil {
+		logs.Write_Log("ERROR", "❌ Erreur lors de l'initialisation de la table PTR : "+err.Error())
+		return false
+	}
+	err = InitZonesTable(db)
+	if err != nil {
+		logs.Write_Log("ERROR", "❌ Erreur lors de l'initialisation de la table Zones : "+err.Error())
+		return false
+	}
 	logs.Write_Log("INFO", "✅ Base de données initialisée avec succès.")
 	return true
 }

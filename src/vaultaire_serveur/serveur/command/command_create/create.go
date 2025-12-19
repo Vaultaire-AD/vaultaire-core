@@ -3,14 +3,21 @@ package commandcreate
 import (
 	"DUCKY/serveur/command/display"
 	"DUCKY/serveur/database"
+	newclient "DUCKY/serveur/ducky-network/new_client"
+	autoaddclientgo "DUCKY/serveur/ducky-network/new_client/AUTO_ADD_client.go"
 	"DUCKY/serveur/logs"
-	newclient "DUCKY/serveur/new_client"
-	autoaddclientgo "DUCKY/serveur/new_client/AUTO_ADD_client.go"
+	"DUCKY/serveur/permission"
 	"DUCKY/serveur/tools"
+	"fmt"
 )
 
 // Management pour les commandes create
-func Create_Command(command_list []string) string {
+func Create_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	isactionlegitimate, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
+	if !isactionlegitimate {
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", sender_Username, action, response))
+		return fmt.Sprintf("Permission refusée : %s", response)
+	}
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return (`"La commande create vous permets de crée des nouveau utilisateur ou des nouveaux clients_software de nouvelles permissions et de nouveau groupes")

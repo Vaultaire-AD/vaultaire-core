@@ -2,6 +2,7 @@ package commandcreate
 
 import (
 	"DUCKY/serveur/database"
+	"DUCKY/serveur/database/db_permission"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/tools"
 )
@@ -16,7 +17,7 @@ func create_Permission(command_list []string) string {
 	} else {
 		switch expression := command_list[1]; expression {
 		case "-u":
-			_, err := database.CreateUserPermissionDefault(database.GetDatabase(), command_list[2], command_list[3])
+			_, err := db_permission.CreateUserPermissionDefault(database.GetDatabase(), command_list[2], command_list[3])
 			if err != nil {
 				logs.Write_Log("WARNING", "error during the creation of the user_permission "+command_list[1]+" : "+err.Error())
 				return (">> -" + err.Error())
@@ -25,7 +26,7 @@ func create_Permission(command_list []string) string {
 			return ("new user_permission create with succes with Name: " + command_list[2] + " and permission admin : ")
 		case "-c":
 			isValid := tools.String_tobool_yesnot(command_list[3])
-			_, err := database.CreateClientPermission(database.GetDatabase(), command_list[2], isValid)
+			_, err := db_permission.CreateClientPermission(database.GetDatabase(), command_list[2], isValid)
 			if err != nil {
 				logs.Write_Log("WARNING", "error during the creation of the client_permission "+command_list[2]+" : "+err.Error())
 				return (">> -" + err.Error())

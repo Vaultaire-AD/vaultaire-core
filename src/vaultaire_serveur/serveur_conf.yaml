@@ -1,4 +1,7 @@
-serveurlistenport: "6666"
+serveurlistenport: "666"
+api:
+  api_enable: true
+  api_port: 6643
 file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
   privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"

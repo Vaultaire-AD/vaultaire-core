@@ -1,40 +1,92 @@
 package commandget
 
 import (
+	commandpermission "DUCKY/serveur/command/command_permission"
 	"DUCKY/serveur/command/display"
 	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
+	dbuser "DUCKY/serveur/database/db-user"
+	"DUCKY/serveur/permission"
+	"fmt"
+	"strings"
 )
 
-func get_User_Command_Parser(command_list []string) string {
-	if len(command_list) == 1 {
-		users, err := database.Command_GET_AllUsers(database.GetDatabase())
-		if err != nil {
-			logs.Write_Log("WARNING", "error during the get of all users : "+err.Error())
-			return (">> -" + err.Error())
-		}
-		return display.DisplayAllUsers(users)
+// GetUserCommandParser traite les commandes "get user"
+func getUserCommandParser(commandList []string, senderGroupsIDs []int, action, senderUsername string) string {
+	switch len(commandList) {
+	case 1:
+		return handleGetAllUsers(senderGroupsIDs, action, senderUsername)
 
+	case 2:
+		return handleGetUserInfo(commandList[1], senderGroupsIDs, action, senderUsername)
+
+	case 3:
+		return handleGetUserSubcommand(commandList, senderGroupsIDs, action, senderUsername)
+
+	default:
+		return commandpermission.InvalidPermissionRequest()
 	}
-	if len(command_list) == 2 {
-		user_Info, err := database.Command_GET_UserInfo(database.GetDatabase(), command_list[1])
+}
+
+// --- Sous-fonctions privées --- //
+
+// handleGetAllUsers retourne la liste de tous les utilisateurs
+func handleGetAllUsers(senderGroupsIDs []int, action, senderUsername string) string {
+	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, []string{"*"}) {
+		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
+	}
+
+	users, err := database.Command_GET_AllUsers(database.GetDatabase())
+	if err != nil {
+		return commandpermission.LogAndReturn("Erreur lors de la récupération des utilisateurs : ", err)
+	}
+	return display.DisplayAllUsers(users)
+}
+
+// handleGetUserInfo retourne les infos détaillées d’un utilisateur
+func handleGetUserInfo(username string, senderGroupsIDs []int, action, senderUsername string) string {
+	domainList, err := permission.GetDomainListFromUsername(senderUsername)
+	if err != nil {
+		return fmt.Sprintf(">> -Erreur récupération domaines pour l'utilisateur %s : %s", username, err.Error())
+	}
+
+	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domainList) {
+		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
+	}
+
+	userInfo, err := database.Command_GET_UserInfo(database.GetDatabase(), username)
+	if err != nil {
+		return commandpermission.LogAndReturn("Erreur récupération utilisateur "+username+" : ", err)
+	}
+	return display.DisplayUsersInfoByName(userInfo)
+}
+
+// handleGetUserSubcommand traite les sous-commandes (-g et -k)
+func handleGetUserSubcommand(commandList []string, senderGroupsIDs []int, action, senderUsername string) string {
+	subcmd, arg := commandList[1], commandList[2]
+
+	switch subcmd {
+	case "-g": // Récupère les utilisateurs par groupe
+		users, err := database.Command_GET_UsersByGroup(database.GetDatabase(), arg)
 		if err != nil {
-			logs.Write_Log("WARNING", "error during the get of the user "+command_list[1]+" : "+err.Error())
-			return (">> -" + err.Error())
+			return commandpermission.LogAndReturn("Erreur récupération utilisateurs du groupe "+arg+" : ", err)
 		}
-		return display.DisplayUsersInfoByName(user_Info)
-	} else if len(command_list) == 3 {
-		switch command_list[1] {
-		case "-g":
-			user_Info, err := database.Command_GET_UsersByGroup(database.GetDatabase(), command_list[2])
-			if err != nil {
-				logs.Write_Log("WARNING", "error during the get of the user "+command_list[2]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			return display.DisplayUsersByGroup(command_list[2], user_Info)
-		default:
-			return ("\nMiss Argument get -h for more information or consult man on the wiki")
-		}
+		return display.DisplayUsersByGroup(arg, users)
 	}
-	return ("\nMiss Argument get -h for more information or consult man on the wiki")
+
+	// Exemple : get user bob -k
+	if arg == "-k" {
+		username := strings.TrimSpace(commandList[1])
+		userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), username)
+		if err != nil {
+			return commandpermission.LogAndReturn("Erreur récupération ID utilisateur "+username+" : ", err)
+		}
+
+		pubKeys, err := dbuser.GetUserKeys(userID)
+		if err != nil || len(pubKeys) == 0 {
+			return ">> -No public key found for this user"
+		}
+		return display.DisplayUserPublicKeys(username, pubKeys)
+	}
+
+	return commandpermission.InvalidPermissionRequest()
 }

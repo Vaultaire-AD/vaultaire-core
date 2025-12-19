@@ -57,8 +57,10 @@ func DisplayClientsByStatus(clients []storage.ClientConnected) string {
 	}
 
 	// Vider le tampon pour s'assurer que tout est écrit dans sb
-	w.Flush()
-
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	// Ajouter une ligne de séparation
 	sb.WriteString("--------------------------------------------------\n")
 

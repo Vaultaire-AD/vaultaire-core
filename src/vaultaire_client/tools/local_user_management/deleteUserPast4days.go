@@ -19,7 +19,12 @@ func DeleteUser_Vaultaire_Past_4Days_withoutconnection() {
 	if err != nil {
 		log.Fatalf("Erreur d'ouverture de %s: %v", passwdFile, err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	scanner := bufio.NewScanner(file)
 	now := time.Now()

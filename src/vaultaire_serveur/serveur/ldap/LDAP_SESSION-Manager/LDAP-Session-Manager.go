@@ -1,6 +1,8 @@
 package ldapsessionmanager
 
 import (
+	"DUCKY/serveur/logs"
+	"fmt"
 	"net"
 	"sync"
 )
@@ -26,6 +28,7 @@ func InitLDAPSession(conn net.Conn) {
 		Conn:    conn,
 		IsBound: false,
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Nouvelle session LDAP créée pour %s", conn.RemoteAddr()))
 }
 
 // Récupérer une session existante
@@ -51,7 +54,6 @@ func SetBindInfo(conn net.Conn, username string, userDN string) {
 
 func ClearSession(c net.Conn) {
 	DeleteLDAPSession(c)
-	c.Close()
 }
 
 // Supprimer la session (à la fermeture de connexion)
@@ -60,4 +62,16 @@ func DeleteLDAPSession(conn net.Conn) {
 	defer sessionStoreMu.Unlock()
 
 	delete(sessionStore, conn)
+	logs.Write_Log("INFO", fmt.Sprintf("Session LDAP supprimée pour %s", conn.RemoteAddr()))
+}
+
+func ListActiveSessions() []LDAPSession {
+	sessionStoreMu.RLock()
+	defer sessionStoreMu.RUnlock()
+
+	sessions := make([]LDAPSession, 0, len(sessionStore))
+	for _, s := range sessionStore {
+		sessions = append(sessions, *s)
+	}
+	return sessions
 }

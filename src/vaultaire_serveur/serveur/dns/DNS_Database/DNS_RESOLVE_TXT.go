@@ -1,6 +1,7 @@
 package dnsdatabase
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"strings"
@@ -15,7 +16,12 @@ func ResolveTXTRecords(db *sql.DB, zone string) ([]string, error) {
 	if err != nil {
 		return nil, fmt.Errorf("erreur récupération TXT pour %s : %v", zone, err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	var results []string
 	for rows.Next() {

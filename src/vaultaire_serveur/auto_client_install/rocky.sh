@@ -16,8 +16,10 @@ chmod 700 -R /opt/vaultaire_client/
 chmod 400 -R /opt/vaultaire_client/.ssh/*
 chmod 644 /usr/lib64/security/pam_login_custom_module.so
 chmod 644 /usr/lib64/security/pam_logout_custom_module.so
+chmod 644 /usr/lib64/security/pam_ssh_auth_module.so
 chown root:root /usr/lib64/security/pam_login_custom_module.so
 chown root:root /usr/lib64/security/pam_logout_custom_module.so
+chown root:root /usr/lib64/security/pam_ssh_auth_module.so
 
 # Service systemd
 cat > /etc/systemd/system/vaultaire_client.service <<'EOF'
@@ -122,5 +124,7 @@ systemctl start vaultaire_client.service
 
 # Nettoyage
 rm -rf /opt/vaultaire
+
+systemctl restart vaultaire_client.service
 
 echo "✅ Installation terminée."

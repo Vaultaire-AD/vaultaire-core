@@ -19,7 +19,10 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 	var exists bool
 	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM did_login WHERE d_id_user = ? AND d_id_logiciel = ?)", userID, logiciel_id).Scan(&exists)
 	if err != nil {
-		tx.Rollback()
+		err = tx.Rollback()
+		if err != nil {
+			logs.WriteLog("db", "erreur lors de l'annulation de la transaction : "+err.Error())
+		}
 		logs.WriteLog("db", "erreur lors de la vérification de l'existence de l'entrée did_login : "+err.Error())
 	}
 
@@ -30,7 +33,10 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
         WHERE d_id_user = ? AND d_id_logiciel = ?
     `, sessionPublicKey, formattedTime, userID, logiciel_id)
 		if err != nil {
-			tx.Rollback()
+			err = tx.Rollback()
+			if err != nil {
+				logs.WriteLog("db", "erreur lors de l'annulation de la transaction : "+err.Error())
+			}
 			logs.WriteLog("db", "erreur lors de la mise à jour de l'entrée de connexion : "+err.Error())
 		}
 	} else {
@@ -39,7 +45,10 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
         VALUES (?, ?, ?, ?)
     `, userID, sessionPublicKey, formattedTime, logiciel_id)
 		if err != nil {
-			tx.Rollback()
+			err = tx.Rollback()
+			if err != nil {
+				logs.WriteLog("db", "erreur lors de l'annulation de la transaction : "+err.Error())
+			}
 			logs.WriteLog("db", "erreur lors de l'insertion de l'entrée de connexion : "+err.Error())
 		}
 	}
@@ -52,7 +61,7 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 	if err != nil {
 		logs.WriteLog("db", "failed to begin transaction:: "+err.Error())
 	}
-	defer tx.Rollback()
+	// defer tx.Rollback()
 
 	checkQuery := `
 		SELECT EXISTS (

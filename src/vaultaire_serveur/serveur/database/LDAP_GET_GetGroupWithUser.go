@@ -2,6 +2,7 @@ package database
 
 import (
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 )
@@ -39,7 +40,12 @@ func fetchGroupAndUsersDataByGroupName(db *sql.DB, groupName string) (*sql.Rows,
 // ou nil si le groupe n'existe pas ou s'il y a une erreur.
 // Elle ferme automatiquement les *sql.Rows.
 func processGroupRowsFromSingleQuery(rows *sql.Rows) (*ldapstorage.Group, error) {
-	defer rows.Close() // Assurez-vous que les lignes sont toujours fermées
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}() // Assurez-vous que les lignes sont toujours fermées
 
 	var currentGroup *ldapstorage.Group // Pointeur pour le groupe en cours de construction
 
@@ -108,6 +114,7 @@ func GetGroupsWithUsersByNames(db *sql.DB, groupNames []string) ([]ldapstorage.G
 	return allFoundGroups, nil
 }
 
+// GetGroupWithUsersByName récupère un groupe spécifique et ses utilisateurs.
 func GetGroupWithUsersByName(db *sql.DB, groupName string) (*ldapstorage.Group, error) {
 	rows, err := fetchGroupAndUsersDataByGroupName(db, groupName)
 	if err != nil {

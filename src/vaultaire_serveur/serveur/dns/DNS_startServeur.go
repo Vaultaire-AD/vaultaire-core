@@ -4,6 +4,7 @@ import (
 	dnsdatabase "DUCKY/serveur/dns/DNS_Database"
 	dnsparser "DUCKY/serveur/dns/DNS_Parser"
 	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	"DUCKY/serveur/logs"
 	"fmt"
 	"log"
 	"net"
@@ -19,7 +20,12 @@ func DNS_StartServeur() {
 	if err != nil {
 		log.Fatalf("Erreur d'écoute UDP : %v", err)
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	fmt.Println("🚀 En attente de requêtes DNS sur le port 53...")
 	dnsdatabase.InitDatabase()
@@ -141,5 +147,4 @@ func ResolveDNSQuery(fqdn string, qType uint16) (any, error) {
 	default:
 		return "", fmt.Errorf("❌ Type de requête DNS non supporté : %d", qType)
 	}
-	return "", fmt.Errorf("❌ Type de requête DNS non supporté : %d", qType)
 }

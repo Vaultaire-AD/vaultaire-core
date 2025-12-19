@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"time"
@@ -47,7 +48,12 @@ func loadConfig(filePath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config config
@@ -65,13 +71,17 @@ func loadConfig(filePath string) error {
 }
 
 func main() {
-	loadConfig("/opt/vaultaire_client/client_conf.yaml")
+	err := loadConfig("/opt/vaultaire_client/client_conf.yaml")
+	if err != nil {
+		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
+
+	}
 	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePath)
 	log.SetOutput(os.Stdout)
 	StartDailyUserCleanup()
 	// Lancer le serveur de socket Unix
 	if storage.IsServeur {
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "")
 	}
 	pamcommunication.UnixSocketServer()
 }

@@ -2,20 +2,21 @@ package ldapbindunbind
 
 import (
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
+	"DUCKY/serveur/logs"
 	"fmt"
 	"net"
 )
 
-func parseUnbindRequestManual(data []byte) error {
-	if len(data) < 2 || data[0] != 0x42 {
-		return fmt.Errorf("not an Unbind Request tag")
-	}
-	length := int(data[1])
-	if length != 0 {
-		return fmt.Errorf("unexpected length for Unbind request")
-	}
-	return nil
-}
+// func parseUnbindRequestManual(data []byte) error {
+// 	if len(data) < 2 || data[0] != 0x42 {
+// 		return fmt.Errorf("not an Unbind Request tag")
+// 	}
+// 	length := int(data[1])
+// 	if length != 0 {
+// 		return fmt.Errorf("unexpected length for Unbind request")
+// 	}
+// 	return nil
+// }
 
 func buildLDAPUnbindResponse(messageID int) []byte {
 	// Par exemple, un LDAPMessage vide de type 'Success' (similaire à BindResponse)
@@ -50,7 +51,11 @@ func HandleUnbindRequest(messageID int, conn net.Conn) {
 	fmt.Println("Handling Unbind Request")
 	// Normalement pas de réponse à un Unbind
 	// Mais si tu veux envoyer une réponse, décommenter la ligne suivante :
-	conn.Write(buildLDAPUnbindResponse(messageID))
+	_, err := conn.Write(buildLDAPUnbindResponse(messageID))
+	if err != nil {
+		logs.Write_Log("ERROR", "Error sending Unbind response: "+err.Error())
+		return
+	}
 	// Puis fermer la connexion (fin de session)
 	ldapsessionmanager.ClearSession(conn)
 }

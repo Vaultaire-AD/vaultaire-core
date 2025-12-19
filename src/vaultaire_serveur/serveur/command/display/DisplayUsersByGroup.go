@@ -51,7 +51,10 @@ func DisplayUsersByGroup(groupName string, users []storage.DisplayUsersByGroup) 
 	}
 
 	// Vider le tampon et ajouter au StringBuilder
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 
 	// Ajouter la ligne de séparation

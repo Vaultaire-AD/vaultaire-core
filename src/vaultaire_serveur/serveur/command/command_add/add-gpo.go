@@ -3,26 +3,41 @@ package commandadd
 import (
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 )
 
-// add_GPO_Command_Parser handles the addition of a GPO to a group.
-// It expects a command list with the format: ["-gpo", "group_name", "-g", "gpo_name"].
-// If the command is valid, it adds the GPO to the group and returns the updated group information.
-// If the command is invalid or an error occurs, it logs the error and returns an empty string.
-func add_GPO_Command_Parser(command_list []string) string {
-	if len(command_list) == 4 {
-		switch command_list[0] {
-		case "-gpo":
-			err := database.Command_ADD_GPOToGroup(database.GetDatabase(), command_list[1], command_list[3])
-			if err != nil {
-				logs.Write_Log("WARNING", "Error for add gpo "+command_list[3]+" to group "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			logs.Write_Log("INFO", "Add to group : "+command_list[1]+" gpo : "+command_list[3])
-			return post_displayGroupInfo(command_list[3])
-		default:
-			return ("Invalid Request Try add -gpo gpo_name -g group_name for more information : " + command_list[0])
-		}
+// add_GPO_Command_Parser handles the addition of a GPO to a group with permission checks.
+func add_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	if len(command_list) != 4 {
+		return "Invalid Request. Usage: add -gpo <gpo_name> -g <group_name>"
 	}
-	return ("Invalid Request Try get -h for more information")
+
+	gpoName := command_list[1]
+	groupName := command_list[3]
+
+	// 🔹 Étape 1 : Récupération des domaines du groupe cible
+	domains, err := permission.GetDomainsFromGroupName(groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err))
+		return fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err)
+	}
+
+	// 🔹 Étape 2 : Vérification des permissions sur les domaines
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter GPO %s au groupe %s (domaines : %v) — %s",
+			sender_Username, gpoName, groupName, domains, reason))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	// 🔹 Étape 3 : Ajout du GPO au groupe
+	err = database.Command_ADD_GPOToGroup(database.GetDatabase(), gpoName, groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout GPO %s au groupe %s : %v", gpoName, groupName, err))
+		return ">> -" + err.Error()
+	}
+
+	logs.Write_Log("INFO", fmt.Sprintf("GPO %s ajouté au groupe %s avec succès", gpoName, groupName))
+	return post_displayGroupInfo(groupName)
 }

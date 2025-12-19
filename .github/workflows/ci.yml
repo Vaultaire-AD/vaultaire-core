@@ -6,35 +6,117 @@ on:
       - dev
 
 jobs:
-  build_test:
-    runs-on: rocky-latest
-
+  build_test_serveur:
+    runs-on: ubuntu-latest
+    name: Build & Test Serveur
+    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Set up Go
-      uses: actions/setup-go@v4
-      with:
-        go-version: 1.22.9
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: stable
 
-    - name: Download dependencies
-      run: go mod download
+      - name: Download dependencies
+        working-directory: ./src/vaultaire_serveur
+        run: go mod download
 
-    - name: Run gofmt check
-      run: |
-        if ! go fmt ./... | grep -q '^'; then
-          echo "Code is not properly formatted. Please run 'go fmt ./...'"
-          exit 1
-        fi
+      - name: Run gofmt check
+        working-directory: ./src/vaultaire_serveur
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not properly formatted. Please run 'go fmt ./...'"
+            exit 1
+          fi
 
-    - name: Run golangci-lint
-      uses: golangci/golangci-lint-action@v3
-      with:
-        version: v1.53.3
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: ./src/vaultaire_serveur
+          version: v2.1
+        
 
-    - name: Run tests
-      run: go test -v ./...
-      
-    - name: Build binaries
-      run: go build -v ./src/...
+      - name: Run tests
+        working-directory: ./src/vaultaire_serveur
+        run: go test -v ./...
+
+      - name: Build binaries
+        working-directory: ./src/vaultaire_serveur
+        run: go build -v ./...
+
+  build_test_client:
+    runs-on: ubuntu-latest
+    name: Build & Test Client 
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.9
+
+      - name: Download dependencies
+        working-directory: ./src/vaultaire_client
+        run: go mod download
+
+      - name: Run gofmt check
+        working-directory: ./src/vaultaire_client
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not properly formatted. Please run 'go fmt ./...'"
+            exit 1
+          fi
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: ./src/vaultaire_client
+          version: v2.1
+        
+      - name: Run tests
+        working-directory: ./src/vaultaire_client
+        run: go test -v ./...
+
+      - name: Build binaries
+        working-directory: ./src/vaultaire_client
+        run: go build -v ./...
+
+  build_test_cli:
+    runs-on: ubuntu-latest
+    name: Build & Test Vaultaire CLI (si différent)
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.22.9
+
+      - name: Download dependencies
+        working-directory: ./src/vaultaire_cli
+        run: go mod download
+
+      - name: Run gofmt check
+        working-directory: ./src/vaultaire_cli
+        run: |
+          if [ -n "$(gofmt -l .)" ]; then
+            echo "Code is not properly formatted. Please run 'go fmt ./...'"
+            exit 1
+          fi
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v8
+        with:
+          working-directory: ./src/vaultaire_cli
+          version: v2.1
+        
+      - name: Run tests
+        working-directory: ./src/vaultaire_cli
+        run: go test -v ./...
+
+      - name: Build binaries
+        working-directory: ./src/vaultaire_cli
+        run: go build -v ./...

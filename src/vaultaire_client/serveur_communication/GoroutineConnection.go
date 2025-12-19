@@ -3,13 +3,19 @@ package serveurcommunication
 import (
 	"fmt"
 	"net"
+	br "vaultaire_client/duckynetworkClient/trames_manager"
 	"vaultaire_client/storage"
-	br "vaultaire_client/trames_manager"
 )
 
 func handleConnection(user string, conn net.Conn) {
 	storeConnection(user, conn)
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
+
 	for {
 		headerSize := br.Read_Header_Size(conn)
 		if !storage.ServeurCheck {

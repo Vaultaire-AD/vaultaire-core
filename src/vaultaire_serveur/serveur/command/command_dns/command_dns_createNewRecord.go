@@ -24,7 +24,7 @@ func command_dns_addRecord(command_list []string, db *sql.DB) string {
 		return "❌ TTL invalide, doit être un entier."
 	}
 
-	var priority int = 100
+	var priority = 100
 	if len(command_list) >= 6 {
 		priority, err = strconv.Atoi(command_list[5])
 		if err != nil {

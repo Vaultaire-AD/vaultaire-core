@@ -1,6 +1,7 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"database/sql"
 	"fmt"
@@ -21,7 +22,12 @@ func GetAllGroupsWithDomains(db *sql.DB) ([]storage.GroupDomain, error) {
 	if err != nil {
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var results []storage.GroupDomain
 	for rows.Next() {

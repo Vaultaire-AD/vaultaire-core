@@ -1,6 +1,7 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"database/sql"
 	"log"
@@ -14,7 +15,12 @@ func Command_GET_AllGPO(db *sql.DB) ([]*storage.LinuxGPO, error) {
 		log.Println("Erreur lors de la récupération des GPO:", err)
 		return nil, err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var gpos []*storage.LinuxGPO
 	for rows.Next() {

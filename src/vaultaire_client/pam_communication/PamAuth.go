@@ -12,8 +12,9 @@ import (
 )
 
 type Response struct {
-	Status  string `json:"status"`
-	IsAdmin bool   `json:"is_admin"` // Ce champ sera ignoré si false/non défini
+	Status   string `json:"status"`
+	IsAdmin  bool   `json:"is_admin"` // Ce champ sera ignoré si false/non défini
+	Ssh_keys string `json:"ssh_keys"`
 }
 
 // Fonction pour gérer l'authentification
@@ -31,29 +32,41 @@ func handleAuthRequest(conn net.Conn, payload string) {
 	}
 
 	// Lancer l'ancien main avec les identifiants
-	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password)
+	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "")
 
 	status_rep := "timeout"
 	select {
 	case auth_res := <-storage.Authentification_PAM:
-		// Traitement de la réponse authentifiée
-		if auth_res == "success" {
+		switch auth_res {
+		case "success":
 			fmt.Println("Authentification réussie:", auth_res)
 			status_rep = "success"
-		} else if auth_res == "failed" {
-			status_rep = "failed"
+		case "failed":
 			fmt.Println("Authentification failed:", auth_res)
+			status_rep = "failed"
+		default:
+			fmt.Println("Authentification status inconnu:", auth_res)
 		}
 
 	case <-time.After(5 * time.Second):
-		// Si aucune donnée n'est reçue après 5 secondes, passez à autre chose
 		fmt.Println("Time Out")
 	}
+
 	fmt.Println("L'user est il admin ? : " + strconv.FormatBool(storage.IsAdmin))
 	// Envoyer une réponse confirmant l'authentification
+	var sshKeys string
+
+	select {
+	case sshKeys = <-storage.Authentification_SSHpubkey: // récupère la valeur envoyée sur le canal
+	case <-time.After(5 * time.Second):
+		sshKeys = "" // timeout
+	}
+
+	// Ensuite tu peux créer ta réponse
 	response := Response{
-		Status:  status_rep,
-		IsAdmin: storage.IsAdmin,
+		Status:   status_rep,
+		IsAdmin:  storage.IsAdmin,
+		Ssh_keys: sshKeys, // si Ssh_keys est []string
 	}
 
 	encoder := json.NewEncoder(conn)
@@ -61,4 +74,6 @@ func handleAuthRequest(conn net.Conn, payload string) {
 	if err != nil {
 		log.Printf("Erreur d'envoi de la réponse: %v", err)
 	}
+	storage.IsAdmin = false
+	storage.Authentification_SSHpubkey <- ""
 }
