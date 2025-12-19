@@ -1,24 +1,36 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 )
 
-func Get_Public_Key_By_UserID(db *sql.DB, userID int) (string, error) {
-	var publicKey string
-	query := `SELECT public_key FROM user_key WHERE d_id_user = ?`
+func Get_PublicKeys_ByUserID(db *sql.DB, userID int) ([]string, error) {
+	query := `SELECT public_key FROM user_public_keys WHERE id_user = ?`
 
-	err := db.QueryRow(query, userID).Scan(&publicKey)
+	rows, err := db.Query(query, userID)
 	if err != nil {
-		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "clé publique non trouvée pour l'utilisateur ID"+err.Error())
-			return "", fmt.Errorf("clé publique non trouvée pour l'utilisateur ID %d", userID)
+		return nil, fmt.Errorf("erreur requête DB: %w", err)
+	}
+	defer rows.Close()
+
+	var keys []string
+
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			return nil, fmt.Errorf("erreur scan clé publique: %w", err)
 		}
-		logs.WriteLog("db", "erreur lors de la récupération de la clé publique: "+err.Error())
-		return "", fmt.Errorf("erreur lors de la récupération de la clé publique: %v", err)
+		keys = append(keys, key)
 	}
 
-	return publicKey, nil
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("erreur itération rows: %w", err)
+	}
+
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("aucune clé publique pour l'utilisateur %d", userID)
+	}
+
+	return keys, nil
 }

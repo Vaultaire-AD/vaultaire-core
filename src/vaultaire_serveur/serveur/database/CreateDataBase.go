@@ -34,16 +34,19 @@ func Create_DataBase(db *sql.DB) {
 
 		// ----- Permissions Utilisateur (type LDAP) -----
 		`CREATE TABLE IF NOT EXISTS user_permission (
-			id_user_permission INT AUTO_INCREMENT PRIMARY KEY,
-			name VARCHAR(255) UNIQUE NOT NULL,
-			description TEXT,
-			none BOOLEAN NOT NULL DEFAULT FALSE,
-			web_admin BOOLEAN NOT NULL DEFAULT FALSE,
-			auth BOOLEAN NOT NULL DEFAULT FALSE,
-			compare BOOLEAN NOT NULL DEFAULT FALSE,
-			search BOOLEAN NOT NULL DEFAULT FALSE,
-			can_read BOOLEAN NOT NULL DEFAULT FALSE,
-			can_write BOOLEAN NOT NULL DEFAULT FALSE
+   			id_user_permission INT AUTO_INCREMENT PRIMARY KEY,
+    		name VARCHAR(255) UNIQUE NOT NULL,
+    		description TEXT,
+
+    		none TEXT DEFAULT 'nil',
+    		web_admin TEXT DEFAULT 'nil',
+    		auth TEXT DEFAULT 'nil',
+    		compare TEXT DEFAULT 'nil',
+    		search TEXT DEFAULT 'nil',
+    		can_read TEXT DEFAULT 'nil',
+    		can_write TEXT DEFAULT 'nil',
+    		api_read_permission TEXT DEFAULT 'nil',
+    		api_write_permission TEXT DEFAULT 'nil'
 		);`,
 
 		// ----- Groupes -----
@@ -55,7 +58,7 @@ func Create_DataBase(db *sql.DB) {
 		// Groupes et domaines
 		`CREATE TABLE IF NOT EXISTS domain_group (
 			id_domain_group INT AUTO_INCREMENT PRIMARY KEY,
-			d_id_group INT NOT NULL,
+			d_id_group INT NOT NULL UNIQUE,
 			domain_name VARCHAR(255) NOT NULL,
 			FOREIGN KEY (d_id_group) REFERENCES groups(id_group) ON DELETE CASCADE
 		);`,
@@ -156,9 +159,50 @@ func Create_DataBase(db *sql.DB) {
 			FOREIGN KEY (d_id_gpo) REFERENCES linux_gpo_distributions(id) ON DELETE CASCADE
 		);`,
 
+		`CREATE TABLE IF NOT EXISTS user_public_keys (
+    		id_key INT AUTO_INCREMENT PRIMARY KEY,
+    		id_user INT NOT NULL,
+    		public_key TEXT NOT NULL,
+    		label VARCHAR(100) DEFAULT NULL, -- optionnel : nom de la clé pour l'utilisateur
+    		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    		CONSTRAINT fk_user FOREIGN KEY (id_user) REFERENCES users(id_user) ON DELETE CASCADE,
+    		UNIQUE KEY unique_pubkey (public_key(255))
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
 		// ----- Données initiales -----
-		`INSERT IGNORE INTO users (username, password, salt, date_naissance)
-		 VALUES ('vaultaire','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,
+		`INSERT IGNORE INTO users (username, firstname, lastname, email, password, salt, date_naissance)
+ 			VALUES ('vaultaire','Vault','Admin','vaultaire@example.com','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,
+
+		`INSERT IGNORE INTO groups (group_name) VALUES ('vaultaire');`,
+
+		// <-- ajout : associer un domaine au groupe "vaultaire"
+		`INSERT IGNORE INTO domain_group (d_id_group, domain_name)
+			SELECT g.id_group, 'vaultaire.fr'
+ 			FROM groups g
+ 			WHERE g.group_name='vaultaire';`,
+
+		`INSERT IGNORE INTO client_permission (name_permission, is_admin)
+ 			VALUES ('vaultaire_admin', TRUE);`,
+
+		`INSERT IGNORE INTO group_permission_logiciel (d_id_group, d_id_permission)
+ 			SELECT g.id_group, p.id_permission
+ 			FROM groups g, client_permission p
+ 			WHERE g.group_name='vaultaire' AND p.name_permission='vaultaire_admin';`,
+
+		`INSERT IGNORE INTO user_permission 
+			(name, description, none, web_admin, auth, compare, search, can_read, can_write, api_read_permission, api_write_permission)
+			VALUES ('vaultaire_all', 'Permissions complètes pour le groupe vaultaire','all','all','all','all','all','all','all','all','all');`,
+
+		`INSERT IGNORE INTO group_user_permission (d_id_group, d_id_user_permission)
+			SELECT g.id_group, u.id_user_permission
+ 			FROM groups g, user_permission u
+ 			WHERE g.group_name='vaultaire' AND u.name='vaultaire_all';`,
+
+		`INSERT IGNORE INTO users_group (d_id_user, d_id_group)
+			SELECT u.id_user, g.id_group
+			FROM users u, groups g
+			WHERE u.username='vaultaire' AND g.group_name='vaultaire';
+		`,
 	}
 
 	for _, query := range createTablesSQL {

@@ -1,6 +1,7 @@
 package display
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"fmt"
 	"strings"
@@ -34,7 +35,7 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 	)
 
 	for _, p := range permissions {
-		fmt.Fprintf(w, "%-5d %-20s %-30s %-6t %-6t %-8t %-8t %-6t %-6t\n",
+		fmt.Fprintf(w, "%-5d %-20s %-30s %-6s %-6s %-8s %-8s %-6s %-6s\n",
 			p.ID,
 			p.Name,
 			p.Description,
@@ -47,7 +48,11 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 		)
 	}
 
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		logs.Write_Log("ERROR", "Erreur lors de l'écriture du tableau: "+err.Error())
+		return "Erreur lors de l'affichage des permissions."
+	}
 	sb.WriteString("--------------------------------------------------\n")
 
 	return sb.String()

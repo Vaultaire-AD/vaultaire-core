@@ -1,6 +1,0 @@
-go run main .ssh/<nom du dossier>/
-
-/create_room <nom de la room> <nom du users>
-/invite <nom de la room> <nom du Users>
-
-\<nom de la room> message

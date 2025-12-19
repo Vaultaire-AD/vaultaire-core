@@ -52,7 +52,10 @@ func DisplayUsersByStatus(users []storage.UserConnected) string {
 	}
 
 	// Écrire le tableau formaté dans `sb`
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 
 	sb.WriteString("--------------------------------------------------\n")

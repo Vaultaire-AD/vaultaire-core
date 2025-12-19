@@ -1,16 +1,16 @@
-package configurationfile
+package configuration_file
 
 import (
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"io/ioutil"
+	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v2"
+	yaml "gopkg.in/yaml.v3"
 )
 
 func ReadConfigUser[T any](filePath string) (*T, error) {
-	data, err := ioutil.ReadFile(filePath)
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		logs.Write_Log("WARNING", "erreur lors de la lecture du fichier de configuration: "+err.Error())
 	}
@@ -30,7 +30,12 @@ func LoadConfig(filePath string) error {
 	if err != nil {
 		return err
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config storage.Config
@@ -105,6 +110,32 @@ func LoadConfig(filePath string) error {
 	}
 	if config.Website.Website_Port != 0 {
 		storage.Website_Port = config.Website.Website_Port
+	}
+	if config.Api.API_Enable {
+		storage.API_Enable = config.Api.API_Enable
+	}
+	if config.Api.API_Port != 0 {
+		storage.API_Port = config.Api.API_Port
+	}
+	if config.Debug.Debug {
+		storage.Debug = config.Debug.Debug
+	}
+	if config.Path.ServerCheckOnlineTimer != 0 {
+		storage.ServerCheckOnlineTimer = config.Path.ServerCheckOnlineTimer
+	}
+
+	// Administrateur settings
+	if config.Administrateur.Enable {
+		storage.Administrateur_Enable = config.Administrateur.Enable
+	}
+	if config.Administrateur.Username != "" {
+		storage.Administrateur_Username = config.Administrateur.Username
+	}
+	if config.Administrateur.Password != "" {
+		storage.Administrateur_Password = config.Administrateur.Password
+	}
+	if config.Administrateur.PublicKey != "" {
+		storage.Administrateur_PublicKey = config.Administrateur.PublicKey
 	}
 	// Retourner la configuration lue
 	return nil

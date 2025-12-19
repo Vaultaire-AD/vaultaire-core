@@ -29,7 +29,12 @@ func Command_GET_AllClients(db *sql.DB) ([]storage.GetClientsByPermission, error
 		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	// Déclaration d'une slice pour stocker les résultats
 	var clients []storage.GetClientsByPermission

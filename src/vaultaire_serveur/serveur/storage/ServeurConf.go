@@ -2,7 +2,10 @@ package storage
 
 type Config struct {
 	ServerListenPort string `yaml:"serveurlistenport"`
-
+	Api              struct {
+		API_Enable bool `yaml:"api_enable"`
+		API_Port   int  `yaml:"api_port"`
+	} `yaml:"api"`
 	Path struct {
 		SocketPath                 string `yaml:"socketpath"`
 		PrivateKeyPath             string `yaml:"privatekeypath"`
@@ -37,6 +40,15 @@ type Config struct {
 	Automatisation struct {
 		Sh_folder_path string `yaml:"sh_folder_path"`
 	} `yaml:"automatisation"`
+	Debug struct {
+		Debug bool `yaml:"debug"`
+	} `yaml:"debug"`
+	Administrateur struct {
+		Enable    bool   `yaml:"enable"`
+		Username  string `yaml:"username"`
+		Password  string `yaml:"password"`
+		PublicKey string `yaml:"public_key"`
+	} `yaml:"administrateur"`
 }
 
 var ServeurLisetenPort string = "6666"
@@ -69,3 +81,13 @@ var Website_Port int = 443
 
 var Dns_Enable bool = true
 var Sh_folder_path string = "/opt/vaultaire/automatisation/"
+
+var API_Enable bool = true
+var API_Port int = 6643
+
+var Debug bool = false
+
+var Administrateur_Enable bool = false
+var Administrateur_Username string = "admin"
+var Administrateur_Password string = "admin123"
+var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCyv4Y1l6K4vX1Y1VJ5t5nX5F2"

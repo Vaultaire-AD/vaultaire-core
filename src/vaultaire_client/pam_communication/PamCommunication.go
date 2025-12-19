@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"vaultaire_client/storage"
 )
 
 type AuthRequest struct {
@@ -16,14 +17,19 @@ type AuthRequest struct {
 
 // Fonction pour valider les entrées de l'utilisateur
 func isValidUserInput(input string) bool {
-	validInputPattern := "^[a-zA-Z0-9._-]+$"
+	validInputPattern := "^[a-zA-Z0-9._@-]+$"
 	re := regexp.MustCompile(validInputPattern)
 	return re.MatchString(input)
 }
 
 // Fonction pour gérer la connexion socket Unix
 func handleUnixSocketConnection(conn net.Conn) {
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			// Handle or log the error
+			log.Printf("error closing connection: %v", err)
+		}
+	}()
 
 	// Décode le message JSON
 	var message map[string]json.RawMessage
@@ -43,27 +49,33 @@ func handleUnixSocketConnection(conn net.Conn) {
 		// Traitement de la commande de fermeture
 		handleCloseRequest(conn, string(close))
 
+	} else if check, exists := message["check"]; exists {
+		handleCheckRequest(conn, string(check))
 	} else {
 		log.Printf("Commande inconnue reçue: %v", message)
 	}
 }
 
 func UnixSocketServer() {
-	socketPath := "/tmp/vaultaire_client.sock"
 
 	// Supprimer le fichier du socket s'il existe déjà
-	if err := os.RemoveAll(socketPath); err != nil {
+	if err := os.RemoveAll(storage.SocketPath); err != nil {
 		log.Fatalf("Error removing existing socket file: %v", err)
 	}
 
 	// Créer le socket Unix
-	ln, err := net.Listen("unix", socketPath)
+	ln, err := net.Listen("unix", storage.SocketPath)
 	if err != nil {
 		log.Fatalf("Error creating Unix socket: %v", err)
 	}
-	defer ln.Close()
+	defer func() {
+		if err := ln.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
-	fmt.Println("Server listening on Unix socket:", socketPath)
+	fmt.Println("Server listening on Unix socket:", storage.SocketPath)
 
 	// Boucle d'acceptation des connexions
 	for {

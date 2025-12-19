@@ -1,6 +1,7 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
 	"database/sql"
 	"fmt"
@@ -27,7 +28,12 @@ func Command_STATUS_GetConnectedUsers(db *sql.DB) ([]storage.UserConnected, erro
 	if err != nil {
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var connectedUsers []storage.UserConnected
 	for rows.Next() {
@@ -71,7 +77,12 @@ func Command_STATUS_GetConnectedUser(db *sql.DB, username string) ([]storage.Use
 		}
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var connectedUsers []storage.UserConnected
 	for rows.Next() {

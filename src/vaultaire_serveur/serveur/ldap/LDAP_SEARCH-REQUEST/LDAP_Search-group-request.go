@@ -15,7 +15,7 @@ import (
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
-func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, filtres []ldapstorage.EqualityFilter, baseObject string) {
+func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, filtres []ldapstorage.EqualityFilter, baseObject string, scope int) {
 
 	if filtres[0].Attribute == "cn" {
 		//ici on cherche a recup les user present dans 1 groupe
@@ -30,7 +30,10 @@ func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, fil
 		groups, err := database.FindGroupsByUserInDomainTree(database.GetDatabase(), uid, baseObject)
 		if err != nil {
 			log.Println("Erreur récupération groupes :", err)
-			SendLDAPSearchFailure(conn, messageID, "Erreur interne")
+			err := SendLDAPSearchFailure(conn, messageID, "Erreur interne")
+			if err != nil {
+				logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+			}
 			return
 		}
 		groupInfos, err := database.GetGroupsWithUsersByNames(database.GetDatabase(), groups)

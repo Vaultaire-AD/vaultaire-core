@@ -23,7 +23,7 @@ func UpdateSessionKeyValidity(db *sql.DB, userID int, logicielID int) error {
 	}
 
 	if rowsAffected == 0 {
-		logs.WriteLog("db", "⚠️ Aucun enregistrement de session à mettre à jour (aucune entrée trouvée).")
+		// logs.WriteLog("db", "⚠️ Aucun enregistrement de session à mettre à jour (aucune entrée trouvée).")
 		return nil
 	}
 	logs.WriteLog("db", "✅ key_time_validity mis à jour avec succès.")

@@ -20,7 +20,13 @@ func Create_New_User(db *sql.DB, username, firstname, lastname, email, password,
 		logs.WriteLog("db", "erreur lors du début de la transaction: "+err.Error())
 		return fmt.Errorf("erreur lors du début de la transaction: %v", err)
 	}
-	defer tx.Rollback()
+
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && rerr != sql.ErrTxDone {
+			// Log rollback failure (don't usually return it, because the main err is more important)
+			logs.WriteLog("db", "erreur lors du rollback de la transaction: "+rerr.Error())
+		}
+	}()
 
 	birthdate, err = tools.StringToDate(birthdate)
 	if err != nil {

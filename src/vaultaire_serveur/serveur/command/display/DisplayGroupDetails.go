@@ -45,7 +45,10 @@ func DisplayGroupDetails(groupDetails []storage.GroupDetails) string {
 		)
 	}
 
-	w.Flush()
+	err := w.Flush()
+	if err != nil {
+		return "Error flushing writer: " + err.Error()
+	}
 	sb.WriteString(b.String())
 	sb.WriteString("-------------------------------------------------------------------------------\n")
 

@@ -17,7 +17,10 @@ import (
 func SendUserSearchRequest(userResponses []map[string]string, conn net.Conn, messageID int) {
 	if len(userResponses) == 0 {
 		logs.Write_Log("DEBUG", "No users found for given groups")
-		SendLDAPSearchFailure(conn, messageID, "No users found for given group")
+		err := SendLDAPSearchFailure(conn, messageID, "No users found for given group")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 
@@ -47,12 +50,12 @@ func SendUserSearchRequest(userResponses []map[string]string, conn net.Conn, mes
 		packet.AppendChild(response)
 
 		logs.Write_Log("DEBUG", fmt.Sprintf("Sending SearchResultEntry for user '%s', packet length: %d bytes", username, len(packet.Bytes())))
-		n, err := conn.Write(packet.Bytes())
+		_, err := conn.Write(packet.Bytes())
 		if err != nil {
 			logs.Write_Log("ERROR", fmt.Sprintf("Error writing SearchResultEntry for user '%s': %v", username, err))
 			return
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("Sent %d bytes for user '%s'", n, username))
+		// logs.Write_Log("DEBUG", fmt.Sprintf("Sent %d bytes for user '%s'", n, username))
 	}
 
 	// Send SearchResultDone
@@ -99,14 +102,14 @@ func buildSearchEntryPacket(dn string, attributes map[string][]string) *ber.Pack
 func PrepareUserResponse(user ldapstorage.User, requestedAttrs []string) map[string]string {
 	userMap := make(map[string]string)
 
+	// Toujours mettre uid et cn
+	userMap["uid"] = user.Username
+	userMap["cn"] = user.Firstname
+	userMap["sn"] = user.Lastname
+
+	// Ensuite ajouter les attributs demandés
 	for _, attr := range requestedAttrs {
 		switch strings.ToLower(attr) {
-		case "uid":
-			userMap["uid"] = user.Username
-		case "cn":
-			userMap["cn"] = user.Firstname
-		case "sn":
-			userMap["sn"] = user.Lastname
 		case "mail":
 			userMap["mail"] = user.Email
 		case "entryuuid":
@@ -138,7 +141,7 @@ func PrepareUserResponses(users []ldapstorage.User, requestedAttrs []string) []m
 	return responses
 }
 
-func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []string, filtres []ldapstorage.EqualityFilter) {
+func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []string, filtres []ldapstorage.EqualityFilter, scope int) {
 	// ici c'est pour les recherche sur 1 user precies
 
 	uidFound := false
@@ -152,7 +155,10 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 			user, err := database.GetUserByUsername(filtre.Value, database.GetDatabase())
 			if err != nil {
 				logs.Write_Log("WARNING", "error during the retrieval of users by groups: "+err.Error())
-				SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups")
+				err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups")
+				if err != nil {
+					logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+				}
 				return
 			}
 			responses = append(responses, PrepareUserResponse(user, attribute))
@@ -168,14 +174,20 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 	groups, err := domain.GetGroupsUnderDomain(dn, database.GetDatabase())
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the retrieval of groups under domain: "+err.Error())
-		SendLDAPSearchFailure(conn, messageID, "error during the retrieval of groups under domain")
+		err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of groups under domain")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 
 	Users, err := database.GetUsersByGroups(groups, database.GetDatabase())
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the retrieval of users by groups: "+err.Error())
-		SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups: ")
+		err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of users by groups: ")
+		if err != nil {
+			logs.Write_Log("ERROR", "Error sending LDAP search failure: "+err.Error())
+		}
 		return
 	}
 

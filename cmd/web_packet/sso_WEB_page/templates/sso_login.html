@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Authentification</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+</head>
+<body>
+  <!-- Popup d'erreur (affichée seulement si erreur) -->
+  {{if .ErrorMessage}}
+  <div class="error-popup">{{.ErrorMessage}}</div>
+  {{end}}
+
+  <div class="login-container">
+    <!-- Logo -->
+    <div class="logo-container">
+      <img src="/static/image/vaultaire_logo.svg" alt="Logo Vaultaire" class="logo">
+    </div>
+
+    <p class="welcome-text">Bienvenue sur votre plateforme de Single Sign-on</p>
+
+    <form action="/login" method="POST">
+      <label for="username">Nom d'utilisateur :</label>
+      <input type="text" id="username" name="username" required>
+
+      <label for="password">Mot de passe :</label>
+      <input type="password" id="password" name="password" required>
+
+      <button type="submit">Se connecter</button>
+    </form>
+  </div>
+</body>
+</html>

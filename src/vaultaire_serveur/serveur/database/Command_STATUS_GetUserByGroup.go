@@ -7,6 +7,7 @@ import (
 	"fmt"
 )
 
+// Command_STATUS_GetUsersByGroup récupère les utilisateurs appartenant à un groupe spécifié.
 func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.UserConnected, error) {
 	injection := SanitizeInput(groupName)
 	if injection != nil {
@@ -35,7 +36,12 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	var users []storage.UserConnected
 	for rows.Next() {

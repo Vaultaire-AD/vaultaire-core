@@ -3,30 +3,53 @@ package commanddelete
 import (
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 )
 
 // delete_Group_Command_Parser handles the deletion of a group by its name.
-// It expects a command list with the format: ["-g", "group_name"].
-// If the command is valid, it deletes the group and returns a success message.
-// If the command is invalid or an error occurs, it logs the error and returns an error message.
-func delete_Group_Command_Parser(command_list []string) string {
-	if len(command_list) == 2 {
-		switch command_list[0] {
-		case "-g":
-			err := database.Command_DELETE_GroupWithGroupName(database.GetDatabase(), command_list[1])
-			if err != nil {
-				logs.Write_Log("WARNING", "error during the deletion of the group "+command_list[1]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			_, err = database.Command_GET_GroupInfo(database.GetDatabase(), command_list[1])
-			if err != nil {
-				return (">> -" + err.Error())
-			}
-			logs.Write_Log("INFO", "group delete with succes with this ID : "+command_list[1])
-			return ("group is delete or never existing")
-		default:
-			return ("Invalid Request Try get -h for more information : " + command_list[0])
-		}
+// Usage: delete -g <group_name>
+func delete_Group_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	db := database.GetDatabase()
+
+	// 🔸 Vérification du format
+	if len(command_list) != 2 || command_list[0] != "-g" {
+		return "Requête invalide. Utilisez : delete -g <nom_du_groupe>"
 	}
-	return ("Invalid Request Try get -h for more information")
+
+	groupName := command_list[1]
+
+	// 🔹 Étape 1 : Récupération des domaines associés au groupe
+	domains, err := permission.GetDomainsFromGroupName(groupName)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err))
+		return fmt.Sprintf("Erreur lors de la récupération des domaines du groupe %s : %v", groupName, err)
+	}
+
+	// 🔹 Étape 2 : Vérification de permission sur ces domaines
+	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"Suppression refusée : %s tente de supprimer le groupe %s (domaines : %v) — %s",
+			sender_Username, groupName, domains, reason,
+		))
+		return fmt.Sprintf("Permission refusée : %s", reason)
+	}
+
+	// 🔹 Étape 3 : Suppression du groupe
+	err = database.Command_DELETE_GroupWithGroupName(db, groupName)
+	if err != nil {
+		logs.Write_Log("ERROR", fmt.Sprintf("Erreur suppression du groupe %s : %v", groupName, err))
+		return fmt.Sprintf("Erreur lors de la suppression du groupe %s : %v", groupName, err)
+	}
+
+	// 🔹 Étape 4 : Vérification que le groupe n’existe plus
+	_, err = database.Command_GET_GroupInfo(db, groupName)
+	if err == nil {
+		return fmt.Sprintf("Le groupe %s semble encore exister après suppression.", groupName)
+	}
+
+	// 🔹 Étape 5 : Journalisation succès
+	logs.Write_Log("INFO", fmt.Sprintf("Groupe '%s' supprimé avec succès par %s", groupName, sender_Username))
+	return fmt.Sprintf("Le groupe '%s' a été supprimé avec succès.", groupName)
 }

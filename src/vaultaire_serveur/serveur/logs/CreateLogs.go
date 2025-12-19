@@ -18,7 +18,12 @@ import (
 // Write_Log prend en paramètre le niveau de log et le contenu du message à enregistrer.
 // Elle crée le répertoire de logs s'il n'existe pas et ouvre le fichier en mode append.
 // Si une erreur survient lors de la création du répertoire, de l'ouverture du fichier ou de l'écriture dans le fichier, elle renvoie une erreur.
-func Write_Log(level string, content string) error {
+func Write_Log(level string, content string) {
+	// Si c'est un log DEBUG et que le mode debug est désactivé, on ignore
+	if level == "DEBUG" && !storage.Debug {
+		return
+	}
+
 	// Définir le chemin du répertoire et du fichier
 	dirPath := storage.LogPath
 	filepath := dirPath + "vaultaire.log"
@@ -26,28 +31,35 @@ func Write_Log(level string, content string) error {
 	// Créer le répertoire s'il n'existe pas
 	err := os.MkdirAll(dirPath, 0755)
 	if err != nil {
-		return fmt.Errorf("erreur lors de la création du répertoire: %v", err)
+		fmt.Printf("erreur lors de la création du répertoire: %v", err)
 	}
 
 	// Ouvre le fichier en mode append, le crée s'il n'existe pas
 	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
+		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	// Formatte l'heure actuelle
-	timestamp := time.Now().Format("2006-01-02 15:04:56")
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
-	// Formatte la ligne à écrire [date/heure:minutes/contenu]
+	// Formatte la ligne à écrire [date/heure niveau contenu]
 	logLine := fmt.Sprintf("%s [%s] %s\n", timestamp, level, content)
-	Print_Log(logLine)
-	// Écrit la ligne dans le fichier
-	if _, err := file.WriteString(logLine); err != nil {
-		return fmt.Errorf("erreur lors de l'écriture dans le fichier: %v", err)
+
+	// Affiche dans la console
+	if err := Print_Log(logLine); err != nil {
+		fmt.Printf("erreur lors de l'impression du log: %v", err)
 	}
 
-	return nil
+	// Écrit dans le fichier
+	if _, err := file.WriteString(logLine); err != nil {
+		fmt.Printf("erreur lors de l'écriture dans le fichier: %v\n", err)
+	}
 }
 
 func Print_Log(logline string) error {
@@ -60,7 +72,7 @@ func Print_Log(logline string) error {
 // Le fichier est créé s'il n'existe pas, et les logs sont ajoutés à la fin du fichier.
 // Le format de la ligne de log est [date/heure:minutes/contenu].
 // Le paramètre 'filename' spécifie le nom du fichier de log, et 'content' est le message à enregistrer.
-func WriteLog(filename string, content string) error {
+func WriteLog(filename string, content string) {
 	// Définir le chemin du répertoire et du fichier
 	dirPath := storage.LogPath
 	filepath := dirPath + filename
@@ -68,15 +80,20 @@ func WriteLog(filename string, content string) error {
 	// Créer le répertoire s'il n'existe pas
 	err := os.MkdirAll(dirPath, 0755)
 	if err != nil {
-		return fmt.Errorf("erreur lors de la création du répertoire: %v", err)
+		fmt.Printf("erreur lors de la création du répertoire: %v", err)
 	}
 
 	// Ouvre le fichier en mode append, le crée s'il n'existe pas
 	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
-		return fmt.Errorf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
+		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}
-	defer file.Close()
+	defer func() {
+		if err := file.Close(); err != nil {
+			// Handle or log the error
+			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+		}
+	}()
 
 	// Formatte l'heure actuelle
 	timestamp := time.Now().Format("2006-01-02 15:04")
@@ -86,10 +103,8 @@ func WriteLog(filename string, content string) error {
 
 	// Écrit la ligne dans le fichier
 	if _, err := file.WriteString(logLine); err != nil {
-		return fmt.Errorf("erreur lors de l'écriture dans le fichier: %v", err)
+		fmt.Printf("erreur lors de l'écriture dans le fichier: %v", err)
 	}
-
-	return nil
 }
 
 //func main() {

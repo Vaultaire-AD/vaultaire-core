@@ -1,11 +1,13 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"strings"
 )
 
+// FindUserDomainFromGroups recherche le domaine utilisateur en fonction des groupes auxquels il appartient.
 func FindUserDomainFromGroups(uid string, baseDomain string, db *sql.DB) (string, error) {
 	injection := SanitizeInput(uid, baseDomain)
 	if injection != nil {
@@ -23,7 +25,12 @@ func FindUserDomainFromGroups(uid string, baseDomain string, db *sql.DB) (string
 	if err != nil {
 		return "", err
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+	}()
 
 	for rows.Next() {
 		var domain string

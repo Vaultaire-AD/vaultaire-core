@@ -28,7 +28,7 @@ func parseBindRequest(p *ber.Packet) (ldapstorage.BindRequest, error) {
 	authPacket := p.Children[2]
 
 	// ⚠️ Récupérer le mot de passe en brut, car c’est un OctetString [0x80]
-	password := string(authPacket.Data.Bytes())
+	password := string(authPacket.Data.String())
 
 	return ldapstorage.BindRequest{
 		Version:        version,

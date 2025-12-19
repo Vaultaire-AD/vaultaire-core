@@ -4,30 +4,76 @@ import (
 	"DUCKY/serveur/command/display"
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
+	"fmt"
 )
 
-func status_User_Command_Parser(command_list []string) string {
+func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+	db := database.GetDatabase()
+
+	// Cas : status -u <username>
 	if len(command_list) == 2 {
-		users_Login, _ := database.Command_STATUS_GetConnectedUser(database.GetDatabase(), command_list[1])
-		return display.DisplayUsersByStatus(users_Login)
-	} else if len(command_list) == 3 {
-		switch command_list[1] {
-		case "-g":
-			users_Login, err := database.Command_STATUS_GetUsersByGroup(database.GetDatabase(), command_list[2])
-			if err != nil {
-				logs.Write_Log("WARNING", "error during the get of the user "+command_list[2]+" : "+err.Error())
-				return (">> -" + err.Error())
-			}
-			return display.DisplayUsersByStatus(users_Login)
-		default:
-			Users_Login, _ := database.Command_STATUS_GetConnectedUsers(database.GetDatabase())
-			return display.DisplayUsersByStatus(Users_Login)
+		targetUser := command_list[1]
+
+		// Récupérer les domaines de l'utilisateur cible
+		userDomains, err := permission.GetDomainListFromUsername(targetUser)
+		if err != nil {
+			logs.Write_Log("WARNING", "Erreur récupération domaines utilisateur "+targetUser+" : "+err.Error())
+			return "Erreur lors de la récupération du domaine utilisateur"
 		}
+
+		// Vérifier la permission sur ces domaines
+		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, userDomains)
+		if !ok {
+			return fmt.Sprintf("Permission refusée : %s", resp)
+		}
+
+		// Si permission OK → récupérer les infos
+		users_Login, err := database.Command_STATUS_GetConnectedUser(db, targetUser)
+		if err != nil {
+			logs.Write_Log("WARNING", "Erreur récupération utilisateur "+targetUser+" : "+err.Error())
+			return "Erreur lors de la récupération de l'utilisateur"
+		}
+
+		return display.DisplayUsersByStatus(users_Login)
 	}
+
+	// Cas : status -u -g <group_name>
+	if len(command_list) == 3 && command_list[1] == "-g" {
+		groupName := command_list[2]
+
+		// Récupérer le domaine du groupe
+		groupDomain, err := permission.GetDomainsFromGroupName(groupName)
+		if err != nil {
+			logs.Write_Log("WARNING", "Erreur récupération domaine groupe "+groupName+" : "+err.Error())
+			return "Erreur lors de la récupération du domaine du groupe"
+		}
+
+		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, groupDomain)
+		if !ok {
+			return fmt.Sprintf("Permission refusée : %s", resp)
+		}
+
+		users_Login, err := database.Command_STATUS_GetUsersByGroup(db, groupName)
+		if err != nil {
+			logs.Write_Log("WARNING", "Erreur récupération utilisateurs du groupe "+groupName+" : "+err.Error())
+			return "Erreur lors de la récupération des utilisateurs du groupe"
+		}
+
+		return display.DisplayUsersByStatus(users_Login)
+	}
+
+	// Cas : status -u (aucun argument)
 	if command_list[0] == "-u" && len(command_list) == 1 {
-		Users_Login, _ := database.Command_STATUS_GetConnectedUsers(database.GetDatabase())
+		// Vérification sur tous les domaines (*)
+		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
+		if !ok {
+			return fmt.Sprintf("Permission refusée : %s", resp)
+		}
+
+		Users_Login, _ := database.Command_STATUS_GetConnectedUsers(db)
 		return display.DisplayUsersByStatus(Users_Login)
-	} else {
-		return ("\nMiss Argument status -h for more information or consult man on the wiki")
 	}
+
+	return "\nArgument manquant. Utilisez 'status -h' pour plus d'informations ou consultez le wiki."
 }

@@ -27,7 +27,12 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 		logs.WriteLog("db", "Erreur début transaction update: "+err.Error())
 		return fmt.Errorf("erreur début transaction: %v", err)
 	}
-	defer tx.Rollback()
+	defer func() {
+		if rerr := tx.Rollback(); rerr != nil && rerr != sql.ErrTxDone {
+			// Log rollback failure (don't usually return it, because the main err is more important)
+			logs.WriteLog("db", "Erreur rollback transaction update: "+rerr.Error())
+		}
+	}()
 
 	// Récupérer domaine principal depuis les groupes de l'utilisateur
 	mainDomain, err := GetUserMainDomain(db, userID)

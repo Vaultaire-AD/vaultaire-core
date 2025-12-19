@@ -1,8 +1,8 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/authentification/client"
 	"DUCKY/serveur/database"
+	gc "DUCKY/serveur/global/security"
 	"DUCKY/serveur/web_serveur/session"
 	"log"
 	"net/http"
@@ -10,7 +10,12 @@ import (
 )
 
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
-	templates.Execute(w, nil)
+	err := templates.Execute(w, nil)
+	if err != nil {
+		log.Printf("Erreur lors de l'exécution du template de la page de connexion : %v", err)
+		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
+		return
+	}
 }
 
 func LoginHandler(w http.ResponseWriter, r *http.Request) {
@@ -37,7 +42,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !client.ComparePasswords(password, salt, Hpassword) {
+	if !gc.ComparePasswords(password, salt, Hpassword) {
 		log.Printf("❌ Mauvais mot de passe pour %s", username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return

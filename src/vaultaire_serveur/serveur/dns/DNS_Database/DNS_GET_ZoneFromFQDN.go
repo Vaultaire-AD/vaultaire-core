@@ -1,7 +1,9 @@
 package dnsdatabase
 
 import (
+	"DUCKY/serveur/logs"
 	"database/sql"
+	"fmt"
 	"strings"
 )
 
@@ -12,7 +14,12 @@ func GetZoneFromFQDN(db *sql.DB, fqdn string) string {
 	if err != nil {
 		return ""
 	}
-	defer rows.Close()
+	defer func() {
+		if err := rows.Close(); err != nil {
+			// Handle or log the error
+			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", err))
+		}
+	}()
 
 	fqdn = strings.ToLower(strings.TrimSuffix(fqdn, "."))
 
