@@ -123,6 +123,20 @@ func LoadConfig(filePath string) error {
 	if config.Path.ServerCheckOnlineTimer != 0 {
 		storage.ServerCheckOnlineTimer = config.Path.ServerCheckOnlineTimer
 	}
+
+	// Administrateur settings
+	if config.Administrateur.Enable {
+		storage.Administrateur_Enable = config.Administrateur.Enable
+	}
+	if config.Administrateur.Username != "" {
+		storage.Administrateur_Username = config.Administrateur.Username
+	}
+	if config.Administrateur.Password != "" {
+		storage.Administrateur_Password = config.Administrateur.Password
+	}
+	if config.Administrateur.PublicKey != "" {
+		storage.Administrateur_PublicKey = config.Administrateur.PublicKey
+	}
 	// Retourner la configuration lue
 	return nil
 }

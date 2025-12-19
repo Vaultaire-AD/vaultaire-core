@@ -12,6 +12,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <shadow.h>
+#include <grp.h>   // pour getgrnam et struct group
+
 
 // Taille du buffer pour les messages
 #define MAX_BUFFER_SIZE 1024
@@ -21,35 +23,24 @@
 #define CMD_SIZE 256
 
 int detect_sudo_group(char *group, size_t size) {
-    FILE *fp = fopen("/etc/os-release", "r");
-    if (!fp) return -1;
+    const char *possible_groups[] = {"sudo", "wheel", "admin", "root", "staff"};
+    struct group *grp;
 
-    char line[256];
-    while (fgets(line, sizeof(line), fp)) {
-        if (strncmp(line, "ID=", 3) == 0) {
-            char *id_value = line + 3;
-
-            // Nettoyage des guillemets et sauts de ligne
-            id_value[strcspn(id_value, "\n")] = 0; // remove newline
-            if (id_value[0] == '"') {
-                id_value++; // skip opening "
-                char *quote = strchr(id_value, '"');
-                if (quote) *quote = '\0';
-            }
-
-            if (strcmp(id_value, "rocky") == 0 || strcmp(id_value, "rhel") == 0) {
-                snprintf(group, size, "wheel");
-            } else {
-                snprintf(group, size, "sudo");
-            }
-
-            fclose(fp);
+    // Parcourt tous les groupes possibles
+    for (size_t i = 0; i < sizeof(possible_groups)/sizeof(possible_groups[0]); i++) {
+        grp = getgrnam(possible_groups[i]);
+        if (grp) {
+            snprintf(group, size, "%s", possible_groups[i]);
             return 0;
         }
     }
 
-    fclose(fp);
-    return -1; // ID not found
+    // Aucun groupe trouvé → fallback
+    snprintf(group, size, "sudo");
+    // Crée le groupe si nécessaire
+    system("getent group sudo >/dev/null 2>&1 || groupadd sudo");
+
+    return 0;
 }
 
 
@@ -60,56 +51,63 @@ int is_valid_username(const char *username) {
 }
 
 int remove_sudo_access(const char *username) {
-    char command[CMD_SIZE];
-    char group[16];
-
     if (!is_valid_username(username)) {
-        fprintf(stderr, "❌ Erreur : nom d'utilisateur invalide\n");
+        fprintf(stderr, "❌ Nom d'utilisateur invalide\n");
         return -1;
     }
 
+    char group[32];
     if (detect_sudo_group(group, sizeof(group)) != 0) {
-        fprintf(stderr, "❌ Erreur : impossible de détecter le groupe sudo\n");
+        fprintf(stderr, "❌ Impossible de détecter le groupe sudo\n");
         return -1;
     }
 
-    snprintf(command, CMD_SIZE, "gpasswd -d %s %s > /dev/null 2>&1", username, group);
+    char command[CMD_SIZE];
+    snprintf(command, sizeof(command), "gpasswd -d %s %s", username, group);
+
     int result = system(command);
-
     if (result != 0) {
-        fprintf(stderr, "❌ Erreur : suppression de %s du groupe %s échouée\n", username, group);
+        fprintf(stderr, "❌ Impossible de retirer %s du groupe %s\n", username, group);
         return -1;
     }
 
-    printf("✅ L'utilisateur %s n'a plus les permissions sudo (groupe %s).\n", username, group);
+    printf("✅ %s retiré du groupe %s (droits sudo désactivés)\n", username, group);
     return 0;
 }
+
 
 int give_sudo_access(const char *username) {
-    char command[CMD_SIZE];
-    char group[16];
-
     if (!is_valid_username(username)) {
-        fprintf(stderr, "❌ Erreur : nom d'utilisateur invalide\n");
+        fprintf(stderr, "❌ Nom d'utilisateur invalide\n");
         return -1;
     }
 
+    char group[32];
     if (detect_sudo_group(group, sizeof(group)) != 0) {
-        fprintf(stderr, "❌ Erreur : impossible de détecter le groupe sudo\n");
+        fprintf(stderr, "❌ Impossible de détecter le groupe sudo\n");
         return -1;
     }
 
-    snprintf(command, CMD_SIZE, "usermod -aG %s %s > /dev/null 2>&1", group, username);
+    // Vérifie si l'utilisateur existe avant d'essayer
+    struct passwd *pwd = getpwnam(username);
+    if (!pwd) {
+        fprintf(stderr, "❌ L'utilisateur %s n'existe pas localement\n", username);
+        return -1;
+    }
+
+    char command[CMD_SIZE];
+    snprintf(command, sizeof(command), "usermod -aG %s %s", group, username);
+
     int result = system(command);
-
     if (result != 0) {
-        fprintf(stderr, "❌ Erreur : ajout de %s au groupe %s échoué\n", username, group);
+        fprintf(stderr, "❌ Échec de l'ajout de %s au groupe %s\n", username, group);
         return -1;
     }
 
-    printf("✅ L'utilisateur %s a maintenant les permissions sudo (groupe %s).\n", username, group);
+    printf("✅ %s ajouté au groupe %s (droits sudo activés)\n", username, group);
     return 0;
 }
+
 
 // Structure pour capturer la réponse du serveur via socket UNIX
 struct MemoryStruct {
@@ -208,117 +206,128 @@ int authenticate_locally(const char *username, const char *password) {
 }
 
 // Fonction pour authentifier un utilisateur via le socket UNIX
-int authenticate_with_socket(const char *username, const char *password, char *status) {
+int authenticate_with_socket(const char *username, const char *password, char *status, bool *is_admin) {
     char response[MAX_BUFFER_SIZE];
 
     if (send_request_to_socket(username, password, response) == -1) {
-        fprintf(stderr, "Error communicating with server via socket\n");
-        strcpy(status, "timeout");  // Timeout
-        return 1;  // Échec
+        fprintf(stderr, "[PAM] Error communicating with server via socket\n");
+        strcpy(status, "timeout");
+        return 0;
     }
 
-    response[strcspn(response, "\n")] = 0;  // Enlever le retour à la ligne
-    response[strcspn(response, "\r")] = 0;  // Enlever le retour chariot
+    // Nettoyage de la réponse
+    response[strcspn(response, "\n")] = 0;
+    response[strcspn(response, "\r")] = 0;
 
-    char extracted_status[32] = "timeout";  // Valeur par défaut
-    bool extracted_is_admin = false;
+    // Valeurs par défaut
+    strcpy(status, "timeout");
+    *is_admin = false;
 
-    // 🔍 Extraction du "status"
+    // Extraction JSON rudimentaire
     char *status_start = strstr(response, "\"status\":\"");
     if (status_start) {
-        sscanf(status_start + 10, "%31[^\"]", extracted_status);
+        sscanf(status_start + 10, "%31[^\"]", status);
     }
 
-    // 🔍 Extraction de "is_admin"
     char *admin_start = strstr(response, "\"is_admin\":");
     if (admin_start) {
-        extracted_is_admin = strstr(admin_start, "true") != NULL;
+        *is_admin = strstr(admin_start, "true") != NULL;
     }
 
-    // 🔄 Stocker les valeurs extraites dans les variables d'entrée
-    strcpy(status, extracted_status);
-    bool *is_admin = &extracted_is_admin;
-
-
-
-    // Chercher le mot "status":"success" dans la réponse
+    // Vérification du résultat
     if (strcmp(status, "success") == 0) {
-        printf("Response from server contains success\n");
-        if (*is_admin){
-            give_sudo_access(username);
-        }else{
-            remove_sudo_access(username);
-        }
-        strcpy(status, "success");
-        return 1;  // Succès
-    }
-    // Chercher le mot "status":"failed" dans la réponse
-    else if (strcmp(status, "failed") == 0) {
-        printf("Response from server contains failed\n");
-        strcpy(status, "failed");
-        return 0;  // Échec
+        fprintf(stderr, "[PAM] Remote auth success for %s (admin=%s)\n", username, *is_admin ? "true" : "false");
+        return 1;
     }
 
-    strcpy(status, "timeout");
-    return 1;  // Échec par défaut si le statut est inconnu
+    if (strcmp(status, "failed") == 0) {
+        fprintf(stderr, "[PAM] Remote auth failed for %s\n", username);
+        return 1;
+    }
+
+    fprintf(stderr, "[PAM] Unknown status '%s' for %s\n", status, username);
+    return 1;
 }
 
 
-int check_user_exists(const char *username, const char *password) {
-    fprintf(stderr, "Checking user %s remotely...\n", username);
+int ensure_local_user(const char *username, const char *password) {
+    struct passwd *pwd = getpwnam(username);
 
-    char status[32];
-    // Vérifier l'existence de l'utilisateur via le socket
-    if (authenticate_with_socket(username, password, status)) {
-        // Statut de succès
-        if (strcmp(status, "success") == 0) {
-            // Vérifier si l'utilisateur existe localement
-            struct passwd *pwd = getpwnam(username);
-            if (pwd != NULL) {
-                fprintf(stderr, "User %s exists locally.\n", username);
-                return 1;  // Utilisateur trouvé localement
-            } else {
-                // Créer un utilisateur local si nécessaire
-                char command[256];
-                snprintf(command, sizeof(command), "useradd --shell /bin/bash -c vaultaire_user_account %s", username);
-                if (system(command) == 0) {
-                    fprintf(stderr, "User %s created locally.\n", username);
-                    
-                    // Ajouter le mot de passe pour l'utilisateur créé
-                    char password_command[256];
-                    snprintf(password_command, sizeof(password_command), "echo \"%s:%s\" | chpasswd", username, password);
-                    if (system(password_command) == 0) {
-                        fprintf(stderr, "Password set for user %s.\n", username);
-                        return 1;  // Succès
-                    } else {
-                        fprintf(stderr, "Failed to set password for user %s.\n", username);
-                        return 0;  // Échec
-                    }
-                } else {
-                    fprintf(stderr, "Failed to create user %s locally.\n", username);
-                    return 0;  // Échec
-                }
-            }
-        }
-        // Si le statut est "failed"
-        else if (strcmp(status, "failed") == 0) {
-            fprintf(stderr, "Authentication failed for user %s.\n", username);
-            return 0;  // Échec d'authentification
-        }
-        // Si le statut est "timeout"
-        else if (strcmp(status, "timeout") == 0) {
-            fprintf(stderr, "Authentication timeout for user %s.\n", username);
-            if(!authenticate_locally(username, password)){
-                return 0; 
-            }else{
-                return 1;
-            }
-            
-        }
-    } else {
-        fprintf(stderr, "Failed to communicate with the server.\n");
-        return 0;  // Échec de communication
+    // L'utilisateur existe déjà
+    if (pwd != NULL) {
+        fprintf(stderr, "[PAM] User %s exists locally.\n", username);
+        return 1;
     }
+
+    // Sinon, création du compte local
+    char cmd_useradd[256];
+    snprintf(cmd_useradd, sizeof(cmd_useradd),
+             "useradd --shell /bin/bash -c '%s@vaultaire' %s", username, username);
+
+    if (system(cmd_useradd) != 0) {
+        fprintf(stderr, "[PAM] Failed to create user %s.\n", username);
+        return 0;
+    }
+
+    // Définir le mot de passe
+    char cmd_passwd[256];
+    snprintf(cmd_passwd, sizeof(cmd_passwd),
+             "echo \"%s:%s\" | chpasswd", username, password);
+
+    if (system(cmd_passwd) != 0) {
+        fprintf(stderr, "[PAM] Failed to set password for %s.\n", username);
+        return 0;
+    }
+
+    fprintf(stderr, "[PAM] Created local user %s with password.\n", username);
+    return 1;
+}
+
+
+
+int check_user_exists(const char *username, const char *password) {
+    char status[32];
+    bool is_admin = false;
+
+    fprintf(stderr, "[PAM] Checking user %s remotely...\n", username);
+
+    // 🔹 Étape 1 — Authentification distante via le socket
+    if (!authenticate_with_socket(username, password, status, &is_admin)) {
+        fprintf(stderr, "[PAM] Failed to communicate with remote server.\n");
+        return 0; // Erreur de communication
+    }
+
+    // 🔹 Étape 2 — Analyse du statut reçu
+    if (strcmp(status, "timeout") == 0) {
+        fprintf(stderr, "[PAM] Remote authentication timeout for %s. Fallback to local auth.\n", username);
+        return authenticate_locally(username, password);
+    }
+
+    if (strcmp(status, "failed") == 0) {
+        fprintf(stderr, "[PAM] Remote authentication failed for %s.\n", username);
+        return 0;
+    }
+
+    if (strcmp(status, "success") != 0) {
+        fprintf(stderr, "[PAM] Unknown status '%s' for user %s.\n", status, username);
+        return 0;
+    }
+
+    // 🔹 Étape 3 — Auth OK → S'assurer que le compte existe localement
+    if (!ensure_local_user(username, password)) {
+        fprintf(stderr, "[PAM] Failed to create or update local user %s.\n", username);
+        return 0;
+    }
+
+    // 🔹 Étape 4 — Droits administrateur
+    if (is_admin) {
+        give_sudo_access(username);
+    } else {
+        remove_sudo_access(username);
+    }
+
+    fprintf(stderr, "[PAM] User %s authenticated successfully.\n", username);
+    return 1;
 }
 
 // Fonction pour gérer les credentials après authentification
@@ -339,45 +348,34 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     const char *password = NULL;
     const char *pUsername;
 
-    // pam_get_user demande et accepte le nom d'utilisateur
+
+    // Récupère l'utilisateur
     retval = pam_get_user(pamh, &pUsername, "Username: ");
-    if (retval != PAM_SUCCESS) {
-        return retval;
+    if (retval != PAM_SUCCESS || !pUsername) {
+        return PAM_USER_UNKNOWN;
     }
 
-    // Vérification des utilisateurs root et adm_local → Authentification locale avec pam_unix
-    if (strcmp(pUsername, "root") == 0 || strcmp(pUsername, "adm_local") == 0) {
-        printf("Authentification locale pour %s\n", pUsername);
+    // Récupère le mot de passe
+    retval = pam_get_authtok(pamh, PAM_AUTHTOK, &password, "Password: ");
+    if (retval != PAM_SUCCESS || !password) {
+        return PAM_AUTH_ERR;
+    }
 
-        // Récupérer le mot de passe via PAM
-        retval = pam_get_authtok(pamh, PAM_AUTHTOK, &password, "PASSWORD: ");
-        if (retval != PAM_SUCCESS) {
-            fprintf(stderr, "Can't get password\n");
-            return PAM_PERM_DENIED;
-        }
 
-        // Appeler explicitement pam_unix.so
-        if(!authenticate_locally(pUsername, password)){
-            return PAM_PERM_DENIED;
-        }else{
+    // Vérifie si c'est une auth distante (présence de '@')
+    if (strchr(pUsername, '@') != NULL) {
+        // Auth distante via socket ou LDAP
+        if (check_user_exists(pUsername, password)) {
             return PAM_SUCCESS;
+        } else {
+            return PAM_AUTH_ERR;
         }
-    }
-
-        // pam_get_authtok demande et accepte le mot de passe de l'utilisateur
-    retval = pam_get_authtok(pamh, PAM_AUTHTOK, &password, "PASSWORD: ");
-    if (retval != PAM_SUCCESS) {
-        fprintf(stderr, "Can't get password\n");
-        return PAM_PERM_DENIED;
-    }
-
-    printf("Welcome %s\n", pUsername);
-
-    // Vérifier si l'utilisateur existe localement ou sur le serveur distant
-    if (!check_user_exists(pUsername, password)) {
-        fprintf(stderr, "User does not exist in /etc/passwd\n");
-        return PAM_PERM_DENIED; // L'utilisateur n'existe pas
-    }else {
-        return PAM_SUCCESS;
+    } else {
+        // Auth locale via pam_unix ou shadow
+        if (authenticate_locally(pUsername, password)) {
+            return PAM_SUCCESS;
+        } else {
+            return PAM_AUTH_ERR;
+        }
     }
 }

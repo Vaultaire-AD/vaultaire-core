@@ -2,6 +2,8 @@ package client
 
 import (
 	"DUCKY/serveur/database"
+	dbuser "DUCKY/serveur/database/db-user"
+	"DUCKY/serveur/ducky-network/ducky_tools"
 	gc "DUCKY/serveur/global/security"
 	logs "DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
@@ -122,7 +124,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 		key := make([]byte, 8)
 		database.AddLoginEntry(db, userID, key, trames_content.ClientSoftwareID)
 		logs.Write_Log("INFO", trames_content.ClientSoftwareID+" is online and enter in the system")
-		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\nclient_giveinformation")
+		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nclient_giveinformation")
 
 	}
 
@@ -149,7 +151,15 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 			if admin {
 				logs.Write_Log("INFO", username+" is admin for the client : "+trames_content.ClientSoftwareID)
 			}
-			return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
+			userpukey, err := dbuser.GetUserKeys(userID)
+			if err != nil {
+				logs.Write_Log("ERROR", "Erreur lors de la récupération de la clé publique de l'utilisateur "+username+" : "+err.Error())
+				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + "empty" + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
+			} else {
+				publicKeys := ducky_tools.ExtractPublicKeys(userpukey)
+				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + publicKeys + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
+			}
+
 		} else {
 			return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "you have not the authorisation for acces to this computeur")
 		}

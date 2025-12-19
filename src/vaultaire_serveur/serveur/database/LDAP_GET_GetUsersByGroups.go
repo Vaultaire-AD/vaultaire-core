@@ -6,6 +6,7 @@ import (
 	"database/sql"
 )
 
+// GetUsersByGroups récupère les utilisateurs appartenant à plusieurs groupes spécifiés.
 func GetUsersByGroups(groups []string, db *sql.DB) ([]ldapstorage.User, error) {
 	if len(groups) == 0 {
 		return []ldapstorage.User{}, nil
@@ -31,6 +32,7 @@ func GetUsersByGroups(groups []string, db *sql.DB) ([]ldapstorage.User, error) {
 	return allUsers, nil
 }
 
+// GetUsersByGroup récupère les utilisateurs appartenant à un groupe spécifié.
 func GetUsersByGroup(group string, db *sql.DB) ([]ldapstorage.User, error) {
 	query := `
 		SELECT 
@@ -72,6 +74,7 @@ func GetUsersByGroup(group string, db *sql.DB) ([]ldapstorage.User, error) {
 	return users, nil
 }
 
+// GetUserByUsername récupère un utilisateur par son nom d'utilisateur.
 func GetUserByUsername(username string, db *sql.DB) (ldapstorage.User, error) {
 	injection := SanitizeInput(username)
 	if injection != nil {

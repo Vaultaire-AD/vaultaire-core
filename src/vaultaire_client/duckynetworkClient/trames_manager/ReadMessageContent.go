@@ -37,7 +37,7 @@ func MessageReader(conn net.Conn, reconstructedMessageSize int) {
 	if err != nil {
 		fmt.Println("Erreur lors de la lecture du message :", err)
 	}
-	fmt.Println("taille du message recu : ", reconstructedMessageSize)
+	// fmt.Println("taille du message recu : ", reconstructedMessageSize)
 
 	privateKeyStr := keymanagement.Get_Client_Private_Key()
 	messageDecrypt, err := keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)

@@ -66,7 +66,7 @@
             - Changement sur la gestion des clé pour les differents services cle unique mtn - Lorens Viguie
             - Ajout des clé public pour les users via WebUI ou vaultaire_cli/vaultaire_ctl - Lorens Viguie
             - Ajout de la logique des permission pour l'api et ldap par encore implémenter - Lorens Viguie
-            - Intégration des permissions dans les commandes toutes a faire sauf -> clear status / en cour get
+            - Intégration des permissions dans les commandes toutes a faire sauf - Lorens Viguie
             - Intégration des permissions dans ldap toutes a faire / en cour search
 
 ---

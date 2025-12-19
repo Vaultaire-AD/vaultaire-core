@@ -77,16 +77,21 @@ dc=infra,dc=it,dc=company,dc=com
 
 ## 👤 LDAP Searching and Updating (Utilisateurs)
 
-| Champ                         | Valeur                                                                 |
-|-------------------------------|------------------------------------------------------------------------|
-| **Edit Mode**                 | `READ_ONLY`                                                           |
-| **Users DN**                  | `dc=it,dc=company,dc=com`                                             |
-| **Username LDAP attribute**   | `uid`                                                                 |
-| **RDN LDAP attribute**        | `uid`                                                                 |
-| **UUID LDAP attribute**       | `uid`                                                                 |
-| **User object classes**       | `inetOrgPerson`, `organizationalPerson`, `posixaccount`, `person`, `user` |
-| **Search scope**              | `One Level` *(remontera aussi les sous-domaines)*                     |
+| Champ                       | Valeur                                                                    |
+| --------------------------- | ------------------------------------------------------------------------- |
+| **Edit Mode**               | `READ_ONLY`                                                               |
+| **Users DN**                | `dc=it,dc=company,dc=com`                                                 |
+| **Username LDAP attribute** | `uid`                                                                     |
+| **RDN LDAP attribute**      | `uid`                                                                     |
+| **UUID LDAP attribute**     | `uid`                                                                     |
+| **User object classes**     | `inetOrgPerson`, `organizationalPerson`, `posixaccount`, `person`, `user` |
+| **Search scope**            | `One Level` *(remontera aussi les sous-domaines)*                         |
+| **Group member attribute**  | `member`                                                                  |
+| **Group naming attribute**  | `group`                                                                   |
+|                             |                                                                           |
 
+
+## **WARNING** penser a activer la RFC 2307 quand c'est possible sinon vos user ne pourront pas se lier automatiquement a des groupes
 ---
 
 ## 👥 LDAP Group Mapping

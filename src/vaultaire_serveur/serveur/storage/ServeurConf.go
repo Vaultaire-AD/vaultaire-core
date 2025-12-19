@@ -43,6 +43,12 @@ type Config struct {
 	Debug struct {
 		Debug bool `yaml:"debug"`
 	} `yaml:"debug"`
+	Administrateur struct {
+		Enable    bool   `yaml:"enable"`
+		Username  string `yaml:"username"`
+		Password  string `yaml:"password"`
+		PublicKey string `yaml:"public_key"`
+	} `yaml:"administrateur"`
 }
 
 var ServeurLisetenPort string = "6666"
@@ -80,3 +86,8 @@ var API_Enable bool = true
 var API_Port int = 6643
 
 var Debug bool = false
+
+var Administrateur_Enable bool = false
+var Administrateur_Username string = "admin"
+var Administrateur_Password string = "admin123"
+var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCyv4Y1l6K4vX1Y1VJ5t5nX5F2"

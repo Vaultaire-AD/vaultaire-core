@@ -54,7 +54,8 @@ echo "🛠 Build modules PAM..."
 cd "$ROOT_DIR/src/vaultaire_client/pam_module"
 gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c -lcurl -lpam
 gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c -lcurl -lpam
-cp ./pam*.so "$BUILD_DIR/"
+gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c -lcurl -lpam
+cp ./pam*.so "$BUILD_DIR/vaultaire_client/"
 
 # -------------------------
 # Copier les binaires dans release Vaultaire_AD-ppd

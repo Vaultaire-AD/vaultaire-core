@@ -1,63 +1,45 @@
 # ====================================================================
-#  Vaultaire Server - Secure Dockerfile
+# Vaultaire Server - Minimal Alpine Dockerfile
 # ====================================================================
-
-# Base solide : Rocky Linux 9
 FROM rockylinux:9
 
 LABEL maintainer="adm-lviguie"
-LABEL description="Vaultaire AD server container (Rocky Linux 9 based)"
+LABEL description="Vaultaire AD server container (Alpine Linux based)"
 
 # --------------------------------------------------------------------
-# Sécurisation de base + outils utiles
+# Mise à jour et installation SSH + utilitaires minimal
 # --------------------------------------------------------------------
-RUN dnf -y update && \
-    dnf -y install \
-        openssh-clients \
-        openssh-server \
-        iputils \
-        bind-utils \
-        vim \
-        mariadb \
-        sudo && \
-    dnf clean all
 
 # --------------------------------------------------------------------
 # Création utilisateur applicatif (non-root)
 # --------------------------------------------------------------------
-RUN useradd -m -s /bin/bash vaultaire && \
-    echo "vaultaire ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/vaultaire && \
-    mkdir -p /opt/vaultaire /var/log/vaultaire && \
-    chown -R root:root /opt/vaultaire /var/log/vaultaire && \
-    chmod 770 /opt/vaultaire /var/log/vaultaire
+RUN useradd -m -d /opt/vaultaire -s /bin/bash vaultaire
+RUN mkdir -p /var/log/vaultaire
+RUN chown -R vaultaire:vaultaire /opt/vaultaire /var/log/vaultaire
+RUN chmod 770 /opt/vaultaire /var/log/vaultaire
+
+
 
 # --------------------------------------------------------------------
-# Copie du code applicatif
-# (on part du répertoire racine du repo)
+# Copier le code applicatif
 # --------------------------------------------------------------------
 WORKDIR /opt/vaultaire
-
-# ⚠️ Ne pas créer manuellement le socket — le serveur le crée lui-même
-COPY cmd/vaultaire_server/vaultaire_serveur ./vaultaire_serveur
-COPY cmd/vaultaire_server/vaultaire_cli ./vaultaire_cli
-COPY cmd/vaultaire_client/ /opt/vaultaire/vaultaire_client/
-COPY web_packet ./web_packet
-COPY automatisation ./automatisation
-COPY deployments/configs/serveur_conf.yaml ./serveur_conf.yaml
-COPY deployments/pre-prod/dockerautocreate.sh ./dockerautocreate.sh
+COPY --chown=vaultaire:vaultaire cmd/vaultaire_server/vaultaire_serveur ./vaultaire_serveur
+COPY --chown=vaultaire:vaultaire cmd/vaultaire_client/ ./vaultaire_client/
+COPY --chown=vaultaire:vaultaire web_packet ./web_packet
+COPY --chown=vaultaire:vaultaire automatisation ./automatisation
+COPY --chown=vaultaire:vaultaire deployments/configs/serveur_conf.yaml ./serveur_conf.yaml
+COPY --chown=vaultaire:vaultaire deployments/pre-prod/dockerautocreate.sh ./dockerautocreate.sh
 
 # --------------------------------------------------------------------
-# Sécurisation des permissions et capabilities
+# Permissions
 # --------------------------------------------------------------------
-RUN chmod +x ./vaultaire_serveur ./vaultaire_cli ./dockerautocreate.sh && \
-    chown -R root:root /opt/vaultaire && \
-    # Autorise l'exécution sur ports <1024 (389, 53, etc.) sans root
-    dnf clean all
+RUN chmod +x ./vaultaire_serveur ./dockerautocreate.sh
 
 # --------------------------------------------------------------------
-# Ports exposés (LDAP, LDAPS, WebUI, DNS interne, etc.)
+# Ports exposés
 # --------------------------------------------------------------------
-EXPOSE 666 443 389 636 53/udp
+EXPOSE 666 443 389 636 22 53/udp
 
 # --------------------------------------------------------------------
 # Définition de l’utilisateur non-root
@@ -65,6 +47,6 @@ EXPOSE 666 443 389 636 53/udp
 USER root
 
 # --------------------------------------------------------------------
-# Commande de démarrage
+# Entrypoint
 # --------------------------------------------------------------------
-ENTRYPOINT ["bash", "-c", "/opt/vaultaire/vaultaire_serveur"]
+ENTRYPOINT ["./vaultaire_serveur"]

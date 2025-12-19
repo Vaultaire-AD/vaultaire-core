@@ -5,6 +5,7 @@ type Trames_struct_client struct {
 	Destination_Server  string
 	SessionIntegritykey string
 	Username            string
+	Domain              string
 	ClientSoftwareID    string
 	Content             string
 }

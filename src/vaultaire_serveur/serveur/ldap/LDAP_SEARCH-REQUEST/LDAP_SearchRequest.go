@@ -63,9 +63,10 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		return
 	} else {
 		keywordMap := map[string][]string{
-			"user":  {"user", "users", "", "person", "inetorgperson", "posixaccount"},
-			"group": {"group", "groups", "groupofnames", "groupofuniquenames"},
-			"CN":    {"Users"},
+			"user":   {"user", "users", "", "person", "inetorgperson", "posixaccount"},
+			"group":  {"group", "groups", "groupofnames", "groupofuniquenames"},
+			"CN":     {"Users"},
+			"member": {"member"},
 		}
 
 		foundCategories := ldaptools.DetectKeywordCategories(filters, keywordMap)
@@ -94,11 +95,11 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 				return
 			}
 			uid := filters[0].Value
-			SendUidSearchRequest(uid, domain, conn, messageID)
+			SendUidSearchRequest(uid, domain, op.Attributes, conn, messageID)
 			return
 		}
 		if foundCategories["member"] {
-			fmt.Println("→ Déclenchement du traitement pour les **membres du pipi**")
+			fmt.Println("→ Déclenchement du traitement pour les **membres**")
 			dn := filters[0].Value                              // "uid=fiona,dc=it,dc=company,dc=com"
 			uid, _, _ := ldaptools.ExtractUsernameAndDomain(dn) // => "fiona"
 			groups, err := database.FindGroupsByUserInDomainTree(database.GetDatabase(), uid, op.BaseObject)
