@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Clients</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+  <style>table{width:100%;border-collapse:collapse}th,td{padding:6px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <div class="container admin-container">
+    <h1>Clients</h1>
+    <p><a href="/admin/users">Utilisateurs</a> | <a href="/admin/groups">Groupes</a> | <a href="/admin/permissions">Permissions</a></p>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+    <table>
+      <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{ range .Clients }}
+        <tr>
+          <td>{{ .ID }}</td>
+          <td>{{ .LogicielType }}</td>
+          <td>{{ .ComputeurID }}</td>
+          <td>{{ .Hostname }}</td>
+          <td>{{ .OS }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete_client">
+              <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
+              <button type="submit" onclick="return confirm('Supprimer client {{ .ComputeurID }} ?')">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+      {{ end }}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>

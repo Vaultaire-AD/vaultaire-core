@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Utilisateurs</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+  <style>table{width:100%;border-collapse:collapse}th,td{padding:6px;border:1px solid #ddd}</style>
+</head>
+<body>
+  <div class="container admin-container">
+    <h1>Utilisateurs</h1>
+    <p><a href="/admin/groups">Groupes</a> | <a href="/admin/clients">Clients</a> | <a href="/admin/permissions">Permissions</a> | <a href="/profil">Profil</a></p>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+    <table>
+      <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Date de naissance</th><th>Créé le</th><th>Action</th></tr></thead>
+      <tbody>
+      {{ range .Users }}
+        <tr>
+          <td>{{ .ID }}</td>
+          <td><a href="/admin/users?user={{ .Username }}">{{ .Username }}</a></td>
+          <td>{{ .Email }}</td>
+          <td>{{ .DateNaissance }}</td>
+          <td>{{ .CreatedAt }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete_user">
+              <input type="hidden" name="username" value="{{ .Username }}">
+              <button type="submit" onclick="return confirm('Supprimer {{ .Username }} ?')">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+      {{ end }}
+      </tbody>
+    </table>
+  </div>
+</body>
+</html>
