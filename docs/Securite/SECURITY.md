@@ -1,9 +1,3 @@
-
----
-
-## `SECURITY.md` – Version ALPHA publique
-
-```markdown
 # Politique de Sécurité – Vaultaire Core
 
 ## 🟢 Versions supportées
