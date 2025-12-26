@@ -12,6 +12,19 @@ Vaultaire Core is currently in **ALPHA**.
 - Known issues: username@domain handling (being patched)
 
 ⚠️ Not production-ready.
+
+## Scope
+
+Vaultaire currently focuses on:
+- Linux identity management
+- LDAP directory services
+- Centralized policy management (Linux)
+
+Out of scope (for now):
+- Windows Active Directory replacement
+- Windows GPO
+- Kerberos trust with AD
+
 ---
 
 ## 1. Workflow Git & gestion des branches
