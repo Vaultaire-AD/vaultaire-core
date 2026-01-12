@@ -52,7 +52,9 @@ func acceptConnections(listener net.Listener) {
 			fmt.Println("Error accepting new connection:", err)
 			continue
 		}
-		go handleConnection(conn)
+		var duckysession storage.DuckySession
+		duckysession.Conn = conn
+		go handleConnection(&duckysession)
 	}
 }
 

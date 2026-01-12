@@ -6,7 +6,6 @@ import (
 	"DUCKY/serveur/ducky-network/sendmessage"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"net"
 	"strings"
 )
 
@@ -37,9 +36,9 @@ func parseTrames(trames string) storage.Trames_struct_client {
 	}
 }
 
-func MessageReader(conn net.Conn, reconstructedMessageSize int) {
+func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize int) {
 	messageBuf := make([]byte, reconstructedMessageSize)
-	_, err := conn.Read(messageBuf)
+	_, err := duckysession.Conn.Read(messageBuf)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error during the read of the message: "+err.Error())
 		return
@@ -51,8 +50,8 @@ func MessageReader(conn net.Conn, reconstructedMessageSize int) {
 		messageSize := sendmessage.CompileMessageSize(data)
 		headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
 		datatosend := append(append(headerSize, messageSize...), data...)
-		if _, err := conn.Write(datatosend); err != nil {
-			err := conn.Close()
+		if _, err := duckysession.Conn.Write(datatosend); err != nil {
+			err := duckysession.Conn.Close()
 			if err != nil {
 				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 			}
@@ -62,12 +61,24 @@ func MessageReader(conn net.Conn, reconstructedMessageSize int) {
 		return
 	}
 	privateKeyStr := keymanagement.GetPrivateKey()
-	messageDecrypt, err := keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)
-	if err != nil {
-		logs.Write_Log("ERROR", "Error during the decryption: "+err.Error())
-		return
+	var messageDecrypt string
+
+	if duckysession.IsSafe {
+		// Déchiffrement symétrique
+		messageDecrypt, err = keydecodeencode.DecryptAESGCMString(duckysession.SessionKey, messageBuf)
+		if err != nil {
+			logs.Write_Log("ERROR", "Error during symmetric decryption: "+err.Error())
+			return
+		}
+	} else {
+		// Déchiffrement asymétrique RSA
+		messageDecrypt, err = keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)
+		if err != nil {
+			logs.Write_Log("ERROR", "Error during asymmetric decryption: "+err.Error())
+			return
+		}
 	}
 
 	var trames_content = parseTrames(messageDecrypt)
-	Split_Action(trames_content, conn)
+	Split_Action(trames_content, duckysession)
 }
