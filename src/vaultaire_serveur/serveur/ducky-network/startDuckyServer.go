@@ -54,6 +54,7 @@ func acceptConnections(listener net.Listener) {
 		}
 		var duckysession storage.DuckySession
 		duckysession.Conn = conn
+		duckysession.IsSafe = false
 		go handleConnection(&duckysession)
 	}
 }

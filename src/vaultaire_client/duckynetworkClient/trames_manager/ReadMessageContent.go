@@ -5,6 +5,7 @@ import (
 	"strings"
 	keydecodeencode "vaultaire_client/duckynetworkClient/key_encode_decode"
 	keymanagement "vaultaire_client/duckynetworkClient/keymanagement"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 )
 
@@ -42,7 +43,7 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 
 	if duckysession.IsSafe {
 		// Déchiffrement symétrique AES-GCM
-		messageDecrypt, err = keydecodeencode.DecryptAESGCMString(duckysession.SessionKey, string(messageBuf))
+		messageDecrypt, err = keydecodeencode.DecryptAESGCMString(duckysession.SessionKey, messageBuf)
 		if err != nil {
 			fmt.Println("Erreur lors du déchiffrement symétrique :", err)
 			return
@@ -58,6 +59,8 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 	}
 
 	// Traitement des trames
+	logs.Write_Log("DEBUG", messageDecrypt)
+	logs.Write_Log("DEBUG", string(duckysession.SessionKey))
 	trames_content := parseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
 }

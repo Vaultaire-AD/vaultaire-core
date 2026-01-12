@@ -16,7 +16,7 @@ func parseTrames(trames string) storage.Trames_struct_client {
 	message := strings.Join(lines[5:], "\n")
 	action := strings.Split(lines[0], "_")
 
-	username := ""
+	username := lines[3]
 	domain := ""
 	// Si présence de @ → split user@domain
 	if strings.Contains(lines[3], "@") {
@@ -43,6 +43,7 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 		logs.Write_Log("ERROR", "Error during the read of the message: "+err.Error())
 		return
 	}
+	logs.Write_Log("DEBUG", string(messageBuf))
 	//fmt.Println("taille du message recu : ", reconstructedMessageSize)
 	if string(messageBuf) == "askkey" {
 		data := []byte("getkey\n" +
@@ -78,7 +79,8 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 			return
 		}
 	}
-
+	logs.Write_Log("DEBUG", messageDecrypt)
+	logs.Write_Log("DEBUG", string(duckysession.SessionKey))
 	var trames_content = parseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
 }

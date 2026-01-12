@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Groupes</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+</head>
+<body>
+  <header class="admin-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
+    <nav class="admin-nav">
+      <a href="/admin/users">Utilisateurs</a>
+      <a href="/admin/groups">Groupes</a>
+      <a href="/admin/clients">Clients</a>
+      <a href="/admin/permissions">Permissions</a>
+      <a href="/profil">Profil</a>
+    </nav>
+    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
+  </header>
+  <div class="admin-container">
+    <h1>Groupes</h1>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+    <section>
+      <h2>Créer un groupe</h2>
+      <form method="post">
+        <input type="hidden" name="action" value="create_group">
+        <label>Nom du groupe <input name="group_name"></label>
+        <label>Domaine <input name="domain" placeholder="example.com"></label>
+        <div style="margin-top:8px"><button type="submit">Créer</button></div>
+      </form>
+    </section>
+    <hr />
+    <table>
+      <thead><tr><th>Group</th><th>Domain</th><th>Users</th><th>Clients</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{ range .Groups }}
+        <tr>
+          <td><a href="/admin/groups?group={{ .GroupName }}">{{ .GroupName }}</a></td>
+          <td>{{ .DomainName }}</td>
+          <td>{{ .UserCount }}</td>
+          <td>{{ .ClientCount }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete_group">
+              <input type="hidden" name="group_name" value="{{ .GroupName }}">
+              <button type="submit" onclick="return confirm('Supprimer le groupe {{ .GroupName }} ?')">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+      {{ end }}
+      </tbody>
+    </table>
+    <script src="/static/admin_app.js"></script>
+  </div>
+</body>
+</html>

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	keyencodedecode "vaultaire_client/duckynetworkClient/key_encode_decode"
 	"vaultaire_client/duckynetworkClient/keymanagement"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 )
 
@@ -60,6 +61,6 @@ func SendMessage(message string, duckysession *storage.DuckySession) {
 		fmt.Println("Erreur lors de l'envoi du message :", err)
 		return
 	}
-
+	logs.Write_Log("DEBUG", string(cipherMsg))
 	fmt.Println("Message envoyé avec succès à", duckysession.Conn.RemoteAddr())
 }

@@ -37,12 +37,13 @@ func EncryptAESGCMString(key []byte, plaintext string) (string, error) {
 }
 
 // DecryptAESGCMString déchiffre un string base64 chiffré avec EncryptAESGCMString
-func DecryptAESGCMString(key []byte, ciphertextB64 string) (string, error) {
+func DecryptAESGCMString(key []byte, ciphertextB64 []byte) (string, error) {
 	if len(key) != 32 {
 		return "", errors.New("clé AES doit faire 32 octets pour AES-256")
 	}
 
-	ciphertext, err := base64.StdEncoding.DecodeString(ciphertextB64)
+	// 🔥 ÉTAPE MANQUANTE
+	ciphertext, err := base64.StdEncoding.DecodeString(string(ciphertextB64))
 	if err != nil {
 		return "", err
 	}

@@ -6,4 +6,4 @@ var C_serveurListenPort string
 
 var LogPath = "/var/log/vaultaire/"
 var DEBUG bool = false
-var Debug bool = false
+var Debug bool = true

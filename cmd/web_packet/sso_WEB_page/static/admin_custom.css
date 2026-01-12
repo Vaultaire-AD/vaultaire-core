@@ -1,0 +1,74 @@
+/* admin_custom.css - styles pour l'interface d'administration */
+
+:root{
+  --brand:#6a0dad;
+  --brand-dark:#4b0082;
+  --muted:#6b6b6b;
+  --card-bg:#ffffff;
+  --page-bg:#f5f3f8;
+  --header-height: 64px; /* hauteur par défaut du bandeau */
+}
+
+.admin-root, html,body{height:100%;margin:0;padding:0;font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;background:var(--page-bg);color:#222}
+
+.admin-header{
+  display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:linear-gradient(90deg,var(--brand),var(--brand-dark));color:white;box-shadow:0 2px 6px rgba(0,0,0,0.12);
+  position:fixed;top:0;left:0;right:0;z-index:9999;height:var(--header-height);align-items:center
+}
+.admin-header .brand{display:flex;align-items:center;gap:12px;font-weight:700}
+.admin-header .brand img{height:36px}
+.admin-header .brand span{font-size:1.1rem}
+.admin-nav a{color:rgba(255,255,255,0.95);text-decoration:none;margin:0 8px;font-weight:600}
+.admin-nav a:hover{text-decoration:underline}
+
+.admin-toolbar{display:flex;align-items:center;gap:12px}
+.theme-toggle{background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.12);color:white;padding:6px 10px;border-radius:8px;cursor:pointer}
+.theme-toggle:hover{background:rgba(255,255,255,0.18)}
+
+.admin-toolbar{display:flex;align-items:center;gap:12px}
+.admin-toolbar .search{padding:6px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.08)}
+
+.admin-container{max-width:1200px;margin:calc(var(--header-height) + 20px) auto 24px;padding:18px 18px 18px;background:var(--card-bg);border-radius:10px;box-shadow:0 10px 30px rgba(50,50,70,0.06)}
+
+/* Stronger rule to avoid any template CSS overriding the top spacing */
+.admin-header + .admin-container,
+.admin-container {
+  margin-top: calc(var(--header-height) + 20px) !important;
+  padding-top: 18px !important;
+}
+
+h1{color:var(--brand);margin:0 0 12px 0}
+h2{color:#333;margin-top:0}
+
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{padding:10px;border-bottom:1px solid #eee;text-align:left}
+th{background:#fafafa}
+
+button{background:var(--brand);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+button.secondary{background:#eee;color:#333}
+button.danger{background:#c0392b}
+
+form label{display:block;margin:6px 0}
+input,select,textarea{padding:8px;border-radius:8px;border:1px solid #ddd;width:100%;box-sizing:border-box}
+
+.top-actions{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+
+@media (max-width:800px){
+  .admin-header{flex-direction:column;gap:8px;align-items:flex-start}
+  :root{--header-height:120px}
+  .admin-container{margin:calc(var(--header-height) + 12px) 12px 12px}
+}
+
+/* Dark theme */
+body.dark{background:#0f1115;color:#e6eef8}
+body.dark .admin-header{background:linear-gradient(90deg,#111 #222)}
+body.dark .admin-container{background:#0e1115;box-shadow:none;color:#e6eef8}
+body.dark table th, body.dark table td{border-color:rgba(255,255,255,0.06)}
+body.dark button{background:#222;color:#fff}
+body.dark .theme-toggle{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.06)}
+
+/* Backwards-compatibility: if templates still use .container, ensure they start below the fixed header */
+.admin-header + .container,
+.container.admin-container {
+  margin-top: calc(var(--header-height) + 20px);
+}
