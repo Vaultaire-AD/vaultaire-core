@@ -143,10 +143,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		if len(foundCategories) == 0 {
 			fmt.Println("Aucune entité correspondante détectée dans les filtres.")
 
-			err := SendLDAPSearchResultDone(conn, messageID)
-    		if err != nil {
-        		logs.Write_Log("ERROR", "Error sending LDAP search result done: "+err.Error())
-    		}
+			SendLDAPSearchResultDone(conn, messageID)
     		return
 		}
 	}
