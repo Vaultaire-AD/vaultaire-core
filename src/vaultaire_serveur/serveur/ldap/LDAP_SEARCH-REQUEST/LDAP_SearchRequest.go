@@ -151,3 +151,44 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		}
 	}
 }
+
+
+// SendLDAPSearchResultDone informe le client que la recherche est terminée avec succès.
+func SendLDAPSearchResultDone(conn net.Conn, messageID int) error {
+    // resultCode 0 = success
+    const LDAPResultSuccess = 0
+
+    // Structure ASN.1 du SearchResultDone
+    result := []any{
+        messageID, 
+        asn1.RawValue{
+            Class:      asn1.ClassApplication,
+            Tag:        5, // SearchResultDone
+            IsCompound: true,
+            Bytes: mustMarshal([]any{
+                LDAPResultSuccess, // resultCode: 0 (Succès)
+                "",                // matchedDN
+                "",                // diagnosticMessage
+            }),
+        },
+    }
+
+    packet, err := asn1.Marshal(result)
+    if err != nil {
+        return fmt.Errorf("ASN.1 marshal failed: %v", err)
+    }
+
+    // Encapsulation dans la SEQUENCE universelle
+    finalPacket, err := asn1.Marshal(asn1.RawValue{
+        Class:      asn1.ClassUniversal,
+        Tag:        asn1.TagSequence,
+        IsCompound: true,
+        Bytes:      packet,
+    })
+    if err != nil {
+        return fmt.Errorf("final packet marshal failed: %v", err)
+    }
+
+    _, err = conn.Write(finalPacket)
+    return err
+}
