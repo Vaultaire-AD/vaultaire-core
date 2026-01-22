@@ -56,3 +56,18 @@ func ExtractEqualityFilters(packet *ber.Packet) ([]ldapstorage.EqualityFilter, e
     walk(packet)
     return filters, nil
 }
+
+func isGenericSearch(filters []ldapstorage.EqualityFilter) bool {
+    // Si pas de filtres, ou si le seul filtre est objectClass=*
+    if len(filters) == 0 {
+        return true
+    }
+    if len(filters) == 1 {
+        attr := filters[0].Attribute
+        val := filters[0].Value
+        if (attr == "objectclass" || attr == "objectClass") && (val == "*" || val == "top") {
+            return true
+        }
+    }
+    return false
+}
