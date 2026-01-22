@@ -39,16 +39,20 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 	// Si le BaseObject est vide, c'est une requête Root DSE (découverte du serveur)
     if op.BaseObject == "" {
     	fmt.Println("→ Requête Root DSE détectée (Découverte du serveur)")
-    
-    // On construit une réponse minimale pour dire que le serveur existe
-    	entry := SearchResultEntry{
-        	ObjectName: "", // Obligatoirement vide pour un Root DSE
-        	Attributes: []PartialAttribute{
-            	{Type: "namingContexts", Vals: []string{"dc=vaultaire,dc=local"}},
-            	{Type: "supportedLDAPVersion", Vals: []string{"3"}},
-            	{Type: "vendorName", Vals: []string{"Vaultaire-AD"}},
-        	},
-    	}
+
+	// On construit une réponse pour dire que le serveur existe et possède le domaine
+    entry := SearchResultEntry{
+        ObjectName: "", // Obligatoirement vide pour un Root DSE
+        Attributes: []PartialAttribute{
+            {Type: "namingContexts", Vals: []string{"dc=vaultaire,dc=local"}},
+            {Type: "supportedLDAPVersion", Vals: []string{"3"}},
+            {Type: "vendorName", Vals: []string{"Vaultaire-AD"}},
+            // Ajout du champ displayname car Nextcloud le demande explicitement dans ton log
+            {Type: "displayName", Vals: []string{"Vaultaire Directory Server"}},
+            // Optionnel mais recommandé pour les clients avancés
+            {Type: "subschemaSubentry", Vals: []string{"cn=subschema"}},
+        },
+    }
     	SendLDAPSearchResultEntry(conn, messageID, entry)
     	SendLDAPSearchResultDone(conn, messageID)
     	return // On s'arrête là pour cette requête
