@@ -12,7 +12,7 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"string"
+	"strings"
 )
 
 func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.Conn) {
