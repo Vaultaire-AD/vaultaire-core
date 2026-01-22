@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"string"
 )
 
 func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.Conn) {
@@ -174,8 +175,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 }
 
 func extractFirstDC(dn string) string {
-    // Importe "strings" en haut de ton fichier si ce n'est pas déjà fait
-    import "strings" 
+    
     
     // Note: Si tu l'ajoutes ici, déplace l'import en haut du fichier avec les autres
     parts := strings.Split(dn, ",")
