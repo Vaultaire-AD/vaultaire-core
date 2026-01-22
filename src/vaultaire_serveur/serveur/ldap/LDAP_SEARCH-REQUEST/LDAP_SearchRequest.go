@@ -35,6 +35,24 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		fmt.Printf("TypesOnly    : %v\n", op.TypesOnly)
 		fmt.Printf("Attributes   : %v\n", op.Attributes)
 	}
+
+	// Si le BaseObject est vide, c'est une requête Root DSE (découverte du serveur)
+    if op.BaseObject == "" {
+    	fmt.Println("→ Requête Root DSE détectée (Découverte du serveur)")
+    
+    // On construit une réponse minimale pour dire que le serveur existe
+    	entry := SearchResultEntry{
+        	ObjectName: "", // Obligatoirement vide pour un Root DSE
+        	Attributes: []PartialAttribute{
+            	{Type: "namingContexts", Vals: []string{"dc=vaultaire,dc=local"}},
+            	{Type: "supportedLDAPVersion", Vals: []string{"3"}},
+            	{Type: "vendorName", Vals: []string{"Vaultaire-AD"}},
+        	},
+    	}
+    	SendLDAPSearchResultEntry(conn, messageID, entry)
+    	SendLDAPSearchResultDone(conn, messageID)
+    	return // On s'arrête là pour cette requête
+    }
 	// Vérifier les permissions en base de données
 	rawPerms, err := db_permission.GetUserPermissionsForAction(database.GetDatabase(), session.Username, "search")
 	if err != nil {
