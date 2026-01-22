@@ -140,11 +140,35 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 			return
 		}
 
-		if len(foundCategories) == 0 {
-			fmt.Println("Aucune entité correspondante détectée dans les filtres.")
 
-			SendLDAPSearchResultDone(conn, messageID)
-    		return
-		}
+		// CAS PAR DÉFAUT : Recherche générique (objectClass=*)
+        if isGenericSearch(filters) {
+            fmt.Println("→ Requête générique détectée : Renvoi des informations de base et listing")
+            
+            // 1. Envoyer l'entrée du BaseObject lui-même (indispensable pour que le client valide le DN)
+            baseEntry := SearchResultEntry{
+                ObjectName: op.BaseObject,
+                Attributes: []PartialAttribute{
+                    {Type: "objectClass", Vals: []string{"top", "domain", "organizationalUnit"}},
+                    {Type: "dc", Vals: []string{extractFirstDC(op.BaseObject)}},
+                },
+            }
+            SendLDAPSearchResultEntry(conn, messageID, baseEntry)
+
+            // 2. Envoyer tous les utilisateurs et groupes
+            // On ne met pas de "return" entre les deux pour que les deux s'exécutent
+            SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters, op.Scope)
+            SearchGroupRequest(conn, messageID, database.GetDatabase(), op.BaseObject, filters, op.BaseObject, op.Scope)
+            
+            // 3. Finaliser
+            SendLDAPSearchResultDone(conn, messageID)
+            return
+        }
+
+        if len(foundCategories) == 0 {
+            fmt.Println("Aucune entité correspondante détectée dans les filtres.")
+            SendLDAPSearchResultDone(conn, messageID)
+            return
+        }
 	}
 }
