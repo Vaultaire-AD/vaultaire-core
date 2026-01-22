@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Variables
-ROOT_DIR="/srv/nfs/vaultaire-core"
+ROOT_DIR="/vaultaire/vaultaire-core"
 BUILD_DIR="$ROOT_DIR/cmd"
 SERVER_BIN="$BUILD_DIR/vaultaire_server/vaultaire_serveur"
 CLI_BIN="$BUILD_DIR/vaultaire_server/vaultaire_cli"
