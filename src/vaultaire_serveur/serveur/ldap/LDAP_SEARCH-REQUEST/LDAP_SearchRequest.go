@@ -172,3 +172,18 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
         }
 	}
 }
+
+func extractFirstDC(dn string) string {
+    // Importe "strings" en haut de ton fichier si ce n'est pas déjà fait
+    import "strings" 
+    
+    // Note: Si tu l'ajoutes ici, déplace l'import en haut du fichier avec les autres
+    parts := strings.Split(dn, ",")
+    if len(parts) > 0 {
+        subparts := strings.Split(parts[0], "=")
+        if len(subparts) > 1 {
+            return subparts[1]
+        }
+    }
+    return "root"
+}
