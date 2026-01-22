@@ -25,8 +25,8 @@ RUN chmod 770 /opt/vaultaire /var/log/vaultaire
 # --------------------------------------------------------------------
 WORKDIR /opt/vaultaire
 COPY --chown=vaultaire:vaultaire cmd/vaultaire_server/vaultaire_serveur ./vaultaire_serveur
+COPY --chown=vaultaire:vaultaire cmd/vaultaire_server/vaultaire_cli ./vaultaire_cli
 COPY --chown=vaultaire:vaultaire cmd/vaultaire_client/ ./vaultaire_client/
-COPY --chown=vaultaire:vaultaire cmd/vaultaire_cli/ ./
 COPY --chown=vaultaire:vaultaire web_packet ./web_packet
 COPY --chown=vaultaire:vaultaire automatisation ./automatisation
 COPY --chown=vaultaire:vaultaire deployments/configs/serveur_conf.yaml ./serveur_conf.yaml
