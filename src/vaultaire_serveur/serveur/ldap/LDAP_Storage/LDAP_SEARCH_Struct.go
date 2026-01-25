@@ -49,3 +49,26 @@ func GetGroupAttrs(group Group) map[string][]string {
 	attrs["objectclass"] = []string{"groupOfNames"}
 	return attrs
 }
+
+// LDAPFilterType représente les types RFC 4511
+type LDAPFilterType int
+
+const (
+	FilterAnd LDAPFilterType = iota
+	FilterOr
+	FilterNot
+	FilterEquality
+	FilterSubstring
+	FilterPresent
+	FilterGreaterOrEqual
+	FilterLessOrEqual
+	FilterApprox
+)
+
+// LDAPFilter est un nœud de filtre LDAP
+type LDAPFilter struct {
+	Type       LDAPFilterType
+	Attribute  string
+	Value      string
+	SubFilters []*LDAPFilter
+}

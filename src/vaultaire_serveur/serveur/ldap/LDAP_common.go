@@ -66,9 +66,9 @@ func handleLDAPSession(c net.Conn, protocol string) {
 			continue
 		}
 
-		if storage.Debug {
-			printLDAPMessageDebug(message, protocol, clientAddr)
-		}
+		// if storage.Debug {
+		// 	printLDAPMessageDebug(message, protocol, clientAddr)
+		// }
 
 		ldapparser.DispatchLDAPOperation(message, message.MessageID, c)
 	}

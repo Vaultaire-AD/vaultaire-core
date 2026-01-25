@@ -1,9 +1,10 @@
 package ldapparser
 
 import (
+	"DUCKY/serveur/database"
 	ldapbindunbind "DUCKY/serveur/ldap/LDAP_BIND-UNBIND"
 	ldapextendedrequest "DUCKY/serveur/ldap/LDAP_EXTENDED-REQUEST"
-	ldapsearch "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST"
+	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule"
 	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
 	"DUCKY/serveur/logs"
@@ -30,7 +31,8 @@ func DispatchLDAPOperation(message *ldapstorage.LDAPParsedReceivedMessage, messa
 	case ldapstorage.ExtendedRequest:
 		ldapextendedrequest.HandleExtendedRequest(op, messageID, c)
 	case ldapstorage.SearchRequest:
-		ldapsearch.HandleSearchRequest(op, messageID, c)
+		newmodule.HandleSearchRequest(database.GetDatabase(), op, messageID, c)
+		//ldapsearch.HandleSearchRequest(op, messageID, c)
 	// case "ExtendedRequest":
 	// 	handleExtendedRequest(message)
 	default:

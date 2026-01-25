@@ -14,7 +14,7 @@ mkdir -p "$BUILD_DIR"
 
 echo "�� Pull des dernières modifications..."
 cd "$ROOT_DIR"
-git pull
+#git pull
 
 # -------------------------
 # Build serveur

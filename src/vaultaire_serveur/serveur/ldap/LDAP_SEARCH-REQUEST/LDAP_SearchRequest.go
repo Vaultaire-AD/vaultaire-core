@@ -34,29 +34,30 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 		fmt.Printf("TimeLimit    : %d\n", op.TimeLimit)
 		fmt.Printf("TypesOnly    : %v\n", op.TypesOnly)
 		fmt.Printf("Attributes   : %v\n", op.Attributes)
+
 	}
 
 	// Si le BaseObject est vide, c'est une requête Root DSE (découverte du serveur)
-    if op.BaseObject == "" {
-    	fmt.Println("→ Requête Root DSE détectée (Découverte du serveur)")
+	if op.BaseObject == "" {
+		fmt.Println("→ Requête Root DSE détectée (Découverte du serveur)")
 
-	// On construit une réponse pour dire que le serveur existe et possède le domaine
-    entry := SearchResultEntry{
-        ObjectName: "", // Obligatoirement vide pour un Root DSE
-        Attributes: []PartialAttribute{
-            {Type: "namingContexts", Vals: []string{"dc=vaultaire,dc=local"}},
-            {Type: "supportedLDAPVersion", Vals: []string{"3"}},
-            {Type: "vendorName", Vals: []string{"Vaultaire-AD"}},
-            // Ajout du champ displayname car Nextcloud le demande explicitement dans ton log
-            {Type: "displayName", Vals: []string{"Vaultaire Directory Server"}},
-            // Optionnel mais recommandé pour les clients avancés
-            {Type: "subschemaSubentry", Vals: []string{"cn=subschema"}},
-        },
-    }
-    	SendLDAPSearchResultEntry(conn, messageID, entry)
-    	SendLDAPSearchResultDone(conn, messageID)
-    	return // On s'arrête là pour cette requête
-    }
+		// On construit une réponse pour dire que le serveur existe et possède le domaine
+		entry := SearchResultEntry{
+			ObjectName: "", // Obligatoirement vide pour un Root DSE
+			Attributes: []PartialAttribute{
+				{Type: "namingContexts", Vals: []string{"dc=vaultaire,dc=local"}},
+				{Type: "defaultNamingContext", Vals: []string{"dc=vaultaire,dc=local"}},
+				{Type: "supportedLDAPVersion", Vals: []string{"3"}},
+				{Type: "supportedControl", Vals: []string{
+					"1.2.840.113556.1.4.319", // paged results
+				}},
+				{Type: "vendorName", Vals: []string{"Vaultaire-AD"}},
+			},
+		}
+		SendLDAPSearchResultEntry(conn, messageID, entry)
+		SendLDAPSearchResultDone(conn, messageID)
+		return // On s'arrête là pour cette requête
+	}
 	// Vérifier les permissions en base de données
 	rawPerms, err := db_permission.GetUserPermissionsForAction(database.GetDatabase(), session.Username, "search")
 	if err != nil {
@@ -96,7 +97,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 
 		if foundCategories["user"] {
 			fmt.Println("→ Déclenchement du traitement pour les **utilisateurs**")
-			SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters, op.Scope)
+			SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters, op.Scope, op.TypesOnly)
 			return
 		}
 
@@ -163,49 +164,47 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 			return
 		}
 
-
 		// CAS PAR DÉFAUT : Recherche générique (objectClass=*)
-        if isGenericSearch(filters) {
-            fmt.Println("→ Requête générique détectée : Renvoi des informations de base et listing")
-            
-            // 1. Envoyer l'entrée du BaseObject lui-même (indispensable pour que le client valide le DN)
-            baseEntry := SearchResultEntry{
-                ObjectName: op.BaseObject,
-                Attributes: []PartialAttribute{
-                    {Type: "objectClass", Vals: []string{"top", "domain", "organizationalUnit"}},
-                    {Type: "dc", Vals: []string{extractFirstDC(op.BaseObject)}},
-                },
-            }
-            SendLDAPSearchResultEntry(conn, messageID, baseEntry)
+		if isGenericSearch(filters) {
+			fmt.Println("→ Requête générique détectée : Renvoi des informations de base et listing")
 
-            // 2. Envoyer tous les utilisateurs et groupes
-            // On ne met pas de "return" entre les deux pour que les deux s'exécutent
-            SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters, op.Scope)
-            SearchGroupRequest(conn, messageID, database.GetDatabase(), op.BaseObject, filters, op.BaseObject, op.Scope)
-            
-            // 3. Finaliser
-            SendLDAPSearchResultDone(conn, messageID)
-            return
-        }
+			// 1. Envoyer l'entrée du BaseObject lui-même (indispensable pour que le client valide le DN)
+			baseEntry := SearchResultEntry{
+				ObjectName: op.BaseObject,
+				Attributes: []PartialAttribute{
+					{Type: "objectClass", Vals: []string{"top", "domain", "organizationalUnit"}},
+					{Type: "dc", Vals: []string{extractFirstDC(op.BaseObject)}},
+				},
+			}
+			SendLDAPSearchResultEntry(conn, messageID, baseEntry)
 
-        if len(foundCategories) == 0 {
-            fmt.Println("Aucune entité correspondante détectée dans les filtres.")
-            SendLDAPSearchResultDone(conn, messageID)
-            return
-        }
+			// 2. Envoyer tous les utilisateurs et groupes
+			// On ne met pas de "return" entre les deux pour que les deux s'exécutent
+			SearchUserRequest(conn, messageID, op.BaseObject, op.Attributes, filters, op.Scope, op.TypesOnly)
+			SearchGroupRequest(conn, messageID, database.GetDatabase(), op.BaseObject, filters, op.BaseObject, op.Scope)
+
+			// 3. Finaliser
+			SendLDAPSearchResultDone(conn, messageID)
+			return
+		}
+
+		if len(foundCategories) == 0 {
+			fmt.Println("Aucune entité correspondante détectée dans les filtres.")
+			SendLDAPSearchResultDone(conn, messageID)
+			return
+		}
 	}
 }
 
 func extractFirstDC(dn string) string {
-    
-    
-    // Note: Si tu l'ajoutes ici, déplace l'import en haut du fichier avec les autres
-    parts := strings.Split(dn, ",")
-    if len(parts) > 0 {
-        subparts := strings.Split(parts[0], "=")
-        if len(subparts) > 1 {
-            return subparts[1]
-        }
-    }
-    return "root"
+
+	// Note: Si tu l'ajoutes ici, déplace l'import en haut du fichier avec les autres
+	parts := strings.Split(dn, ",")
+	if len(parts) > 0 {
+		subparts := strings.Split(parts[0], "=")
+		if len(subparts) > 1 {
+			return subparts[1]
+		}
+	}
+	return "root"
 }

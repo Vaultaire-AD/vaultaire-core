@@ -125,9 +125,10 @@ func LoadConfig(filePath string) error {
 	}
 
 	// Administrateur settings
-	if config.Administrateur.Enable {
+	if config.Administrateur.Enable != true {
 		storage.Administrateur_Enable = config.Administrateur.Enable
 	}
+
 	if config.Administrateur.Username != "" {
 		storage.Administrateur_Username = config.Administrateur.Username
 	}
