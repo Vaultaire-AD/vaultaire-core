@@ -2,21 +2,21 @@ package serveurauth
 
 import (
 	"fmt"
-	"net"
 	"strings"
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	br "vaultaire_client/duckynetworkClient/trames_manager"
+	"vaultaire_client/storage"
 )
 
-func AskServerKey(conn net.Conn) bool {
+func AskServerKey(duckysession *storage.DuckySession) bool {
 	message := []byte("askkey")
 	fmt.Println("je veux une clé serveur")
 	messageSize := sendmessage.CompileMessageSize(message)
 	headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
 	data := append(append(headerSize, messageSize...), message...)
-	if _, err := conn.Write(data); err != nil {
+	if _, err := duckysession.Conn.Write(data); err != nil {
 		defer func() {
-			if err := conn.Close(); err != nil {
+			if err := duckysession.Conn.Close(); err != nil {
 				// Handle or log the error
 				fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
 			}
@@ -25,14 +25,14 @@ func AskServerKey(conn net.Conn) bool {
 		fmt.Println("Erreur lors de l'envoi du message :", err)
 		return false
 	}
-	fmt.Println("Message send with succces to", conn.RemoteAddr())
+	fmt.Println("Message send with succces to", duckysession.Conn.RemoteAddr())
 	for {
-		headerSize := br.Read_Header_Size(conn)
+		headerSize := br.Read_Header_Size(duckysession.Conn)
 		if headerSize != 0 {
-			messagesize := br.Read_Message_Size(conn, headerSize)
-			fmt.Println("\nYou receive a message from : ", conn.RemoteAddr())
+			messagesize := br.Read_Message_Size(duckysession.Conn, headerSize)
+			fmt.Println("\nYou receive a message from : ", duckysession.Conn.RemoteAddr())
 			messageBuf := make([]byte, messagesize)
-			_, err := conn.Read(messageBuf)
+			_, err := duckysession.Conn.Read(messageBuf)
 			if err != nil {
 				fmt.Println("Erreur lors de la lecture du message :", err)
 			}

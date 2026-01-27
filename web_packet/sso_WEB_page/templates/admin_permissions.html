@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Permissions</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+</head>
+<body>
+  <header class="admin-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
+    <nav class="admin-nav">
+      <a href="/admin/users">Utilisateurs</a>
+      <a href="/admin/groups">Groupes</a>
+      <a href="/admin/clients">Clients</a>
+      <a href="/admin/permissions">Permissions</a>
+      <a href="/profil">Profil</a>
+    </nav>
+    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
+  </header>
+  <div class="admin-container">
+    <h1>Permissions</h1>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+    <section>
+      <h2>Créer une permission</h2>
+      <form method="post">
+        <input type="hidden" name="action" value="create_permission">
+        <label>Nom <input name="name"></label>
+        <label>Description <input name="description"></label>
+        <div style="margin-top:8px"><button type="submit">Créer</button></div>
+      </form>
+    </section>
+    <hr />
+    <table>
+      <thead><tr><th>ID</th><th>Name</th><th>Description</th><th>None</th><th>Auth</th><th>Compare</th><th>Search</th><th>Read</th><th>Write</th><th>Actions</th></tr></thead>
+      <tbody>
+      {{ range .Perms }}
+        <tr>
+          <td>{{ .ID }}</td>
+          <td><a href="/admin/permissions?perm={{ .Name }}">{{ .Name }}</a></td>
+          <td>{{ .Description }}</td>
+          <td>{{ .None }}</td>
+          <td>{{ .Auth }}</td>
+          <td>{{ .Compare }}</td>
+          <td>{{ .Search }}</td>
+          <td>{{ .Read }}</td>
+          <td>{{ .Write }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete_permission">
+              <input type="hidden" name="permission_name" value="{{ .Name }}">
+              <button type="submit" onclick="return confirm('Supprimer la permission {{ .Name }} ?')">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+      {{ end }}
+      </tbody>
+    </table>
+    <script src="/static/admin_app.js"></script>
+  </div>
+</body>
+</html>

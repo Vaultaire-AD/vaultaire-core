@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Détail utilisateur</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+</head>
+<body>
+  <header class="admin-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
+    <nav class="admin-nav">
+      <a href="/admin/users">Utilisateurs</a>
+      <a href="/admin/groups">Groupes</a>
+      <a href="/admin/clients">Clients</a>
+      <a href="/admin/permissions">Permissions</a>
+      <a href="/profil">Profil</a>
+    </nav>
+    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
+  </header>
+  <div class="admin-container">
+    <h1>Détail utilisateur: {{ .User.Username }}</h1>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+
+    <section>
+      <h2>Informations</h2>
+      <form method="post" action="/admin/users?user={{ .User.Username }}">
+        <input type="hidden" name="action" value="update_user">
+        <input type="hidden" name="target_user" value="{{ .User.Username }}">
+        <label>Username <input name="username" value="{{ .User.Username }}"></label>
+        <label>Prénom <input name="firstname" value="{{ .User.Firstname }}"></label>
+        <label>Nom <input name="lastname" value="{{ .User.Lastname }}"></label>
+        <div style="margin-top:8px"><button type="submit">Mettre à jour</button></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Changer le mot de passe</h2>
+      <form method="post" action="/admin/users?user={{ .User.Username }}">
+        <input type="hidden" name="action" value="change_password">
+        <input type="hidden" name="target_user" value="{{ .User.Username }}">
+        <label>Nouveau mot de passe <input type="password" name="password"></label>
+        <div style="margin-top:8px"><button type="submit">Changer</button></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Groupes</h2>
+      <div class="group-list">
+        <strong>Membre de:</strong>
+        <ul>
+        {{ range .User.Groups }}<li><a href="/admin/groups?group={{ . }}">{{ . }}</a></li>{{ end }}
+        </ul>
+      </div>
+  <div style="margin-top:8px">
+        <form method="post" style="display:inline" action="/admin/users?user={{ .User.Username }}">
+          <input type="hidden" name="action" value="add_group">
+          <input type="hidden" name="target_user" value="{{ .User.Username }}">
+          <label>Ajouter au groupe
+            <select name="group">
+              {{ range .AllGroups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+            </select>
+          </label>
+          <div style="margin-top:6px"><button type="submit">Ajouter</button></div>
+        </form>
+
+        <form method="post" style="display:inline;margin-left:12px" action="/admin/users?user={{ .User.Username }}">
+          <input type="hidden" name="action" value="remove_group">
+          <input type="hidden" name="target_user" value="{{ .User.Username }}">
+          <label>Retirer du groupe
+            <select name="group">
+                {{ range .User.Groups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+            </select>
+          </label>
+          <div style="margin-top:6px"><button type="submit">Retirer</button></div>
+        </form>
+      </div>
+    </section>
+
+      <section>
+        <h2>Permissions dérivées</h2>
+        <ul>
+          {{ range .UserPerms }}<li><a href="/admin/permissions?perm={{ . }}">{{ . }}</a></li>{{ end }}
+        </ul>
+      </section>
+
+    <section style="margin-top:12px">
+      <form method="post" action="/admin/users?user={{ .User.Username }}">
+        <input type="hidden" name="action" value="delete_user">
+        <input type="hidden" name="target_user" value="{{ .User.Username }}">
+        <button type="submit" onclick="return confirm('Supprimer cet utilisateur ?')">Supprimer l'utilisateur</button>
+      </form>
+    </section>
+
+    <p style="margin-top:16px"><a href="/admin/users">Retour à la liste</a></p>
+    <script src="/static/admin_app.js"></script>
+  </div>
+</body>
+</html>

@@ -4,11 +4,10 @@ import (
 	"DUCKY/serveur/database"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"net"
 	"strings"
 )
 
-func SSH_Client_Manager(trames_content storage.Trames_struct_client, conn net.Conn) string {
+func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) string {
 	message := ""
 	switch trames_content.Message_Order[1] {
 	case "01":

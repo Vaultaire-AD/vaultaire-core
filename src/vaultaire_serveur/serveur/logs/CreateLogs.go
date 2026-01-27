@@ -6,6 +6,7 @@ import (
 	"DUCKY/serveur/storage"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 )
 
@@ -23,7 +24,8 @@ func Write_Log(level string, content string) {
 	if level == "DEBUG" && !storage.Debug {
 		return
 	}
-
+	// Supprimer un retour à la ligne final éventuel
+	content = strings.TrimRight(content, "\n")
 	// Définir le chemin du répertoire et du fichier
 	dirPath := storage.LogPath
 	filepath := dirPath + "vaultaire.log"
@@ -63,7 +65,7 @@ func Write_Log(level string, content string) {
 }
 
 func Print_Log(logline string) error {
-	fmt.Println(logline)
+	fmt.Print(logline)
 	return nil
 }
 

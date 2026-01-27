@@ -3,41 +3,59 @@ package ldapsearchrequest
 import (
 	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
 	"fmt"
-
-	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
-func ExtractEqualityFilters(packet *ber.Packet) ([]ldapstorage.EqualityFilter, error) {
-	var filters []ldapstorage.EqualityFilter
+func ExtractEqualityFilters(filter *ldapstorage.LDAPFilter) ([]ldapstorage.EqualityFilter, error) {
+	if filter == nil {
+		return nil, fmt.Errorf("nil LDAP filter")
+	}
 
-	var walk func(p *ber.Packet)
-	walk = func(p *ber.Packet) {
-		// Si c’est un EqualityMatch
-		if p.Tag == 3 && p.ClassType == ber.ClassContext && len(p.Children) == 2 {
-			attrPacket := p.Children[0]
-			valPacket := p.Children[1]
+	var result []ldapstorage.EqualityFilter
 
-			attr, ok1 := attrPacket.Value.(string)
-			val, ok2 := valPacket.Value.(string)
+	var walk func(f *ldapstorage.LDAPFilter)
+	walk = func(f *ldapstorage.LDAPFilter) {
+		if f == nil {
+			return
+		}
 
-			if ok1 && ok2 {
-				filters = append(filters, ldapstorage.EqualityFilter{
-					Attribute: attr,
-					Value:     val,
-				})
-			}
-		} else {
-			// Si c’est un filtre composé (AND, OR, etc.), on traverse ses enfants
-			for _, child := range p.Children {
+		switch f.Type {
+
+		case ldapstorage.FilterEquality:
+			result = append(result, ldapstorage.EqualityFilter{
+				Attribute: f.Attribute,
+				Value:     f.Value,
+			})
+
+		case ldapstorage.FilterPresent:
+			result = append(result, ldapstorage.EqualityFilter{
+				Attribute: f.Attribute,
+				Value:     "*",
+			})
+
+		case ldapstorage.FilterAnd,
+			ldapstorage.FilterOr,
+			ldapstorage.FilterNot:
+			for _, child := range f.SubFilters {
 				walk(child)
 			}
 		}
 	}
 
-	if packet == nil {
-		return nil, fmt.Errorf("nil packet")
-	}
+	walk(filter)
+	return result, nil
+}
 
-	walk(packet)
-	return filters, nil
+func isGenericSearch(filters []ldapstorage.EqualityFilter) bool {
+	// Si pas de filtres, ou si le seul filtre est objectClass=*
+	if len(filters) == 0 {
+		return true
+	}
+	if len(filters) == 1 {
+		attr := filters[0].Attribute
+		val := filters[0].Value
+		if (attr == "objectclass" || attr == "objectClass") && (val == "*" || val == "top") {
+			return true
+		}
+	}
+	return false
 }

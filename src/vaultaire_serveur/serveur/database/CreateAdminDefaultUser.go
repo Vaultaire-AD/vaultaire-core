@@ -1,62 +1,105 @@
 package database
 
 import (
+	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"fmt"
 	"log"
+	"time"
 )
 
-func CreateAdminDefaultUser(db *sql.DB) {
-	// Fonction pour créer un utilisateur administrateur par défaut
-	log.Println("[BOOTSTRAP] Administrateur activé")
+// CreateAdminUser crée un utilisateur administrateur et l'ajoute au groupe vaultaire
+func CreateDefaultAdminUser(db *sql.DB) {
+	log.Println("[BOOTSTRAP] Création de l'administrateur...")
 
 	// 1. Validation minimale
 	if storage.Administrateur_Username == "" {
-		log.Fatal("Administrateur username vide")
+		log.Fatal("[BOOTSTRAP] Le username de l'administrateur est vide")
+	}
+	if storage.Administrateur_Password == "" {
+		log.Fatal("[BOOTSTRAP] Le password de l'administrateur est vide")
 	}
 
-	if storage.Administrateur_PublicKey == "" {
-		log.Fatal("Administrateur public_key manquante")
+	// Générer un salt
+	salt, err := generateSalt(16)
+	if err != nil {
+		return
 	}
+	saltHex := hex.EncodeToString(salt)
 
-	// 2. Créer l'utilisateur admin s'il n'existe pas
-	_, err := db.Exec(`
-		INSERT IGNORE INTO users (username, password)
-		VALUES (?, ?)
-	`,
+	// Appliquer le hash SHA256 sur le mot de passe + salt
+	saltedPassword := append(salt, []byte(storage.Administrateur_Password)...)
+	hash := sha256.Sum256(saltedPassword)
+	hashHex := hex.EncodeToString(hash[:])
+
+	// 3. Valeurs par défaut pour les champs requis
+	firstname := "Admin"
+	lastname := "System"
+	email := storage.Administrateur_Username + "@vaultaire.local"
+	birthdate := "01/01/3300"
+
+	// 4. Créer l'utilisateur admin
+	err = Create_New_User(
+		GetDatabase(),
 		storage.Administrateur_Username,
-		storage.Administrateur_Password, // idéalement hashé, mais on reste cohérent avec ton modèle actuel
+		firstname,
+		lastname,
+		email,
+		hashHex, // mot de passe hashé
+		saltHex, // salt (en hex)
+		birthdate,
+		time.Now().Format("2006-01-02 15:04:05"),
 	)
 	if err != nil {
-		log.Fatalf("Erreur création utilisateur admin: %v", err)
+		logs.WriteLog("db", fmt.Sprintf("Erreur création admin: %v", err))
+		log.Fatalf("[BOOTSTRAP] Erreur création admin: %v", err)
+	} else {
+		log.Println("[BOOTSTRAP] ✓ Utilisateur administrateur créé")
 	}
 
-	// 3. Associer la clé publique à l'utilisateur
-	_, err = db.Exec(`
-		INSERT IGNORE INTO user_public_key (d_id_user, public_key)
-		SELECT u.id_user, ?
-		FROM users u
-		WHERE u.username = ?
-	`,
-		storage.Administrateur_PublicKey,
-		storage.Administrateur_Username,
-	)
+	// 5. Récupérer l'ID de l'utilisateur
+	var userID int
+	err = db.QueryRow(`
+		SELECT id_user FROM users WHERE username = ?
+	`, storage.Administrateur_Username).Scan(&userID)
 	if err != nil {
-		log.Fatalf("Erreur ajout clé publique admin: %v", err)
+		logs.WriteLog("db", fmt.Sprintf("Erreur récupération ID admin: %v", err))
+		log.Fatalf("[BOOTSTRAP] Erreur récupération ID admin: %v", err)
 	}
 
-	// 4. Ajouter l'utilisateur au groupe "vaultaire"
+	// 6. Ajouter la clé publique si fournie
+	if storage.Administrateur_PublicKey != "" {
+		_, err = db.Exec(`
+			INSERT IGNORE INTO user_public_keys (id_user, public_key, label)
+			VALUES (?, ?, 'Admin Key')
+		`,
+			userID,
+			storage.Administrateur_PublicKey,
+		)
+		if err != nil {
+			logs.WriteLog("db", fmt.Sprintf("Erreur ajout clé publique: %v", err))
+			log.Printf("[BOOTSTRAP] WARN: Impossible d'ajouter la clé publique: %v", err)
+		} else {
+			log.Println("[BOOTSTRAP] Clé publique ajoutée")
+		}
+	}
+
+	// 7. Ajouter l'utilisateur au groupe vaultaire
 	_, err = db.Exec(`
 		INSERT IGNORE INTO users_group (d_id_user, d_id_group)
-		SELECT u.id_user, g.id_group
-		FROM users u, groups g
-		WHERE u.username = ? AND g.group_name = 'vaultaire'
+		SELECT ?, g.id_group
+		FROM groups g
+		WHERE g.group_name = 'vaultaire'
 	`,
-		storage.Administrateur_Username,
+		userID,
 	)
 	if err != nil {
-		log.Fatalf("Erreur association admin au groupe vaultaire: %v", err)
+		logs.WriteLog("db", fmt.Sprintf("Erreur association au groupe vaultaire: %v", err))
+		log.Fatalf("[BOOTSTRAP] Erreur association au groupe vaultaire: %v", err)
 	}
 
-	log.Println("[BOOTSTRAP] Administrateur créé et configuré")
+	log.Printf("[BOOTSTRAP] ✓ Admin '%s' créé et ajouté au groupe vaultaire", storage.Administrateur_Username)
 }

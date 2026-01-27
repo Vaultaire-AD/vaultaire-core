@@ -37,21 +37,23 @@ func EnableServerCommunication(user, pass, sshUser string) {
 				conn,
 				sessionmgr.SessionPending,
 			)
-
+			var duckysession storage.DuckySession
+			duckysession.Conn = conn
+			duckysession.IsSafe = false
 			if !HaveServeurKey() {
-				_ = serveur.AskServerKey(conn)
+				_ = serveur.AskServerKey(&duckysession)
 			}
-			sessionIntegritykey := serveur.AskServerAuthentification(conn)
+			duckysession.SessionKey = serveur.AskServerAuthentification(&duckysession)
 
 			// Lance le gestionnaire de connexion en goroutine
 			done := make(chan struct{})
 			go func() {
-				handleConnection(user, conn)
+				handleConnection(user, &duckysession)
 				close(done) // signal que handleConnection est terminé
 			}()
 
 			// Lance l'authentification (si c'est bloquant, c'est ok)
-			userauth.AskAuthentification(user, pass, conn, sessionIntegritykey)
+			userauth.AskAuthentification(user, pass, &duckysession)
 
 			if sshUser != "" {
 				fmt.Println("Attente fin d'auth pour :", sshUser)
@@ -62,10 +64,9 @@ func EnableServerCommunication(user, pass, sshUser string) {
 						fmt.Println("Session disparue")
 						break
 					}
-
+					sessionIntegritykey := string(duckysession.SessionKey)
 					if status == sessionmgr.SessionAuthenticated {
 						fmt.Println("Session authentifiée, envoi 03_01")
-
 						msg := "03_01\nserveur_central\n" +
 							sessionIntegritykey + "\n" +
 							user + "\n" +
@@ -73,7 +74,7 @@ func EnableServerCommunication(user, pass, sshUser string) {
 							"ask_sshpubkey\n" +
 							sshUser
 
-						sendmessage.SendMessage(msg, conn)
+						sendmessage.SendMessage(msg, &duckysession)
 						break
 					}
 
@@ -97,12 +98,15 @@ func EnableServerCommunication(user, pass, sshUser string) {
 			fmt.Println("Erreur lors de la connexion au serveur :", err)
 			return
 		}
+		var duckysession storage.DuckySession
+		duckysession.Conn = conn
+		duckysession.IsSafe = false
 		// Exemple simplifié de logique liée au serveur
 		if !HaveServeurKey() {
-			_ = serveur.AskServerKey(conn)
+			_ = serveur.AskServerKey(&duckysession)
 		}
-		sessionIntegritykey := serveur.AskServerAuthentification(conn)
-		go handleConnection(user, conn)
-		userauth.AskAuthentification(user, pass, conn, sessionIntegritykey)
+		duckysession.SessionKey = serveur.AskServerAuthentification(&duckysession)
+		go handleConnection(user, &duckysession)
+		userauth.AskAuthentification(user, pass, &duckysession)
 	}
 }

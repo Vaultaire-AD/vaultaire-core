@@ -38,12 +38,12 @@ func handleCloseRequest(conn net.Conn, payload string) {
 	}
 
 	fmt.Printf("Fermeture de session pour l'utilisateur: %s\n", closeReq.User)
-	connn, exist := serveurcommunication.GetConnection(closeReq.User)
+	duckysession, exist := serveurcommunication.GetConnection(closeReq.User)
 	if !exist {
 		fmt.Println("Unable to recover user tunnel connection to serveur")
 	} else {
 		message := "02_05\nserveur_central\n" + closeReq.User + "\n" + storage.Computeur_ID + "\nclose"
-		sendmessage.SendMessage(message, connn)
+		sendmessage.SendMessage(message, &duckysession)
 		serveurcommunication.RemoveConnection(closeReq.User)
 	}
 }

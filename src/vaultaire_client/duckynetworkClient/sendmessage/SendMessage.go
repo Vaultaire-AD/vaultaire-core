@@ -3,9 +3,10 @@ package sendmessage
 import (
 	"encoding/binary"
 	"fmt"
-	"net"
 	keyencodedecode "vaultaire_client/duckynetworkClient/key_encode_decode"
 	"vaultaire_client/duckynetworkClient/keymanagement"
+	"vaultaire_client/logs"
+	"vaultaire_client/storage"
 )
 
 func CompileMessageSize(message []byte) []byte {
@@ -20,27 +21,46 @@ func CompileHeaderSize(messageSize []byte) byte {
 	return headerSize
 }
 
-func SendMessage(message string, conn net.Conn) {
-	if message == "" || conn == nil {
+func SendMessage(message string, duckysession *storage.DuckySession) {
+	if message == "" || duckysession.Conn == nil {
 		return
 	}
-	cipher_msg, err := keyencodedecode.EncryptMessageWithPublic(keymanagement.GetServeurPublicKey(), message)
-	if err != nil {
-		fmt.Println("Erreur de chiffrement lors de l'envoie de données" + err.Error())
+
+	var cipherMsg string
+	var err error
+
+	if duckysession.IsSafe {
+		// Chiffrement symétrique AES-GCM avec clé de session
+		cipherMsg, err = keyencodedecode.EncryptAESGCMString(duckysession.SessionKey, message)
+		if err != nil {
+			fmt.Println("Erreur lors du chiffrement symétrique :", err)
+			return
+		}
+	} else {
+		// Chiffrement asymétrique RSA avec clé publique du serveur
+		cipherBytes, err := keyencodedecode.EncryptMessageWithPublic(keymanagement.GetServeurPublicKey(), message)
+		if err != nil {
+			fmt.Println("Erreur lors du chiffrement asymétrique :", err)
+			return
+		}
+		cipherMsg = string(cipherBytes) // ou Base64 si nécessaire
 	}
-	messageSize := CompileMessageSize(cipher_msg)
+
+	// Préparer header et taille du message
+	messageSize := CompileMessageSize([]byte(cipherMsg))
 	headerSize := []byte{CompileHeaderSize(messageSize)}
-	data := append(append(headerSize, messageSize...), cipher_msg...)
-	if _, err := conn.Write(data); err != nil {
+	data := append(append(headerSize, messageSize...), []byte(cipherMsg)...)
+
+	// Envoi sur la connexion
+	if _, err := duckysession.Conn.Write(data); err != nil {
 		defer func() {
-			if err := conn.Close(); err != nil {
-				// Handle or log the error
-				fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+			if cerr := duckysession.Conn.Close(); cerr != nil {
+				fmt.Printf("Erreur lors de la fermeture de la connexion : %v\n", cerr)
 			}
 		}()
-
 		fmt.Println("Erreur lors de l'envoi du message :", err)
 		return
 	}
-	fmt.Println("Message send with succces to", conn.RemoteAddr())
+	logs.Write_Log("DEBUG", string(cipherMsg))
+	fmt.Println("Message envoyé avec succès à", duckysession.Conn.RemoteAddr())
 }
