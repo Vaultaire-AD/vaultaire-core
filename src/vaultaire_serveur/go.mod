@@ -16,8 +16,8 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
-	github.com/pkg/sftp v1.13.7
-	golang.org/x/crypto v0.36.0
-	golang.org/x/sys v0.31.0 // indirect
+	github.com/pkg/sftp v1.13.10
+	golang.org/x/crypto v0.41.0
+	golang.org/x/sys v0.35.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
