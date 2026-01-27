@@ -30,7 +30,7 @@ func main() {
 	go duckynetwork.StartDuckyServer()
 
 	if storage.Administrateur_Enable {
-		db.CreateAdminDefaultUser(db.GetDatabase())
+		db.CreateDefaultAdminUser(db.GetDatabase())
 	} else {
 		log.Println("[BOOTSTRAP] Default Administrateur désactivé")
 	}

@@ -4,6 +4,7 @@ import (
 	"DUCKY/serveur/database"
 	dbuser "DUCKY/serveur/database/db-user"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/permission"
 	"DUCKY/serveur/storage"
 	"DUCKY/serveur/web_serveur/session"
 	"html/template"
@@ -14,8 +15,9 @@ import (
 )
 
 type ProfilPageData struct {
-	User storage.GetUserInfoSingle
-	Keys []storage.PublicKey
+	User        storage.GetUserInfoSingle
+	Keys        []storage.PublicKey
+	HasWebAdmin bool
 }
 
 func ProfilHandler(w http.ResponseWriter, r *http.Request) {
@@ -50,9 +52,17 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Determine if the current user has the web_admin permission
+	hasAdmin := false
+	if groupsID, action, err := permission.PrePermissionCheck(username, "web_admin"); err == nil {
+		ok, _ := permission.CheckPermissionsMultipleDomains(groupsID, action, []string{"*"})
+		hasAdmin = ok
+	}
+
 	data := ProfilPageData{
-		User: *userInfo,
-		Keys: keys,
+		User:        *userInfo,
+		Keys:        keys,
+		HasWebAdmin: hasAdmin,
 	}
 
 	if r.Method == "GET" {

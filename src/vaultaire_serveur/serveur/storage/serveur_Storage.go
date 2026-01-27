@@ -1,11 +1,9 @@
 package storage
 
-import "net"
-
 type Is_Serveur_Online struct {
 	Client_ID           string
 	Username            string
-	Conn                net.Conn
+	Duckysession        *DuckySession
 	Failed_Time         int
 	SessionIntegritykey string
 }

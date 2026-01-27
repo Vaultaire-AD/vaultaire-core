@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Détail groupe</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+</head>
+<body>
+  <header class="admin-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
+    <nav class="admin-nav">
+      <a href="/admin/users">Utilisateurs</a>
+      <a href="/admin/groups">Groupes</a>
+      <a href="/admin/clients">Clients</a>
+      <a href="/admin/permissions">Permissions</a>
+      <a href="/profil">Profil</a>
+    </nav>
+    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
+  </header>
+  <div class="admin-container">
+    <h1>Détail groupe: {{ .Group }}</h1>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+
+    <section>
+      <h2>Membres utilisateurs</h2>
+      <ul>
+        {{ range .Users }}<li><a href="/admin/users?user={{ . }}">{{ . }}</a></li>{{ end }}
+      </ul>
+      <form method="post">
+        <input type="hidden" name="action" value="add_user">
+          <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Ajouter utilisateur
+          <select name="username">
+            {{ range .AllUsers }}<option value="{{ .Username }}">{{ .Username }}</option>{{ end }}
+          </select>
+        </label>
+        <div style="margin-top:6px"><button type="submit">Ajouter</button></div>
+      </form>
+
+      <form method="post" style="margin-top:8px">
+        <input type="hidden" name="action" value="remove_user">
+          <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Retirer utilisateur
+          <select name="username">
+            {{ range .Users }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+          </select>
+        </label>
+        <div style="margin-top:6px"><button type="submit">Retirer</button></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Clients</h2>
+      <ul>
+        {{ range .Clients }}<li><a href="/admin/clients?client={{ . }}">{{ . }}</a></li>{{ end }}
+      </ul>
+      <form method="post">
+        <input type="hidden" name="action" value="add_client">
+          <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Ajouter client
+          <select name="computeur_id">
+            {{ range .AllClients }}<option value="{{ .ComputeurID }}">{{ .ComputeurID }}</option>{{ end }}
+          </select>
+        </label>
+        <div style="margin-top:6px"><button type="submit">Ajouter</button></div>
+      </form>
+
+      <form method="post" style="margin-top:8px">
+        <input type="hidden" name="action" value="remove_client">
+          <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Retirer client
+          <select name="computeur_id">
+            {{ range .Clients }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+          </select>
+        </label>
+        <div style="margin-top:6px"><button type="submit">Retirer</button></div>
+      </form>
+    </section>
+
+    <section>
+      <h2>Permissions utilisateurs</h2>
+      <ul>
+        {{ range .Perms }}<li><a href="/admin/permissions?perm={{ . }}">{{ . }}</a></li>{{ end }}
+      </ul>
+      <form method="post">
+        <input type="hidden" name="action" value="add_permission">
+          <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Ajouter permission
+          <select name="permission">
+            {{ range .AllPerms }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}
+          </select>
+        </label>
+        <div style="margin-top:6px"><button type="submit">Ajouter</button></div>
+      </form>
+
+      <form method="post" style="margin-top:8px">
+        <input type="hidden" name="action" value="remove_permission">
+          <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Retirer permission
+          <select name="permission">
+            {{ range .Perms }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+          </select>
+        </label>
+        <div style="margin-top:6px"><button type="submit">Retirer</button></div>
+      </form>
+    </section>
+
+    <section style="margin-top:12px">
+      <form method="post">
+        <input type="hidden" name="action" value="delete_group">
+        <input type="hidden" name="target_group" value="{{ .Group }}">
+        <button type="submit" onclick="return confirm('Supprimer ce groupe ?')">Supprimer le groupe</button>
+      </form>
+    </section>
+
+    <p style="margin-top:16px"><a href="/admin/groups">Retour aux groupes</a></p>
+    <script src="/static/admin_app.js"></script>
+  </div>
+</body>
+</html>

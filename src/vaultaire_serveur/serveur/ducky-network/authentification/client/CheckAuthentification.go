@@ -7,7 +7,6 @@ import (
 	gc "DUCKY/serveur/global/security"
 	logs "DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"net"
 	"strconv"
 
 	//"DUCKY/serveur/logs"
@@ -109,7 +108,7 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 // If they match, it generates a session key, checks if the user can log in, and adds a login entry to the database.
 // If the user can log in, it sends the GPO to the client and returns a success message with the session key.
 // If the challenge does not match, it logs a warning and returns an error message indicating that the authentication failed.
-func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) string {
+func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) string {
 	message_reconstruction := strings.Split(trames_content.Content, "\n")
 	message_content := storage.Authentification_Challenge_server{
 		AuthID:    message_reconstruction[0],
@@ -118,7 +117,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, conn net.Conn) strin
 	randomAuth, username := GetRandomAuthByAuthID(message_content.AuthID)
 	DeleteAuthByID(message_content.AuthID)
 	if username == "vaultaire" {
-		addOnlineServerToTable(username, trames_content.ClientSoftwareID, trames_content.SessionIntegritykey, conn)
+		addOnlineServerToTable(username, trames_content.ClientSoftwareID, trames_content.SessionIntegritykey, duckysession)
 		db := database.GetDatabase()
 		userID, _ := database.Get_User_ID_By_Username(db, username)
 		key := make([]byte, 8)

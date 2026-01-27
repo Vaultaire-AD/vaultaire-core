@@ -3,10 +3,9 @@ package gpomanager
 import (
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"net"
 )
 
-func GPO_Manager(trames_content storage.Trames_struct_client, conn net.Conn) string {
+func GPO_Manager(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) string {
 
 	commands_string, err := Get_GPO_forClient(trames_content.Username, trames_content.ClientSoftwareID)
 	if err != nil {

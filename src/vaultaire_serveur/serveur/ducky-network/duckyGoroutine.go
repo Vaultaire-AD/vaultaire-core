@@ -6,7 +6,6 @@ import (
 	tm "DUCKY/serveur/ducky-network/trames_manager"
 	"DUCKY/serveur/logs"
 	"DUCKY/serveur/storage"
-	"net"
 	"time"
 )
 
@@ -15,32 +14,32 @@ import (
 //
 
 // handleConnection gère une nouvelle connexion client.
-func handleConnection(conn net.Conn) {
-	defer closeConnection(conn)
+func handleConnection(duckysession *storage.DuckySession) {
+	defer closeConnection(duckysession)
 
-	logs.Write_Log("INFO", "New connection established: "+conn.RemoteAddr().String())
+	logs.Write_Log("INFO", "New connection established: "+duckysession.Conn.RemoteAddr().String())
 
-	for processIncomingMessage(conn) {
+	for processIncomingMessage(duckysession) {
 		// rien à mettre ici : processIncomingMessage gère tout
 	}
 }
 
 // processIncomingMessage lit et traite un message du client.
 // Retourne false si rien n’a pu être lu (connexion probablement interrompue).
-func processIncomingMessage(conn net.Conn) bool {
-	headerSize := tm.Read_Header_Size(conn)
+func processIncomingMessage(duckysession *storage.DuckySession) bool {
+	headerSize := tm.Read_Header_Size(duckysession.Conn)
 	if headerSize == 0 {
 		return false
 	}
 
-	messageSize := tm.Read_Message_Size(conn, headerSize)
-	tm.MessageReader(conn, messageSize)
+	messageSize := tm.Read_Message_Size(duckysession.Conn, headerSize)
+	tm.MessageReader(duckysession, messageSize)
 	return true
 }
 
 // closeConnection ferme proprement une connexion et log si erreur.
-func closeConnection(conn net.Conn) {
-	if err := conn.Close(); err != nil {
+func closeConnection(duckysession *storage.DuckySession) {
+	if err := duckysession.Conn.Close(); err != nil {
 		logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 	}
 }
@@ -74,7 +73,7 @@ func verifyServersOnline() {
 // pingServer envoie un message heartbeat à un serveur et retourne true si OK.
 func pingServer(serveur storage.Is_Serveur_Online) bool {
 	content := "02_11\nserveur_central\n" + serveur.SessionIntegritykey + "\nclient_giveinformation"
-	err := sendmessage.SendMessage(content, serveur.Client_ID, serveur.Conn)
+	err := sendmessage.SendMessage(content, serveur.Client_ID, serveur.Duckysession)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error sending heartbeat to "+serveur.Client_ID+": "+err.Error())
 		return false

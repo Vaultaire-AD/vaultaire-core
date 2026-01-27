@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"time"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -99,49 +98,71 @@ func buildSearchEntryPacket(dn string, attributes map[string][]string) *ber.Pack
 	return entry
 }
 
-func PrepareUserResponse(user ldapstorage.User, requestedAttrs []string) map[string]string {
+func PrepareUserResponseSmart(
+	user ldapstorage.User,
+	requestedAttrs []string,
+	ctx AttrContext,
+	typesOnly bool,
+) map[string]string {
+
 	userMap := make(map[string]string)
 
-	// Toujours mettre uid et cn
-	userMap["uid"] = user.Username
-	userMap["cn"] = user.Firstname
-	userMap["sn"] = user.Lastname
+	// ← Ici on ajoute l'étape 2
+	if typesOnly {
+		// TypesOnly = true → on renvoie au minimum 'uid' et éventuellement d'autres attributs de base
+		userMap["uid"] = user.Username
+		userMap["displayname"] = strings.TrimSpace(user.Firstname + " " + user.Lastname)
+		userMap["mail"] = user.Email
+		return userMap
+	}
 
-	// Ensuite ajouter les attributs demandés
 	for _, attr := range requestedAttrs {
-		switch strings.ToLower(attr) {
-		case "mail":
-			userMap["mail"] = user.Email
-		case "entryuuid":
-			userMap["entryUUID"] = user.Username
-		case "pwdchangedtime":
-			userMap["pwdChangedTime"] = time.Now().UTC().Format("20060102150405") + "Z"
-		case "krb5principalname":
-			userMap["krb5PrincipalName"] = user.Username
-		case "objectclass":
-			userMap["objectClass"] = "inetOrgPerson"
-		case "createtimestamp":
-			userMap["createTimestamp"] = user.Created_at
-		case "modifytimestamp":
-			userMap["modifyTimestamp"] = time.Now().UTC().Format("20060102150405") + "Z"
+		key := strings.ToLower(attr)
+
+		resolver, ok := userAttributeResolvers[key]
+		if !ok {
+			continue // attribut non supporté → ignoré
+		}
+
+		if value, ok := resolver(user, ctx); ok {
+			userMap[attr] = value
 		}
 	}
 
 	return userMap
 }
 
-func PrepareUserResponses(users []ldapstorage.User, requestedAttrs []string) []map[string]string {
+func PrepareUserResponses(
+	users []ldapstorage.User,
+	requestedAttrs []string,
+	baseDN string,
+	typeonly bool,
+) []map[string]string {
+
 	responses := make([]map[string]string, 0, len(users))
 
 	for _, u := range users {
-		userMap := PrepareUserResponse(u, requestedAttrs)
+
+		groups, _ := database.FindGroupsByUserInDomainTree(
+			database.GetDatabase(),
+			u.Username,
+			baseDN,
+		)
+
+		ctx := AttrContext{
+			BaseDN: baseDN,
+			Groups: groups,
+		}
+
+		userMap := PrepareUserResponseSmart(u, requestedAttrs, ctx, typeonly)
+		logs.Write_Log("DEBUG", "[LDAP] User response map: "+fmt.Sprint(userMap))
 		responses = append(responses, userMap)
 	}
 
 	return responses
 }
 
-func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []string, filtres []ldapstorage.EqualityFilter, scope int) {
+func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []string, filtres []ldapstorage.EqualityFilter, scope int, typeonly bool) {
 	// ici c'est pour les recherche sur 1 user precies
 
 	uidFound := false
@@ -161,7 +182,22 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 				}
 				return
 			}
-			responses = append(responses, PrepareUserResponse(user, attribute))
+			groups, _ := database.FindGroupsByUserInDomainTree(
+				database.GetDatabase(),
+				user.Username,
+				dn,
+			)
+
+			ctx := AttrContext{
+				BaseDN: dn,
+				Groups: groups,
+			}
+
+			responses = append(
+				responses,
+				PrepareUserResponseSmart(user, attribute, ctx, typeonly),
+			)
+
 		}
 	}
 
@@ -171,7 +207,7 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 	}
 	logs.Write_Log("INFO", fmt.Sprintf("Handling SearchUserRequest for DN: %s, messageID: %d", dn, messageID))
 
-	groups, err := domain.GetGroupsUnderDomain(dn, database.GetDatabase())
+	groups, err := domain.GetGroupsUnderDomain(dn, database.GetDatabase(), false)
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the retrieval of groups under domain: "+err.Error())
 		err := SendLDAPSearchFailure(conn, messageID, "error during the retrieval of groups under domain")
@@ -191,7 +227,7 @@ func SearchUserRequest(conn net.Conn, messageID int, dn string, attribute []stri
 		return
 	}
 
-	responses = PrepareUserResponses(Users, attribute)
+	responses = PrepareUserResponses(Users, attribute, dn, typeonly)
 
 	logs.Write_Log("INFO", fmt.Sprintf("Found %d users for groups under domain %s", len(responses), dn))
 

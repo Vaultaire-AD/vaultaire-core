@@ -2,6 +2,29 @@
 
 Bienvenue dans le dépôt Vaultaire Core ! Ce guide explique comment organiser votre travail, collaborer efficacement et respecter les bonnes pratiques du projet.
 
+## Project Status
+
+Vaultaire Core is currently in **ALPHA**.
+
+- Linux integration: partial (Rocky Linux only at the moment)
+- SSH first-login: work in progress
+- LDAP: functional with TLS (tested with Keycloak, pfSense)
+- Known issues: username@domain handling (being patched)
+
+⚠️ Not production-ready.
+
+## Scope
+
+Vaultaire currently focuses on:
+- Linux identity management
+- LDAP directory services
+- Centralized policy management (Linux)
+
+Out of scope (for now):
+- Windows Active Directory replacement
+- Windows GPO
+- Kerberos trust with AD
+
 ---
 
 ## 1. Workflow Git & gestion des branches

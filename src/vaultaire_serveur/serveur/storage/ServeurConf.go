@@ -1,53 +1,53 @@
 package storage
 
 type Config struct {
-	ServerListenPort string `yaml:"serveurlistenport"`
+	ServerListenPort *string `yaml:"serveurlistenport"`
 	Api              struct {
-		API_Enable bool `yaml:"api_enable"`
-		API_Port   int  `yaml:"api_port"`
+		API_Enable *bool `yaml:"api_enable"`
+		API_Port   *int  `yaml:"api_port"`
 	} `yaml:"api"`
 	Path struct {
-		SocketPath                 string `yaml:"socketpath"`
-		PrivateKeyPath             string `yaml:"privatekeypath"`
-		PublicKeyPath              string `yaml:"publickeypath"`
-		PrivateKeyforlogintoclient string `yaml:"privatekeyforlogintoclient"`
-		PublicKeyforlogintoclient  string `yaml:"publickeyforlogintoclient"`
-		Client_Conf_path           string `yaml:"clientconfpath"`
-		LogPath                    string `yaml:"logpath"`
-		ServerCheckOnlineTimer     int    `yaml:"servercheckonlinetimer"`
+		SocketPath                 *string `yaml:"socketpath"`
+		PrivateKeyPath             *string `yaml:"privatekeypath"`
+		PublicKeyPath              *string `yaml:"publickeypath"`
+		PrivateKeyforlogintoclient *string `yaml:"privatekeyforlogintoclient"`
+		PublicKeyforlogintoclient  *string `yaml:"publickeyforlogintoclient"`
+		Client_Conf_path           *string `yaml:"clientconfpath"`
+		LogPath                    *string `yaml:"logpath"`
+		ServerCheckOnlineTimer     *int    `yaml:"servercheckonlinetimer"`
 	} `yaml:"file-path"`
 	Ldap struct {
-		Ldap_Enable  bool `yaml:"ldap_enable"`
-		Ldaps_Enable bool `yaml:"ldaps_enable"`
-		Ldap_Debug   bool `yaml:"ldap_debug"`
-		Ldap_Port    int  `yaml:"ldap_port"`
-		Ldaps_Port   int  `yaml:"ldaps_port"`
+		Ldap_Enable  *bool `yaml:"ldap_enable"`
+		Ldaps_Enable *bool `yaml:"ldaps_enable"`
+		Ldap_Debug   *bool `yaml:"ldap_debug"`
+		Ldap_Port    *int  `yaml:"ldap_port"`
+		Ldaps_Port   *int  `yaml:"ldaps_port"`
 	} `yaml:"ldap"`
 	Dns struct {
-		Dns_Enable bool `yaml:"dns_enable"`
+		Dns_Enable *bool `yaml:"dns_enable"`
 	} `yaml:"dns"`
 	Database struct {
-		Database_username     string `yaml:"username"`
-		Database_password     string `yaml:"password"`
-		Database_iPDatabase   string `yaml:"ip_database"`
-		Database_portDatabase string `yaml:"port_database"`
-		Database_databaseName string `yaml:"databaseName"`
+		Database_username     *string `yaml:"username"`
+		Database_password     *string `yaml:"password"`
+		Database_iPDatabase   *string `yaml:"ip_database"`
+		Database_portDatabase *string `yaml:"port_database"`
+		Database_databaseName *string `yaml:"databaseName"`
 	} `yaml:"database"`
 	Website struct {
-		Website_Enable bool `yaml:"website_enable"`
-		Website_Port   int  `yaml:"website_port"`
+		Website_Enable *bool `yaml:"website_enable"`
+		Website_Port   *int  `yaml:"website_port"`
 	} `yaml:"website"`
 	Automatisation struct {
-		Sh_folder_path string `yaml:"sh_folder_path"`
+		Sh_folder_path *string `yaml:"sh_folder_path"`
 	} `yaml:"automatisation"`
 	Debug struct {
-		Debug bool `yaml:"debug"`
+		Debug *bool `yaml:"debug"`
 	} `yaml:"debug"`
 	Administrateur struct {
-		Enable    bool   `yaml:"enable"`
-		Username  string `yaml:"username"`
-		Password  string `yaml:"password"`
-		PublicKey string `yaml:"public_key"`
+		Enable    *bool   `yaml:"enable"`
+		Username  *string `yaml:"username"`
+		Password  *string `yaml:"password"`
+		PublicKey *string `yaml:"public_key"`
 	} `yaml:"administrateur"`
 }
 
@@ -87,7 +87,7 @@ var API_Port int = 6643
 
 var Debug bool = false
 
-var Administrateur_Enable bool = false
+var Administrateur_Enable bool = true
 var Administrateur_Username string = "admin"
 var Administrateur_Password string = "admin123"
-var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCyv4Y1l6K4vX1Y1VJ5t5nX5F2"
+var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJnFvZ8sfvIGVc0gB5oQEv2Vh1A6lqGNK/CrcgZj5ybNoEwxdbkQyRYkJ6NmtxDs1zLyRUr5GCGtjX44JNNnTDdL+E00Aiw8nFBJRlHkV78ehG62p2DeeVLUydnlnT5ey3KJtmY+Tc0dq5AqWdnAsLbZ/JHw/EuZTeifYJ6wmpxp69oHnsvRxBomH2wSp7CjeYTaBpVFF4KChBSXm/gO4quWQT0JBsDyNmPhZ/QwRJKqujh1B5OX6bbKAl5MOC3OoPXfYkyhilaMku9lK5E6i3wLdP08FQ6Op/Psy7ukTTvMduhqsauxZMMx+x12RAT72LFySZ6RSkLKQXhwkO8pG4laNKFQbDoTULC973AKy0le2Jyb7SnNBL+I+KviMojItYCc6QmQ39TVowy6VQimHiPPs6UPTDt8KROm1SEtPSXj7QvtwJU5hbAG9uFVH/udX7y6BhNPkOgCmrH9s5fh0= root@NTFS"
