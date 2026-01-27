@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Détail permission</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+</head>
+<body>
+  <header class="admin-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
+    <nav class="admin-nav">
+      <a href="/admin/users">Utilisateurs</a>
+      <a href="/admin/groups">Groupes</a>
+      <a href="/admin/clients">Clients</a>
+      <a href="/admin/permissions">Permissions</a>
+      <a href="/profil">Profil</a>
+    </nav>
+    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
+  </header>
+  <div class="admin-container">
+    <h1>Détail permission: {{ .Perm.Name }}</h1>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+    <div class="perm-detail">
+      <p><strong>Nom:</strong> {{ .Perm.Name }}</p>
+      <p><strong>Description:</strong> {{ .Perm.Description }}</p>
+      <p><strong>Actions:</strong>
+        <ul>
+          <li>none: {{ .Perm.None }}</li>
+          <li>auth: {{ .Perm.Auth }}</li>
+          <li>compare: {{ .Perm.Compare }}</li>
+          <li>search: {{ .Perm.Search }}</li>
+        </ul>
+      </p>
+      <p><strong>Accès:</strong> read={{ .Perm.Read }} write={{ .Perm.Write }} api_read={{ .Perm.APIRead }} api_write={{ .Perm.APIWrite }} web_admin={{ .Perm.Web_admin }}</p>
+    </div>
+
+    <form method="post">
+      <input type="hidden" name="action" value="delete_permission">
+      <input type="hidden" name="target_perm" value="{{ .Perm.Name }}">
+      <button type="submit" onclick="return confirm('Supprimer cette permission ?')">Supprimer la permission</button>
+    </form>
+    
+    <section style="margin-top:12px">
+      <h2>Groupes fournissant cette permission</h2>
+      {{ if .Groups }}
+        <ul>
+          {{ range .Groups }}<li><a href="/admin/groups?group={{ . }}">{{ . }}</a></li>{{ end }}
+        </ul>
+      {{ else }}
+        <p>Aucun groupe ne fournit cette permission.</p>
+      {{ end }}
+    </section>
+    <p style="margin-top:16px"><a href="/admin/permissions">Retour aux permissions</a></p>
+    <script src="/static/admin_app.js"></script>
+  </div>
+</body>
+</html>

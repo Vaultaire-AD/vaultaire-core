@@ -3,9 +3,9 @@ package sendmessage
 import (
 	keydecodeencode "DUCKY/serveur/ducky-network/key_decode_encode"
 	"DUCKY/serveur/logs"
+	"DUCKY/serveur/storage"
 	"encoding/binary"
 	"fmt"
-	"net"
 )
 
 func CompileMessageSize(message []byte) []byte {
@@ -20,30 +20,47 @@ func CompileHeaderSize(messageSize []byte) byte {
 	return headerSize
 }
 
-func SendMessage(message string, clientSoftwareID string, conn net.Conn) error {
-	if conn == nil {
+func SendMessage(message string, clientSoftwareID string, duckysession *storage.DuckySession) error {
+	if duckysession.Conn == nil {
 		logs.Write_Log("ERROR", "Connection is nil")
 		return fmt.Errorf("connection is nil")
 	}
 
-	cipher_msg, err := keydecodeencode.EncryptMessageWithClientPublic(message, clientSoftwareID)
-	if err != nil {
-		logs.Write_Log("ERROR", "Error during the encryption: "+err.Error())
-		return err
+	var cipherMsg string
+	var err error
+
+	if duckysession.IsSafe {
+		// Chiffrement symétrique AES-GCM
+		cipherMsg, err = keydecodeencode.EncryptAESGCMString(duckysession.SessionKey, message)
+		if err != nil {
+			logs.Write_Log("ERROR", "Error during symmetric encryption: "+err.Error())
+			return err
+		}
+	} else {
+		// Chiffrement asymétrique RSA
+		cipherBytes, err := keydecodeencode.EncryptMessageWithClientPublic(message, clientSoftwareID)
+		if err != nil {
+			logs.Write_Log("ERROR", "Error during asymmetric encryption: "+err.Error())
+			return err
+		}
+		cipherMsg = string(cipherBytes)
 	}
-	messageSize := CompileMessageSize(cipher_msg)
+
+	// Prépare le header et la taille du message
+	messageSize := CompileMessageSize([]byte(cipherMsg))
 	headerSize := []byte{CompileHeaderSize(messageSize)}
-	data := append(append(headerSize, messageSize...), cipher_msg...)
-	if _, err := conn.Write(data); err != nil {
+	data := append(append(headerSize, messageSize...), []byte(cipherMsg)...)
+
+	// Envoi du message
+	if _, err := duckysession.Conn.Write(data); err != nil {
 		defer func() {
-			if err := conn.Close(); err != nil {
-				// Handle or log the error
-				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			if cerr := duckysession.Conn.Close(); cerr != nil {
+				logs.Write_Log("ERROR", "Error closing connection: "+cerr.Error())
 			}
 		}()
-		logs.Write_Log("ERROR", "Error during the send of the message: "+err.Error())
+		logs.Write_Log("ERROR", "Error sending message: "+err.Error())
 		return err
 	}
+
 	return nil
-	//fmt.Println("Message send with succces to", conn.RemoteAddr())
 }

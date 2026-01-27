@@ -1,7 +1,5 @@
 package ldapstorage
 
-import ber "github.com/go-asn1-ber/asn1-ber"
-
 type LDAPParsedReceivedMessage struct {
 	MessageID  int                   // messageID : INTEGER (Tag 2)
 	ProtocolOp LDAPProtocolOperation // protocolOp : CHOICE (BindRequest, SearchRequest, etc.)
@@ -52,7 +50,7 @@ type SearchRequest struct {
 	SizeLimit    int
 	TimeLimit    int
 	TypesOnly    bool
-	Filter       *ber.Packet // brut pour l’instant
+	Filter       *LDAPFilter // brut pour l’instant
 	Attributes   []string
 }
 

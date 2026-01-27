@@ -45,7 +45,7 @@ func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, fil
 		return
 	}
 
-	groups, err := domain.GetGroupsUnderDomain(dn, database.GetDatabase())
+	groups, err := domain.GetGroupsUnderDomain(dn, database.GetDatabase(), false)
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the retrieval of groups under domain: "+err.Error())
 		return

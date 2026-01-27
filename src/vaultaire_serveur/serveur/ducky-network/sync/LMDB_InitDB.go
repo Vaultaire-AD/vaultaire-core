@@ -36,7 +36,7 @@ func AddConnectionToMap(actualTrame string, computeurID string) (string, error) 
 
 	for i := 0; i < maxRetries; i++ {
 		var err error
-		key, err = generateRandomKey(10) // Génère une clé de 10 caractères
+		key, err = generateRandomKey(32) // Génère une clé de 10 caractères
 		if err != nil {
 			logs.Write_Log("WARNING", "erreur lors de la génération de la clé LMBD : "+err.Error())
 			return "", fmt.Errorf("erreur lors de la génération de la clé : %v", err)

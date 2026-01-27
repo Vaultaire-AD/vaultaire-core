@@ -3,112 +3,179 @@ package domain
 import (
 	"DUCKY/serveur/database"
 	"database/sql"
+	"fmt"
 	"strings"
 )
 
-// GetGroupsUnderDomain retourne tous les groupes appartenant à un domaine et ses sous-domaines
-func GetGroupsUnderDomain(domainPath string, db *sql.DB) ([]string, error) {
-	allGroups, err := database.GetAllGroupsWithDomains(db)
-	if err != nil {
-		return nil, err
-	}
-
-	tree := BuildDomainTree(allGroups)
-
-	targetNode := findDomainNode(tree, domainPath)
-	if targetNode == nil {
-		return nil, nil // domaine non trouvé
-	}
-
-	var result []string
-	collectGroupsChilds(targetNode, &result)
-	return result, nil
+// normalizeDomain normalise un nom de domaine : minuscules, trim espaces et point final
+func normalizeDomain(s string) string {
+	s = strings.TrimSpace(s)
+	s = strings.TrimSuffix(s, ".")
+	return strings.ToLower(s)
 }
 
-// GetDirectGroupsUnderDomain retourne uniquement les groupes appartenant directement au domaine (non récursif)
-// GetDirectGroupsUnderDomain retourne uniquement les groupes appartenant
-// directement au domaine (non récursif) ou aux sous-domaines immédiats.
-// Exemples:
+// GetGroupsUnderDomain retourne tous les noms de groupes appartenant à un domaine
+// et à tous ses sous-domaines (scope subtree LDAP)
+// Exemples :
 //
 //	domainPath = "vaultaire.local"
 //	g.DomainName == "vaultaire.local"         -> included
-//	g.DomainName == "vpn.vaultaire.local"     -> included (immediate child)
-//	g.DomainName == "intra.vpn.vaultaire.local" -> NOT included (grand-child)
-func GetDirectGroupsDomainUnderDomain(domainPath string, db *sql.DB) ([]string, error) {
+//	g.DomainName == "vpn.vaultaire.local"     -> included
+//	g.DomainName == "intra.vpn.vaultaire.local" -> included
+func GetGroupsUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]string, error) {
 	allGroups, err := database.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil, err
 	}
 
-	// Normalisation : lowercase et suppression d'un point final éventuel
-	normalize := func(s string) string {
-		s = strings.TrimSpace(s)
-		s = strings.TrimSuffix(s, ".")
-		return strings.ToLower(s)
-	}
-	target := normalize(domainPath)
+	target := normalizeDomain(domainPath)
+	seen := make(map[string]struct{})
+	result := []string{}
 
-	var directGroups []string
 	for _, g := range allGroups {
-		if g.DomainName == "" {
+		if g.DomainName == "" || g.GroupName == "" {
 			continue
 		}
-		dn := normalize(g.DomainName)
-
-		// cas 1 : domaine identique
-		if dn == target {
-			directGroups = append(directGroups, g.GroupName)
-			continue
-		}
-
-		// cas 2 : sous-domaine ; vérifier suffixe ".<target>"
-		suffix := "." + target
-		if strings.HasSuffix(dn, suffix) {
-			// extra = la partie avant ".<target>"
-			extra := strings.TrimSuffix(dn, suffix) // ex: "vpn"  ou "intra.vpn"
-			// On veut accepter seulement les sous-domaines *immédiats* :
-			// donc extra ne doit pas contenir de '.' (un seul label)
-			if extra != "" && !strings.Contains(extra, ".") {
-				directGroups = append(directGroups, g.DomainName)
+		dn := normalizeDomain(g.DomainName)
+		if dn == target || strings.HasSuffix(dn, "."+target) {
+			var val string
+			if returnDomain {
+				val = g.DomainName
+			} else {
+				val = g.GroupName
+			}
+			if _, ok := seen[val]; !ok {
+				seen[val] = struct{}{}
+				result = append(result, val)
 			}
 		}
 	}
 
-	return directGroups, nil
+	return result, nil
 }
 
-// GetAllGroupsDomainsUnderDomain retourne tous les DomainName des groupes
-// qui appartiennent au domaine donné ou à ses sous-domaines (récursif)
-func GetAllGroupsDomainsUnderDomain(domainPath string, db *sql.DB) ([]string, error) {
+// GetGroupsDirectlyUnderDomain retourne uniquement les groupes appartenant au domaine
+// exact ou à ses sous-domaines immédiats (scope LDAP 1 ou "onelevel")
+// Exemples :
+//
+//	domainPath = "vaultaire.local"
+//	g.DomainName == "vaultaire.local"         -> included
+//	g.DomainName == "vpn.vaultaire.local"     -> included (immediate child)
+//	g.DomainName == "intra.vpn.vaultaire.local" -> NOT included
+func GetGroupsDirectlyUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]string, error) {
+	allGroups, err := database.GetAllGroupsWithDomains(db)
+	if err != nil {
+		return nil, err
+	}
+	target := normalizeDomain(domainPath)
+	seen := make(map[string]struct{})
+	result := []string{}
+
+	for _, g := range allGroups {
+
+		if g.DomainName == "" || g.GroupName == "" {
+			continue
+		}
+		dn := normalizeDomain(g.DomainName)
+
+		// Domaine exact
+		if dn == target {
+			var val string
+			if returnDomain {
+				val = g.DomainName
+			} else {
+				val = g.GroupName
+			}
+			if _, ok := seen[val]; !ok {
+				seen[val] = struct{}{}
+				result = append(result, val)
+			}
+			continue
+		}
+
+		// Sous-domaine immédiat
+		suffix := "." + target
+		if strings.HasSuffix(dn, suffix) {
+			extra := strings.TrimSuffix(dn, suffix)
+			if extra != "" && !strings.Contains(extra, ".") { // sous-domaine immédiat
+				var val string
+				if returnDomain {
+					val = g.DomainName
+				} else {
+					val = g.GroupName
+				}
+				if _, ok := seen[val]; !ok {
+					seen[val] = struct{}{}
+					result = append(result, val)
+				}
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// GetGroupsDirectlyUnderDomainExact retourne uniquement les groupes appartenant exactement
+// au domaine donné, sans inclure les sous-domaines.
+// Exemples :
+//
+//	domainPath = "vaultaire.local"
+//	g.DomainName == "vaultaire.local" -> included
+//	g.DomainName == "vpn.vaultaire.local" -> NOT included
+func GetGroupsDirectlyUnderDomainExact(domainPath string, db *sql.DB, returnDomain bool) ([]string, error) {
 	allGroups, err := database.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil, err
 	}
 
-	normalize := func(s string) string {
-		s = strings.TrimSpace(s)
-		s = strings.TrimSuffix(s, ".")
-		return strings.ToLower(s)
-	}
-	target := normalize(domainPath)
+	target := normalizeDomain(domainPath)
+	result := []string{}
 
-	seen := make(map[string]struct{})
 	for _, g := range allGroups {
-		if g.DomainName == "" {
+		fmt.Printf("DEBUG: checking g.DomainName='%s', normalized='%s', target='%s'\n", g.DomainName, normalizeDomain(g.DomainName), target)
+		if g.DomainName == "" || g.GroupName == "" {
 			continue
 		}
-		dn := normalize(g.DomainName)
-
-		// On accepte tout domaine qui est exactement le target ou qui finit par ".<target>"
-		if dn == target || strings.HasSuffix(dn, "."+target) {
-			seen[g.DomainName] = struct{}{}
+		if normalizeDomain(g.DomainName) == target {
+			if returnDomain {
+				result = append(result, g.DomainName)
+			} else {
+				result = append(result, g.GroupName)
+			}
 		}
 	}
 
-	// construire le slice sans doublons
-	result := make([]string, 0, len(seen))
-	for d := range seen {
-		result = append(result, d)
+	return result, nil
+}
+
+// GetAllGroupDomains retourne la liste de tous les DomainName existants dans la base (sans doublons)
+func GetAllGroupDomains(db *sql.DB, returnDomain bool) ([]string, error) {
+	allGroups, err := database.GetAllGroupsWithDomains(db)
+	if err != nil {
+		return nil, err
+	}
+
+	seen := make(map[string]struct{})
+	result := []string{}
+
+	for _, g := range allGroups {
+		var val string
+		if returnDomain {
+			if g.DomainName == "" {
+				continue
+			}
+			val = normalizeDomain(g.DomainName)
+		} else {
+			if g.GroupName == "" {
+				continue
+			}
+			val = g.GroupName
+		}
+
+		if _, ok := seen[val]; !ok {
+			seen[val] = struct{}{}
+			result = append(result, val)
+		}
 	}
 
 	return result, nil

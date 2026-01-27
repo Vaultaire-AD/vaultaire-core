@@ -2,10 +2,10 @@ package tramesmanager
 
 import (
 	"fmt"
-	"net"
 	"strings"
 	keydecodeencode "vaultaire_client/duckynetworkClient/key_encode_decode"
 	keymanagement "vaultaire_client/duckynetworkClient/keymanagement"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 )
 
@@ -31,19 +31,36 @@ func VarLog() bool {
 	return log
 }
 
-func MessageReader(conn net.Conn, reconstructedMessageSize int) {
+func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize int) {
 	messageBuf := make([]byte, reconstructedMessageSize)
-	_, err := conn.Read(messageBuf)
+	_, err := duckysession.Conn.Read(messageBuf)
 	if err != nil {
 		fmt.Println("Erreur lors de la lecture du message :", err)
+		return
 	}
-	// fmt.Println("taille du message recu : ", reconstructedMessageSize)
 
-	privateKeyStr := keymanagement.Get_Client_Private_Key()
-	messageDecrypt, err := keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)
-	if err != nil {
-		fmt.Println("Erreur lors du dechifrement :", err)
+	var messageDecrypt string
+
+	if duckysession.IsSafe {
+		// Déchiffrement symétrique AES-GCM
+		messageDecrypt, err = keydecodeencode.DecryptAESGCMString(duckysession.SessionKey, messageBuf)
+		if err != nil {
+			fmt.Println("Erreur lors du déchiffrement symétrique :", err)
+			return
+		}
+	} else {
+		// Déchiffrement asymétrique RSA
+		privateKeyStr := keymanagement.Get_Client_Private_Key()
+		messageDecrypt, err = keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)
+		if err != nil {
+			fmt.Println("Erreur lors du déchiffrement RSA :", err)
+			return
+		}
 	}
-	var trames_content = parseTrames(messageDecrypt)
-	Split_Action(trames_content, conn)
+
+	// Traitement des trames
+	logs.Write_Log("DEBUG", messageDecrypt)
+	logs.Write_Log("DEBUG", string(duckysession.SessionKey))
+	trames_content := parseTrames(messageDecrypt)
+	Split_Action(trames_content, duckysession)
 }

@@ -17,18 +17,29 @@ func parseProtocolOp(p *ber.Packet) (ldapstorage.LDAPProtocolOperation, error) {
 	if p.ClassType != ber.ClassApplication {
 		return nil, fmt.Errorf("protocolOp should be application class")
 	}
+
 	if storage.Ldap_Debug {
 		fmt.Printf("Parsing protocolOp with tag: %d, class: %d\n", p.Tag, p.ClassType)
 	}
+
 	switch p.Tag {
 	case 0: // BindRequest
 		return parseBindRequest(p)
+
 	case 2: // UnbindRequest
 		return parseUnBindRequest()
-	case 23: // ModifyResponse
+
+	case 23: // ModifyResponse / ExtendedRequest
 		return parseExtendedRequest(p)
+
 	case 3: // SearchRequest
-		return parseSearchRequest(p)
+		// On appelle parseSearchRequest pour obtenir un SearchRequest complet
+		sr, err := parseSearchRequest(p)
+		if err != nil {
+			return nil, err
+		}
+		return sr, nil
+
 	default:
 		logs.Write_Log("WARNING", fmt.Sprintf("Unsupported protocolOp tag: %d", p.Tag))
 		return nil, fmt.Errorf("unsupported protocolOp tag: %d", p.Tag)

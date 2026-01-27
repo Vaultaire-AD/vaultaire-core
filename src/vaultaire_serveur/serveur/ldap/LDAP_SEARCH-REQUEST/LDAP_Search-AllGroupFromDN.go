@@ -26,7 +26,7 @@ func SearchGroupsForCNUsers(conn net.Conn, messageID int, baseDomain string, sco
 
 	case 1: // singleLevel → uniquement les groupes directement sous le domaine
 		logs.Write_Log("DEBUG", "Scope = singleLevel : retrieving direct child groups")
-		groups, err = domain.GetDirectGroupsDomainUnderDomain(baseDomain, database.GetDatabase())
+		groups, err = domain.GetGroupsDirectlyUnderDomainExact(baseDomain, database.GetDatabase(), true)
 		if err != nil {
 			logs.Write_Log("ERROR", "Erreur récupération des groupes directs : "+err.Error())
 			_ = SendLDAPSearchFailure(conn, messageID, "Erreur interne lors de la récupération des groupes")
@@ -35,7 +35,7 @@ func SearchGroupsForCNUsers(conn net.Conn, messageID int, baseDomain string, sco
 
 	case 2: // wholeSubtree → tous les groupes récursivement
 		logs.Write_Log("DEBUG", "Scope = wholeSubtree : retrieving all groups recursively")
-		groups, err = domain.GetAllGroupsDomainsUnderDomain(baseDomain, database.GetDatabase())
+		groups, err = domain.GetGroupsUnderDomain(baseDomain, database.GetDatabase(), true)
 		if err != nil {
 			logs.Write_Log("ERROR", "Erreur récupération des groupes récursifs : "+err.Error())
 			_ = SendLDAPSearchFailure(conn, messageID, "Erreur interne lors de la récupération des groupes")

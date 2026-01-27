@@ -30,8 +30,8 @@ func InitDatabase() bool {
 			logs.Write_Log("ERROR", "❌ Erreur de ping : "+err.Error())
 		}
 
-		fmt.Println("🔁 Nouvelle tentative de connexion dans 30 secondes...")
-		time.Sleep(30 * time.Second)
+		fmt.Println("🔁 Nouvelle tentative de connexion dans 5 secondes...")
+		time.Sleep(5 * time.Second)
 	}
 
 	return true

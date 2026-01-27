@@ -53,7 +53,7 @@ func eyes_by_domain(command_list []string, sender_groupsIDs []int, action, sende
 
 	// Si un domaine spécifique est fourni
 	if len(command_list) == 2 {
-		groups, err := domain.GetGroupsUnderDomain(command_list[1], db)
+		groups, err := domain.GetGroupsUnderDomain(command_list[1], db, true)
 		if err != nil {
 			logs.Write_Log("ERROR", "Erreur lors de la récupération des groupes : "+err.Error())
 			return "Erreur interne lors de la récupération des groupes."

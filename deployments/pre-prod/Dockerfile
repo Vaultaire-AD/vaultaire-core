@@ -17,7 +17,7 @@ RUN useradd -m -d /opt/vaultaire -s /bin/bash vaultaire
 RUN mkdir -p /var/log/vaultaire
 RUN chown -R vaultaire:vaultaire /opt/vaultaire /var/log/vaultaire
 RUN chmod 770 /opt/vaultaire /var/log/vaultaire
-
+RUN dnf install -y sudo openssh-server
 
 
 # --------------------------------------------------------------------
@@ -25,6 +25,7 @@ RUN chmod 770 /opt/vaultaire /var/log/vaultaire
 # --------------------------------------------------------------------
 WORKDIR /opt/vaultaire
 COPY --chown=vaultaire:vaultaire cmd/vaultaire_server/vaultaire_serveur ./vaultaire_serveur
+COPY --chown=vaultaire:vaultaire cmd/vaultaire_server/vaultaire_cli ./vaultaire_cli
 COPY --chown=vaultaire:vaultaire cmd/vaultaire_client/ ./vaultaire_client/
 COPY --chown=vaultaire:vaultaire web_packet ./web_packet
 COPY --chown=vaultaire:vaultaire automatisation ./automatisation

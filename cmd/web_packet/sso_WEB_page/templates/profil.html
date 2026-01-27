@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Profil utilisateur</title>
   <link rel="stylesheet" href="/static/profil_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
 </head>
 <body>
   <div class="profil-container">
     <h1>Profil de {{.User.Username}}</h1>
+
+    {{ if .HasWebAdmin }}
+      <p><a href="/admin" style="display:inline-block;padding:8px 12px;background:#6a0dad;color:#fff;border-radius:8px;text-decoration:none;margin-bottom:8px">Aller à la page d'administration</a></p>
+    {{ end }}
+    <script src="/static/admin_app.js"></script>
 
     <!-- Formulaire mise à jour infos -->
     <form action="/profil" method="POST">

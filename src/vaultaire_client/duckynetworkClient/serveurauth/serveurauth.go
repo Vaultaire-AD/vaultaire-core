@@ -7,16 +7,16 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"net"
 	"strings"
 	keyencodedecode "vaultaire_client/duckynetworkClient/key_encode_decode"
 	"vaultaire_client/duckynetworkClient/keymanagement"
 	send "vaultaire_client/duckynetworkClient/sendmessage"
 	br "vaultaire_client/duckynetworkClient/trames_manager"
+	"vaultaire_client/storage"
 	auth "vaultaire_client/storage"
 )
 
-func AskServerAuthentification(conn net.Conn) string {
+func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 	serveurkey := keymanagement.GetServeurPublicKey()
 	_, randomdata, err := encrypt(serveurkey)
 	if err != nil {
@@ -24,14 +24,14 @@ func AskServerAuthentification(conn net.Conn) string {
 	}
 	auth.ServeurAUth = randomdata
 	fmt.Println("Ask Serveur Auth\n", string(randomdata))
-	send.SendMessage(("01_01\nserver_central\n" + "INIT" + "\n" + auth.Username + "\n" + auth.Computeur_ID + "\n" + string(randomdata)), conn)
+	send.SendMessage(("01_01\nserver_central\n" + "INIT" + "\n" + auth.Username + "\n" + auth.Computeur_ID + "\n" + string(randomdata)), duckysession)
 	for {
-		headerSize := br.Read_Header_Size(conn)
+		headerSize := br.Read_Header_Size(duckysession.Conn)
 		if headerSize != 0 {
-			messagesize := br.Read_Message_Size(conn, headerSize)
-			fmt.Println("\nYou receive a message from : ", conn.RemoteAddr())
+			messagesize := br.Read_Message_Size(duckysession.Conn, headerSize)
+			fmt.Println("\nYou receive a message from : ", duckysession.Conn.RemoteAddr())
 			messageBuf := make([]byte, messagesize)
-			_, err := conn.Read(messageBuf)
+			_, err := duckysession.Conn.Read(messageBuf)
 			if err != nil {
 				fmt.Println("Erreur lors de la lecture du message :", err)
 			}
@@ -48,7 +48,7 @@ func AskServerAuthentification(conn net.Conn) string {
 				} else {
 					fmt.Println("ERREUR lors de l'authentification du serveur")
 				}
-				return sessionIntegritykey
+				return []byte(sessionIntegritykey)
 			}
 
 		}

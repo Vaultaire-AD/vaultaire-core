@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <title>Admin - Utilisateurs</title>
+  <link rel="stylesheet" href="/static/login_custom.css">
+  <link rel="stylesheet" href="/static/admin_custom.css">
+</head>
+<body>
+  <header class="admin-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
+    <nav class="admin-nav">
+      <a href="/admin/users">Utilisateurs</a>
+      <a href="/admin/groups">Groupes</a>
+      <a href="/admin/clients">Clients</a>
+      <a href="/admin/permissions">Permissions</a>
+      <a href="/profil">Profil</a>
+    </nav>
+    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
+  </header>
+  <div class="admin-container">
+    <h1>Utilisateurs</h1>
+    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+    <section>
+      <h2>Créer un utilisateur</h2>
+      <form method="post">
+        <input type="hidden" name="action" value="create_user">
+        <label>Username <input name="username"></label>
+        <label>Domain <input name="domain" placeholder="company.com"></label>
+        <label>Mot de passe <input type="password" name="password"></label>
+        <label>Date de naissance <input name="birthdate" placeholder="YYYY-MM-DD"></label>
+        <label>Prénom <input name="firstname"></label>
+        <label>Nom <input name="lastname"></label>
+        <div style="margin-top:8px"><button type="submit">Créer</button></div>
+      </form>
+    </section>
+    <hr />
+    <table>
+      <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Date de naissance</th><th>Créé le</th><th>Action</th></tr></thead>
+      <tbody>
+      {{ range .Users }}
+        <tr>
+          <td>{{ .ID }}</td>
+          <td><a href="/admin/users?user={{ .Username }}">{{ .Username }}</a></td>
+          <td>{{ .Email }}</td>
+          <td>{{ .DateNaissance }}</td>
+          <td>{{ .CreatedAt }}</td>
+          <td>
+            <form method="post" style="display:inline">
+              <input type="hidden" name="action" value="delete_user">
+              <input type="hidden" name="username" value="{{ .Username }}">
+              <button type="submit" onclick="return confirm('Supprimer {{ .Username }} ?')">Supprimer</button>
+            </form>
+          </td>
+        </tr>
+      {{ end }}
+      </tbody>
+    </table>
+    <script src="/static/admin_app.js"></script>
+  </div>
+</body>
+</html>
