@@ -1,8 +1,8 @@
 package ldapsearchrequest
 
 import (
-	"DUCKY/serveur/database"
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
+	"vaultaire/serveur/database"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
 	"fmt"
 	"log"
 	"net"

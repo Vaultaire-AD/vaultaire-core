@@ -1,8 +1,8 @@
 package permission
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
 	"fmt"
 )
 

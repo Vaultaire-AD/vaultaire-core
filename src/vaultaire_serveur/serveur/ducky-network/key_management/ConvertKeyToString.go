@@ -1,7 +1,7 @@
 package keymanagement
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"

@@ -1,10 +1,11 @@
 package ldapextendedrequest
 
 import (
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 )
@@ -53,9 +54,10 @@ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn n
 	}
 
 	// --- 🔐 Étape 1 : Identification de l’utilisateur
-	username := op.RequestName // dépend de ta structure LDAP_Storage
-	if username == "" {
-		username = "anonymous"
+	session, ok := ldapsessionmanager.GetLDAPSession(conn)
+	username := "anonymous"
+	if ok && session.IsBound && session.Username != "" {
+		username = session.Username
 	}
 
 	// --- 🔐 Étape 2 : Vérification des permissions

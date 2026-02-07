@@ -1,9 +1,9 @@
 package session
 
-// 📁 DUCKY/serveur/webserveur/session/session.go
+// 📁 vaultaire/serveur/webserveur/session/session.go
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"crypto/rand"
 	"encoding/hex"
 	"sync"

@@ -1,11 +1,11 @@
 package commandupdate
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/database/db_permission"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 

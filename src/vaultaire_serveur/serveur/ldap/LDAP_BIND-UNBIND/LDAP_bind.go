@@ -1,14 +1,14 @@
 package ldapbindunbind
 
 import (
-	"DUCKY/serveur/database"
-	gc "DUCKY/serveur/global/security"
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	gc "vaultaire/serveur/global/security"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 )

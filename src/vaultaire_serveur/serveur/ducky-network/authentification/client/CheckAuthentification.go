@@ -1,15 +1,15 @@
 package client
 
 import (
-	"DUCKY/serveur/database"
-	dbuser "DUCKY/serveur/database/db-user"
-	"DUCKY/serveur/ducky-network/ducky_tools"
-	gc "DUCKY/serveur/global/security"
-	logs "DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	dbuser "vaultaire/serveur/database/db-user"
+	"vaultaire/serveur/ducky-network/ducky_tools"
+	gc "vaultaire/serveur/global/security"
+	logs "vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"strconv"
 
-	//"DUCKY/serveur/logs"
+	//"vaultaire/serveur/logs"
 	"bytes"
 	"crypto/rand"
 	"strings"

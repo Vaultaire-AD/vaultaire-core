@@ -1,8 +1,8 @@
 package commandsetup
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"os"
 
 	"github.com/pkg/sftp"

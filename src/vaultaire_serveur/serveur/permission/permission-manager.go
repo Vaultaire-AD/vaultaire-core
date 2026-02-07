@@ -1,10 +1,10 @@
 package permission
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/database/db_permission"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"strings"
 )

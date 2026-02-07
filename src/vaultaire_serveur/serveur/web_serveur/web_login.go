@@ -1,9 +1,9 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/database"
-	gc "DUCKY/serveur/global/security"
-	"DUCKY/serveur/web_serveur/session"
+	"vaultaire/serveur/database"
+	gc "vaultaire/serveur/global/security"
+	"vaultaire/serveur/web_serveur/session"
 	"log"
 	"net/http"
 	"time"

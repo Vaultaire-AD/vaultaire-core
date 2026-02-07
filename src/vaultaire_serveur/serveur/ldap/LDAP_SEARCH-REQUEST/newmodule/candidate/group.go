@@ -1,7 +1,7 @@
 package candidate
 
 import (
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
 	"fmt"
 	"strings"
 )

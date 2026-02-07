@@ -1,9 +1,9 @@
 package ldapsearchrequest
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/domain"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/domain"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"net"
 	"strings"

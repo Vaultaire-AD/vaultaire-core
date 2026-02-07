@@ -1,7 +1,7 @@
 package filter
 
 import (
-	ldapinterface "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+	ldapinterface "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	"fmt"
 	"strings"
 )

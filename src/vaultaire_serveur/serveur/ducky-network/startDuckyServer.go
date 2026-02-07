@@ -1,10 +1,10 @@
 package duckynetwork
 
 import (
-	keymanagement "DUCKY/serveur/ducky-network/key_management"
-	sync "DUCKY/serveur/ducky-network/sync"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	keymanagement "vaultaire/serveur/ducky-network/key_management"
+	sync "vaultaire/serveur/ducky-network/sync"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 )

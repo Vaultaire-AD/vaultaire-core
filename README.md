@@ -85,7 +85,9 @@ git clone git@votre_repo:vaultaire-core.git
 cd vaultaire-core
 
 # Lancer en mode développement
-docker-compose -f deployments/docker-compose.yml up --build
+.\deployments\pre-prod\docker-build-and-up.ps1
+## ou pour linux
+./deployments/pre-prod/docker-build-and-up.sh 
 ```
 
 ---

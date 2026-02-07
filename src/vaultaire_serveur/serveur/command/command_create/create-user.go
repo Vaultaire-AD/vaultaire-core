@@ -1,7 +1,7 @@
 package commandcreate
 
 import (
-	"DUCKY/serveur/database"
+	"vaultaire/serveur/database"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"

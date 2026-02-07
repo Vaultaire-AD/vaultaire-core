@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Arborescence LDAP — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      <nav class="app-sidebar-nav">
+        <a href="/admin/tree" class="active">Arborescence</a>
+        <a href="/admin">Tableau de bord</a>
+        <a href="/admin/users">Utilisateurs</a>
+        <a href="/admin/groups">Groupes</a>
+        <a href="/admin/clients">Clients</a>
+        <a href="/admin/permissions">Permissions</a>
+        {{ if .DnsEnable }}<a href="/admin/dns">DNS</a>{{ end }}
+        <a href="/profil">Profil</a>
+      </nav>
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+          <h1>Arborescence LDAP</h1>
+          <p class="muted">Domaines et groupes. Cliquez sur un groupe pour afficher les utilisateurs, permissions et clients.</p>
+          <div id="ldap-tree-mount" class="ldap-tree">
+            <div class="tree-loading" id="tree-loading">Chargement…</div>
+            <div id="tree-root" style="display:none;"></div>
+          </div>
+          <p style="margin-top:1rem">
+            <button type="button" id="tree-refresh" class="btn btn-secondary">Actualiser</button>
+          </p>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+  <script src="/static/ldap_tree.js"></script>
+</body>
+</html>

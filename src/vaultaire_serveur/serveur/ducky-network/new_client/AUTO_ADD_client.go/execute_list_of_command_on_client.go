@@ -1,7 +1,7 @@
 package autoaddclientgo
 
 import (
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/storage"
 	"bytes"
 	"fmt"
 	"os/exec"

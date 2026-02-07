@@ -1,7 +1,7 @@
 package ldapparser
 
 import (
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"fmt"
 
 	ber "github.com/go-asn1-ber/asn1-ber"

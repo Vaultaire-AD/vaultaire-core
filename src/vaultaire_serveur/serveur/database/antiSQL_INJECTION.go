@@ -1,7 +1,7 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"regexp"
 	"runtime"

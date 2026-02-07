@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/storage"
 	"strings"
 )
 

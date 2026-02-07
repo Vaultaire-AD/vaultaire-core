@@ -1,10 +1,10 @@
 package newclient
 
 import (
-	"DUCKY/serveur/database"
-	keymanagement "DUCKY/serveur/ducky-network/key_management"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	keymanagement "vaultaire/serveur/ducky-network/key_management"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"crypto/rand"
 	"fmt"
 	"math/big"

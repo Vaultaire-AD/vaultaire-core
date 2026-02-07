@@ -1,8 +1,8 @@
 package dnsparser
 
 import (
-	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
-	dnstools "DUCKY/serveur/dns/DNS_Tools"
+	dnsstorage "vaultaire/serveur/dns/DNS_Storage"
+	dnstools "vaultaire/serveur/dns/DNS_Tools"
 	"bytes"
 	"encoding/binary"
 	"fmt"

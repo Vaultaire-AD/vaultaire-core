@@ -1,7 +1,7 @@
 package response
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"net"
 

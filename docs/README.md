@@ -22,10 +22,16 @@ docs/
 │   └── Upgrade_Guide.md          # Mise à jour vers une nouvelle version
 │
 ├── 📚 Utilisation/
-│   ├── MAN.md                    # Guide d’utilisation (manuel)
+│   ├── MAN.md                    # Guide d’utilisation (manuel détaillé)
+│   ├── WIKI_Manual.md             # Manuel pour wiki (commandes + DNS + config LDAP)
 │   ├── vaultaireLDAP.md          # Documentation LDAP
 │   ├── Group-Permission.md       # Gestion des groupes et permissions
 │   └── Troubleshooting.md        # Résolution des problèmes courants
+│
+├── REPO_REVIEW.md                # Revue technique du dépôt
+├── NEXT_DEV_AXES.md              # Prochains axes de développement
+├── DUCKY_NETWORK_SSH_CHECKLIST.md # Checklist SSH via Ducky Network + PAM (sans modif code)
+├── V1_A_FAIRE.md                  # Reste à faire pour une V1 propre
 │
 ├── 🔒 Sécurité/
 │   ├── SECURITY.md               # Déplacé

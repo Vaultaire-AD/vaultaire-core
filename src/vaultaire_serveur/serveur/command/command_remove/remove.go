@@ -1,9 +1,9 @@
 package commandremove
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
 )
 
 func Remove_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {

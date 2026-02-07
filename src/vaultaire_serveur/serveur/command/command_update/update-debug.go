@@ -1,8 +1,8 @@
 package commandupdate
 
 import (
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
 	"fmt"
 )
 

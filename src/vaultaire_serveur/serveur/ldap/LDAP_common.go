@@ -1,11 +1,11 @@
 package ldap
 
 import (
-	ldapparser "DUCKY/serveur/ldap/LDAP_Parser"
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	ldapparser "vaultaire/serveur/ldap/LDAP_Parser"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"io"
 	"net"
@@ -109,6 +109,9 @@ func readLDAPPacket(conn net.Conn) ([]byte, error) {
 
 	if length&0x80 != 0 {
 		numBytes := length & 0x7F
+		if numBytes > 4 {
+			return nil, fmt.Errorf("invalid BER length: too many length bytes")
+		}
 		lenBytes = make([]byte, numBytes)
 		if _, err := io.ReadFull(conn, lenBytes); err != nil {
 			return nil, err
@@ -117,6 +120,11 @@ func readLDAPPacket(conn net.Conn) ([]byte, error) {
 		for _, b := range lenBytes {
 			length = (length << 8) | int(b)
 		}
+	}
+
+	const maxLDAPMessageSize = 4 * 1024 * 1024 // 4 MiB, évite allocation DoS
+	if length < 0 || length > maxLDAPMessageSize {
+		return nil, fmt.Errorf("invalid LDAP message length: %d (max %d)", length, maxLDAPMessageSize)
 	}
 
 	message := make([]byte, length)

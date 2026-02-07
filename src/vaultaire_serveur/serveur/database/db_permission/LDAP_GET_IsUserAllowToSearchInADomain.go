@@ -1,7 +1,7 @@
 package db_permission
 
 import (
-	"DUCKY/serveur/database"
+	"vaultaire/serveur/database"
 	"database/sql"
 	"log"
 )

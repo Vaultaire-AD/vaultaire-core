@@ -1,13 +1,13 @@
 package commandcreate
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	newclient "DUCKY/serveur/ducky-network/new_client"
-	autoaddclientgo "DUCKY/serveur/ducky-network/new_client/AUTO_ADD_client.go"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/tools"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	newclient "vaultaire/serveur/ducky-network/new_client"
+	autoaddclientgo "vaultaire/serveur/ducky-network/new_client/AUTO_ADD_client.go"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/tools"
 	"fmt"
 )
 

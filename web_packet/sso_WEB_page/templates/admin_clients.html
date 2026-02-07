@@ -1,60 +1,102 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>Admin - Clients</title>
-  <link rel="stylesheet" href="/static/login_custom.css">
-  <link rel="stylesheet" href="/static/admin_custom.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Clients — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <header class="admin-header">
-    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
-    <nav class="admin-nav">
-      <a href="/admin/users">Utilisateurs</a>
-      <a href="/admin/groups">Groupes</a>
-      <a href="/admin/clients">Clients</a>
-      <a href="/admin/permissions">Permissions</a>
-      <a href="/profil">Profil</a>
-    </nav>
-    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
-  </header>
-  <div class="admin-container">
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      <nav class="app-sidebar-nav">
+        <a href="/admin/tree" {{ if eq .Section "tree" }}class="active"{{ end }}>Arborescence</a>
+        <a href="/admin" {{ if eq .Section "dashboard" }}class="active"{{ end }}>Tableau de bord</a>
+        <a href="/admin/users" {{ if eq .Section "users" }}class="active"{{ end }}>Utilisateurs</a>
+        <a href="/admin/groups" {{ if eq .Section "groups" }}class="active"{{ end }}>Groupes</a>
+        <a href="/admin/clients" {{ if eq .Section "clients" }}class="active"{{ end }}>Clients</a>
+        <a href="/admin/permissions" {{ if eq .Section "permissions" }}class="active"{{ end }}>Permissions</a>
+        {{ if .DnsEnable }}<a href="/admin/dns" {{ if eq .Section "dns" }}class="active"{{ end }}>DNS</a>{{ end }}
+        <a href="/profil">Profil</a>
+      </nav>
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
     <h1>Clients</h1>
-    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
-    <section>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+
+    <section class="section">
       <h2>Créer un client</h2>
       <form method="post">
         <input type="hidden" name="action" value="create_client">
-        <label>Computeur ID <input name="computeur_id"></label>
-        <label>Type (ex: client, serveur) <input name="logiciel_type"></label>
-        <label>Public key (optionnel) <input name="public_key"></label>
-        <label>Est serveur ? <select name="is_serveur"><option value="0">Non</option><option value="1">Oui</option></select></label>
-        <div style="margin-top:8px"><button type="submit">Créer</button></div>
+        <label>Type (ex: client, serveur)</label>
+        <input name="logiciel_type" placeholder="client">
+        <label>Est serveur ?</label>
+        <select name="is_serveur"><option value="0">Non</option><option value="1">Oui</option></select>
+        <label>Public key (optionnel)</label>
+        <input name="public_key" placeholder="">
+        <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Créer</button></div>
       </form>
     </section>
-    <hr />
-    <table>
-      <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th>Actions</th></tr></thead>
-      <tbody>
-      {{ range .Clients }}
-        <tr>
-          <td>{{ .ID }}</td>
-          <td>{{ .LogicielType }}</td>
-          <td><a href="/admin/clients?client={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
-          <td>{{ .Hostname }}</td>
-          <td>{{ .OS }}</td>
-          <td>
-            <form method="post" style="display:inline">
-              <input type="hidden" name="action" value="delete_client">
-              <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
-              <button type="submit" onclick="return confirm('Supprimer client {{ .ComputeurID }} ?')">Supprimer</button>
-            </form>
-          </td>
-        </tr>
-      {{ end }}
-      </tbody>
-    </table>
-    <script src="/static/admin_app.js"></script>
+
+    <hr>
+    <h2 class="h2">Liste</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th></th></tr></thead>
+        <tbody>
+        {{ range .Clients }}
+          <tr class="row-context" data-href="/admin/clients?client={{ .ComputeurID }}" data-label="Client {{ .ComputeurID }}">
+            <td>{{ .ID }}</td>
+            <td>{{ .LogicielType }}</td>
+            <td><a href="/admin/clients?client={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
+            <td>{{ .Hostname }}</td>
+            <td>{{ .OS }}</td>
+            <td>
+              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer client {{ .ComputeurID }} ?');">
+                <input type="hidden" name="action" value="delete_client">
+                <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
+                <button type="submit" class="btn btn-danger">Supprimer</button>
+              </form>
+            </td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+        </div>
+      </div>
+    </main>
   </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>

@@ -1,58 +1,104 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>Admin - Détail permission</title>
-  <link rel="stylesheet" href="/static/login_custom.css">
-  <link rel="stylesheet" href="/static/admin_custom.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Détail permission — {{ .Perm.Name }}</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <header class="admin-header">
-    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
-    <nav class="admin-nav">
-      <a href="/admin/users">Utilisateurs</a>
-      <a href="/admin/groups">Groupes</a>
-      <a href="/admin/clients">Clients</a>
-      <a href="/admin/permissions">Permissions</a>
-      <a href="/profil">Profil</a>
-    </nav>
-    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
-  </header>
-  <div class="admin-container">
-    <h1>Détail permission: {{ .Perm.Name }}</h1>
-    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
-    <div class="perm-detail">
-      <p><strong>Nom:</strong> {{ .Perm.Name }}</p>
-      <p><strong>Description:</strong> {{ .Perm.Description }}</p>
-      <p><strong>Actions:</strong>
-        <ul>
-          <li>none: {{ .Perm.None }}</li>
-          <li>auth: {{ .Perm.Auth }}</li>
-          <li>compare: {{ .Perm.Compare }}</li>
-          <li>search: {{ .Perm.Search }}</li>
-        </ul>
-      </p>
-      <p><strong>Accès:</strong> read={{ .Perm.Read }} write={{ .Perm.Write }} api_read={{ .Perm.APIRead }} api_write={{ .Perm.APIWrite }} web_admin={{ .Perm.Web_admin }}</p>
-    </div>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      <nav class="app-sidebar-nav">
+        <a href="/admin/tree" {{ if eq .Section "tree" }}class="active"{{ end }}>Arborescence</a>
+        <a href="/admin" {{ if eq .Section "dashboard" }}class="active"{{ end }}>Tableau de bord</a>
+        <a href="/admin/users" {{ if eq .Section "users" }}class="active"{{ end }}>Utilisateurs</a>
+        <a href="/admin/groups" {{ if eq .Section "groups" }}class="active"{{ end }}>Groupes</a>
+        <a href="/admin/clients" {{ if eq .Section "clients" }}class="active"{{ end }}>Clients</a>
+        <a href="/admin/permissions" {{ if eq .Section "permissions" }}class="active"{{ end }}>Permissions</a>
+        {{ if .DnsEnable }}<a href="/admin/dns" {{ if eq .Section "dns" }}class="active"{{ end }}>DNS</a>{{ end }}
+        <a href="/profil">Profil</a>
+      </nav>
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+          <h1>Détail permission : {{ .Perm.Name }}</h1>
+          {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
 
-    <form method="post">
-      <input type="hidden" name="action" value="delete_permission">
-      <input type="hidden" name="target_perm" value="{{ .Perm.Name }}">
-      <button type="submit" onclick="return confirm('Supprimer cette permission ?')">Supprimer la permission</button>
-    </form>
-    
-    <section style="margin-top:12px">
-      <h2>Groupes fournissant cette permission</h2>
-      {{ if .Groups }}
-        <ul>
-          {{ range .Groups }}<li><a href="/admin/groups?group={{ . }}">{{ . }}</a></li>{{ end }}
-        </ul>
-      {{ else }}
-        <p>Aucun groupe ne fournit cette permission.</p>
-      {{ end }}
-    </section>
-    <p style="margin-top:16px"><a href="/admin/permissions">Retour aux permissions</a></p>
-    <script src="/static/admin_app.js"></script>
+          <section class="section">
+            <h2>Groupes ayant cette permission</h2>
+            <ul style="list-style:none;padding:0">{{ range .Groups }}<li><a href="/admin/groups?group={{ . }}">{{ . }}</a></li>{{ end }}</ul>
+          </section>
+
+          <section class="section">
+            <h2>Mise à jour des actions (nil / all / domaines)</h2>
+            <p class="muted small">nil = refuser, all = tous domaines. Ajouter/retirer des domaines : 0 = sans propagation, 1 = avec propagation (sous-domaines inclus).</p>
+            <div class="table-wrap" style="margin-top:0.75rem">
+              <table>
+                <thead>
+                  <tr><th>Action</th><th>Valeur actuelle</th><th>Modifier</th></tr>
+                </thead>
+                <tbody>
+                  {{ range .Actions }}
+                  <tr>
+                    <td><strong>{{ .Label }}</strong></td>
+                    <td><code style="font-size:0.8rem">{{ .Value }}</code></td>
+                    <td>
+                      <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" style="display:inline-flex;flex-wrap:wrap;gap:0.35rem;align-items:center">
+                        <input type="hidden" name="action" value="update_permission_action">
+                        <input type="hidden" name="field" value="{{ .Field }}">
+                        <button type="submit" name="op" value="nil" class="btn btn-ghost" style="padding:0.3rem 0.5rem;font-size:0.8rem">nil</button>
+                        <button type="submit" name="op" value="all" class="btn btn-ghost" style="padding:0.3rem 0.5rem;font-size:0.8rem">all</button>
+                        <span class="muted" style="font-size:0.8rem">Ajouter:</span>
+                        <select name="propagation" style="width:auto;max-width:none">
+                          <option value="0">0 (sans prop.)</option>
+                          <option value="1">1 (avec prop.)</option>
+                        </select>
+                        <input type="text" name="domain" placeholder="domaine" list="domains-list" style="width:120px">
+                        <button type="submit" name="op" value="add" class="btn btn-secondary" style="padding:0.3rem 0.5rem;font-size:0.8rem">+</button>
+                      </form>
+                      <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" style="display:inline">
+                        <input type="hidden" name="action" value="update_permission_action">
+                        <input type="hidden" name="field" value="{{ .Field }}">
+                        <input type="hidden" name="op" value="remove">
+                        <input type="text" name="domain_remove" placeholder="retirer domaine" list="domains-list" style="width:110px;margin-left:0.5rem">
+                        <button type="submit" class="btn btn-ghost" style="padding:0.3rem 0.5rem;font-size:0.8rem">−</button>
+                      </form>
+                    </td>
+                  </tr>
+                  {{ end }}
+                </tbody>
+              </table>
+            </div>
+            <datalist id="domains-list">{{ range .AllDomains }}<option value="{{ . }}">{{ end }}</datalist>
+          </section>
+
+          <section class="section">
+            <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}" onsubmit="return confirm('Supprimer cette permission ?');">
+              <input type="hidden" name="action" value="delete_permission">
+              <input type="hidden" name="target_perm" value="{{ .Perm.Name }}">
+              <button type="submit" class="btn btn-danger">Supprimer la permission</button>
+            </form>
+          </section>
+
+          <p class="muted" style="margin-top:1.5rem"><a href="/admin/permissions">← Retour à la liste</a></p>
+        </div>
+      </div>
+    </main>
   </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>

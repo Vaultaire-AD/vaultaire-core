@@ -1,11 +1,11 @@
 package tramesmanager
 
 import (
-	keydecodeencode "DUCKY/serveur/ducky-network/key_decode_encode"
-	keymanagement "DUCKY/serveur/ducky-network/key_management"
-	"DUCKY/serveur/ducky-network/sendmessage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	keydecodeencode "vaultaire/serveur/ducky-network/key_decode_encode"
+	keymanagement "vaultaire/serveur/ducky-network/key_management"
+	"vaultaire/serveur/ducky-network/sendmessage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"strings"
 )
 

@@ -1,9 +1,9 @@
 package security
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/database/db_permission"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/permission"
 )
 
 func IsAuthorizedToSearch(username, baseDN string) bool {

@@ -1,7 +1,7 @@
 package keydecodeencode
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"

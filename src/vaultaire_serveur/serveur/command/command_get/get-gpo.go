@@ -1,11 +1,11 @@
 package commandget
 
 import (
-	commandpermission "DUCKY/serveur/command/command_permission"
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	commandpermission "vaultaire/serveur/command/command_permission"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 

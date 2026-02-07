@@ -1,7 +1,7 @@
 package ldapsessionmanager
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"net"
 	"sync"

@@ -1,17 +1,20 @@
 package main
 
 import (
-	configurationfile "DUCKY/serveur/configuration_file"
-	db "DUCKY/serveur/database"
-	"DUCKY/serveur/dns"
-	duckynetwork "DUCKY/serveur/ducky-network"
-	ldap "DUCKY/serveur/ldap"
-	"DUCKY/serveur/storage"
-	"DUCKY/serveur/vaultairegoroutine"
-	webserveur "DUCKY/serveur/web_serveur"
 	"fmt"
 	"log"
 	"net"
+	"os"
+
+	configurationfile "vaultaire/serveur/configuration_file"
+	db "vaultaire/serveur/database"
+	"vaultaire/serveur/dns"
+	duckynetwork "vaultaire/serveur/ducky-network"
+	ldap "vaultaire/serveur/ldap"
+	"vaultaire/serveur/storage"
+	"vaultaire/serveur/testrunner"
+	"vaultaire/serveur/vaultairegoroutine"
+	webserveur "vaultaire/serveur/web_serveur"
 )
 
 type ClientInfo struct {
@@ -20,6 +23,12 @@ type ClientInfo struct {
 }
 
 func main() {
+	for _, arg := range os.Args[1:] {
+		if arg == "--test" {
+			os.Exit(testrunner.RunFromMain())
+		}
+	}
+
 	err := configurationfile.LoadConfig("/opt/vaultaire/serveur_conf.yaml")
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)

@@ -1,15 +1,15 @@
 package newmodule
 
 import (
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	candidate "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
-	scope "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/scope"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	candidate "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
+	scope "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/scope"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"database/sql"
 	"fmt"
 	"net"
@@ -17,11 +17,10 @@ import (
 
 // HandleSearchRequest traite une requête LDAP Search
 func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int, conn net.Conn) {
-	var baseDN string
+	baseDN := ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
 	if storage.Ldap_Debug {
 		fmt.Println("Handling Search Request")
 		fmt.Printf("BaseObject   : %s\n", op.BaseObject)
-		baseDN = ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
 		fmt.Printf("BaseDomain   : %s\n", baseDN)
 		fmt.Printf("Scope        : %d\n", op.Scope)
 		fmt.Printf("DerefAliases : %d\n", op.DerefAliases)
@@ -30,7 +29,6 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		fmt.Printf("TypesOnly    : %v\n", op.TypesOnly)
 		fmt.Printf("Attributes   : %v\n", op.Attributes)
 		fmt.Printf("Filter       : %+v\n", op.Filter)
-
 	}
 	if len(op.Attributes) == 0 {
 		op.Attributes = []string{"dn"}

@@ -1,99 +1,114 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <title>Admin - Détail utilisateur</title>
-  <link rel="stylesheet" href="/static/login_custom.css">
-  <link rel="stylesheet" href="/static/admin_custom.css">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Détail utilisateur — {{ .User.Username }}</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <header class="admin-header">
-    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="logo"> <span>Vaultaire Admin</span></div>
-    <nav class="admin-nav">
-      <a href="/admin/users">Utilisateurs</a>
-      <a href="/admin/groups">Groupes</a>
-      <a href="/admin/clients">Clients</a>
-      <a href="/admin/permissions">Permissions</a>
-      <a href="/profil">Profil</a>
-    </nav>
-    <div class="admin-toolbar"><button id="theme-toggle" class="theme-toggle">Thème</button></div>
-  </header>
-  <div class="admin-container">
-    <h1>Détail utilisateur: {{ .User.Username }}</h1>
-    {{ if .Message }}<p><strong>{{ .Message }}</strong></p>{{ end }}
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      <nav class="app-sidebar-nav">
+        <a href="/admin/tree" {{ if eq .Section "tree" }}class="active"{{ end }}>Arborescence</a>
+        <a href="/admin" {{ if eq .Section "dashboard" }}class="active"{{ end }}>Tableau de bord</a>
+        <a href="/admin/users" {{ if eq .Section "users" }}class="active"{{ end }}>Utilisateurs</a>
+        <a href="/admin/groups" {{ if eq .Section "groups" }}class="active"{{ end }}>Groupes</a>
+        <a href="/admin/clients" {{ if eq .Section "clients" }}class="active"{{ end }}>Clients</a>
+        <a href="/admin/permissions" {{ if eq .Section "permissions" }}class="active"{{ end }}>Permissions</a>
+        {{ if .DnsEnable }}<a href="/admin/dns" {{ if eq .Section "dns" }}class="active"{{ end }}>DNS</a>{{ end }}
+        <a href="/profil">Profil</a>
+      </nav>
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Détail utilisateur : {{ .User.Username }}</h1>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
 
-    <section>
+    <section class="section">
       <h2>Informations</h2>
       <form method="post" action="/admin/users?user={{ .User.Username }}">
         <input type="hidden" name="action" value="update_user">
         <input type="hidden" name="target_user" value="{{ .User.Username }}">
-        <label>Username <input name="username" value="{{ .User.Username }}"></label>
-        <label>Prénom <input name="firstname" value="{{ .User.Firstname }}"></label>
-        <label>Nom <input name="lastname" value="{{ .User.Lastname }}"></label>
-        <div style="margin-top:8px"><button type="submit">Mettre à jour</button></div>
+        <label>Username</label>
+        <input name="username" value="{{ .User.Username }}">
+        <label>Prénom</label>
+        <input name="firstname" value="{{ .User.Firstname }}">
+        <label>Nom</label>
+        <input name="lastname" value="{{ .User.Lastname }}">
+        <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
       </form>
     </section>
 
-    <section>
+    <section class="section">
       <h2>Changer le mot de passe</h2>
       <form method="post" action="/admin/users?user={{ .User.Username }}">
         <input type="hidden" name="action" value="change_password">
         <input type="hidden" name="target_user" value="{{ .User.Username }}">
-        <label>Nouveau mot de passe <input type="password" name="password"></label>
-        <div style="margin-top:8px"><button type="submit">Changer</button></div>
+        <label>Nouveau mot de passe</label>
+        <input type="password" name="password">
+        <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Changer</button></div>
       </form>
     </section>
 
-    <section>
+    <section class="section">
       <h2>Groupes</h2>
-      <div class="group-list">
-        <strong>Membre de:</strong>
-        <ul>
-        {{ range .User.Groups }}<li><a href="/admin/groups?group={{ . }}">{{ . }}</a></li>{{ end }}
-        </ul>
-      </div>
-  <div style="margin-top:8px">
-        <form method="post" style="display:inline" action="/admin/users?user={{ .User.Username }}">
+      <p class="muted">Membre de : {{ range .User.Groups }}<a href="/admin/groups?group={{ . }}">{{ . }}</a> {{ end }}</p>
+      <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-top:0.75rem">
+        <form method="post" action="/admin/users?user={{ .User.Username }}" style="flex:1;min-width:200px">
           <input type="hidden" name="action" value="add_group">
           <input type="hidden" name="target_user" value="{{ .User.Username }}">
-          <label>Ajouter au groupe
-            <select name="group">
-              {{ range .AllGroups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
-            </select>
-          </label>
-          <div style="margin-top:6px"><button type="submit">Ajouter</button></div>
+          <label>Ajouter au groupe</label>
+          <select name="group">
+            {{ range .AllGroups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+          </select>
+          <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Ajouter</button>
         </form>
-
-        <form method="post" style="display:inline;margin-left:12px" action="/admin/users?user={{ .User.Username }}">
+        <form method="post" action="/admin/users?user={{ .User.Username }}" style="flex:1;min-width:200px">
           <input type="hidden" name="action" value="remove_group">
           <input type="hidden" name="target_user" value="{{ .User.Username }}">
-          <label>Retirer du groupe
-            <select name="group">
-                {{ range .User.Groups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
-            </select>
-          </label>
-          <div style="margin-top:6px"><button type="submit">Retirer</button></div>
+          <label>Retirer du groupe</label>
+          <select name="group">
+            {{ range .User.Groups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+          </select>
+          <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
         </form>
       </div>
     </section>
 
-      <section>
-        <h2>Permissions dérivées</h2>
-        <ul>
-          {{ range .UserPerms }}<li><a href="/admin/permissions?perm={{ . }}">{{ . }}</a></li>{{ end }}
-        </ul>
-      </section>
+    <section class="section">
+      <h2>Permissions dérivées</h2>
+      <ul style="list-style:none;padding:0">
+        {{ range .UserPerms }}<li><a href="/admin/permissions?perm={{ . }}">{{ . }}</a></li>{{ end }}
+      </ul>
+    </section>
 
-    <section style="margin-top:12px">
-      <form method="post" action="/admin/users?user={{ .User.Username }}">
+    <section class="section">
+      <form method="post" action="/admin/users?user={{ .User.Username }}" onsubmit="return confirm('Supprimer cet utilisateur ?');">
         <input type="hidden" name="action" value="delete_user">
         <input type="hidden" name="target_user" value="{{ .User.Username }}">
-        <button type="submit" onclick="return confirm('Supprimer cet utilisateur ?')">Supprimer l'utilisateur</button>
+        <button type="submit" class="btn btn-danger">Supprimer l'utilisateur</button>
       </form>
     </section>
 
-    <p style="margin-top:16px"><a href="/admin/users">Retour à la liste</a></p>
-    <script src="/static/admin_app.js"></script>
+    <p class="muted" style="margin-top:1.5rem"><a href="/admin/users">← Retour à la liste</a></p>
+        </div>
+      </div>
+    </main>
   </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>

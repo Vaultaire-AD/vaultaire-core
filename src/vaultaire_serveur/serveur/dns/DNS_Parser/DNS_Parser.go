@@ -1,7 +1,7 @@
 package dnsparser
 
 import (
-	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
+	dnsstorage "vaultaire/serveur/dns/DNS_Storage"
 	"encoding/binary"
 	"errors"
 )

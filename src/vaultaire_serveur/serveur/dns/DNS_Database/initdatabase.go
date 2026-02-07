@@ -1,8 +1,8 @@
 package dnsdatabase
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"database/sql"
 	"fmt"
 	"log"

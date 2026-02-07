@@ -1,13 +1,13 @@
 package api
 
 import (
-	"DUCKY/serveur/command"
-	"DUCKY/serveur/database"
-	dbuser "DUCKY/serveur/database/db-user"
-	"DUCKY/serveur/global/security"
-	"DUCKY/serveur/global/security/keymanagement"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/command"
+	"vaultaire/serveur/database"
+	dbuser "vaultaire/serveur/database/db-user"
+	"vaultaire/serveur/global/security"
+	"vaultaire/serveur/global/security/keymanagement"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"

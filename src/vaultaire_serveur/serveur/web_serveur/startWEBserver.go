@@ -1,9 +1,9 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/global/security"
-	"DUCKY/serveur/global/security/keymanagement"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/global/security"
+	"vaultaire/serveur/global/security/keymanagement"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"html/template"
 	"log"
@@ -32,10 +32,15 @@ func StartWebServer() {
 	http.HandleFunc("/profil", ProfilHandler)
 	// Route pour l'interface d'administration web (dashboard)
 	http.HandleFunc("/admin", AdminIndexHandler)
+	http.HandleFunc("/admin/tree", AdminTreePageHandler)
+	http.HandleFunc("/admin/api/ldap-tree", AdminLDAPTreeAPIHandler)
+	http.HandleFunc("/admin/api/group-info", AdminGroupInfoAPIHandler)
+	http.HandleFunc("/admin/api/search", AdminSearchAPIHandler)
 	http.HandleFunc("/admin/users", AdminUsersHandler)
 	http.HandleFunc("/admin/groups", AdminGroupsHandler)
 	http.HandleFunc("/admin/clients", AdminClientsHandler)
 	http.HandleFunc("/admin/permissions", AdminPermissionsHandler)
+	http.HandleFunc("/admin/dns", AdminDNSHandler)
 	server_Port := strconv.Itoa(storage.Website_Port)
 	fmt.Println("Serveur HTTPS démarré sur https://0.0.0.0:" + server_Port)
 	log.Fatal(http.ListenAndServeTLS(":"+server_Port, certFile, privateKeyPath, nil))

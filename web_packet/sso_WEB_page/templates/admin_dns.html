@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DNS — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      <nav class="app-sidebar-nav">
+        <a href="/admin/tree" {{ if eq .Section "tree" }}class="active"{{ end }}>Arborescence</a>
+        <a href="/admin" {{ if eq .Section "dashboard" }}class="active"{{ end }}>Tableau de bord</a>
+        <a href="/admin/users" {{ if eq .Section "users" }}class="active"{{ end }}>Utilisateurs</a>
+        <a href="/admin/groups" {{ if eq .Section "groups" }}class="active"{{ end }}>Groupes</a>
+        <a href="/admin/clients" {{ if eq .Section "clients" }}class="active"{{ end }}>Clients</a>
+        <a href="/admin/permissions" {{ if eq .Section "permissions" }}class="active"{{ end }}>Permissions</a>
+        {{ if .DnsEnable }}<a href="/admin/dns" {{ if eq .Section "dns" }}class="active"{{ end }}>DNS</a>{{ end }}
+        <a href="/profil">Profil</a>
+      </nav>
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>DNS</h1>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+
+    {{ if not .Zones }}
+      {{ if eq .Message "DNS non disponible (base de données non initialisée)." }}
+        <p class="muted">Le module DNS n'a pas encore initialisé sa base. Vérifiez que le serveur DNS est démarré.</p>
+      {{ else }}
+        <p class="muted">Aucune zone. Créez une zone ci-dessous.</p>
+      {{ end }}
+    {{ end }}
+
+    <section class="section">
+      <h2>Créer une zone</h2>
+      <form method="post">
+        <input type="hidden" name="action" value="create_zone">
+        <label>Nom de zone (ex: example.com)</label>
+        <input type="text" name="zone_name" placeholder="example.com" required>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Créer</button>
+      </form>
+    </section>
+
+    {{ if .Zones }}
+    <section class="section">
+      <h2>Zones</h2>
+      <ul class="list-context" style="list-style:none;padding:0">
+        {{ range .Zones }}
+        <li class="row-context" style="margin-bottom:0.5rem" data-href="/admin/dns?zone={{ .ZoneName }}" data-label="Zone {{ .ZoneName }}">
+          <a href="/admin/dns?zone={{ .ZoneName }}">{{ .ZoneName }}</a>
+        </li>
+        {{ end }}
+      </ul>
+    </section>
+    {{ end }}
+
+    {{ if .Zone }}
+    <hr>
+    <section class="section">
+      <h2>Zone : {{ .Zone }}</h2>
+      <h3 class="h2">Ajouter un enregistrement</h3>
+      <form method="post">
+        <input type="hidden" name="action" value="add_record">
+        <input type="hidden" name="zone" value="{{ .Zone }}">
+        <label>Nom (relatif ou FQDN)</label>
+        <input type="text" name="name" placeholder="@ ou www">
+        <label>Type</label>
+        <select name="record_type">
+          <option value="A">A</option>
+          <option value="AAAA">AAAA</option>
+          <option value="CNAME">CNAME</option>
+          <option value="MX">MX</option>
+          <option value="TXT">TXT</option>
+          <option value="NS">NS</option>
+        </select>
+        <label>Data</label>
+        <input type="text" name="data" placeholder="192.168.1.1 ou valeur">
+        <label>TTL</label>
+        <input type="number" name="ttl" value="300" min="60">
+        <label>Priorité (MX)</label>
+        <input type="number" name="priority" value="10">
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
+      </form>
+
+      <h3 class="h2" style="margin-top:1.5rem">Enregistrements</h3>
+      {{ if .Records }}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Nom</th><th>Type</th><th>TTL</th><th>Data</th><th>Priorité</th><th></th></tr>
+          </thead>
+          <tbody>
+            {{ range .Records }}
+            <tr>
+              <td>{{ .Name }}</td>
+              <td>{{ .Type }}</td>
+              <td>{{ .TTL }}</td>
+              <td>{{ .Data }}</td>
+              <td>{{ if .Priority.Valid }}{{ .Priority.Int64 }}{{ else }}—{{ end }}</td>
+              <td>
+                <form method="post" style="display:inline" onsubmit="return confirm('Supprimer cet enregistrement ?');">
+                  <input type="hidden" name="action" value="delete_record">
+                  <input type="hidden" name="zone" value="{{ $.Zone }}">
+                  <input type="hidden" name="record_name" value="{{ .Name }}">
+                  <input type="hidden" name="record_type" value="{{ .Type }}">
+                  <button type="submit" class="btn btn-danger">Supprimer</button>
+                </form>
+              </td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+      {{ else }}
+      <p class="muted">Aucun enregistrement.</p>
+      {{ end }}
+    </section>
+    {{ end }}
+        </div>
+      </div>
+    </main>
+  </div>
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

@@ -1,7 +1,7 @@
 package sync
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"

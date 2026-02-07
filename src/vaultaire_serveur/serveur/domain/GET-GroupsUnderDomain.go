@@ -1,7 +1,7 @@
 package domain
 
 import (
-	"DUCKY/serveur/database"
+	"vaultaire/serveur/database"
 	"database/sql"
 	"fmt"
 	"strings"

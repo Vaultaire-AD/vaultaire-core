@@ -1,904 +1,444 @@
-# 🏢 Manuel des Commandes Vaultaire AD
+# Manuel Vaultaire — Documentation Wiki
 
-## 📜 Table des Matières
-
-- [📌 Commandes Disponibles](#-commandes-disponibles)
-- [🚀 `create` (Création)](#-create)
-- [📊 `status` - Voir l'état](#-status)
-- [🧹 `clear` (Nettoyage des sessions)](#-clear)
-- [🔍 `get` (Récupérer des informations)](#-get)
-- [➕ `add` (Ajouter des groupes ou permissions)](#-add)
-- [➖ `remove` (Retirer des permissions ou groupes)](#-remove)
-- [🗑️ `delete` (Suppression)](#-delete)
-- [⚙️ `update` (Mise à jour des utilisateurs)](#-update)
+Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes d’administration, les **commandes DNS** et la **configuration LDAP** de manière claire et structurée.
 
 ---
 
-## 📌 Commandes Disponibles
+## Table des matières
 
-- `create`  
-- `status`  
-- `clear`  
-- `get`  
-- `add`  
-- `remove`  
-- `delete`  
-- `update`  
+1. [Présentation](#1-présentation)
+2. [Configuration serveur (YAML)](#2-configuration-serveur-yaml)
+3. [Configuration LDAP](#3-configuration-ldap)
+4. [Commandes principales](#4-commandes-principales)
+5. [create — Création](#5-create--création)
+6. [status — État des sessions](#6-status--état-des-sessions)
+7. [clear — Nettoyage des sessions](#7-clear--nettoyage-des-sessions)
+8. [get — Consultation](#8-get--consultation)
+9. [add — Ajout](#9-add--ajout)
+10. [remove — Retrait](#10-remove--retrait)
+11. [delete — Suppression](#11-delete--suppression)
+12. [update — Mise à jour](#12-update--mise-à-jour)
+13. [eyes — Arborescence LDAP](#13-eyes--arborescence-ldap)
+14. [Commandes DNS](#14-commandes-dns)
+15. [Référence rapide](#15-référence-rapide)
 
 ---
 
-# 🚀 `create`
+## 1. Présentation
 
-On peut créer différentes entités :
-- 🧑‍💻 **Utilisateurs**
-- 📁 **Groupes**
-- 🔐 **Permissions**
-- 🖥️ **Clients**
-- 🔒 **GPO**
+Vaultaire est un contrôleur de domaine / annuaire centralisé. Les administrateurs utilisent :
 
-   ## `create -p -u` (Créer une permission user)
+- **vaultaire** (CLI sur le serveur, via socket) pour les commandes ci-dessous.
+- **vaultaire_ctl** (vlt) pour les mêmes commandes à distance via l’API (voir [vaultairectl.md](./vaultairectl.md)).
+- L’**interface web** (/admin) pour la gestion des utilisateurs, groupes, permissions, clients et DNS.
 
-   ```bash
-   create -p -u "nom_de_la_permission" <description_sans_espace>
-   ```
-   ✨*example*
-   ---
-   ```bash
-   ```
-   🔹 yes/not : Indique si la permission concerne l'administration globale.  
+Les entités gérées : **Utilisateurs**, **Groupes**, **Permissions** (user et client), **Clients** (machines), **GPO**, **Zones DNS**.
 
-   ## `create -p -c` (Créer une permission client)
+---
 
-   ```bash
-   create -p -c "nom_de_la_permission" <yes/not>
-   ```
-   ✨*example*
-   ---
-   ```bash
-   ```
-   🔹 yes/not : Indique si la permission concerne l'administration globale.  
+## 2. Configuration serveur (YAML)
 
-## `create -g` (Créer un groupe)
+Fichier typique : `serveur_conf.yaml` (ou équivalent en déploiement).
+
+### 2.1 Extrait commenté
+
+```yaml
+serveurlistenport: "6666"
+
+file-path:
+  socketpath: "/opt/vaultaire/vaultaire.sock"
+  privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"
+  publickeypath: "/opt/vaultaire/.ssh/public_key.pub"
+  # ... autres chemins (client, logs, etc.)
+
+ldap:
+  ldap_enable: true    # LDAP (port 389)
+  ldaps_enable: true   # LDAPS (port 636)
+  ldap_debug: true     # Logs LDAP détaillés
+  ldap_port: 389
+  ldaps_port: 636
+
+dns:
+  dns_enable: true     # Active le serveur DNS intégré
+
+database:
+  username: root
+  password: root
+  ip_database: "vaultaire-db"
+  port_database: "3306"
+  databaseName: "vaultaire"
+
+website:
+  website_enable: true
+  website_port: 443
+
+api:
+  api_enable: true
+  api_port: 6643
+
+administreur:
+  enable: true
+  username: admin
+  password: admin123
+  public_key: "ssh-rsa ..."
+```
+
+**À ne pas oublier** : en production, désactiver `ldap_debug` et `debug`, et changer les mots de passe / clés.
+
+---
+
+## 3. Configuration LDAP
+
+### 3.1 Côté serveur Vaultaire
+
+- Activer LDAP/LDAPS et les ports dans `serveur_conf.yaml` (voir [§2](#2-configuration-serveur-yaml)).
+- Créer un **compte dédié** pour l’application qui fera les requêtes LDAP (ex. `proxmox_ldap_account`).
+- Définir le **domaine (base DN)** en fonction de l’arborescence des groupes (`vaultaire eyes -g`).  
+  Exemple : pour `it.company.com` → base DN `dc=it,dc=company,dc=com`.
+
+### 3.2 Syntaxe du DN
+
+Toujours séparer chaque niveau avec `dc=` :
+
+- Zone `company.com` → `dc=company,dc=com`
+- Sous-domaine `it.company.com` → `dc=it,dc=company,dc=com`
+- Sous-domaine `infra.it.company.com` → `dc=infra,dc=it,dc=company,dc=com`
+
+### 3.3 Exemple de configuration client (Keycloak)
+
+| Champ                | Valeur type |
+|----------------------|-------------|
+| **Connection URL**   | `ldap://<ip_ou_fqdn>` ou `ldaps://...` si TLS |
+| **Bind DN**          | `cn=proxmox_ldap_account,dc=company,dc=com` |
+| **Bind Credentials** | Mot de passe du compte |
+
+**Utilisateurs (Users DN)** :
+
+| Champ                       | Valeur |
+|-----------------------------|--------|
+| Users DN                    | `dc=it,dc=company,dc=com` |
+| Username LDAP attribute     | `uid` |
+| RDN / UUID LDAP attribute   | `uid` |
+| User object classes         | `inetOrgPerson`, `organizationalPerson`, `posixaccount`, `person`, `user` |
+| Search scope                | One Level |
+| Group member attribute      | `member` |
+
+**Groupes (Group Mapping)** :
+
+| Champ                      | Valeur |
+|----------------------------|--------|
+| LDAP Groups DN             | `dc=it,dc=company,dc=com` |
+| Group Name LDAP Attribute   | `cn` |
+| Group Object Classes       | `groupOfNames` |
+| Membership LDAP Attribute  | `member` |
+| Membership Attribute Type  | UID |
+| Preserve Group Inheritance | OFF |
+
+**Important** : activer la **RFC 2307** quand c’est possible pour que les utilisateurs soient correctement liés aux groupes.
+
+Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
+
+---
+
+## 4. Commandes principales
+
+| Commande | Description |
+|----------|-------------|
+| `create` | Créer utilisateur, groupe, permission, client, GPO |
+| `status` | Sessions (utilisateurs connectés, clients) |
+| `clear`  | Nettoyer les sessions expirées |
+| `get`    | Lister / détail utilisateurs, groupes, clients, permissions, GPO |
+| `add`    | Ajouter user à un groupe, client à un groupe, permission à un groupe, GPO à un groupe |
+| `remove` | Retirer user d’un groupe, client d’un groupe, permission (user/client) d’un groupe, GPO d’un groupe |
+| `delete` | Supprimer une entité (user, groupe, permission, client, GPO) |
+| `update` | Renommer user, modifier permission user (-pu), debug |
+| `eyes`   | Arborescence des groupes (forêt LDAP) |
+| `dns`    | Gestion DNS (zones, enregistrements, PTR) — voir [§14](#14-commandes-dns) |
+
+---
+
+## 5. create — Création
+
+### 5.1 Permission utilisateur
+
+```bash
+create -p -u "nom_permission" <description_sans_espace>
+```
+
+### 5.2 Permission client
+
+```bash
+create -p -c "nom_permission" <yes|not>
+```
+
+### 5.3 Groupe
 
 ```bash
 create -g "nom_du_groupe" "domain_name"
 ```
-✨*example*
----
-```bash
-create -g test
-📂 Group Information: test
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   ❌ No permissions assigned to this group.
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   ❌ No permissions assigned to clients in this group.
---------------------------------------------------0
-```
 
-⚠️ Un groupe doit être associé à une permission.
+Exemple : `create -g "IT_Group" "it.company.com"`
 
-## `create -u` (Créer un utilisateur)  
-
-📌 Commande pour créer un utilisateur :
-
-if you create user with firstname.lastname it will auto complete in database
-```bash
-create -u username domain password birthdate(06/02/1992) email
-#optional path for auto create first and last name 
-create -u user.name domain password birthdate(06/02/1992) email
-#optional priorité sur le parsing avec le point pour definir le first et last name
-create -u user.name domain password birthdate(06/02/1992) email firstname lastname
-```
-✨*example*
----
-```bash
->> vaultaire create -u alice secret123 06/02/1992
-vaultaire create -u bob.lenon company.com strongpass 09/12/1988 
-vaultaire create -u fiona company.com mypass321 08/07/1985 fiona targerien
-vaultaire create -u julie company.com loginme 10/09/1994
-vaultaire create -u charlie company.com admin987 03/09/1995
-vaultaire create -u diana company.com pass456 01/07/1990
-vaultaire create -u eric company.com devpass99 30/01/1993 
-vaultaire create -u george company.com testme! 12/11/1997 
-vaultaire create -u hannah company.com welcome1 04/02/1991
-vaultaire create -u isaac company.com vault123 05/03/1989 
-```
- 
-
-## `create` -c (Créer un client)
+### 5.4 Utilisateur
 
 ```bash
-create -c <type_client> <yes/not> 
-#optional argument 
-#for auto integration of the client
-create -c <type_client> <yes/not> -join <IP> <Username>
-```
-✨*example*
----
-```bash
->> create -c serveurKubernetes yes
-Client software configuration et clés générées avec succès dans : /opt/vaultaire/conf/clientsoftware/wUTEcxeT5RGY
-new user create with succes with this conf : serveurKubernetesserveur = yes
+create -u username domain password birthdate(JJ/MM/AAAA) email
+# Option : firstname.lastname pour remplir prénom/nom
+create -u user.name domain password birthdate email
+# Option : firstname lastname en fin pour priorité
+create -u user.name domain password birthdate email firstname lastname
 ```
 
-🔹 yes/not : Indique s'il s'agit d'un serveur ou non.
-
-## `create` -gpo (Créer une gpo)
+Exemples :
 
 ```bash
-create -gpo <nom_de_la_gpo> [--cmd <commande>] ou [--ubuntu <commande> --debian ... --rocky]"
-```
-✨*example*
----
-```bash
->> create -gpo alias --cmd alias vlt=vautlaire
-🔒 GPO Information
---------------------------------------------------
-ID                  : 22                            
-Nom de la GPO       : alias                         
-Ubuntu Commande     : alias vlt=vautlaire           
-Debian Commande     : alias vlt=vautlaire           
-Rocky Commande      : alias vlt=vautlaire           
---------------------------------------------------
->>create -gpo test3 --ubuntu alias vlt_ubuntu=vaultaire --debian alias vlt_debian=vaultaire --rocky alias vlt_rocky=vaultaire
-🔒 GPO Information
---------------------------------------------------
-ID                  : 23                            
-Nom de la GPO       : test3                         
-Ubuntu Commande     : alias vlt_ubuntu=vaultaire    
-Debian Commande     : vlt_debian=vaultaire          
-Rocky Commande      : vlt_rocky=vaultaire           
---------------------------------------------------
+create -u alice company.com secret123 06/02/1992 alice@company.com
+create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
 ```
 
-🔹 yes/not : Indique s'il s'agit d'un serveur ou non.
+### 5.5 Client
+
+```bash
+create -c <type_client> <yes|not>
+# Option : intégration automatique
+create -c <type_client> <yes|not> -join <IP> <Username>
+```
+
+### 5.6 GPO
+
+```bash
+create -gpo <nom_gpo> [--cmd <commande>]
+create -gpo <nom_gpo> --ubuntu <cmd_ubuntu> --debian <cmd_debian> --rocky <cmd_rocky>
+```
+
+Exemple : `create -gpo alias --cmd "alias vlt=vaultaire"`
+
 ---
 
-# 📊 `status`
+## 6. status — État des sessions
 
-📌 Permet d'afficher l'activité de l'Active Directory :
-- **Les utilisateurs connectés et sur quel client 🧑‍💻**
-- **La liste des utilisateurs par client 🖥️**
-- **La liste des clients serveurs 🌐**
-
-## `status -u` (Lister les utilisateurs connectés)  
+### 6.1 Utilisateurs connectés
 
 ```bash
 status -u
-```
-✨*example*
----
-```bash
->> status -u
-📋 Connected Users
---------------------------------------------------------------------------
-ID Username             Created At            Token Expiry       Status
-1    visiteur        2025-02-15 15:29:46  2025-03-01 22:10:51  ✅ Active
-2    admin           2025-03-01 21:09:00  2025-03-01 22:11:19  ✅ Active
---------------------------------------------------------------------------
-```
-
-## **🎯 Arguments** :
-- Par nom **d'utilisateur** :
-```bash
 status -u "username"
-```
-✨*example*
----
-```bash
->> status -u admin
-📋 Connected Users
---------------------------------------------------
-ID Username Created At Token Expiry Status
-2    admin           2025-03-01 21:09:00  2025-03-01 22:11:19  ✅ Active
---------------------------------------------------
-```
-- Par **groupe** :
-```bash
 status -u -g "group_name"
 ```
-✨*example*
----
-```bash
->> status -u -g Administrateur_Global
-📋 Connected Users
---------------------------------------------------
-ID Username Created At Token Expiry Status
-2    admin           2025-03-01 21:09:00  2025-03-01 22:11:19  ✅ Active
---------------------------------------------------
-```
 
-## `status -c` (Lister les clients connectés)
+### 6.2 Clients connectés
 
 ```bash
 status -c
-```
-✨*example*
----
-```bash
->> status -c
-💻 Connected Clients
-----------------------------------------------------------------------------------------------------------------------------------------
-Username        Type            Computeur ID       Hostname                 Serveur  CPU         RAM                  OS
-test10          test            Vhg4WLMbHbwO         client               🟢 Serveur 6          4.2Gi      Rocky Linux 9.4 (Blue Onyx)
-admin           test            Vhg4WLMbHbwO         client               🟢 Serveur 6          4.2Gi      Rocky Linux 9.4 (Blue Onyx)
-----------------------------------------------------------------------------------------------------------------------------------------
-```
-
-## **🎯 Arguments** :
-- Par type de **client** :
-```bash
 status -c <type_client>
-```
-✨*example*
----
-```bash
->> status -c test
-💻 Connected Clients
-----------------------------------------------------------------------------------------------------------------------------------------
-Username        Type            Computeur ID       Hostname                 Serveur  CPU         RAM                  OS
-Test            test            Vhg4WLMbHbwO         client               🟢 Serveur 6          4.2Gi      Rocky Linux 9.4 (Blue Onyx)
-admin           test            Vhg4WLMbHbwO         client               🟢 Serveur 6          4.2Gi      Rocky Linux 9.4 (Blue Onyx)
-----------------------------------------------------------------------------------------------------------------------------------------
-```
-
-- Par **groupe** :
-```bash
 status -c -g "group_name"
 ```
-✨*example*
----
-```bash
->> status -c -g visiteur
-💻 Connected Clients
---------------------------------------------------
-Username Type Computeur ID Hostname Serveur CPU RAM OS
-admin   test            Vhg4WLMbHbwO         client               🟢 Serveur 6          4.2Gi      Rocky Linux 9.4 (Blue Onyx)
-```
 
 ---
 
-# 🧹 `clear` 
+## 7. clear — Nettoyage des sessions
 
-## **Nettoyer les sessions**
+Exécute le nettoyage des sessions inactives (sinon exécuté périodiquement).
 
 ```bash
 clear
 ```
-✨*example*
+
 ---
-```bash
->> clear
-```
 
-📌 Exécute immédiatement la suppression des sessions inactives (sinon exécuté toutes les 30 minutes).
+## 8. get — Consultation
 
-# 🔍 `get`
+### 8.1 Utilisateurs
 
-## `get -u` (Informations sur un utilisateur)
-
-- Tous les **utilisateurs** :
 ```bash
 get -u
-```
-✨*example*
----
-```bash
->> get -u
-👥 Liste de tous les Utilisateurs
---------------------------------------------------
-ID Utilisateur Username    Date de Naissance Créé à
-1               test                      2004-01-06      2025-02-15 15:29:46 
-2               admin                     2004-01-06      2025-03-01 21:09:00 
---------------------------------------------------
-```
-- Un utilisateur **spécifique** :
-```bash
 get -u "username"
-```
-✨*example*
----
-```bash
->> get -u admin
-👤 User Information
---------------------------------------------------
-Username: admin      
-Date of Birth: 2004-01-06 
-Status: ✅ Online   
-
-Groups: [Administrateur_Global]
-Permissions: [visiteur]
---------------------------------------------------
-```
-
-- Par **groupe** :
-```bash
 get -u -g "group_name"
 ```
-✨*example*
----
-```bash
->> get -u -g visiteur
->> -aucun utilisateur trouvé pour le groupe 'visiteur'
->> get -u -g Administrateur_Global
-👥 Users in Group: Administrateur_Global
---------------------------------------------------
-Username Date of Birth Status
-admin                2004-01-06      ✅ Online
---------------------------------------------------
-```
 
-## `get -p` (Lister les permissions et leurs groupes associés)
+### 8.2 Permissions
 
 ```bash
 get -p -u
-get -p -u permission name
-```
-
-```bash
+get -p -u "permission_name"
 get -p -c
-get -p -c permission name
+get -p -c "permission_name"
 ```
 
-## `get -g` (Lister les groupes et leurs permissions associées)
+### 8.3 Groupes
 
-- Tous les **groupes** avec leur contenu :
 ```bash
 get -g
-```
-✨*example*
----
-```bash
->> get -g
-📊 Group Details
---------------------------------------------------
-Group_Name Permissions Users  Clients
-Administrateur_Global 0                    2                    1                   
-visiteur             1                    0                    1                   
---------------------------------------------------
-```
-- Détails **d'un** groupe :
-```bash
-get -g "groupe_name"
-```
-✨*example*
----
-```bash
->> get -g visiteur
-📂 Group Information: visiteur
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   - test
-   - visiteur
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   - client
---------------------------------------------------
-🔐 Client Permissions:
-   - test
---------------------------------------------------
-```
-- **Clients** d'un groupe :
-```bash
+get -g "group_name"
 get -g -c "group_name"
-```
-✨*example*
----
-```bash
->> get -g -c visiteur
-💻 Clients in Group: visiteur
---------------------------------------------------
-Client ID Type Computeur ID Hostname Serveur Processeur RAM
-1          test            Vhg4WLMbHbwO         client          Yes        6               4.2Gi     
---------------------------------------------------
-```
-- **Utilisateurs** d'un groupe :
-```bash
 get -g -u "group_name"
 ```
-✨*example*
----
-```bash
->> get -g -u Administrateur_Global
-👥 Users in Group: Administrateur_Global
---------------------------------------------------
-Username Date of Birth Status
-admin                2004-01-06      ✅ Online
---------------------------------------------------
-```
 
-## `get -c` (Lister les Clients)
+### 8.4 Clients
 
-- **Tous** les clients :
 ```bash
 get -c
-```
-✨*example*
----
-```bash
->> get -c
-💻 Liste de tous les Clients (Logiciels)
---------------------------------------------------
-ID Logiciel Logiciel Type Computeur ID Hostname Serveur Processeur RAM OS
-1               test                      Vhg4WLMbHbwO    client          Oui        6          4.2Gi           Rocky Linux 9.4 (Blue Onyx)
---------------------------------------------------
-```
-- Par **Computeur ID** :
-```bash
 get -c "computeur_id"
 ```
-✨*example*
----
-```bash
->> get -c Vhg4WLMbHbwO
-💻 Client Information
---------------------------------------------------
-ID    : 1                             
-Type  : test                          
-Computeur ID: Vhg4WLMbHbwO                  
-Hostname: client                        
-Serveur: ✅ Yes                
-Processeur: 6                             
-RAM   : 4.2Gi                         
-OS    : Rocky Linux 9.4 (Blue Onyx)   
-Groupes: Administrateur_Global, visiteur
-Permissions: visiteur                      
---------------------------------------------------
-```
 
-## `get -gpo` (Lister les gpo)
+### 8.5 GPO
 
-- Tous les **groupes** avec leur contenu :
 ```bash
 get -gpo
+get -gpo "nom_gpo"
 ```
-✨*example*
+
 ---
-```bash
->> get -gpo
-🔒 Liste des GPO
---------------------------------------------------
-ID                  : 22                            
-Nom de la GPO       : alias                         
-Ubuntu Commande     : alias vlt=vautlaire           
-Debian Commande     : alias vlt=vautlaire           
-Rocky Commande      : alias vlt=vautlaire           
---------------------------------------------------
->> get gpo alias
-🔒 GPO Information
---------------------------------------------------
-ID                  : 22                            
-Nom de la GPO       : alias                         
-Ubuntu Commande     : alias vlt=vautlaire           
-Debian Commande     : alias vlt=vautlaire           
-Rocky Commande      : alias vlt=vautlaire           
---------------------------------------------------
-```
 
-# ➕ `add`
+## 9. add — Ajout
 
-## `add -u` (Ajouter un groupe à un utilisateur)
+### 9.1 Utilisateur dans un groupe
 
 ```bash
 add -u "username" -g "group_name"
 ```
-✨*example*
----
-```bash
->> add -u admin -g visiteur
-👤 User Information
---------------------------------------------------
-Username: admin
-Date of Birth: 2004-12-06 
-Status: ✅ Online   
 
-Groups: [Administrateur_Global visiteur]
---------------------------------------------------
-```
-
-## `add -c` (Ajouter un client à un groupe)
+### 9.2 Client dans un groupe
 
 ```bash
 add -c "computeur_id" -g "group_name"
 ```
-✨*example*
----
-```bash
->> add -c Vhg4WLMbHbwO -g Administration_Global
-💻 Client Information
---------------------------------------------------
-ID    : 1                             
-Type  : test                          
-Computeur ID: Vhg4WLMbHbwO                  
-Hostname: client                        
-Serveur: ✅ Yes                
-Processeur: 6                             
-RAM   : 4.2Gi                         
-OS    : Rocky Linux 9.4 (Blue Onyx)   
-Groupes: Administrateur_Global, visiteur
---------------------------------------------------
-```
 
-## `add -g` (Ajouter une permission à un groupe)
+### 9.3 Permission (user) à un groupe
 
-- Groupe **d'utilisateurs** :
 ```bash
 add -gu "group_name" -p "permission_name"
 ```
-✨*example*
----
-```bash
->> add -gu test10 -p test
-✅ La permission 'test' a été ajoutée au groupe 'test10' avec succès !
-📂 Group Information: test10
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   - test
-   - visiteur
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   ❌ No permissions assigned to clients in this group.
---------------------------------------------------
-```
-- Groupe de **clients** :
+
+### 9.4 Permission (client) à un groupe
+
 ```bash
 add -gc "group_name" -p "permission_name"
 ```
-✨*example*
+
+### 9.5 GPO à un groupe
+
+```bash
+add -gpo "gpo_name" -g "group_name"
+```
+
 ---
-```bash
->> add -gc test10 -p visiteur
-✅ La permission 'visiteur' dans le groupe 'test10' avec succès !
-📂 Group Information: test10
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   - test
-   - visiteur
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   - visiteur
---------------------------------------------------
-```
 
-## `add -gpo` (Ajouter une permission à un groupe)
-```bash
-add -gpo "gpo_name" -p "group_name"
-```
-✨*example*
----
-```bash
->> add -gpo session-timeout -g test
-📂 Group Information: test
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   ❌ No permissions assigned to this group.
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   ❌ No permissions assigned to clients in this group.
---------------------------------------------------
-🔒 Group GPOs:
-   - session-timeout
---------------------------------------------------
-```
+## 10. remove — Retrait
 
-# ➖ `remove`
-
-## `remove -u` (Retirer une permission a un groupe )
+### 10.1 Utilisateur d’un groupe
 
 ```bash
 remove -u "username" -g "group_name"
 ```
-✨*example*
----
-```bash
->> remove -u admin -g visiteur
-👤 User Information
---------------------------------------------------
-Username: admin      
-Date of Birth: 2004-01-06 
-Status: ❌ Offline  
 
-Groups: [Administrateur_Global]
---------------------------------------------------
-```
-
-## `remove -c` (Retirer un client d'un groupe)
+### 10.2 Client d’un groupe
 
 ```bash
 remove -c "computeur_id" -g "group_name"
 ```
-✨*example*
----
-```bash
->> remove -c Vhg4WLMbHbwO -g visiteur
-💻 Client Information
---------------------------------------------------
-ID    : 1                             
-Type  : test                          
-Computeur ID: Vhg4WLMbHbwO                  
-Hostname: client                        
-Serveur: ✅ Yes                
-Processeur: 6                             
-RAM   : 4.2Gi                         
-OS    : Rocky Linux 9.4 (Blue Onyx)   
-Groupes: Administrateur_Global         
---------------------------------------------------
-```
 
-## `remove -g` (Retirer une permission d'un groupe)
- remove une permission users d'un groupe
+### 10.3 Permission user d’un groupe
+
 ```bash
 remove -g "group_name" -pu "permission_name"
 ```
-✨*example*
----
-```bash
->> remove -g test10 -pu test
-📂 Group Information: test10
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   - visiteur
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   - visiteur
---------------------------------------------------
-```
 
-remove une permission Client d'un groupe
+### 10.4 Permission client d’un groupe
+
 ```bash
 remove -g "group_name" -pc "permission_name"
 ```
-✨*example*
----
+
+### 10.5 GPO d’un groupe
+
 ```bash
->> remove -g test10 -pc visiteur
-📂 Group Information: test10
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   ❌ No permissions assigned to this group.
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   - visiteur
---------------------------------------------------
+remove -gpo "gpo_name" -g "group_name"
 ```
 
-## `remove -gpo` (Retirer une gpo d'un groupe)
- remove une permission users d'un groupe
-```bash
-remove -gpo "gpo_name" -pu "group_name"
-```
-✨*example*
 ---
-```sh
->> vlt remove -gpo session-timeout -g test
- Group Information: test
---------------------------------------------------
-👥 Users in Group:
-   ❌ No users in this group.
---------------------------------------------------
-🔑 Group Permissions:
-   ❌ No permissions assigned to this group.
---------------------------------------------------
-🖥️ Clients (Softwares) in Group:
-   ❌ No clients associated with this group.
---------------------------------------------------
-🔐 Client Permissions:
-   ❌ No permissions assigned to clients in this group.
---------------------------------------------------
-🔒 Group GPOs:
-   ❌ No GPOs assigned to this group.
---------------------------------------------------
-```
 
-# 🗑️ `delete`
+## 11. delete — Suppression
 
-la fonction delete detruit aussi toutes les relation entres les differentes entités
+Supprime l’entité et ses liaisons.
+
 ```bash
 delete -u "username"
 delete -g "group_name"
-delete -p -u/-c "permission_name"
+delete -p -u "permission_name"
+delete -p -c "permission_name"
 delete -c "computeur_id"
 delete -gpo "gpo_name"
 ```
-✨*example*
----
-```bash
->> delete -p visiteur
-The Client :visiteur Has been DELETED With Succes
-```
 
-# ⚙️ `update`
+---
+
+## 12. update — Mise à jour
+
+### 12.1 Renommer un utilisateur
 
 ```bash
 update -u "username" -uu "new_username"
 ```
-✨*example*
+
+### 12.2 Mode debug
+
+```bash
+update -debug true
+update -debug false
+```
+
+### 12.3 Mise à jour des actions d’une permission utilisateur (-pu)
+
+Modèle :
+
+```bash
+update -pu <PermissionName> <Action> <Arg> [ChildOrAll] [Domain]
+```
+
+- **PermissionName** : nom de la permission (ex. LDAP_AdminPanel).
+- **Action** : auth, compare, search, can_read, can_write, web_admin, none, api_read_permission, api_write_permission.
+- **Arg** :
+  - `nil` — aucun accès.
+  - `all` — tous les domaines.
+  - `-a` — ajouter un domaine (nécessite ChildOrAll et Domain).
+  - `-r` — retirer un domaine (nécessite ChildOrAll et Domain).
+- **ChildOrAll** (avec -a ou -r) : `0` = sans propagation, `1` = avec propagation (sous-domaines inclus).
+- **Domain** (avec -a ou -r) : nom du domaine (ex. company.fr).
+
+Exemples :
+
+```bash
+# Autoriser tous les domaines pour auth
+update -pu LDAP_AdminPanel auth all
+
+# Refuser
+update -pu LDAP_AdminPanel auth nil
+
+# Ajouter un domaine sans propagation
+update -pu LDAP_AdminPanel auth -a 0 legacy.company.fr
+
+# Ajouter un domaine avec propagation
+update -pu LDAP_AdminPanel auth -a 1 company.fr
+
+# Retirer un domaine
+update -pu LDAP_AdminPanel auth -r 0 legacy.company.fr
+```
+
+Si après un `-r` il ne reste plus aucun domaine, l’action repasse en `nil`.
+
 ---
-```bash
 
-```
+## 13. eyes — Arborescence LDAP
 
-## update Debug var
-
-```bash
-update -debug true/false
-```
-
-## 🔑 Update User permission
-
-Cette commande permet de mettre à jour les actions associées à une permission utilisateur.
-
-```bash
-vaultaire update -pu <PermissionName> <Action> <Arg> [ChildOrAll] [Domain]
-```
-### Arguments
-
--  **PermissionName** : le nom de la permission utilisateur (ex: LDAP_AdminPanel).
--  **Action** : le champ de la permission à modifier (auth, compare, search, canRead, canWrite, etc.).
--  **Arg** :
-   -  nil → aucune autorisation (deny).
-   -  all → autorisation globale (tous domaines).
-   -  -a → ajouter un domaine.
-   -  -r → retirer un domaine.
--  **ChildOrAll** (uniquement avec -a ou -r) :
-   -  0 → domaine sans propagation (uniquement ce domaine).
-   -  1 → domaine avec propagation (inclut tous les sous-domaines).
--  **Domain** (uniquement avec -a ou -r) : le domaine concerné.
-
-
-
-✨*example*
----
-1. Autoriser tous les domaines sur l'action auth (mode global)
-```bash
-vaultaire update -pu LDAP_AdminPanel auth all
-👤 Permission Utilisateur : LDAP_AdminPanel
--------------------------------------------------------------
-ID: 9
-description: Accès_admin_LDAP
-none: nil
-auth: all
-compare: nil
-search: nil
-can_read: nil
-can_write: nil
-api_read_permission: nil
-api_write_permission: nil
-web_admin: nil
--------------------------------------------------------------
-```
-2. Bloquer tous les domaines (mode deny)
-```bash
-vaultaire update -pu LDAP_AdminPanel auth nil
-👤 Permission Utilisateur : LDAP_AdminPanel
--------------------------------------------------------------
-ID: 9
-description: Accès_admin_LDAP
-none: nil
-auth: nil
-compare: nil
-search: nil
-can_read: nil
-can_write: nil
-api_read_permission: nil
-api_write_permission: nil
-web_admin: nil
--------------------------------------------------------------
-```
-3. Ajouter un domaine sans propagation
-```bash
-vaultaire update -pu LDAP_AdminPanel auth -a 0 legacy.company.fr
-👤 Permission Utilisateur : LDAP_AdminPanel
--------------------------------------------------------------
-ID: 9
-description: Accès_admin_LDAP
-none: nil
-auth: (0:legacy.company.fr)
-compare: nil
-search: nil
-can_read: nil
-can_write: nil
-api_read_permission: nil
-api_write_permission: nil
-web_admin: nil
--------------------------------------------------------------
-```
-4. Ajouter un domaine avec propagation
-```bash
-vaultaire update -pu LDAP_AdminPanel auth -a 1 company.fr
-👤 Permission Utilisateur : LDAP_AdminPanel
--------------------------------------------------------------
-ID: 9
-description: Accès_admin_LDAP
-none: nil
-auth: (1:company.fr)(0:legacy.company.fr)
-compare: nil
-search: nil
-can_read: nil
-can_write: nil
-api_read_permission: nil
-api_write_permission: nil
-web_admin: nil
--------------------------------------------------------------
-```
-5. Retirer un domaine
-```bash
-vaultaire update -pu LDAP_AdminPanel auth -r 0 legacy.company.fr
-👤 Permission Utilisateur : LDAP_AdminPanel
--------------------------------------------------------------
-ID: 9
-description: Accès_admin_LDAP
-none: nil
-auth: (1:company.fr)
-compare: nil
-search: nil
-can_read: nil
-can_write: nil
-api_read_permission: nil
-api_write_permission: nil
-web_admin: nil
--------------------------------------------------------------
-```
-➡️ Retire legacy.company.fr des autorisations.  
-⚠️ Si aucun domaine ne reste après suppression → l’action repasse automatiquement en nil.
-
-# 👁️ `eyes`
-
-eyes est un module pour obtenir des information particuliere sur l'etat de votre controlleur de domaine
-
-## eyes -g
-
-cette commande permet d'obtenir un arbre de groupe au format foret de ldap
+Affiche l’arbre des groupes au format forêt LDAP.
 
 ```bash
 eyes -g
 ```
 
-✨*example*
----
-```bash
-vaultaire eyes -g
+Exemple de sortie :
+
+```
 ├── data
 │   └── solution
 │       └── test
@@ -910,8 +450,125 @@ vaultaire eyes -g
         │   ├── * Group: admin (admin.vaultaire.fr)
         │   └── virtu
         │       └── * Group: admin-virtu (virtu.admin.vaultaire.fr)
-        ├── audit
-        │   └── * Group: audit (audit.vaultaire.fr)
+        └── audit
+            └── * Group: audit (audit.vaultaire.fr)
 ```
 
-📌 **Paramètres facultatifs** après -u.
+Utile pour définir les base DN des clients LDAP.
+
+---
+
+## 14. Commandes DNS
+
+Les commandes DNS s’appellent via le préfixe **`dns`** (en CLI : `dns <sous-commande> ...`). Elles nécessitent la permission `api_write_permission` (ou équivalent) et que le module DNS soit activé (`dns_enable: true`).
+
+### 14.1 Aide
+
+```bash
+dns -h
+# ou
+dns help
+```
+
+### 14.2 Créer une zone
+
+```bash
+dns create_zone <nom_de_zone>
+```
+
+Exemple : `dns create_zone example.com`
+
+### 14.3 Lister les zones / contenu d’une zone
+
+```bash
+dns get_zone
+dns get_zone <nom_de_zone>
+```
+
+- Sans argument : liste toutes les zones.
+- Avec argument : liste les enregistrements de la zone.
+
+### 14.4 Ajouter un enregistrement
+
+```bash
+dns add_record <fqdn> <type> <data> <ttl> [priority]
+```
+
+- **fqdn** : nom complet (ex. `www.example.com` ou `@.example.com` pour l’apex).
+- **type** : A, CNAME, MX, NS, TXT (voir règles ci-dessous).
+- **data** : valeur (IP pour A, FQDN pour CNAME/MX/NS, texte pour TXT).
+- **ttl** : entier (ex. 300).
+- **priority** : optionnel, pour MX (ex. 10).
+
+Exemples :
+
+```bash
+dns add_record www.example.com A 192.168.1.1 300
+dns add_record mail.example.com CNAME srv.example.com 300
+dns add_record @.example.com MX 10 mail.example.com 300
+dns add_record @.example.com NS ns1.example.com 300
+dns add_record @.example.com TXT "v=spf1 ..." 300
+```
+
+Règles (résumé) : A → IP ; CNAME → FQDN ; MX/NS → nom souvent en `@.<zone>` et cible FQDN ; TXT → texte.
+
+### 14.5 Enregistrements PTR (inverse)
+
+Lister les PTR :
+
+```bash
+dns get_ptr
+```
+
+Les PTR sont gérés via la base (table `ptr_records`). La création peut se faire via des mécanismes internes (ex. enregistrement A avec création PTR automatique selon le code).
+
+### 14.6 Suppression
+
+```bash
+dns delete zone <nom.zone>
+dns delete record <fqdn> <type>
+dns delete ptr <ip>
+```
+
+Exemples :
+
+```bash
+dns delete zone example.com
+dns delete record www.example.com A
+dns delete ptr 192.168.1.1
+```
+
+### 14.7 Types d’enregistrements supportés
+
+| Type  | Validation |
+|-------|------------|
+| A     | IP valide, FQDN existant dans une zone |
+| CNAME | FQDN valide pour nom et cible |
+| MX    | Nom type @.zone, cible FQDN |
+| NS    | Idem MX |
+| TXT   | Nom @ ou FQDN valide |
+| PTR   | Géré séparément (get_ptr, delete ptr) |
+
+---
+
+## 15. Référence rapide
+
+| Besoin | Commande type |
+|--------|----------------|
+| Créer un user | `create -u user domain pass JJ/MM/AAAA email` |
+| Créer un groupe | `create -g "Nom" "domain"` |
+| Voir les sessions | `status -u` / `status -c` |
+| Détail d’un groupe | `get -g "group_name"` |
+| Ajouter user au groupe | `add -u "user" -g "group"` |
+| Permission user : tous domaines | `update -pu PERM auth all` |
+| Permission user : un domaine | `update -pu PERM auth -a 1 domain.fr` |
+| Arborescence LDAP | `eyes -g` |
+| Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
+| Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
+| Supprimer zone / record | `dns delete zone example.com` ; `dns delete record www.example.com A` |
+| Config LDAP serveur | `serveur_conf.yaml` → section `ldap` |
+| Config LDAP client | Voir [§3.3](#33-exemple-de-configuration-client-keycloak) et [vaultaireLDAP.md](./vaultaireLDAP.md) |
+
+---
+
+*Ce manuel est conçu pour être copié dans un wiki (sections, ancres, table des matières). Pour les détails d’exemples de sortie et les cas particuliers, se reporter au [MAN.md](./MAN.md) d’origine.*

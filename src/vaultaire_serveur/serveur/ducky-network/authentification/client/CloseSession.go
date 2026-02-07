@@ -1,9 +1,9 @@
 package client
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 )
 
 // closeSession handles the closing of a session for a client.

@@ -1,6 +1,6 @@
 package domain
 
-import "DUCKY/serveur/storage"
+import "vaultaire/serveur/storage"
 
 func collectGroupsChilds(node *storage.DomainNode, groups *[]string) {
 	*groups = append(*groups, node.Groups...)

@@ -1,10 +1,10 @@
 package dns
 
 import (
-	dnsdatabase "DUCKY/serveur/dns/DNS_Database"
-	dnsparser "DUCKY/serveur/dns/DNS_Parser"
-	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
-	"DUCKY/serveur/logs"
+	dnsdatabase "vaultaire/serveur/dns/DNS_Database"
+	dnsparser "vaultaire/serveur/dns/DNS_Parser"
+	dnsstorage "vaultaire/serveur/dns/DNS_Storage"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"log"
 	"net"

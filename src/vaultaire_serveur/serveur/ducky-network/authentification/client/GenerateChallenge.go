@@ -1,8 +1,8 @@
 package client
 
 import (
-	"DUCKY/serveur/database"
-	logs "DUCKY/serveur/logs"
+	"vaultaire/serveur/database"
+	logs "vaultaire/serveur/logs"
 	"crypto/rand"
 	"encoding/pem"
 	"fmt"

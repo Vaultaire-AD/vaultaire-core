@@ -1,4 +1,4 @@
-module DUCKY
+module vaultaire
 
 go 1.23.0
 

@@ -1,8 +1,8 @@
 package displaydns
 
 import (
-	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
-	"DUCKY/serveur/logs"
+	dnsstorage "vaultaire/serveur/dns/DNS_Storage"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"strings"
 	"text/tabwriter"

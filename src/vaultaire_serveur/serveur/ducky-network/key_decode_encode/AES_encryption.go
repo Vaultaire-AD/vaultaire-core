@@ -1,7 +1,7 @@
 package keydecodeencode
 
 // import (
-// 	"DUCKY/serveur/logs"
+// 	"vaultaire/serveur/logs"
 // 	"crypto/aes"
 // 	"crypto/cipher"
 // 	"crypto/rand"

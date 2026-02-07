@@ -1,9 +1,9 @@
 package commanddns
 
 import (
-	dnsdatabase "DUCKY/serveur/dns/DNS_Database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	dnsdatabase "vaultaire/serveur/dns/DNS_Database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 

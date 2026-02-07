@@ -1,14 +1,14 @@
 package ldap
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"crypto/tls"
 	"fmt"
 	"os"
 	"strconv"
 
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
 )
 
 func HandleLDAPSserveur() {

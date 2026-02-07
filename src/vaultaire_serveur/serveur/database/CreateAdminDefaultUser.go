@@ -1,8 +1,8 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
@@ -11,9 +11,10 @@ import (
 	"time"
 )
 
-// CreateAdminUser crée un utilisateur administrateur et l'ajoute au groupe vaultaire
+// CreateDefaultAdminUser crée l'utilisateur administrateur par défaut s'il n'existe pas, et l'ajoute au groupe vaultaire.
+// Si l'admin existe déjà (ex: redémarrage du conteneur), la création est ignorée et le processus continue.
 func CreateDefaultAdminUser(db *sql.DB) {
-	log.Println("[BOOTSTRAP] Création de l'administrateur...")
+	log.Println("[BOOTSTRAP] Vérification de l'administrateur par défaut...")
 
 	// 1. Validation minimale
 	if storage.Administrateur_Username == "" {
@@ -23,48 +24,54 @@ func CreateDefaultAdminUser(db *sql.DB) {
 		log.Fatal("[BOOTSTRAP] Le password de l'administrateur est vide")
 	}
 
-	// Générer un salt
-	salt, err := generateSalt(16)
-	if err != nil {
+	// 2. Si l'admin existe déjà (ex: redémarrage), ne pas recréer — éviter log.Fatal sur contrainte unique
+	userID, err := Get_User_ID_By_Username(db, storage.Administrateur_Username)
+	if err == nil {
+		log.Printf("[BOOTSTRAP] Admin '%s' déjà existant, pas de création (id=%d)", storage.Administrateur_Username, userID)
+		// S'assurer qu'il est bien dans le groupe vaultaire (INSERT IGNORE si déjà présent)
+		_, _ = db.Exec(`
+			INSERT IGNORE INTO users_group (d_id_user, d_id_group)
+			SELECT ?, g.id_group FROM groups g WHERE g.group_name = 'vaultaire'
+		`, userID)
+		log.Println("[BOOTSTRAP] ✓ Démarrage avec admin existant")
 		return
 	}
-	saltHex := hex.EncodeToString(salt)
 
-	// Appliquer le hash SHA256 sur le mot de passe + salt
+	// 3. Créer le nouvel admin
+	log.Println("[BOOTSTRAP] Création de l'administrateur...")
+	salt, err := generateSalt(16)
+	if err != nil {
+		logs.WriteLog("db", "génération salt admin: "+err.Error())
+		log.Fatalf("[BOOTSTRAP] Erreur génération salt: %v", err)
+	}
+	saltHex := hex.EncodeToString(salt)
 	saltedPassword := append(salt, []byte(storage.Administrateur_Password)...)
 	hash := sha256.Sum256(saltedPassword)
 	hashHex := hex.EncodeToString(hash[:])
 
-	// 3. Valeurs par défaut pour les champs requis
 	firstname := "Admin"
 	lastname := "System"
 	email := storage.Administrateur_Username + "@vaultaire.local"
 	birthdate := "01/01/3300"
 
-	// 4. Créer l'utilisateur admin
 	err = Create_New_User(
 		GetDatabase(),
 		storage.Administrateur_Username,
 		firstname,
 		lastname,
 		email,
-		hashHex, // mot de passe hashé
-		saltHex, // salt (en hex)
+		hashHex,
+		saltHex,
 		birthdate,
 		time.Now().Format("2006-01-02 15:04:05"),
 	)
 	if err != nil {
 		logs.WriteLog("db", fmt.Sprintf("Erreur création admin: %v", err))
 		log.Fatalf("[BOOTSTRAP] Erreur création admin: %v", err)
-	} else {
-		log.Println("[BOOTSTRAP] ✓ Utilisateur administrateur créé")
 	}
+	log.Println("[BOOTSTRAP] ✓ Utilisateur administrateur créé")
 
-	// 5. Récupérer l'ID de l'utilisateur
-	var userID int
-	err = db.QueryRow(`
-		SELECT id_user FROM users WHERE username = ?
-	`, storage.Administrateur_Username).Scan(&userID)
+	userID, err = Get_User_ID_By_Username(db, storage.Administrateur_Username)
 	if err != nil {
 		logs.WriteLog("db", fmt.Sprintf("Erreur récupération ID admin: %v", err))
 		log.Fatalf("[BOOTSTRAP] Erreur récupération ID admin: %v", err)

@@ -1,9 +1,9 @@
 package commandadd
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
 )
 
 // Add_Command processes the add command for adding groups or permissions to users, groups, or clients.

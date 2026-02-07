@@ -1,662 +1,661 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/database"
-	dbperm "DUCKY/serveur/database/db_permission"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/web_serveur/session"
+	"vaultaire/serveur/database"
+	dbperm "vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/ducky-network/new_client"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
+	"vaultaire/serveur/tools"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"database/sql"
 	"html/template"
 	"net/http"
 	"strings"
 	"time"
 )
 
-// helper: vérifie session et permission web_admin
-func requireWebAdmin(w http.ResponseWriter, r *http.Request) (string, bool) {
-	tokenCookie, err := r.Cookie("session_token")
-	if err != nil || tokenCookie.Value == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return "", false
-	}
-	username, valid := session.ValidateToken(tokenCookie.Value)
-	if !valid {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return "", false
-	}
+func generateSalt(length int) ([]byte, error) {
+	salt := make([]byte, length)
+	_, err := rand.Read(salt)
+	return salt, err
+}
 
-	groupsID, action, err := permission.PrePermissionCheck(username, "web_admin")
+func getUniqueDomains(db *sql.DB) []string {
+	groups, err := database.GetAllGroupsWithDomains(db)
 	if err != nil {
-		logs.Write_Log("WARNING", "PrePermissionCheck échoué pour user "+username+": "+err.Error())
-		http.Error(w, "Permission refusée", http.StatusForbidden)
-		return "", false
+		return nil
 	}
-	ok, reason := permission.CheckPermissionsMultipleDomains(groupsID, action, []string{"*"})
-	if !ok {
-		logs.Write_Log("WARNING", "Accès admin refusé pour "+username+" : "+reason)
-		http.Error(w, "Accès admin refusé : "+reason, http.StatusForbidden)
-		return "", false
+	seen := make(map[string]struct{})
+	var out []string
+	for _, g := range groups {
+		dname := strings.TrimSpace(g.DomainName)
+		if dname == "" {
+			continue
+		}
+		if _, ok := seen[dname]; !ok {
+			seen[dname] = struct{}{}
+			out = append(out, dname)
+		}
 	}
-
-	// prolonger la session
-	http.SetCookie(w, &http.Cookie{
-		Name:     "session_token",
-		Value:    tokenCookie.Value,
-		HttpOnly: true,
-		Secure:   true,
-		Path:     "/",
-		Expires:  time.Now().Add(30 * time.Minute),
-	})
-
-	return username, true
+	return out
 }
 
-// Dashboard admin — redirige vers la liste utilisateurs
-func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireWebAdmin(w, r)
-	if !ok {
-		return
-	}
-	http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
-}
-
-// Liste tous les utilisateurs
+// AdminUsersHandler lists users or shows user detail when ?user= is set.
 func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 	username, ok := requireWebAdmin(w, r)
 	if !ok {
 		return
 	}
-	// Si un utilisateur spécifique est demandé => page détail / édition
-	targetUser := r.URL.Query().Get("user")
-	message := ""
-	// If POST from a detail form, the browser may omit the query string — accept hidden field fallback
-	if r.Method == "POST" {
-		_ = r.ParseForm()
-		if t := r.FormValue("target_user"); t != "" {
-			targetUser = t
-		}
-	}
-	if targetUser != "" {
-		// Detail view
-		if r.Method == "POST" {
-			if err := r.ParseForm(); err == nil {
-				action := r.FormValue("action")
-				switch action {
-				case "update_user":
-					newUsername := r.FormValue("username")
-					firstname := r.FormValue("firstname")
-					lastname := r.FormValue("lastname")
-					password := r.FormValue("password")
-					// Récupérer id
-					userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), targetUser)
-					if err == nil {
-						if err := database.Update_User_Info(database.GetDatabase(), userID, newUsername, firstname, lastname, password, ""); err != nil {
-							message = "Erreur update user: " + err.Error()
-						} else {
-							message = "Utilisateur mis à jour"
-							// update targetUser for reload
-							targetUser = newUsername
-						}
-					} else {
-						message = "Utilisateur introuvable"
-					}
-				case "change_password":
-					pass := r.FormValue("password")
-					if pass != "" {
-						userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), targetUser)
-						if err == nil {
-							if err := database.Update_User_Info(database.GetDatabase(), userID, targetUser, "", "", pass, ""); err != nil {
-								message = "Erreur changement mot de passe: " + err.Error()
-							} else {
-								message = "Mot de passe mis à jour"
-							}
-						}
-					}
-				case "add_group":
-					group := r.FormValue("group")
-					if group != "" {
-						if err := database.Command_ADD_UserToGroup(database.GetDatabase(), targetUser, group); err != nil {
-							message = "Erreur ajout au groupe: " + err.Error()
-						} else {
-							message = "Ajouté au groupe " + group
-						}
-					}
-				case "remove_group":
-					group := r.FormValue("group")
-					if group != "" {
-						if err := database.Command_Remove_UserFromGroup(database.GetDatabase(), targetUser, group); err != nil {
-							message = "Erreur retrait du groupe: " + err.Error()
-						} else {
-							message = "Retiré du groupe " + group
-						}
-					}
-				case "delete_user":
-					if err := database.Command_DELETE_UserWithUsername(database.GetDatabase(), targetUser); err != nil {
-						message = "Erreur suppression utilisateur: " + err.Error()
-					} else {
-						http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
-						return
-					}
-				}
-			}
-		}
+	db := database.GetDatabase()
+	detailUser := r.URL.Query().Get("user")
 
-		// Render detail
-		userInfo, err := database.Command_GET_UserInfo(database.GetDatabase(), targetUser)
+	if detailUser != "" {
+		// --- Detail view: one user ---
+		detailData := struct {
+			User      *storage.GetUserInfoSingle
+			AllGroups []string
+			UserPerms []string
+			Message   string
+			Username  string
+			DnsEnable bool
+			Section   string
+		}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
+		userInfo, err := database.Command_GET_UserInfo(db, detailUser)
 		if err != nil {
 			http.Error(w, "Utilisateur introuvable", http.StatusNotFound)
 			return
 		}
-
-		groups, _ := database.Command_GET_GroupDetails(database.GetDatabase())
-		// build list of group names
-		var allGroups []string
-		for _, g := range groups {
-			allGroups = append(allGroups, g.GroupName)
+		detailData.User = userInfo
+		userPerms, _ := dbperm.Command_GET_UserPermissionNamesByUsername(db, detailUser)
+		detailData.UserPerms = userPerms
+		allDetails, _ := database.Command_GET_GroupDetails(db)
+		for _, g := range allDetails {
+			detailData.AllGroups = append(detailData.AllGroups, g.GroupName)
 		}
 
-		// Aggregate permissions from user's groups (unique)
-		permSet := make(map[string]bool)
-		for _, gname := range userInfo.Groups {
-			grpInfo, err := database.Command_GET_GroupInfo(database.GetDatabase(), gname)
-			if err == nil {
-				for _, p := range grpInfo.Permissions {
-					if p != "" {
-						permSet[p] = true
+		if r.Method == http.MethodPost {
+			action := r.FormValue("action")
+			target := r.FormValue("target_user")
+			if target == "" {
+				target = detailUser
+			}
+			switch action {
+			case "update_user":
+				uid, _ := database.Get_User_ID_By_Username(db, target)
+				newUsername := r.FormValue("username")
+				firstname := r.FormValue("firstname")
+				lastname := r.FormValue("lastname")
+				if err := database.Update_User_Info(db, uid, newUsername, firstname, lastname, "", ""); err != nil {
+					detailData.Message = "Erreur : " + err.Error()
+				} else {
+					detailData.Message = "Profil mis à jour."
+					if newUsername != detailUser {
+						detailUser = newUsername
+						userInfo, _ = database.Command_GET_UserInfo(db, newUsername)
+						detailData.User = userInfo
 					}
 				}
+			case "change_password":
+				uid, _ := database.Get_User_ID_By_Username(db, target)
+				password := r.FormValue("password")
+				if password == "" {
+					detailData.Message = "Mot de passe requis."
+				} else {
+					cur, _ := database.Command_GET_UserInfo(db, target)
+					if cur == nil {
+						detailData.Message = "Utilisateur introuvable."
+					} else if err := database.Update_User_Info(db, uid, cur.Username, cur.Firstname, cur.Lastname, password, ""); err != nil {
+						detailData.Message = "Erreur : " + err.Error()
+					} else {
+						detailData.Message = "Mot de passe changé."
+					}
+				}
+			case "add_group":
+				groupName := r.FormValue("group")
+				if groupName != "" {
+					if err := database.Command_ADD_UserToGroup(db, target, groupName); err != nil {
+						detailData.Message = err.Error()
+					} else {
+						detailData.Message = "Ajouté au groupe."
+						userInfo, _ = database.Command_GET_UserInfo(db, target)
+						detailData.User = userInfo
+					}
+				}
+			case "remove_group":
+				groupName := r.FormValue("group")
+				if groupName != "" {
+					if err := database.Command_Remove_UserFromGroup(db, target, groupName); err != nil {
+						detailData.Message = err.Error()
+					} else {
+						detailData.Message = "Retiré du groupe."
+						userInfo, _ = database.Command_GET_UserInfo(db, target)
+						detailData.User = userInfo
+					}
+				}
+			case "delete_user":
+				if err := database.Command_DELETE_UserWithUsername(db, target); err != nil {
+					detailData.Message = err.Error()
+				} else {
+					http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+					return
+				}
 			}
-		}
-		var userPerms []string
-		for p := range permSet {
-			userPerms = append(userPerms, p)
+			userPerms, _ = dbperm.Command_GET_UserPermissionNamesByUsername(db, detailUser)
+			detailData.UserPerms = userPerms
 		}
 
 		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_user_detail.html")
 		if err != nil {
-			logs.Write_Log("ERROR", "Template admin_user_detail manquant: "+err.Error())
 			http.Error(w, "Template manquant", http.StatusInternalServerError)
 			return
 		}
-
-		data := struct {
-			Username  string
-			User      interface{}
-			AllGroups []string
-			UserPerms []string
-			Message   string
-		}{Username: username, User: userInfo, AllGroups: allGroups, Message: message}
-		data.UserPerms = userPerms
-		_ = tmpl.Execute(w, data)
+		_ = tmpl.Execute(w, detailData)
 		return
 	}
 
-	// actions POST (list view)
-	if r.Method == "POST" {
-		if err := r.ParseForm(); err == nil {
-			action := r.FormValue("action")
-			switch action {
-			case "delete_user":
-				target := r.FormValue("username")
-				if target != "" {
-					if err := database.Command_DELETE_UserWithUsername(database.GetDatabase(), target); err != nil {
-						message = "Erreur suppression utilisateur: " + err.Error()
+	// --- List view ---
+	data := struct {
+		Username  string
+		Users     []storage.GetUsers
+		Message   string
+		DnsEnable bool
+		Section   string
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
+	if r.Method == http.MethodPost {
+		action := r.FormValue("action")
+		switch action {
+		case "create_user":
+			u := r.FormValue("username")
+			domain := r.FormValue("domain")
+			password := r.FormValue("password")
+			birthdate := r.FormValue("birthdate")
+			firstname := r.FormValue("firstname")
+			lastname := r.FormValue("lastname")
+			if u == "" || domain == "" || password == "" {
+				data.Message = "Username, domain et mot de passe requis."
+			} else if strings.ToLower(u) == "vaultaire" {
+				data.Message = "Ce nom d'utilisateur est réservé."
+			} else {
+				if _, err := tools.StringToDate(birthdate); err != nil {
+					data.Message = "Date de naissance invalide (format DD/MM/YYYY)."
+				} else {
+					salt, err := generateSalt(16)
+					if err != nil {
+						data.Message = "Erreur génération salt."
 					} else {
-						message = "Utilisateur supprimé: " + target
+						saltHex := hex.EncodeToString(salt)
+						salted := append(salt, []byte(password)...)
+						hash := sha256.Sum256(salted)
+						hashHex := hex.EncodeToString(hash[:])
+						email := u + "@" + domain
+						if firstname == "" {
+							firstname = u
+						}
+						if lastname == "" {
+							lastname = u
+						}
+						err = database.Create_New_User(db, u, firstname, lastname, email, hashHex, saltHex, birthdate, time.Now().Format("2006-01-02 15:04:05"))
+						if err != nil {
+							data.Message = "Erreur création : " + err.Error()
+							logs.Write_Log("ERROR", "admin create user: "+err.Error())
+						} else {
+							data.Message = "Utilisateur créé."
+						}
 					}
 				}
-			case "create_user":
-				// expected fields: username, domain, password, birthdate, firstname, lastname
-				uname := strings.TrimSpace(r.FormValue("username"))
-				domain := strings.TrimSpace(r.FormValue("domain"))
-				password := r.FormValue("password")
-				birthdate := r.FormValue("birthdate")
-				firstname := r.FormValue("firstname")
-				lastname := r.FormValue("lastname")
-				if uname != "" && domain != "" && password != "" {
-					// generate salt+hash
-					salt := make([]byte, 16)
-					_, _ = rand.Read(salt)
-					saltHex := hex.EncodeToString(salt)
-					salted := append(salt, []byte(password)...)
-					hash := sha256.Sum256(salted)
-					hashHex := hex.EncodeToString(hash[:])
-					email := uname + "@" + domain
-					if err := database.Create_New_User(database.GetDatabase(), uname, firstname, lastname, email, hashHex, saltHex, birthdate, time.Now().Format("2006-01-02 15:04:05")); err != nil {
-						message = "Erreur création utilisateur: " + err.Error()
-					} else {
-						message = "Utilisateur créé: " + uname
-					}
+			}
+		case "delete_user":
+			u := r.FormValue("username")
+			if u != "" {
+				if err := database.Command_DELETE_UserWithUsername(db, u); err != nil {
+					data.Message = "Erreur suppression : " + err.Error()
 				} else {
-					message = "Champs manquants pour création"
+					data.Message = "Utilisateur supprimé."
 				}
 			}
 		}
 	}
-
-	users, err := database.Command_GET_AllUsers(database.GetDatabase())
+	users, err := database.Command_GET_AllUsers(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "Erreur récupération utilisateurs: "+err.Error())
-		http.Error(w, "Erreur interne", http.StatusInternalServerError)
+		logs.Write_Log("ERROR", "admin list users: "+err.Error())
+		http.Error(w, "Erreur liste utilisateurs", http.StatusInternalServerError)
 		return
 	}
-
+	data.Users = users
 	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_users.html")
 	if err != nil {
-		logs.Write_Log("ERROR", "Template admin_users manquant: "+err.Error())
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 		return
 	}
-
-	data := struct {
-		Username string
-		Users    interface{}
-		Message  string
-	}{Username: username, Users: users, Message: message}
-
-	if err := tmpl.Execute(w, data); err != nil {
-		logs.Write_Log("ERROR", "Erreur execution template admin_users: "+err.Error())
-	}
+	_ = tmpl.Execute(w, data)
 }
 
-// Liste des groupes
+// AdminGroupsHandler lists groups or shows group detail when ?group= is set.
 func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	username, ok := requireWebAdmin(w, r)
 	if !ok {
 		return
 	}
-	targetGroup := r.URL.Query().Get("group")
-	message := ""
-	if r.Method == "POST" {
-		_ = r.ParseForm()
-		if t := r.FormValue("target_group"); t != "" {
-			targetGroup = t
-		}
-	}
+	db := database.GetDatabase()
+	detailGroup := r.URL.Query().Get("group")
 
-	if targetGroup != "" {
-		// Group detail view
-		if r.Method == "POST" {
-			if err := r.ParseForm(); err == nil {
-				action := r.FormValue("action")
-				switch action {
-				case "add_user":
-					user := r.FormValue("username")
-					if user != "" {
-						if err := database.Command_ADD_UserToGroup(database.GetDatabase(), user, targetGroup); err != nil {
-							message = "Erreur ajout user: " + err.Error()
-						} else {
-							message = "Utilisateur ajouté au groupe"
-						}
-					}
-				case "remove_user":
-					user := r.FormValue("username")
-					if user != "" {
-						if err := database.Command_Remove_UserFromGroup(database.GetDatabase(), user, targetGroup); err != nil {
-							message = "Erreur retrait user: " + err.Error()
-						} else {
-							message = "Utilisateur retiré"
-						}
-					}
-				case "add_client":
-					client := r.FormValue("computeur_id")
-					if client != "" {
-						if err := database.Command_ADD_SoftwareToGroup(database.GetDatabase(), client, targetGroup); err != nil {
-							message = "Erreur ajout client: " + err.Error()
-						} else {
-							message = "Client ajouté"
-						}
-					}
-				case "remove_client":
-					client := r.FormValue("computeur_id")
-					if client != "" {
-						if err := database.Command_Remove_SoftwareFromGroup(database.GetDatabase(), client, targetGroup); err != nil {
-							message = "Erreur retrait client: " + err.Error()
-						} else {
-							message = "Client retiré"
-						}
-					}
-				case "add_permission":
-					perm := r.FormValue("permission")
-					if perm != "" {
-						if err := dbperm.Command_ADD_UserPermissionToGroup(database.GetDatabase(), perm, targetGroup); err != nil {
-							message = "Erreur ajout permission: " + err.Error()
-						} else {
-							message = "Permission ajoutée"
-						}
-					}
-				case "remove_permission":
-					perm := r.FormValue("permission")
-					if perm != "" {
-						if err := database.Command_Remove_UserPermissionFromGroup(database.GetDatabase(), targetGroup, perm); err != nil {
-							message = "Erreur retrait permission: " + err.Error()
-						} else {
-							message = "Permission retirée"
-						}
-					}
-				case "delete_group":
-					if err := database.Command_DELETE_GroupWithGroupName(database.GetDatabase(), targetGroup); err != nil {
-						message = "Erreur suppression groupe: " + err.Error()
-					} else {
-						http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
-						return
-					}
-				}
-			}
-		}
-
-		// render detail
-		// use consolidated group info
-		groupInfo, _ := database.Command_GET_GroupInfo(database.GetDatabase(), targetGroup)
-
-		// all users/clients/permissions for selection
-		allUsers, _ := database.Command_GET_AllUsers(database.GetDatabase())
-		allClients, _ := database.Command_GET_AllClients(database.GetDatabase())
-		allPerms, _ := dbperm.Command_GET_AllUserPermissions(database.GetDatabase())
-
-		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_group_detail.html")
+	if detailGroup != "" {
+		info, err := database.Command_GET_GroupInfo(db, detailGroup)
 		if err != nil {
-			logs.Write_Log("ERROR", "Template admin_group_detail manquant: "+err.Error())
-			http.Error(w, "Template manquant", http.StatusInternalServerError)
+			http.Error(w, "Groupe introuvable", http.StatusNotFound)
 			return
 		}
-
-		data := struct {
-			Username   string
+		detailData := struct {
 			Group      string
-			Users      interface{}
-			Clients    interface{}
-			Perms      interface{}
-			AllUsers   interface{}
-			AllClients interface{}
-			AllPerms   interface{}
+			Users      []string
+			Clients    []string
+			Perms      []string
+			AllUsers   []storage.GetUsers
+			AllClients []storage.GetClientsByPermission
+			AllPerms   []storage.UserPermission
 			Message    string
-		}{Username: username, Group: targetGroup, Users: groupInfo.Users, Clients: groupInfo.Clients, Perms: groupInfo.Permissions, AllUsers: allUsers, AllClients: allClients, AllPerms: allPerms, Message: message}
-		_ = tmpl.Execute(w, data)
-		return
-	}
+			Username   string
+			DnsEnable  bool
+			Section    string
+		}{Group: info.Name, Users: info.Users, Clients: info.Clients, Perms: info.Permissions, Username: username, DnsEnable: storage.Dns_Enable, Section: "groups"}
 
-	// list view: create/delete groups
-	if r.Method == "POST" {
-		if err := r.ParseForm(); err == nil {
+		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
+			targetGroup := r.FormValue("target_group")
+			if targetGroup == "" {
+				targetGroup = detailGroup
+			}
 			switch action {
+			case "add_user":
+				u := r.FormValue("username")
+				if u != "" && database.Command_ADD_UserToGroup(db, u, targetGroup) == nil {
+					detailData.Message = "Utilisateur ajouté."
+					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
+				} else if u != "" {
+					detailData.Message = "Erreur ajout (déjà membre ?)."
+				}
+			case "remove_user":
+				u := r.FormValue("username")
+				if u != "" && database.Command_Remove_UserFromGroup(db, u, targetGroup) == nil {
+					detailData.Message = "Utilisateur retiré."
+					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
+				}
+			case "add_client":
+				cid := r.FormValue("computeur_id")
+				if cid != "" && database.Command_ADD_SoftwareToGroup(db, cid, targetGroup) == nil {
+					detailData.Message = "Client ajouté."
+					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
+				}
+			case "remove_client":
+				cid := r.FormValue("computeur_id")
+				if cid != "" && database.Command_Remove_SoftwareFromGroup(db, cid, targetGroup) == nil {
+					detailData.Message = "Client retiré."
+					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
+				}
+			case "add_permission":
+				p := r.FormValue("permission")
+				if p != "" && dbperm.Command_ADD_UserPermissionToGroup(db, p, targetGroup) == nil {
+					detailData.Message = "Permission ajoutée."
+					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					detailData.Perms = info.Permissions
+				} else if p != "" {
+					detailData.Message = "Erreur (déjà attribuée ?)."
+				}
+			case "remove_permission":
+				p := r.FormValue("permission")
+				if p != "" && database.Command_Remove_UserPermissionFromGroup(db, targetGroup, p) == nil {
+					detailData.Message = "Permission retirée."
+					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					detailData.Perms = info.Permissions
+				}
 			case "delete_group":
-				target := r.FormValue("group_name")
-				if target != "" {
-					if err := database.Command_DELETE_GroupWithGroupName(database.GetDatabase(), target); err != nil {
-						message = "Erreur suppression groupe: " + err.Error()
-					} else {
-						message = "Groupe supprimé: " + target
-					}
+				if database.Command_DELETE_GroupWithGroupName(db, targetGroup) == nil {
+					http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+					return
 				}
-			case "create_group":
-				grp := r.FormValue("group_name")
-				domain := r.FormValue("domain")
-				if grp != "" && domain != "" {
-					if _, err := database.CreateGroup(database.GetDatabase(), grp, domain); err != nil {
-						message = "Erreur création groupe: " + err.Error()
-					} else {
-						message = "Groupe créé: " + grp
-					}
-				} else {
-					message = "Champs manquants"
-				}
+				detailData.Message = "Erreur suppression."
 			}
 		}
-	}
+		allUsers, _ := database.Command_GET_AllUsers(db)
+		allClients, _ := database.Command_GET_AllClients(db)
+		allPerms, _ := dbperm.Command_GET_AllUserPermissions(db)
+		detailData.AllUsers, detailData.AllClients, detailData.AllPerms = allUsers, allClients, allPerms
 
-	groups, err := database.Command_GET_GroupDetails(database.GetDatabase())
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur récupération groups: "+err.Error())
-		http.Error(w, "Erreur interne", http.StatusInternalServerError)
-		return
-	}
-
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_groups.html")
-	if err != nil {
-		logs.Write_Log("ERROR", "Template admin_groups manquant: "+err.Error())
-		http.Error(w, "Template manquant", http.StatusInternalServerError)
+		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_group_detail.html")
+		_ = tmpl.Execute(w, detailData)
 		return
 	}
 
 	data := struct {
-		Username string
-		Groups   interface{}
-		Message  string
-	}{Username: username, Groups: groups, Message: message}
+		Groups    []storage.GroupDetails
+		Message   string
+		Username  string
+		DnsEnable bool
+		Section   string
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "groups"}
+	if r.Method == http.MethodPost {
+		action := r.FormValue("action")
+		switch action {
+		case "create_group":
+			groupName := r.FormValue("group_name")
+			domain := r.FormValue("domain")
+			if groupName == "" || domain == "" {
+				data.Message = "Nom du groupe et domaine requis."
+			} else {
+				_, err := database.CreateGroup(db, groupName, domain)
+				if err != nil {
+					data.Message = "Erreur création : " + err.Error()
+					logs.Write_Log("ERROR", "admin create group: "+err.Error())
+				} else {
+					data.Message = "Groupe créé."
+				}
+			}
+		case "delete_group":
+			groupName := r.FormValue("group_name")
+			if groupName != "" {
+				if err := database.Command_DELETE_GroupWithGroupName(db, groupName); err != nil {
+					data.Message = "Erreur suppression : " + err.Error()
+				} else {
+					data.Message = "Groupe supprimé."
+				}
+			}
+		}
+	}
+	groups, err := database.Command_GET_GroupDetails(db)
+	if err != nil {
+		logs.Write_Log("ERROR", "admin list groups: "+err.Error())
+		http.Error(w, "Erreur liste groupes", http.StatusInternalServerError)
+		return
+	}
+	data.Groups = groups
+	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_groups.html")
+	if err != nil {
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+		return
+	}
 	_ = tmpl.Execute(w, data)
 }
 
-// Liste des clients
+// AdminClientsHandler lists clients or shows client detail when ?client= is set.
 func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	username, ok := requireWebAdmin(w, r)
 	if !ok {
 		return
 	}
+	db := database.GetDatabase()
+	detailClient := r.URL.Query().Get("client")
 
-	message := ""
-	targetClient := r.URL.Query().Get("client")
-	if r.Method == "POST" {
-		_ = r.ParseForm()
-		if t := r.FormValue("target_client"); t != "" {
-			targetClient = t
-		}
-		// also accept computeur_id as fallback for older templates
-		if targetClient == "" && r.FormValue("computeur_id") != "" {
-			targetClient = r.FormValue("computeur_id")
-		}
-	}
-	if targetClient != "" {
-		// detail view
-		if r.Method == "POST" {
-			if err := r.ParseForm(); err == nil {
-				action := r.FormValue("action")
-				switch action {
-				case "update_client":
-					hostname := r.FormValue("hostname")
-					os := r.FormValue("os")
-					ram := r.FormValue("ram")
-					proc := r.FormValue("proc")
-					if err := database.UpdateHostname(database.GetDatabase(), targetClient, hostname, os, ram, proc); err != nil {
-						message = "Erreur mise à jour client: " + err.Error()
-					} else {
-						message = "Client mis à jour"
-					}
-				case "delete_client":
-					if err := database.Command_DELETE_ClientWithComputeurID(database.GetDatabase(), targetClient); err != nil {
-						message = "Erreur suppression client: " + err.Error()
-					} else {
-						http.Redirect(w, r, "/admin/clients", http.StatusSeeOther)
-						return
-					}
-				}
-			}
-		}
-
-		clientInfo, err := database.Command_GET_ClientByComputeurID(database.GetDatabase(), targetClient)
+	if detailClient != "" {
+		client, err := database.Command_GET_ClientByComputeurID(db, detailClient)
 		if err != nil {
 			http.Error(w, "Client introuvable", http.StatusNotFound)
 			return
 		}
-
-		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_client_detail.html")
-		if err != nil {
-			logs.Write_Log("ERROR", "Template admin_client_detail manquant: "+err.Error())
-			http.Error(w, "Template manquant", http.StatusInternalServerError)
-			return
-		}
-
-		data := struct {
-			Username string
-			Client   interface{}
-			Message  string
-		}{Username: username, Client: clientInfo, Message: message}
-		_ = tmpl.Execute(w, data)
-		return
-	}
-
-	// list view with create/delete
-	if r.Method == "POST" {
-		if err := r.ParseForm(); err == nil {
+		detailData := struct {
+			Client    *storage.Software
+			Message   string
+			Username  string
+			DnsEnable bool
+			Section   string
+		}{Client: client, Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
+		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
+			targetClient := r.FormValue("target_client")
+			if targetClient == "" {
+				targetClient = detailClient
+			}
 			switch action {
-			case "delete_client":
-				target := r.FormValue("computeur_id")
-				if target != "" {
-					if err := database.Command_DELETE_ClientWithComputeurID(database.GetDatabase(), target); err != nil {
-						message = "Erreur suppression client: " + err.Error()
-					} else {
-						message = "Client supprimé: " + target
-					}
-				}
-			case "create_client":
-				computeur := r.FormValue("computeur_id")
-				ltype := r.FormValue("logiciel_type")
-				pubkey := r.FormValue("public_key")
-				isServeur := r.FormValue("is_serveur") == "1"
-				if computeur != "" && ltype != "" {
-					if err := database.Create_ClientSoftware(database.GetDatabase(), computeur, ltype, pubkey, isServeur); err != nil {
-						message = "Erreur création client: " + err.Error()
-					} else {
-						message = "Client créé: " + computeur
-					}
+			case "update_client":
+				hostname := r.FormValue("hostname")
+				osVal := r.FormValue("os")
+				ram := r.FormValue("ram")
+				proc := r.FormValue("proc")
+				if err := database.UpdateHostname(db, targetClient, hostname, osVal, ram, proc); err != nil {
+					detailData.Message = err.Error()
 				} else {
-					message = "Champs manquants pour création client"
+					detailData.Message = "Client mis à jour."
+					client, _ = database.Command_GET_ClientByComputeurID(db, targetClient)
+					detailData.Client = client
 				}
+			case "delete_client":
+				if database.Command_DELETE_ClientWithComputeurID(db, targetClient) == nil {
+					http.Redirect(w, r, "/admin/clients", http.StatusSeeOther)
+					return
+				}
+				detailData.Message = "Erreur suppression."
 			}
 		}
-	}
-
-	clients, err := database.Command_GET_AllClients(database.GetDatabase())
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur récupération clients: "+err.Error())
-		http.Error(w, "Erreur interne", http.StatusInternalServerError)
-		return
-	}
-
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_clients.html")
-	if err != nil {
-		logs.Write_Log("ERROR", "Template admin_clients manquant: "+err.Error())
-		http.Error(w, "Template manquant", http.StatusInternalServerError)
+		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_client_detail.html")
+		_ = tmpl.Execute(w, detailData)
 		return
 	}
 
 	data := struct {
-		Username string
-		Clients  interface{}
-		Message  string
-	}{Username: username, Clients: clients, Message: message}
+		Clients   []storage.GetClientsByPermission
+		Message   string
+		Username  string
+		DnsEnable bool
+		Section   string
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
+	if r.Method == http.MethodPost {
+		action := r.FormValue("action")
+		switch action {
+		case "create_client":
+			logicielType := r.FormValue("logiciel_type")
+			isServeurStr := r.FormValue("is_serveur")
+			if logicielType == "" {
+				data.Message = "Type du client requis."
+			} else {
+				isServeur := isServeurStr == "1"
+				computeurID, err := newclient.GenerateClientSoftware(logicielType, isServeur)
+				if err != nil {
+					data.Message = "Erreur création : " + err.Error()
+					logs.Write_Log("ERROR", "admin create client: "+err.Error())
+				} else {
+					data.Message = "Client créé avec ID : " + computeurID
+				}
+			}
+		case "delete_client":
+			computeurID := r.FormValue("computeur_id")
+			if computeurID != "" {
+				if err := database.Command_DELETE_ClientWithComputeurID(db, computeurID); err != nil {
+					data.Message = "Erreur suppression : " + err.Error()
+				} else {
+					data.Message = "Client supprimé."
+				}
+			}
+		}
+	}
+	clients, err := database.Command_GET_AllClients(db)
+	if err != nil {
+		logs.Write_Log("ERROR", "admin list clients: "+err.Error())
+		http.Error(w, "Erreur liste clients", http.StatusInternalServerError)
+		return
+	}
+	data.Clients = clients
+	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_clients.html")
+	if err != nil {
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+		return
+	}
 	_ = tmpl.Execute(w, data)
 }
 
-// Liste des permissions utilisateurs
+// AdminPermissionsHandler lists permissions or shows permission detail when ?perm= is set.
 func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 	username, ok := requireWebAdmin(w, r)
 	if !ok {
 		return
 	}
+	db := database.GetDatabase()
+	detailPerm := r.URL.Query().Get("perm")
 
-	message := ""
-	targetPerm := r.URL.Query().Get("perm")
-	if r.Method == "POST" {
-		_ = r.ParseForm()
-		if t := r.FormValue("target_perm"); t != "" {
-			targetPerm = t
-		}
-		if targetPerm == "" && r.FormValue("permission_name") != "" {
-			targetPerm = r.FormValue("permission_name")
-		}
-	}
-
-	if targetPerm != "" {
-		// detail / edit permission (for now allow delete)
-		if r.Method == "POST" {
-			if err := r.ParseForm(); err == nil {
-				action := r.FormValue("action")
-				switch action {
-				case "delete_permission":
-					if err := dbperm.Command_DELETE_UserPermissionByName(database.GetDatabase(), targetPerm); err != nil {
-						message = "Erreur suppression permission: " + err.Error()
-					} else {
-						http.Redirect(w, r, "/admin/permissions", http.StatusSeeOther)
-						return
-					}
-				}
-			}
-		}
-
-		permInfo, err := dbperm.Command_GET_UserPermissionByName(database.GetDatabase(), targetPerm)
-		if err != nil {
+	if detailPerm != "" {
+		perm, err := dbperm.Command_GET_UserPermissionByName(db, detailPerm)
+		if err != nil || perm == nil {
 			http.Error(w, "Permission introuvable", http.StatusNotFound)
 			return
 		}
-		// groups providing this permission
-		groupsWithPerm, _ := dbperm.Command_GET_Groups_ByUserPermission(database.GetDatabase(), targetPerm)
-		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_permission_detail.html")
-		if err != nil {
-			logs.Write_Log("ERROR", "Template admin_permission_detail manquant: "+err.Error())
-			http.Error(w, "Template manquant", http.StatusInternalServerError)
-			return
-		}
-		data := struct {
-			Username string
-			Perm     interface{}
-			Groups   interface{}
-			Message  string
-		}{Username: username, Perm: permInfo, Groups: groupsWithPerm, Message: message}
-		_ = tmpl.Execute(w, data)
-		return
-	}
-
-	if r.Method == "POST" {
-		if err := r.ParseForm(); err == nil {
+		groups, _ := dbperm.Command_GET_Groups_ByUserPermission(db, detailPerm)
+		allDomains := getUniqueDomains(db)
+			actions := []struct{ Field, Label, Value string }{
+				{"auth", "Auth", perm.Auth},
+				{"compare", "Compare", perm.Compare},
+				{"search", "Search", perm.Search},
+				{"can_read", "Read", perm.Read},
+				{"can_write", "Write", perm.Write},
+				{"web_admin", "Web admin", perm.Web_admin},
+				{"none", "None", perm.None},
+				{"api_read_permission", "API Read", perm.APIRead},
+				{"api_write_permission", "API Write", perm.APIWrite},
+			}
+			detailData := struct {
+				Perm       *storage.UserPermission
+				Groups     []string
+				AllDomains []string
+				Actions    []struct{ Field, Label, Value string }
+				Message    string
+				Username   string
+				DnsEnable  bool
+				Section    string
+			}{Perm: perm, Groups: groups, AllDomains: allDomains, Actions: actions, Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
+		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
 			switch action {
 			case "delete_permission":
-				target := r.FormValue("permission_name")
-				if target != "" {
-					if err := dbperm.Command_DELETE_UserPermissionByName(database.GetDatabase(), target); err != nil {
-						message = "Erreur suppression permission: " + err.Error()
-					} else {
-						message = "Permission supprimée: " + target
-					}
+				if r.FormValue("target_perm") == detailPerm && dbperm.Command_DELETE_UserPermissionByName(db, detailPerm) == nil {
+					http.Redirect(w, r, "/admin/permissions", http.StatusSeeOther)
+					return
 				}
-			case "create_permission":
-				name := r.FormValue("name")
-				desc := r.FormValue("description")
-				if name != "" {
-					if _, err := dbperm.CreateUserPermissionDefault(database.GetDatabase(), name, desc); err != nil {
-						message = "Erreur création permission: " + err.Error()
+				detailData.Message = "Erreur suppression."
+			case "update_permission_action":
+				field := r.FormValue("field")
+				op := r.FormValue("op")
+				domain := strings.TrimSpace(r.FormValue("domain"))
+				if domain == "" {
+					domain = strings.TrimSpace(r.FormValue("domain_remove"))
+				}
+				propagation := r.FormValue("propagation")
+				if propagation == "" {
+					propagation = "0"
+				}
+				permID, errID := dbperm.Command_GET_UserPermissionID(db, detailPerm)
+				if errID != nil {
+					detailData.Message = "Permission introuvable."
+					break
+				}
+				current, errGet := dbperm.Command_GET_UserPermissionAction(db, permID, field)
+				if errGet != nil {
+					detailData.Message = "Erreur lecture action: " + errGet.Error()
+					break
+				}
+				parsed := permission.ParsePermissionAction(current)
+				switch op {
+				case "nil":
+					_ = dbperm.Command_SET_UserPermissionAction(db, permID, field, "nil")
+					detailData.Message = "Action " + field + " mise à nil."
+				case "all":
+					_ = dbperm.Command_SET_UserPermissionAction(db, permID, field, "all")
+					detailData.Message = "Action " + field + " mise à all."
+				case "add":
+					if domain != "" {
+						permission.UpdatePermissionAction(&parsed, domain, propagation, true)
+						newVal := permission.ConvertPermissionActionToString(parsed)
+						if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
+							detailData.Message = "Erreur: " + err.Error()
+						} else {
+							detailData.Message = "Domaine " + domain + " ajouté."
+						}
 					} else {
-						message = "Permission créée: " + name
+						detailData.Message = "Domaine requis."
 					}
+				case "remove":
+					if domain != "" {
+						permission.UpdatePermissionAction(&parsed, domain, propagation, false)
+						newVal := "nil"
+						if len(parsed.WithPropagation) > 0 || len(parsed.WithoutPropagation) > 0 {
+							newVal = permission.ConvertPermissionActionToString(parsed)
+						}
+						_ = dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal)
+						detailData.Message = "Domaine " + domain + " retiré."
+					}
+				default:
+					detailData.Message = "Opération invalide."
+				}
+				perm, _ = dbperm.Command_GET_UserPermissionByName(db, detailPerm)
+				detailData.Perm = perm
+				detailData.Actions = []struct{ Field, Label, Value string }{
+					{"auth", "Auth", perm.Auth},
+					{"compare", "Compare", perm.Compare},
+					{"search", "Search", perm.Search},
+					{"can_read", "Read", perm.Read},
+					{"can_write", "Write", perm.Write},
+					{"web_admin", "Web admin", perm.Web_admin},
+					{"none", "None", perm.None},
+					{"api_read_permission", "API Read", perm.APIRead},
+					{"api_write_permission", "API Write", perm.APIWrite},
 				}
 			}
 		}
-	}
-
-	perms, err := dbperm.Command_GET_AllUserPermissions(database.GetDatabase())
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur récupération permissions: "+err.Error())
-		http.Error(w, "Erreur interne", http.StatusInternalServerError)
-		return
-	}
-
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_permissions.html")
-	if err != nil {
-		logs.Write_Log("ERROR", "Template admin_permissions manquant: "+err.Error())
-		http.Error(w, "Template manquant", http.StatusInternalServerError)
+		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_permission_detail.html")
+		_ = tmpl.Execute(w, detailData)
 		return
 	}
 
 	data := struct {
-		Username string
-		Perms    interface{}
-		Message  string
-	}{Username: username, Perms: perms, Message: message}
+		Perms     []storage.UserPermission
+		Message   string
+		Username  string
+		DnsEnable bool
+		Section   string
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
+	if r.Method == http.MethodPost {
+		action := r.FormValue("action")
+		switch action {
+		case "create_permission":
+			name := r.FormValue("name")
+			description := r.FormValue("description")
+			if name == "" {
+				data.Message = "Nom de la permission requis."
+			} else {
+				_, err := dbperm.CreateUserPermissionDefault(db, name, description)
+				if err != nil {
+					data.Message = "Erreur création : " + err.Error()
+					logs.Write_Log("ERROR", "admin create permission: "+err.Error())
+				} else {
+					data.Message = "Permission créée."
+				}
+			}
+		case "delete_permission":
+			permName := r.FormValue("permission_name")
+			if permName != "" {
+				if err := dbperm.Command_DELETE_UserPermissionByName(db, permName); err != nil {
+					data.Message = "Erreur suppression : " + err.Error()
+				} else {
+					data.Message = "Permission supprimée."
+				}
+			}
+		}
+	}
+	perms, err := dbperm.Command_GET_AllUserPermissions(db)
+	if err != nil {
+		logs.Write_Log("ERROR", "admin list permissions: "+err.Error())
+		http.Error(w, "Erreur liste permissions", http.StatusInternalServerError)
+		return
+	}
+	data.Perms = perms
+	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_permissions.html")
+	if err != nil {
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+		return
+	}
 	_ = tmpl.Execute(w, data)
 }

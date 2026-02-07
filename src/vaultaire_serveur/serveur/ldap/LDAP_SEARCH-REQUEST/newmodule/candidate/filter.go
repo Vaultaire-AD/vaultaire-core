@@ -3,10 +3,10 @@ package candidate
 import (
 	"fmt"
 
-	ldapinterface "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/filter"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
+	ldapinterface "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/filter"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
 )
 
 func DebugLDAPFilter(f *ldapstorage.LDAPFilter, indent string) {

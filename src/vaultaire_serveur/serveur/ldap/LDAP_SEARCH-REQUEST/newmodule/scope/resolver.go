@@ -1,16 +1,16 @@
 package scope
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/domain"
-	domainpkg "DUCKY/serveur/domain"
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
-	ldapinterface "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/domain"
+	domainpkg "vaultaire/serveur/domain"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	ldapinterface "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"database/sql"
 	"fmt"
 )

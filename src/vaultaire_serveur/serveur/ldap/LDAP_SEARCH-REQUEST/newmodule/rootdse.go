@@ -1,8 +1,8 @@
 package newmodule
 
 import (
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
 	"net"
 )
 

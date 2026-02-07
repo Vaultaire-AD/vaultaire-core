@@ -1,10 +1,10 @@
 package vaultairegoroutine
 
 import (
-	"DUCKY/serveur/api"
-	"DUCKY/serveur/command"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/api"
+	"vaultaire/serveur/command"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 	"os"
