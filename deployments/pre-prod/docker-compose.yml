@@ -1,9 +1,10 @@
+# Pre-prod: test/staging deployment. App is compiled in the image (no local mount).
 networks:
   Ducky-network:
     driver: bridge
 volumes:
   vaultaire_db_data:
-  
+
 services:
   vaultaire-db:
     image: mariadb:latest
@@ -22,14 +23,16 @@ services:
 
   vaultaire-ad:
     build:
-      context: ../../   # <-- la racine du repo
+      context: ../..
       dockerfile: deployments/pre-prod/Dockerfile
-    container_name: vaultaire
+    image: vaultaire-preprod:latest
+    container_name: vaultaire-ad
     restart: unless-stopped
     depends_on:
       - vaultaire-db
     environment:
       - TZ=Europe/Paris
+      - VAULTAIRE_ENV=preprod
     ports:
       - "666:666"
       - "443:443"

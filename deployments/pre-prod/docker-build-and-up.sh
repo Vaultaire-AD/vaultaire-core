@@ -18,4 +18,4 @@ docker compose -f deployments/pre-prod/docker-compose.yml up -d
 echo "Containers:"
 docker compose -f deployments/pre-prod/docker-compose.yml ps
 
-echo "Done. Logs: docker compose -f deployments/pre-prod/docker-compose.yml logs -f vaultaire-ad"
+echo "Done (pre-prod = test/staging). Logs: docker compose -f deployments/pre-prod/docker-compose.yml logs -f vaultaire-ad"

@@ -1,54 +1,72 @@
-version: '3'
- 
+# Dev: local source mounted, no image compile. Restart container to try updates.
+# Run from repo root: docker compose -f deployments/dev/docker-compose.yml up -d
+
 networks:
   Ducky-network:
     driver: bridge
-    
-services:
-  oppydoome_AD:
-    image: golang:latest
-    restart: unless-stopped
-    container_name: vaultaire
-    privileged: true
-    working_dir: /go/src/app
-    volumes:
-      - ./src:/go/src/app
-      - ./src/vaultaire_cli:/opt
-      - ./web_packet:/go/src/app
-    ports:
-      - 6666:6666
-    command: ["/bin/sh", "-c","mkdir -p /opt/vaultaire/.ssh && cp /go/src/app/serveur_conf.yaml /opt/vaultaire/serveur_conf.yaml && chmod +x /go/src/app/dockerautocreate.sh && go run main/main.go & tail -f /dev/null"]
-    networks:
-      - Ducky-network
 
-  oppidum-db:
+volumes:
+  vaultaire_dev_data:
+
+services:
+  vaultaire-db:
     image: mariadb:latest
-    container_name: OPPIDUM
+    container_name: vaultaire-db-dev
     restart: unless-stopped
     environment:
       - MARIADB_ROOT_PASSWORD=root
       - MARIADB_DATABASE=vaultaire
       - TZ=Europe/Paris
     volumes:
-      - ./database/:/var/lib/mysql/
+      - vaultaire_dev_data:/var/lib/mysql
     ports:
-      - 3306:3306
+      - "3306:3306"
     networks:
       - Ducky-network
 
-  phpmyadmin:
-    image: phpmyadmin/phpmyadmin:latest
-    container_name: phpmyadmin
+  vaultaire-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vaultaire-dev:latest
+    container_name: vaultaire-dev
     restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ../../cmd/vaultaire_server:/app
+      # Mount server source so restarts pick up changes (no rebuild)
+      - ../../src/vaultaire_serveur:/app
+      # Config expected by the app at /opt/vaultaire
+      - ../../deployments/configs/serveur_conf.yaml:/opt/vaultaire/serveur_conf.yaml:ro
+      # Web assets (templates/static) if served from repo
+      - ../../web_packet:/app/web_packet:ro
     environment:
-      - PMA_HOST=OPPIDUM
-      - PMA_PORT=3306
-      - PMA_USER=root
-      - PMA_PASSWORD=root
       - TZ=Europe/Paris
+      - VAULTAIRE_ENV=dev
     ports:
-      - 8080:80
+      - "6666:6666"
+      - "443:443"
+      - "389:389"
+      - "636:636"
+      - "6643:6643"
     depends_on:
-      - oppydoome_AD
+      - vaultaire-db
     networks:
       - Ducky-network
+    # Override to run tests only: docker compose run --rm vaultaire-dev go run ./main --test
+    command: ["go", "run", "./main"]
+
+  # Client Rocky 9 avec SSH (root/root) pour tester la connexion SSH depuis le serveur (Ducky / PAM).
+  rocky-ssh:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocky-ssh
+    image: vaultaire-dev-rocky-ssh:latest
+    container_name: rocky-ssh-dev
+    restart: unless-stopped
+    networks:
+      - Ducky-network
+    ports:
+      - "2222:22"
+    # Connexion: ssh -p 2222 root@localhost (mdp: root)
+    # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh (mdp: root)

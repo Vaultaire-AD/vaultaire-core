@@ -1,24 +1,12 @@
-FROM golang:latest
+# Dev image: Go only, no app build. Source is mounted at runtime.
+# Restart the container to pick up code changes (or use go run ./main from mounted dir).
 
-# Set the working directory
-WORKDIR /go/src/app
+FROM golang:1.23-alpine
 
-# Update, install dependencies, and USB/FIDO2 tools
-RUN apt-get update && apt-get install -y \
-    libfido2-dev libudev-dev usbutils fido2-tools \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache git ca-certificates openssh-client
 
-# Install Go tools for development and testing
-RUN go install golang.org/x/tools/gopls@latest \
-    && go install github.com/cweill/gotests/...@latest \
-    && go install github.com/fatih/gomodifytags@latest \
-    && go install github.com/josharian/impl@latest \
-    && go install github.com/haya14busa/goplay/cmd/goplay@latest \
-    && go install github.com/go-delve/delve/cmd/dlv@latest \
-    && go install honnef.co/go/tools/cmd/staticcheck@latest
+WORKDIR /app
 
-# Install go-libfido2 (library for FIDO2 key interactions)
-RUN go install github.com/keys-pub/go-libfido2@latest
-
-CMD ["tail", "-f", "/dev/null"]
+# No COPY of app source - mount from host in docker-compose.
+# Default: run the server. Override to run tests: go run ./main --test
+CMD ["go", "run", "./main"]

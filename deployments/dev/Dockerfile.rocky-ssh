@@ -1,0 +1,13 @@
+# Rocky 9 + SSH pour tester les connexions client (root / root).
+FROM rockylinux:9
+
+RUN dnf install -y openssh-server openssh-clients passwd && dnf clean all \
+    && ssh-keygen -A \
+    && mkdir -p /run/sshd \
+    && echo 'root:root' | chpasswd \
+    && sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/' /etc/ssh/sshd_config \
+    && sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+EXPOSE 22
+
+CMD ["/usr/sbin/sshd", "-D"]

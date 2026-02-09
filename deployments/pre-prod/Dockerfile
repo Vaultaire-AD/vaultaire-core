@@ -30,7 +30,8 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o vaultaire_cli .
 FROM rockylinux:9
 
 LABEL maintainer="adm-lviguie"
-LABEL description="Vaultaire AD server container"
+LABEL description="Vaultaire AD server - pre-prod/test deployment (compiled)"
+LABEL env="preprod"
 
 RUN useradd -m -d /opt/vaultaire -s /bin/bash vaultaire
 RUN mkdir -p /var/log/vaultaire
