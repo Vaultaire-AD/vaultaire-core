@@ -4,10 +4,8 @@ api:
   api_port: 6643
 file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
-  privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"
-  publickeypath: "/opt/vaultaire/.ssh/public_key.pub"
-  privatekeyforlogintoclient: "/opt/vaultaire/.ssh/private_key_for_login_client_rsa"
-  publickeyforlogintoclient: "/opt/vaultaire/.ssh/public_key_for_login_client_rsa.pub"
+  # Les chemins de clés (privatekeypath, publickeypath, privatekeyforlogintoclient, publickeyforlogintoclient)
+  # ne sont plus nécessaires - toutes les clés et certificats sont maintenant stockés en base de données
   clientconfpath: "/opt/vaultaire/client_conf.yaml"
   logpath: "/var/log/vaultaire/vaultaire.log"
   servercheckonlinetimer: 5
@@ -19,7 +17,6 @@ database:
   databaseName: "vaultaire"
 ldap:
   ldap_enable: true
-  ldap_debug: true
 dns:
   dns_enable: true
 automatisation: 

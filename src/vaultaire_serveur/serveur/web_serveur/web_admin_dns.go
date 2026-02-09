@@ -5,7 +5,6 @@ import (
 	dnsstorage "vaultaire/serveur/dns/DNS_Storage"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
@@ -29,8 +28,7 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 			DnsEnable bool
 			Section   string
 		}{Message: "DNS non disponible (base de données non initialisée).", Username: username, DnsEnable: true, Section: "dns"}
-		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_dns.html")
-		_ = tmpl.Execute(w, data)
+		_ = executeAdminPage(w, "admin_dns.html", data)
 		return
 	}
 
@@ -120,10 +118,7 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_dns.html")
-	if err != nil {
+	if err := executeAdminPage(w, "admin_dns.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
-		return
 	}
-	_ = tmpl.Execute(w, data)
 }

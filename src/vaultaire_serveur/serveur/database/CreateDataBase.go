@@ -3,7 +3,6 @@ package database
 import (
 	"vaultaire/serveur/logs"
 	"database/sql"
-	"fmt"
 	"log"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -169,6 +168,21 @@ func Create_DataBase(db *sql.DB) {
     		UNIQUE KEY unique_pubkey (public_key(255))
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
+		// ----- Certificats et clés système -----
+		`CREATE TABLE IF NOT EXISTS certificates (
+    		id_certificate INT AUTO_INCREMENT PRIMARY KEY,
+    		name VARCHAR(255) NOT NULL UNIQUE,
+    		certificate_type VARCHAR(100) NOT NULL, -- 'rsa_keypair', 'tls_cert', 'ssh_key', etc.
+    		certificate_data LONGTEXT, -- Certificat X.509 (PEM) ou certificat SSH
+    		private_key_data LONGTEXT, -- Clé privée (PEM)
+    		public_key_data LONGTEXT, -- Clé publique (PEM)
+    		description TEXT,
+    		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    		INDEX idx_name (name),
+    		INDEX idx_type (certificate_type)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
 		// ----- Données initiales -----
 		`INSERT IGNORE INTO users (username, firstname, lastname, email, password, salt, date_naissance)
  			VALUES ('vaultaire','Vault','Admin','vaultaire@example.com','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,
@@ -213,5 +227,5 @@ func Create_DataBase(db *sql.DB) {
 		}
 	}
 
-	fmt.Println("Toutes les tables et relations ont été créées avec succès.")
+	logs.Write_Log("INFO", "database: all tables and relations created successfully")
 }

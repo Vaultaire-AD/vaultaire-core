@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"vaultaire/serveur/dns"
 	duckynetwork "vaultaire/serveur/ducky-network"
 	ldap "vaultaire/serveur/ldap"
+	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
 	"vaultaire/serveur/testrunner"
 	"vaultaire/serveur/vaultairegoroutine"
@@ -41,34 +41,32 @@ func main() {
 	if storage.Administrateur_Enable {
 		db.CreateDefaultAdminUser(db.GetDatabase())
 	} else {
-		log.Println("[BOOTSTRAP] Default Administrateur désactivé")
+		logs.Write_Log("INFO", "bootstrap: default administrator disabled")
 	}
 
 	if storage.Ldap_Enable {
 		go ldap.HandleLDAPserveur()
 	} else {
-		log.Println("LDAP is disabled, not starting LDAP server.")
+		logs.Write_Log("INFO", "ldap: server disabled, not starting")
 	}
 	if condition := storage.Ldaps_Enable; condition {
 		go ldap.HandleLDAPSserveur()
 	} else {
-		log.Println("LDAPS is disabled, not starting LDAPS server.")
-
+		logs.Write_Log("INFO", "ldaps: server disabled, not starting")
 	}
 	if storage.Website_Enable {
 		go webserveur.StartWebServer()
 	} else {
-		log.Println("Website is disabled, not starting web server.")
+		logs.Write_Log("INFO", "website: server disabled, not starting")
 	}
 	if storage.Dns_Enable {
 		go dns.DNS_StartServeur()
 	}
-	fmt.Printf("DEBUG: storage.API_Enable = %v", storage.API_Enable)
 	if storage.API_Enable {
-		log.Println("API TRY TO START")
+		logs.Write_Log("INFO", "api: starting REST server")
 		go vaultairegoroutine.StartAPI()
 	} else {
-		log.Println("API is disabled, not starting API server.")
+		logs.Write_Log("INFO", "api: server disabled, not starting")
 	}
 
 	vaultairegoroutine.StartUnixSocketServer()

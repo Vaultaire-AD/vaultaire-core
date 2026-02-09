@@ -47,14 +47,13 @@ serveurlistenport: "6666"
 
 file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
-  privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"
-  publickeypath: "/opt/vaultaire/.ssh/public_key.pub"
-  # ... autres chemins (client, logs, etc.)
+  # Les chemins de clés (privatekeypath, publickeypath, privatekeyforlogintoclient, publickeyforlogintoclient)
+  # ne sont plus nécessaires - toutes les clés et certificats sont maintenant stockés en base de données
+  # ... autres chemins (clientconfpath, logpath, servercheckonlinetimer, etc.)
 
 ldap:
   ldap_enable: true    # LDAP (port 389)
   ldaps_enable: true   # LDAPS (port 636)
-  ldap_debug: true     # Logs LDAP détaillés
   ldap_port: 389
   ldaps_port: 636
 
@@ -83,7 +82,7 @@ administreur:
   public_key: "ssh-rsa ..."
 ```
 
-**À ne pas oublier** : en production, désactiver `ldap_debug` et `debug`, et changer les mots de passe / clés.
+**À ne pas oublier** : en production, désactiver `debug` (section debug) et changer les mots de passe / clés.
 
 ---
 

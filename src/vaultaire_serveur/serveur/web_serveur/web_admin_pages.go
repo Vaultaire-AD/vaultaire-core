@@ -2,6 +2,7 @@ package webserveur
 
 import (
 	"vaultaire/serveur/database"
+	dbcert "vaultaire/serveur/database/db-certificates"
 	dbperm "vaultaire/serveur/database/db_permission"
 	"vaultaire/serveur/ducky-network/new_client"
 	"vaultaire/serveur/logs"
@@ -11,9 +12,10 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"database/sql"
-	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -148,12 +150,10 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			detailData.UserPerms = userPerms
 		}
 
-		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_user_detail.html")
-		if err != nil {
+		if err := executeAdminPage(w, "admin_user_detail.html", detailData); err != nil {
 			http.Error(w, "Template manquant", http.StatusInternalServerError)
 			return
 		}
-		_ = tmpl.Execute(w, detailData)
 		return
 	}
 
@@ -201,7 +201,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 						err = database.Create_New_User(db, u, firstname, lastname, email, hashHex, saltHex, birthdate, time.Now().Format("2006-01-02 15:04:05"))
 						if err != nil {
 							data.Message = "Erreur création : " + err.Error()
-							logs.Write_Log("ERROR", "admin create user: "+err.Error())
+							logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create user failed: "+err.Error())
 						} else {
 							data.Message = "Utilisateur créé."
 						}
@@ -221,17 +221,15 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	users, err := database.Command_GET_AllUsers(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "admin list users: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list users failed: "+err.Error())
 		http.Error(w, "Erreur liste utilisateurs", http.StatusInternalServerError)
 		return
 	}
 	data.Users = users
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_users.html")
-	if err != nil {
+	if err := executeAdminPage(w, "admin_users.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 		return
 	}
-	_ = tmpl.Execute(w, data)
 }
 
 // AdminGroupsHandler lists groups or shows group detail when ?group= is set.
@@ -329,8 +327,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		allPerms, _ := dbperm.Command_GET_AllUserPermissions(db)
 		detailData.AllUsers, detailData.AllClients, detailData.AllPerms = allUsers, allClients, allPerms
 
-		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_group_detail.html")
-		_ = tmpl.Execute(w, detailData)
+		_ = executeAdminPage(w, "admin_group_detail.html", detailData)
 		return
 	}
 
@@ -353,7 +350,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				_, err := database.CreateGroup(db, groupName, domain)
 				if err != nil {
 					data.Message = "Erreur création : " + err.Error()
-					logs.Write_Log("ERROR", "admin create group: "+err.Error())
+					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create group failed: "+err.Error())
 				} else {
 					data.Message = "Groupe créé."
 				}
@@ -371,17 +368,14 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	groups, err := database.Command_GET_GroupDetails(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "admin list groups: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list groups failed: "+err.Error())
 		http.Error(w, "Erreur liste groupes", http.StatusInternalServerError)
 		return
 	}
 	data.Groups = groups
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_groups.html")
-	if err != nil {
+	if err := executeAdminPage(w, "admin_groups.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
-		return
 	}
-	_ = tmpl.Execute(w, data)
 }
 
 // AdminClientsHandler lists clients or shows client detail when ?client= is set.
@@ -433,8 +427,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 				detailData.Message = "Erreur suppression."
 			}
 		}
-		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_client_detail.html")
-		_ = tmpl.Execute(w, detailData)
+		_ = executeAdminPage(w, "admin_client_detail.html", detailData)
 		return
 	}
 
@@ -458,7 +451,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 				computeurID, err := newclient.GenerateClientSoftware(logicielType, isServeur)
 				if err != nil {
 					data.Message = "Erreur création : " + err.Error()
-					logs.Write_Log("ERROR", "admin create client: "+err.Error())
+					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client failed: "+err.Error())
 				} else {
 					data.Message = "Client créé avec ID : " + computeurID
 				}
@@ -476,17 +469,14 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	clients, err := database.Command_GET_AllClients(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "admin list clients: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list clients failed: "+err.Error())
 		http.Error(w, "Erreur liste clients", http.StatusInternalServerError)
 		return
 	}
 	data.Clients = clients
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_clients.html")
-	if err != nil {
+	if err := executeAdminPage(w, "admin_clients.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
-		return
 	}
-	_ = tmpl.Execute(w, data)
 }
 
 // AdminPermissionsHandler lists permissions or shows permission detail when ?perm= is set.
@@ -605,8 +595,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
-		tmpl, _ := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_permission_detail.html")
-		_ = tmpl.Execute(w, detailData)
+		_ = executeAdminPage(w, "admin_permission_detail.html", detailData)
 		return
 	}
 
@@ -629,7 +618,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				_, err := dbperm.CreateUserPermissionDefault(db, name, description)
 				if err != nil {
 					data.Message = "Erreur création : " + err.Error()
-					logs.Write_Log("ERROR", "admin create permission: "+err.Error())
+					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create permission failed: "+err.Error())
 				} else {
 					data.Message = "Permission créée."
 				}
@@ -647,15 +636,156 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	perms, err := dbperm.Command_GET_AllUserPermissions(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "admin list permissions: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list permissions failed: "+err.Error())
 		http.Error(w, "Erreur liste permissions", http.StatusInternalServerError)
 		return
 	}
 	data.Perms = perms
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_permissions.html")
-	if err != nil {
+	if err := executeAdminPage(w, "admin_permissions.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
+	}
+}
+
+// AdminCertificatesHandler lists certificates or shows certificate detail when ?cert= is set.
+func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
+	username, ok := requireWebAdmin(w, r)
+	if !ok {
 		return
 	}
-	_ = tmpl.Execute(w, data)
+
+	detailCertID := r.URL.Query().Get("cert")
+	if detailCertID != "" {
+		certID, err := strconv.Atoi(detailCertID)
+		if err != nil {
+			http.Error(w, "ID certificat invalide", http.StatusBadRequest)
+			return
+		}
+		cert, err := dbcert.GetCertificateByID(certID)
+		if err != nil {
+			http.Error(w, "Certificat introuvable", http.StatusNotFound)
+			return
+		}
+		// Ne jamais exposer la clé privée dans l'interface web
+		cert.PrivateKeyData = nil
+		detailData := struct {
+			Certificate *storage.Certificate
+			Message     string
+			Username    string
+			DnsEnable   bool
+			Section     string
+		}{Certificate: cert, Username: username, DnsEnable: storage.Dns_Enable, Section: "certificates"}
+		if r.Method == http.MethodPost {
+			action := r.FormValue("action")
+			switch action {
+			case "delete_certificate":
+				if err := dbcert.DeleteCertificate(certID); err != nil {
+					detailData.Message = "Erreur suppression : " + err.Error()
+				} else {
+					http.Redirect(w, r, "/admin/certificates", http.StatusSeeOther)
+					return
+				}
+			}
+		}
+		_ = executeAdminPage(w, "admin_certificate_detail.html", detailData)
+		return
+	}
+
+	data := struct {
+		Certificates []storage.Certificate
+		Message      string
+		Username     string
+		DnsEnable    bool
+		Section      string
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "certificates"}
+
+	if r.Method == http.MethodPost {
+		action := r.FormValue("action")
+		switch action {
+		case "delete_certificate":
+			certIDStr := r.FormValue("certificate_id")
+			if certIDStr != "" {
+				certID, err := strconv.Atoi(certIDStr)
+				if err != nil {
+					data.Message = "ID certificat invalide"
+				} else {
+					if err := dbcert.DeleteCertificate(certID); err != nil {
+						data.Message = "Erreur suppression : " + err.Error()
+					} else {
+						data.Message = "Certificat supprimé."
+					}
+				}
+			}
+		}
+	}
+
+	certificates, err := dbcert.GetAllCertificates()
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list certificates failed: "+err.Error())
+		http.Error(w, "Erreur liste certificats", http.StatusInternalServerError)
+		return
+	}
+	data.Certificates = certificates
+
+	if err := executeAdminPage(w, "admin_certificates.html", data); err != nil {
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+	}
+}
+
+// AdminLogsHandler affiche la page des logs avec filtres
+func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
+	username, ok := requireWebAdmin(w, r)
+	if !ok {
+		return
+	}
+
+	data := struct {
+		Username  string
+		DnsEnable bool
+		Section   string
+		Stats     map[string]interface{}
+	}{
+		Username:  username,
+		DnsEnable: storage.Dns_Enable,
+		Section:   "logs",
+		Stats:     logs.GetLogsStats(),
+	}
+
+	if err := executeAdminPage(w, "admin_logs.html", data); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin: template admin_logs.html missing: "+err.Error())
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+	}
+}
+
+// AdminLogsAPIHandler retourne les logs filtrés en JSON
+func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
+	_, ok := requireWebAdmin(w, r)
+	if !ok {
+		http.Error(w, "Non autorisé", http.StatusUnauthorized)
+		return
+	}
+
+	levelFilter := r.URL.Query().Get("level")
+	codeFilter := r.URL.Query().Get("code")
+	limitStr := r.URL.Query().Get("limit")
+
+	limit := 100
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
+			limit = l
+		}
+	}
+
+	entries, err := logs.GetLogsForWebUI(levelFilter, codeFilter, limit)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: logs retrieval failed: "+err.Error())
+		http.Error(w, "Erreur récupération logs", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs":  entries,
+		"count": len(entries),
+		"stats": logs.GetLogsStats(),
+	})
 }

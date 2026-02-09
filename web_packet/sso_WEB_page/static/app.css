@@ -298,12 +298,14 @@ a:hover {
 
 .app-content {
   flex: 1;
+  min-width: 0;
   overflow: auto;
   padding: 1.5rem;
 }
 
 .app-content .app-container {
   margin: 0 auto;
+  min-width: 0;
 }
 
 .app-toolbar {
@@ -436,12 +438,14 @@ textarea {
 /* Cards & containers */
 .app-container {
   max-width: 1040px;
+  min-width: 0;
   margin: calc(var(--header-h) + 1.5rem) auto 2rem;
   padding: 1.75rem 1.5rem;
   background: var(--bg-elevated);
   border-radius: var(--radius-lg);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-md);
+  box-sizing: border-box;
 }
 
 .profil-container {
@@ -464,6 +468,7 @@ textarea {
 }
 
 .login-card {
+  position: relative;
   width: 100%;
   max-width: 380px;
   padding: 2rem 2.25rem;
@@ -472,6 +477,14 @@ textarea {
   border: 1px solid var(--border);
   box-shadow: var(--shadow-lg);
 }
+
+.login-theme-wrap {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+}
+
+.login-theme-wrap .btn { font-size: 0.8125rem; padding: 0.35rem 0.6rem; }
 
 .login-card .logo-container { text-align: center; margin-bottom: 1.5rem; }
 .login-card .logo { max-width: 80px; height: auto; }
@@ -666,6 +679,102 @@ pre.output {
   font-family: ui-monospace, monospace;
   overflow-x: auto;
   margin: 0.5rem 0 0 0;
+}
+
+/* Bloc code dédié : design distinct (type terminal) + texte qui dépasse = caché (overflow hidden) */
+.chat-code-block {
+  border: 1px solid var(--border-strong);
+  border-left: 4px solid var(--accent);
+  border-radius: 6px;
+  background: #1e293b;
+  overflow: hidden;
+  margin-top: 0.5rem;
+  display: block;
+  max-width: 100%;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+}
+body.dark .chat-code-block {
+  background: #0f172a;
+  border-left-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+}
+
+.chat-code-block .chat-code-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #334155;
+  border-bottom: 1px solid #475569;
+  font-size: 0.75rem;
+  min-height: 36px;
+  box-sizing: border-box;
+}
+body.dark .chat-code-block .chat-code-header {
+  background: #1e293b;
+  border-bottom-color: #334155;
+}
+
+.chat-code-block .chat-code-lang {
+  color: #94a3b8;
+  text-transform: uppercase;
+  font-family: ui-monospace, monospace;
+  letter-spacing: 0.02em;
+}
+
+/* Bouton Copier dans le bloc code */
+button.chat-code-copy {
+  -webkit-appearance: none;
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-family: inherit;
+  font-weight: 500;
+  line-height: 1.2;
+  color: #e2e8f0;
+  background: #475569;
+  border: 1px solid #64748b;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+button.chat-code-copy:hover {
+  background: #64748b;
+  color: #fff;
+}
+button.chat-code-copy.chat-code-copied {
+  color: #86efac;
+  background: #166534;
+  border-color: #166534;
+}
+
+/* Zone code : overflow hidden = texte qui sort de la boîte est caché (pas de scroll) */
+.chat-code-block .chat-code-inner {
+  overflow: hidden;
+  max-height: 120px;
+  max-width: 100%;
+  background: #1e293b;
+}
+body.dark .chat-code-block .chat-code-inner {
+  background: #0f172a;
+}
+.chat-code-block .chat-code-body {
+  margin: 0;
+  padding: 10px 12px;
+  font-size: 0.8125rem;
+  font-family: ui-monospace, monospace;
+  white-space: pre;
+  background: transparent;
+  color: #e2e8f0;
+  display: block;
+}
+.chat-code-block .chat-code-body code {
+  background: none;
+  padding: 0;
+  color: inherit;
 }
 
 /* Animations */

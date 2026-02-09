@@ -1,17 +1,49 @@
 /**
- * Vaultaire — theme, section dropdown, right-click context menu, drawer panel
+ * Vaultaire — theme (cookie + localStorage), section dropdown, right-click context menu, drawer panel
  */
 (function () {
   'use strict';
 
-  var saved = localStorage.getItem('vaultaire-theme') || 'light';
-  if (saved === 'dark') document.body.classList.add('dark');
+  var COOKIE_NAME = 'vaultaire-theme';
+  var COOKIE_MAX_AGE_DAYS = 365;
+
+  function getThemeFromCookie() {
+    var match = document.cookie.match(new RegExp('(?:^|;\\s*)' + COOKIE_NAME + '=([^;]*)'));
+    return match ? decodeURIComponent(match[1]) : null;
+  }
+
+  function setThemeCookie(theme) {
+    var maxAge = COOKIE_MAX_AGE_DAYS * 24 * 60 * 60;
+    document.cookie = COOKIE_NAME + '=' + encodeURIComponent(theme) + '; path=/; max-age=' + maxAge + '; SameSite=Lax';
+  }
+
+  function getSavedTheme() {
+    var fromCookie = getThemeFromCookie();
+    if (fromCookie === 'dark' || fromCookie === 'light') return fromCookie;
+    var fromStorage = localStorage.getItem(COOKIE_NAME);
+    if (fromStorage === 'dark' || fromStorage === 'light') return fromStorage;
+    return 'light';
+  }
+
+  function applyTheme(theme) {
+    if (theme === 'dark') document.body.classList.add('dark');
+    else document.body.classList.remove('dark');
+  }
+
+  function saveTheme(theme) {
+    setThemeCookie(theme);
+    try { localStorage.setItem(COOKIE_NAME, theme); } catch (e) {}
+  }
+
+  var saved = getSavedTheme();
+  applyTheme(saved);
 
   var themeToggle = document.getElementById('theme-toggle');
   if (themeToggle) {
     themeToggle.addEventListener('click', function () {
       var isDark = document.body.classList.toggle('dark');
-      localStorage.setItem('vaultaire-theme', isDark ? 'dark' : 'light');
+      var theme = isDark ? 'dark' : 'light';
+      saveTheme(theme);
     });
   }
 

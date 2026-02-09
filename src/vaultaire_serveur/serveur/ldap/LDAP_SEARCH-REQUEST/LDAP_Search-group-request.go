@@ -6,7 +6,6 @@ import (
 	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
 	"database/sql"
 	"fmt"
 	"log"
@@ -61,10 +60,7 @@ func SearchGroupRequest(conn net.Conn, messageID int, db *sql.DB, dn string, fil
 }
 func SendGroupSearchEntries(conn net.Conn, messageID int, groupInfos []ldapstorage.Group) {
 	for _, group := range groupInfos {
-		if storage.Ldap_Debug {
-			fmt.Println("sgroup send to client : " + group.GroupName)
-		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("Sending group '%s' with users: %v to %s", group.GroupName, group.Users, conn.RemoteAddr().String()))
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: send group '%s' users=%v to %s", group.GroupName, group.Users, conn.RemoteAddr().String()))
 		dn := fmt.Sprintf("cn=%s,dc=%s", group.GroupName, group.DomainName)
 
 		groupattr := ldapstorage.Group{

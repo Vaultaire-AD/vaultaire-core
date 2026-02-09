@@ -1,9 +1,11 @@
 package commandsetup
 
 import (
+	duckykey "vaultaire/serveur/ducky-network/key_management"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
 	"os"
+	"path/filepath"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -11,8 +13,14 @@ import (
 
 // setup un nouveau client en se connectant dessus
 func DeployFilesAndRunCommands(computerID, username, password, serverIP string) string {
-	// Liste des fichiers à envoyer
-	path := storage.Client_Conf_path + computerID + "/"
+	// Récupérer les clés depuis la BDD et créer les fichiers temporaires
+	_, _, err := duckykey.EnsureClientSoftwareKeyFiles(computerID)
+	if err != nil {
+		return "Erreur : Impossible de récupérer les clés depuis la BDD pour " + computerID + " : " + err.Error()
+	}
+
+	// Liste des fichiers à envoyer (les clés sont maintenant créées depuis la BDD)
+	path := storage.Client_Conf_path + "/clientsoftware/" + computerID + "/"
 	files := []string{path + "client_software.yaml", path + "private_key.pem", path + "public_key.pem"}
 	// Vérification de l'existence des fichiers locaux
 	for _, file := range files {
@@ -38,7 +46,7 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 	defer func() {
 		if err := client.Close(); err != nil {
 			// Handle or log the error
-			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			logs.Write_Log("DEBUG", "command_setup: close failed: "+err.Error())
 		}
 	}()
 
@@ -51,7 +59,7 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 	defer func() {
 		if err := sftpClient.Close(); err != nil {
 			// Handle or log the error
-			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			logs.Write_Log("DEBUG", "command_setup: close failed: "+err.Error())
 		}
 	}()
 
@@ -68,7 +76,7 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 		defer func() {
 			if err := srcFile.Close(); err != nil {
 				// Handle or log the error
-				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+				logs.Write_Log("DEBUG", "command_setup: close failed: "+err.Error())
 			}
 		}()
 
@@ -80,7 +88,7 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 		defer func() {
 			if err := dstFile.Close(); err != nil {
 				// Handle or log the error
-				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+				logs.Write_Log("DEBUG", "command_setup: close failed: "+err.Error())
 			}
 		}()
 
@@ -112,7 +120,7 @@ func DeployFilesAndRunCommands(computerID, username, password, serverIP string) 
 	defer func() {
 		if err := client.Close(); err != nil {
 			// Handle or log the error
-			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			logs.Write_Log("DEBUG", "command_setup: close failed: "+err.Error())
 		}
 	}()
 

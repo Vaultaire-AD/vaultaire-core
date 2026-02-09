@@ -3,7 +3,6 @@ package configuration_file
 import (
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"fmt"
 	"os"
 
 	yaml "gopkg.in/yaml.v3"
@@ -12,14 +11,14 @@ import (
 func ReadConfigUser[T any](filePath string) (*T, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		logs.Write_Log("WARNING", "erreur lors de la lecture du fichier de configuration: "+err.Error())
+		logs.Write_LogCode("WARNING", logs.CodeFileConfig, "config: read file failed: "+err.Error())
 		return nil, err
 	}
 
 	var config T
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		logs.Write_Log("WARNING", "erreur lors du décodage du fichier de configuration: "+err.Error())
+		logs.Write_LogCode("WARNING", logs.CodeFileConfig, "config: YAML decode failed: "+err.Error())
 		return nil, err
 	}
 
@@ -34,7 +33,7 @@ func LoadConfig(filePath string) error {
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la fermeture du fichier : %v", err))
+			logs.Write_LogCode("ERROR", logs.CodeFileConfig, "config: file close failed: "+err.Error())
 		}
 	}()
 
@@ -83,22 +82,10 @@ func LoadConfig(filePath string) error {
 	if config.ServerListenPort != nil {
 		storage.ServeurLisetenPort = *config.ServerListenPort
 	}
-	if config.Path.PrivateKeyPath != nil {
-		storage.PrivateKeyPath = *config.Path.PrivateKeyPath
-	}
-	if config.Path.PublicKeyPath != nil {
-		storage.PublicKeyPath = *config.Path.PublicKeyPath
-	}
-	if config.Path.PrivateKeyforlogintoclient != nil {
-		storage.PrivateKeyforlogintoclient = *config.Path.PrivateKeyforlogintoclient
-	}
-	if config.Path.PublicKeyforlogintoclient != nil {
-		storage.PublicKeyforlogintoclient = *config.Path.PublicKeyforlogintoclient
-	}
+	// Les chemins de clés ne sont plus configurés via YAML - toutes les clés sont en BDD
+	// Les variables PrivateKeyPath, PublicKeyPath, PrivateKeyforlogintoclient, PublicKeyforlogintoclient
+	// restent pour compatibilité avec EnsureLoginClientKeyFiles qui écrit temporairement les fichiers SSH
 
-	if config.Ldap.Ldap_Debug != nil {
-		storage.Ldap_Debug = *config.Ldap.Ldap_Debug
-	}
 	if config.Ldap.Ldap_Enable != nil {
 		storage.Ldap_Enable = *config.Ldap.Ldap_Enable
 	}

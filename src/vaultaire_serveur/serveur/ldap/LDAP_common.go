@@ -5,7 +5,6 @@ import (
 	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
 	"fmt"
 	"io"
 	"net"
@@ -15,16 +14,16 @@ import (
 func handleLDAPConnections(listener net.Listener, protocol string) {
 	defer func() {
 		if err := listener.Close(); err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("[%s] Erreur fermeture listener: %s", protocol, err.Error()))
+			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: listener close failed: "+err.Error())
 		}
 	}()
 
-	logs.Write_Log("INFO", fmt.Sprintf("[%s] Serveur en écoute sur %s", protocol, listener.Addr().String()))
+	logs.Write_Log("INFO", "ldap: "+protocol+" listening on "+listener.Addr().String())
 
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			logs.Write_Log("WARNING", fmt.Sprintf("[%s] Erreur d’acceptation de connexion: %s", protocol, err))
+			logs.Write_LogCode("WARNING", logs.CodeLDAPListen, fmt.Sprintf("[%s] Erreur d’acceptation de connexion: %s", protocol, err))
 			continue
 		}
 
@@ -37,32 +36,30 @@ func handleLDAPSession(c net.Conn, protocol string) {
 	defer func() {
 		ldapsessionmanager.ClearSession(c)
 		if err := c.Close(); err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("[%s] Erreur fermeture connexion: %s", protocol, err.Error()))
+			logs.Write_Log("DEBUG", "ldap: connection close failed: "+err.Error())
 		}
 	}()
 
 	ldapsessionmanager.InitLDAPSession(c)
 	clientAddr := c.RemoteAddr().String()
-	logs.Write_Log("INFO", fmt.Sprintf("[%s] Connexion établie avec %s", protocol, clientAddr))
+	logs.Write_Log("INFO", "ldap: connection from "+clientAddr)
 
 	for {
 		packet, err := readLDAPPacket(c)
 		if err != nil {
 			if err == io.EOF {
-				logs.Write_Log("INFO", fmt.Sprintf("[%s] Connexion fermée par le client %s", protocol, clientAddr))
+				logs.Write_Log("DEBUG", "ldap: client closed connection: "+clientAddr)
 			} else {
-				logs.Write_Log("ERROR", fmt.Sprintf("[%s] Erreur lecture packet LDAP (%s): %s", protocol, clientAddr, err))
+				logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: read packet failed from "+clientAddr+": "+err.Error())
 			}
 			return
 		}
 
-		if storage.Debug {
-			logs.Write_Log("DEBUG", fmt.Sprintf("[%s] Reçu packet LDAP (%s): % X", protocol, clientAddr, packet))
-		}
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet))
 
 		message, err := ldapparser.ParseLDAPMessage(packet)
 		if err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("[%s] Erreur parsing LDAP (%s): %s", protocol, clientAddr, err))
+			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: parse failed from "+clientAddr+": "+err.Error())
 			continue
 		}
 

@@ -9,7 +9,6 @@ import (
 	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
 	"database/sql"
 	"fmt"
 	"net"
@@ -18,18 +17,7 @@ import (
 // HandleSearchRequest traite une requête LDAP Search
 func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int, conn net.Conn) {
 	baseDN := ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
-	if storage.Ldap_Debug {
-		fmt.Println("Handling Search Request")
-		fmt.Printf("BaseObject   : %s\n", op.BaseObject)
-		fmt.Printf("BaseDomain   : %s\n", baseDN)
-		fmt.Printf("Scope        : %d\n", op.Scope)
-		fmt.Printf("DerefAliases : %d\n", op.DerefAliases)
-		fmt.Printf("SizeLimit    : %d\n", op.SizeLimit)
-		fmt.Printf("TimeLimit    : %d\n", op.TimeLimit)
-		fmt.Printf("TypesOnly    : %v\n", op.TypesOnly)
-		fmt.Printf("Attributes   : %v\n", op.Attributes)
-		fmt.Printf("Filter       : %+v\n", op.Filter)
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: search request baseObject=%s baseDomain=%s scope=%d attributes=%v", op.BaseObject, baseDN, op.Scope, op.Attributes))
 	if len(op.Attributes) == 0 {
 		op.Attributes = []string{"dn"}
 	}

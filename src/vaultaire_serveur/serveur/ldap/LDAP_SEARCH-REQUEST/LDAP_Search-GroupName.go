@@ -4,7 +4,6 @@ import (
 	"vaultaire/serveur/database"
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 
@@ -21,12 +20,7 @@ func SearchGroupNameRequest(conn net.Conn, messageID int, groupName string) {
 
 	// Compose DN du groupe (exemple)
 	dn := fmt.Sprintf("cn=%s,dc=%s", group.GroupName, group.DomainName)
-	if storage.Ldap_Debug {
-		fmt.Printf("cn=%s,dc=%s\n", group.GroupName, group.DomainName)
-		for _, user := range group.Users {
-			fmt.Println("username :" + user)
-		}
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: search group cn=%s,dc=%s users=%v", group.GroupName, group.DomainName, group.Users))
 	groupattr := ldapstorage.Group{
 		GroupName: group.GroupName,
 		Users:     group.Users,

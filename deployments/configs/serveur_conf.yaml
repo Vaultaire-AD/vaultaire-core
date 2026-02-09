@@ -2,10 +2,8 @@ serveurlistenport: "6666"
 
 file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
-  privatekeypath: "/opt/vaultaire/.ssh/private_key.pem"
-  publickeypath: "/opt/vaultaire/.ssh/public_key.pub"
-  privatekeyforlogintoclient: "/opt/vaultaire/.ssh/private_key_for_login_client_rsa"
-  publickeyforlogintoclient: "/opt/vaultaire/.ssh/private_key_for_login_client_rsa.pub"
+  # Les chemins de clés (privatekeypath, publickeypath, privatekeyforlogintoclient, publickeyforlogintoclient)
+  # ne sont plus nécessaires - toutes les clés et certificats sont maintenant stockés en base de données
   clientconfpath: "/opt/vaultaire/"
   logpath: "/var/log/vaultaire/"
   servercheckonlinetimer: 5
@@ -13,7 +11,6 @@ file-path:
 ldap:
   ldap_enable: true
   ldaps_enable: true
-  ldap_debug: true
   ldap_port: 389
   ldaps_port: 636
 

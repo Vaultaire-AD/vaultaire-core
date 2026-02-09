@@ -27,15 +27,15 @@ func InitDatabase() bool {
 	for {
 		tempDB, err = sql.Open("mysql", dsnNoDB)
 		if err != nil {
-			log.Printf("❌ Erreur d'ouverture MySQL (sans DB) : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeDBConnection, "dnsdb: MySQL connection open failed (no DB): "+err.Error())
 		} else {
 			err = tempDB.Ping()
 			if err == nil {
 				break
 			}
-			log.Printf("❌ Erreur de ping (sans DB) : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeDBConnection, "dnsdb: MySQL ping failed (no DB): "+err.Error())
 		}
-		fmt.Println("🔁 Tentative de reconnexion dans 30 secondes...")
+		logs.Write_Log("INFO", "dnsdb: retrying connection in 30 seconds")
 		time.Sleep(30 * time.Second)
 	}
 
@@ -65,29 +65,29 @@ func InitDatabase() bool {
 	for {
 		db, err = sql.Open("mysql", dsnWithDB)
 		if err != nil {
-			log.Printf("❌ Erreur ouverture DB finale : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeDBConnection, "dnsdb: final database connection open failed: "+err.Error())
 		} else {
 			err = db.Ping()
 			if err == nil {
-				logs.Write_Log("INFO", "✅ Connecté à la base de données.")
+				logs.Write_Log("INFO", "dnsdb: connected to database successfully")
 				break
 			}
-			logs.Write_Log("ERROR", "❌ Erreur de ping finale : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBConnection, "dnsdb: final database ping failed: "+err.Error())
 		}
-		fmt.Println("🔁 Nouvelle tentative dans 30 secondes...")
+		logs.Write_Log("INFO", "dnsdb: retrying connection in 30 seconds")
 		time.Sleep(30 * time.Second)
 	}
 	err = InitPTRTable(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "❌ Erreur lors de l'initialisation de la table PTR : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "dnsdb: PTR table initialization failed: "+err.Error())
 		return false
 	}
 	err = InitZonesTable(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "❌ Erreur lors de l'initialisation de la table Zones : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "dnsdb: zones table initialization failed: "+err.Error())
 		return false
 	}
-	logs.Write_Log("INFO", "✅ Base de données initialisée avec succès.")
+	logs.Write_Log("INFO", "dnsdb: database initialized successfully")
 	return true
 }
 

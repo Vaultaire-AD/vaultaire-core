@@ -10,16 +10,7 @@
   <div class="app-layout">
     <aside class="app-sidebar">
       <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
-      <nav class="app-sidebar-nav">
-        <a href="/admin/tree" {{ if eq .Section "tree" }}class="active"{{ end }}>Arborescence</a>
-        <a href="/admin" {{ if eq .Section "dashboard" }}class="active"{{ end }}>Tableau de bord</a>
-        <a href="/admin/users" {{ if eq .Section "users" }}class="active"{{ end }}>Utilisateurs</a>
-        <a href="/admin/groups" {{ if eq .Section "groups" }}class="active"{{ end }}>Groupes</a>
-        <a href="/admin/clients" {{ if eq .Section "clients" }}class="active"{{ end }}>Clients</a>
-        <a href="/admin/permissions" {{ if eq .Section "permissions" }}class="active"{{ end }}>Permissions</a>
-        {{ if .DnsEnable }}<a href="/admin/dns" {{ if eq .Section "dns" }}class="active"{{ end }}>DNS</a>{{ end }}
-        <a href="/profil">Profil</a>
-      </nav>
+      {{template "admin_sidebar" .}}
     </aside>
     <main class="app-main">
       <header class="app-topbar">
@@ -28,14 +19,14 @@
           <div class="search-results" id="search-results" aria-hidden="true"></div>
         </div>
         <div class="app-toolbar">
-          <span class="muted small">{{ .Username }}</span>
+          <span class="muted small">{{.Username}}</span>
           <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
         </div>
       </header>
       <div class="app-content">
         <div class="app-container animate-in">
     <h1>Utilisateurs</h1>
-    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
 
     <section class="section">
       <h2>Créer un utilisateur</h2>
@@ -63,22 +54,22 @@
       <table>
         <thead><tr><th>ID</th><th>Username</th><th>Email</th><th>Date de naissance</th><th>Créé le</th><th></th></tr></thead>
         <tbody>
-        {{ range .Users }}
-          <tr class="row-context" data-href="/admin/users?user={{ .Username }}" data-label="Utilisateur {{ .Username }}">
-            <td>{{ .ID }}</td>
-            <td><a href="/admin/users?user={{ .Username }}">{{ .Username }}</a></td>
-            <td>{{ .Email }}</td>
-            <td>{{ .DateNaissance }}</td>
-            <td>{{ .CreatedAt }}</td>
+        {{range .Users}}
+          <tr class="row-context" data-href="/admin/users?user={{.Username}}" data-label="Utilisateur {{.Username}}">
+            <td>{{.ID}}</td>
+            <td><a href="/admin/users?user={{.Username}}">{{.Username}}</a></td>
+            <td>{{.Email}}</td>
+            <td>{{.DateNaissance}}</td>
+            <td>{{.CreatedAt}}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer {{ .Username }} ?');">
+              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer {{.Username}} ?');">
                 <input type="hidden" name="action" value="delete_user">
-                <input type="hidden" name="username" value="{{ .Username }}">
+                <input type="hidden" name="username" value="{{.Username}}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>
               </form>
             </td>
           </tr>
-        {{ end }}
+        {{end}}
         </tbody>
       </table>
     </div>

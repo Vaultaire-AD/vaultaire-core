@@ -4,8 +4,6 @@ import (
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
 	"database/sql"
-	"fmt"
-	"log"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -20,17 +18,17 @@ func InitDatabase() bool {
 			"@tcp("+storage.Database_iPDatabase+":"+storage.Database_portDatabase+")/"+
 			storage.Database_databaseName)
 		if err != nil {
-			log.Printf("Erreur lors de l'ouverture de la connexion à la base de données : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeDBConnection, "database: connection open failed: "+err.Error())
 		} else {
 			err = DB.Ping()
 			if err == nil {
-				logs.Write_Log("INFO", "✅ Connecté à la base de données.")
+				logs.Write_Log("INFO", "database: connected successfully")
 				break
 			}
-			logs.Write_Log("ERROR", "❌ Erreur de ping : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBConnection, "database: ping failed: "+err.Error())
 		}
 
-		fmt.Println("🔁 Nouvelle tentative de connexion dans 5 secondes...")
+		logs.Write_Log("INFO", "database: retrying connection in 5 seconds")
 		time.Sleep(5 * time.Second)
 	}
 

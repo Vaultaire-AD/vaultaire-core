@@ -7,7 +7,6 @@ import (
 	"vaultaire/serveur/storage"
 	"database/sql"
 	"encoding/json"
-	"html/template"
 	"net/http"
 	"sort"
 )
@@ -154,14 +153,8 @@ func AdminTreePageHandler(w http.ResponseWriter, r *http.Request) {
 		DnsEnable bool
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "tree"}
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin_tree.html")
-	if err != nil {
+	if err := executeAdminPage(w, "admin_tree.html", data); err != nil {
 		logs.Write_Log("ERROR", "admin tree template: "+err.Error())
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
-		return
-	}
-	if err := tmpl.Execute(w, data); err != nil {
-		logs.Write_Log("ERROR", "admin tree execute: "+err.Error())
-		http.Error(w, "Erreur serveur", http.StatusInternalServerError)
 	}
 }

@@ -9,6 +9,9 @@
 <body>
   <div class="login-wrap">
     <div class="login-card animate-in">
+      <div class="login-theme-wrap">
+        <button type="button" id="theme-toggle" class="btn btn-ghost" title="Changer le thème">Thème</button>
+      </div>
       {{if .ErrorMessage}}
       <div class="alert alert-error">{{.ErrorMessage}}</div>
       {{end}}
@@ -25,5 +28,6 @@
       </form>
     </div>
   </div>
+  <script src="/static/app.js"></script>
 </body>
 </html>

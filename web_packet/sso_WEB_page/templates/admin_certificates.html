@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certificats — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Certificats et clés</h1>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+
+    <hr>
+    <h2 class="h2">Liste des certificats</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>ID</th><th>Nom</th><th>Type</th><th>Description</th><th>Créé le</th><th>Mis à jour</th><th></th></tr></thead>
+        <tbody>
+        {{ range .Certificates }}
+          <tr class="row-context" data-href="/admin/certificates?cert={{ .ID }}" data-label="Certificat {{ .Name }}">
+            <td>{{ .ID }}</td>
+            <td><a href="/admin/certificates?cert={{ .ID }}">{{ .Name }}</a></td>
+            <td><span class="badge">{{ .CertificateType }}</span></td>
+            <td>{{ if .Description }}{{ .Description }}{{ else }}—{{ end }}</td>
+            <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
+            <td>{{ .UpdatedAt.Format "2006-01-02 15:04" }}</td>
+            <td>
+              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer le certificat {{ .Name }} ?');">
+                <input type="hidden" name="action" value="delete_certificate">
+                <input type="hidden" name="certificate_id" value="{{ .ID }}">
+                <button type="submit" class="btn btn-danger">Supprimer</button>
+              </form>
+            </td>
+          </tr>
+        {{ else }}
+          <tr><td colspan="7" class="muted">Aucun certificat enregistré.</td></tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

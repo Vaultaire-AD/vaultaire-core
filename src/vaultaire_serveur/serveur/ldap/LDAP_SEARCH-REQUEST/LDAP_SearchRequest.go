@@ -8,7 +8,6 @@ import (
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/permission"
-	"vaultaire/serveur/storage"
 	"fmt"
 	"log"
 	"net"
@@ -22,20 +21,8 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 
 		return
 	}
-	if storage.Ldap_Debug {
-
-		fmt.Println("Handling Search Request")
-		fmt.Printf("BaseObject   : %s\n", op.BaseObject)
-		op.BaseObject = ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
-		fmt.Printf("BaseDomain   : %s\n", op.BaseObject)
-		fmt.Printf("Scope        : %d\n", op.Scope)
-		fmt.Printf("DerefAliases : %d\n", op.DerefAliases)
-		fmt.Printf("SizeLimit    : %d\n", op.SizeLimit)
-		fmt.Printf("TimeLimit    : %d\n", op.TimeLimit)
-		fmt.Printf("TypesOnly    : %v\n", op.TypesOnly)
-		fmt.Printf("Attributes   : %v\n", op.Attributes)
-
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: search baseObject=%s scope=%d attributes=%v", op.BaseObject, op.Scope, op.Attributes))
+	op.BaseObject = ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
 
 	// Si le BaseObject est vide, c'est une requête Root DSE (découverte du serveur)
 	if op.BaseObject == "" {
@@ -136,9 +123,7 @@ func HandleSearchRequest(op ldapstorage.SearchRequest, messageID int, conn net.C
 				return
 			}
 			for _, group := range groups {
-				if storage.Ldap_Debug {
-					fmt.Println("Group found for member:", group)
-				}
+				logs.Write_Log("DEBUG", fmt.Sprintf("ldap: search member group=%s", group))
 				entry := SearchResultEntry{
 					ObjectName: fmt.Sprintf("cn=%s,"+op.BaseObject, group),
 					Attributes: []PartialAttribute{

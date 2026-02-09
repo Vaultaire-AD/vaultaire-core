@@ -17,7 +17,7 @@ Liste stricte des actions à mener pour une V1 propre. Aucun commentaire superfl
 ## Sécurité
 
 - Supprimer ou externaliser les identifiants en dur (admin, vaultaire) : fichier protégé, variables d’environnement ou secret manager.
-- Désactiver par défaut en prod : `debug`, `ldap_debug` ; documenter le passage en prod dans la config.
+- Désactiver par défaut en prod : `debug` (un seul flag pour tous les logs DEBUG) ; documenter le passage en prod dans la config.
 - Échapper le mot de passe dans `pam_login_custom_module.c` (chpasswd) pour éviter l’injection.
 - Ne pas exposer le port Ducky (ex. 6666) sur Internet ; documenter la restriction (réseau interne / VPN).
 

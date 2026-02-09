@@ -1,8 +1,8 @@
 package autoaddclientgo
 
 import (
+	duckykey "vaultaire/serveur/ducky-network/key_management"
 	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
 	"bytes"
 	"fmt"
 	"os"
@@ -16,20 +16,25 @@ func Manage_Auto_ADD_client(hostuser, hostip, client_softwareID string) string {
 
 	// Étape 0 : Ajouter automatiquement le host au known_hosts
 	if err := AddHostToKnownHosts(hostip, 22); err != nil {
-		logs.Write_Log("WARNING", "Host key scan failed for "+hostip+" : "+err.Error())
+		logs.Write_LogCode("WARNING", logs.CodeNetConnection, "autoadd: host key scan failed for "+hostip+": "+err.Error())
 		return "host key scan failed for " + hostip + " : " + err.Error()
 	}
 
-	err := envoyerFichierSCPAvecCleSSH(hostuser, storage.PrivateKeyforlogintoclient, client_softwareID, hostip, 22)
+	privateKeyPath, err := duckykey.GetLoginClientPrivateKeyPath()
 	if err != nil {
-		logs.Write_Log("WARNING", "error during the creation of the client software -> send file to host : "+client_softwareID+" : "+err.Error())
-		return ("error during the creation of the client software -> send file to host : " + client_softwareID + " : " + err.Error())
-
+		logs.Write_LogCode("ERROR", logs.CodeCertLoad, "autoadd: login client SSH key from database failed: "+err.Error())
+		return "error: " + err.Error()
 	}
-	err = ExecuterCommandesSSHAvecCle(hostuser, storage.PrivateKeyforlogintoclient, hostip, 22)
+
+	err = envoyerFichierSCPAvecCleSSH(hostuser, privateKeyPath, client_softwareID, hostip, 22)
 	if err != nil {
-		logs.Write_Log("WARNING", "error during the creation of the client software -> execute list of command : "+client_softwareID+" : "+err.Error())
-		return ("error during the creation of the client software -> execute list of command : " + client_softwareID + " : " + err.Error())
+		logs.Write_LogCode("WARNING", logs.CodeNetConnection, "autoadd: send file to host "+client_softwareID+" failed: "+err.Error())
+		return "error send file: " + err.Error()
+	}
+	err = ExecuterCommandesSSHAvecCle(hostuser, privateKeyPath, hostip, 22)
+	if err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeNetConnection, "autoadd: execute commands on host "+client_softwareID+" failed: "+err.Error())
+		return "error execute commands: " + err.Error()
 	}
 	return ("new client setup remotly with succes with this ID : " + client_softwareID)
 }
@@ -75,8 +80,7 @@ func AddHostToKnownHosts(host string, port int) error {
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
-			// Handle or log the error
-			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			logs.Write_Log("DEBUG", "autoadd: known_hosts file close failed: "+err.Error())
 		}
 	}()
 

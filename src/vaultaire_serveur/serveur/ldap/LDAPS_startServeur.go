@@ -3,31 +3,33 @@ package ldap
 import (
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"crypto/tls"
-	"fmt"
-	"os"
-	"strconv"
-
+	duckykey "vaultaire/serveur/ducky-network/key_management"
 	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	"crypto/tls"
+	"strconv"
 )
 
 func HandleLDAPSserveur() {
-	const (
-		certFile       = "/opt/vaultaire/.ssh/ldaps_server.crt"
-		privateKeyPath = "/opt/vaultaire/.ssh/ldaps_server.key"
-	)
-
-	if _, err := os.Stat(certFile); os.IsNotExist(err) || ldaptools.FileEmpty(certFile) || ldaptools.FileEmpty(privateKeyPath) {
-		logs.Write_Log("WARNING", "[LDAPS] Certificat TLS absent — génération auto-signée en cours...")
-		if err := ldaptools.GenerateSelfSignedCert(certFile, privateKeyPath); err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("[LDAPS] Erreur génération certificats: %v", err))
+	certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.LDAPSServerCertName)
+	if err != nil {
+		logs.Write_Log("INFO", "ldaps: TLS certificate not in database, generating self-signed")
+		certPEM, keyPEM, err = ldaptools.GenerateSelfSignedCertPEM()
+		if err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeLDAPTLS, "ldaps: certificate generation failed: "+err.Error())
 			return
+		}
+		if errSave := duckykey.SaveCertificateToDB(duckykey.LDAPSServerCertName, "tls_cert", "Certificat TLS LDAPS", certPEM, keyPEM); errSave != nil {
+			certPEM, keyPEM, err = duckykey.GetCertificatePEMFromDB(duckykey.LDAPSServerCertName)
+			if err != nil {
+				logs.Write_LogCode("ERROR", logs.CodeCertLoad, "ldaps: certificate load from database failed: "+err.Error())
+				return
+			}
 		}
 	}
 
-	cert, err := tls.LoadX509KeyPair(certFile, privateKeyPath)
+	cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
 	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("[LDAPS] Erreur chargement clé TLS: %s", err))
+		logs.Write_LogCode("ERROR", logs.CodeLDAPTLS, "ldaps: TLS key pair load failed: "+err.Error())
 		return
 	}
 
@@ -38,7 +40,7 @@ func HandleLDAPSserveur() {
 
 	listener, err := tls.Listen("tcp", ":"+strconv.Itoa(storage.Ldaps_Port), tlsConfig)
 	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("[LDAPS] Erreur écoute TLS: %s", err))
+		logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldaps: TLS listen failed: "+err.Error())
 		return
 	}
 

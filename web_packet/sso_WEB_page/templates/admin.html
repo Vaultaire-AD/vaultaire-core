@@ -10,16 +10,7 @@
   <div class="app-layout">
     <aside class="app-sidebar">
       <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
-      <nav class="app-sidebar-nav">
-        <a href="/admin/tree" {{ if eq .Section "tree" }}class="active"{{ end }}>Arborescence</a>
-        <a href="/admin" {{ if eq .Section "dashboard" }}class="active"{{ end }}>Tableau de bord</a>
-        <a href="/admin/users" {{ if eq .Section "users" }}class="active"{{ end }}>Utilisateurs</a>
-        <a href="/admin/groups" {{ if eq .Section "groups" }}class="active"{{ end }}>Groupes</a>
-        <a href="/admin/clients" {{ if eq .Section "clients" }}class="active"{{ end }}>Clients</a>
-        <a href="/admin/permissions" {{ if eq .Section "permissions" }}class="active"{{ end }}>Permissions</a>
-        {{ if .DnsEnable }}<a href="/admin/dns" {{ if eq .Section "dns" }}class="active"{{ end }}>DNS</a>{{ end }}
-        <a href="/profil">Profil</a>
-      </nav>
+      {{template "admin_sidebar" .}}
     </aside>
     <main class="app-main">
       <header class="app-topbar">
@@ -28,14 +19,27 @@
           <div class="search-results" id="search-results" aria-hidden="true"></div>
         </div>
         <div class="app-toolbar">
-          <span class="muted small">{{ .Username }}</span>
+          <span class="muted small">{{.Username}}</span>
           <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
         </div>
       </header>
       <div class="app-content">
         <div class="app-container animate-in">
           <h1>Tableau de bord</h1>
-          <p class="muted">Connecté : {{ .Username }} · <a href="/profil">Profil</a></p>
+          <p class="muted">Connecté : {{.Username}} · <a href="/profil">Profil</a></p>
+
+          <section class="section">
+            <h2>Mode debug</h2>
+            <p class="small muted">Active ou désactive les logs de niveau DEBUG (tous composants). État actuel : <strong>{{if .Debug}}activé{{else}}désactivé{{end}}</strong></p>
+            <form method="post" action="/admin">
+              <input type="hidden" name="action" value="set_debug">
+              <label class="checkbox-label">
+                <input type="checkbox" name="debug" value="on" {{if .Debug}}checked{{end}}>
+                Activer les logs DEBUG
+              </label>
+              <div style="margin-top:0.5rem"><button type="submit" class="btn btn-secondary">Appliquer</button></div>
+            </form>
+          </section>
 
           <section class="section">
             <h2>Exécuter une commande</h2>
@@ -49,17 +53,59 @@
 
           <section class="section">
             <h2>Résultat</h2>
-            {{ if .Output }}
-              <pre class="output">{{ .Output }}</pre>
-            {{ else }}
-              <p class="muted">Aucun résultat. Exécutez une commande ci-dessus.</p>
-            {{ end }}
+            {{if .Output}}
+            <pre class="output">{{.Output}}</pre>
+            {{else}}
+            <p class="muted">Aucun résultat. Exécutez une commande ci-dessus.</p>
+            {{end}}
           </section>
+
+          {{ if .LoginClientPublicKey }}
+          <section class="section section-code-join">
+            <h2>Client -join</h2>
+            <p class="small muted">Clé publique du serveur et script pour l’ajouter à <code>root</code> sur le client (autoriser le join sans mot de passe).</p>
+            <p class="small muted" style="margin-bottom:0.5rem">Clé publique (client -join)</p>
+            <div class="chat-code-block">
+              <div class="chat-code-header">
+                <span class="chat-code-lang"></span>
+                <button type="button" class="chat-code-copy" data-copy-target="login-client-pub" title="Copier">Copier</button>
+              </div>
+              <div class="chat-code-inner">
+                <pre class="chat-code-body" id="login-client-pub"><code>{{ .LoginClientPublicKey }}</code></pre>
+              </div>
+            </div>
+            <p class="small muted" style="margin:1.25rem 0 0.5rem 0">Script : ajouter la clé à <code>/root/.ssh/authorized_keys</code> (à exécuter en root sur le client)</p>
+            <div class="chat-code-block">
+              <div class="chat-code-header">
+                <span class="chat-code-lang">sh</span>
+                <button type="button" class="chat-code-copy" data-copy-target="login-client-script" title="Copier">Copier</button>
+              </div>
+              <div class="chat-code-inner">
+                <pre class="chat-code-body" id="login-client-script"><code>{{ .LoginClientAddKeyScript }}</code></pre>
+              </div>
+            </div>
+          </section>
+          {{ end }}
         </div>
       </div>
     </main>
   </div>
   <script src="/static/app.js"></script>
   <script src="/static/admin_sidebar.js"></script>
+  <script>
+    document.querySelectorAll('.chat-code-copy[data-copy-target]').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var el = document.getElementById(this.getAttribute('data-copy-target'));
+        if (!el) return;
+        var text = el.textContent || el.innerText;
+        navigator.clipboard.writeText(text).then(function() {
+          var lbl = btn.textContent;
+          btn.textContent = 'Copié';
+          btn.classList.add('chat-code-copied');
+          setTimeout(function() { btn.textContent = lbl; btn.classList.remove('chat-code-copied'); }, 2000);
+        });
+      });
+    });
+  </script>
 </body>
 </html>

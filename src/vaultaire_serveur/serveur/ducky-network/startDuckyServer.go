@@ -5,7 +5,6 @@ import (
 	sync "vaultaire/serveur/ducky-network/sync"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"fmt"
 	"net"
 )
 
@@ -48,8 +47,7 @@ func acceptConnections(listener net.Listener) {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
-			logs.Write_Log("WARNING", "Error accepting new connection: "+err.Error())
-			fmt.Println("Error accepting new connection:", err)
+			logs.Write_LogCode("WARNING", logs.CodeNetConnection, "ducky: error accepting new connection: "+err.Error())
 			continue
 		}
 		var duckysession storage.DuckySession
@@ -65,18 +63,17 @@ func StartDuckyServer() {
 	initializeServer()
 
 	if err := generateKeys(); err != nil {
-		fmt.Println("Key generation failed, check logs.")
+		logs.Write_LogCode("CRITICAL", logs.CodeNetKey, "ducky: key generation failed")
 		return
 	}
 
 	listener, err := createListener()
 	if err != nil {
-		fmt.Println("Listener creation failed, check logs.")
+		logs.Write_LogCode("CRITICAL", logs.CodeNetConnection, "ducky: listener creation failed")
 		return
 	}
 
-	fmt.Println("Server is ready and listening on port " + storage.ServeurLisetenPort + " ...")
-	logs.Write_Log("INFO", "Server is ready and listening on port "+storage.ServeurLisetenPort+" ...")
+	logs.Write_Log("INFO", "ducky: server ready and listening on port "+storage.ServeurLisetenPort)
 
 	acceptConnections(listener)
 }

@@ -8,7 +8,6 @@ import (
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/permission"
-	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 )
@@ -112,12 +111,7 @@ func respondProtocolError(messageID int, conn net.Conn) {
 func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn) {
 	user, domain, ou := ldaptools.ExtractUsernameAndDomain(op.Name)
 
-	if storage.Ldap_Debug {
-		logs.Write_Log("DEBUG", fmt.Sprintf(
-			"===== LDAP Bind Request =====\nMessage ID: %d\nBind DN: %s\nUsername: %s\nOU: %s\nDomain: %s\nPassword length: %d bytes\n=============================",
-			messageID, op.Name, user, ou, domain, len(op.Authentication),
-		))
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: bind request messageID=%d dn=%s user=%s ou=%s domain=%s password_len=%d", messageID, op.Name, user, ou, domain, len(op.Authentication)))
 
 	// 🔒 Interdiction d'utiliser le compte système Vaultaire
 	if user == "vaultaire" {

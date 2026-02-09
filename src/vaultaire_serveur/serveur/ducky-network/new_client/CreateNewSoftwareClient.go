@@ -36,8 +36,8 @@ func generateRandomID(length int) (string, error) {
 	for i := range result {
 		index, err := rand.Int(rand.Reader, big.NewInt(int64(len(charset))))
 		if err != nil {
-			logs.Write_Log("ERROR", "generateRandomID for client software error : "+err.Error())
-			return "", fmt.Errorf("generateRandomID for client software error : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeInternal, "newclient: random ID generation failed: "+err.Error())
+			return "", fmt.Errorf("generateRandomID: %v", err)
 		}
 		result[i] = charset[index.Int64()]
 	}
@@ -51,13 +51,12 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 	// Génération de la paire de clés SSH
 	privateKey, publicKey, err := keymanagement.GenerateKeyRSA(4096)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error during the key pair generation"+err.Error())
-		return "", fmt.Errorf("error during the key pair generation : %v", err)
+		return "", fmt.Errorf("key pair generation: %v", err)
 	}
 	err = database.Create_ClientSoftware(database.GetDatabase(), computeurID, logicielType, keymanagement.Convert_Public_Key_To_String(publicKey), isServeur)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error during the creation of the client software in the database"+err.Error())
-		return "", fmt.Errorf("error during the creation of the client software in the database : %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "newclient: create client software in database failed: "+err.Error())
+		return "", fmt.Errorf("create client software: %v", err)
 	}
 
 	// Préparation des données pour le fichier YAML
@@ -70,44 +69,36 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 	path := storage.Client_Conf_path + "/clientsoftware"
 	dirPath := filepath.Join(path, computeurID)
 	if err := os.MkdirAll(dirPath, 0700); err != nil {
-		logs.Write_Log("ERROR", "Error during the folder creation : "+err.Error())
-		return "", fmt.Errorf("error during the folder creation : %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeFileConfig, "newclient: folder creation failed: "+err.Error())
+		return "", fmt.Errorf("folder creation: %v", err)
 	}
 
-	// Écriture du fichier YAML
 	yamlPath := filepath.Join(dirPath, "client_software.yaml")
 	yamlFile, err := os.Create(yamlPath)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error during the creation of the YAML file : "+err.Error())
-		return "", fmt.Errorf("error during the creation of the YAML file : %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeFileConfig, "newclient: YAML file create failed: "+err.Error())
+		return "", fmt.Errorf("YAML file create: %v", err)
 	}
 	defer func() {
 		if err := yamlFile.Close(); err != nil {
-			// Handle or log the error
-			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+			logs.Write_Log("DEBUG", "newclient: file close failed: "+err.Error())
 		}
 	}()
 
 	encoder := yaml.NewEncoder(yamlFile)
 	encoder.SetIndent(2)
 	if err := encoder.Encode(&clientSoftware); err != nil {
-		logs.Write_Log("ERROR", "Error during the YAML encoding : "+err.Error())
-		return "", fmt.Errorf("error during the YAML encoding : %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeFileConfig, "newclient: YAML encode failed: "+err.Error())
+		return "", fmt.Errorf("YAML encode: %v", err)
 	}
 
-	// Écriture de la clé privée
-	privateKeyPath := filepath.Join(dirPath, "private_key.pem")
-	err = keymanagement.SavePEMKey(privateKeyPath, privateKey)
+	keyName := fmt.Sprintf("client_software_%s", computeurID)
+	err = keymanagement.SaveKeyPairToDB(keyName, "rsa_keypair", fmt.Sprintf("Clés pour client software %s (%s)", computeurID, logicielType), privateKey, publicKey)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error during the private key saving : "+err.Error())
-	}
-	// Écriture de la clé publique
-	publicKeyPath := filepath.Join(dirPath, "public_key.pem")
-	err = keymanagement.SavePEMKeyPublic(publicKeyPath, publicKey)
-	if err != nil {
-		logs.Write_Log("ERROR", "Error during the public key saving : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeCertSave, "newclient: key pair save to database failed: "+err.Error())
+		return "", fmt.Errorf("key pair save: %v", err)
 	}
 
-	fmt.Printf("Client software configuration et clés générées avec succès dans : %s\n", dirPath)
+	logs.Write_Log("INFO", "newclient: client software "+computeurID+" created successfully")
 	return computeurID, nil
 }

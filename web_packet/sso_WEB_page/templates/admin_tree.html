@@ -10,16 +10,7 @@
   <div class="app-layout">
     <aside class="app-sidebar">
       <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
-      <nav class="app-sidebar-nav">
-        <a href="/admin/tree" class="active">Arborescence</a>
-        <a href="/admin">Tableau de bord</a>
-        <a href="/admin/users">Utilisateurs</a>
-        <a href="/admin/groups">Groupes</a>
-        <a href="/admin/clients">Clients</a>
-        <a href="/admin/permissions">Permissions</a>
-        {{ if .DnsEnable }}<a href="/admin/dns">DNS</a>{{ end }}
-        <a href="/profil">Profil</a>
-      </nav>
+      {{template "admin_sidebar" .}}
     </aside>
     <main class="app-main">
       <header class="app-topbar">

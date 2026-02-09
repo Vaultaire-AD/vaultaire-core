@@ -2,18 +2,13 @@ package keymanagement
 
 import (
 	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
-	"fmt"
-	"os"
 )
 
 func GetPrivateKey() string {
-
-	publicKeyBytes, err := os.ReadFile(storage.PrivateKeyPath)
+	privKeyPEM, err := GetPrivateKeyPEMFromDB(ServerMainKeyName)
 	if err != nil {
-		fmt.Println("Error during pubkey reading :", err)
-		logs.Write_Log("CRITICAL", "Error during pubkey reading : "+err.Error())
-		panic(0)
+		logs.Write_LogCode("CRITICAL", logs.CodeCertNotFound, "keymanagement: server private key missing (server_main): "+err.Error())
+		panic("clé privée serveur non trouvée en base de données — exécuter le serveur une fois pour générer les clés ou importer le certificat server_main")
 	}
-	return string(publicKeyBytes)
+	return privKeyPEM
 }

@@ -1,6 +1,7 @@
 package ldaptools
 
 import (
+	"bytes"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -74,5 +75,38 @@ func GenerateSelfSignedCert(certPath, keyPath string) error {
 
 	log.Println("🔐 Certificat et clé générés.")
 	return nil
+}
 
+// GenerateSelfSignedCertPEM génère un certificat LDAPS auto-signé et sa clé, retournés en PEM (sans fichier).
+func GenerateSelfSignedCertPEM() (certPEM string, keyPEM string, err error) {
+	priv, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return "", "", err
+	}
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject: pkix.Name{
+			Organization: []string{"YNOV Labs"},
+			CommonName:   "localhost",
+		},
+		NotBefore: time.Now(),
+		NotAfter:  time.Now().AddDate(2, 0, 0),
+		KeyUsage:  x509.KeyUsageKeyEncipherment | x509.KeyUsageDigitalSignature,
+		ExtKeyUsage: []x509.ExtKeyUsage{
+			x509.ExtKeyUsageServerAuth,
+		},
+		BasicConstraintsValid: true,
+		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1")},
+	}
+
+	derBytes, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	if err != nil {
+		return "", "", err
+	}
+
+	var certBuf, keyBuf bytes.Buffer
+	pem.Encode(&certBuf, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes})
+	pem.Encode(&keyBuf, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
+	return certBuf.String(), keyBuf.String(), nil
 }
