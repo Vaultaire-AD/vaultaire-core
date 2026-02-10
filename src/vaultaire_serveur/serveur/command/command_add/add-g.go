@@ -27,7 +27,7 @@ func add_group_Command_Parser(command_list []string, sender_groupsIDs []int, act
 	// 🔹 Étape 2 : Vérification des permissions sur les domaines
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter permission %s au groupe %s (domaines : %v) — %s",
+		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("permission denied: user=%s action=add permission=%s group=%s domains=%v reason=%s",
 			sender_Username, permName, groupName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}

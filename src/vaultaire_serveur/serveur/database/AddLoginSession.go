@@ -111,10 +111,10 @@ func get_id_logiciel(db *sql.DB, logiciel_id string) string {
 	err := db.QueryRow(query, logiciel_id).Scan(&publicKey)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "clé publique non trouvée pour l'utilisateur ID"+err.Error())
+			logs.Write_LogCode("WARNING", logs.CodeDBQuery, "database: logiciel_id not found for client")
 			return ""
 		}
-		logs.WriteLog("db", "erreur lors de la récupération de la clé publique: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: get logiciel id failed: "+err.Error())
 		return ""
 	}
 

@@ -27,8 +27,9 @@ const (
 	CodeLDAPTLS    = "VLT-LDAP002"
 
 	// Authentification / permission (VLT-AUTHxxx)
-	CodeAuthFailed     = "VLT-AUTH001"
-	CodeAuthPermission = "VLT-AUTH002"
+	CodeAuthFailed       = "VLT-AUTH001"
+	CodeAuthPermission   = "VLT-AUTH002"
+	CodeAuthLoginDenied  = "VLT-AUTH003" // permission denied / security event
 
 	// Web / admin (VLT-WEBxxx)
 	CodeWebTemplate = "VLT-WEB001"

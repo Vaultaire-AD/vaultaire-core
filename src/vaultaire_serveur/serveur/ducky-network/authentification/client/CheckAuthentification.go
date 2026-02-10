@@ -8,8 +8,6 @@ import (
 	logs "vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
 	"strconv"
-
-	//"vaultaire/serveur/logs"
 	"bytes"
 	"crypto/rand"
 	"strings"

@@ -52,7 +52,7 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 				data.Message = "Nom de zone requis."
 			} else if err := dnsdatabase.CreateZoneTable(db, zone); err != nil {
 				data.Message = "Erreur : " + err.Error()
-				logs.Write_Log("ERROR", "admin dns create zone: "+err.Error())
+				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin dns: create zone failed: "+err.Error())
 			} else {
 				data.Message = "Zone créée."
 				data.Zone = zone
@@ -104,7 +104,7 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 
 	zones, err := dnsdatabase.GetAllDNSZones(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "admin dns list zones: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin dns: list zones failed: "+err.Error())
 		data.Message = "Erreur chargement zones."
 	} else {
 		data.Zones = zones

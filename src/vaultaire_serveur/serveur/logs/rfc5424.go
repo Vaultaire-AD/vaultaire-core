@@ -1,16 +1,20 @@
 package logs
 
 import (
-	"vaultaire/serveur/storage"
+	"encoding/json"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"vaultaire/serveur/storage"
 )
 
 // RFC 5424 Syslog Protocol
 // Format: <PRI>VERSION TIMESTAMP HOSTNAME APP-NAME PROCID MSGID STRUCTURED-DATA MSG
+// Severity: 0=Emergency, 1=Alert, 2=Critical, 3=Error, 4=Warning, 5=Notice, 6=Informational, 7=Debug
 
 const (
 	RFC5424Version = "1"
@@ -30,7 +34,14 @@ const (
 	SeverityDebug            // 7
 )
 
-// LogEntry représente une entrée de log pour la web UI
+// LogMeta holds optional contextual metadata (request ID, user ID) for structured logging.
+// Use WithMeta or Write_LogCodeMeta for critical paths (auth, API, DB transactions).
+type LogMeta struct {
+	RequestID string
+	UserID    string // numeric or opaque ID; never log passwords or tokens
+}
+
+// LogEntry represents a log entry for stdout/buffer and web UI (RFC 5424 + optional metadata).
 type LogEntry struct {
 	Timestamp time.Time `json:"timestamp"`
 	Priority  int       `json:"priority"`
@@ -39,6 +50,8 @@ type LogEntry struct {
 	Code      string    `json:"code,omitempty"`
 	Message   string    `json:"message"`
 	Hostname  string    `json:"hostname"`
+	RequestID string    `json:"request_id,omitempty"`
+	UserID    string    `json:"user_id,omitempty"`
 }
 
 // LogBuffer stocke les logs en mémoire pour la web UI (limite de taille)
@@ -127,7 +140,8 @@ func (b *LogBuffer) GetEntriesCount() int {
 	return len(b.entries)
 }
 
-// levelToSeverity convertit un niveau de log en severity RFC 5424 (syslog)
+// levelToSeverity converts log level to RFC 5424 severity (0-7).
+// SECURITY is mapped to Warning (4) for permission/audit events.
 func levelToSeverity(level string) int {
 	switch strings.ToUpper(level) {
 	case "EMERGENCY", "EMERG":
@@ -138,7 +152,7 @@ func levelToSeverity(level string) int {
 		return SeverityCritical
 	case "ERROR", "ERR":
 		return SeverityError
-	case "WARNING", "WARN":
+	case "WARNING", "WARN", "SECURITY":
 		return SeverityWarning
 	case "NOTICE":
 		return SeverityNotice
@@ -151,7 +165,7 @@ func levelToSeverity(level string) int {
 	}
 }
 
-// canonicalLevel retourne le nom canonique du niveau pour affichage (RFC 5424)
+// canonicalLevel returns RFC 5424 canonical level name for display.
 func canonicalLevel(level string) string {
 	switch strings.ToUpper(level) {
 	case "EMERGENCY", "EMERG":
@@ -162,7 +176,7 @@ func canonicalLevel(level string) string {
 		return "CRITICAL"
 	case "ERROR", "ERR":
 		return "ERROR"
-	case "WARNING", "WARN":
+	case "WARNING", "WARN", "SECURITY":
 		return "WARNING"
 	case "NOTICE":
 		return "NOTICE"
@@ -193,8 +207,14 @@ func formatRFC5424(severity int, code string, message string) string {
 		priority, RFC5424Version, timestamp, hostname, AppName, structuredData, message)
 }
 
-// formatHumanReadable formate un log pour lecture humaine (docker logs, terminal)
-// Ex: 2026-02-09 20:53:54 [INFO   ] database: connected successfully
+// logFormatJSON is set from env VAULTAIRE_LOG_FORMAT=json for structured JSON stdout.
+var logFormatJSON bool
+
+func init() {
+	logFormatJSON = strings.TrimSpace(strings.ToLower(os.Getenv("VAULTAIRE_LOG_FORMAT"))) == "json"
+}
+
+// formatHumanReadable formats a log line for human reading (docker logs, terminal).
 func formatHumanReadable(level string, message string) string {
 	ts := time.Now().Format("2006-01-02 15:04:05")
 	lvl := canonicalLevel(level)
@@ -203,30 +223,41 @@ func formatHumanReadable(level string, message string) string {
 	} else if len(lvl) > 8 {
 		lvl = lvl[:8]
 	}
-	return fmt.Sprintf("%s [%s] %s", ts, lvl, message)
+	return ts + " [" + lvl + "] " + message
 }
 
-// Write_Log écrit un log sur stdout (format lisible) et l'ajoute au buffer pour la web UI
-func Write_Log(level string, content string) {
-	Write_LogCode(level, CodeNone, content)
-}
-
-// Write_LogCode écrit un log avec code d'erreur en RFC 5424.
-// Un seul flag (storage.Debug) contrôle tous les logs DEBUG : si debug: false dans la config, aucun log DEBUG n'est émis.
-func Write_LogCode(level string, code string, content string) {
-	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
-		return
+// formatJSONLine emits one JSON object per line (structured logging); no extra allocation for message.
+func formatJSONLine(entry LogEntry) []byte {
+	// Build minimal struct for stdout (timestamp as RFC3339 string for parsers)
+	type stdoutLine struct {
+		Time      string `json:"@timestamp"`
+		Level     string `json:"level"`
+		Code      string `json:"code,omitempty"`
+		Message   string `json:"message"`
+		Hostname  string `json:"hostname"`
+		RequestID string `json:"request_id,omitempty"`
+		UserID    string `json:"user_id,omitempty"`
 	}
+	line := stdoutLine{
+		Time:      entry.Timestamp.Format(time.RFC3339),
+		Level:     entry.Level,
+		Code:      entry.Code,
+		Message:   entry.Message,
+		Hostname:  entry.Hostname,
+		RequestID: entry.RequestID,
+		UserID:    entry.UserID,
+	}
+	b, _ := json.Marshal(line)
+	return b
+}
 
+// writeEntry emits one log entry to stdout and buffer. Caller must have already skipped DEBUG when needed.
+func writeEntry(level string, code string, content string, meta *LogMeta) {
 	content = strings.TrimRight(content, "\n")
 	severity := levelToSeverity(level)
-
-	// Stdout: format lisible pour humains (docker logs, terminal)
-	fmt.Fprintln(os.Stdout, formatHumanReadable(level, content))
-
-	// Ajouter au buffer pour la web UI (niveau canonique RFC 5424)
+	now := time.Now()
 	entry := LogEntry{
-		Timestamp: time.Now(),
+		Timestamp: now,
 		Priority:  Facility*8 + severity,
 		Severity:  severity,
 		Level:     canonicalLevel(level),
@@ -234,7 +265,57 @@ func Write_LogCode(level string, code string, content string) {
 		Message:   content,
 		Hostname:  getBuffer().hostname,
 	}
+	if meta != nil {
+		entry.RequestID = meta.RequestID
+		entry.UserID = meta.UserID
+	}
+
+	if logFormatJSON {
+		os.Stdout.Write(formatJSONLine(entry))
+		os.Stdout.Write([]byte{'\n'})
+	} else {
+		fmt.Fprintln(os.Stdout, formatHumanReadable(level, content))
+	}
 	getBuffer().addEntry(entry)
+}
+
+// Write_Log writes a log to stdout and buffer (no error code, no metadata).
+func Write_Log(level string, content string) {
+	Write_LogCode(level, CodeNone, content)
+}
+
+// Write_LogCode writes a log with RFC 5424 severity and optional error code.
+// DEBUG logs are emitted only when storage.Debug is true.
+func Write_LogCode(level string, code string, content string) {
+	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
+		return
+	}
+	writeEntry(level, code, content, nil)
+}
+
+// Write_LogCodeMeta writes a log with optional request_id and user_id for critical paths (auth, API, transactions).
+// Never pass passwords or tokens in content or meta.
+func Write_LogCodeMeta(level string, code string, content string, meta *LogMeta) {
+	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
+		return
+	}
+	writeEntry(level, code, content, meta)
+}
+
+// WithMeta returns a LogMeta for use with Write_LogCodeMeta. userID can be numeric string or empty.
+func WithMeta(requestID, userID string) *LogMeta {
+	if requestID == "" && userID == "" {
+		return nil
+	}
+	return &LogMeta{RequestID: requestID, UserID: userID}
+}
+
+// UserMeta returns LogMeta with only UserID set (e.g. for auth success).
+func UserMeta(userID int) *LogMeta {
+	if userID <= 0 {
+		return nil
+	}
+	return &LogMeta{UserID: strconv.Itoa(userID)}
 }
 
 // GetLogsForWebUI retourne les logs filtrés pour la web UI (JSON)

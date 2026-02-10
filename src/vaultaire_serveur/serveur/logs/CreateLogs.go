@@ -1,22 +1,20 @@
 package logs
 
 import (
-	"vaultaire/serveur/storage"
 	"fmt"
 	"os"
 	"strings"
 	"time"
+
+	"vaultaire/serveur/storage"
 )
 
-// Le système de logs utilise maintenant RFC 5424 et écrit sur stdout (Twelve-Factor App).
-// Les logs sont également stockés en mémoire pour la web UI (avec limite de taille).
-// Voir rfc5424.go pour l'implémentation.
+// Logging uses RFC 5424 severity levels and writes to stdout (Twelve-Factor App).
+// Logs are also kept in memory for the web UI (size-limited). See rfc5424.go.
 
-// Write_Log et Write_LogCode sont maintenant définis dans rfc5424.go
-
-// WriteLog écrit dans un fichier de log dédié ou émet en RFC 5424.
-// Si filename == "db" ou "auth", le message est envoyé sur stdout en RFC 5424 (pas de fichier) pour éviter les doublons.
-// Sinon, écrit dans dirPath+filename (compatibilité legacy).
+// WriteLog writes to a dedicated log file or emits via RFC 5424.
+// If filename is "db" or "auth", the message is sent to stdout only (no file) to avoid duplicates.
+// Otherwise writes to dirPath+filename (legacy file logging).
 func WriteLog(filename string, content string) {
 	content = strings.TrimSpace(content)
 	switch filename {

@@ -36,66 +36,67 @@ type CommandResponse struct {
 // ===================== HANDLER PRINCIPAL =====================
 
 func commandHandler(w http.ResponseWriter, r *http.Request) {
+	requestID := r.Header.Get("X-Request-ID")
+
 	req, err := decodeRequest(r)
 	if err != nil {
-		logRequest(req, "", err)
+		logRequest(requestID, 0, req, "", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
 	userID, err := fetchUserID(req.Username)
 	if err != nil {
-		logRequest(req, "", err)
+		logRequest(requestID, 0, req, "", err)
 		http.Error(w, "Utilisateur introuvable", http.StatusUnauthorized)
 		return
 	}
 
 	pubKeys, err := dbuser.GetUserKeys(userID)
 	if err != nil || len(pubKeys) == 0 {
-		logRequest(req, "", err)
+		logRequest(requestID, userID, req, "", err)
 		http.Error(w, "Aucune clé publique trouvée", http.StatusUnauthorized)
 		return
 	}
 
 	bodyToVerify, err := buildSignedBody(req)
 	if err != nil {
-		logRequest(req, "", err)
+		logRequest(requestID, userID, req, "", err)
 		http.Error(w, "Erreur interne", http.StatusInternalServerError)
 		return
 	}
 
 	if !verifySignature(pubKeys, bodyToVerify, req.Signature) {
 		err = fmt.Errorf("signature invalide")
-		logRequest(req, "", err)
+		logRequest(requestID, userID, req, "", err)
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
 	}
 
-	// Exécution de la commande
 	result := command.ExecuteCommand(req.Command, req.Username)
-
-	// Log la requête avec succès
-	logRequest(req, result, nil)
-
+	logRequest(requestID, userID, req, result, nil)
 	writeJSON(w, CommandResponse{Result: result})
 }
 
-// logRequest enregistre la requête, le username, la commande et le résultat ou erreur
-func logRequest(req *CommandRequest, result string, err error) {
+// logRequest logs one API command line with request_id and user_id (specific errors are already logged by decodeRequest etc.).
+func logRequest(requestID string, userID int, req *CommandRequest, result string, err error) {
 	username := "<unknown>"
 	commandStr := "<empty>"
-	status := "SUCCESS"
-
 	if req != nil {
 		username = req.Username
 		commandStr = req.Command
 	}
-
+	level := "INFO"
+	msg := "api: command user=" + username + " command=" + commandStr + " status=success"
 	if err != nil {
-		status = "ERROR: " + err.Error()
+		level = "ERROR"
+		msg = "api: command failed user=" + username + " error=" + err.Error()
 	}
-
-	logs.Write_Log("INFO", "api: user="+username+" command="+commandStr+" status="+status)
+	meta := logs.WithMeta(requestID, strconv.Itoa(userID))
+	if meta == nil && userID > 0 {
+		meta = logs.UserMeta(userID)
+	}
+	logs.Write_LogCodeMeta(level, logs.CodeNone, msg, meta)
 }
 
 // ===================== SOUS-FONCTIONS =====================

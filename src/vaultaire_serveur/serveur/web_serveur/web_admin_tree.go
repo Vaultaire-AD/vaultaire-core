@@ -74,7 +74,7 @@ func AdminLDAPTreeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	db := database.GetDatabase()
 	groups, err := database.GetAllGroupsWithDomains(db)
 	if err != nil {
-		logs.Write_Log("ERROR", "admin ldap tree: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin ldap tree: load failed: "+err.Error())
 		http.Error(w, "Erreur chargement groupes", http.StatusInternalServerError)
 		return
 	}
@@ -93,7 +93,7 @@ func AdminLDAPTreeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	if err := json.NewEncoder(w).Encode(payload); err != nil {
-		logs.Write_Log("ERROR", "admin ldap tree encode: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin ldap tree: encode failed: "+err.Error())
 		http.Error(w, "Erreur encodage", http.StatusInternalServerError)
 	}
 }
@@ -154,7 +154,7 @@ func AdminTreePageHandler(w http.ResponseWriter, r *http.Request) {
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "tree"}
 	if err := executeAdminPage(w, "admin_tree.html", data); err != nil {
-		logs.Write_Log("ERROR", "admin tree template: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin tree: template failed: "+err.Error())
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
 }
