@@ -24,10 +24,16 @@ DATABASE: DUCKY
 ├─ user_permission
 │   ├─ PK: id_user_permission
 │   ├─ name (UNIQUE), description
-│   ├─ none, web_admin, auth, compare, search,
-│   ├─ can_read, can_write, api_read_permission, api_write_permission
+│   ├─ none, web_admin, auth, compare, search
 │   └─ Relations:
-│       └─ group_user_permission.d_id_user_permission ← FK -> user_permission.id_user_permission
+│       ├─ group_user_permission.d_id_user_permission ← FK -> user_permission.id_user_permission
+│       └─ user_permission_action.id_user_permission ← FK -> user_permission.id_user_permission
+│
+├─ user_permission_action   [RBAC : clés catégorie:action:objet]
+│   ├─ PK composite: (id_user_permission, action_key)
+│   ├─ id_user_permission FK -> user_permission.id_user_permission
+│   ├─ action_key (ex: read:get:user, write:create:group)
+│   └─ value (nil, all, ou domaines 0:/1:)
 │
 ├─ groups
 │   ├─ PK: id_group

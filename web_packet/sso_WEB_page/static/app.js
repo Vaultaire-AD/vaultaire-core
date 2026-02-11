@@ -35,8 +35,12 @@
     try { localStorage.setItem(COOKIE_NAME, theme); } catch (e) {}
   }
 
-  var saved = getSavedTheme();
-  applyTheme(saved);
+  function initTheme() {
+    var saved = getSavedTheme();
+    applyTheme(saved);
+  }
+  initTheme();
+  document.addEventListener('DOMContentLoaded', initTheme);
 
   var themeToggle = document.getElementById('theme-toggle');
   if (themeToggle) {

@@ -32,20 +32,25 @@ func Create_DataBase(db *sql.DB) {
 		);`,
 
 		// ----- Permissions Utilisateur (type LDAP) -----
+		// RBAC: none, web_admin, auth, compare, search restent en colonnes; lecture/écriture par objet dans user_permission_action
 		`CREATE TABLE IF NOT EXISTS user_permission (
    			id_user_permission INT AUTO_INCREMENT PRIMARY KEY,
     		name VARCHAR(255) UNIQUE NOT NULL,
     		description TEXT,
-
     		none TEXT DEFAULT 'nil',
     		web_admin TEXT DEFAULT 'nil',
     		auth TEXT DEFAULT 'nil',
     		compare TEXT DEFAULT 'nil',
-    		search TEXT DEFAULT 'nil',
-    		can_read TEXT DEFAULT 'nil',
-    		can_write TEXT DEFAULT 'nil',
-    		api_read_permission TEXT DEFAULT 'nil',
-    		api_write_permission TEXT DEFAULT 'nil'
+    		search TEXT DEFAULT 'nil'
+		);`,
+
+		// Actions granulaires format catégorie:action:objet (ex: read:get:user, write:create:group)
+		`CREATE TABLE IF NOT EXISTS user_permission_action (
+			id_user_permission INT NOT NULL,
+			action_key VARCHAR(128) NOT NULL,
+			value TEXT DEFAULT 'nil',
+			PRIMARY KEY (id_user_permission, action_key),
+			FOREIGN KEY (id_user_permission) REFERENCES user_permission(id_user_permission) ON DELETE CASCADE
 		);`,
 
 		// ----- Groupes -----
@@ -203,9 +208,18 @@ func Create_DataBase(db *sql.DB) {
  			FROM groups g, client_permission p
  			WHERE g.group_name='vaultaire' AND p.name_permission='vaultaire_admin';`,
 
-		`INSERT IGNORE INTO user_permission 
-			(name, description, none, web_admin, auth, compare, search, can_read, can_write, api_read_permission, api_write_permission)
-			VALUES ('vaultaire_all', 'Permissions complètes pour le groupe vaultaire','all','all','all','all','all','all','all','all','all');`,
+		`INSERT IGNORE INTO user_permission (name, description, none, web_admin, auth, compare, search)
+			VALUES ('vaultaire_all', 'Permissions complètes pour le groupe vaultaire','all','all','all','all','all');`,
+
+		`INSERT IGNORE INTO user_permission_action (id_user_permission, action_key, value)
+			SELECT u.id_user_permission, v.k, 'all' FROM user_permission u
+			CROSS JOIN (SELECT 'read:get:user' AS k UNION ALL SELECT 'read:status:user' UNION ALL SELECT 'write:create:user' UNION ALL SELECT 'write:delete:user' UNION ALL SELECT 'write:update:user' UNION ALL SELECT 'write:add:user'
+				UNION ALL SELECT 'read:get:group' UNION ALL SELECT 'read:status:group' UNION ALL SELECT 'write:create:group' UNION ALL SELECT 'write:delete:group' UNION ALL SELECT 'write:update:group' UNION ALL SELECT 'write:add:group'
+				UNION ALL SELECT 'read:get:client' UNION ALL SELECT 'read:status:client' UNION ALL SELECT 'write:create:client' UNION ALL SELECT 'write:delete:client' UNION ALL SELECT 'write:update:client' UNION ALL SELECT 'write:add:client'
+				UNION ALL SELECT 'read:get:permission' UNION ALL SELECT 'read:status:permission' UNION ALL SELECT 'write:create:permission' UNION ALL SELECT 'write:delete:permission' UNION ALL SELECT 'write:update:permission' UNION ALL SELECT 'write:add:permission'
+				UNION ALL SELECT 'read:get:gpo' UNION ALL SELECT 'read:status:gpo' UNION ALL SELECT 'write:create:gpo' UNION ALL SELECT 'write:delete:gpo' UNION ALL SELECT 'write:update:gpo' UNION ALL SELECT 'write:add:gpo'
+				UNION ALL SELECT 'write:dns' UNION ALL SELECT 'write:eyes') v
+			WHERE u.name='vaultaire_all';`,
 
 		`INSERT IGNORE INTO group_user_permission (d_id_group, d_id_user_permission)
 			SELECT g.id_group, u.id_user_permission

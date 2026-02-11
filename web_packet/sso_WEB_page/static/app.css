@@ -940,6 +940,105 @@ li.row-context:hover {
   background: var(--bg-subtle);
 }
 
+/* Permissions list (card layout) */
+.perm-list {
+  display: grid;
+  gap: 1rem;
+  margin-top: 1rem;
+}
+.perm-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  padding: 1.25rem 1.5rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+.perm-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-sm);
+}
+.perm-card-main {
+  min-width: 0;
+  flex: 1;
+}
+.perm-card-title {
+  font-size: 1.0625rem;
+  font-weight: 600;
+  margin: 0 0 0.35rem 0;
+  color: var(--text-primary);
+}
+.perm-card-title a:hover { color: var(--accent); }
+.perm-card-desc {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem 0;
+  line-height: 1.45;
+}
+.perm-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+.perm-id { font-variant-numeric: tabular-nums; }
+.perm-badge {
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 0.2rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+}
+.perm-badge-admin { background: var(--success-subtle); color: var(--success); }
+.perm-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+.perm-card-delete { margin: 0; }
+
+/* Permission detail: grouped actions */
+.perm-detail-group {
+  margin-top: 1.5rem;
+}
+.perm-detail-group:first-of-type { margin-top: 0.75rem; }
+.perm-detail-group-title {
+  font-size: 0.9375rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin: 0 0 0.5rem 0;
+  padding-bottom: 0.25rem;
+}
+.perm-value-cell {
+  font-size: 0.8rem;
+  word-break: break-all;
+  max-width: 280px;
+  display: inline-block;
+}
+.perm-actions-cell {
+  min-width: 0;
+}
+.perm-action-form {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  margin: 0;
+}
+.perm-action-form input[type="text"] { width: 120px; }
+.perm-remove-form { margin-left: 0.5rem; }
+.perm-remove-form input[type="text"] { width: 110px; }
+.btn-sm {
+  padding: 0.3rem 0.5rem;
+  font-size: 0.8rem;
+}
+.perm-form-label { font-size: 0.8rem; }
+
 body.dark .app-header { border-bottom-color: var(--border); }
 body.dark .table-wrap { border-color: var(--border); }
 body.dark tr:hover td { background: var(--bg-subtle); }
@@ -951,3 +1050,5 @@ body.dark .app-topbar .search-input { background: var(--bg-subtle); }
 body.dark .app-topbar .search-results { border-color: var(--border); }
 body.dark .tree-domain-block { border-color: var(--border); }
 body.dark .tree-group-card { border-color: var(--border); }
+body.dark .perm-card { border-color: var(--border); }
+body.dark .perm-card:hover { border-color: var(--border-strong); }

@@ -46,10 +46,10 @@ func eyes_by_domain(command_list []string, sender_groupsIDs []int, action, sende
 	// Vérification centralisée des permissions
 	ok, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, targetDomains)
 	if !ok {
-		msg := fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", sender_Username, action, response)
-		logs.Write_Log("WARNING", msg)
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, response))
 		return "Permission refusée : " + response
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (eyes tree)", sender_Username, action))
 
 	// Si un domaine spécifique est fourni
 	if len(command_list) == 2 {

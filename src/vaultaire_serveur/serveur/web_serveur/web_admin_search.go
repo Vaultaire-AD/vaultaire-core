@@ -17,13 +17,17 @@ type SearchResult struct {
 }
 
 // AdminSearchAPIHandler serves GET /admin/api/search?q=... (JSON: users, groups, clients, permissions).
+// Access: web_admin + legacy action "search" (same as search in permission model).
 func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_, ok := requireWebAdmin(w, r)
+	_, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "search") {
 		return
 	}
 	q := strings.TrimSpace(r.URL.Query().Get("q"))

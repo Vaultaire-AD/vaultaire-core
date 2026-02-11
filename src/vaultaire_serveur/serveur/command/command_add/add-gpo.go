@@ -26,10 +26,11 @@ func add_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, actio
 	// 🔹 Étape 2 : Vérification des permissions sur les domaines
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter GPO %s au groupe %s (domaines : %v) — %s",
-			sender_Username, gpoName, groupName, domains, reason))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s gpo=%s group=%s reason=%s", sender_Username, action, gpoName, groupName, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter GPO %s au groupe %s (domaines : %v) — %s", sender_Username, gpoName, groupName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (add gpo)", sender_Username, action))
 
 	// 🔹 Étape 3 : Ajout du GPO au groupe
 	err = database.Command_ADD_GPOToGroup(database.GetDatabase(), gpoName, groupName)

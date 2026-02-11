@@ -11,13 +11,9 @@ import (
 	"fmt"
 )
 
-// Management pour les commandes create
-func Create_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
-	isactionlegitimate, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
-	if !isactionlegitimate {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", sender_Username, action, response))
-		return fmt.Sprintf("Permission refusée : %s", response)
-	}
+// Create_Command : clé RBAC selon sous-commande (write:create:user, write:create:group, write:create:client, etc.)
+func Create_Command(command_list []string, sender_groupsIDs []int, sender_Username string) string {
+	var actionKey string
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return (`"La commande create vous permets de crée des nouveau utilisateur ou des nouveaux clients_software de nouvelles permissions et de nouveau groupes")
@@ -25,6 +21,28 @@ func Create_Command(command_list []string, sender_groupsIDs []int, action, sende
 		"-c <type_client> <yes/not(serveur or not)> pour crée un nouveau client software"
 		"-g <nom_du_goupe> <nom_de_la_perm> pour crée un nouveau groupe"
 		"-p <nom_de_la_permissions> <yes/not> pour crée un nouvelle permisions admin ou non"`)
+	case "-u":
+		actionKey = "write:create:user"
+	case "-c":
+		actionKey = "write:create:client"
+	case "-g":
+		actionKey = "write:create:group"
+	case "-p":
+		actionKey = "write:create:permission"
+	case "-gpo":
+		actionKey = "write:create:gpo"
+	default:
+		return ("Invalid Request Try get -h for more information")
+	}
+	if actionKey != "" {
+		ok, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, actionKey, []string{"*"})
+		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, actionKey, response))
+			return fmt.Sprintf("Permission refusée : %s", response)
+		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (create)", sender_Username, actionKey))
+	}
+	switch command_list[0] {
 	case "-u":
 		return create_User(command_list)
 	case "-c":

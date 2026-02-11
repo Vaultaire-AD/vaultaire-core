@@ -6,11 +6,9 @@ import (
 	"vaultaire/serveur/logs"
 )
 
-// Add_Command processes the add command for adding groups or permissions to users, groups, or clients.
-// It takes a slice of strings as input, which represents the command and its arguments.
-// Depending on the first argument, it calls the appropriate parser function to handle the command.
-// If the command is valid, it returns a string with the result of the operation.
-func Add_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+// Add_Command processes the add command; RBAC action key is determined by subcommand.
+func Add_Command(command_list []string, sender_groupsIDs []int, sender_Username string) string {
+	actionKey := "write:add:group"
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return (`
@@ -27,13 +25,17 @@ add -g (Ajouter une permission à un groupe)
 add -g "group_name" -p "permission_name"
 `)
 	case "-u":
-		return add_User_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:add:user"
+		return add_User_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	case "-c":
-		return add_Client_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:add:client"
+		return add_Client_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	case "-gu", "-gc":
-		return add_group_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:add:permission"
+		return add_group_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	case "-gpo":
-		return add_GPO_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:add:gpo"
+		return add_GPO_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	default:
 		return ("Invalid Request Try get -h for more information")
 	}

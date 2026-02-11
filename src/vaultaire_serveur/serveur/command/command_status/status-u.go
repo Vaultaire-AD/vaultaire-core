@@ -25,8 +25,10 @@ func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 		// Vérifier la permission sur ces domaines
 		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, userDomains)
 		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s target=%s reason=%s", sender_Username, action, targetUser, resp))
 			return fmt.Sprintf("Permission refusée : %s", resp)
 		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status user)", sender_Username, action))
 
 		// Si permission OK → récupérer les infos
 		users_Login, err := database.Command_STATUS_GetConnectedUser(db, targetUser)
@@ -51,8 +53,10 @@ func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 
 		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, groupDomain)
 		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s group=%s reason=%s", sender_Username, action, groupName, resp))
 			return fmt.Sprintf("Permission refusée : %s", resp)
 		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status user by group)", sender_Username, action))
 
 		users_Login, err := database.Command_STATUS_GetUsersByGroup(db, groupName)
 		if err != nil {
@@ -68,8 +72,10 @@ func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 		// Vérification sur tous les domaines (*)
 		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
 		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, resp))
 			return fmt.Sprintf("Permission refusée : %s", resp)
 		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status all users)", sender_Username, action))
 
 		Users_Login, _ := database.Command_STATUS_GetConnectedUsers(db)
 		return display.DisplayUsersByStatus(Users_Login)

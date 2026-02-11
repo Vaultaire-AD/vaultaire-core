@@ -35,29 +35,22 @@ func ExecuteCommand(input, sender string) string {
 
 	cmd, argv := args[0], args[1:]
 
-	// Table de routage rapide
-	commandTable := map[string]struct {
-		perm   string
-		action func([]string, []int, string, string) string
-	}{
-
-		"add":    {"api_write_permission", commandadd.Add_Command},
-		"remove": {"api_write_permission", commandremove.Remove_Command},
-		"update": {"api_write_permission", commandupdate.Update_Command},
-		"delete": {"api_write_permission", commanddelete.Delete_Command},
-		"dns":    {"api_write_permission", commanddns.DNS_Command},
-		"status": {"api_read_permission", commandstatus.Status_Command},
-		"create": {"api_write_permission", commandcreate.Create_Command},
-		"get":    {"api_read_permission", commandget.Get_Command},
-		"eyes":   {"api_write_permission", commandeyes.Eyes_Command},
+	// Routage RBAC : chaque commande détermine elle-même la clé d'action (catégorie:action:objet)
+	commandTable := map[string]func([]string, []int, string) string{
+		"add":    commandadd.Add_Command,
+		"remove": commandremove.Remove_Command,
+		"update": commandupdate.Update_Command,
+		"delete": commanddelete.Delete_Command,
+		"dns":    commanddns.DNS_Command,
+		"status": commandstatus.Status_Command,
+		"create": commandcreate.Create_Command,
+		"get":    commandget.Get_Command,
+		"eyes":   commandeyes.Eyes_Command,
 	}
 
-	// Commande spéciale clear (plus rapide ici)
 	if cmd == "clear" {
 		return handleClear(sender)
 	}
-
-	// Commande help
 	if cmd == "help" {
 		return `Commandes disponibles :
   create [OPTIONS] : crée une nouvelle entrée.
@@ -66,36 +59,30 @@ func ExecuteCommand(input, sender string) string {
   help             : Affiche cette aide.`
 	}
 
-	// Recherche dans la table
 	entry, ok := commandTable[cmd]
 	if !ok {
 		return fmt.Sprintf("Commande inconnue : %s. Tapez 'help' pour plus d'informations.", cmd)
 	}
 
-	// Si aucune permission requise (ex: status)
-	if entry.perm == "" {
-		return entry.action(argv, nil, "", sender)
-	}
-
-	// Vérification des permissions
-	groupIDs, action, err := permission.PrePermissionCheck(sender, entry.perm)
+	groupIDs, err := permission.GetGroupIDsForUser(sender)
 	if err != nil {
 		return "Erreur de permission : " + err.Error()
 	}
 
-	return entry.action(argv, groupIDs, action, sender)
+	return entry(argv, groupIDs, sender)
 }
 
 func handleClear(sender string) string {
-	groupIDs, action, err := permission.PrePermissionCheck(sender, "api_write_permission")
+	groupIDs, err := permission.GetGroupIDsForUser(sender)
 	if err != nil {
 		return "Erreur de permission : " + err.Error()
 	}
-	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, action, []string{"*"})
+	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, "write:update:user", []string{"*"})
 	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour %s : %s", sender, msg))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=write:update:user reason=%s", sender, msg))
 		return "Permission refusée : " + msg
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=write:update:user (clear)", sender))
 	if err := database.CleanUpExpiredSessions(database.DB); err != nil {
 		logs.Write_Log("ERROR", "Erreur nettoyage sessions : "+err.Error())
 		return "Erreur lors du nettoyage des sessions expirées."

@@ -27,10 +27,11 @@ func remove_Group_Command_Parser(command_list []string, sender_groupsIDs []int, 
 	// 🔹 Étape 2 : Vérification des permissions du sender sur ces domaines
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de retirer %s du groupe %s (domaines : %v) — %s",
-			sender_Username, permissionName, groupName, domains, reason))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s permission=%s group=%s reason=%s", sender_Username, action, permissionName, groupName, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de retirer %s du groupe %s (domaines : %v) — %s", sender_Username, permissionName, groupName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (remove permission from group)", sender_Username, action))
 
 	var errRemove error
 	switch argType {

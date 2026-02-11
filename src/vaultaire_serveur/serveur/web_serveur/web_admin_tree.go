@@ -62,13 +62,17 @@ func buildTreeFromNode(node *storage.DomainNode, db *sql.DB) TreeDomainNode {
 }
 
 // AdminLDAPTreeAPIHandler serves the LDAP tree as JSON (domain → groups → users).
+// Access: web_admin + write:eyes (same as command eyes -g).
 func AdminLDAPTreeAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_, ok := requireWebAdmin(w, r)
+	_, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "write:eyes") {
 		return
 	}
 	db := database.GetDatabase()
@@ -110,13 +114,17 @@ type GroupInfoAPI struct {
 }
 
 // AdminGroupInfoAPIHandler serves GET /admin/api/group-info?group=xxx (JSON group details).
+// Access: web_admin + read:get:group (same as command get -g).
 func AdminGroupInfoAPIHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_, ok := requireWebAdmin(w, r)
+	_, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:group") {
 		return
 	}
 	groupName := r.URL.Query().Get("group")
@@ -143,9 +151,13 @@ func AdminGroupInfoAPIHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminTreePageHandler serves the LDAP tree page (HTML with dynamic tree).
+// Access: web_admin + write:eyes (same as command eyes -g).
 func AdminTreePageHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "write:eyes") {
 		return
 	}
 	data := struct {

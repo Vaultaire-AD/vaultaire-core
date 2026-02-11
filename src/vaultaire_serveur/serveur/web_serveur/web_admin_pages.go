@@ -47,9 +47,13 @@ func getUniqueDomains(db *sql.DB) []string {
 }
 
 // AdminUsersHandler lists users or shows user detail when ?user= is set.
+// Access: web_admin + read:get:user to view; write:create|update|delete|add:user for POST actions (same as command package).
 func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:user") {
 		return
 	}
 	db := database.GetDatabase()
@@ -84,6 +88,20 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			target := r.FormValue("target_user")
 			if target == "" {
 				target = detailUser
+			}
+			actionKey := ""
+			switch action {
+			case "update_user", "change_password":
+				actionKey = "write:update:user"
+			case "add_group":
+				actionKey = "write:add:user"
+			case "remove_group":
+				actionKey = "write:delete:user"
+			case "delete_user":
+				actionKey = "write:delete:user"
+			}
+			if actionKey != "" && !checkWebAdminRBAC(w, r, groupIDs, actionKey) {
+				return
 			}
 			switch action {
 			case "update_user":
@@ -167,6 +185,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
+		if action == "create_user" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:user") {
+			return
+		}
+		if action == "delete_user" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:user") {
+			return
+		}
 		switch action {
 		case "create_user":
 			u := r.FormValue("username")
@@ -233,9 +257,13 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminGroupsHandler lists groups or shows group detail when ?group= is set.
+// Access: web_admin + read:get:group to view; write:create|delete|add:group|user|client|permission for POST (same as command package).
 func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:group") {
 		return
 	}
 	db := database.GetDatabase()
@@ -266,6 +294,26 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			targetGroup := r.FormValue("target_group")
 			if targetGroup == "" {
 				targetGroup = detailGroup
+			}
+			actionKey := ""
+			switch action {
+			case "add_user":
+				actionKey = "write:add:user"
+			case "remove_user":
+				actionKey = "write:delete:user"
+			case "add_client":
+				actionKey = "write:add:client"
+			case "remove_client":
+				actionKey = "write:delete:client"
+			case "add_permission":
+				actionKey = "write:add:permission"
+			case "remove_permission":
+				actionKey = "write:delete:group"
+			case "delete_group":
+				actionKey = "write:delete:group"
+			}
+			if actionKey != "" && !checkWebAdminRBAC(w, r, groupIDs, actionKey) {
+				return
 			}
 			switch action {
 			case "add_user":
@@ -340,6 +388,12 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "groups"}
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
+		if action == "create_group" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:group") {
+			return
+		}
+		if action == "delete_group" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:group") {
+			return
+		}
 		switch action {
 		case "create_group":
 			groupName := r.FormValue("group_name")
@@ -379,9 +433,13 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminClientsHandler lists clients or shows client detail when ?client= is set.
+// Access: web_admin + read:get:client to view; write:create|update|delete:client for POST (same as command package).
 func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:client") {
 		return
 	}
 	db := database.GetDatabase()
@@ -405,6 +463,16 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			targetClient := r.FormValue("target_client")
 			if targetClient == "" {
 				targetClient = detailClient
+			}
+			actionKey := ""
+			switch action {
+			case "update_client":
+				actionKey = "write:update:client"
+			case "delete_client":
+				actionKey = "write:delete:client"
+			}
+			if actionKey != "" && !checkWebAdminRBAC(w, r, groupIDs, actionKey) {
+				return
 			}
 			switch action {
 			case "update_client":
@@ -440,6 +508,12 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
+		if action == "create_client" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:client") {
+			return
+		}
+		if action == "delete_client" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:client") {
+			return
+		}
 		switch action {
 		case "create_client":
 			logicielType := r.FormValue("logiciel_type")
@@ -479,10 +553,67 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// PermissionActionRow est une ligne d'action pour le détail permission (template).
+type PermissionActionRow struct{ Field, Label, Value string }
+
+// PermissionActionGroup est un groupe d'actions pour le détail permission (template).
+type PermissionActionGroup struct {
+	GroupName string
+	Actions   []PermissionActionRow
+}
+
+// buildPermissionActionsGrouped construit les actions groupées par catégorie pour une lecture plus claire.
+func buildPermissionActionsGrouped(db *sql.DB, perm *storage.UserPermission) []PermissionActionGroup {
+	row := func(field, label, value string) PermissionActionRow { return PermissionActionRow{field, label, value} }
+	legacy := []PermissionActionRow{
+		row("auth", "Auth", perm.Auth),
+		row("compare", "Compare", perm.Compare),
+		row("search", "Search", perm.Search),
+		row("web_admin", "Web admin", perm.Web_admin),
+		row("none", "None", perm.None),
+	}
+	objectLabels := map[string]string{
+		"user": "Utilisateurs (user)", "group": "Groupes (group)", "client": "Clients (client)",
+		"permission": "Permissions (permission)", "gpo": "GPO",
+	}
+	groups := []PermissionActionGroup{{GroupName: "Legacy", Actions: legacy}}
+	byObject := map[string][]PermissionActionRow{}
+	for _, key := range permission.AllRBACActionKeys() {
+		val, _ := dbperm.Command_GET_UserPermissionAction(db, int64(perm.ID), key)
+		parts := strings.SplitN(key, ":", 3)
+		obj := ""
+		if len(parts) == 3 {
+			obj = parts[2]
+		}
+		label := objectLabels[obj]
+		if label == "" {
+			label = obj
+		}
+		byObject[obj] = append(byObject[obj], PermissionActionRow{key, key, val})
+	}
+	for _, obj := range []string{"user", "group", "client", "permission", "gpo"} {
+		if actions, ok := byObject[obj]; ok {
+			name := objectLabels[obj]
+			groups = append(groups, PermissionActionGroup{GroupName: name, Actions: actions})
+		}
+	}
+	special := []PermissionActionRow{}
+	for _, key := range []string{"write:dns", "write:eyes"} {
+		val, _ := dbperm.Command_GET_UserPermissionAction(db, int64(perm.ID), key)
+		special = append(special, PermissionActionRow{key, key, val})
+	}
+	groups = append(groups, PermissionActionGroup{GroupName: "Spécial (DNS, Eyes)", Actions: special})
+	return groups
+}
+
 // AdminPermissionsHandler lists permissions or shows permission detail when ?perm= is set.
+// Access: web_admin + read:get:permission to view; write:create|update|delete:permission for POST (same as command package).
 func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:permission") {
 		return
 	}
 	db := database.GetDatabase()
@@ -496,29 +627,25 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		groups, _ := dbperm.Command_GET_Groups_ByUserPermission(db, detailPerm)
 		allDomains := getUniqueDomains(db)
-			actions := []struct{ Field, Label, Value string }{
-				{"auth", "Auth", perm.Auth},
-				{"compare", "Compare", perm.Compare},
-				{"search", "Search", perm.Search},
-				{"can_read", "Read", perm.Read},
-				{"can_write", "Write", perm.Write},
-				{"web_admin", "Web admin", perm.Web_admin},
-				{"none", "None", perm.None},
-				{"api_read_permission", "API Read", perm.APIRead},
-				{"api_write_permission", "API Write", perm.APIWrite},
-			}
-			detailData := struct {
-				Perm       *storage.UserPermission
-				Groups     []string
-				AllDomains []string
-				Actions    []struct{ Field, Label, Value string }
-				Message    string
-				Username   string
-				DnsEnable  bool
-				Section    string
-			}{Perm: perm, Groups: groups, AllDomains: allDomains, Actions: actions, Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
+		groupedActions := buildPermissionActionsGrouped(db, perm)
+		detailData := struct {
+				Perm           *storage.UserPermission
+				Groups         []string
+				AllDomains     []string
+				GroupedActions []PermissionActionGroup
+				Message        string
+				Username       string
+				DnsEnable      bool
+				Section        string
+			}{Perm: perm, Groups: groups, AllDomains: allDomains, GroupedActions: groupedActions, Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
 		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
+			if action == "delete_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
+				return
+			}
+			if action == "update_permission_action" && !checkWebAdminRBAC(w, r, groupIDs, "write:update:permission") {
+				return
+			}
 			switch action {
 			case "delete_permission":
 				if r.FormValue("target_perm") == detailPerm && dbperm.Command_DELETE_UserPermissionByName(db, detailPerm) == nil {
@@ -582,17 +709,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				perm, _ = dbperm.Command_GET_UserPermissionByName(db, detailPerm)
 				detailData.Perm = perm
-				detailData.Actions = []struct{ Field, Label, Value string }{
-					{"auth", "Auth", perm.Auth},
-					{"compare", "Compare", perm.Compare},
-					{"search", "Search", perm.Search},
-					{"can_read", "Read", perm.Read},
-					{"can_write", "Write", perm.Write},
-					{"web_admin", "Web admin", perm.Web_admin},
-					{"none", "None", perm.None},
-					{"api_read_permission", "API Read", perm.APIRead},
-					{"api_write_permission", "API Write", perm.APIWrite},
-				}
+				detailData.GroupedActions = buildPermissionActionsGrouped(db, perm)
 			}
 		}
 		_ = executeAdminPage(w, "admin_permission_detail.html", detailData)
@@ -608,6 +725,12 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
+		if action == "create_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:permission") {
+			return
+		}
+		if action == "delete_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
+			return
+		}
 		switch action {
 		case "create_permission":
 			name := r.FormValue("name")
@@ -647,6 +770,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminCertificatesHandler lists certificates or shows certificate detail when ?cert= is set.
+// Access: web_admin only (no specific RBAC key for certificates; same as before).
 func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	username, ok := requireWebAdmin(w, r)
 	if !ok {
@@ -731,10 +855,14 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminLogsHandler affiche la page des logs avec filtres
+// AdminLogsHandler affiche la page des logs avec filtres.
+// Access: web_admin + read:get:user (same as command get -u for viewing data).
 func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:user") {
 		return
 	}
 
@@ -756,11 +884,17 @@ func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminLogsAPIHandler retourne les logs filtrés en JSON
+// AdminLogsAPIHandler retourne les logs filtrés en JSON.
+// Access: web_admin + read:get:user.
 func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	_, ok := requireWebAdmin(w, r)
+	_, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
 		http.Error(w, "Non autorisé", http.StatusUnauthorized)
+		return
+	}
+	allowed, _ := permission.CheckPermissionsMultipleDomains(groupIDs, "read:get:user", []string{"*"})
+	if !allowed {
+		http.Error(w, "Permission refusée", http.StatusForbidden)
 		return
 	}
 

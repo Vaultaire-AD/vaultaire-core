@@ -7,12 +7,13 @@ import (
 	"fmt"
 )
 
-func DNS_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
-	isactionlegitimate, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
-	if !isactionlegitimate {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour l'utilisateur %s sur l'action %s : %s", sender_Username, action, response))
+func DNS_Command(command_list []string, sender_groupsIDs []int, sender_Username string) string {
+	ok, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, "write:dns", []string{"*"})
+	if !ok {
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=write:dns reason=%s", sender_Username, response))
 		return fmt.Sprintf("Permission refusée : %s", response)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=write:dns (dns command)", sender_Username))
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return `Invalid Request Try get -h for more information 

@@ -15,8 +15,10 @@ func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 	if command_list[0] == "-c" && len(command_list) == 1 {
 		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
 		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, resp))
 			return fmt.Sprintf("Permission refusée : %s", resp)
 		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status all clients)", sender_Username, action))
 
 		client_Login, err := database.Command_STATUS_GetClientsConnected(db)
 		if err != nil {
@@ -39,8 +41,10 @@ func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 
 		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, groupDomain)
 		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s group=%s reason=%s", sender_Username, action, groupName, resp))
 			return fmt.Sprintf("Permission refusée : %s", resp)
 		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status clients by group)", sender_Username, action))
 
 		client_Login, err := database.Command_STATUS_GetClientsConnectedByGroup(db, groupName)
 		if err != nil {
@@ -57,8 +61,10 @@ func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 		// 🔹 Vérification sur tous les domaines (les types n’ont pas de domaine explicite)
 		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
 		if !ok {
+			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, resp))
 			return fmt.Sprintf("Permission refusée : %s", resp)
 		}
+		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status clients by type)", sender_Username, action))
 
 		Client_Login, err := database.Command_STATUS_GetClientsConnectedByLogicielType(db, clientType)
 		if err != nil {

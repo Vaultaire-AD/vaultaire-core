@@ -34,46 +34,51 @@
           </section>
 
           <section class="section">
-            <h2>Mise à jour des actions (nil / all / domaines)</h2>
+            <h2>Actions par catégorie</h2>
             <p class="muted small">nil = refuser, all = tous domaines. Ajouter/retirer des domaines : 0 = sans propagation, 1 = avec propagation (sous-domaines inclus).</p>
-            <div class="table-wrap" style="margin-top:0.75rem">
-              <table>
-                <thead>
-                  <tr><th>Action</th><th>Valeur actuelle</th><th>Modifier</th></tr>
-                </thead>
-                <tbody>
-                  {{ range .Actions }}
-                  <tr>
-                    <td><strong>{{ .Label }}</strong></td>
-                    <td><code style="font-size:0.8rem">{{ .Value }}</code></td>
-                    <td>
-                      <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" style="display:inline-flex;flex-wrap:wrap;gap:0.35rem;align-items:center">
-                        <input type="hidden" name="action" value="update_permission_action">
-                        <input type="hidden" name="field" value="{{ .Field }}">
-                        <button type="submit" name="op" value="nil" class="btn btn-ghost" style="padding:0.3rem 0.5rem;font-size:0.8rem">nil</button>
-                        <button type="submit" name="op" value="all" class="btn btn-ghost" style="padding:0.3rem 0.5rem;font-size:0.8rem">all</button>
-                        <span class="muted" style="font-size:0.8rem">Ajouter:</span>
-                        <select name="propagation" style="width:auto;max-width:none">
-                          <option value="0">0 (sans prop.)</option>
-                          <option value="1">1 (avec prop.)</option>
-                        </select>
-                        <input type="text" name="domain" placeholder="domaine" list="domains-list" style="width:120px">
-                        <button type="submit" name="op" value="add" class="btn btn-secondary" style="padding:0.3rem 0.5rem;font-size:0.8rem">+</button>
-                      </form>
-                      <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" style="display:inline">
-                        <input type="hidden" name="action" value="update_permission_action">
-                        <input type="hidden" name="field" value="{{ .Field }}">
-                        <input type="hidden" name="op" value="remove">
-                        <input type="text" name="domain_remove" placeholder="retirer domaine" list="domains-list" style="width:110px;margin-left:0.5rem">
-                        <button type="submit" class="btn btn-ghost" style="padding:0.3rem 0.5rem;font-size:0.8rem">−</button>
-                      </form>
-                    </td>
-                  </tr>
-                  {{ end }}
-                </tbody>
-              </table>
-            </div>
             <datalist id="domains-list">{{ range .AllDomains }}<option value="{{ . }}">{{ end }}</datalist>
+            {{ range .GroupedActions }}
+            <div class="perm-detail-group">
+              <h3 class="perm-detail-group-title">{{ .GroupName }}</h3>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr><th>Action</th><th>Valeur actuelle</th><th>Modifier</th></tr>
+                  </thead>
+                  <tbody>
+                    {{ range .Actions }}
+                    <tr>
+                      <td><strong>{{ .Label }}</strong></td>
+                      <td><code class="perm-value-cell">{{ .Value }}</code></td>
+                      <td class="perm-actions-cell">
+                        <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" class="perm-action-form">
+                          <input type="hidden" name="action" value="update_permission_action">
+                          <input type="hidden" name="field" value="{{ .Field }}">
+                          <button type="submit" name="op" value="nil" class="btn btn-ghost btn-sm">nil</button>
+                          <button type="submit" name="op" value="all" class="btn btn-ghost btn-sm">all</button>
+                          <span class="muted perm-form-label">Ajouter</span>
+                          <select name="propagation">
+                            <option value="0">0 (sans prop.)</option>
+                            <option value="1">1 (avec prop.)</option>
+                          </select>
+                          <input type="text" name="domain" placeholder="domaine" list="domains-list">
+                          <button type="submit" name="op" value="add" class="btn btn-secondary btn-sm">+</button>
+                        </form>
+                        <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" class="perm-action-form perm-remove-form">
+                          <input type="hidden" name="action" value="update_permission_action">
+                          <input type="hidden" name="field" value="{{ .Field }}">
+                          <input type="hidden" name="op" value="remove">
+                          <input type="text" name="domain_remove" placeholder="retirer domaine" list="domains-list">
+                          <button type="submit" class="btn btn-ghost btn-sm">−</button>
+                        </form>
+                      </td>
+                    </tr>
+                    {{ end }}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {{ end }}
           </section>
 
           <section class="section">

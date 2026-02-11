@@ -11,6 +11,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 3. [Configuration LDAP](#3-configuration-ldap)
 4. [Commandes principales](#4-commandes-principales)
 5. [create — Création](#5-create--création)
+   - [5.0 Modèle des permissions (user)](#50-modèle-des-permissions-user)
 6. [status — État des sessions](#6-status--état-des-sessions)
 7. [clear — Nettoyage des sessions](#7-clear--nettoyage-des-sessions)
 8. [get — Consultation](#8-get--consultation)
@@ -18,6 +19,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 10. [remove — Retrait](#10-remove--retrait)
 11. [delete — Suppression](#11-delete--suppression)
 12. [update — Mise à jour](#12-update--mise-à-jour)
+    - [12.3 Mise à jour des actions d'une permission utilisateur (-pu)](#123-mise-à-jour-des-actions-dune-permission-utilisateur--pu)
 13. [eyes — Arborescence LDAP](#13-eyes--arborescence-ldap)
 14. [Commandes DNS](#14-commandes-dns)
 15. [Référence rapide](#15-référence-rapide)
@@ -150,7 +152,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `add`    | Ajouter user à un groupe, client à un groupe, permission à un groupe, GPO à un groupe |
 | `remove` | Retirer user d’un groupe, client d’un groupe, permission (user/client) d’un groupe, GPO d’un groupe |
 | `delete` | Supprimer une entité (user, groupe, permission, client, GPO) |
-| `update` | Renommer user, modifier permission user (-pu), debug |
+| `update` | Renommer user, modifier actions d'une permission user (-pu, RBAC / legacy), debug |
 | `eyes`   | Arborescence des groupes (forêt LDAP) |
 | `dns`    | Gestion DNS (zones, enregistrements, PTR) — voir [§14](#14-commandes-dns) |
 
@@ -158,11 +160,34 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 
 ## 5. create — Création
 
+### 5.0 Modèle des permissions (user)
+
+Les **permissions utilisateur** contrôlent l’accès aux ressources (SSO, API, LDAP, etc.). Chaque permission possède un ensemble d’**actions** configurables par domaine :
+
+- **Valeur par action** : `nil` (refusé), `all` (tous les domaines), ou une liste de domaines avec ou sans propagation.
+- **Format des domaines** : `(1:domaine.fr)(0:sous.domaine.fr)` — `1:` = avec propagation (sous-domaines inclus), `0:` = sans propagation.
+
+**Actions disponibles** :
+
+| Type | Actions |
+|------|--------|
+| **Legacy** | `none`, `web_admin`, `auth`, `compare`, `search` |
+| **RBAC** | Format `catégorie:action:objet` — ex. `read:get:user`, `write:create:group` |
+| **Spécial** | `write:dns`, `write:eyes` |
+
+**Objets RBAC** : `user`, `group`, `client`, `permission`, `gpo`.  
+**Lecture** : `read:get:<objet>`, `read:status:<objet>`.  
+**Écriture** : `write:create:<objet>`, `write:delete:<objet>`, `write:update:<objet>`, `write:add:<objet>`.
+
+La configuration se fait via `update -pu` (voir [§12.3](#123-mise-à-jour-des-actions-dune-permission-utilisateur--pu)) ou l’interface web **Admin → Permissions**.
+
 ### 5.1 Permission utilisateur
 
 ```bash
 create -p -u "nom_permission" <description_sans_espace>
 ```
+
+Crée une permission **user**. Les actions (legacy et RBAC) sont ensuite configurées avec `update -pu` ou depuis l’admin web.
 
 ### 5.2 Permission client
 
@@ -386,16 +411,19 @@ update -debug true
 update -debug false
 ```
 
-### 12.3 Mise à jour des actions d’une permission utilisateur (-pu)
+### 12.3 Mise à jour des actions d'une permission utilisateur (-pu)
 
 Modèle :
 
 ```bash
-update -pu <PermissionName> <Action> <Arg> [ChildOrAll] [Domain]
+update -pu <PermissionName> <ActionKey> <Arg> [ChildOrAll] [Domain]
 ```
 
 - **PermissionName** : nom de la permission (ex. LDAP_AdminPanel).
-- **Action** : auth, compare, search, can_read, can_write, web_admin, none, api_read_permission, api_write_permission.
+- **ActionKey** : clé d’action (voir [§5.0](#50-modèle-des-permissions-user)).
+  - **Legacy** : `none`, `web_admin`, `auth`, `compare`, `search`.
+  - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (et idem pour `group`, `client`, `permission`, `gpo`).
+  - **Spécial** : `write:dns`, `write:eyes`.
 - **Arg** :
   - `nil` — aucun accès.
   - `all` — tous les domaines.
@@ -413,14 +441,17 @@ update -pu LDAP_AdminPanel auth all
 # Refuser
 update -pu LDAP_AdminPanel auth nil
 
-# Ajouter un domaine sans propagation
-update -pu LDAP_AdminPanel auth -a 0 legacy.company.fr
-
 # Ajouter un domaine avec propagation
 update -pu LDAP_AdminPanel auth -a 1 company.fr
 
 # Retirer un domaine
 update -pu LDAP_AdminPanel auth -r 0 legacy.company.fr
+
+# RBAC : autoriser la lecture des utilisateurs sur tous les domaines
+update -pu Inspecteur read:get:user all
+
+# RBAC : autoriser la création de clients sur un domaine (avec propagation)
+update -pu DevApp write:create:client -a 1 apps.company.fr
 ```
 
 Si après un `-r` il ne reste plus aucun domaine, l’action repasse en `nil`.
@@ -459,7 +490,7 @@ Utile pour définir les base DN des clients LDAP.
 
 ## 14. Commandes DNS
 
-Les commandes DNS s’appellent via le préfixe **`dns`** (en CLI : `dns <sous-commande> ...`). Elles nécessitent la permission `api_write_permission` (ou équivalent) et que le module DNS soit activé (`dns_enable: true`).
+Les commandes DNS s’appellent via le préfixe **`dns`** (en CLI : `dns <sous-commande> ...`). Elles nécessitent la permission **`write:dns`** sur les domaines concernés et que le module DNS soit activé (`dns_enable: true`).
 
 ### 14.1 Aide
 
@@ -559,8 +590,9 @@ dns delete ptr 192.168.1.1
 | Voir les sessions | `status -u` / `status -c` |
 | Détail d’un groupe | `get -g "group_name"` |
 | Ajouter user au groupe | `add -u "user" -g "group"` |
-| Permission user : tous domaines | `update -pu PERM auth all` |
-| Permission user : un domaine | `update -pu PERM auth -a 1 domain.fr` |
+| Permission user : tous domaines (auth) | `update -pu PERM auth all` |
+| Permission user : un domaine (auth) | `update -pu PERM auth -a 1 domain.fr` |
+| Permission user : lecture utilisateurs (RBAC) | `update -pu PERM read:get:user all` |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |

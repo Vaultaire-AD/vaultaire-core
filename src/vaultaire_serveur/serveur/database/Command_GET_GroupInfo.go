@@ -25,7 +25,7 @@ func Command_GET_GroupInfo(db *sql.DB, groupName string) (*storage.GroupInfo, er
 		COALESCE(GROUP_CONCAT(DISTINCT u.username ORDER BY u.username SEPARATOR ', '), '') AS users,
 		-- Permissions utilisateurs (LDAP)
 		COALESCE(GROUP_CONCAT(DISTINCT p.name ORDER BY p.name SEPARATOR ', '), '') AS user_permissions,
-		COALESCE(GROUP_CONCAT(DISTINCT l.hostname ORDER BY l.hostname SEPARATOR ', '), '') AS clients,
+		COALESCE(GROUP_CONCAT(DISTINCT l.computeur_id ORDER BY l.computeur_id SEPARATOR ', '), '') AS clients,
 		-- Permissions clients/logiciels (table client_permission)
 		COALESCE(GROUP_CONCAT(DISTINCT cp.name_permission ORDER BY cp.name_permission SEPARATOR ', '), '') AS client_permissions,
 		COALESCE(GROUP_CONCAT(DISTINCT gpo.gpo_name ORDER BY gpo.gpo_name SEPARATOR ', '), '') AS gpos

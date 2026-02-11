@@ -28,10 +28,11 @@ func add_User_Command_Parser(command_list []string, sender_groupsIDs []int, acti
 	// 🔹 Étape 2 : Vérification des permissions
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter %s (domaines : %v) — %s",
-			sender_Username, username, domains, reason))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s target=%s reason=%s", sender_Username, action, username, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter %s (domaines : %v) — %s", sender_Username, username, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (add user)", sender_Username, action))
 
 	switch argType {
 	case "-g":

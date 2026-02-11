@@ -27,10 +27,11 @@ func add_group_Command_Parser(command_list []string, sender_groupsIDs []int, act
 	// 🔹 Étape 2 : Vérification des permissions sur les domaines
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("permission denied: user=%s action=add permission=%s group=%s domains=%v reason=%s",
-			sender_Username, permName, groupName, domains, reason))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s permission=%s group=%s reason=%s", sender_Username, action, permName, groupName, reason))
+		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("permission denied: user=%s action=add permission=%s group=%s domains=%v reason=%s", sender_Username, permName, groupName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (add permission to group)", sender_Username, action))
 
 	// 🔹 Étape 3 : Ajout de la permission
 	switch command_list[0] {

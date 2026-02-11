@@ -11,9 +11,13 @@ import (
 )
 
 // AdminDNSHandler serves the DNS management page when Dns_Enable is true.
+// Access: web_admin + write:dns (same as command dns).
 func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "write:dns") {
 		return
 	}
 	if !storage.Dns_Enable {

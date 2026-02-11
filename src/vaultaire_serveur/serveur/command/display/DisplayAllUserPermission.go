@@ -21,8 +21,7 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
-	// En-têtes avec les colonnes pour chaque champ booléen
-	fmt.Fprintf(w, "%-5s %-20s %-30s %-6s %-6s %-8s %-8s %-6s %-6s\n",
+	fmt.Fprintf(w, "%-5s %-20s %-30s %-6s %-6s %-8s %-8s\n",
 		header("ID"),
 		header("Nom"),
 		header("Description"),
@@ -30,12 +29,11 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 		header("Auth"),
 		header("Compare"),
 		header("Search"),
-		header("Read"),
-		header("Write"),
+		header("WebAdmin"),
 	)
 
 	for _, p := range permissions {
-		fmt.Fprintf(w, "%-5d %-20s %-30s %-6s %-6s %-8s %-8s %-6s %-6s\n",
+		fmt.Fprintf(w, "%-5d %-20s %-30s %-6s %-6s %-8s %-8s\n",
 			p.ID,
 			p.Name,
 			p.Description,
@@ -43,8 +41,7 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 			p.Auth,
 			p.Compare,
 			p.Search,
-			p.Read,
-			p.Write,
+			p.Web_admin,
 		)
 	}
 

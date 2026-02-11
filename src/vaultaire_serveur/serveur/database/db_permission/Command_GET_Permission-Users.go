@@ -10,16 +10,7 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 	var permissions []storage.UserPermission
 
 	query := `
-        SELECT 
-            id_user_permission, 
-            name, 
-            description, 
-            none, 
-            auth, 
-            compare, 
-            search, 
-            can_read, 
-            can_write
+        SELECT id_user_permission, name, description, none, auth, compare, search, web_admin
         FROM user_permission
     `
 
@@ -30,7 +21,6 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			// Handle or log the error
 			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 		}
 	}()
@@ -45,8 +35,7 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 			&perm.Auth,
 			&perm.Compare,
 			&perm.Search,
-			&perm.Read,
-			&perm.Write,
+			&perm.Web_admin,
 		); err != nil {
 			logs.WriteLog("db", "Erreur lors du scan des résultats des permissions utilisateurs : "+err.Error())
 			return nil, err
@@ -59,19 +48,7 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 
 func Command_GET_UserPermissionByName(db *sql.DB, name string) (*storage.UserPermission, error) {
 	query := `
-		SELECT 
-			id_user_permission, 
-			name, 
-			description, 
-			none, 
-			auth, 
-			compare, 
-			search, 
-			can_read, 
-			can_write,
-			api_read_permission,
-			api_write_permission,
-			web_admin
+		SELECT id_user_permission, name, description, none, auth, compare, search, web_admin
 		FROM user_permission
 		WHERE name = ?
 		LIMIT 1
@@ -86,10 +63,6 @@ func Command_GET_UserPermissionByName(db *sql.DB, name string) (*storage.UserPer
 		&permission.Auth,
 		&permission.Compare,
 		&permission.Search,
-		&permission.Read,
-		&permission.Write,
-		&permission.APIRead,
-		&permission.APIWrite,
 		&permission.Web_admin,
 	)
 	if err != nil {

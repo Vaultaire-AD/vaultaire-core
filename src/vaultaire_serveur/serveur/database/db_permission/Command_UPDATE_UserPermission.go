@@ -13,17 +13,13 @@ func UpdateUserPermissionBooleanField(db *sql.DB, permissionName string, column 
 		"web_admin":            true,
 		"auth":                 true,
 		"compare":              true,
-		"search":               true,
-		"can_read":             true,
-		"can_write":            true,
-		"api_read_permission":  true,
-		"api_write_permission": true,
+		"search": true,
 	}
 
 	// Vérifie que la colonne est bien autorisée
 	if !validColumns[column] {
 		logs.WriteLog("db", "colonne invalide : "+column)
-		return fmt.Errorf("colonne invalide : %s -> Voila la liste des colone valide auth, compare, search, can_read, can_write", column)
+		return fmt.Errorf("colonne invalide : %s (valides: none, web_admin, auth, compare, search)", column)
 	}
 
 	// Prépare dynamiquement la requête SQL (en toute sécurité car column est validée)

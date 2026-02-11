@@ -41,33 +41,28 @@
     </section>
 
     <hr>
-    <h2 class="h2">Liste</h2>
-    <div class="table-wrap">
-      <table>
-        <thead><tr><th>ID</th><th>Nom</th><th>Description</th><th>None</th><th>Auth</th><th>Compare</th><th>Search</th><th>Read</th><th>Write</th><th></th></tr></thead>
-        <tbody>
-        {{ range .Perms }}
-          <tr class="row-context" data-href="/admin/permissions?perm={{ .Name }}" data-label="Permission {{ .Name }}">
-            <td>{{ .ID }}</td>
-            <td><a href="/admin/permissions?perm={{ .Name }}">{{ .Name }}</a></td>
-            <td>{{ .Description }}</td>
-            <td>{{ .None }}</td>
-            <td>{{ .Auth }}</td>
-            <td>{{ .Compare }}</td>
-            <td>{{ .Search }}</td>
-            <td>{{ .Read }}</td>
-            <td>{{ .Write }}</td>
-            <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer la permission {{ .Name }} ?');">
-                <input type="hidden" name="action" value="delete_permission">
-                <input type="hidden" name="permission_name" value="{{ .Name }}">
-                <button type="submit" class="btn btn-danger">Supprimer</button>
-              </form>
-            </td>
-          </tr>
-        {{ end }}
-        </tbody>
-      </table>
+    <h2 class="h2">Liste des permissions</h2>
+    <div class="perm-list">
+      {{ range .Perms }}
+      <article class="perm-card">
+        <div class="perm-card-main">
+          <h3 class="perm-card-title"><a href="/admin/permissions?perm={{ .Name }}">{{ .Name }}</a></h3>
+          {{ if .Description }}<p class="perm-card-desc">{{ .Description }}</p>{{ end }}
+          <div class="perm-card-meta">
+            <span class="perm-id muted small">ID {{ .ID }}</span>
+            {{ if eq .Web_admin "all" }}<span class="perm-badge perm-badge-admin">Web admin</span>{{ end }}
+          </div>
+        </div>
+        <div class="perm-card-actions">
+          <a href="/admin/permissions?perm={{ .Name }}" class="btn btn-secondary">Détail</a>
+          <form method="post" class="perm-card-delete" onsubmit="return confirm('Supprimer la permission {{ .Name }} ?');">
+            <input type="hidden" name="action" value="delete_permission">
+            <input type="hidden" name="permission_name" value="{{ .Name }}">
+            <button type="submit" class="btn btn-ghost btn-danger">Supprimer</button>
+          </form>
+        </div>
+      </article>
+      {{ end }}
     </div>
         </div>
       </div>
