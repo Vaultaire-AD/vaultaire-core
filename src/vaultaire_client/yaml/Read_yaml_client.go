@@ -27,6 +27,7 @@ func readConfig[T any](filePath string) (*T, error) {
 	var config T
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
+		logs.WriteLog("error", "erreur lors du décodage du fichier de configuration: %v")
 		return nil, fmt.Errorf("erreur lors du décodage du fichier de configuration: %v", err)
 	}
 

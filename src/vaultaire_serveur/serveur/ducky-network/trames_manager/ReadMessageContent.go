@@ -1,12 +1,12 @@
 package tramesmanager
 
 import (
+	"strings"
 	keydecodeencode "vaultaire/serveur/ducky-network/key_decode_encode"
 	keymanagement "vaultaire/serveur/ducky-network/key_management"
 	"vaultaire/serveur/ducky-network/sendmessage"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"strings"
 )
 
 func parseTrames(trames string) storage.Trames_struct_client {
@@ -79,8 +79,6 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 			return
 		}
 	}
-	logs.Write_Log("DEBUG", messageDecrypt)
-	logs.Write_Log("DEBUG", string(duckysession.SessionKey))
 	var trames_content = parseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
 }

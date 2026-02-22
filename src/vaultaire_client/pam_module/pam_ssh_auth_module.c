@@ -104,59 +104,99 @@ static int send_check_request(const char *username, char *resp, size_t resp_size
 
 /* rudimentaire parser JSON (pas de dépendance JSON externe) :
    extrait "status", "is_admin" (true/false) et la zone de tableau ssh_keys (contenu entre [ ] ) */
-static void parse_response(const char *resp, char *status_out, size_t status_sz, bool *is_admin_out, char *ssh_keys_out, size_t ssh_keys_sz) {
+static int parse_response(const char *resp,
+                          char *status_out, size_t status_sz,
+                          bool *is_admin_out,
+                          char ***ssh_keys_out,
+                          size_t *key_count_out)
+{
+    if (!resp) return -1;
+
     status_out[0] = '\0';
     *is_admin_out = false;
-    ssh_keys_out[0] = '\0';
+    *ssh_keys_out = NULL;
+    *key_count_out = 0;
 
-    if (!resp) return;
-
-    /* status */
+    /* -------- status -------- */
     char *p = strstr(resp, "\"status\"");
-    if (p) {
-        char *q = strstr(p, ":");
-        if (q) {
-            q++;
-            while (*q == ' ' || *q == '"' ) q++;
-            char tmp[64] = {0};
-            int i = 0;
-            while (q[i] && q[i] != '"' && q[i] != ',' && i < (int)sizeof(tmp)-1) {
-                tmp[i] = q[i];
-                i++;
-            }
-            tmp[i] = '\0';
-            strncpy(status_out, tmp, status_sz-1);
-        }
-    }
-
-    /* is_admin */
-    p = strstr(resp, "\"is_admin\"");
-    if (p) {
-        char *q = strstr(p, ":");
-        if (q) {
-            q++;
-            if (strstr(q, "true")) *is_admin_out = true;
-            else *is_admin_out = false;
-        }
-    }
-
-    /* ssh_keys as raw string */
-    p = strstr(resp, "\"Ssh_keys\"");
-    if (!p) p = strstr(resp, "\"ssh_keys\"");
     if (p) {
         char *q = strchr(p, ':');
         if (q) {
             q++;
             while (*q == ' ' || *q == '"') q++;
-            char *end = strrchr(q, '"');
-            if (end && end > q) {
-                size_t len = end - q;
-                if (len >= ssh_keys_sz) len = ssh_keys_sz - 1;
-                strncpy(ssh_keys_out, q, len);
-                ssh_keys_out[len] = '\0';
+
+            size_t i = 0;
+            while (q[i] && q[i] != '"' && q[i] != ',' &&
+                   i < status_sz - 1) {
+                status_out[i] = q[i];
+                i++;
             }
+            status_out[i] = '\0';
         }
     }
+
+    /* -------- is_admin -------- */
+    p = strstr(resp, "\"is_admin\"");
+    if (p) {
+        char *q = strchr(p, ':');
+        if (q) {
+            q++;
+            while (*q == ' ') q++;
+
+            if (strncmp(q, "true", 4) == 0)
+                *is_admin_out = true;
+            else
+                *is_admin_out = false;
+        }
+    }
+
+    /* -------- ssh_keys array -------- */
+    p = strstr(resp, "\"ssh_keys\"");
+    if (!p) return 0;
+
+    char *q = strchr(p, '[');
+    if (!q) return 0;
+    q++;  // après [
+
+    char **keys = NULL;
+    size_t count = 0;
+
+    while (*q && *q != ']') {
+
+        while (*q == ' ' || *q == ',') q++;
+
+        if (*q != '"') break;
+        q++; // après "
+
+        char *start = q;
+
+        while (*q && *q != '"') q++;
+        if (!*q) break;
+
+        size_t len = q - start;
+
+        char *key = malloc(len + 1);
+        if (!key) break;
+
+        memcpy(key, start, len);
+        key[len] = '\0';
+
+        char **tmp = realloc(keys, sizeof(char*) * (count + 1));
+        if (!tmp) {
+            free(key);
+            break;
+        }
+
+        keys = tmp;
+        keys[count++] = key;
+
+        q++; // après "
+    }
+
+    *ssh_keys_out = keys;
+    *key_count_out = count;
+
+    return 0;
 }
 
 /* Validate username to avoid shell injection etc. */
@@ -184,10 +224,25 @@ static int ensure_local_user_no_password(const char *username) {
     return 0;
 }
 
-/* Install ssh keys from a simplified CSV-like content extracted earlier.
-   ssh_keys_raw is like: " \"ssh-ed25519 AAA...\",\"ssh-rsa AAA...\" " (commas and optional quotes)
-*/
-static int install_ssh_keys_for_user(const char *username, const char *ssh_keys_raw) {
+static void unescape_newlines(char *str) {
+    char *src = str;
+    char *dst = str;
+
+    while (*src) {
+        if (src[0] == '\\' && src[1] == 'n') {
+            *dst++ = '\n';
+            src += 2;
+        } else {
+            *dst++ = *src++;
+        }
+    }
+    *dst = '\0';
+}
+
+static int install_ssh_keys_for_user(const char *username,
+                                     char **ssh_keys,
+                                     size_t key_count)
+{
     struct passwd *pw = getpwnam(username);
     if (!pw) {
         log_err("install_ssh_keys_for_user: user %s not found", username);
@@ -195,16 +250,21 @@ static int install_ssh_keys_for_user(const char *username, const char *ssh_keys_
     }
 
     char sshdir[PATH_MAX];
-    snprintf(sshdir, sizeof(sshdir), "%s/.ssh", pw->pw_dir);
+    if (snprintf(sshdir, sizeof(sshdir), "%s/.ssh", pw->pw_dir) >= sizeof(sshdir))
+        return -1;
 
     if (mkdir(sshdir, 0700) != 0 && errno != EEXIST) {
         log_err("mkdir(%s): %s", sshdir, strerror(errno));
         return -1;
     }
+
     chown(sshdir, pw->pw_uid, pw->pw_gid);
+    chmod(sshdir, 0700);
 
     char authfile[PATH_MAX];
-    snprintf(authfile, sizeof(authfile), "%s/authorized_keys", sshdir);
+    if (snprintf(authfile, sizeof(authfile),
+                 "%s/authorized_keys", sshdir) >= sizeof(authfile))
+        return -1;
 
     FILE *f = fopen(authfile, "w");
     if (!f) {
@@ -212,15 +272,28 @@ static int install_ssh_keys_for_user(const char *username, const char *ssh_keys_
         return -1;
     }
 
-    if (ssh_keys_raw && ssh_keys_raw[0]) {
-        fprintf(f, "%s\n", ssh_keys_raw); // écrire toutes les clés telles quelles
+    for (size_t i = 0; i < key_count; i++) {
+
+        if (!ssh_keys[i] || ssh_keys[i][0] == '\0')
+            continue;
+
+        /* validation minimale sécurité */
+        if (strncmp(ssh_keys[i], "ssh-", 4) != 0) {
+            log_err("Invalid SSH key format for user %s", username);
+            continue;
+        }
+
+        fprintf(f, "%s\n", ssh_keys[i]);
     }
 
     fclose(f);
+
     chmod(authfile, 0600);
     chown(authfile, pw->pw_uid, pw->pw_gid);
+
     return 0;
 }
+
 
 /* Add or remove sudo group membership; detect a suitable sudo-like group automatically */
 static int detect_sudo_group(char *group, size_t gsize) {
@@ -246,7 +319,7 @@ static int add_user_to_group(const char *username, const char *group) {
         snprintf(cmd, sizeof(cmd), "usermod -aG %s %s", group, username);
     } else {
         /* fallback for minimal systems */
-        snprintf(cmd, sizeof(cmd), "adduser %s %s 2>/dev/null || echo"); /* best effort */
+        snprintf(cmd, sizeof(cmd), "adduser %s %s 2>/dev/null || echo", username, group);
     }
     return system(cmd);
 }
@@ -282,11 +355,19 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         return PAM_USER_UNKNOWN;
     }
 
+        /* ---- local vs remote split ---- */
+    if (strchr(username, '@') == NULL) {
+        /* user local → laisser pam_unix gérer */
+        return PAM_IGNORE;
+    }
+
     /* validate */
     if (!is_valid_username(username)) {
         log_err("invalid username: %s", username);
         return PAM_PERM_DENIED;
     }
+
+    
 
     /* contact remote service to check rights and fetch keys */
     char resp[MAX_BUFFER_SIZE];
@@ -298,8 +379,17 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 
     char status[64];
     bool is_admin = false;
-    char ssh_keys_raw[2048];
-    parse_response(resp, status, sizeof(status), &is_admin, ssh_keys_raw, sizeof(ssh_keys_raw));
+    char **ssh_keys = NULL;
+    size_t key_count = 0;
+
+    if (parse_response(resp,
+                   status, sizeof(status),
+                   &is_admin,
+                   &ssh_keys,
+                   &key_count) != 0) {
+        log_err("parse_response failed");
+        return PAM_PERM_DENIED;
+    }
 
     log_info("vaultaire: user=%s status=%s is_admin=%s", username, status, is_admin ? "true" : "false");
 
@@ -310,14 +400,17 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
             return PAM_PERM_DENIED;
         }
         /* Install public keys (if any) */
-        if (ssh_keys_raw[0]) {
-            if (install_ssh_keys_for_user(username, ssh_keys_raw) != 0) {
+        if (key_count > 0) {
+           if (install_ssh_keys_for_user(username, ssh_keys, key_count) != 0) {
                 log_err("Failed installing ssh keys for %s", username);
-                /* continue: keys failure shouldn't necessarily block? We choose to deny to be safe */
                 return PAM_PERM_DENIED;
             }
         }
 
+        for (size_t i = 0; i < key_count; i++) {
+            free(ssh_keys[i]);
+        }
+        free(ssh_keys);
         /* Sudo membership */
         char group[64];
         detect_sudo_group(group, sizeof(group));
@@ -327,7 +420,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
             remove_user_from_group(username, group);
         }
 
-        return PAM_SUCCESS;
+        return PAM_IGNORE;
     } else {
         /* failed -> delete user if exists and deny */
         delete_local_user(username);

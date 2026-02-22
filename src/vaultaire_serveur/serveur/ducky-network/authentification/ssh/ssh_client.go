@@ -1,10 +1,10 @@
 package sshclient
 
 import (
+	"strings"
 	"vaultaire/serveur/database"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"strings"
 )
 
 func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) string {
@@ -35,7 +35,8 @@ func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
 	)
 	if err != nil {
 		logs.Write_Log("ERROR", sshUser+" try to login by ssh but error for get user can login")
-		return "02_07\nSomething go wrong contact your administrator for ssh connection"
+		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nSomething go wrong contact your administrator for ssh connection")
+
 	}
 
 	if can {
@@ -82,7 +83,5 @@ func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
 		sshUser+" Does not have the permission for SSH login to "+trames_content.ClientSoftwareID,
 	)
 
-	return "02_07\nserveur_central\n" +
-		trames_content.SessionIntegritykey +
-		"\nYou are not authentificate for SSH"
+	return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nyou have not the authorisation for acces to this computeur")
 }

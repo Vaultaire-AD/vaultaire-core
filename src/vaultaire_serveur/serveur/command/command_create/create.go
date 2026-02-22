@@ -90,7 +90,7 @@ func create_ClientSoftware(command_list []string) string {
 			return err.Error()
 		}
 		logs.Write_Log("INFO", "new client create with succes with this ID : "+computeurID)
-		if command_list[3] == "-join" {
+		if len(command_list) >= 6 && command_list[3] == "-join" {
 			return autoaddclientgo.Manage_Auto_ADD_client(command_list[5], command_list[4], computeurID)
 		}
 		return ("new client create with succes with this ID : " + computeurID)

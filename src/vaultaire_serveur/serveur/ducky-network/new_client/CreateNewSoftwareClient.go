@@ -1,16 +1,16 @@
 package newclient
 
 import (
-	"vaultaire/serveur/database"
-	keymanagement "vaultaire/serveur/ducky-network/key_management"
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
 	"crypto/rand"
 	"fmt"
 	"math/big"
 	"os"
 	"path/filepath"
 	"time"
+	"vaultaire/serveur/database"
+	keymanagement "vaultaire/serveur/ducky-network/key_management"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 
 	yaml "gopkg.in/yaml.v3"
 )
@@ -92,11 +92,17 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 		return "", fmt.Errorf("YAML encode: %v", err)
 	}
 
-	keyName := fmt.Sprintf("client_software_%s", computeurID)
-	err = keymanagement.SaveKeyPairToDB(keyName, "rsa_keypair", fmt.Sprintf("Clés pour client software %s (%s)", computeurID, logicielType), privateKey, publicKey)
+	// Écriture de la clé privée
+	privateKeyPath := filepath.Join(dirPath, "private_key.pem")
+	err = keymanagement.ClientWritePEMKey(privateKeyPath, privateKey)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeCertSave, "newclient: key pair save to database failed: "+err.Error())
-		return "", fmt.Errorf("key pair save: %v", err)
+		logs.Write_Log("ERROR", "Error during the private key saving : "+err.Error())
+	}
+	// Écriture de la clé publique
+	publicKeyPath := filepath.Join(dirPath, "public_key.pem")
+	err = keymanagement.ClientWritePEMKeyPublic(publicKeyPath, publicKey)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error during the public key saving : "+err.Error())
 	}
 
 	logs.Write_Log("INFO", "newclient: client software "+computeurID+" created successfully")

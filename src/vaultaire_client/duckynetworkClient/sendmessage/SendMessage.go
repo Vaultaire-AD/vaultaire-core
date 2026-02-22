@@ -33,14 +33,14 @@ func SendMessage(message string, duckysession *storage.DuckySession) {
 		// Chiffrement symétrique AES-GCM avec clé de session
 		cipherMsg, err = keyencodedecode.EncryptAESGCMString(duckysession.SessionKey, message)
 		if err != nil {
-			fmt.Println("Erreur lors du chiffrement symétrique :", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors du chiffrement symétrique : %v", err))
 			return
 		}
 	} else {
 		// Chiffrement asymétrique RSA avec clé publique du serveur
 		cipherBytes, err := keyencodedecode.EncryptMessageWithPublic(keymanagement.GetServeurPublicKey(), message)
 		if err != nil {
-			fmt.Println("Erreur lors du chiffrement asymétrique :", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors du chiffrement asymétrique : %v", err))
 			return
 		}
 		cipherMsg = string(cipherBytes) // ou Base64 si nécessaire
@@ -55,12 +55,10 @@ func SendMessage(message string, duckysession *storage.DuckySession) {
 	if _, err := duckysession.Conn.Write(data); err != nil {
 		defer func() {
 			if cerr := duckysession.Conn.Close(); cerr != nil {
-				fmt.Printf("Erreur lors de la fermeture de la connexion : %v\n", cerr)
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", cerr))
 			}
 		}()
-		fmt.Println("Erreur lors de l'envoi du message :", err)
+		logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de l'envoi du message : %v", err))
 		return
 	}
-	logs.Write_Log("DEBUG", string(cipherMsg))
-	fmt.Println("Message envoyé avec succès à", duckysession.Conn.RemoteAddr())
 }

@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
 	"vaultaire_client/storage"
@@ -30,11 +31,10 @@ func StartDailyUserCleanup() {
 			}
 
 			duration := time.Until(next)
-			log.Printf("⏳ Prochaine exécution de la suppression à %s", next.Format(time.RFC1123))
+			logs.Write_log("INFO", fmt.Sprintf("⏳ Prochaine exécution de la suppression à %s", next.Format(time.RFC1123)))
 
 			time.Sleep(duration)
-
-			log.Println("🚀 Lancement de la suppression des utilisateurs Vaultaire inactifs")
+			logs.Write_log("INFO", "🚀 Lancement de la suppression des utilisateurs Vaultaire inactifs")
 			localusermanagement.DeleteUser_Vaultaire_Past_4Days_withoutconnection()
 
 			time.Sleep(24 * time.Hour)
@@ -51,7 +51,7 @@ func loadConfig(filePath string) error {
 	defer func() {
 		if err := file.Close(); err != nil {
 			// Handle or log the error
-			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la fermeture du fichier de configuration: %v", err))
 		}
 	}()
 

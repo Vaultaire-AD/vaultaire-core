@@ -36,7 +36,7 @@ api:
   api_port: 6643
 
 debug:
-  debug: true
+  debug: false
 
 administreur:
   enable: true

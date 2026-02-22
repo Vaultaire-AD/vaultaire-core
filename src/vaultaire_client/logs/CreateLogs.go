@@ -9,7 +9,7 @@ import (
 
 func WriteLog(filename string, content string) {
 	// Définir le chemin du répertoire et du fichier
-	dirPath := "/var/log/oppydoome/"
+	dirPath := "/var/log/vaultaire_client/"
 	filepath := dirPath + filename
 
 	// Créer le répertoire s'il n'existe pas
@@ -52,7 +52,7 @@ func WriteLog(filename string, content string) {
 //	}
 //}
 
-func Write_Log(level string, content string) {
+func Write_log(level string, content string) {
 	// Si c'est un log DEBUG et que le mode debug est désactivé, on ignore
 	if level == "DEBUG" && !storage.Debug {
 		return

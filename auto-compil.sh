@@ -1,8 +1,8 @@
 #!/bin/bash
-set -euo pipefail
+# set -euo pipefail
 
 # Variables
-ROOT_DIR="/workspaces/vaultaire-core"
+ROOT_DIR="./"
 BUILD_DIR="$ROOT_DIR/cmd"
 SERVER_BIN="$BUILD_DIR/vaultaire_server/vaultaire_serveur"
 CLI_BIN="$BUILD_DIR/vaultaire_server/vaultaire_cli"
@@ -12,7 +12,6 @@ CTL_BIN="$BUILD_DIR/vaultaire_ctl/vaultaire_ctl"
 # Créer le dossier build si nécessaire
 mkdir -p "$BUILD_DIR"
 
-echo "�� Pull des dernières modifications..."
 cd "$ROOT_DIR"
 #git pull
 

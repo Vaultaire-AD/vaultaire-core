@@ -12,6 +12,7 @@ import (
 	"vaultaire_client/duckynetworkClient/keymanagement"
 	send "vaultaire_client/duckynetworkClient/sendmessage"
 	br "vaultaire_client/duckynetworkClient/trames_manager"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 	auth "vaultaire_client/storage"
 )
@@ -23,17 +24,15 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 		fmt.Println(err)
 	}
 	auth.ServeurAUth = randomdata
-	fmt.Println("Ask Serveur Auth\n", string(randomdata))
 	send.SendMessage(("01_01\nserver_central\n" + "INIT" + "\n" + auth.Username + "\n" + auth.Computeur_ID + "\n" + string(randomdata)), duckysession)
 	for {
 		headerSize := br.Read_Header_Size(duckysession.Conn)
 		if headerSize != 0 {
 			messagesize := br.Read_Message_Size(duckysession.Conn, headerSize)
-			fmt.Println("\nYou receive a message from : ", duckysession.Conn.RemoteAddr())
 			messageBuf := make([]byte, messagesize)
 			_, err := duckysession.Conn.Read(messageBuf)
 			if err != nil {
-				fmt.Println("Erreur lors de la lecture du message :", err)
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
 			}
 			message, _ := keyencodedecode.DecryptMessageWithPrivate(keymanagement.Get_Client_Private_Key(), messageBuf)
 			lines := strings.Split(string(message), "\n")
@@ -46,7 +45,7 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 					fmt.Println("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
 					auth.ServeurCheck = true
 				} else {
-					fmt.Println("ERREUR lors de l'authentification du serveur")
+					logs.Write_log("ERROR", "Erreur lors de l'authentification du serveur : les données ne correspondent pas")
 				}
 				return []byte(sessionIntegritykey)
 			}

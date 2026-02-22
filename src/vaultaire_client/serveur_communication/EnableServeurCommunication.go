@@ -9,6 +9,7 @@ import (
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	serveur "vaultaire_client/duckynetworkClient/serveurauth"
 	"vaultaire_client/duckynetworkClient/userauth"
+	"vaultaire_client/logs"
 	"vaultaire_client/sessionmgr"
 	"vaultaire_client/storage"
 )
@@ -28,7 +29,7 @@ func EnableServerCommunication(user, pass, sshUser string) {
 			serverAddr := storage.C_serveurIP + ":" + storage.C_serveurListenPort
 			conn, err := net.Dial("tcp", serverAddr)
 			if err != nil {
-				fmt.Println("Erreur lors de la connexion au serveur :", err)
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la connexion au serveur : %v", err))
 				time.Sleep(30 * time.Second)
 				continue
 			}
@@ -56,17 +57,17 @@ func EnableServerCommunication(user, pass, sshUser string) {
 			userauth.AskAuthentification(user, pass, &duckysession)
 
 			if sshUser != "" {
-				fmt.Println("Attente fin d'auth pour :", sshUser)
+				logs.Write_log("INFO", fmt.Sprintf("Attente fin de check ssh pour l'utilisateur : %s", sshUser))
 
 				for {
 					status, ok := storage.SessionsUser.GetStatus(user)
 					if !ok {
-						fmt.Println("Session disparue")
+						logs.Write_log("ERROR", "Session disparue")
 						break
 					}
 					sessionIntegritykey := string(duckysession.SessionKey)
 					if status == sessionmgr.SessionAuthenticated {
-						fmt.Println("Session authentifiée, envoi 03_01")
+						logs.Write_log("INFO", fmt.Sprintf("Session authentifiée pour l'utilisateur : %s, demande des clés SSH pour", sshUser))
 						msg := "03_01\nserveur_central\n" +
 							sessionIntegritykey + "\n" +
 							user + "\n" +
@@ -79,7 +80,7 @@ func EnableServerCommunication(user, pass, sshUser string) {
 					}
 
 					if status == sessionmgr.SessionFailed {
-						fmt.Println("Auth échouée, abandon")
+						logs.Write_log("ERROR", "Auth échouée, abandon")
 						break
 					}
 
@@ -88,14 +89,14 @@ func EnableServerCommunication(user, pass, sshUser string) {
 			}
 			// Attendre que la connexion soit terminée avant de continuer
 			<-done
-			fmt.Println("Connexion terminée, nouvelle tentative dans 30 secondes...")
+			logs.Write_log("INFO", "Connexion terminée, nouvelle tentative dans 30 secondes...")
 			time.Sleep(30 * time.Second)
 		}
 	} else {
 		serverAddr := storage.C_serveurIP + ":" + storage.C_serveurListenPort
 		conn, err := net.Dial("tcp", serverAddr)
 		if err != nil {
-			fmt.Println("Erreur lors de la connexion au serveur :", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la connexion au serveur : %v", err))
 			return
 		}
 		var duckysession storage.DuckySession

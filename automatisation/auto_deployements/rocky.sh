@@ -45,8 +45,8 @@ EOF
 
 # Configuration client
 cat > /opt/vaultaire_client/client_conf.yaml <<'EOF'
-serveurlistenport: 666
-serveur_ip: 192.168.10.57
+serveurlistenport: 6666
+serveur_ip: vaultaire-dev
 EOF
 
 # PAM system-auth
@@ -119,20 +119,22 @@ cat > /etc/pam.d/sshd <<'EOF'
 # --- AUTHENTICATION ---
 # TON MODULE SSH CUSTOM (exécuté AVANT l'auth par clé)
 auth     required    pam_ssh_auth_module.so
-# Auth standard (fallback si ton module accepte l’utilisateur)
-auth     include     system-auth
-# --- ACCOUNT MANAGEMENT ---
-account  include     system-auth
-# --- PASSWORD MGMT ---
-password include     system-auth
-# --- SESSION ---
-# pam_selinux.so close doit TOUJOURS être avant le session stack
-session  required    pam_selinux.so close
-session  required    pam_login_custom_module.so
-session  include     system-auth
-session  required    pam_logout_custom_module.so
-# pam_selinux.so open doit être exécuté en dernier
-session  required    pam_selinux.so open
+auth       substack     password-auth
+auth       include      postlogin
+account    required     pam_sepermit.so
+account    required     pam_nologin.so
+account    include      password-auth
+password   include      password-auth
+# pam_selinux.so close should be the first session rule
+session    required     pam_selinux.so close
+session    required     pam_loginuid.so
+# pam_selinux.so open should only be followed by sessions to be executed in the user context
+session    required     pam_selinux.so open env_params
+session    required     pam_namespace.so
+session    optional     pam_keyinit.so force revoke
+session    optional     pam_motd.so
+session    include      password-auth
+session    include      postlogin
 EOF
 
 # Permissions PAM

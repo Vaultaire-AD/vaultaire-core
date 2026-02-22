@@ -1,16 +1,16 @@
 package client
 
 import (
+	"bytes"
+	"crypto/rand"
+	"strconv"
+	"strings"
 	"vaultaire/serveur/database"
 	dbuser "vaultaire/serveur/database/db-user"
 	"vaultaire/serveur/ducky-network/ducky_tools"
 	gc "vaultaire/serveur/global/security"
 	logs "vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"strconv"
-	"bytes"
-	"crypto/rand"
-	"strings"
 )
 
 // GetRandomAuthByAuthID retrieves the random authentication data and username for a given authID.
@@ -139,7 +139,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		can, err := database.DidUserCanLogin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 		if err != nil {
 			logs.Write_Log("ERROR", username+" try to login but error for get user can login")
-			return ("02_07\nSomething go wrong contact you administrator")
+			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "Something go wrong contact you administrator")
 		}
 		if can {
 			database.AddLoginEntry(db, userID, key, trames_content.ClientSoftwareID)

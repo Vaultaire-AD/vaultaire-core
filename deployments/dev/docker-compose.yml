@@ -26,8 +26,8 @@ services:
 
   vaultaire-dev:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: deployments/dev/Dockerfile
     image: vaultaire-dev:latest
     container_name: vaultaire-dev
     restart: unless-stopped
@@ -36,10 +36,9 @@ services:
       - ../../cmd/vaultaire_server:/app
       # Mount server source so restarts pick up changes (no rebuild)
       - ../../src/vaultaire_serveur:/app
-      # Config expected by the app at /opt/vaultaire
-      - ../../deployments/configs/serveur_conf.yaml:/opt/vaultaire/serveur_conf.yaml:ro
       # Web assets (templates/static) if served from repo
       - ../../web_packet:/app/web_packet:ro
+
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=dev

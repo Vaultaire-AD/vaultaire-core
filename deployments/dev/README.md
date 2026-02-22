@@ -18,6 +18,10 @@ docker compose -f deployments/dev/docker-compose.yml up -d
 docker compose -f deployments/dev/docker-compose.yml restart vaultaire-dev
 ```
 
+```vlt
+create -c test yes -join rocky-ssh-dev root
+```
+
 ## Run tests (no server start)
 
 Run the test suite and exit:

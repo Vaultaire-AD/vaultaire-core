@@ -1,11 +1,10 @@
 package commandsetup
 
 import (
+	"os"
 	duckykey "vaultaire/serveur/ducky-network/key_management"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
-	"os"
-	"path/filepath"
 
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
