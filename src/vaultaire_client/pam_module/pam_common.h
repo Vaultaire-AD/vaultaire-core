@@ -11,6 +11,7 @@
 #include <stdbool.h>
 
 /* --- Constants (single source of truth) --- */
+
 #define VAULTAIRE_SOCKET_PATH    "/tmp/vaultaire_client.sock"
 #define VAULTAIRE_MAX_BUF        4096
 #define VAULTAIRE_CMD_SIZE       512

@@ -25,6 +25,7 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 	if len(lines) < 2 {
 		logs.Write_log("ERROR", "Trame SSH 03_02 invalide : contenu incomplet")
 		return "03_99\nserveur_central\ninvalid_content"
+		
 	}
 
 	sshUser := lines[0]

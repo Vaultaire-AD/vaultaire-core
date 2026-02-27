@@ -14,6 +14,7 @@ From **repo root**:
 docker compose -f deployments/dev/docker-compose.yml build
 docker compose -f deployments/dev/docker-compose.yml up -d
 
+ssh-keygen -R "[127.0.0.1]:2222"
 # After code changes: restart to pick up updates
 docker compose -f deployments/dev/docker-compose.yml restart vaultaire-dev
 ```
