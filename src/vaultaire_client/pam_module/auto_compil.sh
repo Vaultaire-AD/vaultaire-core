@@ -1,9 +1,12 @@
-gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c -lcurl -lpam
-gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c -lcurl -lpam
-gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c -lcurl -lpam
-# cp ./pam_login_custom_module.so /usr/lib64/security/pam_login_custom_module.so
-# cp ./pam_logout_custom_module.so /usr/lib64/security/pam_logout_custom_module.so
+# Build shared common object and PAM modules (run from pam_module directory)
+set -e
+# gcc -fPIC -c -o pam_common.o pam_common.c
+gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c pam_common.c -lcurl -lpam
+gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c pam_common.c -lcurl -lpam
+gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c pam_common.c -lcurl -lpam
 
-cp ./src/vaultaire_client/pam_module/pam_login_custom_module.so ./cmd/vaultaire_client/
-cp ./src/vaultaire_client/pam_module/pam_logout_custom_module.so ./cmd/vaultaire_client/
-cp ./src/vaultaire_client/pam_module/pam_ssh_auth_module.so ./cmd/vaultaire_client/
+
+# Copy to cmd/vaultaire_client (when run from repo root)
+# cp src/vaultaire_client/pam_module/pam_*.so cmd/vaultaire_client/
+# When run from this directory:
+# cp pam_login_custom_module.so pam_logout_custom_module.so pam_ssh_auth_module.so ../../../cmd/vaultaire_client/

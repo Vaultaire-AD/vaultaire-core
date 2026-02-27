@@ -50,26 +50,26 @@ serveur_ip: vaultaire-dev
 EOF
 
 # PAM system-auth
-cat > /etc/pam.d/system-auth <<'EOF'
-#%PAM-1.0
-# This file is auto-generated.
-# User changes will be destroyed the next time authselect is run.
-#auth        required      pam_env.so
-#auth        sufficient    pam_unix.so try_first_pass nullok
-#auth        required      pam_deny.so
-auth        required      pam_login_custom_module.so
-account     required      pam_unix.so
+# cat > /etc/pam.d/system-auth <<'EOF'
+# #%PAM-1.0
+# # This file is auto-generated.
+# # User changes will be destroyed the next time authselect is run.
+# #auth        required      pam_env.so
+# #auth        sufficient    pam_unix.so try_first_pass nullok
+# #auth        required      pam_deny.so
+# auth        required      pam_login_custom_module.so
+# account     required      pam_unix.so
 
-password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
-password    sufficient    pam_unix.so try_first_pass use_authtok nullok sha512 shadow
-password    required      pam_deny.so
+# password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
+# password    sufficient    pam_unix.so try_first_pass use_authtok nullok sha512 shadow
+# password    required      pam_deny.so
 
-session     optional      pam_keyinit.so revoke
-session     required      pam_limits.so
--session     optional      pam_systemd.so
-session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
-session     required      pam_unix.so
-EOF
+# session     optional      pam_keyinit.so revoke
+# session     required      pam_limits.so
+# -session     optional      pam_systemd.so
+# session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
+# session     required      pam_unix.so
+# EOF
 
 # PAM login
 cat > /etc/pam.d/login <<'EOF'
@@ -94,25 +94,25 @@ session    include      postlogin
 EOF
 
 # PAM sudo
-cat > /etc/pam.d/sudo <<'EOF'
-#%PAM-1.0
-#auth       include      system-auth
-#account    include      system-auth
-#password   include      system-auth
-#session    include      system-auth
-auth       required      pam_env.so
-auth       sufficient    pam_unix.so try_first_pass nullok
-auth       required      pam_deny.so
+# cat > /etc/pam.d/sudo <<'EOF'
+# #%PAM-1.0
+# #auth       include      system-auth
+# #account    include      system-auth
+# #password   include      system-auth
+# #session    include      system-auth
+# auth       required      pam_env.so
+# auth       sufficient    pam_unix.so try_first_pass nullok
+# auth       required      pam_deny.so
 
-account    required      pam_unix.so
+# account    required      pam_unix.so
 
-password   sufficient    pam_unix.so try_first_pass use_authtok nullok sha512 shadow
-password   required      pam_deny.so
+# password   sufficient    pam_unix.so try_first_pass use_authtok nullok sha512 shadow
+# password   required      pam_deny.so
 
-session    optional      pam_keyinit.so revoke
-session    required      pam_limits.so
--session   optional      pam_systemd.so
-EOF
+# session    optional      pam_keyinit.so revoke
+# session    required      pam_limits.so
+# -session   optional      pam_systemd.so
+# EOF
 
 cat > /etc/pam.d/sshd <<'EOF'
 #%PAM-1.0
@@ -139,6 +139,9 @@ EOF
 
 # Permissions PAM
 chmod 644 /etc/pam.d/*
+
+# Nettoyage
+rm -rf /opt/vaultaire
 
 # Activation du service
 systemctl daemon-reload

@@ -58,14 +58,17 @@ services:
   # Client Rocky 9 avec SSH (root/root) pour tester la connexion SSH depuis le serveur (Ducky / PAM).
   rocky-ssh:
     build:
-      context: .
-      dockerfile: Dockerfile.rocky-ssh
+      context: ../..
+      dockerfile: deployments/dev/Dockerfile.rocky-ssh
     image: vaultaire-dev-rocky-ssh:latest
     container_name: rocky-ssh-dev
     restart: unless-stopped
     networks:
       - Ducky-network
     ports:
-      - "2222:22"
+      - "5656:22"
+    volumes:
+      # Monte le dossier des sources (adapte le chemin relatif si besoin)
+      - ../../cmd/vaultaire_client:/usr/lib64/security/
     # Connexion: ssh -p 2222 root@localhost (mdp: root)
     # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh (mdp: root)
