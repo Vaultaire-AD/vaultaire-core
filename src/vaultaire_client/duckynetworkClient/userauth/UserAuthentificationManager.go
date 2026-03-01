@@ -8,6 +8,7 @@ import (
 	"vaultaire_client/logs"
 	"vaultaire_client/sessionmgr"
 	"vaultaire_client/storage"
+	sto_session "vaultaire_client/storage/stosession"
 	"vaultaire_client/tools/getlocalinformation"
 	"vaultaire_client/tools/sshreq"
 )
@@ -44,11 +45,15 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 		// admin
 		storage.IsAdmin = (lines[1] == "true")
 
+		rep := storage.AuthResult{
+			IsAdmin: storage.IsAdmin,
+			Keys:    lines[2],
+		}
 		// 🔑 SSH KEYS → nouveau système
 		if lines[2] != "empty" {
 			if ch, ok := sshreq.Pop(username); ok {
 				select {
-				case ch <- lines[2]:
+				case ch <- rep:
 				default:
 					logs.Write_log("WARNING", "Channel SSH plein pour "+username)
 				}
@@ -98,10 +103,11 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
-		storage.SessionsUser.AddOrUpdate(
+		sto_session.SessionsUser.AddOrUpdate(
 			username,
 			duckysession.Conn,
 			sessionmgr.SessionAuthenticated,
+			duckysession,
 		)
 
 		message = "02_12\nserveur_central\n" +

@@ -20,6 +20,8 @@
 void vaultaire_log_info(const char *fmt, ...);
 void vaultaire_log_err(const char *fmt, ...);
 
+
+int is_vaultaire_user(const char *username);
 /* --- UNIX socket: send JSON request; optionally receive response --- */
 /* Returns 0 on success, -1 on error. If resp and resp_size > 0, response is written (null-terminated). */
 int vaultaire_socket_send_recv(const char *request, char *resp, size_t resp_size);

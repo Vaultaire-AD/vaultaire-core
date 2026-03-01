@@ -16,6 +16,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <grp.h>
+#include <pwd.h>
 
 /* --- Logging --- */
 void vaultaire_log_info(const char *fmt, ...) {
@@ -28,6 +29,29 @@ void vaultaire_log_info(const char *fmt, ...) {
         fclose(f);
     }
     va_end(ap);
+}
+
+
+
+int is_vaultaire_user(const char *username) {
+    struct passwd *pw = getpwnam(username);
+    
+    // CAS 1 : L'utilisateur n'existe pas encore sur la machine.
+    // On DOIT retourner 1 pour qu'il entre dans le cycle Vaultaire et soit créé.
+    if (pw == NULL) {
+        return 1; 
+    }
+
+    // CAS 2 : L'utilisateur existe. On vérifie son tag GECOS et si egale a @vaultaire pas de bol ^^.
+    char expected_comment[128];
+    snprintf(expected_comment, sizeof(expected_comment), "%s@vaultaire", username);
+
+    if (pw->pw_gecos != NULL && strcmp(pw->pw_gecos, expected_comment) == 0) {
+        return 1; // C'est un utilisateur déjà marqué Vaultaire
+    }
+
+    // CAS 3 : L'utilisateur existe mais n'a pas le tag vaultaire (ex: root, adm-lviguie)
+    return 0; 
 }
 
 void vaultaire_log_err(const char *fmt, ...) {

@@ -22,6 +22,8 @@ func CompileHeaderSize(messageSize []byte) byte {
 }
 
 func SendMessage(message string, duckysession *storage.DuckySession) {
+
+	// 1. Vérification de sécurité
 	if message == "" || duckysession.Conn == nil {
 		return
 	}
@@ -29,6 +31,7 @@ func SendMessage(message string, duckysession *storage.DuckySession) {
 	var cipherMsg string
 	var err error
 
+	// 2. chiffrement (AES ou RSA)
 	if duckysession.IsSafe {
 		// Chiffrement symétrique AES-GCM avec clé de session
 		cipherMsg, err = keyencodedecode.EncryptAESGCMString(duckysession.SessionKey, message)
@@ -46,19 +49,20 @@ func SendMessage(message string, duckysession *storage.DuckySession) {
 		cipherMsg = string(cipherBytes) // ou Base64 si nécessaire
 	}
 
-	// Préparer header et taille du message
+	// 3. Préparation du paquet (Header + Size + Payload)
 	messageSize := CompileMessageSize([]byte(cipherMsg))
 	headerSize := []byte{CompileHeaderSize(messageSize)}
+
+	// Construction de la trame : [1 byte HeaderSize][2 bytes MessageSize][Payload]
 	data := append(append(headerSize, messageSize...), []byte(cipherMsg)...)
 
-	// Envoi sur la connexion
-	if _, err := duckysession.Conn.Write(data); err != nil {
-		defer func() {
-			if cerr := duckysession.Conn.Close(); cerr != nil {
-				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la fermeture de la connexion : %v", cerr))
-			}
-		}()
-		logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de l'envoi du message : %v", err))
+	// 4. Envoi sur la connexion
+	_, err = duckysession.Conn.Write(data)
+	if err != nil {
+		logs.Write_log("ERROR", fmt.Sprintf("Échec d'envoi au serveur: %v", err))
+		// CRITIQUE : Si l'envoi échoue, on force la fermeture du socket.
+		// Cela va débloquer la goroutine handleConnection qui est en train de Read()
+		duckysession.Conn.Close()
 		return
 	}
 }

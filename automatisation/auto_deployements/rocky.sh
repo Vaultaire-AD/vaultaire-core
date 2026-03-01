@@ -14,9 +14,9 @@ mv /opt/vaultaire/*.pem /opt/vaultaire_client/.ssh/
 # Permissions
 chmod 700 -R /opt/vaultaire_client/
 chmod 400 -R /opt/vaultaire_client/.ssh/*
-chmod 644 /usr/lib64/security/pam_login_custom_module.so
-chmod 644 /usr/lib64/security/pam_logout_custom_module.so
-chmod 644 /usr/lib64/security/pam_ssh_auth_module.so
+chmod 755 /usr/lib64/security/pam_login_custom_module.so
+chmod 755 /usr/lib64/security/pam_logout_custom_module.so
+chmod 755 /usr/lib64/security/pam_ssh_auth_module.so
 chown root:root /usr/lib64/security/pam_login_custom_module.so
 chown root:root /usr/lib64/security/pam_logout_custom_module.so
 chown root:root /usr/lib64/security/pam_ssh_auth_module.so
@@ -46,8 +46,24 @@ EOF
 # Configuration client
 cat > /opt/vaultaire_client/client_conf.yaml <<'EOF'
 serveurlistenport: 6666
-serveur_ip: vaultaire-dev
+serveur_ip: vaultaire-ad1.vaultaire.local
 EOF
+
+# Force le MFA : Clé SSH + Mot de passe (via PAM)
+# On utilise sed pour modifier les lignes existantes ou on les ajoute à la fin
+sed -i 's/^#\(UsePAM\) .*/\1 yes/' /etc/ssh/sshd_config
+sed -i 's/^\(UsePAM\) .*/\1 yes/' /etc/ssh/sshd_config
+
+sed -i 's/^#\(KbdInteractiveAuthentication\) .*/\1 yes/' /etc/ssh/sshd_config
+sed -i 's/^\(KbdInteractiveAuthentication\) .*/\1 yes/' /etc/ssh/sshd_config
+
+# Ajout des méthodes d'authentification combinées (MFA)
+if ! grep -q "AuthenticationMethods" /etc/ssh/sshd_config; then
+    echo "AuthenticationMethods publickey,keyboard-interactive" >> /etc/ssh/sshd_config
+else
+    sed -i 's/^.*AuthenticationMethods.*/AuthenticationMethods publickey,keyboard-interactive/' /etc/ssh/sshd_config
+fi
+
 
 # PAM system-auth
 # cat > /etc/pam.d/system-auth <<'EOF'
@@ -145,11 +161,8 @@ rm -rf /opt/vaultaire
 
 # Activation du service
 systemctl daemon-reload
-systemctl relaod sshd
 systemctl enable vaultaire_client.service
 systemctl start vaultaire_client.service
-
-# Nettoyage
-rm -rf /opt/vaultaire
-
 echo "✅ Installation terminée."
+systemctl reload sshd
+

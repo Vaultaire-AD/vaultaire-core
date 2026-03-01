@@ -14,7 +14,8 @@ import (
 )
 
 type CheckRequest struct {
-	User string `json:"user"`
+	User     string `json:"user"`
+	Password string `json:"password"`
 }
 
 func handleCheckRequest(conn net.Conn, payload string) {
@@ -31,33 +32,41 @@ func handleCheckRequest(conn net.Conn, payload string) {
 	}
 	logs.Write_log("INFO", fmt.Sprintf("PAM Check request for user: %s", req.User))
 
-	// 🔐 channel privé pour cette requête
-	respChan := make(chan string, 1)
+	// 🔐 channel de type AuthResult
+	respChan := make(chan storage.AuthResult, 1)
 	sshreq.Register(req.User, respChan)
 
 	// lance la requête réseau
-	go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", req.User)
+	go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", req.User, &req.Password)
 
-	status_rep := "timeout"
+	status_rep := "failed"
+	sshKey := ""
+	isAdminResult := false
 
 	fmt.Println("L'user est il admin ? : " + strconv.FormatBool(storage.IsAdmin))
 	// Envoyer une réponse confirmant l'authentification
-	sshKey := ""
+
 	select {
-	case sshKey = <-respChan:
-		logs.Write_log("INFO", fmt.Sprintf("Clés publiques reçues pour l'utilisateur %s: %d clés", req.User, len(sshKey)))
+	case result := <-respChan:
+		// On récupère tout d'un coup !
+		sshKey = result.Keys
+		isAdminResult = result.IsAdmin
+
+		logs.Write_log("INFO", fmt.Sprintf("User %s authentifié. Admin: %t, Clés: %d", req.User, isAdminResult, len(cleankey(sshKey))))
 		status_rep = "success"
 
-	case <-time.After(5 * time.Second):
-		logs.Write_log("ERROR", "Timeout récupération des clés publiques")
-		sshreq.Remove(req.User) // cleanup registry
-		sshKey = ""
-		status_rep = "failed"
+	case <-time.After(7 * time.Second):
+		logs.Write_log("ERROR", "Timeout ou Auth Failed pour "+req.User)
+		sshreq.Remove(req.User)
 	}
 
+	// On nettoie le mot de passe après usage ou timeout
+	req.Password = ""
+
+	// Construction de la réponse pour le module PAM (JSON)
 	response := Response{
 		Status:   status_rep,
-		IsAdmin:  storage.IsAdmin,
+		IsAdmin:  isAdminResult, // Utilisation du résultat serveur
 		Ssh_keys: cleankey(sshKey),
 	}
 
@@ -66,7 +75,6 @@ func handleCheckRequest(conn net.Conn, payload string) {
 	if err != nil {
 		logs.Write_log("ERROR", fmt.Sprintf("Erreur d'envoi réponse check: %v", err))
 	}
-	storage.IsAdmin = false
 }
 
 func cleankey(sshKey string) []string {

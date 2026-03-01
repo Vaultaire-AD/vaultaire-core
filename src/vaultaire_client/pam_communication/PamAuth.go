@@ -29,7 +29,7 @@ func handleAuthRequest(conn net.Conn, payload string) {
 		return
 	}
 
-	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "")
+	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "", nil)
 
 	status_rep := "timeout"
 

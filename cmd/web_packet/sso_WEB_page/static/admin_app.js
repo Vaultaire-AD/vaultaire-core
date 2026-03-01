@@ -54,8 +54,8 @@ function initAdminApp(){
     if(!a) return;
     const href = a.getAttribute('href');
     if(!href) return;
-    // only intercept internal admin links
-    if(href.startsWith('/admin')){
+    // only intercept internal admin links (full load for tree page so LDAP tree script runs)
+    if(href.startsWith('/admin') && !href.startsWith('/admin/tree') && !href.startsWith('/admin/api/')){
       e.preventDefault();
       ajaxNavigate(href, true);
     }

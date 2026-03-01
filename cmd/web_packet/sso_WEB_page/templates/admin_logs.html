@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Logs — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <style>
+    .log-entry { padding: 0.5rem; border-bottom: 1px solid var(--border-color, #e0e0e0); font-family: monospace; font-size: 0.875rem; }
+    .log-entry.level-ERROR, .log-entry.level-CRITICAL { background-color: rgba(220, 53, 69, 0.1); }
+    .log-entry.level-WARNING { background-color: rgba(255, 193, 7, 0.1); }
+    .log-entry.level-INFO { background-color: rgba(0, 123, 255, 0.05); }
+    .log-entry.level-DEBUG { color: #666; }
+    .log-timestamp { color: #666; margin-right: 0.5rem; }
+    .log-level { font-weight: bold; margin-right: 0.5rem; display: inline-block; min-width: 80px; }
+    .log-code { color: #0066cc; margin-right: 0.5rem; }
+    .log-message { word-break: break-word; }
+    .log-filters { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: end; }
+    .log-filters select, .log-filters input { padding: 0.5rem; }
+    .log-stats { font-size: 0.875rem; color: #666; margin-bottom: 1rem; }
+    #log-container { max-height: 600px; overflow-y: auto; border: 1px solid var(--border-color, #e0e0e0); border-radius: 4px; }
+    .loading { text-align: center; padding: 2rem; color: #666; }
+  </style>
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Logs système</h1>
+    <p class="muted">Logs RFC 5424 — Buffer en mémoire (max {{ .Stats.max_size }} entrées)</p>
+
+    <div class="log-stats">
+      <span>Total: <strong>{{ .Stats.total_entries }}</strong> entrées</span>
+      <span style="margin-left: 1rem;">Hostname: <strong>{{ .Stats.hostname }}</strong></span>
+    </div>
+
+    <div class="log-filters">
+      <div>
+        <label for="level-filter">Niveau:</label>
+        <select id="level-filter">
+          <option value="">Tous</option>
+          <option value="DEBUG">DEBUG</option>
+          <option value="INFO">INFO</option>
+          <option value="NOTICE">NOTICE</option>
+          <option value="WARNING">WARNING</option>
+          <option value="ERROR">ERROR</option>
+          <option value="CRITICAL">CRITICAL</option>
+          <option value="ALERT">ALERT</option>
+          <option value="EMERGENCY">EMERGENCY</option>
+        </select>
+      </div>
+      <div>
+        <label for="code-filter">Code:</label>
+        <input type="text" id="code-filter" placeholder="Ex: VLT-DB001" style="width: 150px;">
+      </div>
+      <div>
+        <label for="limit-filter">Limite:</label>
+        <input type="number" id="limit-filter" value="100" min="1" max="1000" style="width: 80px;">
+      </div>
+      <div>
+        <button type="button" id="refresh-logs" class="btn btn-primary">Actualiser</button>
+        <button type="button" id="auto-refresh" class="btn btn-ghost">Auto-actualisation</button>
+      </div>
+    </div>
+
+    <div id="log-container">
+      <div class="loading">Chargement des logs...</div>
+    </div>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+  <script>
+    let autoRefreshInterval = null;
+
+    function formatTimestamp(ts) {
+      const d = new Date(ts);
+      return d.toLocaleString('fr-FR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    }
+
+    function loadLogs() {
+      const level = document.getElementById('level-filter').value;
+      const code = document.getElementById('code-filter').value.trim();
+      const limit = document.getElementById('limit-filter').value || 100;
+
+      const params = new URLSearchParams();
+      if (level) params.append('level', level);
+      if (code) params.append('code', code);
+      params.append('limit', limit);
+
+      fetch('/admin/api/logs?' + params.toString())
+        .then(r => r.json())
+        .then(data => {
+          const container = document.getElementById('log-container');
+          if (data.logs && data.logs.length > 0) {
+            container.innerHTML = data.logs.map(log => {
+              const levelClass = 'level-' + log.level;
+              return `<div class="log-entry ${levelClass}">
+                <span class="log-timestamp">${formatTimestamp(log.timestamp)}</span>
+                <span class="log-level">[${log.level}]</span>
+                ${log.code ? `<span class="log-code">[${log.code}]</span>` : ''}
+                <span class="log-message">${escapeHtml(log.message)}</span>
+              </div>`;
+            }).join('');
+            container.scrollTop = container.scrollHeight;
+          } else {
+            container.innerHTML = '<div class="loading">Aucun log trouvé avec ces filtres.</div>';
+          }
+        })
+        .catch(err => {
+          document.getElementById('log-container').innerHTML = '<div class="loading" style="color: red;">Erreur: ' + escapeHtml(err.message) + '</div>';
+        });
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    document.getElementById('refresh-logs').addEventListener('click', loadLogs);
+    document.getElementById('auto-refresh').addEventListener('click', function() {
+      if (autoRefreshInterval) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        this.textContent = 'Auto-actualisation';
+        this.classList.remove('btn-primary');
+        this.classList.add('btn-ghost');
+      } else {
+        autoRefreshInterval = setInterval(loadLogs, 2000);
+        this.textContent = 'Arrêter auto-actualisation';
+        this.classList.remove('btn-ghost');
+        this.classList.add('btn-primary');
+      }
+    });
+
+    loadLogs();
+  </script>
+</body>
+</html>

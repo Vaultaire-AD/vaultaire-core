@@ -6,7 +6,7 @@ file-path:
   # ne sont plus nécessaires - toutes les clés et certificats sont maintenant stockés en base de données
   clientconfpath: "/opt/vaultaire/"
   logpath: "/var/log/vaultaire/"
-  servercheckonlinetimer: 5
+  servercheckonlinetimer: 2
 
 ldap:
   ldap_enable: true

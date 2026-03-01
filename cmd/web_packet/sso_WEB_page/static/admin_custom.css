@@ -1,74 +1,425 @@
-/* admin_custom.css - styles pour l'interface d'administration */
+/* admin_custom.css — Voltaire: simple, confident, secure */
 
-:root{
-  --brand:#6a0dad;
-  --brand-dark:#4b0082;
-  --muted:#6b6b6b;
-  --card-bg:#ffffff;
-  --page-bg:#f5f3f8;
-  --header-height: 64px; /* hauteur par défaut du bandeau */
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;0,700&family=Source+Sans+3:wght@400;500;600;700&display=swap');
+
+:root {
+  --ink: #1a2332;
+  --paper: #f5f3ef;
+  --paper-warm: #ebe8e2;
+  --card: #ffffff;
+  --border: #c9c4bc;
+  --border-light: #e5e2dc;
+  --accent: #2c5282;
+  --accent-hover: #1a365d;
+  --muted: #5c6470;
+  --danger: #c53030;
+  --danger-bg: #fed7d7;
+  --success: #276749;
+  --header-height: 56px;
+  --radius: 3px;
+  --shadow: rgba(26, 35, 50, 0.06);
 }
 
-.admin-root, html,body{height:100%;margin:0;padding:0;font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;background:var(--page-bg);color:#222}
-
-.admin-header{
-  display:flex;align-items:center;justify-content:space-between;padding:12px 20px;background:linear-gradient(90deg,var(--brand),var(--brand-dark));color:white;box-shadow:0 2px 6px rgba(0,0,0,0.12);
-  position:fixed;top:0;left:0;right:0;z-index:9999;height:var(--header-height);align-items:center
+.admin-root, html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Source Sans 3', system-ui, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
+  font-size: 15px;
+  line-height: 1.5;
 }
-.admin-header .brand{display:flex;align-items:center;gap:12px;font-weight:700}
-.admin-header .brand img{height:36px}
-.admin-header .brand span{font-size:1.1rem}
-.admin-nav a{color:rgba(255,255,255,0.95);text-decoration:none;margin:0 8px;font-weight:600}
-.admin-nav a:hover{text-decoration:underline}
 
-.admin-toolbar{display:flex;align-items:center;gap:12px}
-.theme-toggle{background:rgba(255,255,255,0.12);border:1px solid rgba(255,255,255,0.12);color:white;padding:6px 10px;border-radius:8px;cursor:pointer}
-.theme-toggle:hover{background:rgba(255,255,255,0.18)}
+/* Header: restrained, professional */
+.admin-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 1.5rem;
+  background: var(--card);
+  border-bottom: 1px solid var(--border-light);
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  height: var(--header-height);
+  box-shadow: 0 1px 3px var(--shadow);
+}
 
-.admin-toolbar{display:flex;align-items:center;gap:12px}
-.admin-toolbar .search{padding:6px 10px;border-radius:8px;border:1px solid rgba(0,0,0,0.08)}
+.admin-header .brand {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--ink);
+}
 
-.admin-container{max-width:1200px;margin:calc(var(--header-height) + 20px) auto 24px;padding:18px 18px 18px;background:var(--card-bg);border-radius:10px;box-shadow:0 10px 30px rgba(50,50,70,0.06)}
+.admin-header .brand img {
+  height: 32px;
+  width: auto;
+}
 
-/* Stronger rule to avoid any template CSS overriding the top spacing */
+.admin-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.admin-nav a {
+  color: var(--muted);
+  text-decoration: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius);
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: color 0.2s, background 0.2s;
+}
+
+.admin-nav a:hover {
+  color: var(--accent);
+  background: rgba(44, 82, 130, 0.06);
+}
+
+.admin-nav a[href*="tree"] {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.admin-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.theme-toggle {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--muted);
+  padding: 0.4rem 0.65rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-family: inherit;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Main content */
+.admin-container {
+  max-width: 1100px;
+  margin: calc(var(--header-height) + 1.5rem) auto 2rem;
+  padding: 1.75rem 1.5rem;
+  background: var(--card);
+  border-radius: var(--radius);
+  border: 1px solid var(--border-light);
+  box-shadow: 0 1px 4px var(--shadow);
+}
+
 .admin-header + .admin-container,
 .admin-container {
-  margin-top: calc(var(--header-height) + 20px) !important;
-  padding-top: 18px !important;
+  margin-top: calc(var(--header-height) + 1.5rem) !important;
+  padding-top: 1.75rem !important;
 }
 
-h1{color:var(--brand);margin:0 0 12px 0}
-h2{color:#333;margin-top:0}
-
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{padding:10px;border-bottom:1px solid #eee;text-align:left}
-th{background:#fafafa}
-
-button{background:var(--brand);color:white;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
-button.secondary{background:#eee;color:#333}
-button.danger{background:#c0392b}
-
-form label{display:block;margin:6px 0}
-input,select,textarea{padding:8px;border-radius:8px;border:1px solid #ddd;width:100%;box-sizing:border-box}
-
-.top-actions{display:flex;gap:8px;align-items:center;margin-bottom:12px}
-
-@media (max-width:800px){
-  .admin-header{flex-direction:column;gap:8px;align-items:flex-start}
-  :root{--header-height:120px}
-  .admin-container{margin:calc(var(--header-height) + 12px) 12px 12px}
+h1 {
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.5rem;
+  color: var(--ink);
+  margin: 0 0 0.5rem 0;
 }
 
-/* Dark theme */
-body.dark{background:#0f1115;color:#e6eef8}
-body.dark .admin-header{background:linear-gradient(90deg,#111 #222)}
-body.dark .admin-container{background:#0e1115;box-shadow:none;color:#e6eef8}
-body.dark table th, body.dark table td{border-color:rgba(255,255,255,0.06)}
-body.dark button{background:#222;color:#fff}
-body.dark .theme-toggle{background:rgba(255,255,255,0.06);border-color:rgba(255,255,255,0.06)}
-
-/* Backwards-compatibility: if templates still use .container, ensure they start below the fixed header */
-.admin-header + .container,
-.container.admin-container {
-  margin-top: calc(var(--header-height) + 20px);
+h2 {
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-weight: 600;
+  font-size: 1.15rem;
+  color: var(--ink);
+  margin: 1.25rem 0 0.5rem 0;
 }
+
+.small {
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+
+/* Tables */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 0.75rem;
+  font-size: 0.9rem;
+}
+
+th, td {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid var(--border-light);
+  text-align: left;
+}
+
+th {
+  background: var(--paper-warm);
+  font-weight: 600;
+  color: var(--muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+tr:hover td {
+  background: rgba(0, 0, 0, 0.02);
+}
+
+/* Forms */
+form label {
+  display: block;
+  margin: 0.5rem 0 0.25rem 0;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+input, select, textarea {
+  padding: 0.5rem 0.65rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  width: 100%;
+  max-width: 400px;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 0.95rem;
+  background: #fff;
+  color: var(--ink);
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(44, 82, 130, 0.12);
+}
+
+textarea {
+  min-height: 100px;
+  font-family: ui-monospace, monospace;
+  font-size: 0.9rem;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  font-family: inherit;
+  transition: background 0.2s;
+}
+
+button:hover {
+  background: var(--accent-hover);
+}
+
+button.secondary {
+  background: var(--paper-warm);
+  color: var(--ink);
+}
+
+button.secondary:hover {
+  background: var(--border-light);
+}
+
+button.danger {
+  background: var(--danger);
+  font-size: 0.85rem;
+  padding: 0.35rem 0.65rem;
+}
+
+button.danger:hover {
+  background: #9b2c2c;
+}
+
+/* Pre / command output */
+pre.output {
+  background: var(--paper-warm);
+  padding: 1rem;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+  font-family: ui-monospace, monospace;
+  color: var(--ink);
+  margin: 0.5rem 0 0 0;
+}
+
+/* Messages */
+.admin-container .message-success {
+  background: #c6f6d5;
+  color: #276749;
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+.admin-container .message-error {
+  background: var(--danger-bg);
+  color: var(--danger);
+  padding: 0.65rem 1rem;
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+  font-weight: 500;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid var(--border-light);
+  margin: 1.5rem 0;
+}
+
+/* Links */
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* LDAP Tree */
+.ldap-tree {
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
+
+.ldap-tree .tree-node {
+  margin-left: 0;
+  list-style: none;
+  padding-left: 0;
+}
+
+.ldap-tree .tree-node ul,
+.ldap-tree .tree-children {
+  margin-left: 1.25rem;
+  padding-left: 0.75rem;
+  border-left: 1px solid var(--border-light);
+  list-style: none;
+}
+
+.ldap-tree .tree-group-wrap {
+  margin: 0.25rem 0;
+}
+
+.ldap-tree .tree-group-wrap ul.tree-node {
+  margin-left: 1rem;
+  padding-left: 0.5rem;
+}
+
+.ldap-tree .tree-toggle {
+  background: none;
+  border: none;
+  padding: 0 0.25rem;
+  margin-right: 0.25rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 0.7rem;
+  line-height: 1;
+  vertical-align: middle;
+}
+
+.ldap-tree .tree-toggle:hover {
+  color: var(--accent);
+}
+
+.ldap-tree .tree-item {
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.ldap-tree .tree-item:hover {
+  background: var(--paper-warm);
+}
+
+.ldap-tree .tree-item.domain .tree-label { font-weight: 600; color: var(--accent); }
+.ldap-tree .tree-item.group .tree-label { font-weight: 500; color: var(--ink); }
+.ldap-tree .tree-item.user .tree-label { color: var(--muted); font-size: 0.9em; }
+
+.ldap-tree .tree-badge {
+  font-size: 0.7rem;
+  padding: 0.15rem 0.4rem;
+  border-radius: 2px;
+  background: var(--border-light);
+  color: var(--muted);
+}
+
+.ldap-tree .tree-loading {
+  color: var(--muted);
+  padding: 1rem;
+}
+
+/* Responsive */
+@media (max-width: 800px) {
+  .admin-header {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: var(--header-height);
+    padding: 0.75rem 1rem;
+  }
+  :root { --header-height: 72px; }
+  .admin-container {
+    margin-left: 0.75rem;
+    margin-right: 0.75rem;
+  }
+}
+
+/* Dark theme — same confidence, darker palette */
+body.dark {
+  background: #0f1419;
+  color: #e2e8f0;
+}
+
+body.dark .admin-header {
+  background: #1a2332;
+  border-bottom-color: #2d3748;
+}
+
+body.dark .admin-header .brand { color: #e2e8f0; }
+body.dark .admin-nav a { color: #a0aec0; }
+body.dark .admin-nav a:hover { color: #63b3ed; background: rgba(99, 179, 237, 0.1); }
+body.dark .admin-container {
+  background: #1a2332;
+  border-color: #2d3748;
+  box-shadow: none;
+}
+
+body.dark h1, body.dark h2 { color: #e2e8f0; }
+body.dark th, body.dark td { border-color: #2d3748; }
+body.dark th { background: #0f1419; color: #a0aec0; }
+body.dark tr:hover td { background: rgba(255,255,255,0.03); }
+body.dark input, body.dark select, body.dark textarea {
+  background: #0f1419;
+  border-color: #2d3748;
+  color: #e2e8f0;
+}
+body.dark button { background: #2c5282; }
+body.dark button:hover { background: #1a365d; }
+body.dark button.secondary { background: #2d3748; color: #e2e8f0; }
+body.dark pre.output { background: #0f1419; border-color: #2d3748; color: #e2e8f0; }
+body.dark .ldap-tree .tree-item.domain .tree-label { color: #63b3ed; }
+body.dark .ldap-tree .tree-item:hover { background: rgba(255,255,255,0.05); }
+body.dark .ldap-tree .tree-node ul { border-left-color: #2d3748; }
+body.dark .theme-toggle { border-color: #2d3748; color: #a0aec0; }
+body.dark .theme-toggle:hover { border-color: #63b3ed; color: #63b3ed; }
+body.dark a { color: #63b3ed; }

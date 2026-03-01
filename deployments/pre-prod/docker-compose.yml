@@ -34,7 +34,7 @@ services:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=preprod
     ports:
-      - "666:666"
+      - "6666:6666"
       - "443:443"
       - "389:389"
       - "636:636"

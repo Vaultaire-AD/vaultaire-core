@@ -27,11 +27,19 @@ func AskServerKey(duckysession *storage.DuckySession) bool {
 	}
 
 	for {
-		headerSize := br.Read_Header_Size(duckysession.Conn)
+		headerSize, err := br.Read_Header_Size(duckysession.Conn)
+		if err != nil {
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du header : %v", err))
+			return false
+		}
 		if headerSize != 0 {
-			messagesize := br.Read_Message_Size(duckysession.Conn, headerSize)
+			messagesize, err := br.Read_Message_Size(duckysession.Conn, headerSize)
+			if err != nil {
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
+				return false
+			}
 			messageBuf := make([]byte, messagesize)
-			_, err := duckysession.Conn.Read(messageBuf)
+			_, err = duckysession.Conn.Read(messageBuf)
 			if err != nil {
 				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
 			}

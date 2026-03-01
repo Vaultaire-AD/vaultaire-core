@@ -26,11 +26,19 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 	auth.ServeurAUth = randomdata
 	send.SendMessage(("01_01\nserver_central\n" + "INIT" + "\n" + auth.Username + "\n" + auth.Computeur_ID + "\n" + string(randomdata)), duckysession)
 	for {
-		headerSize := br.Read_Header_Size(duckysession.Conn)
+		headerSize, err := br.Read_Header_Size(duckysession.Conn)
+		if err != nil {
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du header : %v", err))
+			return nil
+		}
 		if headerSize != 0 {
-			messagesize := br.Read_Message_Size(duckysession.Conn, headerSize)
+			messagesize, err := br.Read_Message_Size(duckysession.Conn, headerSize)
+			if err != nil {
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
+				return nil
+			}
 			messageBuf := make([]byte, messagesize)
-			_, err := duckysession.Conn.Read(messageBuf)
+			_, err = duckysession.Conn.Read(messageBuf)
 			if err != nil {
 				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
 			}

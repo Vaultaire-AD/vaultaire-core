@@ -114,88 +114,66 @@ static int install_ssh_keys_for_user(const char *username, char **ssh_keys, size
 
 /* --- PAM auth hook --- */
 PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv) {
-    const char *username;
-    const char *password;
-    struct pam_conv *conv;
-    struct pam_message msg;
-    const struct pam_message *pmsg;
-    struct pam_response *pam_resp = NULL; // Renommé pour éviter le conflit
-
-    // 1. Récupérer le nom d'utilisateur
+    const char *username = NULL;
     if (pam_get_user(pamh, &username, NULL) != PAM_SUCCESS || !username) {
         vaultaire_log_err("pam_get_user failed");
         return PAM_USER_UNKNOWN;
     }
-
-    // --- CORRECTION : Suppression de la ligne "nst char *username" qui était ici ---
-
+    // if (strchr(username, '@') == NULL)
+    //     return PAM_IGNORE;
     if (!is_vaultaire_user(username)) {
-        return PAM_IGNORE; // On laisse passer les users locaux
+        vaultaire_log_err("User %s is not a Vaultaire user, ignoring", username);
+        return PAM_IGNORE;
     }
 
-    // 2. Demander le mot de passe
-    pam_get_item(pamh, PAM_CONV, (const void **)&conv);
-    msg.msg_style = PAM_PROMPT_ECHO_OFF;
-    msg.msg = "Vaultaire MFA Password: ";
-    pmsg = &msg;
-
-    if (conv->conv(1, &pmsg, &pam_resp, conv->appdata_ptr) != PAM_SUCCESS || !pam_resp) {
-        return PAM_AUTH_ERR;
-    }
-    password = pam_resp[0].resp; 
-
-    // 3. Préparation requête JSON
-    char req_buf[VAULTAIRE_MAX_BUF];
-    snprintf(req_buf, sizeof(req_buf), "{\"check\":{\"user\":\"%s\",\"password\":\"%s\"}}", username, password);
-
-    // NETTOYAGE IMMÉDIAT du mot de passe en mémoire
-    if (pam_resp[0].resp) {
-        memset(pam_resp[0].resp, 0, strlen(pam_resp[0].resp));
-        free(pam_resp[0].resp);
-    }
-    free(pam_resp);
-
-    // 4. Envoi au daemon Go
-    char json_res[VAULTAIRE_MAX_BUF]; // Renommé
-    if (vaultaire_socket_send_recv(req_buf, json_res, sizeof(json_res)) != 0) {
-        vaultaire_log_err("Socket communication failed");
+    if (!vaultaire_is_valid_username(username)) {
+        vaultaire_log_err("invalid username: %s", username);
         return PAM_PERM_DENIED;
     }
 
-    // 5. Parsing de la réponse enrichie
-    char status[64] = {0};
+    char req[VAULTAIRE_MAX_BUF];
+    snprintf(req, sizeof(req), "{\"check\":{\"user\":\"%s\"}}", username);
+    char resp[VAULTAIRE_MAX_BUF];
+    if (vaultaire_socket_send_recv(req, resp, sizeof(resp)) != 0) {
+        vaultaire_log_err("send_check_request failed for %s", username);
+        return PAM_PERM_DENIED;
+    }
+
+    char status[64];
     bool is_admin = false;
     char **ssh_keys = NULL;
     size_t key_count = 0;
 
-    vaultaire_json_get_string(json_res, "status", status, sizeof(status));
-    vaultaire_json_get_bool(json_res, "is_admin", &is_admin);
-    vaultaire_json_get_ssh_keys(json_res, &ssh_keys, &key_count);
+    if (vaultaire_json_get_string(resp, "status", status, sizeof(status)) != 0) {
+        vaultaire_log_err("parse status failed");
+        return PAM_PERM_DENIED;
+    }
+    vaultaire_json_get_bool(resp, "is_admin", &is_admin);
+    vaultaire_json_get_ssh_keys(resp, &ssh_keys, &key_count);
+
+    vaultaire_log_info("vaultaire: user=%s status=%s is_admin=%s", username, status, is_admin ? "true" : "false");
 
     if (strcmp(status, "success") == 0) {
-        // Installation utilisateur et clés
-        ensure_local_user_no_password(username);
-        
-        if (key_count > 0) {
-            install_ssh_keys_for_user(username, ssh_keys, key_count);
+        if (ensure_local_user_no_password(username) != 0) {
+            vaultaire_log_err("Could not ensure local user %s", username);
+            if (ssh_keys) { for (size_t i = 0; i < key_count; i++) free(ssh_keys[i]); free(ssh_keys); }
+            return PAM_PERM_DENIED;
         }
-
-        // GESTION DU GROUPE SUDO
-        if (is_admin) {
-            vaultaire_log_info("Granting sudo rights to %s", username);
+        if (key_count > 0 && install_ssh_keys_for_user(username, ssh_keys, key_count) != 0) {
+            vaultaire_log_err("Failed installing ssh keys for %s", username);
+            for (size_t i = 0; i < key_count; i++) free(ssh_keys[i]); free(ssh_keys);
+            return PAM_PERM_DENIED;
+        }
+        for (size_t i = 0; i < key_count; i++) free(ssh_keys[i]);
+        free(ssh_keys);
+        if (is_admin)
             vaultaire_add_user_to_sudo_group(username);
-        } else {
+        else
             vaultaire_remove_user_from_sudo_group(username);
-        }
-
-        // Nettoyage des clés en mémoire
-        if (ssh_keys) {
-            for (size_t i = 0; i < key_count; i++) free(ssh_keys[i]);
-            free(ssh_keys);
-        }
-        return PAM_SUCCESS; // Ou PAM_IGNORE selon ta stack
+        return PAM_IGNORE;
     }
-
+    // delete_local_user(username);
+    vaultaire_log_info("vaultaire: access denied for %s", username);
     return PAM_PERM_DENIED;
 }
 

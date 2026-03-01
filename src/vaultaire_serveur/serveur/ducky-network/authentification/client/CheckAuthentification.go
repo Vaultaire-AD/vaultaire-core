@@ -139,7 +139,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		can, err := database.DidUserCanLogin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 		if err != nil {
 			logs.Write_Log("ERROR", username+" try to login but error for get user can login")
-			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "Something go wrong contact you administrator")
+			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "\nSomething go wrong contact you administrator")
 		}
 		if can {
 			database.AddLoginEntry(db, userID, key, trames_content.ClientSoftwareID)
@@ -158,7 +158,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 			}
 
 		} else {
-			return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "you have not the authorisation for acces to this computeur")
+			return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nyou have not the authorisation for acces to this computeur")
 		}
 
 	} else {
