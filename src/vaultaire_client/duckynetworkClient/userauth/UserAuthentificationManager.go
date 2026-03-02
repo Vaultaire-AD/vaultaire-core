@@ -98,9 +98,6 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 	case "11":
 		lines := strings.Split(trames_content.Content, "\n")
 		username := lines[0]
-
-		logs.Write_log("INFO", "client online")
-
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
 		sto_session.SessionsUser.AddOrUpdate(

@@ -9,7 +9,7 @@ import (
 	"vaultaire_client/storage"
 )
 
-func parseTrames(trames string) storage.Trames_struct_client {
+func ParseTrames(trames string) storage.Trames_struct_client {
 	lines := strings.Split(trames, "\n")
 
 	// Vérifier que nous avons exactement trois lignes
@@ -53,6 +53,6 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 	}
 
 	// Traitement des trames
-	trames_content := parseTrames(messageDecrypt)
+	trames_content := ParseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
 }

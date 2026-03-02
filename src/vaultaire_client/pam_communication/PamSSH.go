@@ -37,10 +37,9 @@ func handleCheckRequest(conn net.Conn, payload string) {
 	sshreq.Register(req.User, respChan)
 
 	// lance la requête réseau
-	go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", req.User, &req.Password)
+	go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", req.User, &req.Password, false)
 
 	status_rep := "failed"
-	sshKey := ""
 	isAdminResult := false
 
 	fmt.Println("L'user est il admin ? : " + strconv.FormatBool(storage.IsAdmin))
@@ -49,10 +48,9 @@ func handleCheckRequest(conn net.Conn, payload string) {
 	select {
 	case result := <-respChan:
 		// On récupère tout d'un coup !
-		sshKey = result.Keys
 		isAdminResult = result.IsAdmin
 
-		logs.Write_log("INFO", fmt.Sprintf("User %s authentifié. Admin: %t, Clés: %d", req.User, isAdminResult, len(cleankey(sshKey))))
+		logs.Write_log("INFO", fmt.Sprintf("User %s authentifié. Admin: %t", req.User, isAdminResult))
 		status_rep = "success"
 
 	case <-time.After(7 * time.Second):
@@ -65,9 +63,8 @@ func handleCheckRequest(conn net.Conn, payload string) {
 
 	// Construction de la réponse pour le module PAM (JSON)
 	response := Response{
-		Status:   status_rep,
-		IsAdmin:  isAdminResult, // Utilisation du résultat serveur
-		Ssh_keys: cleankey(sshKey),
+		Status:  status_rep,
+		IsAdmin: isAdminResult, // Utilisation du résultat serveur
 	}
 
 	encoder := json.NewEncoder(conn)

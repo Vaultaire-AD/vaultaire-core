@@ -6,3 +6,5 @@ type AuthResult struct {
 	Keys    string
 	IsAdmin bool
 }
+
+var SilentConsole = false

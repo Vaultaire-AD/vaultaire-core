@@ -12,13 +12,16 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 	message := ""
 	switch trames_content.Message_Order[1] {
 	case "01":
+		message = SSH_SEND_Pubkey_AUTH(trames_content)
+	case "04":
 		message = SSH_SEND_Pubkey(trames_content)
 	default:
+
 	}
 	return message
 }
 
-func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
+func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	content := strings.Split(trames_content.Content, "\n")
 	if len(content) < 3 {
 		logs.Write_Log("ERROR", "Malformed SSH pubkey request")
@@ -42,7 +45,7 @@ func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
 	hPassword, salt, err := database.Get_User_Password_By_ID(db, userID)
 	if err != nil {
 		logs.Write_Log("ERROR", "Password lookup failed for "+sshUser)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\ninternal error"
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\ninternal error"
 	}
 	// On utilise ta fonction de comparaison (GC = ton package de crypto/auth)
 	if !gc.ComparePasswords(password, salt, hPassword) {
@@ -79,11 +82,38 @@ func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
 
 		logs.Write_Log("INFO", "MFA Success: "+sshUser+" authorized on "+trames_content.ClientSoftwareID+" (Admin: "+adminFlag+")")
 
-		return "03_02\nserveur_central\n" +
-			trames_content.SessionIntegritykey + "\n" +
-			sshUser + "\n" +
-			adminFlag + "\n" +
-			pubkeyStr
+		return "03_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\n" + adminFlag + "\n" + pubkeyStr
 	}
-	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\nunknown order"
+	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\nunknown order"
+}
+
+func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
+
+	content := strings.Split(trames_content.Content, "\n")
+	if len(content) < 1 {
+		logs.Write_Log("ERROR", "Trame SSH 04_01 invalide : contenu incomplet")
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nmalformed_trame"
+	}
+	// Logique : Le client demande les clés publiques pour l'utilisateur X
+	username := content[0]
+	db := database.GetDatabase()
+
+	// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
+	can, err := database.DidUserCanLogin(db, username, trames_content.ClientSoftwareID)
+	if err != nil || !can {
+		logs.Write_Log("WARNING", username+" permission denied for machine "+trames_content.ClientSoftwareID)
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\npermission denied"
+	}
+
+	id, err := database.Get_User_ID_By_Username(db, username)
+	if err != nil {
+		logs.Write_Log("ERROR", "User not found: "+username)
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nuser not found"
+	}
+	keys, err := database.Get_PublicKeys_ByUserID(db, id)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error retrieving public keys for user "+username)
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nkey error"
+	}
+	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strings.Join(keys, "\n")
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -71,17 +72,28 @@ func loadConfig(filePath string) error {
 }
 
 func main() {
+	// ... chargement config ...
 	err := loadConfig("/opt/vaultaire_client/client_conf.yaml")
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
 	}
 	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePath)
-	log.SetOutput(os.Stdout)
-	StartDailyUserCleanup()
-	// Lancer le serveur de socket Unix
-	if storage.IsServeur {
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil)
+
+	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
+	flag.Parse()
+	if *fetchKey != "" {
+		storage.SilentConsole = true
+		// Mode One-Shot pour SSH
+		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", *fetchKey, nil, true)
+		return
+	} else {
+		StartDailyUserCleanup()
+		// Lancer le serveur de socket Unix
+		if storage.IsServeur {
+			go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil, false)
+		}
+		pamcommunication.UnixSocketServer()
 	}
-	pamcommunication.UnixSocketServer()
+
 }

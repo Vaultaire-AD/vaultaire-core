@@ -55,10 +55,10 @@ cd "$ROOT_DIR/src/vaultaire_client/pam_module"
 gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c pam_common.c -lcurl -lpam
 gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c pam_common.c -lcurl -lpam
 gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c pam_common.c -lcurl -lpam
-
+gcc -fPIC -shared -o libnss_vaultaire.so.2 nss_vaultaire.c
 
 cp ./pam*.so "$BUILD_DIR/vaultaire_client/"
-
+cp ./libnss_vaultaire.so.2 "$BUILD_DIR/vaultaire_client/"
 # -------------------------
 # Copier les binaires dans release Vaultaire_AD-ppd
 # -------------------------

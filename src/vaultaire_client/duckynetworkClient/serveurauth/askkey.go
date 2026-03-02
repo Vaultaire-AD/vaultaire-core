@@ -11,7 +11,6 @@ import (
 
 func AskServerKey(duckysession *storage.DuckySession) bool {
 	message := []byte("askkey")
-	fmt.Println("je veux une clé serveur")
 	messageSize := sendmessage.CompileMessageSize(message)
 	headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
 	data := append(append(headerSize, messageSize...), message...)

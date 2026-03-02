@@ -97,6 +97,10 @@ func Write_log(level string, content string) {
 }
 
 func Print_Log(logline string) error {
+	// Si on est en mode SSH Fetch, on n'affiche RIEN sur la console
+	if storage.SilentConsole {
+		return nil
+	}
 	fmt.Println(logline)
 	return nil
 }

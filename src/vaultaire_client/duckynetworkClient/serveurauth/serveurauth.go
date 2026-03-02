@@ -44,13 +44,11 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 			}
 			message, _ := keyencodedecode.DecryptMessageWithPrivate(keymanagement.Get_Client_Private_Key(), messageBuf)
 			lines := strings.Split(string(message), "\n")
-			fmt.Println(lines[0])
 			if lines[0] == "01_02" {
 				sessionIntegritykey := lines[2]
 				data := strings.Join(lines[3:], "\n")
-				fmt.Println(string([]byte(data)))
 				if bytes.Equal(auth.ServeurAUth, []byte(data)) {
-					fmt.Println("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
+					logs.Print_Log("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
 					auth.ServeurCheck = true
 				} else {
 					logs.Write_log("ERROR", "Erreur lors de l'authentification du serveur : les données ne correspondent pas")

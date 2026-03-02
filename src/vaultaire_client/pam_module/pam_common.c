@@ -42,12 +42,9 @@ int is_vaultaire_user(const char *username) {
         return 1; 
     }
 
-    // CAS 2 : L'utilisateur existe. On vérifie son tag GECOS et si egale a @vaultaire pas de bol ^^.
-    char expected_comment[128];
-    snprintf(expected_comment, sizeof(expected_comment), "%s@vaultaire", username);
-
-    if (pw->pw_gecos != NULL && strcmp(pw->pw_gecos, expected_comment) == 0) {
-        return 1; // C'est un utilisateur déjà marqué Vaultaire
+    // Cas 2 : On cherche le marqueur @vaultaire n'importe où dans le GECOS
+    if (pw->pw_gecos != NULL && strstr(pw->pw_gecos, "@vaultaire") != NULL) {
+        return 1; 
     }
 
     // CAS 3 : L'utilisateur existe mais n'a pas le tag vaultaire (ex: root, adm-lviguie)

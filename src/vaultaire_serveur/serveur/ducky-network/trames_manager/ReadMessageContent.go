@@ -12,6 +12,12 @@ import (
 func parseTrames(trames string) storage.Trames_struct_client {
 	lines := strings.Split(trames, "\n")
 
+	// SÉCURITÉ : Vérifier qu'on a au moins le minimum vital (5 lignes pour atteindre l'index 4)
+	if len(lines) < 5 {
+		logs.Write_Log("ERROR", "Trame incomplète reçue : pas assez de lignes")
+		return storage.Trames_struct_client{} // Ou gérer l'erreur autrement
+	}
+
 	// Vérifier que nous avons exactement trois lignes
 	message := strings.Join(lines[5:], "\n")
 	action := strings.Split(lines[0], "_")

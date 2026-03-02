@@ -11,6 +11,10 @@ mv /opt/vaultaire/vaultaire_client/vaultaire_client /opt/vaultaire_client/
 mv /opt/vaultaire/client_software.yaml /opt/vaultaire_client/.ssh/client_software.yaml
 mv /opt/vaultaire/*.pem /opt/vaultaire_client/.ssh/
 
+mv libnss_vaultaire.so.2 /lib64/
+chmod 755 /lib64/libnss_vaultaire.so.2
+chmod 750 /opt/vaultaire_client/vaultaire_client
+
 # Permissions
 chmod 700 -R /opt/vaultaire_client/
 chmod 400 -R /opt/vaultaire_client/.ssh/*
@@ -37,7 +41,7 @@ LimitNOFILE=4096
 PrivateTmp=false
 ProtectSystem=full
 ReadOnlyPaths=/etc /usr /lib /bin
-ReadWritePaths=/tmp
+ReadWritePaths=/tmp /etc /home /var/log/vaultaire
 
 [Install]
 WantedBy=multi-user.target
@@ -49,43 +53,41 @@ serveurlistenport: 6666
 serveur_ip: vaultaire-ad1.vaultaire.local
 EOF
 
-# Force le MFA : Clé SSH + Mot de passe (via PAM)
-# On utilise sed pour modifier les lignes existantes ou on les ajoute à la fin
-sed -i 's/^#\(UsePAM\) .*/\1 yes/' /etc/ssh/sshd_config
-sed -i 's/^\(UsePAM\) .*/\1 yes/' /etc/ssh/sshd_config
 
-sed -i 's/^#\(KbdInteractiveAuthentication\) .*/\1 yes/' /etc/ssh/sshd_config
-sed -i 's/^\(KbdInteractiveAuthentication\) .*/\1 yes/' /etc/ssh/sshd_config
+echo "🔗 Configuration NSS..."
+sed -i '/^passwd:/ s/$/ vaultaire/' /etc/nsswitch.conf
+sed -i '/^group:/ s/$/ vaultaire/' /etc/nsswitch.conf
+# On s'assure de supprimer les doublons si le script est lancé deux fois
+sed -i 's/vaultaire vaultaire/vaultaire/g' /etc/nsswitch.conf
 
-# Ajout des méthodes d'authentification combinées (MFA)
-if ! grep -q "AuthenticationMethods" /etc/ssh/sshd_config; then
-    echo "AuthenticationMethods publickey,keyboard-interactive" >> /etc/ssh/sshd_config
-else
-    sed -i 's/^.*AuthenticationMethods.*/AuthenticationMethods publickey,keyboard-interactive/' /etc/ssh/sshd_config
-fi
+# 5. Configuration SSHD (Nettoyage agressif des doublons et conflits)
+echo "Configure SSHD MFA..."
 
+# On utilise un fichier temporaire pour reconstruire une config propre sans doublons
+SSHD_CONF="/etc/ssh/sshd_config"
 
-# PAM system-auth
-# cat > /etc/pam.d/system-auth <<'EOF'
-# #%PAM-1.0
-# # This file is auto-generated.
-# # User changes will be destroyed the next time authselect is run.
-# #auth        required      pam_env.so
-# #auth        sufficient    pam_unix.so try_first_pass nullok
-# #auth        required      pam_deny.so
-# auth        required      pam_login_custom_module.so
-# account     required      pam_unix.so
+# Désactiver les paramètres conflictuels dans TOUS les fichiers d'inclusion (.conf)
+# Désactiver les paramètres conflictuels proprement
+[ -d /etc/ssh/sshd_config.d/ ] && sed -i 's/^\(KbdInteractiveAuthentication\|PasswordAuthentication\).*/#\0 disabled_by_vaultaire/' /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
 
-# password    requisite     pam_pwquality.so try_first_pass local_users_only retry=3 authtok_type=
-# password    sufficient    pam_unix.so try_first_pass use_authtok nullok sha512 shadow
-# password    required      pam_deny.so
+# Ajout du Fetch Dynamique de clés
+sed -i '/^AuthorizedKeysCommand/d' "/etc/ssh/sshd_config"
+sed -i '/^AuthorizedKeysCommandUser/d' "/etc/ssh/sshd_config"
+echo "AuthorizedKeysCommand /opt/vaultaire_client/vaultaire_client --fetch-key %u" >> "/etc/ssh/sshd_config"
+echo "AuthorizedKeysCommandUser root" >> "/etc/ssh/sshd_config"
 
-# session     optional      pam_keyinit.so revoke
-# session     required      pam_limits.so
-# -session     optional      pam_systemd.so
-# session     [success=1 default=ignore] pam_succeed_if.so service in crond quiet use_uid
-# session     required      pam_unix.so
-# EOF
+# Nettoyage du fichier principal pour éviter les doublons
+sed -i '/^UsePAM/d' "/etc/ssh/sshd_config"
+sed -i '/^KbdInteractiveAuthentication/d' "/etc/ssh/sshd_config"
+sed -i '/^ChallengeResponseAuthentication/d' "/etc/ssh/sshd_config"
+sed -i '/^AuthenticationMethods/d' "/etc/ssh/sshd_config"
+sed -i '/^PubkeyAuthentication/d' "/etc/ssh/sshd_config"
+# Ré-injection propre
+echo "UsePAM yes" >> "/etc/ssh/sshd_config"
+echo "PubkeyAuthentication yes" >> "/etc/ssh/sshd_config"
+echo "KbdInteractiveAuthentication yes" >> "/etc/ssh/sshd_config"
+echo "ChallengeResponseAuthentication yes" >> "/etc/ssh/sshd_config"
+echo "AuthenticationMethods publickey,keyboard-interactive" >> "/etc/ssh/sshd_config"
 
 # PAM login
 cat > /etc/pam.d/login <<'EOF'
@@ -133,18 +135,22 @@ EOF
 cat > /etc/pam.d/sshd <<'EOF'
 #%PAM-1.0
 # --- AUTHENTICATION ---
-# TON MODULE SSH CUSTOM (exécuté AVANT l'auth par clé)
-auth     required    pam_ssh_auth_module.so
+
+# On remplace 'required' par 'sufficient'
+# Si Vaultaire dit OK, on arrête l'authentification ici et on passe à la suite
+auth       sufficient   pam_ssh_auth_module.so
+
+# Ces lignes ne seront lues QUE si le module échoue (ex: mauvais mdp MFA)
 auth       substack     password-auth
 auth       include      postlogin
-account    required     pam_sepermit.so
+
+# --- ACCOUNT ---
 account    required     pam_nologin.so
 account    include      password-auth
-password   include      password-auth
-# pam_selinux.so close should be the first session rule
+
+# --- SESSION ---
 session    required     pam_selinux.so close
 session    required     pam_loginuid.so
-# pam_selinux.so open should only be followed by sessions to be executed in the user context
 session    required     pam_selinux.so open env_params
 session    required     pam_namespace.so
 session    optional     pam_keyinit.so force revoke

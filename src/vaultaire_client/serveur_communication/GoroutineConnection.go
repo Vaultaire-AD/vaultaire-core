@@ -9,7 +9,7 @@ import (
 )
 
 func handleConnection(user string, duckysession *storage.DuckySession) {
-	logs.Write_log("INFO", fmt.Sprintf("Démarrage du gestionnaire de flux pour %s", user))
+	// logs.Write_log("INFO", fmt.Sprintf("Démarrage du gestionnaire de flux pour %s", user))
 	defer func() {
 		if r := recover(); r != nil {
 			logs.Write_log("ERROR", fmt.Sprintf("Panic récupéré dans handleConnection pour %s: %v", user, r))

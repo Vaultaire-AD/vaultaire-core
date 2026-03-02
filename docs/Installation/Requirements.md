@@ -8,7 +8,7 @@ Ce document détaille les prérequis nécessaires pour installer et exécuter le
 - Windows Server 2019+ (support partiel)
 
 ## Dépendances logicielles
-- Go >= 1.20
+- Go >= 1.20 
 - Docker >= 24.x (optionnel pour déploiement containerisé)
 - make (pour compilation)
 - Git >= 2.30
