@@ -82,20 +82,17 @@ mais sous forme **structurée et flexible** :
     inclus).\
 -   `0:` → domaine sans propagation (uniquement ce domaine précis).
 
-#### Liste des actions possibles (en cours de dev 🚧)
--   attention le nil n'a pas la priorité si un user est dans plusieur groupe si il y a 1 all ou custom alors le all prévaudra puis le custom
--   attention pour utiliser la commande create via l'api (vlt) il faut que l'utilisateur dispose du droit all sur l'action api_write_permission sinon le user ne pourra pas crée d'entité
+#### Liste des actions possibles (RBAC)
+-   **Attention** : le `nil` n'a pas la priorité si un user est dans plusieurs groupes ; si un groupe a `all` ou `custom`, cela prévaut.
+-   **Format** : `<catégorie>:<action>:<objet>`. Commande : `update -pu <perm> <action_key> nil|all|-a|-r ...`
 
-
--   `none` → action neutre / désactivée.\
--   `web_admin` → accès à l'interface d'administration Web.\
--   `auth` → autorisation d'authentification si disable l'utilisateur ne peut pas se connecter utilise pour desactiver un compte attention a bien mettre le user dans un groupe unique dédiée (groupe de quarantaine) .\
--   `compare` → comparaison LDAP/ressource, Utilisé pour l'authenti.\
--   `search` → recherche d'objets (LDAP, base de données, etc.).\
--   `can_read` → lecture de données.\
--   `can_write` → écriture/modification de données.\
--   `api_read_permission` → accès lecture via API.\
--   `api_write_permission` → accès écriture via API.
+-   `none` → action neutre / désactivée.
+-   `web_admin` → accès à l'interface d'administration Web.
+-   `auth` → autorisation d'authentification (si désactivé, l'utilisateur ne peut pas se connecter ; à utiliser avec un groupe de quarantaine dédié).
+-   `compare` → comparaison LDAP/ressource (authentification).
+-   `search` → recherche d'objets (LDAP, base de données, etc.).
+-   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (idem pour `group`, `client`) + `write:dns`, `write:eyes`.
+-   Exemples (CLI) : l’admin et l’`vaultaire update -pu Inspecteur read:get:user all` ; `vaultaire update -pu DevApp write:create:client -a 1 apps.interne`.
 
 ## 📖 **CONVENTION**
 

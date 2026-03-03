@@ -1,8 +1,8 @@
 package filter
 
 import (
-	ldapinterface "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
+	ldapinterface "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 )
 
 // Evaluate applique un filtre LDAP à une entrée

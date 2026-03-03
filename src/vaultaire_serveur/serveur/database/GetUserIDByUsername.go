@@ -1,9 +1,9 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
+	"vaultaire/serveur/logs"
 )
 
 func Get_User_ID_By_Username(db *sql.DB, username string) (int, error) {
@@ -17,10 +17,10 @@ func Get_User_ID_By_Username(db *sql.DB, username string) (int, error) {
 	err := db.QueryRow(query, username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "utilisateur non trouvé "+username+" : "+err.Error())
+			logs.Write_LogCode("WARNING", logs.CodeDBUserNotFound, "utilisateur non trouvé "+username)
 			return 0, fmt.Errorf("utilisateur non trouvé")
 		}
-		logs.WriteLog("db", "erreur lors de la récupération de l'ID utilisateur: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "récupération ID utilisateur: "+err.Error())
 		return 0, fmt.Errorf("erreur lors de la récupération de l'ID utilisateur: %v", err)
 	}
 

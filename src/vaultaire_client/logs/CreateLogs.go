@@ -9,7 +9,7 @@ import (
 
 func WriteLog(filename string, content string) {
 	// Définir le chemin du répertoire et du fichier
-	dirPath := "/var/log/oppydoome/"
+	dirPath := "/var/log/vaultaire_client/"
 	filepath := dirPath + filename
 
 	// Créer le répertoire s'il n'existe pas
@@ -52,7 +52,7 @@ func WriteLog(filename string, content string) {
 //	}
 //}
 
-func Write_Log(level string, content string) {
+func Write_log(level string, content string) {
 	// Si c'est un log DEBUG et que le mode debug est désactivé, on ignore
 	if level == "DEBUG" && !storage.Debug {
 		return
@@ -83,7 +83,7 @@ func Write_Log(level string, content string) {
 	timestamp := time.Now().Format("2006-01-02 15:04:05")
 
 	// Formatte la ligne à écrire [date/heure niveau contenu]
-	logLine := fmt.Sprintf("%s [%s] %s", timestamp, level, content)
+	logLine := fmt.Sprintf("%s [%s] %s\n", timestamp, level, content)
 
 	// Affiche dans la console
 	if err := Print_Log(logLine); err != nil {
@@ -97,6 +97,10 @@ func Write_Log(level string, content string) {
 }
 
 func Print_Log(logline string) error {
+	// Si on est en mode SSH Fetch, on n'affiche RIEN sur la console
+	if storage.SilentConsole {
+		return nil
+	}
 	fmt.Println(logline)
 	return nil
 }

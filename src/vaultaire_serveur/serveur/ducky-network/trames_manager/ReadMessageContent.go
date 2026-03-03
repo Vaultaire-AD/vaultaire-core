@@ -1,16 +1,22 @@
 package tramesmanager
 
 import (
-	keydecodeencode "DUCKY/serveur/ducky-network/key_decode_encode"
-	keymanagement "DUCKY/serveur/ducky-network/key_management"
-	"DUCKY/serveur/ducky-network/sendmessage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
 	"strings"
+	keydecodeencode "vaultaire/serveur/ducky-network/key_decode_encode"
+	keymanagement "vaultaire/serveur/ducky-network/key_management"
+	"vaultaire/serveur/ducky-network/sendmessage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 )
 
 func parseTrames(trames string) storage.Trames_struct_client {
 	lines := strings.Split(trames, "\n")
+
+	// SÉCURITÉ : Vérifier qu'on a au moins le minimum vital (5 lignes pour atteindre l'index 4)
+	if len(lines) < 5 {
+		logs.Write_Log("ERROR", "Trame incomplète reçue : pas assez de lignes")
+		return storage.Trames_struct_client{} // Ou gérer l'erreur autrement
+	}
 
 	// Vérifier que nous avons exactement trois lignes
 	message := strings.Join(lines[5:], "\n")
@@ -79,8 +85,6 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 			return
 		}
 	}
-	logs.Write_Log("DEBUG", messageDecrypt)
-	logs.Write_Log("DEBUG", string(duckysession.SessionKey))
 	var trames_content = parseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
 }

@@ -1,8 +1,8 @@
 package keymanagement
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"

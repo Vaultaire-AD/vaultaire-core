@@ -1,8 +1,8 @@
 package ldap
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"net"
 	"strconv"

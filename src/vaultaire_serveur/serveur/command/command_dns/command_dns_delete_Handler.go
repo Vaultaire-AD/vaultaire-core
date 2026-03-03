@@ -1,7 +1,7 @@
 package commanddns
 
 import (
-	dnsdatabasego "DUCKY/serveur/dns/DNS_Database"
+	dnsdatabasego "vaultaire/serveur/dns/DNS_Database"
 	"fmt"
 	"strings"
 )

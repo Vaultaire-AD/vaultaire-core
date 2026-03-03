@@ -1,9 +1,9 @@
 package commanddelete
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 
@@ -40,10 +40,11 @@ func delete_users_Command_Parser(command_list []string, sender_groupsIDs []int, 
 	// 🔹 Étape 3 : Vérification de permission sur les domaines concernés
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer %s (domaines : %v) — %s",
-			sender_Username, username, domains, reason))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s target=%s reason=%s", sender_Username, action, username, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer %s (domaines : %v) — %s", sender_Username, username, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (delete user)", sender_Username, action))
 
 	// 🔹 Étape 4 : Suppression sécurisée
 	err = database.Command_DELETE_UserWithUsername(db, username)

@@ -1,13 +1,13 @@
 package ldapparser
 
 import (
-	"DUCKY/serveur/database"
-	ldapbindunbind "DUCKY/serveur/ldap/LDAP_BIND-UNBIND"
-	ldapextendedrequest "DUCKY/serveur/ldap/LDAP_EXTENDED-REQUEST"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule"
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/database"
+	ldapbindunbind "vaultaire/serveur/ldap/LDAP_BIND-UNBIND"
+	ldapextendedrequest "vaultaire/serveur/ldap/LDAP_EXTENDED-REQUEST"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"net"
 )

@@ -4,6 +4,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"vaultaire_client/storage"
 )
 
 type SessionStatus int
@@ -15,10 +16,11 @@ const (
 )
 
 type Session struct {
-	Username string
-	Conn     net.Conn
-	Status   SessionStatus
-	LastSeen time.Time
+	Username     string
+	Conn         net.Conn
+	DuckySession *storage.DuckySession
+	Status       SessionStatus
+	LastSeen     time.Time
 }
 type Manager struct {
 	sessions map[string]*Session

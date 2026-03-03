@@ -1,16 +1,15 @@
 package scope
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/domain"
-	domainpkg "DUCKY/serveur/domain"
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
-	ldapinterface "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/domain"
+	domainpkg "vaultaire/serveur/domain"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	ldapinterface "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
 	"database/sql"
 	"fmt"
 )
@@ -18,7 +17,7 @@ import (
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
 func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
-	logs.Write_Log("DEBUG", fmt.Sprintf("Resolving candidates for BaseDN '%s' with scope %d", baseDN, scope))
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d", baseDN, scope))
 	switch scope {
 	case 0: // base → juste le domaine lui-même
 		entries = append(entries, candidate.DomainEntry{DNName: baseDN})
@@ -38,15 +37,12 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		if err != nil {
 			return nil, err
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("Subtree scope - found group domains: %v", groupDomains))
-		if storage.Ldap_Debug {
-			fmt.Printf("Subtree scope - found group domains: %v\n", groupDomains)
-		}
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope group domains=%v", groupDomains))
 		entries, err = loadGroupsAndUsers(db, groupDomains, 2, attributes, username)
 		if err != nil {
 			return nil, err
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("Subtree scope - loaded %d entries", len(entries)))
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree loaded %d entries", len(entries)))
 
 	default:
 		return nil, fmt.Errorf("invalid scope: %d", scope)

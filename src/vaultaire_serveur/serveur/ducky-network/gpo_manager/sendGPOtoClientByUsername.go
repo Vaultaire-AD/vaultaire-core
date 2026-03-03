@@ -1,8 +1,8 @@
 package gpomanager
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/tools"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/tools"
 	"strings"
 )
 

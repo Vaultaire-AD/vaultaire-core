@@ -3,7 +3,8 @@ package dnsdatabase
 import (
 	"database/sql"
 	"fmt"
-	"log"
+
+	"vaultaire/serveur/logs"
 )
 
 // Initialise la table des enregistrements PTR
@@ -20,7 +21,7 @@ func InitPTRTable(db *sql.DB) error {
 		return fmt.Errorf("échec création table ptr_records : %v", err)
 	}
 
-	log.Println("✅ Table 'ptr_records' prête.")
+	logs.Write_Log("INFO", "dnsdb: table 'ptr_records' ready")
 	return nil
 }
 
@@ -38,6 +39,6 @@ func InitZonesTable(db *sql.DB) error {
 		return fmt.Errorf("échec création table dns_zones : %v", err)
 	}
 
-	log.Println("✅ Table 'dns_zones' prête.")
+	logs.Write_Log("INFO", "dnsdb: table 'dns_zones' ready")
 	return nil
 }

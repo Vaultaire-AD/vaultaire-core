@@ -1,9 +1,9 @@
 package commanddelete
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 
@@ -29,12 +29,11 @@ func delete_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, ac
 	// 🔹 Étape 2 : Vérification des permissions sur les domaines concernés
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"Suppression refusée : %s tente de supprimer la GPO %s (domaines : %v) — %s",
-			sender_Username, gpoName, domains, reason,
-		))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s gpo=%s reason=%s", sender_Username, action, gpoName, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer la GPO %s (domaines : %v) — %s", sender_Username, gpoName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (delete gpo)", sender_Username, action))
 
 	// 🔹 Étape 3 : Suppression de la GPO
 	err = database.Command_DELETE_GPOWithGPOName(db, gpoName)

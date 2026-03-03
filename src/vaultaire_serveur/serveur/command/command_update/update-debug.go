@@ -1,8 +1,9 @@
 package commandupdate
 
 import (
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
 	"fmt"
 )
 
@@ -14,8 +15,10 @@ func update_Debug_Command_Parser(commandList []string, sender_groupsIDs []int, a
 	// 🔹 Vérification des permissions du sender
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
 	if !ok {
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (update debug)", sender_Username, action))
 
 	arg := commandList[1]
 	switch arg {

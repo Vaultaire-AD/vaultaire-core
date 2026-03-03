@@ -1,7 +1,7 @@
 package ldapsearchrequest
 
 import (
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"strings"
 )
 

@@ -1,9 +1,9 @@
 package ducky_tools
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"log"
 	"strconv"
 	"strings"

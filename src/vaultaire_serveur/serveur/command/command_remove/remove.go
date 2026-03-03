@@ -1,23 +1,29 @@
 package commandremove
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
 )
 
-func Remove_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+// Remove_Command : clé RBAC write:delete:user, write:delete:client, write:delete:group selon sous-commande.
+func Remove_Command(command_list []string, sender_groupsIDs []int, sender_Username string) string {
+	actionKey := "write:delete:group"
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return ("LOOK MAN")
 	case "-u":
-		return remove_User_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:delete:user"
+		return remove_User_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	case "-c":
-		return remove_Client_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:delete:client"
+		return remove_Client_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	case "-g":
-		return remove_Group_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:delete:group"
+		return remove_Group_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	case "-gpo":
-		return remove_GPO_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "write:delete:gpo"
+		return remove_GPO_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	default:
 		return ("LOOK MAN")
 	}

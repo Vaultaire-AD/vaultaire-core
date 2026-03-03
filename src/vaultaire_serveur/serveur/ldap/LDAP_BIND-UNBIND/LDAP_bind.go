@@ -1,14 +1,13 @@
 package ldapbindunbind
 
 import (
-	"DUCKY/serveur/database"
-	gc "DUCKY/serveur/global/security"
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	gc "vaultaire/serveur/global/security"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 	"net"
 )
@@ -50,7 +49,7 @@ func respondBindSuccess(messageID int, conn net.Conn) {
 	res := buildLDAPBindResponse(messageID, 0x00, "", "Bind successful")
 	_, err := conn.Write(res)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error sending bind success response: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap bind: send success response failed: "+err.Error())
 		return
 	}
 }
@@ -59,7 +58,7 @@ func respondInvalidCredentials(messageID int, conn net.Conn) {
 	res := buildLDAPBindResponse(messageID, 0x31, "", "Invalid credentials")
 	_, err := conn.Write(res)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error sending invalid credentials response: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap bind: send invalid credentials response failed: "+err.Error())
 		return
 	}
 }
@@ -68,7 +67,7 @@ func respondProtocolError(messageID int, conn net.Conn) {
 	res := buildLDAPBindResponse(messageID, 0x02, "", "Protocol error")
 	_, err := conn.Write(res)
 	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de l'envoi de la réponse Bind: %s", err.Error()))
+		logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap bind: send protocol error response failed: "+err.Error())
 		return
 	}
 }
@@ -112,16 +111,11 @@ func respondProtocolError(messageID int, conn net.Conn) {
 func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn) {
 	user, domain, ou := ldaptools.ExtractUsernameAndDomain(op.Name)
 
-	if storage.Ldap_Debug {
-		logs.Write_Log("DEBUG", fmt.Sprintf(
-			"===== LDAP Bind Request =====\nMessage ID: %d\nBind DN: %s\nUsername: %s\nOU: %s\nDomain: %s\nPassword length: %d bytes\n=============================",
-			messageID, op.Name, user, ou, domain, len(op.Authentication),
-		))
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: bind request messageID=%d dn=%s user=%s ou=%s domain=%s", messageID, op.Name, user, ou, domain))
 
 	// 🔒 Interdiction d'utiliser le compte système Vaultaire
 	if user == "vaultaire" {
-		logs.Write_Log("WARNING", fmt.Sprintf("Tentative de connexion avec l'utilisateur 'vaultaire' depuis %s", conn.RemoteAddr().String()))
+		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: system user rejected from %s", conn.RemoteAddr().String()))
 		ldapsessionmanager.ClearSession(conn)
 		respondInvalidCredentials(messageID, conn)
 		return
@@ -130,7 +124,7 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// 🔍 Vérification que l'utilisateur existe
 	userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), user)
 	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Utilisateur inconnu (%s) depuis %s", user, conn.RemoteAddr().String()))
+		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: unknown user=%s from %s", user, conn.RemoteAddr().String()))
 		respondInvalidCredentials(messageID, conn)
 		return
 	}
@@ -138,13 +132,13 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// 🔐 Vérification du mot de passe
 	Hpassword, salt, err := database.Get_User_Password_By_ID(database.GetDatabase(), userID)
 	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("Erreur lors de la récupération du mot de passe pour %s : %v", user, err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf("ldap bind: password lookup failed for user=%s: %v", user, err))
 		respondProtocolError(messageID, conn)
 		return
 	}
 
 	if !gc.ComparePasswords(string(op.Authentication), salt, Hpassword) {
-		logs.Write_Log("WARNING", fmt.Sprintf("Échec de connexion pour %s (%s) : mot de passe incorrect", user, conn.RemoteAddr().String()))
+		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: invalid password user=%s from %s", user, conn.RemoteAddr().String()))
 		respondInvalidCredentials(messageID, conn)
 		return
 	}
@@ -152,24 +146,20 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// ✅ Authentification réussie — maintenant vérification de la permission
 	groupIDs, normalizedAction, err := permission.PrePermissionCheck(user, "auth")
 	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Échec pré-permission pour %s : %v", user, err))
+		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("ldap bind: pre-permission failed user=%s: %v", user, err))
 		respondInvalidCredentials(messageID, conn)
 		return
 	}
 
-	// On vérifie s'il a le droit d'exécuter "auth" sur ce domaine
 	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, normalizedAction, []string{domain})
 	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour %s sur domaine %s : %s", user, domain, msg))
+		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("ldap bind: permission denied user=%s domain=%s reason=%s", user, domain, msg))
 		respondInvalidCredentials(messageID, conn)
 		return
 	}
 
-	// 🔁 Mise à jour de la session
 	ldapsessionmanager.SetBindInfo(conn, user, op.Name)
-
-	// 🟢 Log succès
-	logs.Write_Log("INFO", fmt.Sprintf("Bind réussi pour %s sur domaine %s depuis %s", user, domain, conn.RemoteAddr().String()))
+	logs.Write_LogCodeMeta("INFO", logs.CodeNone, fmt.Sprintf("ldap bind: success user=%s domain=%s from %s", user, domain, conn.RemoteAddr().String()), logs.UserMeta(userID))
 
 	// ✅ Réponse LDAP
 	respondBindSuccess(messageID, conn)

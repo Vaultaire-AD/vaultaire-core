@@ -1,7 +1,7 @@
 package ducky_tools
 
 import (
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/storage"
 	"strings"
 )
 

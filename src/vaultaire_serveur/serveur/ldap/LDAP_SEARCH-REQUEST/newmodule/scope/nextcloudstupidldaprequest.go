@@ -1,12 +1,12 @@
 package scope
 
 import (
-	domainpkg "DUCKY/serveur/domain"
-	candidate "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	"DUCKY/serveur/logs"
+	domainpkg "vaultaire/serveur/domain"
+	candidate "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	"vaultaire/serveur/logs"
 	"database/sql"
 	"fmt"
 	"net"

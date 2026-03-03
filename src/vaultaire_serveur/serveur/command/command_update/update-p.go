@@ -1,11 +1,11 @@
 package commandupdate
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/database/db_permission"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 
@@ -16,12 +16,15 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 		return "Invalid Request. Try update -h for more information"
 	}
 
-	// Parsing des arguments
 	permissionName := command_list[1]
 	action := command_list[2]
 	arg := command_list[3]
 	childOrAll := "0"
 	var domain string
+
+	if _, ok := permission.IsValidAction(action); !ok {
+		return "Invalid action key. Use format category:action:object (e.g. read:get:user, write:create:group)"
+	}
 
 	// Si l’action attend un domaine
 	if arg == "-a" || arg == "-r" {
@@ -43,12 +46,11 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, Useraction, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"%s tente de modifier la permission %s (domaines : %v) — %s",
-			sender_Username, permissionName, domains, reason,
-		))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s permission=%s reason=%s", sender_Username, Useraction, permissionName, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de modifier la permission %s (domaines : %v) — %s", sender_Username, permissionName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s permission=%s", sender_Username, Useraction, permissionName))
 
 	// 🔹 Étape 1 : Récupération de l’ID de la permission
 	permissionID, err := db_permission.Command_GET_UserPermissionID(db, permissionName)

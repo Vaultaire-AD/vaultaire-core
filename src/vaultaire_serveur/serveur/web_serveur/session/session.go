@@ -1,9 +1,9 @@
 package session
 
-// 📁 DUCKY/serveur/webserveur/session/session.go
+// 📁 vaultaire/serveur/webserveur/session/session.go
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"crypto/rand"
 	"encoding/hex"
 	"sync"
@@ -26,7 +26,7 @@ func generateToken() string {
 	b := make([]byte, 32)
 	_, err := rand.Read(b)
 	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de la lecture du nombre aleatoire lors de la generation du token dans webserver "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeWebSession, "session: token generation failed: "+err.Error())
 	}
 	return hex.EncodeToString(b)
 }
