@@ -1,12 +1,12 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/database"
-	dbuser "DUCKY/serveur/database/db-user"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
-	"DUCKY/serveur/web_serveur/session"
+	"vaultaire/serveur/database"
+	dbuser "vaultaire/serveur/database/db-user"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
+	"vaultaire/serveur/web_serveur/session"
 	"html/template"
 	"net/http"
 	"strconv"

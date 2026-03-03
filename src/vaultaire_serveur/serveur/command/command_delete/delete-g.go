@@ -1,9 +1,9 @@
 package commanddelete
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 
@@ -29,12 +29,11 @@ func delete_Group_Command_Parser(command_list []string, sender_groupsIDs []int, 
 	// 🔹 Étape 2 : Vérification de permission sur ces domaines
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"Suppression refusée : %s tente de supprimer le groupe %s (domaines : %v) — %s",
-			sender_Username, groupName, domains, reason,
-		))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s group=%s reason=%s", sender_Username, action, groupName, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer le groupe %s (domaines : %v) — %s", sender_Username, groupName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (delete group)", sender_Username, action))
 
 	// 🔹 Étape 3 : Suppression du groupe
 	err = database.Command_DELETE_GroupWithGroupName(db, groupName)

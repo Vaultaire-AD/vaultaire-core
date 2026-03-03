@@ -1,7 +1,7 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"

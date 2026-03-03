@@ -1,8 +1,8 @@
 package autoaddclientgo
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"bufio"
 	"os"
 	"strings"

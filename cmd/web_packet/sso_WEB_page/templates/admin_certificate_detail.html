@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Certificat {{ .Certificate.Name }} — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Certificat : {{ .Certificate.Name }}</h1>
+    <p><a href="/admin/certificates">← Retour à la liste</a></p>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+
+    <section class="section">
+      <h2>Informations</h2>
+      <dl>
+        <dt>ID</dt>
+        <dd>{{ .Certificate.ID }}</dd>
+        <dt>Nom</dt>
+        <dd><code>{{ .Certificate.Name }}</code></dd>
+        <dt>Type</dt>
+        <dd><span class="badge">{{ .Certificate.CertificateType }}</span></dd>
+        <dt>Description</dt>
+        <dd>{{ if .Certificate.Description }}{{ .Certificate.Description }}{{ else }}—{{ end }}</dd>
+        <dt>Créé le</dt>
+        <dd>{{ .Certificate.CreatedAt.Format "2006-01-02 15:04:05" }}</dd>
+        <dt>Mis à jour le</dt>
+        <dd>{{ .Certificate.UpdatedAt.Format "2006-01-02 15:04:05" }}</dd>
+      </dl>
+    </section>
+
+    {{ if .Certificate.CertificateData }}
+    <section class="section">
+      <h2>Certificat (PEM)</h2>
+      <pre class="code-block"><code>{{ .Certificate.CertificateData }}</code></pre>
+    </section>
+    {{ end }}
+
+    {{ if .Certificate.PublicKeyData }}
+    <section class="section">
+      <h2>Clé publique (PEM)</h2>
+      <pre class="code-block"><code>{{ .Certificate.PublicKeyData }}</code></pre>
+    </section>
+    {{ end }}
+
+    <hr>
+    <section class="section">
+      <h2>Actions</h2>
+      <form method="post" onsubmit="return confirm('Supprimer le certificat {{ .Certificate.Name }} ? Cette action est irréversible.');">
+        <input type="hidden" name="action" value="delete_certificate">
+        <button type="submit" class="btn btn-danger">Supprimer ce certificat</button>
+      </form>
+    </section>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

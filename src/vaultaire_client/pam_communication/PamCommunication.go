@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"regexp"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 )
 
@@ -27,7 +28,7 @@ func handleUnixSocketConnection(conn net.Conn) {
 	defer func() {
 		if err := conn.Close(); err != nil {
 			// Handle or log the error
-			log.Printf("error closing connection: %v", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Error closing connection: %v", err))
 		}
 	}()
 
@@ -36,7 +37,7 @@ func handleUnixSocketConnection(conn net.Conn) {
 	decoder := json.NewDecoder(conn)
 	err := decoder.Decode(&message)
 	if err != nil {
-		log.Printf("Erreur de décodage du message JSON: %v", err)
+		logs.Write_log("ERROR", fmt.Sprintf("Erreur de décodage du message JSON: %v", err))
 		return
 	}
 
@@ -60,28 +61,28 @@ func UnixSocketServer() {
 
 	// Supprimer le fichier du socket s'il existe déjà
 	if err := os.RemoveAll(storage.SocketPath); err != nil {
-		log.Fatalf("Error removing existing socket file: %v", err)
+		logs.Write_log("CRITICAL", fmt.Sprintf("Error removing existing socket file: %v", err))
 	}
 
 	// Créer le socket Unix
 	ln, err := net.Listen("unix", storage.SocketPath)
 	if err != nil {
-		log.Fatalf("Error creating Unix socket: %v", err)
+		logs.Write_log("CRITICAL", fmt.Sprintf("Error creating Unix socket: %v", err))
 	}
 	defer func() {
 		if err := ln.Close(); err != nil {
 			// Handle or log the error
-			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+			logs.Write_log("CRITICAL", fmt.Sprintf("Error closing Unix socket: %v", err))
 		}
 	}()
 
-	fmt.Println("Server listening on Unix socket:", storage.SocketPath)
+	logs.Write_log("INFO", fmt.Sprintf("Server listening on Unix socket: %s", storage.SocketPath))
 
 	// Boucle d'acceptation des connexions
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			log.Printf("Error accepting connection: %v", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Error accepting connection: %v", err))
 			continue
 		}
 

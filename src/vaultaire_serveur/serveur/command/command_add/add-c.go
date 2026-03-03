@@ -1,10 +1,10 @@
 package commandadd
 
 import (
-	"DUCKY/serveur/command/display"
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
+	"vaultaire/serveur/command/display"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 )
 
@@ -27,10 +27,11 @@ func add_Client_Command_Parser(command_list []string, sender_groupsIDs []int, ac
 	// 🔹 Étape 2 : Vérification des permissions sur les domaines
 	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
 	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter le client %s au groupe %s (domaines : %v) — %s",
-			sender_Username, clientID, groupName, domains, reason))
+		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s client=%s group=%s reason=%s", sender_Username, action, clientID, groupName, reason))
+		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter le client %s au groupe %s (domaines : %v) — %s", sender_Username, clientID, groupName, domains, reason))
 		return fmt.Sprintf("Permission refusée : %s", reason)
 	}
+	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (add client)", sender_Username, action))
 
 	// 🔹 Étape 3 : Ajout du client au groupe
 	switch command_list[2] {

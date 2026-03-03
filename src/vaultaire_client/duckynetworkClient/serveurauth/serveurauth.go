@@ -12,6 +12,7 @@ import (
 	"vaultaire_client/duckynetworkClient/keymanagement"
 	send "vaultaire_client/duckynetworkClient/sendmessage"
 	br "vaultaire_client/duckynetworkClient/trames_manager"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 	auth "vaultaire_client/storage"
 )
@@ -23,30 +24,34 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 		fmt.Println(err)
 	}
 	auth.ServeurAUth = randomdata
-	fmt.Println("Ask Serveur Auth\n", string(randomdata))
 	send.SendMessage(("01_01\nserver_central\n" + "INIT" + "\n" + auth.Username + "\n" + auth.Computeur_ID + "\n" + string(randomdata)), duckysession)
 	for {
-		headerSize := br.Read_Header_Size(duckysession.Conn)
+		headerSize, err := br.Read_Header_Size(duckysession.Conn)
+		if err != nil {
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du header : %v", err))
+			return nil
+		}
 		if headerSize != 0 {
-			messagesize := br.Read_Message_Size(duckysession.Conn, headerSize)
-			fmt.Println("\nYou receive a message from : ", duckysession.Conn.RemoteAddr())
-			messageBuf := make([]byte, messagesize)
-			_, err := duckysession.Conn.Read(messageBuf)
+			messagesize, err := br.Read_Message_Size(duckysession.Conn, headerSize)
 			if err != nil {
-				fmt.Println("Erreur lors de la lecture du message :", err)
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
+				return nil
+			}
+			messageBuf := make([]byte, messagesize)
+			_, err = duckysession.Conn.Read(messageBuf)
+			if err != nil {
+				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
 			}
 			message, _ := keyencodedecode.DecryptMessageWithPrivate(keymanagement.Get_Client_Private_Key(), messageBuf)
 			lines := strings.Split(string(message), "\n")
-			fmt.Println(lines[0])
 			if lines[0] == "01_02" {
 				sessionIntegritykey := lines[2]
 				data := strings.Join(lines[3:], "\n")
-				fmt.Println(string([]byte(data)))
 				if bytes.Equal(auth.ServeurAUth, []byte(data)) {
-					fmt.Println("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
+					logs.Print_Log("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
 					auth.ServeurCheck = true
 				} else {
-					fmt.Println("ERREUR lors de l'authentification du serveur")
+					logs.Write_log("ERROR", "Erreur lors de l'authentification du serveur : les données ne correspondent pas")
 				}
 				return []byte(sessionIntegritykey)
 			}

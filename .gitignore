@@ -5,6 +5,8 @@
 /vaultaire_client
 /vaultaire_client/*
 
+# Site vitrine (optionnel : retirer cette ligne pour versionner publicweb)
+/src/publicweb
 
 # Cache / build
 bin/

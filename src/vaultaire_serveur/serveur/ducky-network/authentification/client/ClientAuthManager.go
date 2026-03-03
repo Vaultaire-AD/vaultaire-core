@@ -1,9 +1,9 @@
 package client
 
 import (
-	getinformation "DUCKY/serveur/ducky-network/ducky_tools"
-	gpomanager "DUCKY/serveur/ducky-network/gpo_manager"
-	"DUCKY/serveur/storage"
+	getinformation "vaultaire/serveur/ducky-network/ducky_tools"
+	gpomanager "vaultaire/serveur/ducky-network/gpo_manager"
+	"vaultaire/serveur/storage"
 )
 
 // Client_Auth_Manager manages the authentication requests from clients.

@@ -1,5 +1,7 @@
 package storage
 
+import "time"
+
 type UserConnected struct {
 	ID          int
 	Username    string
@@ -24,6 +26,19 @@ type PublicKey struct {
 	Key       string
 	Label     string
 	CreatedAt string
+}
+
+// Certificate représente un certificat/clé système stocké en base de données
+type Certificate struct {
+	ID              int
+	Name            string
+	CertificateType string // 'rsa_keypair', 'tls_cert', 'ssh_key', etc.
+	CertificateData *string // Certificat X.509 (PEM) ou certificat SSH
+	PrivateKeyData  *string // Clé privée (PEM)
+	PublicKeyData   *string // Clé publique (PEM)
+	Description     *string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 type GroupInfoLDAP struct {

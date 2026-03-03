@@ -1,7 +1,7 @@
 package newclient
 
 // import (
-// 	"DUCKY/serveur/logs"
+// 	"vaultaire/serveur/logs"
 // 	"crypto/rand"
 // 	"crypto/sha256"
 // 	"encoding/hex"

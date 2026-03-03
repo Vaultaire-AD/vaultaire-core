@@ -9,7 +9,7 @@ import (
 	"vaultaire_client/storage"
 )
 
-func parseTrames(trames string) storage.Trames_struct_client {
+func ParseTrames(trames string) storage.Trames_struct_client {
 	lines := strings.Split(trames, "\n")
 
 	// Vérifier que nous avons exactement trois lignes
@@ -25,17 +25,11 @@ func parseTrames(trames string) storage.Trames_struct_client {
 	}
 }
 
-var log = false
-
-func VarLog() bool {
-	return log
-}
-
 func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize int) {
 	messageBuf := make([]byte, reconstructedMessageSize)
 	_, err := duckysession.Conn.Read(messageBuf)
 	if err != nil {
-		fmt.Println("Erreur lors de la lecture du message :", err)
+		logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
 		return
 	}
 
@@ -45,7 +39,7 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 		// Déchiffrement symétrique AES-GCM
 		messageDecrypt, err = keydecodeencode.DecryptAESGCMString(duckysession.SessionKey, messageBuf)
 		if err != nil {
-			fmt.Println("Erreur lors du déchiffrement symétrique :", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors du déchiffrement symétrique : %v", err))
 			return
 		}
 	} else {
@@ -53,14 +47,12 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 		privateKeyStr := keymanagement.Get_Client_Private_Key()
 		messageDecrypt, err = keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)
 		if err != nil {
-			fmt.Println("Erreur lors du déchiffrement RSA :", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors du déchiffrement RSA : %v", err))
 			return
 		}
 	}
 
 	// Traitement des trames
-	logs.Write_Log("DEBUG", messageDecrypt)
-	logs.Write_Log("DEBUG", string(duckysession.SessionKey))
-	trames_content := parseTrames(messageDecrypt)
+	trames_content := ParseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
 }

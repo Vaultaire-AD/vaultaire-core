@@ -1,8 +1,8 @@
 package gpomanager
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 )
 
 func GPO_Manager(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) string {

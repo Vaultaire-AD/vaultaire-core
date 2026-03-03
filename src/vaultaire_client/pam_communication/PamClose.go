@@ -3,11 +3,11 @@ package pamcommunication
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
 	"vaultaire_client/duckynetworkClient/sendmessage"
-	serveurcommunication "vaultaire_client/serveur_communication"
+	"vaultaire_client/logs"
 	"vaultaire_client/storage"
+	sto_session "vaultaire_client/storage/stosession"
 )
 
 type CloseRequest struct {
@@ -15,35 +15,42 @@ type CloseRequest struct {
 	Action string `json:"action"`
 }
 
-// Fonction pour gérer les requêtes "close"
 func handleCloseRequest(conn net.Conn, payload string) {
-	defer func() {
-		if err := conn.Close(); err != nil {
-			// Handle or log the error
-			log.Printf("error closing connection: %v", err)
-		}
-	}()
+	// Fermeture du socket local (celui qui a envoyé la requête JSON)
+	defer conn.Close()
 
 	var closeReq CloseRequest
 	err := json.Unmarshal([]byte(payload), &closeReq)
 	if err != nil {
-		log.Printf("Erreur de décodage JSON auth: %v", err)
+		logs.Write_log("ERROR", fmt.Sprintf("Erreur de décodage JSON close: %v", err))
 		return
 	}
 
-	// Vérifier que l'action est bien "S_close"
 	if closeReq.Action != "S_close" {
-		log.Printf("Action invalide: %s", closeReq.Action)
+		logs.Write_log("ERROR", fmt.Sprintf("Action invalide dans close: %s", closeReq.Action))
 		return
 	}
 
-	fmt.Printf("Fermeture de session pour l'utilisateur: %s\n", closeReq.User)
-	duckysession, exist := serveurcommunication.GetConnection(closeReq.User)
+	logs.Write_log("INFO", fmt.Sprintf("Demande de fermeture de session reçue pour: %s", closeReq.User))
+
+	// Récupération de la session ACTIVE via ton nouveau système
+	duckysession, exist := sto_session.SessionsUser.GetDuckySession(closeReq.User)
+
 	if !exist {
-		fmt.Println("Unable to recover user tunnel connection to serveur")
-	} else {
-		message := "02_05\nserveur_central\n" + closeReq.User + "\n" + storage.Computeur_ID + "\nclose"
-		sendmessage.SendMessage(message, &duckysession)
-		serveurcommunication.RemoveConnection(closeReq.User)
+		logs.Write_log("WARNING", fmt.Sprintf("Tentative de fermeture pour %s mais aucune connexion active trouvée", closeReq.User))
+		return
 	}
+
+	// 1. Préparer et envoyer le message de clôture au serveur central
+	// On utilise la session récupérée dynamiquement
+	message := fmt.Sprintf("02_05\nserveur_central\n%s\n%s\nclose", closeReq.User, storage.Computeur_ID)
+
+	// SendMessage doit utiliser la connexion présente dans duckysession
+
+	sendmessage.SendMessage(message, duckysession)
+
+	// 2. NETTOYAGE CRITIQUE : on supprime des deux côtés
+	sto_session.SessionsUser.Delete(closeReq.User) // Supprime du manager de sessions (et ferme le socket TCP)
+
+	logs.Write_log("INFO", fmt.Sprintf("Session %s proprement fermée et retirée des registres", closeReq.User))
 }

@@ -1,8 +1,11 @@
 package sessionmgr
 
 import (
+	"fmt"
 	"net"
 	"time"
+	"vaultaire_client/logs"
+	"vaultaire_client/storage"
 )
 
 func NewManager(timeout time.Duration) *Manager {
@@ -14,15 +17,16 @@ func NewManager(timeout time.Duration) *Manager {
 	return m
 }
 
-func (m *Manager) AddOrUpdate(username string, conn net.Conn, status SessionStatus) {
+func (m *Manager) AddOrUpdate(username string, conn net.Conn, status SessionStatus, duckysession *storage.DuckySession) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.sessions[username] = &Session{
-		Username: username,
-		Conn:     conn,
-		Status:   status,
-		LastSeen: time.Now(),
+		Username:     username,
+		DuckySession: duckysession, // Initialisé plus tard
+		Conn:         conn,
+		Status:       status,
+		LastSeen:     time.Now(),
 	}
 }
 
@@ -62,14 +66,12 @@ func (m *Manager) cleanupLoop() {
 
 	for range ticker.C {
 		now := time.Now()
-
 		m.mu.Lock()
 		for user, s := range m.sessions {
-			// Conn fermée OU timeout
-			if s.Conn == nil ||
-				isConnClosed(s.Conn) ||
-				now.Sub(s.LastSeen) > m.timeout {
-
+			// On ne check QUE le timeout d'inactivité
+			// Si aucune donnée n'a transité depuis m.timeout
+			if now.Sub(s.LastSeen) > m.timeout {
+				logs.Write_log("WARNING", fmt.Sprintf("Session timeout pour l'utilisateur %s. Fermeture du tunnel.", user))
 				if s.Conn != nil {
 					_ = s.Conn.Close()
 				}
@@ -80,9 +82,23 @@ func (m *Manager) cleanupLoop() {
 	}
 }
 
+// On supprime la fonction isConnClosed qui cassait les lectures en cours
 func isConnClosed(conn net.Conn) bool {
 	one := []byte{}
 	_ = conn.SetReadDeadline(time.Now())
 	_, err := conn.Read(one)
 	return err != nil
+}
+
+// GetDuckySession permet de récupérer l'objet DuckySession associé à un utilisateur.
+func (m *Manager) GetDuckySession(username string) (*storage.DuckySession, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	s, ok := m.sessions[username]
+	if !ok || s.DuckySession == nil {
+		return nil, false
+	}
+
+	return s.DuckySession, true
 }

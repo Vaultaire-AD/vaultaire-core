@@ -3,75 +3,76 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Profil utilisateur</title>
-  <link rel="stylesheet" href="/static/profil_custom.css">
-  <link rel="stylesheet" href="/static/admin_custom.css">
+  <title>Profil — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
 </head>
 <body>
-  <div class="profil-container">
-    <h1>Profil de {{.User.Username}}</h1>
+  <header class="app-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+    <nav class="app-nav">
+      {{ if .HasWebAdmin }}
+      <a href="/admin">Administration</a>
+      {{ end }}
+      <a href="/profil" class="active">Profil</a>
+    </nav>
+    <div class="app-toolbar">
+      <span class="muted">{{ .User.Username }}</span>
+      <a href="/logout" class="btn btn-ghost">Déconnexion</a>
+    </div>
+  </header>
+  <div class="profil-container animate-in">
+    <h1>Profil</h1>
+    <p class="muted">{{ .User.Username }}</p>
 
-    {{ if .HasWebAdmin }}
-      <p><a href="/admin" style="display:inline-block;padding:8px 12px;background:#6a0dad;color:#fff;border-radius:8px;text-decoration:none;margin-bottom:8px">Aller à la page d'administration</a></p>
-    {{ end }}
-    <script src="/static/admin_app.js"></script>
+    <section class="section">
+      <h2>Informations</h2>
+      <form action="/profil" method="POST">
+        <input type="hidden" name="action" value="update_info">
+        <label for="username">Nom d'utilisateur</label>
+        <input type="text" id="username" name="username" value="{{.User.Username}}" required>
+        <label for="firstname">Prénom</label>
+        <input type="text" id="firstname" name="firstname" value="{{.User.Firstname}}" required>
+        <label for="lastname">Nom</label>
+        <input type="text" id="lastname" name="lastname" value="{{.User.Lastname}}" required>
+        <label for="email">Email</label>
+        <input type="email" id="email" name="email" value="{{.User.Email}}" readonly>
+        <label for="password">Nouveau mot de passe</label>
+        <input type="password" id="password" name="password">
+        <label for="confirm_password">Confirmer le mot de passe</label>
+        <input type="password" id="confirm_password" name="confirm_password">
+        <button type="submit" class="btn btn-primary" style="margin-top:0.75rem">Enregistrer</button>
+      </form>
+    </section>
 
-    <!-- Formulaire mise à jour infos -->
-    <form action="/profil" method="POST">
-      <input type="hidden" name="action" value="update_info">
-
-      <label for="username">Nom d'utilisateur :</label>
-      <input type="text" id="username" name="username" value="{{.User.Username}}" required>
-
-      <label for="firstname">Prénom :</label>
-      <input type="text" id="firstname" name="firstname" value="{{.User.Firstname}}" required>
-
-      <label for="lastname">Nom :</label>
-      <input type="text" id="lastname" name="lastname" value="{{.User.Lastname}}" required>
-
-      <label for="email">Email :</label>
-      <input type="email" id="email" name="email" value="{{.User.Email}}" readonly>
-
-      <label for="password">Nouveau mot de passe :</label>
-      <input type="password" id="password" name="password">
-
-      <label for="confirm_password">Confirmer le mot de passe :</label>
-      <input type="password" id="confirm_password" name="confirm_password">
-
-      <button type="submit">Mettre à jour</button>
-    </form>
-
-    <div class="profil-infos">
-      <p><strong>Date de naissance :</strong> {{.User.DateOfBirth}}</p>
-      <p><strong>Groupes :</strong> {{range .User.Groups}}{{.}}, {{end}}</p>
-      <p><strong>Status :</strong> {{if .User.Connected}}Connecté{{else}}Déconnecté{{end}}</p>
+    <div class="profil-infos section muted">
+      <p><strong>Date de naissance</strong> {{ .User.DateOfBirth }}</p>
+      <p><strong>Groupes</strong> {{range .User.Groups}}{{.}} {{end}}</p>
+      <p><strong>Statut</strong> {{if .User.Connected}}Connecté{{else}}Déconnecté{{end}}</p>
     </div>
 
-    <!-- 🔑 Liste des clés publiques -->
-    <h2>Clés publiques</h2>
-    <ul>
-      {{range .Keys}}
-        <li>
-          {{.Label}}
+    <section class="section">
+      <h2>Clés publiques</h2>
+      <ul style="list-style:none;padding:0">
+        {{range .Keys}}
+        <li style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem">
+          <span>{{.Label}}</span>
           <form action="/profil" method="POST" style="display:inline">
             <input type="hidden" name="action" value="delete_key">
             <input type="hidden" name="key_id" value="{{.ID}}">
-            <button type="submit">Supprimer</button>
+            <button type="submit" class="btn btn-ghost btn-danger">Supprimer</button>
           </form>
         </li>
-      {{end}}
-    </ul>
-
-    <!-- ➕ Ajout d'une nouvelle clé -->
-    <h3>Ajouter une nouvelle clé publique</h3>
-    <form action="/profil" method="POST" enctype="multipart/form-data">
-      <input type="hidden" name="action" value="add_key">
-      <label for="public_key_file">Fichier clé publique :</label>
-      <input type="file" id="public_key_file" name="public_key_file" accept=".pub" required>
-      <button type="submit">Ajouter</button>
-    </form>
-
-    <a href="/logout">Se déconnecter</a>
+        {{end}}
+      </ul>
+      <h3 class="h2">Ajouter une clé</h3>
+      <form action="/profil" method="POST" enctype="multipart/form-data">
+        <input type="hidden" name="action" value="add_key">
+        <label for="public_key_file">Fichier clé publique (.pub)</label>
+        <input type="file" id="public_key_file" name="public_key_file" accept=".pub" required>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
+      </form>
+    </section>
   </div>
+  <script src="/static/app.js"></script>
 </body>
 </html>

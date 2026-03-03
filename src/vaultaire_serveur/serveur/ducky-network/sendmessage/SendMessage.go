@@ -1,9 +1,9 @@
 package sendmessage
 
 import (
-	keydecodeencode "DUCKY/serveur/ducky-network/key_decode_encode"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	keydecodeencode "vaultaire/serveur/ducky-network/key_decode_encode"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"encoding/binary"
 	"fmt"
 )

@@ -3,77 +3,61 @@ package pamcommunication
 import (
 	"encoding/json"
 	"fmt"
-	"log"
 	"net"
-	"strconv"
 	"time"
+	"vaultaire_client/logs"
 	serveurcommunication "vaultaire_client/serveur_communication"
 	"vaultaire_client/storage"
 )
 
 type Response struct {
-	Status   string `json:"status"`
-	IsAdmin  bool   `json:"is_admin"` // Ce champ sera ignoré si false/non défini
-	Ssh_keys string `json:"ssh_keys"`
+	Status   string   `json:"status"`
+	IsAdmin  bool     `json:"is_admin"`
+	Ssh_keys []string `json:"ssh_keys"`
 }
 
-// Fonction pour gérer l'authentification
 func handleAuthRequest(conn net.Conn, payload string) {
 	var authReq AuthRequest
 	err := json.Unmarshal([]byte(payload), &authReq)
 	if err != nil {
-		log.Printf("Erreur de décodage JSON auth: %v", err)
+		logs.Write_log("ERROR", fmt.Sprintf("Erreur JSON auth: %v", err))
 		return
 	}
 
 	if !isValidUserInput(authReq.User) || !isValidUserInput(authReq.Password) {
-		log.Printf("Entrée invalide de l'utilisateur: %s", authReq.User)
+		logs.Write_log("ERROR", fmt.Sprintf("Entrée invalide auth: %s", authReq.User))
 		return
 	}
 
-	// Lancer l'ancien main avec les identifiants
-	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "")
+	go serveurcommunication.EnableServerCommunication(authReq.User, authReq.Password, "", nil, false)
 
 	status_rep := "timeout"
+
 	select {
 	case auth_res := <-storage.Authentification_PAM:
-		switch auth_res {
-		case "success":
-			fmt.Println("Authentification réussie:", auth_res)
+		if auth_res == "success" {
 			status_rep = "success"
-		case "failed":
-			fmt.Println("Authentification failed:", auth_res)
+			logs.Write_log("INFO", "Auth PAM succès "+authReq.User)
+		} else {
 			status_rep = "failed"
-		default:
-			fmt.Println("Authentification status inconnu:", auth_res)
+			logs.Write_log("ERROR", "Auth PAM failed "+authReq.User)
 		}
 
 	case <-time.After(5 * time.Second):
-		fmt.Println("Time Out")
+		logs.Write_log("ERROR", "Timeout auth")
 	}
 
-	fmt.Println("L'user est il admin ? : " + strconv.FormatBool(storage.IsAdmin))
-	// Envoyer une réponse confirmant l'authentification
-	var sshKeys string
-
-	select {
-	case sshKeys = <-storage.Authentification_SSHpubkey: // récupère la valeur envoyée sur le canal
-	case <-time.After(5 * time.Second):
-		sshKeys = "" // timeout
-	}
-
-	// Ensuite tu peux créer ta réponse
 	response := Response{
 		Status:   status_rep,
 		IsAdmin:  storage.IsAdmin,
-		Ssh_keys: sshKeys, // si Ssh_keys est []string
+		Ssh_keys: []string{}, // ❗ pas ici
 	}
 
 	encoder := json.NewEncoder(conn)
 	err = encoder.Encode(response)
 	if err != nil {
-		log.Printf("Erreur d'envoi de la réponse: %v", err)
+		logs.Write_log("ERROR", fmt.Sprintf("Erreur envoi réponse: %v", err))
 	}
+
 	storage.IsAdmin = false
-	storage.Authentification_SSHpubkey <- ""
 }

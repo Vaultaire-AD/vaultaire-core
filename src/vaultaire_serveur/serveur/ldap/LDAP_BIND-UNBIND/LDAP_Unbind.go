@@ -1,8 +1,8 @@
 package ldapbindunbind
 
 import (
-	ldapsessionmanager "DUCKY/serveur/ldap/LDAP_SESSION-Manager"
-	"DUCKY/serveur/logs"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"net"
 )

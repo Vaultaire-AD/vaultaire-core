@@ -2,111 +2,56 @@ package serveurcommunication
 
 import (
 	"fmt"
-	"net"
 	"os"
-	"path/filepath"
 	"time"
-	"vaultaire_client/duckynetworkClient/sendmessage"
-	serveur "vaultaire_client/duckynetworkClient/serveurauth"
-	"vaultaire_client/duckynetworkClient/userauth"
+	"vaultaire_client/logs"
+	"vaultaire_client/serveur_communication/module"
 	"vaultaire_client/sessionmgr"
-	"vaultaire_client/storage"
+	sto_session "vaultaire_client/storage/stosession"
 )
 
 // Fonction pour gérer la requete au serveur central
+func EnableServerCommunication(user, pass, sshUser string, sshpassword *string, isFetchBrut bool) {
+	logs.Print_Log("Launching Vaultaire_Client_Network: " + user)
 
-func HaveServeurKey() bool {
-	serveurKeyPath := filepath.Join(storage.KeyPath, "serveurpublickey.pem")
-	_, privateErr := os.Stat(serveurKeyPath)
-	return !os.IsNotExist(privateErr)
-}
-
-func EnableServerCommunication(user, pass, sshUser string) {
-	fmt.Printf("Launching Vaultaire_Client_Network: %s\n", user)
 	if user == "vaultaire" {
 		for {
-			serverAddr := storage.C_serveurIP + ":" + storage.C_serveurListenPort
-			conn, err := net.Dial("tcp", serverAddr)
+			ds, err := module.EstablishDuckySession(user, pass)
 			if err != nil {
-				fmt.Println("Erreur lors de la connexion au serveur :", err)
+				logs.Write_log("ERROR", fmt.Sprintf("Connexion échouée: %v", err))
 				time.Sleep(30 * time.Second)
 				continue
 			}
-			storage.SessionsUser.AddOrUpdate(
-				user,
-				conn,
-				sessionmgr.SessionPending,
-			)
-			var duckysession storage.DuckySession
-			duckysession.Conn = conn
-			duckysession.IsSafe = false
-			if !HaveServeurKey() {
-				_ = serveur.AskServerKey(&duckysession)
-			}
-			duckysession.SessionKey = serveur.AskServerAuthentification(&duckysession)
 
-			// Lance le gestionnaire de connexion en goroutine
+			sto_session.SessionsUser.AddOrUpdate(user, ds.Conn, sessionmgr.SessionPending, ds)
+
 			done := make(chan struct{})
 			go func() {
-				handleConnection(user, &duckysession)
-				close(done) // signal que handleConnection est terminé
+				handleConnection(user, ds)
+				close(done)
 			}()
 
-			// Lance l'authentification (si c'est bloquant, c'est ok)
-			userauth.AskAuthentification(user, pass, &duckysession)
-
-			if sshUser != "" {
-				fmt.Println("Attente fin d'auth pour :", sshUser)
-
-				for {
-					status, ok := storage.SessionsUser.GetStatus(user)
-					if !ok {
-						fmt.Println("Session disparue")
-						break
-					}
-					sessionIntegritykey := string(duckysession.SessionKey)
-					if status == sessionmgr.SessionAuthenticated {
-						fmt.Println("Session authentifiée, envoi 03_01")
-						msg := "03_01\nserveur_central\n" +
-							sessionIntegritykey + "\n" +
-							user + "\n" +
-							storage.Computeur_ID + "\n" +
-							"ask_sshpubkey\n" +
-							sshUser
-
-						sendmessage.SendMessage(msg, &duckysession)
-						break
-					}
-
-					if status == sessionmgr.SessionFailed {
-						fmt.Println("Auth échouée, abandon")
-						break
-					}
-
-					time.Sleep(100 * time.Millisecond)
-				}
+			// Si on a une demande SSH spécifique à passer dans ce tunnel
+			if sshUser != "" && sshpassword != nil && *sshpassword != "" {
+				module.WaitForSSHAuth(user, sshUser, sshpassword, ds)
+			} else if isFetchBrut {
+				module.WaitForSSHFetch(user, sshUser, ds)
+				// 🔥 AJOUTE CECI :
+				logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
+				os.Exit(0) // On force l'arrêt propre du binaire
 			}
-			// Attendre que la connexion soit terminée avant de continuer
-			<-done
-			fmt.Println("Connexion terminée, nouvelle tentative dans 30 secondes...")
+
+			<-done // Attend la fin de la connexion
+			logs.Write_log("WARNING", "Flux arrêté. Reconnexion dans 30s...")
 			time.Sleep(30 * time.Second)
 		}
 	} else {
-		serverAddr := storage.C_serveurIP + ":" + storage.C_serveurListenPort
-		conn, err := net.Dial("tcp", serverAddr)
+		// Mode Client Simple (One-shot)
+		ds, err := module.EstablishDuckySession(user, pass)
 		if err != nil {
-			fmt.Println("Erreur lors de la connexion au serveur :", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur connexion client: %v", err))
 			return
 		}
-		var duckysession storage.DuckySession
-		duckysession.Conn = conn
-		duckysession.IsSafe = false
-		// Exemple simplifié de logique liée au serveur
-		if !HaveServeurKey() {
-			_ = serveur.AskServerKey(&duckysession)
-		}
-		duckysession.SessionKey = serveur.AskServerAuthentification(&duckysession)
-		go handleConnection(user, &duckysession)
-		userauth.AskAuthentification(user, pass, &duckysession)
+		handleConnection(user, ds)
 	}
 }

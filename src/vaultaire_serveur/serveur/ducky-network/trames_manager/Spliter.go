@@ -1,13 +1,13 @@
 package tramesmanager
 
 import (
-	autc "DUCKY/serveur/ducky-network/authentification/client"
-	auts "DUCKY/serveur/ducky-network/authentification/serveur"
-	autssh "DUCKY/serveur/ducky-network/authentification/ssh"
-	"DUCKY/serveur/ducky-network/sendmessage"
-	sync "DUCKY/serveur/ducky-network/sync"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	autc "vaultaire/serveur/ducky-network/authentification/client"
+	auts "vaultaire/serveur/ducky-network/authentification/serveur"
+	autssh "vaultaire/serveur/ducky-network/authentification/ssh"
+	"vaultaire/serveur/ducky-network/sendmessage"
+	sync "vaultaire/serveur/ducky-network/sync"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"strings"
 )
 

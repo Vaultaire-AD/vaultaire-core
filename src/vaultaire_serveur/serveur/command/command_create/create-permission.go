@@ -1,10 +1,10 @@
 package commandcreate
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/database/db_permission"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/tools"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/tools"
 )
 
 // create_Permission handles the creation of a user or client permission.

@@ -65,10 +65,6 @@ type UserPermission struct {
 	Auth        string
 	Compare     string
 	Search      string
-	Read        string
-	Write       string
-	APIRead     string
-	APIWrite    string
 	Web_admin   string
 }
 

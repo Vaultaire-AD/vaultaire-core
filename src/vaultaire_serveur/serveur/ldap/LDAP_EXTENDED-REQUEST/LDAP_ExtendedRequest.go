@@ -1,10 +1,10 @@
 package ldapextendedrequest
 
 import (
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/storage"
+	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
 	"fmt"
 	"net"
 )
@@ -46,16 +46,13 @@ func buildLDAPExtendedResponse(messageID int, resultCode byte, matchedDN, diagMs
 }
 
 func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn net.Conn) {
-	if storage.Ldap_Debug {
-		fmt.Println("Handling Extended Request")
-		fmt.Printf("RequestName: %s\n", op.RequestName)
-		fmt.Printf("RequestValue: %s\n", op.RequestValue)
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: extended request name=%s value=%s", op.RequestName, op.RequestValue))
 
 	// --- 🔐 Étape 1 : Identification de l’utilisateur
-	username := op.RequestName // dépend de ta structure LDAP_Storage
-	if username == "" {
-		username = "anonymous"
+	session, ok := ldapsessionmanager.GetLDAPSession(conn)
+	username := "anonymous"
+	if ok && session.IsBound && session.Username != "" {
+		username = session.Username
 	}
 
 	// --- 🔐 Étape 2 : Vérification des permissions
@@ -85,10 +82,7 @@ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn n
 
 	// --- ✅ Étape 3 : Exécution de la requête autorisée
 	if op.RequestName == "1.3.6.1.4.1.4203.1.11.3" {
-		if storage.Ldap_Debug {
-			fmt.Println("Traitement de la requête WHOAMI")
-			fmt.Printf("MessageID: %d\n", messageID)
-		}
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: WHOAMI messageID=%d", messageID))
 		authzID := fmt.Sprintf("dn:uid=%s,ou=system", username)
 		response := buildLDAPExtendedResponse(messageID, 0x00, "", "", "", authzID)
 		_, err := conn.Write(response)

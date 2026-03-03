@@ -1,11 +1,11 @@
 package duckynetwork
 
 import (
-	db "DUCKY/serveur/database"
-	"DUCKY/serveur/ducky-network/sendmessage"
-	tm "DUCKY/serveur/ducky-network/trames_manager"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	db "vaultaire/serveur/database"
+	"vaultaire/serveur/ducky-network/sendmessage"
+	tm "vaultaire/serveur/ducky-network/trames_manager"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 	"time"
 )
 

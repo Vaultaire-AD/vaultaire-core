@@ -1,347 +1,198 @@
 /*
  * pam_vaultaire_ssh.c
- * Module PAM léger pour provisioning SSH keys & création d'utilisateur avant auth par clé.
- *
- * Comportement :
- *  - pam_sm_authenticate() : envoie {"check":{"user":"username"}} au socket UNIX (SOCKET_PATH)
- *  - attend une réponse JSON : {"status":"success"|"failed", "is_admin":true|false, "ssh_keys":["...","..."]}
- *  - si success : ensure local user, install keys, set sudo selon is_admin -> retourne PAM_SUCCESS
- *  - si failed : supprime local user (optionnel) -> retourne PAM_PERM_DENIED
- *
- * IMPORTANT :
- *  - Exécuter en root (module PAM).
- *  - Recommandations de sécurité mentionnées plus bas.
+ * PAM module: SSH key provisioning and local user setup before key auth.
+ * Sends {"check":{"user":"username"}} to Vaultaire socket; on success ensures user, installs keys, sets sudo.
  */
 
 #define _GNU_SOURCE
 #include <security/pam_appl.h>
 #include <security/pam_modules.h>
 #include <security/pam_ext.h>
-
-#include <sys/types.h>
-#include <sys/socket.h>
-#include <sys/un.h>
+#include <syslog.h>
 #include <sys/stat.h>
 #include <limits.h>
-
 #include <pwd.h>
-#include <grp.h>
-#include <shadow.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <errno.h>
-#include <syslog.h>
 
-#define MAX_BUFFER_SIZE 4096
-#define SOCKET_PATH "/tmp/vaultaire_client.sock"
-#define CMD_SIZE 512
+#include "pam_common.h"
 
-/* --- utilitaires simples --- */
+/* --- SSH-specific: ensure user (no password), install keys, delete user --- */
 
-static void log_info(const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    vsyslog(LOG_AUTH | LOG_INFO, fmt, ap);
-    va_end(ap);
-}
+// static int ensure_local_user_no_password(const char *username) {
+//     struct passwd *pw = getpwnam(username);
+//     char cmd[512];
+    
+//     // 1. Si l'utilisateur n'existe pas, on le crée (c'est forcément un futur user Vaultaire)
+//     if (pw == NULL) {
+//         char comment[128];
+//         snprintf(comment, sizeof(comment), "%s@vaultaire", username);
+//         vaultaire_log_info("Creating new Vaultaire user: %s", username);
 
-static void log_err(const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
-    vsyslog(LOG_AUTH | LOG_ERR, fmt, ap);
-    va_end(ap);
-}
+//         snprintf(cmd, sizeof(cmd), 
+//                  "/usr/sbin/useradd -m -s /bin/bash -p '*' -c '%s' %s", 
+//                  comment, username);
+        
+//         if (system(cmd) != 0) {
+//             vaultaire_log_err("Failed to create user %s", username);
+//             return -1;
+//         }
+//         pw = getpwnam(username); // Récupère l'UID généré
+//     } 
+//     // 2. Si l'utilisateur existe, on vérifie STRICTEMENT si c'est un user Vaultaire
+//     else {
+//         if (!is_vaultaire_user(username)) {
+//             vaultaire_log_info("User %s is local/system, skipping permission fixes.", username);
+//             return 0; // On ne touche à rien (ni shadow, ni chown)
+//         }
 
-/* Send a simple JSON check request (no password) and receive server response into resp (zero-terminated) */
-static int send_check_request(const char *username, char *resp, size_t resp_size) {
-    int sock = -1;
-    struct sockaddr_un addr;
-    char req[MAX_BUFFER_SIZE];
-    ssize_t s;
+//         // Si c'est un user Vaultaire, on s'assure qu'il n'est pas bloqué (!!)
+//         snprintf(cmd, sizeof(cmd), "/usr/sbin/usermod -p '*' %s", username);
+//         system(cmd);
+//     }
 
-    if (!username || !resp) return -1;
+//     // 3. Application des correctifs de permissions (UNIQUEMENT pour Vaultaire users)
+//     if (pw != NULL) {
+//         // Fix de l'UID sur le home (si reliquat d'une autre install)
+//         snprintf(cmd, sizeof(cmd), "chown -R %u:%u /home/%s", 
+//                  pw->pw_uid, pw->pw_gid, username);
+//         system(cmd);
 
-    sock = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (sock < 0) {
-        log_err("socket(): %s", strerror(errno));
-        return -1;
-    }
+//         // StrictMode SSH : 700 sur le Home
+//         snprintf(cmd, sizeof(cmd), "chmod 700 /home/%s", username);
+//         system(cmd);
+//     }
 
-    memset(&addr, 0, sizeof(addr));
-    addr.sun_family = AF_UNIX;
-    strncpy(addr.sun_path, SOCKET_PATH, sizeof(addr.sun_path) - 1);
+//     return 0;
+// }
 
-    if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
-        log_err("connect() to %s failed: %s", SOCKET_PATH, strerror(errno));
-        close(sock);
-        return -1;
-    }
+// static int install_ssh_keys_for_user(const char *username, char **ssh_keys, size_t key_count) {
+//     struct passwd *pw = getpwnam(username);
+//     if (!pw) {
+//         vaultaire_log_err("install_ssh_keys: user %s not found", username);
+//         return -1;
+//     }
+//     char sshdir[PATH_MAX];
+//     if (snprintf(sshdir, sizeof(sshdir), "%s/.ssh", pw->pw_dir) >= (int)sizeof(sshdir)) return -1;
+//     if (mkdir(sshdir, 0700) != 0 && errno != EEXIST) {
+//         vaultaire_log_err("mkdir(%s): %s", sshdir, strerror(errno));
+//         return -1;
+//     }
+//     chown(sshdir, pw->pw_uid, pw->pw_gid);
+//     chmod(sshdir, 0700);
 
-    /* Requête minimale (format convenu) */
-    snprintf(req, sizeof(req), "{\"check\":{\"user\":\"%s\"}}", username);
+//     char authfile[PATH_MAX];
+//     if (snprintf(authfile, sizeof(authfile), "%s/authorized_keys", sshdir) >= (int)sizeof(authfile)) return -1;
+//     FILE *f = fopen(authfile, "w");
+//     if (!f) {
+//         vaultaire_log_err("fopen(%s): %s", authfile, strerror(errno));
+//         return -1;
+//     }
+//     for (size_t i = 0; i < key_count; i++) {
+//         if (!ssh_keys[i] || ssh_keys[i][0] == '\0') continue;
+//         if (strncmp(ssh_keys[i], "ssh-", 4) != 0) {
+//             vaultaire_log_err("Invalid SSH key format for user %s", username);
+//             continue;
+//         }
+//         fprintf(f, "%s\n", ssh_keys[i]);
+//     }
+//     fclose(f);
+//     chmod(authfile, 0600);
+//     chown(authfile, pw->pw_uid, pw->pw_gid);
+//     return 0;
+// }
 
-    s = send(sock, req, strlen(req), 0);
-    if (s < 0) {
-        log_err("send(): %s", strerror(errno));
-        close(sock);
-        return -1;
-    }
+// static void delete_local_user(const char *username) {
+//     char cmd[VAULTAIRE_CMD_SIZE];
+//     snprintf(cmd, sizeof(cmd), "userdel -r %s >/dev/null 2>&1 || true", username);
+//     (void)system(cmd);
+// }
 
-    /* lire la réponse (on suppose qu'elle tient dans resp buffer) */
-    s = recv(sock, resp, resp_size - 1, 0);
-    if (s < 0) {
-        log_err("recv(): %s", strerror(errno));
-        close(sock);
-        return -1;
-    }
-    resp[s] = '\0';
-    close(sock);
-    return 0;
-}
-
-/* rudimentaire parser JSON (pas de dépendance JSON externe) :
-   extrait "status", "is_admin" (true/false) et la zone de tableau ssh_keys (contenu entre [ ] ) */
-static void parse_response(const char *resp, char *status_out, size_t status_sz, bool *is_admin_out, char *ssh_keys_out, size_t ssh_keys_sz) {
-    status_out[0] = '\0';
-    *is_admin_out = false;
-    ssh_keys_out[0] = '\0';
-
-    if (!resp) return;
-
-    /* status */
-    char *p = strstr(resp, "\"status\"");
-    if (p) {
-        char *q = strstr(p, ":");
-        if (q) {
-            q++;
-            while (*q == ' ' || *q == '"' ) q++;
-            char tmp[64] = {0};
-            int i = 0;
-            while (q[i] && q[i] != '"' && q[i] != ',' && i < (int)sizeof(tmp)-1) {
-                tmp[i] = q[i];
-                i++;
-            }
-            tmp[i] = '\0';
-            strncpy(status_out, tmp, status_sz-1);
-        }
-    }
-
-    /* is_admin */
-    p = strstr(resp, "\"is_admin\"");
-    if (p) {
-        char *q = strstr(p, ":");
-        if (q) {
-            q++;
-            if (strstr(q, "true")) *is_admin_out = true;
-            else *is_admin_out = false;
-        }
-    }
-
-    /* ssh_keys as raw string */
-    p = strstr(resp, "\"Ssh_keys\"");
-    if (!p) p = strstr(resp, "\"ssh_keys\"");
-    if (p) {
-        char *q = strchr(p, ':');
-        if (q) {
-            q++;
-            while (*q == ' ' || *q == '"') q++;
-            char *end = strrchr(q, '"');
-            if (end && end > q) {
-                size_t len = end - q;
-                if (len >= ssh_keys_sz) len = ssh_keys_sz - 1;
-                strncpy(ssh_keys_out, q, len);
-                ssh_keys_out[len] = '\0';
-            }
-        }
-    }
-}
-
-/* Validate username to avoid shell injection etc. */
-static bool is_valid_username(const char *username) {
-    if (!username) return false;
-    if (strchr(username, '/') || strchr(username, ' ') || strchr(username, ';') || strchr(username, '&') || strchr(username, ':')) return false;
-    return true;
-}
-
-/* Ensure local user exists; if not create with useradd, no password set here (SSH key only).
-   Returns 0 on success, -1 on failure.
-   Warning: uses system() for simplicity; production: prefer fork/exec with argv. */
-static int ensure_local_user_no_password(const char *username) {
-    struct passwd *pw = getpwnam(username);
-    if (pw) return 0; /* already exists */
-
-    char cmd[CMD_SIZE];
-    /* create user with home directory, bash shell */
-    snprintf(cmd, sizeof(cmd), "useradd -m -s /bin/bash -c 'vaultaire_user' %s", username);
-    int rc = system(cmd);
-    if (rc != 0) {
-        log_err("useradd failed for %s (rc=%d)", username, rc);
-        return -1;
-    }
-    return 0;
-}
-
-/* Install ssh keys from a simplified CSV-like content extracted earlier.
-   ssh_keys_raw is like: " \"ssh-ed25519 AAA...\",\"ssh-rsa AAA...\" " (commas and optional quotes)
-*/
-static int install_ssh_keys_for_user(const char *username, const char *ssh_keys_raw) {
-    struct passwd *pw = getpwnam(username);
-    if (!pw) {
-        log_err("install_ssh_keys_for_user: user %s not found", username);
-        return -1;
-    }
-
-    char sshdir[PATH_MAX];
-    snprintf(sshdir, sizeof(sshdir), "%s/.ssh", pw->pw_dir);
-
-    if (mkdir(sshdir, 0700) != 0 && errno != EEXIST) {
-        log_err("mkdir(%s): %s", sshdir, strerror(errno));
-        return -1;
-    }
-    chown(sshdir, pw->pw_uid, pw->pw_gid);
-
-    char authfile[PATH_MAX];
-    snprintf(authfile, sizeof(authfile), "%s/authorized_keys", sshdir);
-
-    FILE *f = fopen(authfile, "w");
-    if (!f) {
-        log_err("fopen(%s): %s", authfile, strerror(errno));
-        return -1;
-    }
-
-    if (ssh_keys_raw && ssh_keys_raw[0]) {
-        fprintf(f, "%s\n", ssh_keys_raw); // écrire toutes les clés telles quelles
-    }
-
-    fclose(f);
-    chmod(authfile, 0600);
-    chown(authfile, pw->pw_uid, pw->pw_gid);
-    return 0;
-}
-
-/* Add or remove sudo group membership; detect a suitable sudo-like group automatically */
-static int detect_sudo_group(char *group, size_t gsize) {
-    const char *candidates[] = { "sudo", "wheel", "admin", "staff" };
-    for (size_t i = 0; i < sizeof(candidates)/sizeof(candidates[0]); ++i) {
-        struct group *g = getgrnam(candidates[i]);
-        if (g) {
-            strncpy(group, candidates[i], gsize-1);
-            group[gsize-1] = '\0';
-            return 0;
-        }
-    }
-    /* fallback: create sudo group */
-    strncpy(group, "sudo", gsize-1);
-    group[gsize-1] = '\0';
-    system("getent group sudo >/dev/null 2>&1 || groupadd sudo");
-    return 0;
-}
-
-static int add_user_to_group(const char *username, const char *group) {
-    char cmd[CMD_SIZE];
-    if (system("command -v usermod >/dev/null 2>&1") == 0) {
-        snprintf(cmd, sizeof(cmd), "usermod -aG %s %s", group, username);
-    } else {
-        /* fallback for minimal systems */
-        snprintf(cmd, sizeof(cmd), "adduser %s %s 2>/dev/null || echo"); /* best effort */
-    }
-    return system(cmd);
-}
-static int remove_user_from_group(const char *username, const char *group) {
-    char cmd[CMD_SIZE];
-    if (system("command -v gpasswd >/dev/null 2>&1") == 0) {
-        snprintf(cmd, sizeof(cmd), "gpasswd -d %s %s", username, group);
-    } else {
-        /* fallback awk edit of /etc/group is risky; we'll best-effort use deluser if present */
-        snprintf(cmd, sizeof(cmd), "deluser %s %s 2>/dev/null || true", username, group);
-    }
-    return system(cmd);
-}
-
-/* delete local user and home - best effort */
-static void delete_local_user(const char *username) {
-    char cmd[CMD_SIZE];
-    snprintf(cmd, sizeof(cmd), "userdel -r %s >/dev/null 2>&1 || true", username);
-    system(cmd);
-}
-
-/* --- PAM hook for auth --- */
-/* This module is intended to be placed in the "auth" stack for sshd.
-   It runs a check to fetch keys & admin flag. If success -> provisioning -> PAM_SUCCESS
-   If failed -> removes user (optional) and returns PAM_PERM_DENIED
-*/
-
+/* --- PAM auth hook --- */
 PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, const char **argv) {
-    const char *username = NULL;
-    int ret = pam_get_user(pamh, &username, NULL);
-    if (ret != PAM_SUCCESS || !username) {
-        log_err("pam_get_user failed");
+    const char *username;
+    const char *password;
+    struct pam_conv *conv;
+    struct pam_message msg;
+    const struct pam_message *pmsg;
+    struct pam_response *pam_resp = NULL;
+    char req_buf[VAULTAIRE_MAX_BUF];
+    char json_res[VAULTAIRE_MAX_BUF];
+    char status[64] = {0};
+
+    openlog("VAULTAIRE_PAM", LOG_PID | LOG_NDELAY, LOG_AUTH);
+
+    // 1. Récupérer le nom d'utilisateur
+    if (pam_get_user(pamh, &username, NULL) != PAM_SUCCESS || !username) {
+        syslog(LOG_ERR, "Vaultaire-PAM: Failed to get username");
+        closelog();
         return PAM_USER_UNKNOWN;
     }
 
-    /* validate */
-    if (!is_valid_username(username)) {
-        log_err("invalid username: %s", username);
-        return PAM_PERM_DENIED;
+    // On ignore les utilisateurs qui n'ont pas le tag @vaultaire dans leur GECOS
+    if (!is_vaultaire_user(username)) {
+        closelog();
+        return PAM_IGNORE; 
     }
 
-    /* contact remote service to check rights and fetch keys */
-    char resp[MAX_BUFFER_SIZE];
-    if (send_check_request(username, resp, sizeof(resp)) != 0) {
-        log_err("send_check_request failed for %s", username);
-        /* conservative: deny */
-        return PAM_PERM_DENIED;
+    // 2. Demander le mot de passe (MFA)
+    if (pam_get_item(pamh, PAM_CONV, (const void **)&conv) != PAM_SUCCESS) {
+        closelog();
+        return PAM_AUTH_ERR;
     }
 
-    char status[64];
-    bool is_admin = false;
-    char ssh_keys_raw[2048];
-    parse_response(resp, status, sizeof(status), &is_admin, ssh_keys_raw, sizeof(ssh_keys_raw));
+    msg.msg_style = PAM_PROMPT_ECHO_OFF;
+    msg.msg = "Vaultaire MFA Password: ";
+    pmsg = &msg;
 
-    log_info("vaultaire: user=%s status=%s is_admin=%s", username, status, is_admin ? "true" : "false");
+    if (conv->conv(1, &pmsg, &pam_resp, conv->appdata_ptr) != PAM_SUCCESS || !pam_resp) {
+        syslog(LOG_ERR, "Vaultaire-PAM: Conversation failed for %s", username);
+        closelog();
+        return PAM_AUTH_ERR;
+    }
+    password = pam_resp[0].resp; 
+
+    // 3. Préparation requête JSON pour le daemon
+    // On suppose que le daemon Go va créer le user/clés s'il valide ce password
+    snprintf(req_buf, sizeof(req_buf), "{\"check\":{\"user\":\"%s\",\"password\":\"%s\"}}", username, password);
+
+    // Nettoyage immédiat du mot de passe en mémoire stack/heap
+    if (pam_resp[0].resp) {
+        memset(pam_resp[0].resp, 0, strlen(pam_resp[0].resp));
+        free(pam_resp[0].resp);
+    }
+    free(pam_resp);
+
+    // 4. Envoi au daemon Go
+    // Le daemon doit : 1. Vérifier l'auth | 2. Créer le user | 3. Installer les clés | 4. Répondre
+    if (vaultaire_socket_send_recv(req_buf, json_res, sizeof(json_res)) != 0) {
+        syslog(LOG_ERR, "Vaultaire-PAM: Daemon communication failed");
+        closelog();
+        return PAM_AUTHINFO_UNAVAIL;
+    }
+
+    // 5. Analyse de la réponse
+    vaultaire_json_get_string(json_res, "status", status, sizeof(status));
 
     if (strcmp(status, "success") == 0) {
-        /* Ensure local user exists */
-        if (ensure_local_user_no_password(username) != 0) {
-            log_err("Could not ensure local user %s", username);
-            return PAM_PERM_DENIED;
-        }
-        /* Install public keys (if any) */
-        if (ssh_keys_raw[0]) {
-            if (install_ssh_keys_for_user(username, ssh_keys_raw) != 0) {
-                log_err("Failed installing ssh keys for %s", username);
-                /* continue: keys failure shouldn't necessarily block? We choose to deny to be safe */
-                return PAM_PERM_DENIED;
-            }
-        }
-
-        /* Sudo membership */
-        char group[64];
-        detect_sudo_group(group, sizeof(group));
-        if (is_admin) {
-            add_user_to_group(username, group);
-        } else {
-            remove_user_from_group(username, group);
-        }
-
+        syslog(LOG_INFO, "Vaultaire-PAM: Authentication successful for %s", username);
+        closelog();
         return PAM_SUCCESS;
-    } else {
-        /* failed -> delete user if exists and deny */
-        delete_local_user(username);
-        log_info("vaultaire: access denied for %s -> deleted local account if present", username);
-        return PAM_PERM_DENIED;
     }
+    
+    syslog(LOG_WARNING, "Vaultaire-PAM: Authentication rejected for %s", username);
+    closelog();
+    return PAM_PERM_DENIED;
 }
 
-/* No credential setting needed here */
 PAM_EXTERN int pam_sm_setcred(pam_handle_t *pamh, int flags, int argc, const char **argv) {
     return PAM_SUCCESS;
 }
 
-/* Not used (account mgmt) but we return success */
 PAM_EXTERN int pam_sm_acct_mgmt(pam_handle_t *pamh, int flags, int argc, const char **argv) {
     return PAM_SUCCESS;
 }

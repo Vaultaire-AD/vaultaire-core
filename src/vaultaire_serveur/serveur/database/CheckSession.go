@@ -1,11 +1,11 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
 	"database/sql"
 	"fmt"
 	"log"
 	"time"
+	"vaultaire/serveur/logs"
 )
 
 func CleanUpExpiredSessions(db *sql.DB) error {
@@ -55,7 +55,7 @@ func CleanUpExpiredSessions(db *sql.DB) error {
 			logs.WriteLog("db", "erreur lors de la suppression des sessions expirées : "+err.Error())
 			return fmt.Errorf("erreur lors de la suppression des sessions expirées : %v", err)
 		}
-		log.Printf("Session expirée pour user_id %d supprimée", userID)
+		logs.Write_Log("INFO", fmt.Sprintf("Session expirée pour user_id %d supprimée", userID))
 	}
 
 	return nil
