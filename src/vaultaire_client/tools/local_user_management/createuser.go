@@ -58,6 +58,8 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 
 		// Création du Home Directory
 		os.MkdirAll(homeDir, 0700)
+		copySkelFiles(homeDir, uid)
+		chownRecursive(homeDir, uid, uid)
 		os.Chown(homeDir, uid, uid)
 	}
 
@@ -83,6 +85,40 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 }
 
 // --- FONCTIONS OUTILS (Helpers) ---
+
+// copySkelFiles imite le comportement de useradd en copiant /etc/skel
+func copySkelFiles(homeDir string, uid int) {
+	skelPath := "/etc/skel"
+	entries, err := os.ReadDir(skelPath)
+	if err != nil {
+		logs.Write_log("ERROR", "Impossible de lire /etc/skel: "+err.Error())
+		return
+	}
+
+	for _, entry := range entries {
+		src := filepath.Join(skelPath, entry.Name())
+		dst := filepath.Join(homeDir, entry.Name())
+
+		// On lit le fichier source
+		data, err := os.ReadFile(src)
+		if err != nil {
+			continue
+		}
+
+		// On l'écrit dans le home de l'user
+		os.WriteFile(dst, data, 0644)
+	}
+}
+
+// chownRecursive s'assure que l'user possède bien tout son home
+func chownRecursive(path string, uid, gid int) error {
+	return filepath.Walk(path, func(name string, info os.FileInfo, err error) error {
+		if err == nil {
+			err = os.Chown(name, uid, gid)
+		}
+		return err
+	})
+}
 
 // Trouve le prochain UID disponible en scannant /etc/passwd
 func getNextAvailableUID(start int) int {

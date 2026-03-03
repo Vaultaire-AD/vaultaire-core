@@ -11,7 +11,7 @@ mv /opt/vaultaire/vaultaire_client/vaultaire_client /opt/vaultaire_client/
 mv /opt/vaultaire/client_software.yaml /opt/vaultaire_client/.ssh/client_software.yaml
 mv /opt/vaultaire/*.pem /opt/vaultaire_client/.ssh/
 
-mv libnss_vaultaire.so.2 /lib64/
+mv /opt/vaultaire/vaultaire_client/libnss_vaultaire.so.2 /lib64/
 chmod 755 /lib64/libnss_vaultaire.so.2
 chmod 750 /opt/vaultaire_client/vaultaire_client
 
@@ -39,9 +39,9 @@ WorkingDirectory=/opt/vaultaire_client
 Environment=USER=root
 LimitNOFILE=4096
 PrivateTmp=false
-ProtectSystem=full
+ProtectSystem=true
 ReadOnlyPaths=/etc /usr /lib /bin
-ReadWritePaths=/tmp /etc /home /var/log/vaultaire
+ReadWritePaths=/tmp /etc /home /var/log/vaultaire /etc/passwd /etc/shadow /etc/group /etc/gshadow
 
 [Install]
 WantedBy=multi-user.target
