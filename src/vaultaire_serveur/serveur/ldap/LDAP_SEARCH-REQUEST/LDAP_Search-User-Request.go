@@ -1,11 +1,11 @@
 package ldapsearchrequest
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/domain"
-	ldaptools "DUCKY/serveur/ldap/LDAP-TOOLS"
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/domain"
+	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"net"
 	"strings"

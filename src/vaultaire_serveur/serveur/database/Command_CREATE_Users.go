@@ -1,8 +1,8 @@
 package database
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/tools"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/tools"
 	"database/sql"
 	"fmt"
 

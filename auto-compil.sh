@@ -1,5 +1,5 @@
 #!/bin/bash
-set -euo pipefail
+# set -euo pipefail
 
 # Variables
 
@@ -13,7 +13,6 @@ CTL_BIN="$BUILD_DIR/vaultaire_ctl/vaultaire_ctl"
 # Créer le dossier build si nécessaire
 mkdir -p "$BUILD_DIR"
 
-echo "�� Pull des dernières modifications..."
 cd "$ROOT_DIR"
 #git pull
 
@@ -53,28 +52,19 @@ go build -buildvcs=false -o "$CTL_BIN"
 # -------------------------
 echo "🛠 Build modules PAM..."
 cd "$ROOT_DIR/src/vaultaire_client/pam_module"
-gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c -lcurl -lpam
-gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c -lcurl -lpam
-gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c -lcurl -lpam
-cp ./pam*.so "$BUILD_DIR/vaultaire_client/"
 
+gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c pam_common.c -lcurl -lpam
+gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c pam_common.c -lcurl -lpam
+gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c pam_common.c -lcurl -lpam
+gcc -fPIC -shared -o libnss_vaultaire.so.2 nss_vaultaire.c
+
+cp ./pam*.so "$BUILD_DIR/vaultaire_client/"
+cp ./libnss_vaultaire.so.2 "$BUILD_DIR/vaultaire_client/"
 # -------------------------
 # Copier les binaires dans release Vaultaire_AD-ppd
 # -------------------------
 RELEASE_DIR="$ROOT_DIR/Vaultaire_AD-ppd"
-# mkdir -p "$RELEASE_DIR"
-mkdir -p /srv/nfs/serveur
-cp $SERVER_BIN /srv/nfs/serveur/
-cp $CLIENT_BIN /srv/nfs/serveur/
-cp $CLI_BIN /srv/nfs/serveur/
-cp $CTL_BIN /srv/nfs/serveur/
 
-mkdir -p /srv/nfs/client
-cp -rf $CLIENT_BIN /srv/nfs/client/
-mkdir -p /srv/nfs/vaultaire_cli
-cp -rf $CLI_BIN /srv/nfs/vaultaire_cli/
-mkdir -p /srv/nfs/vaultaire_ctl
-cp -rf $CTL_BIN /srv/nfs/vaultaire_ctl
 
 echo "✅ Build et déploiement terminés."
 

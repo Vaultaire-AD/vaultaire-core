@@ -1,8 +1,8 @@
 package client
 
 import (
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 )
 
 // This function should be called when a new client connects

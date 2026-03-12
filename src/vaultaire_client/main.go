@@ -1,10 +1,12 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 	"time"
+	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
 	"vaultaire_client/storage"
@@ -30,11 +32,10 @@ func StartDailyUserCleanup() {
 			}
 
 			duration := time.Until(next)
-			log.Printf("⏳ Prochaine exécution de la suppression à %s", next.Format(time.RFC1123))
+			logs.Write_log("INFO", fmt.Sprintf("⏳ Prochaine exécution de la suppression à %s", next.Format(time.RFC1123)))
 
 			time.Sleep(duration)
-
-			log.Println("🚀 Lancement de la suppression des utilisateurs Vaultaire inactifs")
+			logs.Write_log("INFO", "🚀 Lancement de la suppression des utilisateurs Vaultaire inactifs")
 			localusermanagement.DeleteUser_Vaultaire_Past_4Days_withoutconnection()
 
 			time.Sleep(24 * time.Hour)
@@ -51,7 +52,7 @@ func loadConfig(filePath string) error {
 	defer func() {
 		if err := file.Close(); err != nil {
 			// Handle or log the error
-			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la fermeture du fichier de configuration: %v", err))
 		}
 	}()
 
@@ -71,17 +72,28 @@ func loadConfig(filePath string) error {
 }
 
 func main() {
+	// ... chargement config ...
 	err := loadConfig("/opt/vaultaire_client/client_conf.yaml")
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
 	}
 	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePath)
-	log.SetOutput(os.Stdout)
-	StartDailyUserCleanup()
-	// Lancer le serveur de socket Unix
-	if storage.IsServeur {
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "")
+
+	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
+	flag.Parse()
+	if *fetchKey != "" {
+		storage.SilentConsole = true
+		// Mode One-Shot pour SSH
+		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", *fetchKey, nil, true)
+		return
+	} else {
+		StartDailyUserCleanup()
+		// Lancer le serveur de socket Unix
+		if storage.IsServeur {
+			go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil, false)
+		}
+		pamcommunication.UnixSocketServer()
 	}
-	pamcommunication.UnixSocketServer()
+
 }

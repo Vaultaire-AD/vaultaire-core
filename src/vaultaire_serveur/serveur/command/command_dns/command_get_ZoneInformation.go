@@ -1,8 +1,8 @@
 package commanddns
 
 import (
-	displaydns "DUCKY/serveur/command/display/display_dns"
-	dnsdb "DUCKY/serveur/dns/DNS_Database" // adapte le chemin selon ton projet
+	displaydns "vaultaire/serveur/command/display/display_dns"
+	dnsdb "vaultaire/serveur/dns/DNS_Database" // adapte le chemin selon ton projet
 	"database/sql"
 	"fmt"
 	"strings"

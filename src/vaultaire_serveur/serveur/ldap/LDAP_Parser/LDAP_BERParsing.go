@@ -1,9 +1,8 @@
 package ldapparser
 
 import (
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
+	"vaultaire/serveur/logs"
 	"fmt"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -18,9 +17,7 @@ func parseProtocolOp(p *ber.Packet) (ldapstorage.LDAPProtocolOperation, error) {
 		return nil, fmt.Errorf("protocolOp should be application class")
 	}
 
-	if storage.Ldap_Debug {
-		fmt.Printf("Parsing protocolOp with tag: %d, class: %d\n", p.Tag, p.ClassType)
-	}
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: protocolOp tag=%d class=%d", p.Tag, p.ClassType))
 
 	switch p.Tag {
 	case 0: // BindRequest

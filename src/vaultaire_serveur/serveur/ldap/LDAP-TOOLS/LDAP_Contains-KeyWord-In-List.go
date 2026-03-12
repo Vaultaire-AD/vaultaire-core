@@ -1,8 +1,8 @@
 package ldaptools
 
 import (
-	ldapstorage "DUCKY/serveur/ldap/LDAP_Storage"
 	"strings"
+	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 )
 
 // DetectKeywordCategories analyse les filtres LDAP et détecte les catégories (user, group, CN=Users, etc.)

@@ -158,7 +158,9 @@ mkdir /var/log/vaultaire
 chown -R vaultaire:vaultaire /var/log/vaultaire
 chmod -R 700 /var/log/vaultaire
 
-# Création du dossier SSH pour Vaultaire
+# Création du dossier SSH pour Vaultaire (pour les fichiers temporaires générés depuis la BDD)
+# Note: Les clés et certificats sont maintenant stockés en base de données, ce dossier sert uniquement
+# pour les fichiers temporaires nécessaires aux outils SSH (ssh -i, scp -i)
 mkdir /opt/vaultaire/.ssh
 chown -R vaultaire:vaultaire /opt/vaultaire/.ssh
 chmod -R 700 /opt/vaultaire/.ssh
@@ -219,7 +221,7 @@ ldap:
   ldaps_enable: true
   Ldap_Port: 389
   Ldaps_Port: 636
-  ldap_debug: false # or true for see all ldap info in logs
+  # Logs DEBUG (LDAP, etc.) : utiliser la section debug: debug: true
 website:
   website_enable: true
   Website_Port: 443
@@ -393,7 +395,8 @@ attention pour utiliser la commande autojoin vous devez crée une variable d'env
 ```bash
 sudo nano /etc/profile.d/setenv.sh
 # add this line
-export VAULTAIRE_pubKeyLogin="/opt/vaultaire/.ssh/public_key_for_login_client_rsa.pub" #if you change the path in your config file change this one to
+# Note: VAULTAIRE_pubKeyLogin n'est plus nécessaire - la clé publique est maintenant gérée automatiquement depuis la base de données
+# Si vous avez besoin d'accéder à la clé publique, utilisez l'interface web admin ou l'API
 #reload
 sudo chmod +x /etc/profile.d/setenv.sh
 source /etc/profile.d/setenv.sh

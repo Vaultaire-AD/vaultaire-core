@@ -4,16 +4,11 @@ import (
 	"net"
 )
 
-func Read_Header_Size(conn net.Conn) int {
-
+func Read_Header_Size(conn net.Conn) (int, error) { // Ajoute error ici
 	headerSizeBuf := make([]byte, 1)
 	_, err := conn.Read(headerSizeBuf)
 	if err != nil {
-		return 0
+		return 0, err // On renvoie la vraie erreur (EOF, timeout, etc.)
 	}
-	// if headerSizeBuf[0] != 0 {
-	// 	fmt.Println("\n Receive message from : ", conn.RemoteAddr())
-	// 	fmt.Println("taille du header recu : ", headerSizeBuf[0])
-	// }
-	return int(headerSizeBuf[0])
+	return int(headerSizeBuf[0]), nil
 }

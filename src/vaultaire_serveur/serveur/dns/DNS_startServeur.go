@@ -1,10 +1,10 @@
 package dns
 
 import (
-	dnsdatabase "DUCKY/serveur/dns/DNS_Database"
-	dnsparser "DUCKY/serveur/dns/DNS_Parser"
-	dnsstorage "DUCKY/serveur/dns/DNS_Storage"
-	"DUCKY/serveur/logs"
+	dnsdatabase "vaultaire/serveur/dns/DNS_Database"
+	dnsparser "vaultaire/serveur/dns/DNS_Parser"
+	dnsstorage "vaultaire/serveur/dns/DNS_Storage"
+	"vaultaire/serveur/logs"
 	"fmt"
 	"log"
 	"net"
@@ -27,27 +27,27 @@ func DNS_StartServeur() {
 		}
 	}()
 
-	fmt.Println("🚀 En attente de requêtes DNS sur le port 53...")
+	logs.Write_Log("INFO", "dns: waiting for DNS requests on port 53")
 	dnsdatabase.InitDatabase()
 	buf := make([]byte, 512)
 
 	for {
 		n, remoteAddr, err := conn.ReadFromUDP(buf)
 		if err != nil {
-			log.Printf("Erreur de lecture : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeNetConnection, "dns: read error: "+err.Error())
 			continue
 		}
 
-		fmt.Println("📩 Requête reçue de " + string(remoteAddr.IP.String()) + ":" + fmt.Sprint(remoteAddr.Port))
+		logs.Write_Log("DEBUG", fmt.Sprintf("dns: request received from %s:%d", remoteAddr.IP.String(), remoteAddr.Port))
 
 		msg, err := dnsparser.ParseDNSMessage(buf[:n])
 		if err != nil {
-			log.Printf("Erreur parsing DNS : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeNetParse, "dns: parsing error: "+err.Error())
 			continue
 		}
 
 		if len(msg.Questions) == 0 {
-			log.Printf("❌ Aucune question DNS dans le message.")
+			logs.Write_LogCode("WARNING", logs.CodeNetParse, "dns: no DNS question in message")
 			continue
 		}
 
@@ -56,9 +56,8 @@ func DNS_StartServeur() {
 
 		result, err := ResolveDNSQuery(fqdn, qType)
 		if err != nil {
-			log.Printf("❌ Résolution échouée pour %s : %v", fqdn, err)
+			logs.Write_LogCode("WARNING", logs.CodeNetMessage, fmt.Sprintf("dns: resolution failed for %s: %v", fqdn, err))
 
-			// 🔴 Construire et envoyer une réponse DNS d'échec
 			failResp, buildErr := dnsparser.BuildErrorDNSResponse(msg, 3 /* NXDOMAIN */)
 			if buildErr != nil {
 				log.Printf("❌ Échec de construction réponse d’erreur : %v", buildErr)
@@ -76,7 +75,7 @@ func DNS_StartServeur() {
 			ipOrName := result.(string)
 			respData, err = dnsparser.BuildDNSResponse(msg, ipOrName)
 			if err != nil {
-				log.Printf("❌ Erreur construction réponse : %v", err)
+				logs.Write_LogCode("ERROR", logs.CodeNetBuild, "dns: failed to build response: "+err.Error())
 				continue
 			}
 
@@ -84,25 +83,24 @@ func DNS_StartServeur() {
 			mxRecords := result.([]dnsstorage.MXRecord)
 			respData, err = dnsparser.BuildDNSResponseMX(msg, mxRecords)
 			if err != nil {
-				log.Printf("❌ Erreur construction réponse : %v", err)
+				logs.Write_LogCode("ERROR", logs.CodeNetBuild, "dns: failed to build MX response: "+err.Error())
 				continue
 			}
 		case 2: // NS (réponse multiple)
 			nsRecords := result.([]dnsstorage.ZoneRecord)
 			respData, err = dnsparser.BuildDNSResponseNS(msg, nsRecords)
 			if err != nil {
-				log.Printf("❌ Erreur construction réponse : %v", err)
+				logs.Write_LogCode("ERROR", logs.CodeNetBuild, "dns: failed to build NS response: "+err.Error())
 				continue
 			}
 		case 16: // TXT
 			txtRecords := result.([]string)
 			respData, err = dnsparser.BuildDNSResponseTXT(msg, txtRecords)
 			if err != nil {
-				log.Printf("❌ Erreur construction réponse : %v", err)
+				logs.Write_LogCode("ERROR", logs.CodeNetBuild, "dns: failed to build TXT response: "+err.Error())
 				continue
 			}
 		default:
-			// autres types non supportés
 			failResp, buildErr := dnsparser.BuildErrorDNSResponse(msg, 4 /* NOTIMP */)
 			if buildErr != nil {
 				log.Printf("❌ Erreur construction réponse d’erreur : %v", buildErr)
@@ -117,7 +115,7 @@ func DNS_StartServeur() {
 
 		_, err = conn.WriteToUDP(respData, remoteAddr)
 		if err != nil {
-			log.Printf("❌ Erreur envoi réponse : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeNetSend, "dns: failed to send response: "+err.Error())
 		}
 	}
 }
@@ -143,8 +141,8 @@ func ResolveDNSQuery(fqdn string, qType uint16) (any, error) {
 	case 2:
 		return dnsdatabase.ResolveNSRecords(db, fqdn)
 	case 28:
-		return "", fmt.Errorf("❌ Type AAAA non supporté")
+		return "", fmt.Errorf("dns: AAAA type not supported")
 	default:
-		return "", fmt.Errorf("❌ Type de requête DNS non supporté : %d", qType)
+		return "", fmt.Errorf("dns: unsupported DNS query type: %d", qType)
 	}
 }

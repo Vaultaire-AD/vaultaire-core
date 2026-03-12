@@ -81,11 +81,13 @@ Le développement suit un modèle inspiré de **Gitflow** :
 
 ```bash
 # Cloner le dépôt
-git clone git@votre_repo:vaultaire-core.git
+git clone git@github.com:Vaultaire-AD/vaultaire-core.git
 cd vaultaire-core
 
 # Lancer en mode développement
-docker-compose -f deployments/docker-compose.yml up --build
+.\deployments\pre-prod\docker-build-and-up.ps1
+## ou pour linux
+./deployments/pre-prod/docker-build-and-up.sh 
 ```
 
 ---

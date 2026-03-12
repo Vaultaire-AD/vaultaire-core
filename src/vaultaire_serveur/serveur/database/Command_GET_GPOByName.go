@@ -1,7 +1,7 @@
 package database
 
 import (
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/storage"
 	"database/sql"
 )
 

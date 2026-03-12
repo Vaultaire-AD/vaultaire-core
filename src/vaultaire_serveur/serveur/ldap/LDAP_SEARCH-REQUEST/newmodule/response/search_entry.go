@@ -1,7 +1,7 @@
 package response
 
 import (
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
 	"fmt"
 	"net"
 

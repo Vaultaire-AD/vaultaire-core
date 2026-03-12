@@ -1,9 +1,9 @@
 package serveur
 
 import (
-	sync "DUCKY/serveur/ducky-network/sync"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/storage"
+	sync "vaultaire/serveur/ducky-network/sync"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/storage"
 )
 
 // Serveur_Auth_Manager manages the authentication requests from servers.

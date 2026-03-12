@@ -1,7 +1,7 @@
 package display
 
 import (
-	"DUCKY/serveur/storage" // adapte selon ton package
+	"vaultaire/serveur/storage" // adapte selon ton package
 	"fmt"
 	"sort"
 	"strings"

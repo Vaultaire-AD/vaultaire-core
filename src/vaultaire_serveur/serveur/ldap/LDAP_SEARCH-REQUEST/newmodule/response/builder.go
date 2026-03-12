@@ -1,8 +1,8 @@
 package response
 
 import (
-	ldapinterface "DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"DUCKY/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
+	ldapinterface "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
 )
 
 // ResolveAttributes récupère les attributs demandés pour une entrée

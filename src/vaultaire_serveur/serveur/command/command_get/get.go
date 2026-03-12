@@ -1,6 +1,7 @@
 package commandget
 
-func Get_Command(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+func Get_Command(command_list []string, sender_groupsIDs []int, sender_Username string) string {
+	actionKey := "read:get:group"
 	switch command_list[0] {
 	case "-h", "help", "--help":
 		return (`
@@ -35,15 +36,27 @@ Lister tous les utilisateurs d'un groupe :
 
 get -g -u "group_name"`)
 	case "-u":
-		return getUserCommandParser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "read:get:user"
 	case "-p":
-		return getPermissionCommandParser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "read:get:permission"
 	case "-g":
-		return getGroupCommandParser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "read:get:group"
 	case "-c":
-		return get_Client_Command_Parser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "read:get:client"
 	case "-gpo":
-		return getGPOCommandParser(command_list, sender_groupsIDs, action, sender_Username)
+		actionKey = "read:get:gpo"
+	}
+	switch command_list[0] {
+	case "-u":
+		return getUserCommandParser(command_list, sender_groupsIDs, actionKey, sender_Username)
+	case "-p":
+		return getPermissionCommandParser(command_list, sender_groupsIDs, actionKey, sender_Username)
+	case "-g":
+		return getGroupCommandParser(command_list, sender_groupsIDs, actionKey, sender_Username)
+	case "-c":
+		return get_Client_Command_Parser(command_list, sender_groupsIDs, actionKey, sender_Username)
+	case "-gpo":
+		return getGPOCommandParser(command_list, sender_groupsIDs, actionKey, sender_Username)
 	default:
 		return ("Invalid Request Try get -h for more information")
 	}

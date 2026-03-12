@@ -1,8 +1,8 @@
 package dbuser
 
 import (
-	"DUCKY/serveur/database"
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/database"
+	"vaultaire/serveur/storage"
 	"fmt"
 )
 

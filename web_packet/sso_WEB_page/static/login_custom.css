@@ -1,22 +1,41 @@
-/* login_custom.css */
+/* login_custom.css — Voltaire: clarity, confidence, security */
+
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Pro:ital,wght@0,400;0,600;1,400&family=Source+Sans+3:wght@400;500;600&display=swap');
+
+:root {
+  --ink: #1a2332;
+  --paper: #f5f3ef;
+  --paper-warm: #ebe8e2;
+  --border: #c9c4bc;
+  --accent: #2c5282;
+  --accent-hover: #1a365d;
+  --muted: #5c6470;
+  --success: #276749;
+  --shadow: rgba(26, 35, 50, 0.08);
+}
+
+* { box-sizing: border-box; }
 
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-  background: linear-gradient(135deg, #4B0082, #6A0DAD);
-  color: white;
+  font-family: 'Source Sans 3', system-ui, sans-serif;
+  background: var(--paper);
+  color: var(--ink);
   margin: 0;
   min-height: 100vh;
   display: flex;
   justify-content: center;
   align-items: center;
+  font-size: 1rem;
+  line-height: 1.5;
 }
 
 .login-container {
-  background: rgba(40, 0, 60, 0.85);
-  padding: 2rem 3rem;
-  border-radius: 12px;
-  box-shadow: 0 8px 30px rgba(106, 13, 173, 0.6);
-  width: 320px;
+  background: #fff;
+  padding: 2.5rem 2.75rem;
+  border-radius: 4px;
+  box-shadow: 0 4px 24px var(--shadow);
+  width: 360px;
+  border: 1px solid var(--border);
 }
 
 .logo-container {
@@ -25,61 +44,74 @@ body {
 }
 
 .logo {
-  max-width: 100px;
+  max-width: 88px;
+  height: auto;
 }
 
 .welcome-text {
-  font-size: 1.2rem;
-  margin-bottom: 2rem;
-  text-align: center;
+  font-family: 'Crimson Pro', Georgia, serif;
+  font-size: 1.25rem;
   font-weight: 600;
-  letter-spacing: 1.2px;
+  color: var(--ink);
+  margin-bottom: 1.75rem;
+  text-align: center;
+  letter-spacing: 0.02em;
 }
 
 label {
   display: block;
-  margin-bottom: 0.25rem;
-  font-weight: 600;
+  margin-bottom: 0.35rem;
+  font-weight: 500;
+  color: var(--muted);
+  font-size: 0.9rem;
 }
 
 input[type="text"],
 input[type="password"] {
   width: 100%;
-  padding: 0.5rem;
-  border-radius: 6px;
-  border: none;
-  margin-bottom: 1.25rem;
+  padding: 0.65rem 0.75rem;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  margin-bottom: 1rem;
   font-size: 1rem;
-  outline: none;
+  font-family: inherit;
+  background: #fff;
+  color: var(--ink);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 input[type="text"]:focus,
 input[type="password"]:focus {
-  box-shadow: 0 0 5px 2px #9b59b6;
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(44, 82, 130, 0.12);
 }
 
 button {
   width: 100%;
-  padding: 0.7rem;
-  background-color: #8e44ad;
+  padding: 0.75rem 1rem;
+  background: var(--accent);
   border: none;
-  border-radius: 6px;
-  font-size: 1.1rem;
-  color: white;
-  font-weight: 700;
+  border-radius: 2px;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #fff;
   cursor: pointer;
-  transition: background-color 0.3s ease;
+  font-family: inherit;
+  transition: background-color 0.2s ease;
 }
 
 button:hover {
-  background-color: #6a0dad;
+  background: var(--accent-hover);
 }
 
 .error-popup {
-  background-color: #c0392b;
-  padding: 0.7rem 1rem;
-  border-radius: 8px;
+  background: #fed7d7;
+  color: #c53030;
+  padding: 0.75rem 1rem;
+  border-radius: 2px;
   margin-bottom: 1rem;
-  font-weight: 700;
+  font-weight: 500;
   text-align: center;
+  font-size: 0.9rem;
 }

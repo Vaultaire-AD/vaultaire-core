@@ -1,7 +1,7 @@
 package tramesmanager
 
 import (
-	"DUCKY/serveur/logs"
+	"vaultaire/serveur/logs"
 	"encoding/binary"
 	"net"
 )

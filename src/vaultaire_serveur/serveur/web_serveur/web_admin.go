@@ -1,86 +1,120 @@
 package webserveur
 
 import (
-	"DUCKY/serveur/command"
-	"DUCKY/serveur/logs"
-	"DUCKY/serveur/permission"
-	"DUCKY/serveur/web_serveur/session"
+	dbcert "vaultaire/serveur/database/db-certificates"
+	duckykey "vaultaire/serveur/ducky-network/key_management"
+	"vaultaire/serveur/command"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
+	"vaultaire/serveur/web_serveur/session"
 	"html/template"
+	"log"
 	"net/http"
-	"time"
+	"strings"
 )
 
-type AdminPageData struct {
-	Username string
-	Output   string
+const adminTplDir = "web_packet/sso_WEB_page/templates"
+
+// executeAdminPage parse le partial sidebar + la page et exécute la page (sidebar commun à toutes les pages admin).
+func executeAdminPage(w http.ResponseWriter, pageName string, data interface{}) error {
+	tmpl, err := template.ParseFiles(adminTplDir+"/admin_sidebar.html", adminTplDir+"/"+pageName)
+	if err != nil {
+		return err
+	}
+	return tmpl.ExecuteTemplate(w, pageName, data)
 }
 
-// AdminHandler gère l'interface d'administration web.
-// Accès restreint aux utilisateurs disposant de la permission `web_admin`.
-func AdminHandler(w http.ResponseWriter, r *http.Request) {
-	// Auth via cookie de session
+// requireWebAdmin checks session and web_admin permission; if not allowed, redirects to / or /profil and returns false.
+func requireWebAdmin(w http.ResponseWriter, r *http.Request) (username string, ok bool) {
 	tokenCookie, err := r.Cookie("session_token")
 	if err != nil || tokenCookie.Value == "" {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
+		return "", false
 	}
 	username, valid := session.ValidateToken(tokenCookie.Value)
 	if !valid {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
+		return "", false
 	}
-
-	// Vérification des permissions web_admin
-	groupsID, action, err := permission.PrePermissionCheck(username, "web_admin")
+	groupIDs, action, err := permission.PrePermissionCheck(username, "web_admin")
 	if err != nil {
-		logs.Write_Log("WARNING", "PrePermissionCheck échoué pour user "+username+": "+err.Error())
-		http.Error(w, "Permission refusée", http.StatusForbidden)
-		return
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return "", false
 	}
+	allowed, _ := permission.CheckPermissionsMultipleDomains(groupIDs, action, []string{"*"})
+	if !allowed {
+		http.Redirect(w, r, "/profil", http.StatusSeeOther)
+		return "", false
+	}
+	return username, true
+}
 
-	ok, reason := permission.CheckPermissionsMultipleDomains(groupsID, action, []string{"*"})
+// requireWebAdminWithGroupIDs does requireWebAdmin then returns the user's groupIDs (same as command package uses for RBAC).
+// Use with permission.CheckPermissionsMultipleDomains(groupIDs, actionKey, domains) for entity-specific checks.
+func requireWebAdminWithGroupIDs(w http.ResponseWriter, r *http.Request) (username string, groupIDs []int, ok bool) {
+	username, ok = requireWebAdmin(w, r)
 	if !ok {
-		logs.Write_Log("WARNING", "Accès admin refusé pour "+username+" : "+reason)
-		http.Error(w, "Accès admin refusé : "+reason, http.StatusForbidden)
-		return
+		return "", nil, false
 	}
-
-	// Méthode POST : exécuter une commande côté serveur via l'interface
-	output := ""
-	if r.Method == "POST" {
-		if err := r.ParseForm(); err != nil {
-			http.Error(w, "Données invalides", http.StatusBadRequest)
-			return
-		}
-		cmd := r.FormValue("command")
-		if cmd != "" {
-			// Exécuter la commande en tant qu'utilisateur connecté
-			output = command.ExecuteCommand(cmd, username)
-		}
-		// Petite mise à jour de la session pour prolonger
-		http.SetCookie(w, &http.Cookie{
-			Name:     "session_token",
-			Value:    tokenCookie.Value,
-			HttpOnly: true,
-			Secure:   true,
-			Path:     "/",
-			Expires:  time.Now().Add(30 * time.Minute),
-		})
-	}
-
-	// Render template
-	tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/admin.html")
+	groupIDs, err := permission.GetGroupIDsForUser(username)
 	if err != nil {
-		logs.Write_Log("ERROR", "Template admin manquant: "+err.Error())
-		http.Error(w, "Template admin manquant", http.StatusInternalServerError)
+		http.Redirect(w, r, "/profil", http.StatusSeeOther)
+		return "", nil, false
+	}
+	return username, groupIDs, true
+}
+
+// checkWebAdminRBAC checks the given RBAC action (e.g. read:get:user) for the user's groups; if not allowed, redirects to /profil and returns false.
+// Uses the same permission.CheckPermissionsMultipleDomains as the command package.
+func checkWebAdminRBAC(w http.ResponseWriter, r *http.Request, groupIDs []int, actionKey string) bool {
+	allowed, _ := permission.CheckPermissionsMultipleDomains(groupIDs, actionKey, []string{"*"})
+	if !allowed {
+		http.Redirect(w, r, "/profil", http.StatusSeeOther)
+		return false
+	}
+	return true
+}
+
+// AdminIndexHandler serves the admin dashboard and executes CLI-style commands via POST.
+func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
+	username, ok := requireWebAdmin(w, r)
+	if !ok {
 		return
 	}
 
-	data := AdminPageData{Username: username, Output: output}
-	if err := tmpl.Execute(w, data); err != nil {
-		logs.Write_Log("ERROR", "Erreur execution template admin: "+err.Error())
-		http.Error(w, "Erreur interne", http.StatusInternalServerError)
-		return
+	data := struct {
+		Username               string
+		Output                 string
+		DnsEnable              bool
+		Section                string
+		Debug                  bool
+		LoginClientPublicKey   string
+		LoginClientAddKeyScript string
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "dashboard", Debug: storage.Debug}
+
+	// Load login client public key for "client -join" copy-paste
+	if cert, err := dbcert.GetCertificateByName(duckykey.ServerLoginClientKeyName); err == nil && cert.PublicKeyData != nil {
+		pub := strings.TrimSpace(*cert.PublicKeyData)
+		data.LoginClientPublicKey = pub
+		// Escape single quotes for use inside shell '...'
+		pubEsc := strings.ReplaceAll(pub, "'", "'\"'\"'")
+		data.LoginClientAddKeyScript = "#!/bin/sh\n# Add Vaultaire server public key to root@client (for client -join)\n# Run as root on the client machine.\nmkdir -p /root/.ssh\necho '" + pubEsc + "' >> /root/.ssh/authorized_keys\nchmod 700 /root/.ssh\nchmod 600 /root/.ssh/authorized_keys\n"
 	}
 
+	if r.Method == http.MethodPost {
+		if r.FormValue("action") == "set_debug" {
+			storage.Debug = r.FormValue("debug") == "on" || r.FormValue("debug") == "1"
+		} else {
+			cmd := strings.TrimSpace(r.FormValue("command"))
+			if cmd != "" {
+				data.Output = command.ExecuteCommand(cmd, username)
+			}
+		}
+		data.Debug = storage.Debug
+	}
+
+	if err := executeAdminPage(w, "admin.html", data); err != nil {
+		log.Printf("admin template: %v", err)
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+	}
 }

@@ -1,7 +1,7 @@
 package display
 
 import (
-	"DUCKY/serveur/storage"
+	"vaultaire/serveur/storage"
 	"fmt"
 	"strings"
 
