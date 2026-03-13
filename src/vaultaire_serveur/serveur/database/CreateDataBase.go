@@ -1,9 +1,9 @@
 package database
 
 import (
-	"vaultaire/serveur/logs"
 	"database/sql"
 	"log"
+	"vaultaire/serveur/logs"
 
 	_ "github.com/go-sql-driver/mysql"
 )
@@ -187,6 +187,20 @@ func Create_DataBase(db *sql.DB) {
     		INDEX idx_name (name),
     		INDEX idx_type (certificate_type)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		// ----- Clusterisation intelligente -----
+		`CREATE TABLE IF NOT EXISTS cluster_nodes (
+    		id_node INT AUTO_INCREMENT PRIMARY KEY,
+    		hostname VARCHAR(255) NOT NULL UNIQUE,
+    		fqdn VARCHAR(255) NOT NULL UNIQUE,
+    		ip_address VARCHAR(45) NOT NULL,
+    		role VARCHAR(50) NOT NULL,            -- ex: 'proxy', 'api', 'core', 'dashboard'
+    		status VARCHAR(20) DEFAULT 'offline',  -- 'online', 'offline', 'maintenance'
+    		version_code VARCHAR(50) NOT NULL,     -- Pour le versionning / hot-patching
+    		capabilities JSON,                     -- Pour les spécificités (ex: {"port": 8080, "protocol": "https"})
+    		last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
+    		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		);`,
 
 		// ----- Données initiales -----
 		`INSERT IGNORE INTO users (username, firstname, lastname, email, password, salt, date_naissance)
