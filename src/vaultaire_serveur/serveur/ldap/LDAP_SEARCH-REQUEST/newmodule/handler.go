@@ -28,13 +28,9 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		return
 	}
 
-	if baseDN == "" && op.Filter.Type == ldapstorage.FilterPresent && op.Filter.Attribute == "objectClass" {
-		scope.HandleGlobalUserDisplayNameSearch(conn, messageID, session, db, op.Attributes)
-		return
-	}
 	// Root DSE
 	if baseDN == "" {
-		SendRootDSE(conn, messageID)
+		SendRootDSE(conn, messageID, db, session)
 		return
 	}
 
