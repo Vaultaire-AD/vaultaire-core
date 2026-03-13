@@ -1,6 +1,9 @@
 package newmodule
 
 import (
+	"database/sql"
+	"fmt"
+	"net"
 	ldaptools "vaultaire/serveur/ldap/LDAP-TOOLS"
 	candidate "vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
@@ -9,9 +12,6 @@ import (
 	ldapsessionmanager "vaultaire/serveur/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
-	"database/sql"
-	"fmt"
-	"net"
 )
 
 // HandleSearchRequest traite une requête LDAP Search
@@ -59,7 +59,7 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 
 	// 3. Construire et envoyer les réponses
 	for _, entry := range matched {
-		resp := response.BuildLDAPEntryForSend(entry, op.Attributes)
+		resp := response.BuildLDAPEntryForSend(entry, op.Attributes, op.TypesOnly)
 		err := response.SendLDAPSearchResultEntry(conn, messageID, resp)
 		if err != nil {
 			// log l'erreur mais on continue

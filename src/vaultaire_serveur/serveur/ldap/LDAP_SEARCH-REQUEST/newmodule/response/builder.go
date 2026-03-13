@@ -53,36 +53,18 @@ func ResolveAttributes(entry ldapinterface.LDAPEntry, requested []string, typesO
 // 	}
 // }
 
-func BuildLDAPEntryForSend(entry ldapinterface.LDAPEntry, requestedAttrs []string) ldap_types.SearchResultEntry {
-	// classes := entry.ObjectClasses()
-
-	// déterminer si c'est un groupe ou un user
-	// isGroup := false
-	// for _, class := range classes {
-	// 	if strings.ToLower(class) == "groupofnames" {
-	// 		isGroup = true
-	// 		break
-	// 	}
-	// }
-
-	// fusionner les attributs demandés avec les obligatoires
-	// var attributesToSend []string
-	// if isGroup {
-	// 	attributesToSend = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryGroupAttrs)
-	// } else {
-	// 	attributesToSend = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryUserAttrs)
-	// }
-
-	// construire les PartialAttribute
-	var attrs []ldap_types.PartialAttribute
-	for _, attr := range requestedAttrs {
-		vals := entry.GetAttribute(attr)
+func BuildLDAPEntryForSend(entry ldapinterface.LDAPEntry, requestedAttrs []string, typesOnly bool) ldap_types.SearchResultEntry {
+	if len(requestedAttrs) == 0 {
+		requestedAttrs = []string{"*"}
+	}
+	attrMap := entry.GetAttributes(requestedAttrs, typesOnly)
+	attrs := make([]ldap_types.PartialAttribute, 0, len(attrMap))
+	for typ, vals := range attrMap {
 		attrs = append(attrs, ldap_types.PartialAttribute{
-			Type: attr,
+			Type: typ,
 			Vals: vals,
 		})
 	}
-
 	return ldap_types.SearchResultEntry{
 		ObjectName: entry.DN(),
 		Attributes: attrs,

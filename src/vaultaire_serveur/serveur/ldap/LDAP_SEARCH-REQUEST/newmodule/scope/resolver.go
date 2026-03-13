@@ -1,6 +1,8 @@
 package scope
 
 import (
+	"database/sql"
+	"fmt"
 	"vaultaire/serveur/database"
 	"vaultaire/serveur/domain"
 	domainpkg "vaultaire/serveur/domain"
@@ -10,8 +12,6 @@ import (
 	"vaultaire/serveur/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
 	ldapstorage "vaultaire/serveur/ldap/LDAP_Storage"
 	"vaultaire/serveur/logs"
-	"database/sql"
-	"fmt"
 )
 
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
@@ -221,7 +221,7 @@ func PrintLDAPEntry(entry ldapinterface.LDAPEntry, requestedAttrs []string) {
 		if len(vals) > 0 {
 			fmt.Printf("%-12s: %v\n", attr, vals)
 		} else {
-			fmt.Printf("%-12s: []\n", attr) // pour voir qu'il est vide
+			fmt.Printf("%-12s: []\n", attr)
 		}
 	}
 
