@@ -53,6 +53,7 @@ func StartWebServer() {
 	http.HandleFunc("/admin/logs", AdminLogsHandler)
 	http.HandleFunc("/admin/api/logs", AdminLogsAPIHandler)
 	http.HandleFunc("/admin/dns", AdminDNSHandler)
+	http.HandleFunc("/admin/cluster", AdminClusterHandler)
 
 	serverPort := strconv.Itoa(storage.Website_Port)
 	logs.Write_Log("INFO", "webadmin: HTTPS server started on https://0.0.0.0:"+serverPort)

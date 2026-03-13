@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 
+	"vaultaire/cluster"
 	configurationfile "vaultaire/serveur/configuration_file"
 	db "vaultaire/serveur/database"
 	"vaultaire/serveur/dns"
@@ -36,6 +37,7 @@ func main() {
 
 	db.InitDatabase()
 	db.Create_DataBase(db.GetDatabase())
+	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
 
 	if storage.Administrateur_Enable {

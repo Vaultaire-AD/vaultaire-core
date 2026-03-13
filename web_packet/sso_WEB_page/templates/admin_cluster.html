@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cluster — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+          <h1>Cluster</h1>
+          {{ if .Message }}<div class="alert alert-info">{{ .Message }}</div>{{ end }}
+
+          <h2 class="h2">Nœuds enregistrés</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Hostname</th>
+                  <th>FQDN</th>
+                  <th>IP</th>
+                  <th>Rôle</th>
+                  <th>Statut</th>
+                  <th>Version</th>
+                  <th>Dernier heartbeat</th>
+                </tr>
+              </thead>
+              <tbody>
+              {{ range .Nodes }}
+                <tr>
+                  <td>{{ .ID }}</td>
+                  <td>{{ .Hostname }}</td>
+                  <td>{{ .FQDN }}</td>
+                  <td>{{ .IPAddress }}</td>
+                  <td>{{ .Role }}</td>
+                  <td>{{ .Status }}</td>
+                  <td>{{ .VersionCode }}</td>
+                  <td>{{ .LastHeartbeat }}</td>
+                </tr>
+              {{ end }}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>
+

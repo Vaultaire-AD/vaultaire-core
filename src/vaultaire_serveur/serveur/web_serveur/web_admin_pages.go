@@ -1,14 +1,6 @@
 package webserveur
 
 import (
-	"vaultaire/serveur/database"
-	dbcert "vaultaire/serveur/database/db-certificates"
-	dbperm "vaultaire/serveur/database/db_permission"
-	"vaultaire/serveur/ducky-network/new_client"
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/permission"
-	"vaultaire/serveur/storage"
-	"vaultaire/serveur/tools"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -18,6 +10,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	clusterdatabase "vaultaire/cluster/cluster_database"
+	"vaultaire/serveur/database"
+	dbcert "vaultaire/serveur/database/db-certificates"
+	dbperm "vaultaire/serveur/database/db_permission"
+	"vaultaire/serveur/ducky-network/new_client"
+	"vaultaire/serveur/logs"
+	"vaultaire/serveur/permission"
+	"vaultaire/serveur/storage"
+	"vaultaire/serveur/tools"
 )
 
 func generateSalt(length int) ([]byte, error) {
@@ -923,3 +925,42 @@ func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 		"stats": logs.GetLogsStats(),
 	})
 }
+
+// AdminClusterHandler affiche l'état des nœuds du cluster (lecture seule).
+// Accès: web_admin + read:get:client (même clé que pour la visibilité des clients).
+func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
+	if !ok {
+		return
+	}
+	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:client") {
+		return
+	}
+
+	db := database.GetDatabase()
+	nodes, err := clusterdatabase.GetAllNodes(db)
+	message := ""
+	if err != nil {
+		message = "Erreur récupération nœuds: " + err.Error()
+	}
+
+	data := struct {
+		Username  string
+		Nodes     interface{}
+		Message   string
+		DnsEnable bool
+		Section   string
+	}{
+		Username:  username,
+		Nodes:     nodes,
+		Message:   message,
+		DnsEnable: storage.Dns_Enable,
+		Section:   "cluster",
+	}
+
+	if err := executeAdminPage(w, "admin_cluster.html", data); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: template admin_cluster.html missing: "+err.Error())
+		http.Error(w, "Template manquant", http.StatusInternalServerError)
+	}
+}
+

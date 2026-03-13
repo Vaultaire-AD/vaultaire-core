@@ -2,6 +2,8 @@ package clusterdatabase
 
 import (
 	"database/sql"
+	"time"
+
 	clusterstorage "vaultaire/cluster/cluster_storage"
 )
 
@@ -19,7 +21,71 @@ func UpdateHeartbeat(db *sql.DB, hostname string) error {
 }
 
 func GetActiveNodesByRole(db *sql.DB, role string) ([]clusterstorage.Node, error) {
-	rows, err := db.Query("SELECT id_node, hostname, fqdn FROM cluster_nodes WHERE role=? AND status='online'", role)
-	// ... implémentation du mapping des rows vers slice de Node ...
-	return nil, err
+	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat 
+                            FROM cluster_nodes 
+                            WHERE role=? AND status='online'`, role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []clusterstorage.Node
+	for rows.Next() {
+		var n clusterstorage.Node
+		var lastHeartbeat time.Time
+		if err := rows.Scan(&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status, &n.VersionCode, &n.Capabilities, &lastHeartbeat); err != nil {
+			return nil, err
+		}
+		n.LastHeartbeat = lastHeartbeat
+		nodes = append(nodes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nodes, nil
 }
+
+// GetAllNodes retourne tous les nœuds, quelque soit leur état.
+func GetAllNodes(db *sql.DB) ([]clusterstorage.Node, error) {
+	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat 
+                            FROM cluster_nodes 
+                            ORDER BY role, hostname`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var nodes []clusterstorage.Node
+	for rows.Next() {
+		var n clusterstorage.Node
+		var lastHeartbeat time.Time
+		if err := rows.Scan(&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status, &n.VersionCode, &n.Capabilities, &lastHeartbeat); err != nil {
+			return nil, err
+		}
+		n.LastHeartbeat = lastHeartbeat
+		nodes = append(nodes, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return nodes, nil
+}
+
+// CleanupStaleNodes applique la politique :
+// - >1 minute sans heartbeat => status='offline'
+// - >5 minutes sans heartbeat => suppression.
+func CleanupStaleNodes(db *sql.DB) error {
+	// Mettre hors ligne les nœuds inactifs depuis plus d'une minute
+	if _, err := db.Exec(`UPDATE cluster_nodes 
+                           SET status='offline' 
+                           WHERE status='online' AND last_heartbeat < DATE_SUB(NOW(), INTERVAL 1 MINUTE)`); err != nil {
+		return err
+	}
+	// Supprimer les nœuds inactifs depuis plus de cinq minutes
+	if _, err := db.Exec(`DELETE FROM cluster_nodes 
+                           WHERE last_heartbeat < DATE_SUB(NOW(), INTERVAL 5 MINUTE)`); err != nil {
+		return err
+	}
+	return nil
+}
+

@@ -5,6 +5,7 @@ import (
 	commandcreate "vaultaire/serveur/command/command_create"
 	commanddelete "vaultaire/serveur/command/command_delete"
 	commanddns "vaultaire/serveur/command/command_dns"
+	commandcluster "vaultaire/serveur/command/command_cluster"
 	commandeyes "vaultaire/serveur/command/command_eyes"
 	commandget "vaultaire/serveur/command/command_get"
 	commandremove "vaultaire/serveur/command/command_remove"
@@ -46,6 +47,7 @@ func ExecuteCommand(input, sender string) string {
 		"create": commandcreate.Create_Command,
 		"get":    commandget.Get_Command,
 		"eyes":   commandeyes.Eyes_Command,
+		"cluster": commandcluster.Cluster_Command,
 	}
 
 	if cmd == "clear" {
