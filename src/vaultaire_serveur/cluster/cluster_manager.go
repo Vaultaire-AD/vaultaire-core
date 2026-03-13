@@ -9,8 +9,8 @@ import (
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
+	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
 
 // StartManager initialise l'enregistrement du nœud courant et les tâches périodiques
@@ -38,9 +38,9 @@ func StartManager(db *sql.DB) {
 		Hostname:     hostname,
 		FQDN:         fqdn,
 		IPAddress:    ip,
-		Role:         "core",
+		Role:         storage.Host_Type,
 		Status:       "online",
-		VersionCode:  "dev-core",
+		VersionCode:  storage.Host_Version,
 		Capabilities: capabilitiesJSON,
 	}
 
@@ -138,4 +138,3 @@ func buildCapabilitiesJSON() string {
 	}
 	return string(b)
 }
-

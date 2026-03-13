@@ -6,16 +6,16 @@ import (
 	"os"
 
 	"vaultaire/cluster"
-	configurationfile "vaultaire/serveur/configuration_file"
-	db "vaultaire/serveur/database"
-	"vaultaire/serveur/dns"
-	duckynetwork "vaultaire/serveur/ducky-network"
-	ldap "vaultaire/serveur/ldap"
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
-	"vaultaire/serveur/testrunner"
-	"vaultaire/serveur/vaultairegoroutine"
-	webserveur "vaultaire/serveur/web_serveur"
+	configurationfile "vaultaire/core/configuration_file"
+	db "vaultaire/core/database"
+	"vaultaire/core/dns"
+	ldap "vaultaire/core/ldap"
+	"vaultaire/core/logs"
+	"vaultaire/core/storage"
+	"vaultaire/core/testrunner"
+	"vaultaire/core/vaultairegoroutine"
+	webserveur "vaultaire/core/web_serveur"
+	duckynetwork "vaultaire/ducky-network"
 )
 
 type ClientInfo struct {
