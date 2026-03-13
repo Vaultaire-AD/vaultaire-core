@@ -3,6 +3,7 @@ package scope
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"vaultaire/serveur/database"
 	"vaultaire/serveur/domain"
 	domainpkg "vaultaire/serveur/domain"
@@ -197,26 +198,26 @@ func PrintLDAPEntry(entry ldapinterface.LDAPEntry, requestedAttrs []string) {
 	// ObjectClasses
 	classes := entry.ObjectClasses()
 	fmt.Printf("ObjectClass: %v\n", classes)
+	// 1. Détermine le type d'objet
+	isGroup := false
+	for _, class := range classes {
+		// Le FortiGate cherche souvent "groupOfNames" ou "group"
+		if strings.ToLower(class) == "groupofnames" || strings.ToLower(class) == "group" {
+			isGroup = true
+			break
+		}
+	}
 
-	// déterminer si c'est un groupe ou un user
-	// isGroup := false
-	// for _, class := range classes {
-	// 	if strings.ToLower(class) == "groupofnames" {
-	// 		isGroup = true
-	// 		break
-	// 	}
-	// }
-
-	// merge des attributs obligatoires
-	// var attributes []string
-	// if isGroup {
-	// 	attributes = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryGroupAttrs)
-	// } else {
-	// 	attributes = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryUserAttrs)
-	// }
-
+	// 2. Fusionne les attributs requis
+	// C'est ici que tu dois utiliser tes constantes (ex: MandatoryGroupAttrs)
+	var finalAttrs []string
+	if isGroup {
+		finalAttrs = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryGroupAttrs)
+	} else {
+		finalAttrs = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryUserAttrs)
+	}
 	// afficher tous les attributs
-	for _, attr := range requestedAttrs {
+	for _, attr := range finalAttrs {
 		vals := entry.GetAttribute(attr)
 		if len(vals) > 0 {
 			fmt.Printf("%-12s: %v\n", attr, vals)
