@@ -202,6 +202,19 @@ func Create_DataBase(db *sql.DB) {
     		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		);`,
 
+		// ----- Métriques proxy (exposées pour l'interface Web) -----
+		`CREATE TABLE IF NOT EXISTS proxy_metrics (
+    		id_metric INT AUTO_INCREMENT PRIMARY KEY,
+    		proxy_hostname VARCHAR(255) NOT NULL,
+    		proxy_ip VARCHAR(45) NOT NULL,
+    		metric_type VARCHAR(64) NOT NULL,       -- 'connections_total', 'requests_ldap', 'requests_ducky', 'backend_errors', etc.
+    		metric_value DOUBLE NOT NULL,
+    		extra JSON,                             -- données additionnelles (backend_id, core_hostname, etc.)
+    		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    		INDEX idx_proxy (proxy_hostname),
+    		INDEX idx_created (created_at)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
 		// ----- Données initiales -----
 		`INSERT IGNORE INTO users (username, firstname, lastname, email, password, salt, date_naissance)
  			VALUES ('vaultaire','Vault','Admin','vaultaire@example.com','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,

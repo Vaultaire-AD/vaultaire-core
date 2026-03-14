@@ -4,8 +4,10 @@ import (
 	autc "vaultaire/serveur/ducky-network/authentification/client"
 	auts "vaultaire/serveur/ducky-network/authentification/serveur"
 	autssh "vaultaire/serveur/ducky-network/authentification/ssh"
+	hosthandler "vaultaire/serveur/ducky-network/host_handler"
 	"vaultaire/serveur/ducky-network/sendmessage"
 	sync "vaultaire/serveur/ducky-network/sync"
+	"vaultaire/serveur/database"
 	"vaultaire/serveur/logs"
 	"vaultaire/serveur/storage"
 	"strings"
@@ -32,6 +34,14 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			message = autc.Client_Auth_Manager(trames_content, duckysession)
 		case "03":
 			message = autssh.SSH_Client_Manager(trames_content, duckysession)
+		case "04":
+			msg, err := hosthandler.HandleHostTrame(database.GetDatabase(), trames_content, duckysession)
+			if err != nil {
+				logs.Write_Log("ERROR", "host_handler: "+err.Error())
+				message = ""
+			} else {
+				message = msg
+			}
 		default:
 			print("FEUR")
 		}

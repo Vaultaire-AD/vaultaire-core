@@ -34,3 +34,13 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | server      |             | 04            | client ask for key           | le client demande juste des clé public pour la première connection d'un user        |
 | client      |             | 05            | server respond with key      | le serveur repond simplement la liste des clés publiques                            |
 |             |             |               |                              |                                                                                     |
+| Cluster / Service discovery | 04 |               | (plage réservée : 04_01 à 04_19) |                                                                                     |
+| client (host/proxy) |       | 01            | register_host                 | enregistrement d’un hôte (proxy, etc.) : hostname, fqdn, ip, role, domain           |
+| serveur     |             | 02            | register_host_ok              | confirmation + session considérée établie pour le host                              |
+| client      |             | 03            | list_cores                    | demande la liste des Cores en ligne (service discovery)                              |
+| serveur     |             | 04            | list_cores_response           | liste des Cores (id, hostname, ip, port, stress, capabilities)                       |
+| client      |             | 05            | proxy_metrics                 | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                 |
+| serveur     |             | 06            | proxy_metrics_ack             | accusé de réception                                                                  |
+| client      |             | 07            | host_heartbeat                | heartbeat du host pour rester dans cluster_nodes (online)                            |
+| serveur     |             | 08            | host_heartbeat_ack            | accusé heartbeat                                                                     |
+|             |             |               |                              |                                                                                     |

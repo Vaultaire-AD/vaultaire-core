@@ -29,10 +29,14 @@ func UpdateConnectionTrame(key string, newTrame string) error {
 	// Mise à jour de la trame
 	connData.ActualTrame = newTrame
 
-	// Vérification si la connexion est maintenant sécurisée
+	// Vérification si la connexion est maintenant sécurisée (user auth complète ou host enregistré)
 	if newTrame == networksecurity.ExpectedTrames[len(networksecurity.ExpectedTrames)-1] {
 		connData.IsSafe = true
 		logs.Write_Log("INFO", "Connexion sécurisée pour la clé : "+key)
+	}
+	if newTrame == "04_01" {
+		connData.IsSafe = true
+		logs.Write_Log("INFO", "Host enregistré, connexion sécurisée pour la clé : "+key)
 	}
 
 	// Sauvegarde des mises à jour dans la SyncMap

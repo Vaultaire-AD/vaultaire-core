@@ -1,0 +1,18 @@
+# vaultaire_proxy - exemple de configuration
+# Copier en config.yaml et renseigner les clés (ou chemins vers fichiers).
+
+core_address: "core.vaultaire.fr:6666"
+
+identity:
+  computeur_id: ""      # ID du logiciel proxy créé sur le Core (create client / add-host)
+  private_key_pem: ""   # Clé privée PEM du proxy (ou chemin fichier)
+  server_pub_key: ""    # Clé publique du serveur Core PEM (ou chemin fichier)
+
+proxy:
+  hostname: ""          # Optionnel, défaut: os.Hostname()
+  fqdn: ""
+  domain: "proxy.vaultaire.fr"
+  role: "proxy"
+
+ldap_listen: ":3890"
+ducky_listen: ":6667"

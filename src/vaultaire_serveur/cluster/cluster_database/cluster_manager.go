@@ -8,10 +8,26 @@ import (
 )
 
 func RegisterNode(db *sql.DB, n clusterstorage.Node) error {
+	// 1) Essayer de mettre à jour par IP (cas container qui reboot avec hostname différent)
+	if n.IPAddress != "" {
+		res, err := db.Exec(
+			`UPDATE cluster_nodes 
+             SET hostname=?, fqdn=?, role=?, status='online', version_code=?, capabilities=?, last_heartbeat=NOW()
+             WHERE ip_address=?`,
+			n.Hostname, n.FQDN, n.Role, n.VersionCode, n.Capabilities, n.IPAddress,
+		)
+		if err == nil {
+			if rows, _ := res.RowsAffected(); rows > 0 {
+				return nil
+			}
+		}
+	}
+
+	// 2) Sinon, insertion classique basée sur l'unicité hostname/fqdn
 	query := `INSERT INTO cluster_nodes (hostname, fqdn, ip_address, role, status, version_code, capabilities) 
               VALUES (?, ?, ?, ?, 'online', ?, ?) 
-              ON DUPLICATE KEY UPDATE ip_address=?, status='online', last_heartbeat=NOW()`
-	_, err := db.Exec(query, n.Hostname, n.FQDN, n.IPAddress, n.Role, n.VersionCode, n.Capabilities, n.IPAddress)
+              ON DUPLICATE KEY UPDATE ip_address=VALUES(ip_address), role=VALUES(role), version_code=VALUES(version_code), capabilities=VALUES(capabilities), status='online', last_heartbeat=NOW()`
+	_, err := db.Exec(query, n.Hostname, n.FQDN, n.IPAddress, n.Role, n.VersionCode, n.Capabilities)
 	return err
 }
 
