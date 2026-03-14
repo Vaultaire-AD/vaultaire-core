@@ -9,10 +9,10 @@ import (
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
-	"vaultaire/serveur/database"
-	"vaultaire/serveur/ducky-network/sendmessage"
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
+	"vaultaire/core/database"
+	"vaultaire/core/logs"
+	"vaultaire/core/storage"
+	"vaultaire/ducky-network/sendmessage"
 )
 
 // HandleHostTrame traite les trames 04_xx (Cluster / Service discovery) et retourne la réponse à envoyer.

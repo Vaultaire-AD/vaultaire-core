@@ -2,11 +2,13 @@ package tramesmanager
 
 import (
 	"strings"
+	"vaultaire/core/database"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	autc "vaultaire/ducky-network/authentification/client"
 	auts "vaultaire/ducky-network/authentification/serveur"
 	autssh "vaultaire/ducky-network/authentification/ssh"
+	hosthandler "vaultaire/ducky-network/host_handler"
 	"vaultaire/ducky-network/sendmessage"
 	sync "vaultaire/ducky-network/sync"
 )

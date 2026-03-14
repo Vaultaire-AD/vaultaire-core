@@ -1,8 +1,8 @@
 package client
 
 import (
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
+	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
 
 // This function should be called when a new client connects
