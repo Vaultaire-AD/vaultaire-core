@@ -104,4 +104,3 @@ func CleanupStaleNodes(db *sql.DB) error {
 	}
 	return nil
 }
-

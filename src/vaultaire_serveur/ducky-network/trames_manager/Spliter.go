@@ -1,18 +1,6 @@
 package tramesmanager
 
 import (
-<<<<<<< HEAD:src/vaultaire_serveur/serveur/ducky-network/trames_manager/Spliter.go
-	autc "vaultaire/serveur/ducky-network/authentification/client"
-	auts "vaultaire/serveur/ducky-network/authentification/serveur"
-	autssh "vaultaire/serveur/ducky-network/authentification/ssh"
-	hosthandler "vaultaire/serveur/ducky-network/host_handler"
-	"vaultaire/serveur/ducky-network/sendmessage"
-	sync "vaultaire/serveur/ducky-network/sync"
-	"vaultaire/serveur/database"
-	"vaultaire/serveur/logs"
-	"vaultaire/serveur/storage"
-=======
->>>>>>> ffa9f8da60a7354175c17ef1f94a696c68628f87:src/vaultaire_serveur/ducky-network/trames_manager/Spliter.go
 	"strings"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
