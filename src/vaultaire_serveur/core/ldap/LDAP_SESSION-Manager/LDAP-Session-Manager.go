@@ -8,16 +8,28 @@ import (
 )
 
 type LDAPSession struct {
-	Conn     net.Conn
-	Username string
-	IsBound  bool
-	UserDN   string // DN complet s'il est connu
+	Conn        net.Conn
+	Username    string
+	IsBound     bool
+	IsAnonymous bool
+	UserDN      string // DN complet s'il est connu
 }
 
 var (
 	sessionStore   = make(map[net.Conn]*LDAPSession)
 	sessionStoreMu sync.RWMutex
 )
+
+func SetAnonymousBindInfo(conn net.Conn) {
+	sessionStoreMu.Lock()
+	defer sessionStoreMu.Unlock()
+
+	if sess, ok := sessionStore[conn]; ok {
+		sess.IsBound = true
+		sess.IsAnonymous = true
+		sess.Username = "anonymous" // Ou vide, selon votre préférence
+	}
+}
 
 // Créer une nouvelle session
 func InitLDAPSession(conn net.Conn) {

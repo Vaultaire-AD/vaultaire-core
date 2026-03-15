@@ -16,8 +16,16 @@ import (
 )
 
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
-func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string) ([]ldapinterface.LDAPEntry, error) {
+func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
+	if baseDN == "" || baseObject == "cn=schema" {
+		entries, err := loadGroupsAndUsers(db, []string{}, scope, attributes, username, baseObject) // On appelle avec une liste vide pour indiquer que c'est une requête RootDSE
+		if err != nil {
+			return nil, err
+		}
+		logs.Write_Log("DEBUG", fmt.Sprintf("RootDSE struct: %+v", entries))
+		return entries, nil // La résolution du RootDSE est gérée à part
+	}
 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d", baseDN, scope))
 	switch scope {
 	case 0: // base → juste le domaine lui-même
@@ -28,7 +36,7 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		if err != nil {
 			return nil, err
 		}
-		entries, err = loadGroupsAndUsers(db, groupDomain, 1, attributes, username)
+		entries, err = loadGroupsAndUsers(db, groupDomain, 1, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
@@ -39,7 +47,7 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 			return nil, err
 		}
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope group domains=%v", groupDomains))
-		entries, err = loadGroupsAndUsers(db, groupDomains, 2, attributes, username)
+		entries, err = loadGroupsAndUsers(db, groupDomains, 2, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
@@ -55,13 +63,28 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 // loadGroupsAndUsers récupère pour chaque domaine/groupe les GroupEntry et les UserEntry correspondants
 // avec gestion du scope pour éviter de retourner tous les groupes sous-jacents par défaut.
 // Cette version enrichit les attributs LDAP pour compatibilité Nextcloud et autres clients.
-func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string) ([]ldapinterface.LDAPEntry, error) {
+func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
 	seenUsers := make(map[string]struct{})
 	seenGroups := make(map[string]struct{}) // clé = "groupName|domain"
 	seenOUs := make(map[string]struct{})    // clé = "ouName|domain" pour éviter doublons
 
-	logs.Write_Log("DEBUG", fmt.Sprintf("loadGroupsAndUsers called with domains=%v, scope=%d", domains, scope))
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN='%v' scope=%d", domains, scope))
+
+	// CAS 1 : SCHEMA
+	if baseObject == "cn=schema" || baseObject == "cn=subschema" {
+		schema := candidate.NewSchemaEntry()
+
+		entries = append(entries, schema)
+		return entries, nil
+	}
+	// ✅ CAS 2 : Gestion explicite de la requête RootDSE
+	if len(domains) == 0 {
+		root := candidate.NewRootDSE()
+		// Crée la slice requise et y ajoute l'objet
+		entries = append(entries, root) // RootDSEEntry implémente LDAPEntry, donc on peut l'ajouter directement{
+		return entries, nil
+	}
 
 	for _, domain := range domains {
 		// 2️⃣ Check permission par domaine
@@ -182,10 +205,10 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 
 	logs.Write_Log("DEBUG", fmt.Sprintf("loadGroupsAndUsers final entries: %d", len(entries)))
 
-	for _, e := range entries {
-		fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
-		PrintLDAPEntry(e, attributes)
-	}
+	// for _, e := range entries {
+	// 	fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
+	// 	PrintLDAPEntry(e, attributes)
+	// }
 
 	return entries, nil
 }

@@ -42,7 +42,7 @@ func Filtre(entries []ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter) []ldap
 	}
 
 	logs.Write_Log("DEBUG", fmt.Sprintf(
-		"Application du filtre LDAP sur %d entrées (Type=%s)",
+		"Application du filtre LDAP sur %d entrées (Type=%v)",
 		len(entries),
 		f.Type,
 	))

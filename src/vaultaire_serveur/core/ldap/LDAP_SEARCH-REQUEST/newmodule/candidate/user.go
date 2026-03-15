@@ -41,7 +41,7 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 		"dn":             {u.DN()},
 		// "ou":             {"users"},
 		"objectclass": {"inetOrgPerson", "posixAccount"},
-		"entryuuid":   {fmt.Sprintf("vaultaire-%s", u.User.Username)},
+		"entryuuid":   {fmt.Sprintf(u.User.Username)},
 		"nsuniqueid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"objectguid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"guid":        {fmt.Sprintf("vaultaire-%s", u.User.Username)},

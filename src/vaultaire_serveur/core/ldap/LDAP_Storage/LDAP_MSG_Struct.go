@@ -21,6 +21,7 @@ type LDAPControl struct {
 type BindRequest struct {
 	Version        int
 	Name           string
+	Anonymous      bool   // pour simplifier, on considère que si Name est vide, c'est une authentification anonyme
 	Authentication []byte // pour simplifier ici, peut être struct plus complexe
 }
 

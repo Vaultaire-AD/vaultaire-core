@@ -121,6 +121,18 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
+	// Selon la RFC 4511, un bind avec un DN vide est une demande d'anonymat.
+	if op.Name == "" || op.Anonymous {
+		logs.Write_Log("INFO", fmt.Sprintf("ldap: anonymous bind request from %s", conn.RemoteAddr().String()))
+
+		// On marque la session comme "Bound" mais sans utilisateur (Anonymous)
+		ldapsessionmanager.SetAnonymousBindInfo(conn)
+
+		// Succès LDAP (code 0)
+		respondBindSuccess(messageID, conn)
+		return
+	}
+
 	// 🔍 Vérification que l'utilisateur existe
 	userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), user)
 	if err != nil {

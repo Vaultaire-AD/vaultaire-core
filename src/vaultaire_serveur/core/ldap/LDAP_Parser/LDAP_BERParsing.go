@@ -65,35 +65,38 @@ func parseControls(p *ber.Packet) []ldapstorage.LDAPControl {
 	return controls
 }
 
-func ParseLDAPMessage(packet []byte) (*ldapstorage.LDAPParsedReceivedMessage, error) {
+func ParseLDAPMessage(packet []byte) (*ldapstorage.LDAPParsedReceivedMessage, error, bool) {
 	p := ber.DecodePacket(packet)
 	if p == nil {
-		return nil, fmt.Errorf("BER decode returned nil packet")
+		return nil, fmt.Errorf("BER decode returned nil packet"), false
 	}
 
 	if p.Tag != ber.TagSequence || p.ClassType != ber.ClassUniversal {
-		return nil, fmt.Errorf("not a valid LDAP message")
+		return nil, fmt.Errorf("not a valid LDAP message"), false
 	}
 
 	if len(p.Children) < 2 {
-		return nil, fmt.Errorf("LDAP message has too few children")
+		return nil, fmt.Errorf("LDAP message has too few children"), false
 	}
 
 	// --- MessageID (Tag: INTEGER)
 	messageIDPacket := p.Children[0]
 	if messageIDPacket.Tag != ber.TagInteger {
-		return nil, fmt.Errorf("expected INTEGER for messageID")
+		return nil, fmt.Errorf("expected INTEGER for messageID"), false
 	}
 	messageID, ok := messageIDPacket.Value.(int64)
 	if !ok {
-		return nil, fmt.Errorf("messageID not an int64")
+		return nil, fmt.Errorf("messageID not an int64"), false
 	}
 
 	// --- ProtocolOp (CHOICE)
 	protocolOpPacket := p.Children[1]
+	if protocolOpPacket.Tag == 16 {
+		return nil, fmt.Errorf("protocolOp is a SEQUENCE, expected application class"), true
+	}
 	protocolOp, err := parseProtocolOp(protocolOpPacket)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse protocolOp: %v", err)
+		return nil, fmt.Errorf("failed to parse protocolOp: %v", err), false
 	}
 
 	// --- Controls (optional, context-specific [0])
@@ -109,5 +112,5 @@ func ParseLDAPMessage(packet []byte) (*ldapstorage.LDAPParsedReceivedMessage, er
 		MessageID:  int(messageID),
 		ProtocolOp: protocolOp,
 		Controls:   controls,
-	}, nil
+	}, nil, false
 }

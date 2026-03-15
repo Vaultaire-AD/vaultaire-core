@@ -8,6 +8,8 @@ import (
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
+
+	ber "github.com/go-asn1-ber/asn1-ber"
 )
 
 // Fonction générique utilisée par LDAP et LDAPS
@@ -57,7 +59,11 @@ func handleLDAPSession(c net.Conn, protocol string) {
 
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet))
 
-		message, err := ldapparser.ParseLDAPMessage(packet)
+		message, err, modify := ldapparser.ParseLDAPMessage(packet)
+		if modify {
+			SendLDAPError(c, message.MessageID, 2, "Protocol error: operation unknown")
+			return
+		}
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: parse failed from "+clientAddr+": "+err.Error())
 			continue
@@ -69,6 +75,31 @@ func handleLDAPSession(c net.Conn, protocol string) {
 
 		ldapparser.DispatchLDAPOperation(message, message.MessageID, c)
 	}
+}
+func SendLDAPError(conn net.Conn, messageID int, resultCode int, errMsg string) error {
+	// 1. Construction de la réponse (LDAPResult)
+	// Le tag pour SearchResultDone est 101 (0x65), pour les autres opérations c'est différent.
+	// Cependant, pour une erreur générale, LDAP utilise souvent le tag correspondant à l'opération.
+	// Pour simplifier et être compatible, on utilise le format LDAPMessage standard.
+
+	response := ber.Encode(ber.ClassApplication, ber.TypeConstructed, 101, nil, "LDAPResponse") // 101 = SearchResultDone
+	response.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated, uint64(resultCode), "resultCode"))
+	response.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "matchedDN"))
+	response.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, errMsg, "diagnosticMessage"))
+
+	// 2. Enveloppe du message (LDAPMessage)
+	finalPacket := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
+	finalPacket.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, uint64(messageID), "Message ID"))
+	finalPacket.AppendChild(response)
+
+	// 3. Envoi sur la socket
+	_, err := conn.Write(finalPacket.Bytes())
+	if err != nil {
+		return fmt.Errorf("failed to send LDAPError: %v", err)
+	}
+
+	logs.Write_Log("WARNING", fmt.Sprintf("LDAP Error sent (Code %d): %s", resultCode, errMsg))
+	return nil
 }
 
 // Affichage structuré des messages LDAP (uniquement si debug)

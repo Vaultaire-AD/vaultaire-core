@@ -32,7 +32,7 @@ func (g GroupEntry) GetAttributes(requested []string, typesOnly bool) map[string
 		"dn": {g.DN()},
 		"cn": {g.Name},
 		// "ou":          {"groups"},
-		"displyname":  {g.Name},
+		"displayname": {g.Name},
 		"member":      g.Members,
 		"objectclass": g.ObjectClasses(),
 	}

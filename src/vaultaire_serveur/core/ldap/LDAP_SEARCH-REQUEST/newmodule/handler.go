@@ -21,26 +21,20 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	if len(op.Attributes) == 0 {
 		op.Attributes = []string{"dn"}
 	}
-
 	session, ok := ldapsessionmanager.GetLDAPSession(conn)
 	if !ok || !session.IsBound {
 		response.SendLDAPSearchFailure(conn, messageID, "Session invalide ou non bindée")
 		return
 	}
-
-	// Root DSE
-	if baseDN == "" {
-		SendRootDSE(conn, messageID, db, session)
-		return
+	if baseDN == "" || baseDN == "cn=schema" {
+	} else {
+		if !security.IsAuthorizedToSearch(session.Username, baseDN) {
+			response.SendLDAPSearchFailure(conn, messageID, "Not authorized")
+			return
+		}
 	}
-
-	if !security.IsAuthorizedToSearch(session.Username, baseDN) {
-		response.SendLDAPSearchFailure(conn, messageID, "Not authorized")
-		return
-	}
-
 	// 1. Résoudre le scope → candidats
-	candidates, err := scope.Resolve(db, baseDN, op.Scope, op.Attributes, session.Username)
+	candidates, err := scope.Resolve(db, baseDN, op.Scope, op.Attributes, session.Username, op.BaseObject)
 	if err != nil {
 		response.SendLDAPSearchFailure(conn, messageID, err.Error())
 		return
