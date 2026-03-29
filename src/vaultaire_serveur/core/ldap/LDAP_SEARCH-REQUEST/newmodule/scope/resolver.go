@@ -10,8 +10,6 @@ import (
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
-	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 )
 
@@ -63,135 +61,240 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 // loadGroupsAndUsers récupère pour chaque domaine/groupe les GroupEntry et les UserEntry correspondants
 // avec gestion du scope pour éviter de retourner tous les groupes sous-jacents par défaut.
 // Cette version enrichit les attributs LDAP pour compatibilité Nextcloud et autres clients.
+// func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
+// 	entries := []ldapinterface.LDAPEntry{}
+// 	seenUsers := make(map[string]struct{})
+// 	seenGroups := make(map[string]struct{}) // clé = "groupName|domain"
+// 	seenOUs := make(map[string]struct{})    // clé = "ouName|domain" pour éviter doublons
+
+// 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN='%v' scope=%d", domains, scope))
+
+// 	// CAS 1 : SCHEMA
+// 	if baseObject == "cn=schema" || baseObject == "cn=subschema" {
+// 		schema := candidate.NewSchemaEntry()
+
+// 		entries = append(entries, schema)
+// 		return entries, nil
+// 	}
+// 	// ✅ CAS 2 : Gestion explicite de la requête RootDSE
+// 	if len(domains) == 0 {
+// 		root := candidate.NewRootDSE()
+// 		// Crée la slice requise et y ajoute l'objet
+// 		entries = append(entries, root) // RootDSEEntry implémente LDAPEntry, donc on peut l'ajouter directement{
+// 		return entries, nil
+// 	}
+
+// 	for _, domain := range domains {
+// 		// 2️⃣ Check permission par domaine
+// 		if !security.IsAuthorizedToSearch(username, domain) {
+// 			logs.Write_Log("DEBUG", fmt.Sprintf("Search denied on domain %s for %s", domain, username))
+// 			continue
+// 		}
+
+// 		// 1️⃣ Créer les OU fictives pour ce domaine si elles n'existent pas déjà
+// 		for _, ouName := range []string{"users", "groups"} {
+// 			ouKey := fmt.Sprintf("%s|%s", ouName, domain)
+// 			if _, exists := seenOUs[ouKey]; !exists {
+// 				entries = append(entries, candidate.OUEntry{
+// 					Name:   ouName,
+// 					BaseDN: domain,
+// 				})
+// 				seenOUs[ouKey] = struct{}{}
+// 			}
+// 		}
+
+// 		var groupNames []string
+// 		var err error
+// 		// selon le scope, on ne prend que les groupes directs ou tous les groupes sous le domaine
+// 		if scope == 1 {
+// 			groupNames, err = domainpkg.GetGroupsDirectlyUnderDomainExact(domain, db, false)
+// 		} else { // scope 2 (subtree)
+// 			groupNames, err = domainpkg.GetGroupsUnderDomain(domain, db, false)
+// 		}
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		if len(groupNames) == 0 {
+// 			continue
+// 		}
+
+// 		groups, err := database.GetGroupsWithUsersByNames(db, groupNames)
+// 		if err != nil {
+// 			return nil, err
+// 		}
+
+// 		for _, g := range groups {
+// 			groupKey := fmt.Sprintf("%s|%s", g.GroupName, g.DomainName)
+// 			if _, exists := seenGroups[groupKey]; exists {
+// 				continue
+// 			}
+// 			seenGroups[groupKey] = struct{}{}
+
+// 			domainDN := ldaptools.ToRootDN(g.DomainName)
+// 			memberDNs := make([]string, len(g.Users))
+// 			for i, u := range g.Users {
+// 				memberDNs[i] = fmt.Sprintf(
+// 					"uid=%s,ou=users,%s",
+// 					u,
+// 					domainDN,
+// 				)
+// 			}
+
+// 			entries = append(entries, candidate.GroupEntry{
+// 				Name:    g.GroupName,
+// 				BaseDN:  g.DomainName,
+// 				Members: memberDNs,
+// 			})
+
+// 			// UserEntry
+// 			for _, uname := range g.Users {
+// 				if _, exists := seenUsers[uname]; exists {
+// 					continue
+// 				}
+
+// 				userObj, err := database.GetUserByUsername(uname, db)
+// 				if err != nil {
+// 					logs.Write_Log("WARNING", fmt.Sprintf("User %s not found", uname))
+// 					continue
+// 				}
+
+// 				// Calculer memberOf automatiquement
+// 				memberOf := []string{}
+// 				for _, grp := range groups {
+// 					domainDN := ldaptools.ToRootDN(grp.DomainName)
+
+// 					for _, u := range grp.Users {
+// 						if u == uname {
+// 							memberOf = append(
+// 								memberOf, fmt.Sprintf("cn=%s,ou=groups,%s", grp.GroupName, domainDN),
+// 							)
+// 						}
+// 					}
+// 				}
+
+// 				entries = append(entries, candidate.UserEntry{
+// 					User: ldapstorage.User{
+// 						ID:          userObj.ID,
+// 						Username:    userObj.Username,
+// 						GroupDomain: userObj.GroupDomain,
+// 						Firstname:   userObj.Firstname,
+// 						Lastname:    userObj.Lastname,
+// 						Email:       userObj.Email,
+// 						Created_at:  userObj.Created_at,
+// 					},
+// 					BaseDN:      g.DomainName,
+// 					Groups:      memberOf,
+// 					DisplayName: userObj.Firstname + " " + userObj.Lastname,
+// 					GivenName:   userObj.Firstname,
+// 					Sn:          userObj.Lastname,
+// 					Uid:         userObj.Username,
+// 				})
+
+// 				seenUsers[uname] = struct{}{}
+// 			}
+// 		}
+// 	}
+
+// 	logs.Write_Log("DEBUG", fmt.Sprintf("loadGroupsAndUsers final entries: %d", len(entries)))
+
+// 	for _, e := range entries {
+// 		fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
+// 		PrintLDAPEntry(e, attributes)
+// 	}
+
+// 	return entries, nil
+// }
+
 func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
 	seenUsers := make(map[string]struct{})
-	seenGroups := make(map[string]struct{}) // clé = "groupName|domain"
-	seenOUs := make(map[string]struct{})    // clé = "ouName|domain" pour éviter doublons
+	seenGroups := make(map[string]struct{})
+	seenOUs := make(map[string]struct{})
 
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN='%v' scope=%d", domains, scope))
-
-	// CAS 1 : SCHEMA
-	if baseObject == "cn=schema" || baseObject == "cn=subschema" {
-		schema := candidate.NewSchemaEntry()
-
-		entries = append(entries, schema)
-		return entries, nil
-	}
-	// ✅ CAS 2 : Gestion explicite de la requête RootDSE
-	if len(domains) == 0 {
-		root := candidate.NewRootDSE()
-		// Crée la slice requise et y ajoute l'objet
-		entries = append(entries, root) // RootDSEEntry implémente LDAPEntry, donc on peut l'ajouter directement{
-		return entries, nil
-	}
+	// --- ÉTAPE 1 : PRÉ-CALCUL GLOBAL DU MEMBEROF ---
+	// Cette map va stocker pour CHAQUE utilisateur son appartenance complète
+	// Clé : username | Valeur : []string (liste des DNs de ses groupes)
+	userMembershipMap := make(map[string][]string)
 
 	for _, domain := range domains {
-		// 2️⃣ Check permission par domaine
-		if !security.IsAuthorizedToSearch(username, domain) {
-			logs.Write_Log("DEBUG", fmt.Sprintf("Search denied on domain %s for %s", domain, username))
-			continue
-		}
+		var groupNames []string
+		// On récupère TOUS les groupes du domaine pour avoir la vue d'ensemble
+		groupNames, _ = domainpkg.GetGroupsUnderDomain(domain, db, false)
 
-		// 1️⃣ Créer les OU fictives pour ce domaine si elles n'existent pas déjà
+		if len(groupNames) > 0 {
+			groupsData, _ := database.GetGroupsWithUsersByNames(db, groupNames)
+			for _, g := range groupsData {
+				// On utilise ToRootDN pour la cohérence avec les recherches Keycloak
+				groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
+
+				for _, uname := range g.Users {
+					userMembershipMap[uname] = append(userMembershipMap[uname], groupDN)
+				}
+			}
+		}
+	}
+
+	// --- ÉTAPE 2 : GÉNÉRATION DES ENTRÉES (Logique actuelle modifiée) ---
+	for _, domain := range domains {
+		// [Garder ici ta logique de permission IsAuthorizedToSearch]
+
+		// 1️⃣ Créer les OU (Inchangé)
 		for _, ouName := range []string{"users", "groups"} {
 			ouKey := fmt.Sprintf("%s|%s", ouName, domain)
 			if _, exists := seenOUs[ouKey]; !exists {
-				entries = append(entries, candidate.OUEntry{
-					Name:   ouName,
-					BaseDN: domain,
-				})
+				entries = append(entries, candidate.OUEntry{Name: ouName, BaseDN: domain})
 				seenOUs[ouKey] = struct{}{}
 			}
 		}
 
+		// Récupération des groupes pour ce domaine précis (Respect du scope)
 		var groupNames []string
-		var err error
-		// selon le scope, on ne prend que les groupes directs ou tous les groupes sous le domaine
 		if scope == 1 {
-			groupNames, err = domainpkg.GetGroupsDirectlyUnderDomainExact(domain, db, false)
-		} else { // scope 2 (subtree)
-			groupNames, err = domainpkg.GetGroupsUnderDomain(domain, db, false)
-		}
-		if err != nil {
-			return nil, err
+			groupNames, _ = domainpkg.GetGroupsDirectlyUnderDomainExact(domain, db, false)
+		} else {
+			groupNames, _ = domainpkg.GetGroupsUnderDomain(domain, db, false)
 		}
 
-		if len(groupNames) == 0 {
-			continue
-		}
-
-		groups, err := database.GetGroupsWithUsersByNames(db, groupNames)
-		if err != nil {
-			return nil, err
-		}
+		groups, _ := database.GetGroupsWithUsersByNames(db, groupNames)
 
 		for _, g := range groups {
+			// 2️⃣ Ajout du Groupe
 			groupKey := fmt.Sprintf("%s|%s", g.GroupName, g.DomainName)
-			if _, exists := seenGroups[groupKey]; exists {
-				continue
+			if _, exists := seenGroups[groupKey]; !exists {
+				domainDN := ldaptools.ToRootDN(g.DomainName)
+				memberDNs := make([]string, len(g.Users))
+				for i, u := range g.Users {
+					memberDNs[i] = fmt.Sprintf("uid=%s,ou=users,%s", u, domainDN)
+				}
+
+				entries = append(entries, candidate.GroupEntry{
+					Name:    g.GroupName,
+					BaseDN:  g.DomainName,
+					Members: memberDNs,
+				})
+				seenGroups[groupKey] = struct{}{}
 			}
-			seenGroups[groupKey] = struct{}{}
 
-			domainDN := ldaptools.DomainToDN(g.DomainName)
-			memberDNs := make([]string, len(g.Users))
-			for i, u := range g.Users {
-				memberDNs[i] = fmt.Sprintf(
-					"uid=%s,ou=users,%s",
-					u,
-					domainDN,
-				)
-			}
-
-			entries = append(entries, candidate.GroupEntry{
-				Name:    g.GroupName,
-				BaseDN:  g.DomainName,
-				Members: memberDNs,
-			})
-
-			// UserEntry
+			// 3️⃣ Ajout des Utilisateurs
 			for _, uname := range g.Users {
 				if _, exists := seenUsers[uname]; exists {
-					continue
+					continue // L'utilisateur a déjà été créé avec sa liste complète
 				}
 
 				userObj, err := database.GetUserByUsername(uname, db)
 				if err != nil {
-					logs.Write_Log("WARNING", fmt.Sprintf("User %s not found", uname))
 					continue
 				}
 
-				// Calculer memberOf automatiquement
-				memberOf := []string{}
-				for _, grp := range groups {
-					domainDN := ldaptools.DomainToDN(grp.DomainName)
-
-					for _, u := range grp.Users {
-						if u == uname {
-							memberOf = append(
-								memberOf,
-								fmt.Sprintf(
-									"cn=%s,ou=groups,%s",
-									grp.GroupName,
-									domainDN,
-								),
-							)
-						}
-					}
-				}
+				// 🔥 AMÉLIORATION : On pioche dans la map pré-calculée à l'étape 1
+				// On a maintenant TOUS les groupes, peu importe le domaine
+				fullMemberOf := userMembershipMap[uname]
 
 				entries = append(entries, candidate.UserEntry{
-					User: ldapstorage.User{
-						ID:          userObj.ID,
-						Username:    userObj.Username,
-						GroupDomain: userObj.GroupDomain,
-						Firstname:   userObj.Firstname,
-						Lastname:    userObj.Lastname,
-						Email:       userObj.Email,
-						Created_at:  userObj.Created_at,
-					},
-					BaseDN:      g.DomainName,
-					Groups:      memberOf,
+					User:        userObj,
+					BaseDN:      domain,       // Le domaine de découverte
+					Groups:      fullMemberOf, // <--- Liste complète ICI
 					DisplayName: userObj.Firstname + " " + userObj.Lastname,
 					GivenName:   userObj.Firstname,
 					Sn:          userObj.Lastname,
@@ -203,13 +306,13 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 		}
 	}
 
+	// ... [Fin de fonction inchangée avec tes logs de debug] ...
 	logs.Write_Log("DEBUG", fmt.Sprintf("loadGroupsAndUsers final entries: %d", len(entries)))
 
-	// for _, e := range entries {
-	// 	fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
-	// 	PrintLDAPEntry(e, attributes)
-	// }
-
+	for _, e := range entries {
+		fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
+		PrintLDAPEntry(e, attributes)
+	}
 	return entries, nil
 }
 
@@ -235,6 +338,10 @@ func PrintLDAPEntry(entry ldapinterface.LDAPEntry, requestedAttrs []string) {
 	// C'est ici que tu dois utiliser tes constantes (ex: MandatoryGroupAttrs)
 	var finalAttrs []string
 	if isGroup {
+		fmt.Printf("[FINAL-CHECK] Groupe %s envoie %d membres\n", entry.DN(), len(entry.GetAttribute("member")))
+		for _, m := range entry.GetAttribute("member") {
+			fmt.Printf("   -> Membre: %s\n", m)
+		}
 		finalAttrs = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryGroupAttrs)
 	} else {
 		finalAttrs = ldaptools.MergeAttributes(requestedAttrs, ldaptools.MandatoryUserAttrs)

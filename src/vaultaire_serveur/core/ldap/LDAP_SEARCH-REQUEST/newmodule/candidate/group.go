@@ -13,7 +13,7 @@ type GroupEntry struct {
 }
 
 func (g GroupEntry) DN() string {
-	return fmt.Sprintf("cn=%s,ou=groups,%s", g.Name, ldaptools.DomainToDC(g.BaseDN))
+	return fmt.Sprintf("cn=%s,ou=groups,%s", g.Name, ldaptools.ToRootDN(g.BaseDN))
 }
 
 func (g GroupEntry) ObjectClasses() []string {

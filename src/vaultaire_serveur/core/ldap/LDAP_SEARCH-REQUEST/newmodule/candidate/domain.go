@@ -30,7 +30,7 @@ func (d DomainEntry) GetAttribute(attr string) []string {
 // GetAttributes pour gérer liste d'attributs et '*'
 func (d DomainEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
 	all := map[string][]string{
-		"objectclass": {"top", "domain"},
+		"objectclass": d.ObjectClasses(),
 		"dc":          {d.getDC()},
 		"dn":          {d.DN()},
 	}

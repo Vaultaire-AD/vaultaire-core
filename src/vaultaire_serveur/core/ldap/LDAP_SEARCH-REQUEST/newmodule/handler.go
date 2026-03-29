@@ -45,7 +45,7 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// 	scope.PrintLDAPEntry(candidate)
 	// }
 	// 2. Évaluer le filtre
-	matched := candidate.Filtre(candidates, op.Filter)
+	matched := candidate.Filtre(candidates, op.Filter, baseDN, op.Scope)
 
 	// 3. Construire et envoyer les réponses
 	for _, entry := range matched {

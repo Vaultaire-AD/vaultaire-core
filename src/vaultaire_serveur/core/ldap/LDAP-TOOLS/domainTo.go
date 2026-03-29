@@ -2,22 +2,25 @@ package ldaptools
 
 import "strings"
 
-// Utilitaire pour convertir "administration.vaultaire.local" → "dc=administration,dc=vaultaire,dc=local"
-func DomainToDC(domain string) string {
-	parts := strings.Split(domain, ".")
-	dcParts := make([]string, len(parts))
+// ToDN convertit "admin.vaultaire.local" -> "dc=admin,dc=vaultaire,dc=local"
+func ToDN(domain string) string {
+	parts := strings.Split(strings.ToLower(domain), ".")
 	for i, p := range parts {
-		dcParts[i] = "dc=" + p
+		parts[i] = "dc=" + p
 	}
-	return strings.Join(dcParts, ",")
+	return strings.Join(parts, ",")
 }
 
-// Utilitaire pour convertir "administration.vaultaire.local" → "dc=administration,dc=vaultaire,dc=local"
-func DomainToDN(domain string) string {
-	parts := strings.Split(domain, ".")
-	dc := make([]string, 0, len(parts))
-	for _, p := range parts {
-		dc = append(dc, "dc="+p)
+// ToRootDN convertit "admin.vaultaire.local" -> "dc=vaultaire,dc=local"
+// Elle prend les deux derniers segments du domaine.
+func ToRootDN(domain string) string {
+	parts := strings.Split(strings.ToLower(domain), ".")
+	if len(parts) > 2 {
+		// On ne garde que les 2 derniers (ex: "vaultaire", "local")
+		parts = parts[len(parts)-2:]
 	}
-	return strings.Join(dc, ",")
+	for i, p := range parts {
+		parts[i] = "dc=" + p
+	}
+	return strings.Join(parts, ",")
 }

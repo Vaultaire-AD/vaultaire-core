@@ -2,6 +2,7 @@ package ldapparser
 
 import (
 	"fmt"
+	"strings"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -216,9 +217,10 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 		return nil, fmt.Errorf("invalid substring filter")
 	}
 
+	// Extraction de l'attribut (uid, mail...)
 	attr := string(p.Children[0].ByteValue)
 	if attr == "" {
-		return nil, fmt.Errorf("substring filter missing attribute")
+		attr = fmt.Sprintf("%v", p.Children[0].Value)
 	}
 
 	filter := &ldapstorage.LDAPFilter{
@@ -226,12 +228,53 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 		Attribute: attr,
 	}
 
-	for _, part := range p.Children[1].Children {
-		filter.SubFilters = append(filter.SubFilters, &ldapstorage.LDAPFilter{
-			Type:  ldapstorage.FilterSubstring,
-			Value: string(part.ByteValue),
-		})
+	var fullValue strings.Builder
+	// p.Children[1] est la séquence des morceaux
+	for i, part := range p.Children[1].Children {
+		// TEST 1: ByteValue
+		val := string(part.ByteValue)
+
+		// TEST 2: Si vide, on regarde Value
+		if val == "" && part.Value != nil {
+			val = fmt.Sprintf("%s", part.Value)
+		}
+
+		// TEST 3: Si toujours vide, on prend les Data brutes du paquet BER
+		if val == "" && part.Data != nil {
+			val = string(part.Data.Bytes())
+		}
+
+		fmt.Printf("[DEBUG-PARSER] Morceau %d: Tag=%d, ValeurExtraite='%s'\n", i, part.Tag, val)
+		fullValue.WriteString(val)
 	}
+
+	filter.Value = fullValue.String()
+	fmt.Printf("[DEBUG-PARSER] Résultat Final: %s=%s\n", filter.Attribute, filter.Value)
 
 	return filter, nil
 }
+
+// func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
+// 	if len(p.Children) < 2 {
+// 		return nil, fmt.Errorf("invalid substring filter")
+// 	}
+
+// 	attr := string(p.Children[0].ByteValue)
+// 	if attr == "" {
+// 		attr = p.Children[0].Value.(string)
+// 	}
+
+// 	filter := &ldapstorage.LDAPFilter{
+// 		Type:      ldapstorage.FilterSubstring,
+// 		Attribute: attr,
+// 	}
+
+// 	for _, part := range p.Children[1].Children {
+// 		filter.SubFilters = append(filter.SubFilters, &ldapstorage.LDAPFilter{
+// 			Type:  ldapstorage.FilterSubstring,
+// 			Value: string(part.ByteValue),
+// 		})
+// 	}
+
+// 	return filter, nil
+// }

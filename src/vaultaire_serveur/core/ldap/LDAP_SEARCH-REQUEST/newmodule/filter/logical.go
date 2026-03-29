@@ -1,12 +1,13 @@
 package filter
 
 import (
+	"strings"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 )
 
 // Evaluate applique un filtre LDAP à une entrée
-func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter) bool {
+func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN string, scope int) bool {
 	if f == nil {
 		return true
 	}
@@ -15,7 +16,7 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter) bool {
 
 	case ldapstorage.FilterAnd:
 		for _, c := range f.SubFilters {
-			if !Evaluate(entry, c) {
+			if !Evaluate(entry, c, baseDN, scope) {
 				// fmt.Printf("[DEBUG] AND fail sur DN=%s pour sous-filtre %+v\n", entry.DN(), c)
 				return false
 			} else {
@@ -26,7 +27,7 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter) bool {
 
 	case ldapstorage.FilterOr:
 		for _, c := range f.SubFilters {
-			if Evaluate(entry, c) {
+			if Evaluate(entry, c, baseDN, scope) {
 				// fmt.Printf("[DEBUG] OR success sur DN=%s pour sous-filtre %+v\n", entry.DN(), c)
 				return true
 			} else {
@@ -40,11 +41,11 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter) bool {
 			// fmt.Printf("[WARN] NOT filter avec != 1 subfilter sur DN=%s\n", entry.DN())
 			return false
 		}
-		res := !Evaluate(entry, f.SubFilters[0])
+		res := !Evaluate(entry, f.SubFilters[0], baseDN, scope)
 		// fmt.Printf("[DEBUG] NOT filter sur DN=%s => %v\n", entry.DN(), res)
 		return res
 
-	case ldapstorage.FilterEquality:
+	case ldapstorage.FilterEquality, ldapstorage.FilterSubstring:
 		res := evalEquality(entry, f.Attribute, f.Value)
 		// fmt.Printf("[DEBUG] Equality filter DN=%s attr=%s val=%s => %v (entry values=%v)\n",
 		// 	entry.DN(), f.Attribute, f.Value, res, entry.GetAttribute(f.Attribute))
@@ -60,4 +61,35 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter) bool {
 		// fmt.Printf("[WARN] Filtre LDAP inconnu Type=%v sur DN=%s\n", f.Type, entry.DN())
 		return false
 	}
+}
+
+func isInScope(entryDN, baseDN string, scope int) bool {
+	entryDN = strings.ToLower(entryDN)
+	baseDN = strings.ToLower(baseDN)
+
+	// 1. Si c'est un match parfait (ou=users,dc=vaultaire,dc=local)
+	if strings.HasSuffix(entryDN, baseDN) {
+		return true
+	}
+
+	// 2. LOGIQUE SPÉCIFIQUE VAULTAIRE (Le "Saut" de sous-domaine)
+	// On veut autoriser : ou=users,dc=admin,dc=vaultaire,dc=local
+	// Pour une base :    ou=users,dc=vaultaire,dc=local
+
+	if scope == 2 { // Subtree
+		// On sépare la base demandée pour isoler "ou=users" et "dc=vaultaire,dc=local"
+		parts := strings.SplitN(baseDN, ",", 2)
+		if len(parts) < 2 {
+			return strings.HasSuffix(entryDN, baseDN)
+		}
+
+		prefix := parts[0] // ex: "ou=users"
+		suffix := parts[1] // ex: "dc=vaultaire,dc=local"
+
+		// L'entrée est valide si elle commence par le préfixe (ou=users)
+		// ET finit par le suffixe racine (dc=vaultaire,dc=local)
+		return strings.HasPrefix(entryDN, prefix) && strings.HasSuffix(entryDN, suffix)
+	}
+
+	return false
 }

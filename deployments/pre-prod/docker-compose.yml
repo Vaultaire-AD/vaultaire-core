@@ -1,17 +1,20 @@
-# Pre-prod: test/staging deployment. App is compiled in the image (no local mount).
+version: '3.8'
+
 networks:
   Ducky-network:
     driver: bridge
+
 volumes:
   vaultaire_db_data:
 
 services:
+  # --- BASE DE DONNÉES (Partagée entre l'App et Keycloak) ---
   vaultaire-db:
     image: mariadb:latest
     container_name: vaultaire-db
     restart: unless-stopped
     environment:
-      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_ROOT_PASSWORD=Savage7-Quaintly9-Democrat3-Jacket1-Rare1
       - MARIADB_DATABASE=vaultaire
       - TZ=Europe/Paris
     volumes:
@@ -21,6 +24,7 @@ services:
     networks:
       - Ducky-network
 
+  # --- APPLICATION VAULTAIRE (Image compilée) ---
   vaultaire-ad:
     build:
       context: ../..
@@ -30,14 +34,37 @@ services:
     restart: unless-stopped
     depends_on:
       - vaultaire-db
+      - vaultaire-keycloak
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=preprod
     ports:
       - "6666:6666"
-      - "443:443"
+      - "4443:4443"
       - "389:389"
       - "636:636"
       - "6643:6643"
+    networks:
+      - Ducky-network
+
+  # --- KEYCLOAK ---
+  vaultaire-keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: vaultaire-keycloak
+    command: start-dev
+    restart: unless-stopped
+    environment:
+      - KC_DB=mariadb
+      - KC_DB_URL=jdbc:mariadb://vaultaire-db:3306/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=Subside9-Unfitting6-Humpback5-Could9-Repugnant1
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=&adZaeD429bqf@B%QHYg
+      - KC_HTTP_RELATIVE_PATH=/auth
+      - TZ=Europe/Paris
+    ports:
+      - "8080:8080"
+    depends_on:
+      - vaultaire-db
     networks:
       - Ducky-network

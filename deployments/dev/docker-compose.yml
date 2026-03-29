@@ -19,6 +19,7 @@ services:
       - TZ=Europe/Paris
     volumes:
       - vaultaire_dev_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     ports:
       - "3306:3306"
     networks:
@@ -38,7 +39,6 @@ services:
       - ../../src/vaultaire_serveur:/app
       # Web assets (templates/static) if served from repo
       - ../../web_packet:/app/web_packet:ro
-
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=dev
@@ -56,19 +56,40 @@ services:
     command: ["go", "run", "./main"]
 
   # Client Rocky 9 avec SSH (root/root) pour tester la connexion SSH depuis le serveur (Ducky / PAM).
-  rocky-ssh:
-    build:
-      context: ../..
-      dockerfile: deployments/dev/Dockerfile.rocky-ssh
-    image: vaultaire-dev-rocky-ssh:latest
-    container_name: rocky-ssh-dev
+  # rocky-ssh:
+  #   build:
+  #     context: ../..
+  #     dockerfile: deployments/dev/Dockerfile.rocky-ssh
+  #   image: vaultaire-dev-rocky-ssh:latest
+  #   container_name: rocky-ssh-dev
+  #   restart: unless-stopped
+  #   networks:
+  #     - Ducky-network
+  #   ports:
+  #     - "5656:22"
+  #   volumes:
+  #     # Monte le dossier des sources (adapte le chemin relatif si besoin)
+  #     - ../../cmd/vaultaire_client:/usr/lib64/security/
+  #   # Connexion: ssh -p 2222 root@localhost (mdp: root)
+  #   # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh (mdp: root)
+
+  vaultaire-keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: vaultaire-keycloak
+    command: start-dev
     restart: unless-stopped
+    environment:
+      - KC_DB=mariadb
+      - KC_DB_URL=jdbc:mariadb://vaultaire-db:3306/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=Subside9-Unfitting6-Humpback5-Could9-Repugnant1
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_HTTP_RELATIVE_PATH=/auth
+      - TZ=Europe/Paris
+    ports:
+      - "8080:8080"
+    depends_on:
+      - vaultaire-db
     networks:
       - Ducky-network
-    ports:
-      - "5656:22"
-    volumes:
-      # Monte le dossier des sources (adapte le chemin relatif si besoin)
-      - ../../cmd/vaultaire_client:/usr/lib64/security/
-    # Connexion: ssh -p 2222 root@localhost (mdp: root)
-    # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh (mdp: root)

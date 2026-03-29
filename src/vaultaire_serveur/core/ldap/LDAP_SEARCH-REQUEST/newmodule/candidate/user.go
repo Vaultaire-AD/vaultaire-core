@@ -20,7 +20,7 @@ type UserEntry struct {
 }
 
 func (u UserEntry) DN() string {
-	return fmt.Sprintf("uid=%s,ou=users,%s", u.User.Username, ldaptools.DomainToDC(u.BaseDN))
+	return fmt.Sprintf("uid=%s,ou=users,%s", u.User.Username, ldaptools.ToRootDN(u.BaseDN))
 }
 
 func (u UserEntry) ObjectClasses() []string {
@@ -40,7 +40,7 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 		"memberof":       u.Groups,
 		"dn":             {u.DN()},
 		// "ou":             {"users"},
-		"objectclass": {"inetOrgPerson", "posixAccount"},
+		"objectclass": u.ObjectClasses(),
 		"entryuuid":   {fmt.Sprintf(u.User.Username)},
 		"nsuniqueid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"objectguid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},

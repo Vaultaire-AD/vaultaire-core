@@ -13,7 +13,7 @@ type OUEntry struct {
 }
 
 func (ou OUEntry) DN() string {
-	return fmt.Sprintf("ou=%s,%s", ou.Name, ldaptools.DomainToDC(ou.BaseDN))
+	return fmt.Sprintf("ou=%s,%s", ou.Name, ldaptools.ToRootDN(ou.BaseDN))
 }
 
 func (ou OUEntry) ObjectClasses() []string {

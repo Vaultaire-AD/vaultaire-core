@@ -29,7 +29,7 @@ func (r RootDSEEntry) ObjectClasses() []string {
 
 func (r RootDSEEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
 	all := map[string][]string{
-		"objectClass":             {"top", "LDAProotDSE"},
+		"objectClass":             r.ObjectClasses(),
 		"namingContexts":          r.NamingContexts,
 		"rootDomainNamingContext": r.RootDomainNamingContext,
 		"defaultNamingContext":    r.RootDomainNamingContext, // Souvent identique au Root
