@@ -26,7 +26,7 @@ database:
 
 website:
   website_enable: true
-  website_port: 443
+  website_port: 4443
 
 automatisation:
   sh_folder_path: "/opt/vaultaire/automatisation/"

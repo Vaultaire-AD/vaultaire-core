@@ -3,6 +3,9 @@ FROM rockylinux:9
 # 1. Installer EPEL et les outils de base
 RUN dnf install -y epel-release && dnf clean all
 
+RUN echo 'root:root' | chpasswd && \
+    sed -i 's/^root:!:/root:*:/' /etc/shadow || true
+
 # 2. Installation des dépendances + Reset root
 RUN dnf install -y \
     openssh-server \
@@ -15,8 +18,11 @@ RUN dnf install -y \
     pamtester \
     && ssh-keygen -A \
     && dnf clean all \
-    && echo 'root:root' | chpasswd \
     && usermod -U root
+
+RUN sed -i '/pam_selinux.so/d' /etc/pam.d/sshd && \
+    sed -i '/pam_loginuid.so/d' /etc/pam.d/sshd && \
+    sed -i '/pam_namespace.so/d' /etc/pam.d/sshd
 
 # 4. Injection de la configuration SSHD (Guillemets refermées + Destination)
 RUN rm -f /etc/ssh/sshd_config.d/*.conf && \
@@ -25,11 +31,10 @@ Protocol 2\n\
 PermitRootLogin yes\n\
 StrictModes no\n\
 PubkeyAuthentication yes\n\
-AuthorizedKeysFile .ssh/authorized_keys\n\
 PasswordAuthentication yes\n\
 KbdInteractiveAuthentication yes\n\
 UsePAM yes\n" > /etc/ssh/sshd_config
 
 EXPOSE 22
 
-CMD ["/usr/sbin/sshd", "-D"]
+CMD ["/usr/sbin/sshd", "-D", "-e"]

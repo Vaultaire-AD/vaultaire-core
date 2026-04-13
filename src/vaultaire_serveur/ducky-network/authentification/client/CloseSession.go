@@ -20,13 +20,39 @@ import (
 // This function is part of the client authentication management system and is used to maintain session integrity and security.
 // It is called when a client wants to terminate their session, ensuring that the session is properly closed and logged.
 // It is essential for maintaining the security and integrity of the client-server communication.
-func closeSession(trames_content storage.Trames_struct_client) string {
+// closeSession gère la fermeture propre de la session client.
+func closeSession(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) {
+	// 1. Nettoyage de la Base de Données
 	err := database.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error deleting session for "+trames_content.Username+" from Computeur "+trames_content.ClientSoftwareID+": "+err.Error())
-		return "02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n : Error deleting session"
+		logs.Write_Log("ERROR", "DB Cleanup Failed for "+trames_content.Username+": "+err.Error())
 	}
+
+	// 2. Nettoyage de l'Auth en mémoire (Cache applicatif)
 	DeleteAuthByID(trames_content.ClientSoftwareID)
-	logs.Write_Log("INFO", "Session closed for "+trames_content.Username+" from Computeur "+trames_content.ClientSoftwareID)
-	return "02_06\nserveur_central\n" + trames_content.SessionIntegritykey + "\n : Session Delete"
+
+	// 3. Sécurisation de l'objet DuckySession (In-Memory)
+	if duckysession != nil {
+		// Invalide immédiatement les droits
+		duckysession.IsSafe = false
+
+		// CRITIQUE : Écraser la clé de session en mémoire (Anti-Forensics)
+		// On ne se contente pas de mettre à nil, on remplit de zéros
+		if duckysession.SessionKey != nil {
+			for i := range duckysession.SessionKey {
+				duckysession.SessionKey[i] = 0
+			}
+			duckysession.SessionKey = nil
+		}
+
+		// 4. Fermeture propre de la socket réseau
+		if duckysession.Conn != nil {
+			logs.Write_Log("DEBUG", "Closing TCP Connection for "+trames_content.Username)
+			duckysession.Conn.Close()
+			duckysession.Conn = nil
+		}
+	}
+
+	logs.Write_Log("INFO", "Clean Logout completed for "+trames_content.Username)
+
 }

@@ -1,15 +1,39 @@
-# Dev image: Go only, no app build. Source is mounted at runtime.
-# Restart the container to pick up code changes (or use go run ./main from mounted dir).
+FROM rockylinux:9
 
-FROM golang:1.26.0-alpine3.23
+LABEL maintainer="adm-lviguie"
+LABEL description="Vaultaire Dev Server - Rocky Linux based"
+LABEL env="dev"
 
-RUN apk add --no-cache git ca-certificates openssh-client
+# Installation de Go (Rocky 9 possède Go 1.21+ dans ses dépôts officiels)
+# Si tu as besoin d'une version très spécifique, on peut l'installer manuellement,
+# mais dnf est plus propre ici.
+RUN dnf install -y \
+    sudo \
+    openssh-server \
+    openssh-clients \
+    golang \
+    git \
+    ca-certificates \
+    && dnf clean all
 
+# Création de l'utilisateur
+RUN useradd -m -d /opt/vaultaire -s /bin/bash vaultaire
+
+# Préparation des répertoires
+RUN mkdir -p /var/log/vaultaire /app && \
+    chown -R vaultaire:vaultaire /opt/vaultaire /var/log/vaultaire /app && \
+    chmod 770 /opt/vaultaire /var/log/vaultaire /app
+
+# Configuration SSH basique pour autoriser les connexions si besoin
+RUN ssh-keygen -A
+
+USER vaultaire
 WORKDIR /app
-COPY --chown=vaultaire:vaultaire ./deployments/configs/ /opt/vaultaire/
-COPY --chown=vaultaire:vaultaire ./cmd/vaultaire_client/ /opt/vaultaire/vaultaire_client/
-COPY --chown=vaultaire:vaultaire ./automatisation/auto_deployements/ /opt/vaultaire/automatisation/
 
-# No COPY of app source - mount from host in docker-compose.
-# Default: run the server. Override to run tests: go run ./main --test
+# L'environnement est défini ici, mais peut être écrasé par le docker-compose
+ENV VAULTAIRE_ENV=dev
+ENV GOPATH=/opt/vaultaire/go
+ENV PATH=$PATH:$GOPATH/bin
+
+# Commande par défaut
 CMD ["go", "run", "./main"]

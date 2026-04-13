@@ -34,11 +34,11 @@ services:
     restart: unless-stopped
     working_dir: /app
     volumes:
+      # Montage des sources pour le "go run"
       - ../../cmd/vaultaire_server:/app
-      # Mount server source so restarts pick up changes (no rebuild)
       - ../../src/vaultaire_serveur:/app
-      # Web assets (templates/static) if served from repo
       - ../../web_packet:/app/web_packet:ro
+      - ../../deployments/configs/serveur_conf.yaml:/opt/vaultaire/serveur_conf.yaml
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=dev
@@ -69,9 +69,10 @@ services:
   #     - "5656:22"
   #   volumes:
   #     # Monte le dossier des sources (adapte le chemin relatif si besoin)
-  #     - ../../cmd/vaultaire_client:/usr/lib64/security/
-  #   # Connexion: ssh -p 2222 root@localhost (mdp: root)
-  #   # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh (mdp: root)
+  #     - ../../cmd/vaultaire_client:/tmp
+  #   # Connexion: ssh -p 5656 root@localhost (mdp: root)
+  #   # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh-dev (mdp: root)
+  #   # commande pour ajouter le client ----> create -c test yes -join rocky-ssh-dev root 
 
   vaultaire-keycloak:
     image: quay.io/keycloak/keycloak:latest

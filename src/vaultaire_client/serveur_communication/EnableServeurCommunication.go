@@ -38,6 +38,7 @@ func EnableServerCommunication(user, pass, sshUser string, sshpassword *string, 
 				module.WaitForSSHFetch(user, sshUser, ds)
 				// 🔥 AJOUTE CECI :
 				logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
+				
 				os.Exit(0) // On force l'arrêt propre du binaire
 			}
 

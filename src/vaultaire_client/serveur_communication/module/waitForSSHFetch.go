@@ -49,6 +49,7 @@ func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
 	select {
 	case res, ok := <-respChan:
 		if ok {
+
 			// C'est ici que le binaire écrit les clés sur Stdout pour SSH
 			fmt.Println(res.Keys)
 			logs.Write_log("INFO", "Clés affichées avec succès")

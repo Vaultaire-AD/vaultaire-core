@@ -19,7 +19,7 @@ func Client_Auth_Manager(trames_content storage.Trames_struct_client, duckysessi
 	case "03":
 		message = CheckAuth(trames_content, duckysession)
 	case "05":
-		message = closeSession(trames_content)
+		closeSession(trames_content, duckysession)
 	case "12":
 		getinformation.GetSoftwareServeurInformation(trames_content)
 	case "15":

@@ -43,9 +43,10 @@ int is_vaultaire_user(const char *username) {
     }
 
     // Cas 2 : On cherche le marqueur @vaultaire n'importe où dans le GECOS
-    if (pw->pw_gecos != NULL && strstr(pw->pw_gecos, "@vaultaire") != NULL) {
+    if (pw->pw_gecos != NULL && strchr(pw->pw_gecos, '@') != NULL) {
         return 1; 
     }
+    
 
     // CAS 3 : L'utilisateur existe mais n'a pas le tag vaultaire (ex: root, adm-lviguie)
     return 0; 

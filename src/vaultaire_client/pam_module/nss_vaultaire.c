@@ -13,12 +13,16 @@ enum nss_status _nss_vaultaire_getpwnam_r(const char *name, struct passwd *resul
     char *buffer, size_t buflen, int *errnop) 
 {
 
+    // 1. On vérifie si c'est un compte de domaine (présence du @)
+    if (strchr(name, '@') == NULL) {
+        return NSS_STATUS_NOTFOUND; // Pas un compte de domaine, on laisse les autres modules gérer
+    }
     // On remplit les informations bidons pour que SSH soit content
     result->pw_name = (char *)name;
     result->pw_passwd = (char *)"x";
     result->pw_uid = VIRTUAL_UID;
     result->pw_gid = VIRTUAL_GID;
-    result->pw_gecos = (char *)"@vaultaire";
+    result->pw_gecos = (char *)name;
     
     // On génère dynamiquement le chemin du home : /home/nom_user
     char *home = buffer;
