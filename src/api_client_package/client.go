@@ -7,6 +7,7 @@ import (
 	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -153,7 +154,7 @@ func (c *Client) Execute(ctx context.Context, command string) (string, error) {
 		return "", fmt.Errorf("invalid response: %w", err)
 	}
 	if parsed.Error != "" {
-		return "", fmt.Errorf(parsed.Error)
+		return "", errors.New(parsed.Error)
 	}
 	return parsed.Result, nil
 }
