@@ -15,12 +15,15 @@ func Update_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		return update_UserPermission_Command_Parser(command_list, sender_groupsIDs, "write:update:permission", sender_Username)
 	case "-u":
 		if len(command_list) == 3 {
-			db := database.GetDatabase()
-			uid, _ := database.Get_User_ID_By_Username(db, command_list[1])
-			cur, _ := database.Command_GET_UserInfo(db, command_list[1])
-			if err := database.Update_User_Info(db, uid, cur.Username, cur.Firstname, cur.Lastname, command_list[2], ""); err != nil {
-				return fmt.Sprintf(">> erreur mise à jour de l'utilisateur : %v", err)
+			if command_list[2] == "-p" {
+				db := database.GetDatabase()
+				uid, _ := database.Get_User_ID_By_Username(db, command_list[1])
+				cur, _ := database.Command_GET_UserInfo(db, command_list[1])
+				if err := database.Update_User_Info(db, uid, cur.Username, cur.Firstname, cur.Lastname, command_list[3], ""); err != nil {
+					return fmt.Sprintf(">> erreur mise à jour de l'utilisateur : %v", err)
+				}
 			}
+
 			return "User updated successfully"
 		}
 
