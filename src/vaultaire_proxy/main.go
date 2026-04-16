@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
+	duckynetwork "vaultaire_duckynetwork"
 	"vaultaire_proxy/balancer"
 	"vaultaire_proxy/config"
-	"vaultaire_proxy/ducky"
 )
 
 var (
@@ -39,7 +39,7 @@ func main() {
 	}
 
 	// Connexion ducky au Core : handshake 01_01/01_02 puis 04_01 (register) si --add-host
-	client, err := ducky.NewClient(ducky.ClientOpts{
+	client, err := duckynetwork.NewClient(duckynetwork.ClientOpts{
 		CoreAddress:    coreAddr,
 		ComputeurID:    cfg.Identity.ComputeurID,
 		PrivateKeyPEM:  cfg.Identity.PrivateKeyPEM,
@@ -96,7 +96,7 @@ func main() {
 	fmt.Println("Arrêt.")
 }
 
-func runDiscovery(client *ducky.Client, lb *balancer.Balancer) {
+func runDiscovery(client *duckynetwork.Client, lb *balancer.Balancer) {
 	ticker := time.NewTicker(30 * time.Second)
 	defer ticker.Stop()
 	for range ticker.C {
