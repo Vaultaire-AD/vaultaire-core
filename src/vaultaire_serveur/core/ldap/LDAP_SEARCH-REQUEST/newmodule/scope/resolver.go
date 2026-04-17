@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"vaultaire/core/database"
-	"vaultaire/core/domain"
 	domainpkg "vaultaire/core/domain"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
@@ -30,22 +29,19 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		entries = append(entries, candidate.DomainEntry{DNName: baseDN})
 
 	case 1: // one-level → groupes directs + leurs utilisateurs
-		groupDomain, err := domainpkg.GetGroupsDirectlyUnderDomainExact(baseDN, db, true)
+		groupDomain := []string{baseDN}
+		entries, err := loadGroupsAndUsers(db, groupDomain, 1, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
-		entries, err = loadGroupsAndUsers(db, groupDomain, 1, attributes, username, baseObject)
-		if err != nil {
-			return nil, err
-		}
-
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree loaded %d entries", len(entries)))
 	case 2: // subtree → tous les groupes + tous les utilisateurs
-		groupDomains, err := domain.GetGroupsUnderDomain(baseDN, db, true)
-		if err != nil {
-			return nil, err
-		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope group domains=%v", groupDomains))
-		entries, err = loadGroupsAndUsers(db, groupDomains, 2, attributes, username, baseObject)
+		// Point d'ancrage subtree: on part toujours du BaseDN demandé.
+		// loadGroupsAndUsers(scope=2) appliquera GetGroupsUnderDomain sur ce domaine,
+		// ce qui inclut le domaine de base et tous ses sous-domaines.
+		groupDomains := []string{baseDN}
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope base domains=%v", groupDomains))
+		entries, err := loadGroupsAndUsers(db, groupDomains, 2, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}

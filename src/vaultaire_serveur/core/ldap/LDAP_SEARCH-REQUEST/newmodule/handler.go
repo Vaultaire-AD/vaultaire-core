@@ -44,6 +44,12 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// for _, candidate := range candidates {
 	// 	scope.PrintLDAPEntry(candidate)
 	// }
+	if len(candidates) == 0 {
+		logs.Write_Log("DEBUG", "ldap: aucun candidat resolu, envoi direct de SearchResultDone")
+		response.SendLDAPSearchResultDone(conn, messageID)
+		return
+	}
+
 	// 2. Évaluer le filtre
 	matched := candidate.Filtre(candidates, op.Filter, baseDN, op.Scope)
 
