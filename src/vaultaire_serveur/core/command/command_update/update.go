@@ -14,8 +14,8 @@ func Update_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		// update -pu <perm_name> <action_key> nil|all|-a|-r ... — le sender doit avoir write:update:permission
 		return update_UserPermission_Command_Parser(command_list, sender_groupsIDs, "write:update:permission", sender_Username)
 	case "-u":
-		if len(command_list) == 3 {
-			if command_list[2] == "-p" {
+		if len(command_list) == 5 {
+			if command_list[3] == "-p" {
 				db := database.GetDatabase()
 				uid, _ := database.Get_User_ID_By_Username(db, command_list[1])
 				cur, _ := database.Command_GET_UserInfo(db, command_list[1])

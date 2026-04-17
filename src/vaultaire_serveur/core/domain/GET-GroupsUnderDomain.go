@@ -32,6 +32,15 @@ func GetGroupsUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]s
 	seen := make(map[string]struct{})
 	result := []string{}
 
+	// Quand on demande les domaines (et non les noms de groupes), on inclut toujours
+	// le domaine de base de recherche pour conserver un point d'ancrage LDAP stable.
+	// Exemple: baseDN=enov.local doit rester présent même si seuls des groupes
+	// existent dans admin.enov.local.
+	if returnDomain && target != "" {
+		seen[target] = struct{}{}
+		result = append(result, target)
+	}
+
 	for _, g := range allGroups {
 		if g.DomainName == "" || g.GroupName == "" {
 			continue
@@ -39,13 +48,17 @@ func GetGroupsUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]s
 		dn := normalizeDomain(g.DomainName)
 		if dn == target || strings.HasSuffix(dn, "."+target) {
 			var val string
+			var key string
 			if returnDomain {
-				val = g.DomainName
+				// On renvoie un domaine normalisé pour éviter les doublons de casse.
+				val = dn
+				key = dn
 			} else {
 				val = g.GroupName
+				key = val
 			}
-			if _, ok := seen[val]; !ok {
-				seen[val] = struct{}{}
+			if _, ok := seen[key]; !ok {
+				seen[key] = struct{}{}
 				result = append(result, val)
 			}
 		}
