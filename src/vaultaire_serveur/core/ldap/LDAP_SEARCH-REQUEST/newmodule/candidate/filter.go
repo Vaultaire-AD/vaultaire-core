@@ -48,6 +48,10 @@ func Filtre(entries []ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN
 		f.Type,
 	))
 	// DebugLDAPFilter(f, "  ")
+	if len(entries) == 0 {
+		logs.Write_Log("DEBUG", "Aucune entrée candidate: résultat de filtre vide")
+		return []ldapinterface.LDAPEntry{}
+	}
 
 	var result []ldapinterface.LDAPEntry
 	fmt.Printf("--- Analyse du filtre pour l'entrée %s ---\n", entries[0].DN())

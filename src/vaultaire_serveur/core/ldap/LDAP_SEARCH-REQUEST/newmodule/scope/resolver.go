@@ -40,7 +40,7 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		}
 
 	case 2: // subtree → tous les groupes + tous les utilisateurs
-		groupDomains, err := domain.GetGroupsDirectlyUnderDomain(baseDN, db, true)
+		groupDomains, err := domain.GetGroupsUnderDomain(baseDN, db, true)
 		if err != nil {
 			return nil, err
 		}
