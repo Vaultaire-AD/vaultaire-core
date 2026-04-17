@@ -16,10 +16,7 @@ import (
 func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
 	if baseDN == "" || baseObject == "cn=schema" {
-		entries, err := loadGroupsAndUsers(db, []string{}, scope, attributes, username, baseObject) // On appelle avec une liste vide pour indiquer que c'est une requête RootDSE
-		if err != nil {
-			return nil, err
-		}
+		entries = append(entries, candidate.NewRootDSE())
 		logs.Write_Log("DEBUG", fmt.Sprintf("RootDSE struct: %+v", entries))
 		return entries, nil // La résolution du RootDSE est gérée à part
 	}
