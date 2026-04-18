@@ -15,6 +15,7 @@ import (
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
 func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
+	var err error
 	if baseDN == "" || baseObject == "cn=schema" {
 		entries = append(entries, candidate.NewRootDSE())
 		logs.Write_Log("DEBUG", fmt.Sprintf("RootDSE struct: %+v", entries))
@@ -27,7 +28,7 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 
 	case 1: // one-level → groupes directs + leurs utilisateurs
 		groupDomain := []string{baseDN}
-		entries, err := loadGroupsAndUsers(db, groupDomain, 1, attributes, username, baseObject)
+		entries, err = loadGroupsAndUsers(db, groupDomain, 1, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
@@ -38,7 +39,7 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		// ce qui inclut le domaine de base et tous ses sous-domaines.
 		groupDomains := []string{baseDN}
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope base domains=%v", groupDomains))
-		entries, err := loadGroupsAndUsers(db, groupDomains, 2, attributes, username, baseObject)
+		entries, err = loadGroupsAndUsers(db, groupDomains, 2, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
