@@ -278,35 +278,65 @@ func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error)
 	var matchValue string
 	var attribute string
 
+	// Debug: print all children for troubleshooting
+	logs.Write_Log("DEBUG", fmt.Sprintf("Decoding extensibleMatch filter with %d children", len(p.Children)))
+	for i, child := range p.Children {
+		val := ""
+		if child.Value != nil {
+			val = fmt.Sprintf("%v", child.Value)
+		} else if len(child.ByteValue) > 0 {
+			val = string(child.ByteValue)
+		}
+		logs.Write_Log("DEBUG", fmt.Sprintf("Child %d: Tag=%d, Value='%s', ByteValue='%s'", i, child.Tag, val, string(child.ByteValue)))
+
+		// If this has children, print them too
+		if len(child.Children) > 0 {
+			for j, subchild := range child.Children {
+				subval := ""
+				if subchild.Value != nil {
+					subval = fmt.Sprintf("%v", subchild.Value)
+				} else if len(subchild.ByteValue) > 0 {
+					subval = string(subchild.ByteValue)
+				}
+				logs.Write_Log("DEBUG", fmt.Sprintf("  SubChild %d: Tag=%d, Value='%s', ByteValue='%s'", j, subchild.Tag, subval, string(subchild.ByteValue)))
+			}
+		}
+	}
+
+	// The structure in the packet might be:
+	// - Primitive octet strings for attribute names and values with tags 2 and 3
+	// Let's process based on what we actually get
 	for _, child := range p.Children {
+		val := ""
+		if child.Value != nil {
+			val = fmt.Sprintf("%s", child.Value)
+		} else if len(child.ByteValue) > 0 {
+			val = string(child.ByteValue)
+		}
+
 		switch child.Tag {
 		case 0: // matchingRule [0] OBJECT IDENTIFIER
-			if v, ok := child.Value.(string); ok {
-				// Store OID as part of filter value
-				matchValue = v
-			}
+			// OID for matching rule, can be used to complement attribute matching
+			matchValue = val
 		case 1: // type [1] AttributeDescription
-			if v, ok := child.Value.(string); ok {
-				attribute = v
-			} else {
-				attribute = string(child.ByteValue)
-			}
+			// The attribute name to match against
+			attribute = val
 		case 2: // matchValue [2] AssertionValue
-			if v, ok := child.Value.(string); ok {
-				matchValue = v
-			} else {
-				matchValue = string(child.ByteValue)
-			}
+			// The value to match
+			matchValue = val
 		case 3: // dnAttributes [3] BOOLEAN
-			// Optional, indicates if search should include DN attributes
-			_ = child
+			// If present, indicates DN-aware matching
+			// For DN-valued attributes like member, this is important
+			if val != "" && attribute == "" {
+				attribute = val
+			}
 		}
 	}
 
 	filter.Attribute = attribute
 	filter.Value = matchValue
 
-	logs.Write_Log("DEBUG", fmt.Sprintf("Decoded extensibleMatch filter: attribute=%s, matchValue=%s", attribute, matchValue))
+	logs.Write_Log("DEBUG", fmt.Sprintf("Decoded extensibleMatch: attribute=%s, value=%s", attribute, matchValue))
 
 	return filter, nil
 }

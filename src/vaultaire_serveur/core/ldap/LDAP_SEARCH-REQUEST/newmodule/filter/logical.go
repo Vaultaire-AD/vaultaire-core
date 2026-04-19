@@ -57,6 +57,12 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN s
 		// 	entry.DN(), f.Attribute, res, entry.GetAttribute(f.Attribute))
 		return res
 
+	case ldapstorage.FilterExtensible:
+		// Extensible match - typically used for memberOf or DN-based assertions
+		// For "member" attribute: check if the value matches any member DN
+		res := evalEquality(entry, f.Attribute, f.Value)
+		return res
+
 	default:
 		// fmt.Printf("[WARN] Filtre LDAP inconnu Type=%v sur DN=%s\n", f.Type, entry.DN())
 		return false
