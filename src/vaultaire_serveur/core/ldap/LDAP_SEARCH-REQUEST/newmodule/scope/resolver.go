@@ -10,6 +10,7 @@ import (
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
 
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
@@ -154,11 +155,13 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 
 	// ... [Fin de fonction inchangée avec tes logs de debug] ...
 	logs.Write_Log("DEBUG", fmt.Sprintf("loadGroupsAndUsers final entries: %d", len(entries)))
-
-	for _, e := range entries {
-		fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
-		PrintLDAPEntry(e, attributes)
+	if storage.Debug {
+		for _, e := range entries {
+			fmt.Printf("DN: %s, ObjectClasses: %v\n", e.DN(), e.ObjectClasses())
+			PrintLDAPEntry(e, attributes)
+		}
 	}
+
 	return entries, nil
 }
 

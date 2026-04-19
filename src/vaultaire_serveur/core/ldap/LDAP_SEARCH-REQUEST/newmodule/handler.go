@@ -39,8 +39,7 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		response.SendLDAPSearchFailure(conn, messageID, err.Error())
 		return
 	}
-
-	fmt.Printf("Resolved %d candidates for BaseDN '%s' with scope %d\n", len(candidates), baseDN, op.Scope)
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolved %d candidates for baseDN=%s scope=%d", len(candidates), baseDN, op.Scope))
 	// for _, candidate := range candidates {
 	// 	scope.PrintLDAPEntry(candidate)
 	// }
