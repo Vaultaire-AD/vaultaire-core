@@ -261,10 +261,9 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 
 // decodeExtensibleMatchFilter handles extensibleMatch filters (RFC 4511 tag 9)
 // Format: SEQUENCE { matchingRule [0] OBJECT IDENTIFIER OPTIONAL,
-//
-//	type [1] AttributeDescription OPTIONAL,
-//	matchValue [2] AssertionValue,
-//	dnAttributes [3] BOOLEAN DEFAULT FALSE }
+//                    type [1] AttributeDescription OPTIONAL,
+//                    matchValue [2] AssertionValue,
+//                    dnAttributes [3] BOOLEAN DEFAULT FALSE }
 func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 	if len(p.Children) == 0 {
 		return nil, fmt.Errorf("extensibleMatch filter has no children")
@@ -274,61 +273,40 @@ func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error)
 		Type: ldapstorage.FilterExtensible,
 	}
 
-	// Parse the children of the extensibleMatch sequence
 	var matchValue string
 	var attribute string
 
-	// Debug: print all children for troubleshooting
-	logs.Write_Log("DEBUG", fmt.Sprintf("Decoding extensibleMatch filter with %d children", len(p.Children)))
-	for i, child := range p.Children {
-		val := ""
-		if child.Value != nil {
-			val = fmt.Sprintf("%v", child.Value)
-		} else if len(child.ByteValue) > 0 {
-			val = string(child.ByteValue)
-		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("Child %d: Tag=%d, Value='%s', ByteValue='%s'", i, child.Tag, val, string(child.ByteValue)))
-
-		// If this has children, print them too
-		if len(child.Children) > 0 {
-			for j, subchild := range child.Children {
-				subval := ""
-				if subchild.Value != nil {
-					subval = fmt.Sprintf("%v", subchild.Value)
-				} else if len(subchild.ByteValue) > 0 {
-					subval = string(subchild.ByteValue)
-				}
-				logs.Write_Log("DEBUG", fmt.Sprintf("  SubChild %d: Tag=%d, Value='%s', ByteValue='%s'", j, subchild.Tag, subval, string(subchild.ByteValue)))
-			}
-		}
-	}
-
-	// The structure in the packet might be:
-	// - Primitive octet strings for attribute names and values with tags 2 and 3
-	// Let's process based on what we actually get
+	// Process each child element
 	for _, child := range p.Children {
+		// Extract value - try Value, ByteValue, then Data
 		val := ""
 		if child.Value != nil {
 			val = fmt.Sprintf("%s", child.Value)
 		} else if len(child.ByteValue) > 0 {
 			val = string(child.ByteValue)
+		} else if child.Data != nil && child.Data.Len() > 0 {
+			// Use Data when ByteValue is empty
+			val = child.Data.String()
 		}
+
+		logs.Write_Log("DEBUG", fmt.Sprintf("extensibleMatch child tag=%d: value='%s'", child.Tag, val))
 
 		switch child.Tag {
 		case 0: // matchingRule [0] OBJECT IDENTIFIER
-			// OID for matching rule, can be used to complement attribute matching
+			// OID for matching rule
 			matchValue = val
 		case 1: // type [1] AttributeDescription
 			// The attribute name to match against
 			attribute = val
 		case 2: // matchValue [2] AssertionValue
-			// The value to match
-			matchValue = val
-		case 3: // dnAttributes [3] BOOLEAN
-			// If present, indicates DN-aware matching
-			// For DN-valued attributes like member, this is important
-			if val != "" && attribute == "" {
+			// In this packet structure: tag 2 = attribute name
+			if attribute == "" {
 				attribute = val
+			}
+		case 3: // dnAttributes [3] or value [3]
+			// In this packet structure: tag 3 = the DN value to match
+			if matchValue == "" {
+				matchValue = val
 			}
 		}
 	}
