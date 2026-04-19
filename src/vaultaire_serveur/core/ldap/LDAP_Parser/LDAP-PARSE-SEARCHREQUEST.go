@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
+	"vaultaire/core/logs"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -149,6 +150,10 @@ func DecodeLDAPFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 	case 4: // substrings
 		return decodeSubstringFilter(p)
 
+	// (attr:oid:=value) or (attr:dn:oid:=value)
+	case 9: // extensibleMatch
+		return decodeExtensibleMatchFilter(p)
+
 	default:
 		return nil, fmt.Errorf("unsupported LDAP filter tag %d", p.Tag)
 	}
@@ -250,6 +255,58 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 
 	filter.Value = fullValue.String()
 	fmt.Printf("[DEBUG-PARSER] Résultat Final: %s=%s\n", filter.Attribute, filter.Value)
+
+	return filter, nil
+}
+
+// decodeExtensibleMatchFilter handles extensibleMatch filters (RFC 4511 tag 9)
+// Format: SEQUENCE { matchingRule [0] OBJECT IDENTIFIER OPTIONAL,
+//
+//	type [1] AttributeDescription OPTIONAL,
+//	matchValue [2] AssertionValue,
+//	dnAttributes [3] BOOLEAN DEFAULT FALSE }
+func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
+	if len(p.Children) == 0 {
+		return nil, fmt.Errorf("extensibleMatch filter has no children")
+	}
+
+	filter := &ldapstorage.LDAPFilter{
+		Type: ldapstorage.FilterExtensible,
+	}
+
+	// Parse the children of the extensibleMatch sequence
+	var matchValue string
+	var attribute string
+
+	for _, child := range p.Children {
+		switch child.Tag {
+		case 0: // matchingRule [0] OBJECT IDENTIFIER
+			if v, ok := child.Value.(string); ok {
+				// Store OID as part of filter value
+				matchValue = v
+			}
+		case 1: // type [1] AttributeDescription
+			if v, ok := child.Value.(string); ok {
+				attribute = v
+			} else {
+				attribute = string(child.ByteValue)
+			}
+		case 2: // matchValue [2] AssertionValue
+			if v, ok := child.Value.(string); ok {
+				matchValue = v
+			} else {
+				matchValue = string(child.ByteValue)
+			}
+		case 3: // dnAttributes [3] BOOLEAN
+			// Optional, indicates if search should include DN attributes
+			_ = child
+		}
+	}
+
+	filter.Attribute = attribute
+	filter.Value = matchValue
+
+	logs.Write_Log("DEBUG", fmt.Sprintf("Decoded extensibleMatch filter: attribute=%s, matchValue=%s", attribute, matchValue))
 
 	return filter, nil
 }

@@ -40,6 +40,7 @@ const (
 	FilterGreaterOrEqual
 	FilterLessOrEqual
 	FilterApprox
+	FilterExtensible
 )
 
 // LDAPFilter est un nœud de filtre LDAP
