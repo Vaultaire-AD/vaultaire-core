@@ -105,7 +105,7 @@ func DumpFilter(f *ldapstorage.LDAPFilter, indent int) string {
 	case ldapstorage.FilterSubstring:
 		sb.WriteString(fmt.Sprintf("%s(%s=*%s*)\n", padding, f.Attribute, f.Value))
 	case ldapstorage.FilterExtensible:
-		sb.WriteString(fmt.Sprintf("%s(%s:dn:=|%s)\n", padding, f.Attribute, f.Value))
+		sb.WriteString(fmt.Sprintf("%s(%s:dn:=%s)\n", padding, f.Attribute, f.Value))
 	case ldapstorage.FilterGreaterOrEqual:
 		sb.WriteString(fmt.Sprintf("%s(%s>=%s)\n", padding, f.Attribute, f.Value))
 	case ldapstorage.FilterLessOrEqual:

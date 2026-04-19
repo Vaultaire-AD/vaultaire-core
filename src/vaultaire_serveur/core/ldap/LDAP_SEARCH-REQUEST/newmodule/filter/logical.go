@@ -1,9 +1,11 @@
 package filter
 
 import (
+	"fmt"
 	"strings"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
+	"vaultaire/core/logs"
 )
 
 // Evaluate applique un filtre LDAP à une entrée
@@ -58,9 +60,10 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN s
 		return res
 
 	case ldapstorage.FilterExtensible:
-		// Extensible match - typically used for memberOf or DN-based assertions
-		// For "member" attribute: check if the value matches any member DN
+		// Extensible match - typically used for DN-aware assertions
 		res := evalEquality(entry, f.Attribute, f.Value)
+		// Log attribute and DN value for troubleshooting
+		logs.Write_Log("DEBUG", fmt.Sprintf("Extensible match DN check for DN=%s attr=%s value=%s => %v", entry.DN(), f.Attribute, f.Value, res))
 		return res
 
 	default:
