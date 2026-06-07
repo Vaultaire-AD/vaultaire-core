@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
+	"strings"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	candidate "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
@@ -27,7 +28,7 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		response.SendLDAPSearchFailure(conn, messageID, "Session invalide ou non bindée")
 		return
 	}
-	if baseDN == "" || baseDN == "cn=schema" {
+	if op.BaseObject == "" || strings.EqualFold(op.BaseObject, "cn=schema") {
 	} else {
 		if !security.IsAuthorizedToSearch(session.Username, baseDN) {
 			response.SendLDAPSearchFailure(conn, messageID, "Not authorized")

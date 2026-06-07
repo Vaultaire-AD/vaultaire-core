@@ -2,6 +2,8 @@ package candidate
 
 import (
 	"strings"
+
+	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 )
 
 // DomainEntry représente le domaine lui-même en tant qu'entrée LDAP
@@ -10,7 +12,10 @@ type DomainEntry struct {
 }
 
 func (d DomainEntry) DN() string {
-	return d.DNName
+	if strings.Contains(d.DNName, "=") {
+		return d.DNName
+	}
+	return ldaptools.ToDN(d.DNName)
 }
 
 func (d DomainEntry) ObjectClasses() []string {

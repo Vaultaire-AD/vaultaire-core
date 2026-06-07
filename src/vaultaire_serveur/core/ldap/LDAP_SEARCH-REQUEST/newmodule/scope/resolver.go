@@ -17,30 +17,45 @@ import (
 func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
 	var err error
-	if baseDN == "" || baseObject == "cn=schema" {
+
+	switch {
+	case baseObject == "":
 		entries = append(entries, candidate.NewRootDSE())
 		logs.Write_Log("DEBUG", fmt.Sprintf("RootDSE struct: %+v", entries))
-		return entries, nil // La résolution du RootDSE est gérée à part
+		return entries, nil
+	case strings.EqualFold(baseObject, "cn=schema"), strings.EqualFold(baseObject, "cn=subschema"):
+		entries = append(entries, candidate.NewSchemaEntry())
+		return entries, nil
 	}
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d", baseDN, scope))
-	switch scope {
-	case 0: // base → juste le domaine lui-même
-		entries = append(entries, candidate.DomainEntry{DNName: baseDN})
 
-	case 1: // one-level → groupes directs + leurs utilisateurs
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d baseObject=%s", baseDN, scope, baseObject))
+
+	// JumpServer and similar clients search ou=users,dc=... with one-level scope but
+	// expect users from all subdomains — use subtree group loading for user containers.
+	loadScope := scope
+	if isUserContainerSearch(baseObject) && scope == 1 {
+		loadScope = 2
+	}
+
+	switch scope {
+	case 0:
+		if ouName, ok := ouFromBaseObject(baseObject); ok {
+			entries = append(entries, candidate.OUEntry{Name: ouName, BaseDN: baseDN})
+		} else {
+			entries = append(entries, candidate.DomainEntry{DNName: baseDN})
+		}
+
+	case 1:
 		groupDomain := []string{baseDN}
-		entries, err = loadGroupsAndUsers(db, groupDomain, 1, attributes, username, baseObject)
+		entries, err = loadGroupsAndUsers(db, groupDomain, loadScope, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree loaded %d entries", len(entries)))
-	case 2: // subtree → tous les groupes + tous les utilisateurs
-		// Point d'ancrage subtree: on part toujours du BaseDN demandé.
-		// loadGroupsAndUsers(scope=2) appliquera GetGroupsUnderDomain sur ce domaine,
-		// ce qui inclut le domaine de base et tous ses sous-domaines.
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: one-level loaded %d entries", len(entries)))
+	case 2:
 		groupDomains := []string{baseDN}
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope base domains=%v", groupDomains))
-		entries, err = loadGroupsAndUsers(db, groupDomains, 2, attributes, username, baseObject)
+		entries, err = loadGroupsAndUsers(db, groupDomains, loadScope, attributes, username, baseObject)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +65,7 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		return nil, fmt.Errorf("invalid scope: %d", scope)
 	}
 
-	return entries, nil
+	return FilterByBaseObject(entries, baseObject, scope), nil
 }
 
 func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {

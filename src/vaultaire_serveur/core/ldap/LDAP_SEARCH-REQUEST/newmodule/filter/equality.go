@@ -11,6 +11,11 @@ func evalEquality(entry ldapinterface.LDAPEntry, attr, value string) bool {
 	attr = strings.ToLower(strings.TrimSpace(attr))
 	value = strings.TrimSpace(value)
 
+	// Many clients (JumpServer, AD tools) send (attr=*) as equality, not present
+	if value == "*" {
+		return evalPresent(entry, attr)
+	}
+
 	vals := entry.GetAttribute(attr)
 
 	// LOG DE DIAGNOSTIC

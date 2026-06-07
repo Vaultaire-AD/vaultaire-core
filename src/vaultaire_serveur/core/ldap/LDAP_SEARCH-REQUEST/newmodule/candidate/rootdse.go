@@ -62,7 +62,15 @@ func (r RootDSEEntry) GetAttributes(requested []string, typesOnly bool) map[stri
 func (ou RootDSEEntry) GetAttribute(attr string) []string {
 	attr = strings.ToLower(attr)
 	res := ou.GetAttributes([]string{attr}, false)
-	return res[attr]
+	if vals, ok := res[attr]; ok {
+		return vals
+	}
+	for k, v := range res {
+		if strings.EqualFold(k, attr) {
+			return v
+		}
+	}
+	return nil
 }
 
 // NewRootDSE construit une entrée RootDSE cohérente avec les standards LDAP

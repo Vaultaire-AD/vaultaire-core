@@ -19,12 +19,7 @@ func (s SchemaEntry) DN() string {
 }
 
 func (s SchemaEntry) ObjectClasses() []string {
-	return []string{"( 2.5.6.0 NAME 'top' ABSTRACT MUST objectClass )",
-		"( 2.5.6.5 NAME 'organizationalUnit' SUP top STRUCTURAL MUST ou )",
-		"( 2.5.6.6 NAME 'person' SUP top STRUCTURAL MUST ( sn $ cn ) )",
-		"( 1.2.840.113556.1.5.8 NAME 'user' SUP person STRUCTURAL )",
-		"( 2.16.840.1.113730.3.2.2 NAME 'inetOrgPerson' SUP person STRUCTURAL )",
-		"( 1.2.840.113556.1.5.9 NAME 'group' SUP top STRUCTURAL )"}
+	return []string{"top", "subschema"}
 }
 
 func (s SchemaEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
@@ -60,10 +55,18 @@ func (s SchemaEntry) GetAttributes(requested []string, typesOnly bool) map[strin
 	return filtered
 }
 
-func (ou SchemaEntry) GetAttribute(attr string) []string {
+func (s SchemaEntry) GetAttribute(attr string) []string {
 	attr = strings.ToLower(attr)
-	res := ou.GetAttributes([]string{attr}, false)
-	return res[attr]
+	res := s.GetAttributes([]string{attr}, false)
+	if vals, ok := res[attr]; ok {
+		return vals
+	}
+	for k, v := range res {
+		if strings.EqualFold(k, attr) {
+			return v
+		}
+	}
+	return nil
 }
 
 // NewSchemaEntry construit l'entrée de schéma complète.
