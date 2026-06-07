@@ -21,8 +21,9 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	if len(op.Attributes) == 0 {
 		op.Attributes = []string{"dn"}
 	}
+	isRootDSE := op.BaseObject == "" || op.BaseObject == "cn=schema"
 	session, ok := ldapsessionmanager.GetLDAPSession(conn)
-	if !ok || !session.IsBound {
+	if !isRootDSE && (!ok || !session.IsBound) {
 		response.SendLDAPSearchFailure(conn, messageID, "Session invalide ou non bindée")
 		return
 	}
