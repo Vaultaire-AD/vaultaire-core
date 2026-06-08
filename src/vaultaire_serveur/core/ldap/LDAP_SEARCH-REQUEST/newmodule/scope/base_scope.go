@@ -102,7 +102,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 	entry := candidate.UserEntry{
 		User:        userObj,
 		BaseDN:      baseDN,
-		Groups:      userMemberOf(db, username),
+		Groups:      memberOfForUser(db, username),
 		DisplayName: userObj.Firstname + " " + userObj.Lastname,
 		GivenName:   userObj.Firstname,
 		Sn:          userObj.Lastname,
@@ -116,7 +116,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 
 func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.GroupEntry, bool) {
 	group, err := database.GetGroupWithUsersByName(db, groupName)
-	if err != nil {
+	if err != nil || group == nil {
 		return candidate.GroupEntry{}, false
 	}
 
@@ -137,22 +137,29 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 	return entry, true
 }
 
-func userMemberOf(db *sql.DB, username string) []string {
+func memberOfForUser(db *sql.DB, username string) []string {
 	groups, err := database.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil
 	}
 	var memberOf []string
+	seen := make(map[string]struct{})
 	for _, g := range groups {
 		groupData, err := database.GetGroupWithUsersByName(db, g.GroupName)
-		if err != nil {
+		if err != nil || groupData == nil {
 			continue
 		}
 		for _, u := range groupData.Users {
-			if strings.EqualFold(u, username) {
-				memberOf = append(memberOf, fmt.Sprintf("cn=%s,ou=groups,%s", groupData.GroupName, ldaptools.ToRootDN(groupData.DomainName)))
+			if !strings.EqualFold(u, username) {
+				continue
+			}
+			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", groupData.GroupName, ldaptools.ToRootDN(groupData.DomainName))
+			if _, exists := seen[groupDN]; exists {
 				break
 			}
+			seen[groupDN] = struct{}{}
+			memberOf = append(memberOf, groupDN)
+			break
 		}
 	}
 	return memberOf
