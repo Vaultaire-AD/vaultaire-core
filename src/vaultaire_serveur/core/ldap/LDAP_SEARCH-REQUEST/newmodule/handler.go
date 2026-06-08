@@ -19,9 +19,7 @@ import (
 func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int, conn net.Conn) {
 	baseDN := ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: search request baseObject=%s baseDomain=%s scope=%d attributes=%v", op.BaseObject, baseDN, op.Scope, op.Attributes))
-	if len(op.Attributes) == 0 {
-		op.Attributes = []string{"dn"}
-	}
+	// RFC 4511: an empty attribute selection means "return all user attributes".
 	isRootDSE := op.BaseObject == "" || op.BaseObject == "cn=schema"
 	session, ok := ldapsessionmanager.GetLDAPSession(conn)
 	if !isRootDSE && (!ok || !session.IsBound) {
