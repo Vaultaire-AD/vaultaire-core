@@ -39,11 +39,10 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 
 	switch scope {
 	case 0:
-		if ouName, ok := ouFromBaseObject(baseObject); ok {
-			entries = append(entries, candidate.OUEntry{Name: ouName, BaseDN: baseDN})
-		} else {
-			entries = append(entries, candidate.DomainEntry{DNName: baseDN})
+		if exact := resolveBaseScope(db, baseObject); exact != nil {
+			return exact, nil
 		}
+		return nil, nil
 
 	case 1:
 		groupDomain := []string{baseDN}
@@ -52,6 +51,9 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 			return nil, err
 		}
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: one-level loaded %d entries", len(entries)))
+		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
+		return entries, nil
+
 	case 2:
 		groupDomains := []string{baseDN}
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope base domains=%v", groupDomains))
@@ -60,12 +62,12 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 			return nil, err
 		}
 		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree loaded %d entries", len(entries)))
+		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
+		return entries, nil
 
 	default:
 		return nil, fmt.Errorf("invalid scope: %d", scope)
 	}
-
-	return FilterByBaseObject(entries, baseObject, scope), nil
 }
 
 func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
