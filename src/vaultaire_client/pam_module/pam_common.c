@@ -4,65 +4,166 @@
  */
 
 #define _GNU_SOURCE
-
 #include "pam_common.h"
+
 #include <stdio.h>
-#include <string.h>
 #include <stdlib.h>
+#include <string.h>
 #include <errno.h>
-#include <syslog.h>
 #include <stdarg.h>
+#include <unistd.h>
+#include <pwd.h>
+#include <grp.h>
+#include <shadow.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <unistd.h>
-#include <grp.h>
-#include <pwd.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+#include <linux/limits.h>
 
 /* --- Logging --- */
-void vaultaire_log_info(const char *fmt, ...) {
-    va_list ap;
-    va_start(ap, fmt);
+static void vaultaire_log_v(const char *prefix, const char *fmt, va_list ap) {
     FILE *f = fopen("/var/log/vaultaire/vaultaire_pam.log", "a");
     if (f) {
+        fprintf(f, "[%s] ", prefix);
         vfprintf(f, fmt, ap);
         fprintf(f, "\n");
         fclose(f);
     }
-    va_end(ap);
 }
 
-
-
-int is_vaultaire_user(const char *username) {
-    struct passwd *pw = getpwnam(username);
-    
-    // CAS 1 : L'utilisateur n'existe pas encore sur la machine.
-    // On DOIT retourner 1 pour qu'il entre dans le cycle Vaultaire et soit créé.
-    if (pw == NULL) {
-        return 1; 
-    }
-
-    // Cas 2 : On cherche le marqueur @vaultaire n'importe où dans le GECOS
-    if (pw->pw_gecos != NULL && strchr(pw->pw_gecos, '@') != NULL) {
-        return 1; 
-    }
-    
-
-    // CAS 3 : L'utilisateur existe mais n'a pas le tag vaultaire (ex: root, adm-lviguie)
-    return 0; 
+void vaultaire_log_info(const char *fmt, ...) {
+    va_list ap;
+    va_start(ap, fmt);
+    vaultaire_log_v("INFO", fmt, ap);
+    va_end(ap);
 }
 
 void vaultaire_log_err(const char *fmt, ...) {
     va_list ap;
     va_start(ap, fmt);
-    FILE *f = fopen("/var/log/vaultaire/vaultaire_pam.log", "a");
-    if (f) {
-        vfprintf(f, fmt, ap);
-        fprintf(f, "\n");
-        fclose(f);
-    }
+    vaultaire_log_v("ERROR", fmt, ap);
     va_end(ap);
 }
+
+/* --- Validation des domaines & usernames --- */
+static const char *vaultaire_allowed_domains[] = { "corp.local", "vaultaire.internal" };
+
+bool vaultaire_is_allowed_domain(const char *domain) {
+    if (!domain || domain[0] == '\0') return false;
+    for (size_t i = 0; i < sizeof(vaultaire_allowed_domains) / sizeof(vaultaire_allowed_domains[0]); i++) {
+        if (strcasecmp(domain, vaultaire_allowed_domains[i]) == 0)
+            return true;
+    }
+    return false;
+}
+
+
+int is_vaultaire_user(const char *username) {
+    const char *at = strchr(username, '@');
+    if (!at) return 0;
+    return vaultaire_is_allowed_domain(at + 1) ? 1 : 0;
+}
+bool vaultaire_is_valid_username(const char *username) {
+    if (!username) return false;
+    if (strpbrk(username, "/ ;&:\n\r\t")) return false;
+    return true;
+}
+
+
+/* --- Commande exécutée via subprocess --- */
+static int run_useradd(const char *username) {
+    pid_t pid = fork();
+    if (pid < 0) return 0;
+    if (pid == 0) {
+        execl("/usr/sbin/useradd", "useradd", "-m", "--shell", "/bin/bash",
+              "-c", "vaultaire", username, (char *)NULL);
+        _exit(127);
+    }
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return 0;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+static int run_chpasswd(const char *username, const char *password) {
+    int fd[2];
+    if (pipe(fd) != 0) return 0;
+    pid_t pid = fork();
+    if (pid < 0) {
+        close(fd[0]); close(fd[1]);
+        return 0;
+    }
+    if (pid == 0) {
+        dup2(fd[0], STDIN_FILENO);
+        close(fd[0]); close(fd[1]);
+        execl("/usr/sbin/chpasswd", "chpasswd", (char *)NULL);
+        _exit(127);
+    }
+    close(fd[0]);
+    dprintf(fd[1], "%s:%s\n", username, password);
+    close(fd[1]);
+    int status;
+    if (waitpid(pid, &status, 0) < 0) return 0;
+    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+int ensure_local_user_with_password(const char *username, const char *password) {
+    if (!getpwnam(username)) {
+        if (!run_useradd(username)) {
+            vaultaire_log_err("useradd failed for %s", username);
+            return 0;
+        }
+        vaultaire_log_info("Created local user %s", username);
+    }
+
+    if (password && password[0] != '\0') {
+        if (!run_chpasswd(username, password)) {
+            vaultaire_log_err("chpasswd failed for %s", username);
+            return 0;
+        }
+    }
+    return 1;
+}
+
+/* --- Provisioning Clés SSH --- */
+int setup_user_ssh_keys(const char *username, char **keys, size_t key_count) {
+    struct passwd *pw = getpwnam(username);
+    if (!pw) return 0;
+
+    char ssh_dir[PATH_MAX];
+    char auth_keys_path[PATH_MAX];
+
+    snprintf(ssh_dir, sizeof(ssh_dir), "%s/.ssh", pw->pw_dir);
+    snprintf(auth_keys_path, sizeof(auth_keys_path), "%s/authorized_keys", ssh_dir);
+
+    // Création du répertoire .ssh
+    if (mkdir(ssh_dir, 0700) != 0 && errno != EEXIST) {
+        vaultaire_log_err("Failed to create ssh dir %s: %s", ssh_dir, strerror(errno));
+        return 0;
+    }
+    chown(ssh_dir, pw->pw_uid, pw->pw_gid);
+
+    // Écriture du fichier authorized_keys
+    FILE *f = fopen(auth_keys_path, "w");
+    if (!f) {
+        vaultaire_log_err("Failed to open %s: %s", auth_keys_path, strerror(errno));
+        return 0;
+    }
+
+    for (size_t i = 0; i < key_count; i++) {
+        fprintf(f, "%s\n", keys[i]);
+    }
+    fclose(f);
+
+    chmod(auth_keys_path, 0600);
+    chown(auth_keys_path, pw->pw_uid, pw->pw_gid);
+
+    vaultaire_log_info("Provisioned %2zu SSH key(s) for %s", key_count, username);
+    return 1;
+}
+
+
 
 /* --- Socket --- */
 static int connect_socket(void) {
@@ -110,14 +211,6 @@ int vaultaire_socket_send(const char *request) {
     return vaultaire_socket_send_recv(request, NULL, 0);
 }
 
-/* --- Username validation --- */
-bool vaultaire_is_valid_username(const char *username) {
-    if (!username) return false;
-    if (strchr(username, '/') || strchr(username, ' ') || strchr(username, ';') ||
-        strchr(username, '&') || strchr(username, ':'))
-        return false;
-    return true;
-}
 
 /* --- Sudo group --- */
 static const char *sudo_group_candidates[] = { "sudo", "wheel", "admin", "staff", "root" };

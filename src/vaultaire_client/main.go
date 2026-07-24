@@ -10,6 +10,7 @@ import (
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
 	"vaultaire_client/storage"
+	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
 	yaml_vaultaire "vaultaire_client/yaml"
 
@@ -91,7 +92,12 @@ func main() {
 		StartDailyUserCleanup()
 		// Lancer le serveur de socket Unix
 		if storage.IsServeur {
-			go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil, false)
+			// 3. Appel vers le serveur backend Vaultaire
+			if tools.IsDuckySessionActive() {
+
+			} else {
+				go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil, false)
+			}
 		}
 		pamcommunication.UnixSocketServer()
 	}

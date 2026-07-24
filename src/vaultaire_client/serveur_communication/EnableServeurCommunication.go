@@ -2,11 +2,11 @@ package serveurcommunication
 
 import (
 	"fmt"
-	"os"
 	"time"
 	"vaultaire_client/logs"
 	"vaultaire_client/serveur_communication/module"
 	"vaultaire_client/sessionmgr"
+	"vaultaire_client/storage"
 	sto_session "vaultaire_client/storage/stosession"
 )
 
@@ -16,31 +16,21 @@ func EnableServerCommunication(user, pass, sshUser string, sshpassword *string, 
 
 	if user == "vaultaire" {
 		for {
-			ds, err := module.EstablishDuckySession(user, pass)
+			var err error
+			storage.DuckySessionLive, err = module.EstablishDuckySession(user, pass)
 			if err != nil {
 				logs.Write_log("ERROR", fmt.Sprintf("Connexion échouée: %v", err))
 				time.Sleep(30 * time.Second)
 				continue
 			}
 
-			sto_session.SessionsUser.AddOrUpdate(user, ds.Conn, sessionmgr.SessionPending, ds)
+			sto_session.SessionsUser.AddOrUpdate(user, storage.DuckySessionLive.Conn, sessionmgr.SessionPending, storage.DuckySessionLive)
 
 			done := make(chan struct{})
 			go func() {
-				handleConnection(user, ds)
+				handleConnection(user, storage.DuckySessionLive)
 				close(done)
 			}()
-
-			// Si on a une demande SSH spécifique à passer dans ce tunnel
-			if sshUser != "" && sshpassword != nil && *sshpassword != "" {
-				module.WaitForSSHAuth(user, sshUser, sshpassword, ds)
-			} else if isFetchBrut {
-				module.WaitForSSHFetch(user, sshUser, ds)
-				// 🔥 AJOUTE CECI :
-				logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
-				
-				os.Exit(0) // On force l'arrêt propre du binaire
-			}
 
 			<-done // Attend la fin de la connexion
 			logs.Write_log("WARNING", "Flux arrêté. Reconnexion dans 30s...")

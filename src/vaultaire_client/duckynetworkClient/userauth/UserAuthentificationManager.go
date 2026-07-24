@@ -10,7 +10,6 @@ import (
 	"vaultaire_client/storage"
 	sto_session "vaultaire_client/storage/stosession"
 	"vaultaire_client/tools/getlocalinformation"
-	"vaultaire_client/tools/sshreq"
 )
 
 func AskAuthentification(username string, password string, duckysession *storage.DuckySession) {
@@ -35,31 +34,6 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 		lines := strings.Split(trames_content.Content, "\n")
 		username := lines[0]
 
-		// AES
-		content := strings.Join(lines[5:], "\n")
-		storage.AES_key = []byte(content)
-
-		// PAM status
-		storage.Authentification_PAM <- "success"
-
-		// admin
-		storage.IsAdmin = (lines[1] == "true")
-
-		rep := storage.AuthResult{
-			IsAdmin: storage.IsAdmin,
-			Keys:    lines[2],
-		}
-		// 🔑 SSH KEYS → nouveau système
-		if lines[2] != "empty" {
-			if ch, ok := sshreq.Pop(username); ok {
-				select {
-				case ch <- rep:
-				default:
-					logs.Write_log("WARNING", "Channel SSH plein pour "+username)
-				}
-			}
-		}
-
 		logs.Write_log("INFO", username+" authentifié succès admin="+lines[1])
 
 		activeSession, _ := getlocalinformation.GetActiveUsers()
@@ -70,13 +44,6 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 			storage.Computeur_ID + "\n" +
 			getlocalinformation.GetAllLocalInfForServeur() + "\n" +
 			strings.Join(activeSession, ",")
-
-		sendmessage.SendMessage(message, duckysession)
-
-		message = "02_15\nserveur_central\n" +
-			trames_content.SessionIntegritykey + "\n" +
-			username + "\n" +
-			storage.Computeur_ID + "\nask_gpo"
 
 	case "16":
 		lines := strings.Split(trames_content.Content, "\n")

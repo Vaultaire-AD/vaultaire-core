@@ -14,7 +14,7 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 	case "01":
 		message = SSH_SEND_Pubkey_AUTH(trames_content)
 	case "04":
-		message = SSH_SEND_Pubkey(trames_content)
+		message = SSH_SEND_SALT(trames_content)
 	default:
 
 	}
@@ -87,11 +87,11 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\nunknown order"
 }
 
-func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
+func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 
 	content := strings.Split(trames_content.Content, "\n")
 	if len(content) < 1 {
-		logs.Write_Log("ERROR", "Trame SSH 04_01 invalide : contenu incomplet")
+		logs.Write_Log("ERROR", "Trame SSH 03_04 invalide : contenu incomplet")
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nmalformed_trame"
 	}
 	// Logique : Le client demande les clés publiques pour l'utilisateur X
@@ -110,10 +110,15 @@ func SSH_SEND_Pubkey(trames_content storage.Trames_struct_client) string {
 		logs.Write_Log("ERROR", "User not found: "+username)
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nuser not found"
 	}
-	keys, err := database.Get_PublicKeys_ByUserID(db, id)
+	salt, err := database.Get_User_Salt_By_UserID(db, id)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error retrieving public keys for user "+username)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nkey error"
+		logs.Write_Log("ERROR", "Error retrieving salt for user "+username)
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\n" + "salt error"
 	}
-	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strings.Join(keys, "\n")
+	nonce, err := IssueChallenge(trames_content.SessionIntegritykey)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error issuing challenge nonce")
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nnonce error"
+	}
+	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + salt + "\n" + nonce
 }

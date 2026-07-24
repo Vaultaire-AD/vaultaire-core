@@ -21,3 +21,5 @@ type DuckySession struct {
 	IsSafe     bool
 	SessionKey []byte
 }
+
+var DuckySessionLive *DuckySession

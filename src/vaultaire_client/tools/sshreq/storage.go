@@ -6,7 +6,8 @@ import (
 )
 
 var (
-	// On change chan string en chan storage.AuthResult
-	requests = map[string]chan storage.AuthResult{}
-	mu       sync.Mutex
+	// requests stocke les channels de réponse en attente, clés par nom d'utilisateur.
+	requests = make(map[string]chan storage.AuthResult)
+	// mu protège l'accès concurrent au dictionnaire requests.
+	mu sync.RWMutex
 )
