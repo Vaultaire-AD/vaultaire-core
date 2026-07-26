@@ -2,6 +2,7 @@ package tramesmanager
 
 import (
 	"strings"
+	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	keydecodeencode "vaultaire/ducky-network/key_decode_encode"
@@ -23,20 +24,15 @@ func parseTrames(trames string) storage.Trames_struct_client {
 	action := strings.Split(lines[0], "_")
 
 	username := lines[3]
-	domain := ""
-	// Si présence de @ → split user@domain
-	if strings.Contains(lines[3], "@") {
-		parts := strings.SplitN(lines[3], "@", 2)
-		username = parts[0]
-		domain = parts[1]
-	}
+	domaine := ""
+	username, domaine = domain.ExctractDomainFromUsername(username)
 
 	return storage.Trames_struct_client{
 		Message_Order:       action,
 		Destination_Server:  lines[1],
 		SessionIntegritykey: lines[2],
 		Username:            username,
-		Domain:              domain,
+		Domain:              domaine,
 		ClientSoftwareID:    lines[4],
 		Content:             message,
 	}

@@ -4,6 +4,7 @@ import (
 	"strconv"
 	"strings"
 	"vaultaire/core/database"
+	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -31,7 +32,7 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}
 	db := database.GetDatabase()
-	sshUser := content[0]
+	sshUser, _ := domain.ExctractDomainFromUsername(content[0])
 	proof := content[1]
 	isauth, err := VerifyChallengeProof(db, sshUser, trames_content.SessionIntegritykey, proof)
 	if err != nil {
@@ -75,7 +76,7 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nmalformed_trame"
 	}
 	// Logique : Le client demande les clés publiques pour l'utilisateur X
-	username := content[0]
+	username, _ := domain.ExctractDomainFromUsername(content[0])
 	db := database.GetDatabase()
 
 	// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
@@ -111,7 +112,7 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	}
 
 	db := database.GetDatabase()
-	sshUser := content[0]
+	sshUser, _ := domain.ExctractDomainFromUsername(content[0])
 
 	// 1. Verification des droits (peut-il se connecter sur cette machine ?)
 	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)

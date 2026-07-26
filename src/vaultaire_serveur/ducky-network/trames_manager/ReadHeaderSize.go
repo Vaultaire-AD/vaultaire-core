@@ -5,7 +5,9 @@ import (
 )
 
 func Read_Header_Size(conn net.Conn) int {
-
+	if conn == nil {
+		return 0
+	}
 	headerSizeBuf := make([]byte, 1)
 	_, err := conn.Read(headerSizeBuf)
 	if err != nil {

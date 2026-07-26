@@ -39,6 +39,9 @@ func processIncomingMessage(duckysession *storage.DuckySession) bool {
 
 // closeConnection ferme proprement une connexion et log si erreur.
 func closeConnection(duckysession *storage.DuckySession) {
+	if duckysession == nil || duckysession.Conn == nil {
+		return
+	}
 	if err := duckysession.Conn.Close(); err != nil {
 		logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 	}
