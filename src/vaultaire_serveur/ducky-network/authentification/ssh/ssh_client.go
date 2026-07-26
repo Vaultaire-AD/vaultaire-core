@@ -32,7 +32,7 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}
 	db := database.GetDatabase()
-	sshUser, _ := domain.ExctractDomainFromUsername(content[0])
+	sshUser, domaine := domain.ExctractDomainFromUsername(content[0])
 	proof := content[1]
 	isauth, err := VerifyChallengeProof(db, sshUser, trames_content.SessionIntegritykey, proof)
 	if err != nil {
@@ -45,27 +45,27 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 		can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 		if err != nil || !can {
 			logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID)
-			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\npermission denied"
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\npermission denied"
 		}
 		userid, err := database.Get_User_ID_By_Username(db, sshUser)
 		if err != nil {
 			logs.Write_Log("ERROR", "User not found: "+sshUser)
-			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nuser not found"
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nuser not found"
 		}
 		sshkey, err := database.Get_PublicKeys_ByUserID(db, userid)
 		if err != nil {
 			logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser)
-			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nssh key error"
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nssh key error"
 		}
 		isadmin, err := database.IsUserAdmin(db, sshUser, trames_content.ClientSoftwareID)
 		if err != nil {
 			logs.Write_Log("ERROR", "Error checking admin status for user "+sshUser)
-			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nadmin check error"
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nadmin check error"
 		}
 		sshkeyString := strings.Join(sshkey, "\n")
-		return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
+		return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
 	}
-	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\ninvalid proof"
+	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\ninvalid proof"
 }
 
 func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
@@ -73,17 +73,17 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 	content := strings.Split(trames_content.Content, "\n")
 	if len(content) < 1 {
 		logs.Write_Log("ERROR", "Trame SSH 03_04 invalide : contenu incomplet")
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nmalformed_trame"
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "@vaultaire" + "\nmalformed_trame"
 	}
 	// Logique : Le client demande les clés publiques pour l'utilisateur X
-	username, _ := domain.ExctractDomainFromUsername(content[0])
+	username, domaine := domain.ExctractDomainFromUsername(content[0])
 	db := database.GetDatabase()
 
 	// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
 	can, err := database.DidUserCanLogin(db, username, trames_content.ClientSoftwareID)
 	if err != nil || !can {
 		logs.Write_Log("WARNING", username+" permission denied for machine "+trames_content.ClientSoftwareID)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\npermission denied"
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "@" + domaine + "\npermission denied"
 	}
 
 	id, err := database.Get_User_ID_By_Username(db, username)
@@ -101,7 +101,7 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 		logs.Write_Log("ERROR", "Error issuing challenge nonce")
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nnonce error"
 	}
-	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + username + "\n" + salt + "\n" + nonce
+	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + username + "@" + domaine + "\n" + salt + "\n" + nonce
 }
 
 func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
@@ -112,7 +112,7 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	}
 
 	db := database.GetDatabase()
-	sshUser, _ := domain.ExctractDomainFromUsername(content[0])
+	sshUser, domaine := domain.ExctractDomainFromUsername(content[0])
 
 	// 1. Verification des droits (peut-il se connecter sur cette machine ?)
 	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
@@ -137,5 +137,5 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	logs.Write_Log("INFO", "Cles publiques transmises pour "+sshUser+" (fetch-key)")
 
 	sshkeyString := strings.Join(sshkeys, "\n")
-	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" + sshUser + "\n" + sshkeyString
+	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" + sshUser + "@" + domaine + "\n" + sshkeyString
 }
