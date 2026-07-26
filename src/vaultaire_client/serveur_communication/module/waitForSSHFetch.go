@@ -19,7 +19,7 @@ func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
 
 	// 2. Boucle d'attente du TUNNEL (on vérifie la session machine "user" qui est "vaultaire")
 	tunnelReady := false
-	for i := 0; i < 50; i++ { // Timeout de 10s (50 * 200ms)
+	for i := 0; i < 2000; i++ { // Timeout de 100s (500 * 200ms)
 		status, ok := stosession.SessionsUser.GetStatus(user) // "user" ici est "vaultaire"
 		if ok && status == sessionmgr.SessionAuthenticated {
 			tunnelReady = true
