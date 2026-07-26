@@ -88,7 +88,7 @@ func main() {
 		sshUser := *fetchKey
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
-		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 		module.WaitForSSHFetch("vaultaire", sshUser, storage.DuckySessionLive)
 		// 🔥 AJOUTE CECI :
 		logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")

@@ -13,7 +13,6 @@ import (
 
 func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
 	logs.Write_log("INFO", fmt.Sprintf("Attente de clé fetch pour requete SSH (%s)", sshUser))
-	time.Sleep(500 * time.Millisecond) // Attente pour que le serveur traite la requete
 	// 1. On prépare le canal de réception
 	respChan := make(chan storage.AuthResult, 1)
 	sshreq.Register(sshUser, respChan)
