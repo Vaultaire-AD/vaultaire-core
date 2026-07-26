@@ -67,26 +67,24 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			close(respChan)
 		}
 	case "05": // RÉUSSITE FETCH BRUT (03_05)
-		// Format: [0]"vaultaire", [1:]clés... (Le user n'est pas dans le content !)
+		// Format Content: "vaultaire\n<username>\n<salt>\n<nonce>"
 		lines := strings.Split(strings.TrimSpace(trames_content.Content), "\n")
 
-		// On récupère les clés (tout ce qui suit "vaultaire")
-		Salt := ""
-		if len(lines) > 1 {
-			Salt = lines[1]
+		if len(lines) < 4 {
+			logs.Write_log("ERROR", "Trame 03_05 malformee, champs manquants")
 		}
-		sshrequser := lines[0] // "vaultaire" dans ce cas, pas d'info user dans le content
-		// 💡 PROBLEME : On n'a pas le nom de l'utilisateur dans la trame 05.
-		// On doit utiliser PopAny() ou passer par un index de session si tu as plusieurs requêtes.
-		// Si c'est du One-Shot, on récupère la dernière requête en attente.
+
+		sshrequser := lines[1] // le vrai username, pas "vaultaire"
+		salt := lines[2]
+		nonce := lines[3]
 		if respChan, ok := sshreq.Pop(sshrequser); ok {
 			select {
-			case respChan <- storage.AuthResult{Salt: Salt, Type: "SALT", IsAdmin: false}:
-				logs.Write_log("INFO", "Salt 03_05 (Brut) transmis au channel")
+			case respChan <- storage.AuthResult{Type: "SALT", Salt: salt, Nonce: nonce, IsAdmin: false}:
+				logs.Write_log("INFO", fmt.Sprintf("Salt/Nonce 03_05 transmis au channel pour %s", sshrequser))
 			default:
 			}
 		} else {
-			logs.Write_log("WARNING", "Réception 03_05 mais aucun channel en attente")
+			logs.Write_log("WARNING", fmt.Sprintf("Réception 03_05 pour %s mais aucun channel en attente", sshrequser))
 		}
 	default:
 		logs.Write_log("DEBUG", "Sous-ordre SSH 03_"+trames_content.Message_Order[1]+" non géré")

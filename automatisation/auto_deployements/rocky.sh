@@ -50,7 +50,7 @@ EOF
 # Configuration client
 cat > /opt/vaultaire_client/client_conf.yaml <<'EOF'
 serveurlistenport: 6666
-serveur_ip: 192.168.30.1
+serveur_ip: 192.168.30.3
 EOF
 
 

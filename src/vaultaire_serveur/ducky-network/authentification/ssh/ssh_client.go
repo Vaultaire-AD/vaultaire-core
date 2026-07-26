@@ -1,9 +1,9 @@
 package sshclient
 
 import (
+	"strconv"
 	"strings"
 	"vaultaire/core/database"
-	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -28,63 +28,41 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 		return "02_07\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}
-
-	order := content[0]
-	sshUser := content[1]
-	password := content[2]
-
 	db := database.GetDatabase()
-
-	// 1. Récupérer l'ID de l'utilisateur
-	userID, err := database.Get_User_ID_By_Username(db, sshUser)
+	sshUser := content[0]
+	proof := content[1]
+	isauth, err := VerifyChallengeProof(db, sshUser, trames_content.SessionIntegritykey, proof)
 	if err != nil {
-		logs.Write_Log("ERROR", "User not found: "+sshUser)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nuser not found"
+		logs.Write_Log("ERROR", "Error verifying challenge proof for user "+sshUser+": "+err.Error())
+		return "02_07\nserveur_central\n" +
+			trames_content.SessionIntegritykey + "\n" + sshUser + "\nverification error"
 	}
-	// 2. 🔐 VÉRIFICATION DU MOT DE PASSE (MFA)
-	hPassword, salt, err := database.Get_User_Password_By_ID(db, userID)
-	if err != nil {
-		logs.Write_Log("ERROR", "Password lookup failed for "+sshUser)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\ninternal error"
-	}
-	// On utilise ta fonction de comparaison (GC = ton package de crypto/auth)
-	if !gc.ComparePasswords(password, salt, hPassword) {
-		logs.Write_Log("WARNING", "MFA Failed: Invalid password for "+sshUser)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\ninvalid credentials"
-	}
-
-	// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
-	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
-	if err != nil || !can {
-		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID)
-		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\npermission denied"
-	}
-
-	// 4. RÉCUPÉRATION DES CLÉS ET DU STATUT ADMIN
-	if order == "ask_sshpubkey" {
-		// Check Admin
-		isAdmin, _ := database.IsUserAdmin(db, sshUser, trames_content.ClientSoftwareID)
-
-		// Check Pubkeys
-		pubkeys, err := database.Get_PublicKeys_ByUserID(db, userID)
+	if !isauth {
+		// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
+		can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
+		if err != nil || !can {
+			logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID)
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\npermission denied"
+		}
+		userid, err := database.Get_User_ID_By_Username(db, sshUser)
 		if err != nil {
-			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\nkey error"
+			logs.Write_Log("ERROR", "User not found: "+sshUser)
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nuser not found"
 		}
-
-		pubkeyStr := strings.Join(pubkeys, "\n")
-
-		// On forge la réponse 03_02 (Succès)
-		// Format : Status | User | IsAdmin | Keys...
-		adminFlag := "false"
-		if isAdmin {
-			adminFlag = "true"
+		sshkey, err := database.Get_PublicKeys_ByUserID(db, userid)
+		if err != nil {
+			logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser)
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nssh key error"
 		}
-
-		logs.Write_Log("INFO", "MFA Success: "+sshUser+" authorized on "+trames_content.ClientSoftwareID+" (Admin: "+adminFlag+")")
-
-		return "03_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\n" + adminFlag + "\n" + pubkeyStr
+		isadmin, err := database.IsUserAdmin(db, sshUser, trames_content.ClientSoftwareID)
+		if err != nil {
+			logs.Write_Log("ERROR", "Error checking admin status for user "+sshUser)
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\nadmin check error"
+		}
+		sshkeyString := strings.Join(sshkey, "\n")
+		return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
 	}
-	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\nunknown order"
+	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "\ninvalid proof"
 }
 
 func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
@@ -120,5 +98,5 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 		logs.Write_Log("ERROR", "Error issuing challenge nonce")
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nnonce error"
 	}
-	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + salt + "\n" + nonce
+	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + username + "\n" + salt + "\n" + nonce
 }

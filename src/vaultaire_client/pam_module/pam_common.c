@@ -133,9 +133,19 @@ int setup_user_ssh_keys(const char *username, char **keys, size_t key_count) {
 
     char ssh_dir[PATH_MAX];
     char auth_keys_path[PATH_MAX];
+    int n;
 
-    snprintf(ssh_dir, sizeof(ssh_dir), "%s/.ssh", pw->pw_dir);
-    snprintf(auth_keys_path, sizeof(auth_keys_path), "%s/authorized_keys", ssh_dir);
+    n = snprintf(ssh_dir, sizeof(ssh_dir), "%s/.ssh", pw->pw_dir);
+    if (n < 0 || (size_t)n >= sizeof(ssh_dir)) {
+        vaultaire_log_err("Home path too long for %s", username);
+        return 0;
+    }
+
+    n = snprintf(auth_keys_path, sizeof(auth_keys_path), "%s/authorized_keys", ssh_dir);
+    if (n < 0 || (size_t)n >= sizeof(auth_keys_path)) {
+        vaultaire_log_err("authorized_keys path too long for %s", username);
+        return 0;
+    }
 
     // Création du répertoire .ssh
     if (mkdir(ssh_dir, 0700) != 0 && errno != EEXIST) {

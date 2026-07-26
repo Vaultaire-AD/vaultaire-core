@@ -86,7 +86,7 @@ func main() {
 	if *fetchKey != "" {
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
-		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", *fetchKey, nil, true)
+		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 		return
 	} else {
 		StartDailyUserCleanup()
@@ -96,7 +96,7 @@ func main() {
 			if tools.IsDuckySessionActive() {
 
 			} else {
-				go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil, false)
+				go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 			}
 		}
 		pamcommunication.UnixSocketServer()

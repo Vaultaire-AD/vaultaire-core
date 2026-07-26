@@ -9,6 +9,7 @@
 
 #include <stddef.h>
 #include <stdbool.h>
+#include <linux/limits.h>   // pour PATH_MAX
 
 /* --- Constants (single source of truth) --- */
 
@@ -44,5 +45,7 @@ int vaultaire_json_get_bool(const char *json, const char *key, bool *out);
 
 /* --- SSH keys array: parse "ssh_keys":["...","..."] into allocated array. Caller frees keys[]. --- */
 int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *count_out);
+int ensure_local_user_with_password(const char *username, const char *password);
+int setup_user_ssh_keys(const char *username, char **keys, size_t key_count);
 
 #endif /* PAM_VAULTAIRE_COMMON_H */

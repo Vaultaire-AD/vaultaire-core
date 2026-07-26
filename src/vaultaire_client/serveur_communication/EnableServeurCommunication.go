@@ -11,7 +11,7 @@ import (
 )
 
 // Fonction pour gérer la requete au serveur central
-func EnableServerCommunication(user, pass, sshUser string, sshpassword *string, isFetchBrut bool) {
+func EnableServerCommunication(user, pass string) {
 	logs.Print_Log("Launching Vaultaire_Client_Network: " + user)
 
 	if user == "vaultaire" {
