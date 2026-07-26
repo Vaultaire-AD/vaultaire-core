@@ -86,7 +86,7 @@ func main() {
 	flag.Parse()
 	if *fetchKey != "" {
 		sshUser := *fetchKey
-		storage.SilentConsole = true
+		// storage.SilentConsole = true
 		// Mode One-Shot pour SSH
 		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 		module.WaitForSSHFetch("vaultaire", sshUser, storage.DuckySessionLive)
