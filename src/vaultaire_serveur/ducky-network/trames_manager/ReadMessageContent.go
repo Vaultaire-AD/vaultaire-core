@@ -49,7 +49,6 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 		logs.Write_Log("ERROR", "Error during the read of the message: "+err.Error())
 		return
 	}
-	logs.Write_Log("DEBUG", string(messageBuf))
 	//fmt.Println("taille du message recu : ", reconstructedMessageSize)
 	if string(messageBuf) == "askkey" {
 		data := []byte("getkey\n" +

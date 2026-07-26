@@ -59,6 +59,7 @@ func SendMessage(message string, clientSoftwareID string, duckysession *storage.
 			}
 		}()
 		logs.Write_Log("ERROR", "Error sending message: "+err.Error())
+		duckysession.Conn.Close()
 		return err
 	}
 

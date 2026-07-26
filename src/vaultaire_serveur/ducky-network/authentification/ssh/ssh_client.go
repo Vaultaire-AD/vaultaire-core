@@ -15,6 +15,8 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 		message = SSH_SEND_Pubkey_AUTH(trames_content)
 	case "04":
 		message = SSH_SEND_SALT(trames_content)
+	case "06":
+		message = SSH_SEND_Fetch_Pubkey(trames_content)
 	default:
 
 	}
@@ -99,4 +101,40 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nnonce error"
 	}
 	return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + username + "\n" + salt + "\n" + nonce
+}
+
+func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
+	content := strings.Split(strings.TrimSpace(trames_content.Content), "\n")
+	if len(content) < 1 || content[0] == "" {
+		logs.Write_Log("ERROR", "Malformed SSH fetch-key request")
+		return "" // Pas de reponse si la requete est malformee
+	}
+
+	db := database.GetDatabase()
+	sshUser := content[0]
+
+	// 1. Verification des droits (peut-il se connecter sur cette machine ?)
+	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
+	if err != nil || !can {
+		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID+" (fetch-key)")
+		return "" // Pas de reponse : on ne revele pas si le user existe ou non
+	}
+
+	// 2. Recuperation des clés publiques
+	userid, err := database.Get_User_ID_By_Username(db, sshUser)
+	if err != nil {
+		logs.Write_Log("ERROR", "User not found: "+sshUser+" (fetch-key)")
+		return ""
+	}
+
+	sshkeys, err := database.Get_PublicKeys_ByUserID(db, userid)
+	if err != nil {
+		logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser+" (fetch-key)")
+		return ""
+	}
+
+	logs.Write_Log("INFO", "Cles publiques transmises pour "+sshUser+" (fetch-key)")
+
+	sshkeyString := strings.Join(sshkeys, "\n")
+	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" + sshUser + "\n" + sshkeyString
 }

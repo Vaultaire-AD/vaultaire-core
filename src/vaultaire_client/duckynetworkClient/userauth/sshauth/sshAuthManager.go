@@ -86,9 +86,38 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		} else {
 			logs.Write_log("WARNING", fmt.Sprintf("Réception 03_05 pour %s mais aucun channel en attente", sshrequser))
 		}
+	case "07":
+		SSH_Handle_Fetch_Pubkey(trames_content)
 	default:
 		logs.Write_log("DEBUG", "Sous-ordre SSH 03_"+trames_content.Message_Order[1]+" non géré")
 	}
 
 	return message
+}
+
+func SSH_Handle_Fetch_Pubkey(trames_content storage.Trames_struct_client) {
+	// Format Content attendu: "vaultaire\n\n<username>\n<clé1>\n<clé2>..."
+	// (il y a une ligne vide en position 1 à cause du "\n"+"\n" dans SSH_SEND_Fetch_Pubkey)
+	lines := strings.Split(strings.TrimSpace(trames_content.Content), "\n")
+
+	if len(lines) < 3 {
+		logs.Write_log("ERROR", "Trame 03_07 malformee, champs manquants")
+		return
+	}
+
+	sshUser := lines[2]
+	sshKeys := strings.Join(lines[3:], "\n")
+
+	respChan, ok := sshreq.Pop(sshUser)
+	if !ok {
+		logs.Write_log("WARNING", fmt.Sprintf("Réception 03_07 pour %s mais aucun channel en attente", sshUser))
+		return
+	}
+
+	select {
+	case respChan <- storage.AuthResult{Type: "FETCH", SSHKeys: sshKeys}:
+		logs.Write_log("INFO", fmt.Sprintf("Cles publiques 03_07 transmises au channel pour %s", sshUser))
+	default:
+		logs.Write_log("WARNING", "Channel réponse SSH plein pour "+sshUser)
+	}
 }

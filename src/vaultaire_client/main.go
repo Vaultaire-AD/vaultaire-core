@@ -9,6 +9,7 @@ import (
 	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
+	"vaultaire_client/serveur_communication/module"
 	"vaultaire_client/storage"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
@@ -84,10 +85,14 @@ func main() {
 	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
 	flag.Parse()
 	if *fetchKey != "" {
+		sshUser := *fetchKey
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
 		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-		return
+		module.WaitForSSHFetch("vaultaire", sshUser, storage.DuckySessionLive)
+		// 🔥 AJOUTE CECI :
+		logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
+		os.Exit(0) // On force l'arrêt propre du binaire
 	} else {
 		StartDailyUserCleanup()
 		// Lancer le serveur de socket Unix
