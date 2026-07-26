@@ -37,9 +37,8 @@ func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
 	}
 
 	// 3. Le tunnel est OK, on envoie la demande 03_04
-	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s", sshUser))
-	msg := fmt.Sprintf("03_06\nserveur_central\n%s\n%s\n%s\n%s",
-		string(ds.SessionKey), user, storage.Computeur_ID, sshUser)
+	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s %s", sshUser, string(ds.SessionKey)))
+	msg := fmt.Sprintf("03_06\nserveur_central\n%s\n%s\n%s\n%s", string(ds.SessionKey), user, storage.Computeur_ID, sshUser)
 	sendmessage.SendMessage(msg, ds)
 
 	// 4. 🔥 TRÈS IMPORTANT : On attend ici la réponse du Manager avant de quitter la fonction
