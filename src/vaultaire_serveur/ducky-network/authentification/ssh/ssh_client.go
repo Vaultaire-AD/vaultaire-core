@@ -134,7 +134,7 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 		return ""
 	}
 
-	logs.Write_Log("INFO", "Cles publiques transmises pour "+sshUser+" (fetch-key)")
+	logs.Write_Log("INFO", "Cles publiques transmises pour "+sshUser+"@"+domaine+" (fetch-key)")
 
 	sshkeyString := strings.Join(sshkeys, "\n")
 	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" + sshUser + "@" + domaine + "\n" + sshkeyString
