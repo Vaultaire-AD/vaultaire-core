@@ -89,7 +89,7 @@ func main() {
 		// storage.SilentConsole = true
 		// Mode One-Shot pour SSH
 		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-		module.WaitForSSHFetch("vaultaire", sshUser, storage.DuckySessionLive)
+		module.WaitForSSHFetch("vaultaire", sshUser)
 		// 🔥 AJOUTE CECI :
 		logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
 		os.Exit(0) // On force l'arrêt propre du binaire

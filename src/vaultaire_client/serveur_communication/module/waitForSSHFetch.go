@@ -11,7 +11,7 @@ import (
 	"vaultaire_client/tools/sshreq"
 )
 
-func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
+func WaitForSSHFetch(user string, sshUser string) {
 	logs.Write_log("INFO", fmt.Sprintf("Attente de clé fetch pour requete SSH (%s)", sshUser))
 	// 1. On prépare le canal de réception
 	respChan := make(chan storage.AuthResult, 1)
@@ -35,7 +35,7 @@ func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
 		logs.Write_log("ERROR", "Le tunnel n'est pas devenu prêt à temps")
 		return
 	}
-
+	ds := storage.DuckySessionLive
 	// 3. Le tunnel est OK, on envoie la demande 03_04
 	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s %s", sshUser, string(ds.SessionKey)))
 	msg := fmt.Sprintf("03_06\nserveur_central\n%s\n%s\n%s\n%s", string(ds.SessionKey), user, storage.Computeur_ID, sshUser)

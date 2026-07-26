@@ -46,7 +46,7 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 			lines := strings.Split(string(message), "\n")
 			if lines[0] == "01_02" {
 				sessionIntegritykey := lines[2]
-				logs.Write_log("INFO", fmt.Sprintf("Serveur authentifié avec succès, sessionIntegritykey : %s", sessionIntegritykey))
+
 				data := strings.Join(lines[3:], "\n")
 				if bytes.Equal(auth.ServeurAUth, []byte(data)) {
 					logs.Print_Log("--------------------\nSERVEUR AUTHENTIFIER\n--------------------")
