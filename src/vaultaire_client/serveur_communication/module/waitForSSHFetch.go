@@ -26,8 +26,7 @@ func WaitForSSHFetch(user string, sshUser string, ds *storage.DuckySession) {
 			break
 		}
 		if status == sessionmgr.SessionFailed {
-			logs.Write_log("ERROR", "Le tunnel machine a échoué")
-			return
+			//Le Tunnel est pas pret donc on attend
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
