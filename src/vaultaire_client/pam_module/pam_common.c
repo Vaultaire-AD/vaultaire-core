@@ -48,7 +48,7 @@ void vaultaire_log_err(const char *fmt, ...) {
 }
 
 /* --- Validation des domaines & usernames --- */
-static const char *vaultaire_allowed_domains[] = { "corp.local", "vaultaire.internal" };
+static const char *vaultaire_allowed_domains[] = { "corp.local", "vaultaire.fr" };
 
 bool vaultaire_is_allowed_domain(const char *domain) {
     if (!domain || domain[0] == '\0') return false;
