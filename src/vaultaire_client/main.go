@@ -86,6 +86,11 @@ func main() {
 	flag.Parse()
 	if *fetchKey != "" {
 		sshUser := *fetchKey
+		_, domain := tools.ExctractDomainFromUsername(sshUser)
+		if domain != "" { // fonction équivalente à vaultaire_is_allowed_domain côté C
+			logs.Write_log("DEBUG", "Fetch-key ignoré (user local, pas de domaine Vaultaire): "+sshUser)
+			return
+		}
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
 		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
