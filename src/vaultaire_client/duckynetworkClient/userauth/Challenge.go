@@ -11,11 +11,15 @@ import (
 // computePasswordHash DOIT reproduire exactement la fonction utilisée à l'inscription
 // (même ordre password/salt, même algo, même encodage) — remplace le corps si besoin
 // pour qu'il matche bit à bit ce que tu as déjà en base.
-func computePasswordHash(password, salt string) []byte {
+func computePasswordHash(password, saltHex string) ([]byte, error) {
+	saltRaw, err := hex.DecodeString(saltHex)
+	if err != nil {
+		return nil, fmt.Errorf("salt hex invalide: %w", err)
+	}
 	h := sha256.New()
-	h.Write([]byte(password))
-	h.Write([]byte(salt))
-	return h.Sum(nil)
+	h.Write(saltRaw)          // salt EN PREMIER (comme create_User)
+	h.Write([]byte(password)) // puis password
+	return h.Sum(nil), nil
 }
 
 func buildAuthMessage(username, serverNonce, sessionID string) []byte {
@@ -30,7 +34,10 @@ func GenerateChallengeProof(username, password, salt, serverNonce, sessionID str
 		return "", errors.New("paramètre manquant")
 	}
 
-	passwordHash := computePasswordHash(password, salt)
+	passwordHash, err := computePasswordHash(password, salt)
+	if err != nil {
+		return "", err
+	}
 	defer func() {
 		for i := range passwordHash {
 			passwordHash[i] = 0

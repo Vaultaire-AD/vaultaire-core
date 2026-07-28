@@ -68,13 +68,15 @@ func VerifyChallengeProof(db *sql.DB, username, sessionID, clientProofHex string
 	if err != nil {
 		return false, err
 	}
-	storedHash, err := database.Get_User_Salt_By_UserID(db, userID)
+	storedHash, err := database.Get_User_PasswordHash_By_UserID(db, userID)
 	if err != nil {
 		return false, err
 	}
-	storedHashBytes := []byte(storedHash)
+	storedHashBytes, err := hex.DecodeString(storedHash)
+	if err != nil {
+		return false, errors.New("format de hash invalide en base")
+	}
 	authMessage := buildAuthMessage(username, pc.Nonce, sessionID)
-
 	mac := hmac.New(sha256.New, storedHashBytes)
 	mac.Write(authMessage)
 	expectedProof := mac.Sum(nil)
