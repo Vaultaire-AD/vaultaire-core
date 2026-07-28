@@ -1,6 +1,7 @@
 package sshclient
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 	"vaultaire/core/database"
@@ -27,7 +28,18 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	content := strings.Split(trames_content.Content, "\n")
 	if len(content) < 2 {
-		logs.Write_Log("ERROR", "Malformed CHECK TRAME THAT IS SEND")
+		logs.Write_Log(
+			"ERROR",
+			fmt.Sprintf(
+				"Malformed CHECK TRAME THAT IS SEND %s %s %s %s %s %s",
+				trames_content.Destination_Server,
+				trames_content.SessionIntegritykey,
+				trames_content.Username,
+				trames_content.Domain,
+				trames_content.ClientSoftwareID,
+				trames_content.Content,
+			),
+		)
 		return "02_07\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}

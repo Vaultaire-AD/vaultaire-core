@@ -3,11 +3,19 @@ package sendmessage
 import (
 	"encoding/binary"
 	"fmt"
+	"strings"
 	keyencodedecode "vaultaire_client/duckynetworkClient/key_encode_decode"
 	"vaultaire_client/duckynetworkClient/keymanagement"
 	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 )
+
+// Côté client
+func BuildClientTrame(action, dest, sessionKey, username, clientID string, contentLines ...string) string {
+	parts := []string{action, dest, sessionKey, username, clientID}
+	parts = append(parts, contentLines...)
+	return strings.Join(parts, "\n")
+}
 
 func CompileMessageSize(message []byte) []byte {
 	sizeBytes := make([]byte, 2)

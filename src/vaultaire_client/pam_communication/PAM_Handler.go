@@ -90,7 +90,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	defer sshreq.Remove(req.User)
 
 	// ⚠️ ordre de message a confirmer (celui qui route vers SSH_SEND_Pubkey_AUTH côté serveur)
-	proofMsg := "03_01\nserveur_central\n" + string(storage.DuckySessionLive.SessionKey) + "\nvaultaire\n" + storage.Computeur_ID + "\n" + req.User + "\n" + proof
+	proofMsg := sendmessage.BuildClientTrame("03_01", "serveur_central", string(storage.DuckySessionLive.SessionKey), "vaultaire", storage.Computeur_ID, req.User, proof)
 	sendmessage.SendMessage(proofMsg, storage.DuckySessionLive)
 	//----------------------------------------------------------------
 	// --- Etape 2 : envoi de la preuve, attente du resultat final ---
