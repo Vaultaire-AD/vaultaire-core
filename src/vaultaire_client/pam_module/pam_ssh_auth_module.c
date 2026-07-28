@@ -13,14 +13,19 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     const char *username = NULL;
     const char *password = NULL;
 
-    if (pam_get_user(pamh, &username, NULL) != PAM_SUCCESS || !username)
+    if (pam_get_user(pamh, &username, NULL) != PAM_SUCCESS || !username) {
+        vaultaire_log_err("pam_get_user failed");
         return PAM_USER_UNKNOWN;
+    }
 
-    if (!is_vaultaire_user(username) || !vaultaire_is_valid_username(username))
+    if (!is_vaultaire_user(username) || !vaultaire_is_valid_username(username)) {
+        vaultaire_log_info("User %s ignored (not vaultaire domain or invalid)", username);
         return PAM_IGNORE;
+    }
 
     // Optionnel : Récupération du password MFA si transmis via la conv SSH
     pam_get_authtok(pamh, PAM_AUTHTOK, &password, NULL);
+    vaultaire_log_info("Password retrieved (len=%zu)", password ? strlen(password) : 0);
 
     // 1. Demande des clés au Daemon Vaultaire
     char req[VAULTAIRE_MAX_BUF];
@@ -32,7 +37,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         vaultaire_log_err("SSH pre-auth failed via socket for %s", username);
         return PAM_AUTHINFO_UNAVAIL;
     }
-
+    vaultaire_log_info("Socket response received for %s: %s", username, resp);
     char status[32] = {0};
     bool is_admin = false;
     vaultaire_json_get_string(resp, "status", status, sizeof(status));
