@@ -50,7 +50,7 @@ func IssueChallenge(sessionID string) (nonce string, err error) {
 
 // VerifyChallengeProof vérifie la preuve envoyée par le client, sans jamais
 // avoir eu accès au mot de passe ni l'avoir reçu sur le réseau.
-func VerifyChallengeProof(db *sql.DB, username, sessionID, clientProofHex string) (bool, error) {
+func VerifyChallengeProof(db *sql.DB, username, fullUsername, sessionID, clientProofHex string) (bool, error) {
 	challengeStore.Lock()
 	pc, ok := challengeStore.m[sessionID]
 	if ok {
@@ -76,7 +76,7 @@ func VerifyChallengeProof(db *sql.DB, username, sessionID, clientProofHex string
 	if err != nil {
 		return false, errors.New("format de hash invalide en base")
 	}
-	authMessage := buildAuthMessage(username, pc.Nonce, sessionID)
+	authMessage := buildAuthMessage(fullUsername, pc.Nonce, sessionID)
 	mac := hmac.New(sha256.New, storedHashBytes)
 	mac.Write(authMessage)
 	expectedProof := mac.Sum(nil)

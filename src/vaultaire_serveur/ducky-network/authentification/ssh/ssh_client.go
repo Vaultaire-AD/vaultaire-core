@@ -47,7 +47,7 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	fullUsername := content[0] // "admin@vaultaire.fr" — NE PAS le strip pour le HMAC
 	sshUser, domaine := domain.ExctractDomainFromUsername(content[0])
 	proof := content[1]
-	isauth, err := VerifyChallengeProof(db, fullUsername, trames_content.SessionIntegritykey, proof)
+	isauth, err := VerifyChallengeProof(db, sshUser, fullUsername, trames_content.SessionIntegritykey, proof)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error verifying challenge proof for user "+fullUsername+": "+err.Error())
 		return "02_07\nserveur_central\n" +
