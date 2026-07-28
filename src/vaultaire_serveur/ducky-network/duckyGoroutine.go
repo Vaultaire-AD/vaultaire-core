@@ -74,6 +74,7 @@ func checkServeurOnline() {
 func verifyServersOnline() {
 	for _, sess := range sessionmgr.Sessions.ListAuthenticated() {
 		pingServer(sess)
+		CheckClientOnline(sess)
 
 	}
 }
