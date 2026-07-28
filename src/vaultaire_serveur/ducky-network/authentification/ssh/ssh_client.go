@@ -44,13 +44,14 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}
 	db := database.GetDatabase()
+	fullUsername := content[0] // "admin@vaultaire.fr" — NE PAS le strip pour le HMAC
 	sshUser, domaine := domain.ExctractDomainFromUsername(content[0])
 	proof := content[1]
-	isauth, err := VerifyChallengeProof(db, sshUser, trames_content.SessionIntegritykey, proof)
+	isauth, err := VerifyChallengeProof(db, fullUsername, trames_content.SessionIntegritykey, proof)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error verifying challenge proof for user "+sshUser+": "+err.Error())
+		logs.Write_Log("ERROR", "Error verifying challenge proof for user "+fullUsername+": "+err.Error())
 		return "02_07\nserveur_central\n" +
-			trames_content.SessionIntegritykey + "\n" + sshUser + "\nverification error"
+			trames_content.SessionIntegritykey + "\n" + fullUsername + "\nverification error"
 	}
 	if isauth {
 		// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
