@@ -44,3 +44,49 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                           |
 | serveur                     |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                    |
 |                             |             |               |                                  |                                                                                     |
+
+
+## Format Client → Serveur
+
+```go
+lines := strings.Split(trames, "\n")
+action              = lines[0]          // "XX_YY"
+Destination_Server  = lines[1]
+SessionIntegritykey = lines[2]
+Username            = lines[3]          // peut contenir un domaine (ex: admin@vaultaire.fr)
+ClientSoftwareID    = lines[4]
+Content             = lines[5:]         // tout le reste, rejoint par \n
+
+//Structure exacte à respecter, ligne par ligne :
+XX_YY
+<destination>
+<session_integrity_key>
+<username>
+<client_software_id>
+<contenu ligne 1>
+<contenu ligne 2>
+...
+
+//EXEMPLE
+msg := "03_04\nserveur_central\n" + SessionKey + "\nvaultaire\n" + Computeur_ID + "\n" + req.User
+```
+
+## Format Serveur → Client
+
+```go
+lines := strings.Split(trames, "\n")
+action              = lines[0]          // "XX_YY"
+Destination_Server  = lines[1]
+SessionIntegritykey = lines[2]
+Content             = lines[3:]         // tout le reste, rejoint par \n
+
+//Structure exacte à respecter :
+XX_YY
+<destination>
+<session_integrity_key>
+<contenu ligne 1>
+<contenu ligne 2>
+...
+//EXEMPLE
+return "03_05\nserveur_central\n" + SessionIntegritykey + "\nvaultaire\n" + sshUser + "\n" + salt + "\n" + nonce
+```
