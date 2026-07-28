@@ -9,7 +9,6 @@ import (
 	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
-	"vaultaire_client/serveur_communication/module"
 	"vaultaire_client/storage"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
@@ -94,7 +93,7 @@ func main() {
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
 		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-		module.WaitForSSHFetch("vaultaire", sshUser)
+		serveurcommunication.WaitForSSHFetch("vaultaire", sshUser)
 		// 🔥 AJOUTE CECI :
 		logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
 		os.Exit(0) // On force l'arrêt propre du binaire

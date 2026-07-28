@@ -1,13 +1,13 @@
-package module
+package serveurcommunication
 
 import (
 	"fmt"
 	"time"
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/logs"
-	"vaultaire_client/sessionmgr"
 	"vaultaire_client/storage"
 	"vaultaire_client/storage/stosession"
+	sto_session "vaultaire_client/storage/stosession"
 	"vaultaire_client/tools/sshreq"
 )
 
@@ -17,25 +17,11 @@ func WaitForSSHFetch(user string, sshUser string) {
 	respChan := make(chan storage.AuthResult, 1)
 	sshreq.Register(sshUser, respChan)
 
-	// 2. Boucle d'attente du TUNNEL (on vérifie la session machine "user" qui est "vaultaire")
-	tunnelReady := false
-	for i := 0; i < 2000; i++ { // Timeout de 100s (500 * 200ms)
-		status, ok := stosession.SessionsUser.GetStatus(user) // "user" ici est "vaultaire"
-		if ok && status == sessionmgr.SessionAuthenticated {
-			tunnelReady = true
-			break
-		}
-		if status == sessionmgr.SessionFailed {
-			//Le Tunnel est pas pret donc on attend
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-
-	if !tunnelReady {
-		logs.Write_log("ERROR", "Le tunnel n'est pas devenu prêt à temps")
-		return
-	}
-	ds := storage.DuckySessionLive
+	// 2. Boucle d'attente du TUNNEL : on interroge le manager de sessions
+	// pour une session "vaultaire" authentifiée et utilisable (il peut y en
+	// avoir plusieurs ; on en prend une, la première valide).
+	sess := sto_session.SessionsUser.GetValidVaultaireSession()
+	ds := sess.DuckySession
 	// 3. Le tunnel est OK, on envoie la demande 03_04
 	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s", sshUser))
 	msg := fmt.Sprintf("03_06\nserveur_central\n%s\n%s\n%s\n%s", string(ds.SessionKey), user, storage.Computeur_ID, sshUser)
@@ -59,6 +45,11 @@ func WaitForSSHFetch(user string, sshUser string) {
 	msg = fmt.Sprintf("02_05\nserveur_central\n%s\n%s\n%s\n%s",
 		string(ds.SessionKey), user, storage.Computeur_ID)
 	sendmessage.SendMessage(msg, ds)
-	storage.DuckySessionLive.Conn.Close()
-	logs.Write_log("INFO", "Fin du WaitForSSHFetch pour "+sshUser)
+	// On ferme via RemoveSession (par SessionID) plutôt qu'un
+	// storage.DuckySessionLive.Conn.Close() direct : ça évite de fermer une
+	// connexion différente si une reconnexion a eu lieu entre-temps, et ça
+	// nettoie la map au lieu de laisser une entrée fantôme jusqu'au prochain
+	// timeout.
+	stosession.SessionsUser.RemoveSession(ds.SessionID)
+	logs.Write_log("INFO", fmt.Sprintf("Fin du WaitForSSHFetch pour %s (session id=%s)", sshUser, ds.SessionID))
 }

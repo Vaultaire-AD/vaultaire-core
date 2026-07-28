@@ -1,14 +1,10 @@
 package tools
 
-import "vaultaire_client/storage"
+import sto_session "vaultaire_client/storage/stosession"
 
-// IsDuckySessionActive vérifie si la session globale DuckySession existe et est prête à l'emploi.
+// IsDuckySessionActive vérifie s'il existe au moins une session "vaultaire"
+// authentifiée et utilisable (il peut y en avoir plusieurs ; on n'a besoin
+// de savoir que si au moins une est disponible).
 func IsDuckySessionActive() bool {
-	if storage.DuckySessionLive == nil || storage.DuckySessionLive.Conn == nil {
-		return false
-	}
-	if !storage.DuckySessionLive.IsSafe {
-		return false
-	}
-	return true
+	return sto_session.SessionsUser.GetValidVaultaireSession() != nil
 }

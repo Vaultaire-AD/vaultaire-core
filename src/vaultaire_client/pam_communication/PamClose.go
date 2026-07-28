@@ -33,24 +33,31 @@ func handleCloseRequest(conn net.Conn, payload string) {
 
 	logs.Write_log("INFO", fmt.Sprintf("Demande de fermeture de session reçue pour: %s", closeReq.User))
 
-	// Récupération de la session ACTIVE via ton nouveau système
-	duckysession, exist := sto_session.SessionsUser.GetDuckySession(closeReq.User)
-
-	if !exist {
-		logs.Write_log("WARNING", fmt.Sprintf("Tentative de fermeture pour %s mais aucune connexion active trouvée", closeReq.User))
+	// Le hook PAM ne connaît que le username, pas le SessionID. ResolveForClose
+	// détermine QUELLE session cibler :
+	//   - username normal : la session correspondante (la plus récente s'il y
+	//     en a plusieurs) ;
+	//   - "vaultaire" : la session machine la plus récente, sauf s'il n'en
+	//     reste qu'une et que ce noeud est un serveur (auquel cas on refuse,
+	//     ok=false, pour ne pas couper le tunnel machine).
+	target, ok := sto_session.SessionsUser.ResolveForClose(closeReq.User)
+	if !ok {
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"Tentative de fermeture pour %s : aucune session fermable trouvée (déjà fermée, ou dernière session machine protégée)",
+			closeReq.User))
 		return
 	}
+	duckysession := target.DuckySession
 
-	// 1. Préparer et envoyer le message de clôture au serveur central
-	// On utilise la session récupérée dynamiquement
+	// 1. Préparer et envoyer le message de clôture au serveur central,
+	// sur la connexion de la session ciblée
 	message := fmt.Sprintf("02_05\nserveur_central\n%s\n%s\nclose", closeReq.User, storage.Computeur_ID)
-
-	// SendMessage doit utiliser la connexion présente dans duckysession
-
 	sendmessage.SendMessage(message, duckysession)
 
-	// 2. NETTOYAGE CRITIQUE : on supprime des deux côtés
-	sto_session.SessionsUser.Delete(closeReq.User) // Supprime du manager de sessions (et ferme le socket TCP)
+	// 2. NETTOYAGE CRITIQUE : on supprime des deux côtés, par SessionID (pas
+	// par username, qui peut correspondre à plusieurs sessions)
+	sto_session.SessionsUser.RemoveSession(target.SessionID)
 
-	logs.Write_log("INFO", fmt.Sprintf("Session %s proprement fermée et retirée des registres", closeReq.User))
+	logs.Write_log("INFO", fmt.Sprintf(
+		"Session %s (id=%s) proprement fermée et retirée des registres", closeReq.User, target.SessionID))
 }

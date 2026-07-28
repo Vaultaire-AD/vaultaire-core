@@ -34,7 +34,12 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 		lines := strings.Split(trames_content.Content, "\n")
 		username := lines[0]
 
-		logs.Write_log("INFO", username+" authentifié succès admin="+lines[1])
+		logs.Write_log("INFO", fmt.Sprintf("%s authentifié succès admin=%s (session id=%s)", username, lines[1], duckysession.SessionID))
+
+		// Cette session a été enregistrée en Pending dès l'ouverture de la
+		// connexion (EnableServerCommunication) ; on la marque Authenticated
+		// maintenant que le serveur a confirmé le login.
+		sto_session.SessionsUser.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
 
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
@@ -67,12 +72,12 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 		username := lines[0]
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
-		sto_session.SessionsUser.AddOrUpdate(
-			username,
-			duckysession.Conn,
-			sessionmgr.SessionAuthenticated,
-			duckysession,
-		)
+		logs.Write_log("INFO", fmt.Sprintf("%s en ligne (session id=%s)", username, duckysession.SessionID))
+
+		// La session vaultaire a déjà été enregistrée (Pending) sous
+		// MotherSessionID dès l'ouverture de la connexion ; on la passe
+		// simplement à Authenticated, sans la réenregistrer par username.
+		sto_session.SessionsUser.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
 
 		message = "02_12\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" +

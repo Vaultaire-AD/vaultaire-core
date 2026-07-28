@@ -6,6 +6,7 @@ import (
 	serveur "vaultaire_client/duckynetworkClient/serveurauth"
 	"vaultaire_client/duckynetworkClient/userauth"
 	"vaultaire_client/logs"
+	"vaultaire_client/sessionmgr"
 	"vaultaire_client/storage"
 )
 
@@ -17,8 +18,14 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 	}
 
 	ds := &storage.DuckySession{
-		Conn:   conn,
-		IsSafe: false,
+		Conn: conn,
+		// SessionID est généré ici, avant toute poignée de main : la session
+		// est adressable dès sa création, pas seulement une fois l'auth
+		// terminée. Pour la session machine "vaultaire", cet ID est ensuite
+		// remplacé par la clé réservée sessionmgr.MotherSessionID par
+		// l'appelant (EnableServerCommunication).
+		SessionID: sessionmgr.NewSessionID(),
+		IsSafe:    false,
 	}
 
 	// Gestion des clés serveur

@@ -6,12 +6,11 @@ import (
 	"net"
 	"time"
 
+	duckytool "vaultaire_client/duckynetworkClient/ducky_tool"
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/duckynetworkClient/userauth"
 	"vaultaire_client/logs"
-	serveurcommunication "vaultaire_client/serveur_communication"
 	"vaultaire_client/storage"
-	"vaultaire_client/tools"
 	"vaultaire_client/tools/sshreq"
 )
 
@@ -42,18 +41,12 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	sshreq.Register(req.User, saltChan)
 	defer sshreq.Remove(req.User)
 
-	// 3. Appel vers le serveur backend Vaultaire
-	if tools.IsDuckySessionActive() {
-
-	} else {
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-		time.Sleep(500 * time.Millisecond) // Attente pour que le serveur traite la requete
-	}
+	sess := duckytool.OpenVaultaireDefaultSession()
 	//----------------------------------------
 	// --- Etape 1 : demande du salt/nonce ---
 	//----------------------------------------
-	var msg = "03_04\nserveur_central\n" + string(storage.DuckySessionLive.SessionKey) + "\n" + "vaultaire" + "\n" + storage.Computeur_ID + "\n" + req.User
-	sendmessage.SendMessage(msg, storage.DuckySessionLive)
+	var msg = "03_04\nserveur_central\n" + string(sess.DuckySession.SessionKey) + "\n" + "vaultaire" + "\n" + storage.Computeur_ID + "\n" + req.User
+	sendmessage.SendMessage(msg, sess.DuckySession)
 
 	// 4. Attente du resultat ou du Timeout
 	statusRep := "failed"
@@ -79,7 +72,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		return
 	}
 	// --- Calcul de la preuve ---
-	proof, err := userauth.GenerateChallengeProof(req.User, req.Password, salt, nonce, string(storage.DuckySessionLive.SessionKey))
+	proof, err := userauth.GenerateChallengeProof(req.User, req.Password, salt, nonce, string(sess.DuckySession.SessionKey))
 	if err != nil {
 		logs.Write_log("ERROR", fmt.Sprintf("[%s] Erreur generation proof pour %s: %v", reqType, req.User, err))
 		sendResponse(conn, Response{Status: "failed"})
@@ -91,8 +84,8 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 
 	// ⚠️ ordre de message a confirmer (celui qui route vers SSH_SEND_Pubkey_AUTH côté serveur)
 	logs.Write_log("DEBUG", fmt.Sprintf("CLIENT SOFTWARE ID: %s", storage.Computeur_ID))
-	proofMsg := sendmessage.BuildClientTrame("03_01", "serveur_central", string(storage.DuckySessionLive.SessionKey), "vaultaire", storage.Computeur_ID, req.User, proof)
-	sendmessage.SendMessage(proofMsg, storage.DuckySessionLive)
+	proofMsg := sendmessage.BuildClientTrame("03_01", "serveur_central", string(sess.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID, req.User, proof)
+	sendmessage.SendMessage(proofMsg, sess.DuckySession)
 	//----------------------------------------------------------------
 	// --- Etape 2 : envoi de la preuve, attente du resultat final ---
 	//----------------------------------------------------------------

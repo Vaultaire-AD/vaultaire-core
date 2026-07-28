@@ -17,9 +17,10 @@ type Trames_struct struct {
 }
 
 type DuckySession struct {
+	SessionID  string
 	Conn       net.Conn
 	IsSafe     bool
 	SessionKey []byte
 }
 
-var DuckySessionLive *DuckySession
+// var DuckySessionLive *DuckySession

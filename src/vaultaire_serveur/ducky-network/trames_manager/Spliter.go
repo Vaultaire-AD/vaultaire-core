@@ -43,7 +43,7 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 				message = msg
 			}
 		default:
-			print("FEUR")
+			logs.Write_Log("WARNING", "Unknown service: "+service[0])
 		}
 		if message == "" {
 

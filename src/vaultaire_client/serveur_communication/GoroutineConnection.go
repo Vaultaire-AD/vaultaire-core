@@ -15,9 +15,10 @@ func handleConnection(user string, duckysession *storage.DuckySession) {
 			logs.Write_log("ERROR", fmt.Sprintf("Panic récupéré dans handleConnection pour %s: %v", user, r))
 		}
 		duckysession.Conn.Close()
-		// On supprime de la map pour que la boucle de check SSH sorte aussi si besoin
-		sto_session.SessionsUser.Delete(user)
-		logs.Write_log("INFO", fmt.Sprintf("Flux terminé pour %s, socket fermé", user))
+		// On supprime de la map (par SessionID, pas par username) pour que la
+		// boucle de check SSH sorte aussi si besoin
+		sto_session.SessionsUser.RemoveSession(duckysession.SessionID)
+		logs.Write_log("INFO", fmt.Sprintf("Flux terminé pour %s (session id=%s), socket fermé", user, duckysession.SessionID))
 	}()
 
 	for {
@@ -29,7 +30,7 @@ func handleConnection(user string, duckysession *storage.DuckySession) {
 		}
 
 		// Si on a lu quelque chose, on rafraîchit le LastSeen pour le cleanupLoop
-		sto_session.SessionsUser.Touch(user)
+		sto_session.SessionsUser.Touch(duckysession.SessionID)
 
 		if headerSize != 0 {
 			messagesize, err := br.Read_Message_Size(duckysession.Conn, headerSize)
