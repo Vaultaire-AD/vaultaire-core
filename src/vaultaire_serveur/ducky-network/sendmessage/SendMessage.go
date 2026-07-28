@@ -29,8 +29,10 @@ func CompileHeaderSize(messageSize []byte) byte {
 }
 
 func SendMessage(message string, clientSoftwareID string, duckysession *storage.DuckySession) error {
+	meta := logs.WithMeta(duckysession.SessionID, clientSoftwareID)
+
 	if duckysession.Conn == nil {
-		logs.Write_Log("ERROR", "Connection is nil")
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Connection is nil", meta)
 		return fmt.Errorf("connection is nil")
 	}
 
@@ -41,14 +43,14 @@ func SendMessage(message string, clientSoftwareID string, duckysession *storage.
 		// Chiffrement symétrique AES-GCM
 		cipherMsg, err = keydecodeencode.EncryptAESGCMString(duckysession.SessionKey, message)
 		if err != nil {
-			logs.Write_Log("ERROR", "Error during symmetric encryption: "+err.Error())
+			logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Error during symmetric encryption: "+err.Error(), meta)
 			return err
 		}
 	} else {
 		// Chiffrement asymétrique RSA
 		cipherBytes, err := keydecodeencode.EncryptMessageWithClientPublic(message, clientSoftwareID)
 		if err != nil {
-			logs.Write_Log("ERROR", "Error during asymmetric encryption: "+err.Error())
+			logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Error during asymmetric encryption: "+err.Error(), meta)
 			return err
 		}
 		cipherMsg = string(cipherBytes)
@@ -61,13 +63,10 @@ func SendMessage(message string, clientSoftwareID string, duckysession *storage.
 
 	// Envoi du message
 	if _, err := duckysession.Conn.Write(data); err != nil {
-		defer func() {
-			if cerr := duckysession.Conn.Close(); cerr != nil {
-				logs.Write_Log("ERROR", "Error closing connection: "+cerr.Error())
-			}
-		}()
-		logs.Write_Log("ERROR", "Error sending message: "+err.Error())
-		duckysession.Conn.Close()
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Error sending message: "+err.Error(), meta)
+		if cerr := duckysession.Conn.Close(); cerr != nil {
+			logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Error closing connection: "+cerr.Error(), meta)
+		}
 		return err
 	}
 

@@ -195,97 +195,98 @@ func (m *Manager) Touch(sessionID string) {
 	}
 }
 
-// func (m *Manager) cleanupLoop() {
-// 	ticker := time.NewTicker(1 * time.Minute)
-// 	defer ticker.Stop()
-
-// 	for range ticker.C {
-// 		now := time.Now()
-// 		m.mu.Lock()
-// 		for id, s := range m.sessions {
-// 			// On ne check QUE le timeout d'inactivité
-// 			// Si aucune donnée n'a transité depuis m.timeout
-// 			if now.Sub(s.LastSeen) > m.timeout {
-// 				logs.Write_log("WARNING", fmt.Sprintf(
-// 					"Session timeout pour %s (id=%s). Fermeture du tunnel.", s.Username, id))
-// 				if s.Conn != nil {
-// 					_ = s.Conn.Close()
-// 				}
-// 				delete(m.sessions, id)
-// 			}
-// 		}
-// 		m.mu.Unlock()
-// 	}
-// }
-
 func (m *Manager) cleanupLoop() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
 		now := time.Now()
-
 		m.mu.Lock()
-
-		logs.Write_log("DEBUG", fmt.Sprintf(
-			"=== Nettoyage sessions (%d sessions actives) ===",
-			len(m.sessions),
-		))
-
 		for id, s := range m.sessions {
-
-			inactive := now.Sub(s.LastSeen)
-
-			logs.Write_log("DEBUG", fmt.Sprintf(
-				"Session id=%s user=%s inactive depuis=%v timeout=%v",
-				id,
-				s.Username,
-				inactive,
-				m.timeout,
-			))
-
-			if inactive > m.timeout {
-
+			// On ne check QUE le timeout d'inactivité
+			// Si aucune donnée n'a transité depuis m.timeout
+			if now.Sub(s.LastSeen) > m.timeout {
 				logs.Write_log("WARNING", fmt.Sprintf(
-					"Session timeout pour %s (id=%s). Fermeture du tunnel.",
-					s.Username,
-					id,
-				))
-
+					"Session timeout pour %s (id=%s). Fermeture du tunnel.", s.Username, id))
 				if s.Conn != nil {
-					err := s.Conn.Close()
-					if err != nil {
-						logs.Write_log("ERROR", fmt.Sprintf(
-							"Erreur fermeture connexion id=%s : %v",
-							id,
-							err,
-						))
-					} else {
-						logs.Write_log("DEBUG", fmt.Sprintf(
-							"Connexion fermée id=%s",
-							id,
-						))
-					}
+					_ = s.Conn.Close()
 				}
-
 				delete(m.sessions, id)
-
-				logs.Write_log("DEBUG", fmt.Sprintf(
-					"Session supprimée id=%s",
-					id,
-				))
-
-			} else {
-
-				logs.Write_log("DEBUG", fmt.Sprintf(
-					"Session conservée id=%s",
-					id,
-				))
 			}
 		}
-
 		m.mu.Unlock()
-
-		logs.Write_log("DEBUG", "=== Fin nettoyage sessions ===")
 	}
 }
+
+// //FOR DEBUG : Affiche les sessions en cours et leur statut
+// func (m *Manager) cleanupLoop() {
+// 	ticker := time.NewTicker(1 * time.Minute)
+// 	defer ticker.Stop()
+
+// 	for range ticker.C {
+// 		now := time.Now()
+
+// 		m.mu.Lock()
+
+// 		logs.Write_log("DEBUG", fmt.Sprintf(
+// 			"=== Nettoyage sessions (%d sessions actives) ===",
+// 			len(m.sessions),
+// 		))
+
+// 		for id, s := range m.sessions {
+
+// 			inactive := now.Sub(s.LastSeen)
+
+// 			logs.Write_log("DEBUG", fmt.Sprintf(
+// 				"Session id=%s user=%s inactive depuis=%v timeout=%v",
+// 				id,
+// 				s.Username,
+// 				inactive,
+// 				m.timeout,
+// 			))
+
+// 			if inactive > m.timeout {
+
+// 				logs.Write_log("WARNING", fmt.Sprintf(
+// 					"Session timeout pour %s (id=%s). Fermeture du tunnel.",
+// 					s.Username,
+// 					id,
+// 				))
+
+// 				if s.Conn != nil {
+// 					err := s.Conn.Close()
+// 					if err != nil {
+// 						logs.Write_log("ERROR", fmt.Sprintf(
+// 							"Erreur fermeture connexion id=%s : %v",
+// 							id,
+// 							err,
+// 						))
+// 					} else {
+// 						logs.Write_log("DEBUG", fmt.Sprintf(
+// 							"Connexion fermée id=%s",
+// 							id,
+// 						))
+// 					}
+// 				}
+
+// 				delete(m.sessions, id)
+
+// 				logs.Write_log("DEBUG", fmt.Sprintf(
+// 					"Session supprimée id=%s",
+// 					id,
+// 				))
+
+// 			} else {
+
+// 				logs.Write_log("DEBUG", fmt.Sprintf(
+// 					"Session conservée id=%s",
+// 					id,
+// 				))
+// 			}
+// 		}
+
+// 		m.mu.Unlock()
+
+// 		logs.Write_log("DEBUG", "=== Fin nettoyage sessions ===")
+// 	}
+// }

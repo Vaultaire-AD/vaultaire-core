@@ -5,6 +5,7 @@ import (
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	keymanagement "vaultaire/ducky-network/key_management"
+	"vaultaire/ducky-network/sessionmgr"
 	sync "vaultaire/ducky-network/sync"
 )
 
@@ -50,10 +51,17 @@ func acceptConnections(listener net.Listener) {
 			logs.Write_LogCode("WARNING", logs.CodeNetConnection, "ducky: error accepting new connection: "+err.Error())
 			continue
 		}
-		var duckysession storage.DuckySession
-		duckysession.Conn = conn
-		duckysession.IsSafe = false
-		go handleConnection(&duckysession)
+		duckysession := &storage.DuckySession{
+			Conn:   conn,
+			IsSafe: false,
+			// SessionID est prêt dès l'accept(), avant la moindre trame lue :
+			// la connexion est traçable dans les logs depuis l'instant zéro.
+			// Il sera remplacé par le SessionIntegritykey réel une fois la
+			// poignée de main initiale terminée (voir authservermanager.go).
+			SessionID: sessionmgr.NewSessionID(),
+		}
+		sessionmgr.Sessions.AddOrUpdate(duckysession.SessionID, conn, sessionmgr.SessionPending, duckysession)
+		go handleConnection(duckysession)
 	}
 }
 

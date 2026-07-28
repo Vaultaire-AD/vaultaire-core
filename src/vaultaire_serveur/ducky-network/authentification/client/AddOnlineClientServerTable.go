@@ -2,18 +2,17 @@ package client
 
 import (
 	"vaultaire/core/logs"
-	"vaultaire/core/storage"
 )
 
-// This function should be called when a new client connects
-func addOnlineServerToTable(username string, clientsoftwareId string, sessionIntegritykey string, duckysession *storage.DuckySession) {
-	logs.Write_Log("INFO", "Adding a new server to the online_local list : "+clientsoftwareId+" with username: "+username)
-	storage.Serveur_Online = append(storage.Serveur_Online, storage.Is_Serveur_Online{
-		Client_ID:           clientsoftwareId,
-		Username:            username,
-		Duckysession:        duckysession,
-		Failed_Time:         0,
-		SessionIntegritykey: sessionIntegritykey,
-	})
-	logs.Write_Log("INFO", "Add a new server to the online_local list : "+clientsoftwareId)
+// addOnlineServerToTable trace l'entrée en ligne d'un serveur pair (username
+// "vaultaire"). L'état lui-même est déjà porté par sessionmgr.Sessions
+// (SetIdentity + SetStatus appelés par l'appelant juste avant) : le
+// heartbeat dans duckyGoroutine.go parcourt maintenant TOUTES les sessions
+// authentifiées (sessionmgr.Sessions.ListAuthenticated()), pas seulement
+// celles en "vaultaire". Cette fonction ne fait donc plus que logguer, mais
+// elle garde son nom pour que l'étape reste visible et grep-able dans le
+// flux de CheckAuth.
+func addOnlineServerToTable(sessionID, username, clientSoftwareID string) {
+	logs.Write_LogCodeMeta("INFO", logs.CodeNone,
+		"New peer server online: "+clientSoftwareID, logs.WithMeta(sessionID, username))
 }

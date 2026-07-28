@@ -40,7 +40,7 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 		// connexion (EnableServerCommunication) ; on la marque Authenticated
 		// maintenant que le serveur a confirmé le login.
 		sto_session.SessionsUser.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
-
+		sto_session.SessionsUser.Touch(duckysession.SessionID)
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
 		message = "02_12\nserveur_central\n" +

@@ -13,4 +13,7 @@ type Authentification_Challenge_server struct {
 	Challenge string
 }
 
-var StorageAuth []Authentification
+// Le stockage des challenges en attente (StorageAuth) a été déplacé dans le
+// package vaultaire/ducky-network/authentification/client (voir
+// authStore.go) : c'est maintenant une map protégée par mutex plutôt qu'une
+// slice globale mutée sans synchronisation depuis plusieurs goroutines.

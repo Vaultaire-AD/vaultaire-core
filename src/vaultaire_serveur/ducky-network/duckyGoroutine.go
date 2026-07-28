@@ -1,11 +1,13 @@
 package duckynetwork
 
 import (
+	"fmt"
 	"time"
 	db "vaultaire/core/database"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
+	"vaultaire/ducky-network/sessionmgr"
 	tm "vaultaire/ducky-network/trames_manager"
 )
 
@@ -15,9 +17,9 @@ import (
 
 // handleConnection gère une nouvelle connexion client.
 func handleConnection(duckysession *storage.DuckySession) {
-	defer closeConnection(duckysession)
-
-	logs.Write_Log("INFO", "New connection established: "+duckysession.Conn.RemoteAddr().String())
+	logs.Write_LogCodeMeta("INFO", logs.CodeNone,
+		"New connection established: "+duckysession.Conn.RemoteAddr().String(),
+		logs.WithMeta(duckysession.SessionID, ""))
 
 	for processIncomingMessage(duckysession) {
 		// rien à mettre ici : processIncomingMessage gère tout
@@ -32,19 +34,22 @@ func processIncomingMessage(duckysession *storage.DuckySession) bool {
 		return false
 	}
 
+	sessionmgr.Sessions.Touch(duckysession.SessionID)
+
 	messageSize := tm.Read_Message_Size(duckysession.Conn, headerSize)
 	tm.MessageReader(duckysession, messageSize)
 	return true
 }
 
-// closeConnection ferme proprement une connexion et log si erreur.
+// closeConnection retire la session du registre (ce qui ferme le socket) et
+// log la fin de connexion avec son SessionID, pour rester traçable même
+// quand plusieurs connexions se terminent en même temps.
 func closeConnection(duckysession *storage.DuckySession) {
 	if duckysession == nil || duckysession.Conn == nil {
 		return
 	}
-	if err := duckysession.Conn.Close(); err != nil {
-		logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
-	}
+	sessionmgr.Sessions.RemoveSession(duckysession.SessionID)
+	logs.Write_LogCodeMeta("INFO", logs.CodeNone, "Connection closed", logs.WithMeta(duckysession.SessionID, ""))
 }
 
 //
@@ -61,40 +66,74 @@ func checkServeurOnline() {
 	}
 }
 
-// verifyServersOnline parcourt la liste des serveurs et vérifie leur état.
+// verifyServersOnline parcourt TOUTES les sessions authentifiées (anciens
+// Serveur_Online, qui ne couvrait que les pairs "vaultaire") et vérifie leur
+// état. ListAuthenticated renvoie un instantané pris sous verrou : on peut
+// le parcourir et supprimer des entrées du registre sans risque de
+// corruption d'index concurrente.
 func verifyServersOnline() {
-	for i := 0; i < len(storage.Serveur_Online); {
-		serveur := storage.Serveur_Online[i]
-		if !pingServer(serveur) {
-			removeOfflineServer(i, serveur)
-			continue // ne pas incrémenter car la slice a bougé
-		}
-		i++
+	for _, sess := range sessionmgr.Sessions.ListAuthenticated() {
+		pingServer(sess)
+
 	}
 }
 
-// pingServer envoie un message heartbeat à un serveur et retourne true si OK.
-func pingServer(serveur storage.Is_Serveur_Online) bool {
-	content := "02_11\nserveur_central\n" + serveur.SessionIntegritykey + "\nclient_giveinformation"
-	err := sendmessage.SendMessage(content, serveur.Client_ID, serveur.Duckysession)
-	if err != nil {
-		logs.Write_Log("ERROR", "Error sending heartbeat to "+serveur.Client_ID+": "+err.Error())
+func CheckClientOnline(sess *sessionmgr.Session) bool {
+
+	logs.Write_Log("INFO", fmt.Sprintf(
+		"Check session ID=%s User=%s LastSeen=%s",
+		sess.SessionID,
+		sess.Username,
+		sess.LastSeen.Format(time.RFC3339),
+	))
+
+	if sessionmgr.Sessions.IsSessionExpired(sess) {
+
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"Session supprimée ID=%s User=%s (LastSeen trop ancien)",
+			sess.SessionID,
+			sess.Username,
+		))
+
+		removeOfflineServer(sess)
 		return false
+	} else {
+
+		logs.Write_Log("INFO", fmt.Sprintf(
+			"Session maintenue ID=%s User=%s",
+			sess.SessionID,
+			sess.Username,
+		))
 	}
 	return true
 }
 
-// removeOfflineServer supprime un serveur offline de la mémoire + DB.
-func removeOfflineServer(index int, serveur storage.Is_Serveur_Online) {
-	// supprimer de la slice
-	storage.Serveur_Online = append(storage.Serveur_Online[:index], storage.Serveur_Online[index+1:]...)
-
-	// supprimer de la DB
-	err := db.DeleteDidLogin(db.GetDatabase(), serveur.Username, serveur.Client_ID)
+// pingServer envoie un message heartbeat à une session et retourne true si OK.
+func pingServer(sess *sessionmgr.Session) {
+	content := "02_11\nserveur_central\n" + sess.SessionID + "\nclient_giveinformation"
+	err := sendmessage.SendMessage(content, sess.ClientSoftwareID, sess.DuckySession)
 	if err != nil {
-		logs.Write_Log("ERROR", "Error deleting session for "+serveur.Client_ID+": "+err.Error())
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
+			"Error sending heartbeat to "+sess.ClientSoftwareID+": "+err.Error(),
+			logs.WithMeta(sess.SessionID, sess.Username))
+		return
+	}
+	return
+}
+
+// removeOfflineServer retire une session offline du registre (ce qui ferme
+// le socket) et nettoie l'entrée de login associée en DB.
+func removeOfflineServer(sess *sessionmgr.Session) {
+	sessionmgr.Sessions.RemoveSession(sess.SessionID)
+
+	err := db.DeleteDidLogin(db.GetDatabase(), sess.Username, sess.ClientSoftwareID)
+	meta := logs.WithMeta(sess.SessionID, sess.Username)
+	if err != nil {
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
+			"Error deleting session for "+sess.ClientSoftwareID+": "+err.Error(), meta)
 	} else {
-		logs.Write_Log("INFO", "Server "+serveur.Client_ID+" is offline and removed from online list")
+		logs.Write_LogCodeMeta("INFO", logs.CodeNone,
+			"Server "+sess.ClientSoftwareID+" is offline and removed from online list", meta)
 	}
 }
 
