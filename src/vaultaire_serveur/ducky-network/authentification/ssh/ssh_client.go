@@ -26,8 +26,8 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 
 func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	content := strings.Split(trames_content.Content, "\n")
-	if len(content) < 3 {
-		logs.Write_Log("ERROR", "Malformed SSH pubkey request")
+	if len(content) < 2 {
+		logs.Write_Log("ERROR", "Malformed CHECK TRAME THAT IS SEND")
 		return "02_07\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}
