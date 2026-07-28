@@ -75,8 +75,10 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nadmin check error"
 		}
 		sshkeyString := strings.Join(sshkey, "\n")
+		logs.Write_Log("INFO", "SSH access granted for user "+sshUser+" (Admin: "+strconv.FormatBool(isadmin)+")")
 		return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
 	}
+	logs.Write_Log("WARNING", "Invalid proof for user "+sshUser)
 	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\ninvalid proof"
 }
 

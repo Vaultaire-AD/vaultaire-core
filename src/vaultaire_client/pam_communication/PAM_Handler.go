@@ -106,7 +106,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 			statusRep = "success"
 			isAdminResult = result.IsAdmin
 			sshKeys = parseSSHKeys(result.SSHKeys)
-			logs.Write_log("INFO", fmt.Sprintf("[%s] Auth finale reussie pour %s (Admin: %t, Cles: %d)",
+			logs.Write_log("INFO", fmt.Sprintf("[%s] Reponse du serveur central recue %s (Admin: %t, Cles: %d)",
 				reqType, req.User, isAdminResult, len(sshKeys)))
 		}
 
