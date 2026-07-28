@@ -33,7 +33,6 @@ func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
 			 WHERE users_group.d_id_user = ? AND id_logiciels.computeur_id = ? LIMIT 1`
 	err = db.QueryRow(query, userID, computeur_id).Scan(&canLogin)
 	if err == nil && canLogin {
-		logs.WriteLog("db", "Utilisateur "+username+" peut se connecter grâce à un groupe partagé.")
 		return true, nil
 	} else if err != sql.ErrNoRows {
 		logs.WriteLog("db", "Erreur lors de la vérification du groupe partagé: "+err.Error())
@@ -41,6 +40,6 @@ func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
 	}
 
 	// Si aucune correspondance n'est trouvée
-	logs.WriteLog("db", "L'utilisateur "+username+" ne peut pas se connecter avec ce client "+computeur_id)
+	logs.WriteLog("WARNING", "L'utilisateur "+username+" ne peut pas se connecter avec ce client "+computeur_id)
 	return false, nil
 }

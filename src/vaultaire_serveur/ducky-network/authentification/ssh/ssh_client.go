@@ -52,7 +52,7 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 		return "02_07\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" + sshUser + "\nverification error"
 	}
-	if !isauth {
+	if isauth {
 		// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
 		can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 		if err != nil || !can {
@@ -75,7 +75,7 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nadmin check error"
 		}
 		sshkeyString := strings.Join(sshkey, "\n")
-		return "03_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
+		return "03_05\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
 	}
 	return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\ninvalid proof"
 }
