@@ -138,9 +138,8 @@ cat > /etc/pam.d/sshd <<'EOF'
 #%PAM-1.0
 # --- AUTHENTICATION ---
 
-# On remplace 'required' par 'sufficient'
-# Si Vaultaire dit OK, on arrête l'authentification ici et on passe à la suite
-auth       sufficient   pam_ssh_auth_module.so
+
+auth       [success=done ignore=ignore default=die]   pam_ssh_auth_module.so
 
 # Ces lignes ne seront lues QUE si le module échoue (ex: mauvais mdp MFA)
 auth       substack     password-auth

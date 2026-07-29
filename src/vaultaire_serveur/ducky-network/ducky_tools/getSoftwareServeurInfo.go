@@ -2,7 +2,6 @@ package ducky_tools
 
 import (
 	"log"
-	"strconv"
 	"strings"
 	"vaultaire/core/database"
 	"vaultaire/core/logs"
@@ -23,15 +22,9 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 	// la il faut gère les session voir la tache sur github
 	db := database.GetDatabase()
 
-	// Supposons que tu as une fonction pour récupérer l'ID utilisateur à partir du username
-	userID, err := database.Get_User_ID_By_Username(db, trames_content.Username)
-	if err != nil {
-		log.Printf("❌ Impossible de trouver l'ID utilisateur pour %s: %v\n", trames_content.Username, err)
-		return
-	}
 	// ✅ Mise à jour de key_time_validity
-	softwareID, _ := strconv.Atoi(trames_content.ClientSoftwareID)
-	err = database.UpdateSessionKeyValidity(db, userID, softwareID)
+
+	err = database.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
 	if err != nil {
 		log.Println(err)
 	}

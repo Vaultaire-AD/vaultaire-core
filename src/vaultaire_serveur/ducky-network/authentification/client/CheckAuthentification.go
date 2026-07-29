@@ -2,7 +2,6 @@ package client
 
 import (
 	"bytes"
-	"crypto/rand"
 	"strconv"
 	"strings"
 	"vaultaire/core/database"
@@ -95,8 +94,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		addOnlineServerToTable(duckysession.SessionID, username, trames_content.ClientSoftwareID)
 		db := database.GetDatabase()
 		userID, _ := database.Get_User_ID_By_Username(db, username)
-		key := make([]byte, 8)
-		database.AddLoginEntry(db, userID, key, trames_content.ClientSoftwareID)
+		database.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
 		logs.Write_LogCodeMeta("INFO", logs.CodeNone, trames_content.ClientSoftwareID+" is online and enter in the system", meta)
 		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nclient_giveinformation")
 
@@ -106,12 +104,6 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 	if bytes.Equal(randomAuth, returnchack) {
 		db := database.GetDatabase()
 		userID, _ := database.Get_User_ID_By_Username(db, username)
-		key := make([]byte, 32)
-		_, err := rand.Read(key)
-		if err != nil {
-			logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Erreur lors de la clé de session : "+err.Error(), meta)
-			return ("erreur lors de la génération de données aléatoires : ")
-		}
 
 		can, err := database.DidUserCanLogin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 		if err != nil {
@@ -119,7 +111,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "\nSomething go wrong contact you administrator")
 		}
 		if can {
-			database.AddLoginEntry(db, userID, key, trames_content.ClientSoftwareID)
+			database.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
 			sessionmgr.Sessions.SetIdentity(duckysession.SessionID, username, trames_content.ClientSoftwareID)
 			sessionmgr.Sessions.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
 			logs.Write_LogCodeMeta("INFO", logs.CodeNone, username+" login with succes with clientsoftware "+trames_content.ClientSoftwareID, meta)
@@ -131,10 +123,10 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 			if err != nil {
 				logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
 					"Erreur lors de la récupération de la clé publique de l'utilisateur "+username+" : "+err.Error(), meta)
-				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + "empty" + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
+				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + "empty" + "\nYou are authentificate Has : \n" + username)
 			} else {
 				publicKeys := ducky_tools.ExtractPublicKeys(userpukey)
-				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + publicKeys + "\nYou are authentificate Has : \n" + username + "\n" + string(key))
+				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + publicKeys + "\nYou are authentificate Has : \n" + username)
 			}
 
 		} else {

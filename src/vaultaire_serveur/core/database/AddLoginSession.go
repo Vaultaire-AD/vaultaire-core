@@ -7,7 +7,7 @@ import (
 )
 
 func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwareID string) {
-	sessionVal := time.Now().Add(1 * time.Hour)
+	sessionVal := time.Now().Add(10 * time.Minute)
 	formattedTime := sessionVal.Format("2006/01/02 15:04:05")
 	logiciel_id := get_id_logiciel(db, clientSoftwareID)
 
@@ -119,4 +119,24 @@ func get_id_logiciel(db *sql.DB, logiciel_id string) string {
 	}
 
 	return publicKey
+}
+
+func RefreshSessionValidity(db *sql.DB, sessionKey []byte) error {
+
+	expiration := time.Now().Add(10 * time.Minute)
+	formattedTime := expiration.Format("2006/01/02 15:04:05")
+
+	query := `
+		UPDATE did_login
+		SET key_time_validity = ?
+		WHERE session_key = ?
+	`
+
+	_, err := db.Exec(
+		query,
+		formattedTime,
+		sessionKey,
+	)
+
+	return err
 }
