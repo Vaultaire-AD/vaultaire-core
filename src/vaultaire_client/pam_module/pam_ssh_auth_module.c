@@ -37,6 +37,8 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         vaultaire_log_err("SSH pre-auth failed via socket for %s", username);
         return PAM_AUTHINFO_UNAVAIL;
     }
+
+    
     vaultaire_log_info("Socket response received for %s: %s", username, resp);
     char status[32] = {0};
     bool is_admin = false;
