@@ -18,7 +18,7 @@ func GetUserGroupNameWhenLogin(db *sql.DB, username, computeur_id string) (strin
 	err := db.QueryRow(query, username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "Utilisateur non trouvé: "+username)
+			logs.Write_LogCode("WARNING", logs.CodeDBUserNotFound, "database: Utilisateur non trouvé: "+username)
 			return "", fmt.Errorf("utilisateur non trouvé")
 		}
 		logs.WriteLog("db", "Erreur lors de la récupération de l'ID utilisateur: "+err.Error())
@@ -37,7 +37,7 @@ func GetUserGroupNameWhenLogin(db *sql.DB, username, computeur_id string) (strin
 	         WHERE users_group.d_id_user = ? AND id_logiciels.computeur_id = ? LIMIT 1`
 	err = db.QueryRow(query, userID, computeur_id).Scan(&groupName)
 	if err == nil && groupName != "" {
-		logs.WriteLog("db", "Utilisateur "+username+" appartient au groupe "+groupName+".")
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Utilisateur "+username+" appartient au groupe "+groupName+".")
 		return groupName, nil
 	} else if err != sql.ErrNoRows {
 		logs.WriteLog("db", "Erreur lors de la récupération du groupe: "+err.Error())
@@ -45,6 +45,6 @@ func GetUserGroupNameWhenLogin(db *sql.DB, username, computeur_id string) (strin
 	}
 
 	// Si aucune correspondance trouvée
-	logs.WriteLog("db", "L'utilisateur "+username+" n'appartient à aucun groupe lié au client "+computeur_id)
+	logs.Write_LogCode("DEBUG", logs.CodeNone, "database: L'utilisateur "+username+" n'appartient à aucun groupe lié au client "+computeur_id)
 	return "", nil
 }

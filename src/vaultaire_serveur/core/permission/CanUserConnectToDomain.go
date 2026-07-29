@@ -1,7 +1,9 @@
 package permission
 
 import (
+	"vaultaire/core/database"
 	"vaultaire/core/domain"
+	"vaultaire/core/logs"
 )
 
 // CanUserConnectToDomain vérifie si un login au format "user@domain" (ou
@@ -28,6 +30,26 @@ import (
 // aucune règle n'autorise l'accès à ce domaine.
 func CanUserConnectToDomain(login string) (bool, string) {
 	username, targetDomain := domain.ExctractDomainFromUsername(login)
+
+	// Un droit "*" veut dire "autorisé partout", pas "n'importe quelle
+	// chaîne tapée par le client est un endroit valide". On vérifie donc que
+	// le domaine existe réellement (associé à au moins un groupe) AVANT de
+	// consulter les permissions : sinon un super admin se voyait accepter
+	// n'importe quel domaine inventé ou mal tapé (ex "vault.fr" au lieu de
+	// "vaultaire.fr").
+	if targetDomain != "" {
+		exists, err := database.DomainExists(database.GetDatabase(), targetDomain)
+		if err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+				"CanUserConnectToDomain: erreur vérification existence domaine '"+targetDomain+"' : "+err.Error())
+			return false, "erreur vérification du domaine"
+		}
+		if !exists {
+			logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied,
+				"Connexion refusée pour "+login+" : domaine inconnu '"+targetDomain+"'")
+			return false, "domaine inconnu : " + targetDomain
+		}
+	}
 
 	groupIDs, action, err := PrePermissionCheck(username, "auth")
 	if err != nil {

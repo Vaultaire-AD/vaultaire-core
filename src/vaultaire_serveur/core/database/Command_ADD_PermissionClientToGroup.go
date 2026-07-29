@@ -21,7 +21,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 	).Scan(&permissionID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "❌ Permission introuvable "+permissionName)
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Permission introuvable "+permissionName)
 			return fmt.Errorf("❌ Permission '%s' introuvable", permissionName)
 		}
 		logs.WriteLog("db", "❌ Erreur lors de la récupération de la permission: "+err.Error())
@@ -36,7 +36,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 	).Scan(&groupID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "❌ Groupe introuvable "+groupName)
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Groupe introuvable "+groupName)
 			return fmt.Errorf("❌ Groupe '%s' introuvable", groupName)
 		}
 		logs.WriteLog("db", "❌ Erreur lors de la récupération du groupe: "+err.Error())
@@ -54,7 +54,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 		return fmt.Errorf("❌ Erreur lors de la vérification de la permission pour le logiciel dans le groupe: %v", err)
 	}
 	if exists {
-		logs.WriteLog("db", "⚠️ La permission "+permissionName+" est déjà attribuée au groupe "+groupName+" pour le logiciel")
+		logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: La permission "+permissionName+" est déjà attribuée au groupe "+groupName+" pour le logiciel")
 		return fmt.Errorf("⚠️ La permission '%s' est déjà attribuée au groupe '%s' pour le logiciel", permissionName, groupName)
 	}
 

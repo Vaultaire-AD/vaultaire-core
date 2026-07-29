@@ -17,6 +17,6 @@ func Command_DELETE_GPOWithGPOName(db *sql.DB, gpoName string) error {
 		logs.WriteLog("db", "Erreur lors de la suppression de la gpo : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression de la gpo %s : %v", gpoName, err)
 	}
-	logs.WriteLog("db", fmt.Sprintf("gpo %s supprimé avec succès", gpoName))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: gpo %s supprimé avec succès", gpoName))
 	return nil
 }

@@ -47,7 +47,7 @@ func Command_GET_UserGroupIDs(db *sql.DB, username string) ([]int, error) {
 	}
 
 	if len(groupIDs) == 0 {
-		logs.WriteLog("db", "Aucun groupe trouvé pour l'utilisateur : "+username)
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun groupe trouvé pour l'utilisateur : "+username)
 		return nil, fmt.Errorf("aucun groupe trouvé pour l'utilisateur '%s'", username)
 	}
 

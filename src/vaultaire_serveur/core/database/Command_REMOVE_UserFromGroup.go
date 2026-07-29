@@ -18,7 +18,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	err := db.QueryRow(queryUser, username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", fmt.Sprintf("Utilisateur %s introuvable", username))
+			logs.Write_LogCode("WARNING", logs.CodeDBUserNotFound, fmt.Sprintf("database: Utilisateur %s introuvable", username))
 			return fmt.Errorf("utilisateur %s introuvable", username)
 		}
 		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération de l'utilisateur : %v", err))
@@ -31,7 +31,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	err = db.QueryRow(queryGroup, groupName).Scan(&groupID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", fmt.Sprintf("Groupe %s introuvable", groupName))
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, fmt.Sprintf("database: Groupe %s introuvable", groupName))
 			return fmt.Errorf("groupe %s introuvable", groupName)
 		}
 		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération du groupe : %v", err))
@@ -48,7 +48,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	}
 
 	if count == 0 {
-		logs.WriteLog("db", fmt.Sprintf("L'utilisateur %s ne fait pas partie du groupe %s", username, groupName))
+		logs.Write_LogCode("WARNING", logs.CodeDBGeneric, fmt.Sprintf("database: L'utilisateur %s ne fait pas partie du groupe %s", username, groupName))
 		return fmt.Errorf("l'utilisateur %s ne fait pas partie du groupe %s", username, groupName)
 	}
 
@@ -61,7 +61,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	}
 
 	// Log de succès
-	logs.WriteLog("db", fmt.Sprintf("Utilisateur %s retiré du groupe %s", username, groupName))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Utilisateur %s retiré du groupe %s", username, groupName))
 
 	return nil
 }

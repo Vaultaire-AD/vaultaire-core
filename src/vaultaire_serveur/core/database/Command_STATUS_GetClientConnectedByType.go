@@ -57,7 +57,7 @@ func Command_STATUS_GetClientsConnectedByLogicielType(db *sql.DB, logicielType s
 	}
 
 	if len(clients) == 0 {
-		logs.WriteLog("db", "Aucun client connecté trouvé pour le type de logiciel "+logicielType)
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun client connecté trouvé pour le type de logiciel "+logicielType)
 		return nil, fmt.Errorf("aucun client connecté trouvé pour le type de logiciel '%s'", logicielType)
 	}
 

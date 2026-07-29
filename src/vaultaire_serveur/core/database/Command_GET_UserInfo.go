@@ -85,7 +85,7 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 	}
 
 	if userInfo.Username == "" {
-		logs.WriteLog("db", "Aucun utilisateur trouvé avec le username : "+username)
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun utilisateur trouvé avec le username : "+username)
 		return nil, fmt.Errorf("aucun utilisateur trouvé avec le username '%s'", username)
 	}
 

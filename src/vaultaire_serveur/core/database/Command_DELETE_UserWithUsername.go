@@ -18,7 +18,7 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
 	err := db.QueryRow(queryUser, username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", fmt.Sprintf("Utilisateur %s introuvable", username))
+			logs.Write_LogCode("WARNING", logs.CodeDBUserNotFound, fmt.Sprintf("database: Utilisateur %s introuvable", username))
 			return fmt.Errorf("utilisateur %s introuvable", username)
 		}
 		logs.WriteLog("db", "Erreur lors de la récupération de l'utilisateur : "+err.Error())
@@ -33,6 +33,6 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
 		return fmt.Errorf("erreur lors de la suppression de l'utilisateur : %v", err)
 	}
 
-	logs.WriteLog("db", fmt.Sprintf("Utilisateur %s supprimé avec succès", username))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Utilisateur %s supprimé avec succès", username))
 	return nil
 }

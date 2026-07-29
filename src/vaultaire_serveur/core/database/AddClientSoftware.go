@@ -23,7 +23,7 @@ func Create_ClientSoftware(db *sql.DB, computeurID, logicielType, publicKey stri
 	}
 
 	if exists {
-		logs.WriteLog("db", "le computeurID existe déjà dans la base de données")
+		logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: le computeurID existe déjà dans la base de données")
 		return errors.New("le computeurID existe déjà dans la base de données")
 	}
 
@@ -37,7 +37,7 @@ func Create_ClientSoftware(db *sql.DB, computeurID, logicielType, publicKey stri
 		logs.WriteLog("db", "erreur lors de l'insertion dans la table id_logiciels : "+err.Error())
 		return fmt.Errorf("erreur lors de l'insertion dans la table id_logiciels : %v", err)
 	}
-	logs.WriteLog("db", "Nouvelle entrée insérée avec succès dans la base de données.")
+	logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Nouvelle entrée insérée avec succès dans la base de données.")
 	//fmt.Println("Nouvelle entrée insérée avec succès dans la base de données.")
 	return nil
 }

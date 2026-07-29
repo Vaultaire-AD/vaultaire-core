@@ -52,7 +52,7 @@ func Command_STATUS_GetClientsConnected(db *sql.DB) ([]storage.ClientConnected, 
 	}
 
 	if len(clients) == 0 {
-		logs.WriteLog("db", "Aucun client connecté trouvé")
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun client connecté trouvé")
 		return nil, fmt.Errorf("aucun client connecté trouvé")
 	}
 

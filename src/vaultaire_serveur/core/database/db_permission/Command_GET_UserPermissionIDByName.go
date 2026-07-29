@@ -14,7 +14,7 @@ func Command_GET_UserPermissionID(db *sql.DB, name string) (int64, error) {
 	err := db.QueryRow(query, name).Scan(&id)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "GetUserPermissionID: No permission found with name "+name)
+			logs.Write_LogCode("DEBUG", logs.CodeNone, "database: GetUserPermissionID: No permission found with name "+name)
 			return 0, fmt.Errorf("aucune permission trouvée avec le nom %s", name)
 		}
 		return 0, err

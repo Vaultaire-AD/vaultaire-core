@@ -18,6 +18,6 @@ func Command_DELETE_GroupWithGroupName(db *sql.DB, groupName string) error {
 		logs.WriteLog("db", "Erreur lors de la suppression du groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression du groupe %s : %v", groupName, err)
 	}
-	logs.WriteLog("db", fmt.Sprintf("Groupe %s supprimé avec succès", groupName))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Groupe %s supprimé avec succès", groupName))
 	return nil
 }

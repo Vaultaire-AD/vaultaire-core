@@ -18,7 +18,7 @@ func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
 	err := db.QueryRow(query, username).Scan(&userID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "Utilisateur non trouvé: "+username)
+			logs.Write_LogCode("WARNING", logs.CodeDBUserNotFound, "database: Utilisateur non trouvé: "+username)
 			return false, fmt.Errorf("utilisateur non trouvé")
 		}
 		logs.WriteLog("db", "Erreur lors de la récupération de l'ID utilisateur: "+err.Error())

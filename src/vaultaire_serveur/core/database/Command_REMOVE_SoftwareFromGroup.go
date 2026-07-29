@@ -18,7 +18,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	err := db.QueryRow(queryLogiciel, computeur_id).Scan(&logicielID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", fmt.Sprintf("Logiciel avec computeur_id %s introuvable", computeur_id))
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, fmt.Sprintf("database: Logiciel avec computeur_id %s introuvable", computeur_id))
 			return fmt.Errorf("logiciel avec computeur_id %s introuvable", computeur_id)
 		}
 		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération du logiciel : %v", err))
@@ -31,7 +31,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	err = db.QueryRow(queryGroup, groupName).Scan(&groupID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", fmt.Sprintf("Groupe %s introuvable", groupName))
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, fmt.Sprintf("database: Groupe %s introuvable", groupName))
 			return fmt.Errorf("groupe %s introuvable", groupName)
 		}
 		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération du groupe : %v", err))
@@ -48,7 +48,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	}
 
 	if count == 0 {
-		logs.WriteLog("db", fmt.Sprintf("Le logiciel %s ne fait pas partie du groupe %s", computeur_id, groupName))
+		logs.Write_LogCode("WARNING", logs.CodeDBGeneric, fmt.Sprintf("database: Le logiciel %s ne fait pas partie du groupe %s", computeur_id, groupName))
 		return fmt.Errorf("le logiciel %s ne fait pas partie du groupe %s", computeur_id, groupName)
 	}
 
@@ -61,7 +61,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	}
 
 	// Log de succès
-	logs.WriteLog("db", fmt.Sprintf("Logiciel %s retiré du groupe %s", computeur_id, groupName))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Logiciel %s retiré du groupe %s", computeur_id, groupName))
 
 	return nil
 }

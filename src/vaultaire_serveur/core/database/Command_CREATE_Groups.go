@@ -98,7 +98,7 @@ func GetGroupIDByName(db *sql.DB, groupName string) (int, error) {
 	err := db.QueryRow(`SELECT id_group FROM groups WHERE group_name = ?`, groupName).Scan(&permissionID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", fmt.Sprintf("permission '%s' introuvable", groupName))
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, fmt.Sprintf("database: permission '%s' introuvable", groupName))
 			return 0, fmt.Errorf("permission '%s' introuvable", groupName)
 		}
 		logs.WriteLog("db", "erreur lors de la récupération de l'ID de la permission: "+err.Error())

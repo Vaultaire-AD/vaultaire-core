@@ -19,7 +19,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 	err := db.QueryRow("SELECT id_user_permission FROM user_permission WHERE name = ?", permissionName).Scan(&permissionID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "❌ Permission '"+permissionName+"' introuvable")
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Permission '"+permissionName+"' introuvable")
 			return fmt.Errorf("❌ Permission '%s' introuvable", permissionName)
 		}
 		logs.WriteLog("db", "❌ Erreur lors de la récupération de la permission: "+err.Error())
@@ -31,7 +31,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 	err = db.QueryRow("SELECT id_group FROM groups WHERE group_name = ?", groupName).Scan(&groupID)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "❌ Groupe '"+groupName+"' introuvable")
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Groupe '"+groupName+"' introuvable")
 			return fmt.Errorf("❌ Groupe '%s' introuvable", groupName)
 		}
 		logs.WriteLog("db", "❌ Erreur lors de la récupération du groupe: "+err.Error())
@@ -47,7 +47,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 		return fmt.Errorf("❌ Erreur lors de la vérification de la permission du groupe: %v", err)
 	}
 	if exists {
-		logs.WriteLog("db", "⚠️ La permission '"+permissionName+"' est déjà attribuée au groupe '"+groupName+"'")
+		logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: La permission '"+permissionName+"' est déjà attribuée au groupe '"+groupName+"'")
 		return fmt.Errorf("⚠️ La permission '%s' est déjà attribuée au groupe '%s'", permissionName, groupName)
 	}
 

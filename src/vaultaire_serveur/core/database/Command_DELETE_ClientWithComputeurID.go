@@ -18,6 +18,6 @@ func Command_DELETE_ClientWithComputeurID(db *sql.DB, computeurID string) error 
 		logs.WriteLog("db", "Erreur lors de la suppression du client : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression du client %s : %v", computeurID, err)
 	}
-	logs.WriteLog("db", fmt.Sprintf("Client %s supprimé avec succès", computeurID))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Client %s supprimé avec succès", computeurID))
 	return nil
 }

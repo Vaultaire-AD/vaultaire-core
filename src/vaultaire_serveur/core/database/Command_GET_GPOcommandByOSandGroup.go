@@ -53,14 +53,14 @@ func GET_GPOcommandByOSandGroup(db *sql.DB, groupName, osName string) ([]string,
 		case "rocky", "centos", "redhat":
 			cmd = rockyCmd
 		default:
-			logs.WriteLog("db", "OS non supporté: "+osName)
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: OS non supporté: "+osName)
 			cmd = ""
 		}
 
 		if cmd != "" {
 			commands = append(commands, cmd)
 		} else {
-			logs.WriteLog("db", "Pas de commande trouvée pour GPO "+gpoName+" sur OS "+osName)
+			logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Pas de commande trouvée pour GPO "+gpoName+" sur OS "+osName)
 		}
 	}
 

@@ -59,7 +59,7 @@ func Command_STATUS_GetClientsConnectedByGroup(db *sql.DB, groupName string) ([]
 	}
 
 	if len(clients) == 0 {
-		logs.WriteLog("db", "Aucun client connecté trouvé pour le groupe "+groupName)
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun client connecté trouvé pour le groupe "+groupName)
 		return nil, fmt.Errorf("aucun client connecté trouvé pour le groupe '%s'", groupName)
 	}
 

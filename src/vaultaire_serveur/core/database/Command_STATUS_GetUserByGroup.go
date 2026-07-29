@@ -30,7 +30,7 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 	rows, err := db.Query(query, groupName)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "Le groupe "+groupName+" n'existe pas.")
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Le groupe "+groupName+" n'existe pas.")
 			return nil, fmt.Errorf("le groupe '%s' n'existe pas", groupName)
 		}
 		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
@@ -59,7 +59,7 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 	}
 
 	if len(users) == 0 {
-		logs.WriteLog("db", "Aucun utilisateur trouvé pour le groupe "+groupName)
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun utilisateur trouvé pour le groupe "+groupName)
 		return nil, fmt.Errorf("aucun utilisateur trouvé pour le groupe '%s'", groupName)
 	}
 

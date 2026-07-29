@@ -61,7 +61,7 @@ func Command_GET_GroupInfo(db *sql.DB, groupName string) (*storage.GroupInfo, er
 	)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "❌ Aucun groupe trouvé avec le nom : "+groupName)
+			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Aucun groupe trouvé avec le nom : "+groupName)
 			return nil, fmt.Errorf("❌ Aucun groupe trouvé avec le nom : %v", groupName)
 		}
 		logs.WriteLog("db", "❌ Erreur SQL : "+err.Error())

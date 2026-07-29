@@ -53,7 +53,7 @@ func Command_GET_UsersByGroup(db *sql.DB, groupName string) ([]storage.DisplayUs
 	}
 
 	if len(users) == 0 {
-		logs.WriteLog("db", "Aucun utilisateur trouvé pour le groupe : "+groupName)
+		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Aucun utilisateur trouvé pour le groupe : "+groupName)
 		return nil, fmt.Errorf("aucun utilisateur trouvé pour le groupe '%s'", groupName)
 	}
 
