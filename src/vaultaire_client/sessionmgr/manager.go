@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 	"vaultaire_client/logs"
+
 	"vaultaire_client/storage"
 )
 
@@ -118,6 +119,29 @@ func (m *Manager) GetValidVaultaireSession() *Session {
 		return s
 	}
 	return nil
+}
+
+func (m *Manager) WaitForVaultaireSession() (*Session, error) {
+
+	timeout := time.After(5 * time.Second)
+	ticker := time.NewTicker(200 * time.Millisecond)
+
+	defer ticker.Stop()
+
+	for {
+		select {
+
+		case <-ticker.C:
+			sess := m.GetValidVaultaireSession()
+
+			if sess != nil {
+				return sess, nil
+			}
+
+		case <-timeout:
+			return nil, fmt.Errorf("timeout attente session Vaultaire")
+		}
+	}
 }
 
 // ResolveForClose détermine quelle session fermer pour une demande de

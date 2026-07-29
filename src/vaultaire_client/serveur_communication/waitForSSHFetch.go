@@ -20,7 +20,12 @@ func WaitForSSHFetch(user string, sshUser string) {
 	// 2. Boucle d'attente du TUNNEL : on interroge le manager de sessions
 	// pour une session "vaultaire" authentifiée et utilisable (il peut y en
 	// avoir plusieurs ; on en prend une, la première valide).
-	sess := sto_session.SessionsUser.GetValidVaultaireSession()
+	time.Sleep(1 * time.Second)
+	sess, err := sto_session.SessionsUser.WaitForVaultaireSession()
+	if err != nil {
+		logs.Write_log("ERROR", "Timeout attente session Vaultaire")
+		return
+	}
 	ds := sess.DuckySession
 	// 3. Le tunnel est OK, on envoie la demande 03_04
 	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s", sshUser))

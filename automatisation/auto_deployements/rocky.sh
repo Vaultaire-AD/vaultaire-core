@@ -7,13 +7,13 @@ echo "🔧 Déploiement Vaultaire Client..."
 # Déplacement des fichiers
 mv -f /opt/vaultaire/vaultaire_client/pam*.so /usr/lib64/security/
 mkdir -p /etc/vaultaire_client/.ssh
-mv /opt/vaultaire/vaultaire_client/vaultaire_client /usr/bin/vaultaire_client/
+mv /opt/vaultaire/vaultaire_client/vaultaire_client /usr/bin/
 mv /opt/vaultaire/client_software.yaml /etc/vaultaire_client/.ssh/client_software.yaml
 mv /opt/vaultaire/*.pem /etc/vaultaire_client/.ssh/
 
 mv /opt/vaultaire/vaultaire_client/libnss_vaultaire.so.2 /lib64/
 chmod 755 /lib64/libnss_vaultaire.so.2
-chmod 750 /usr/bin/vaultaire_client/
+chmod 750 /usr/bin/vaultaire_client
 
 # Permissions
 chmod 700 -R /etc/vaultaire_client/
@@ -75,7 +75,7 @@ SSHD_CONF="/etc/ssh/sshd_config"
 # Ajout du Fetch Dynamique de clés
 sed -i '/^AuthorizedKeysCommand/d' "/etc/ssh/sshd_config"
 sed -i '/^AuthorizedKeysCommandUser/d' "/etc/ssh/sshd_config"
-echo "AuthorizedKeysCommand /opt/vaultaire_client/vaultaire_client --fetch-key %u" >> "/etc/ssh/sshd_config"
+echo "AuthorizedKeysCommand /usr/bin/vaultaire_client --fetch-key %u" >> "/etc/ssh/sshd_config"
 echo "AuthorizedKeysCommandUser root" >> "/etc/ssh/sshd_config"
 
 # Nettoyage du fichier principal pour éviter les doublons
