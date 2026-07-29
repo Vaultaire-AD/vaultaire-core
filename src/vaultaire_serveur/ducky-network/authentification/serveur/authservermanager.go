@@ -4,7 +4,6 @@ import (
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sessionmgr"
-	sync "vaultaire/ducky-network/sync"
 )
 
 // Serveur_Auth_Manager manages the authentication requests from servers.
@@ -18,7 +17,7 @@ func Serveur_Auth_Manager(trames_content storage.Trames_struct_client, duckysess
 	case "01":
 		oldSessionID := duckysession.SessionID
 
-		sessionIntegritykey, err := sync.AddConnectionToMap("01_01", trames_content.ClientSoftwareID)
+		sessionIntegritykey, err := sessionmgr.Sessions.GenerateIntegrityKey()
 		if err != nil {
 			message = "error"
 			logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
@@ -39,6 +38,9 @@ func Serveur_Auth_Manager(trames_content storage.Trames_struct_client, duckysess
 		duckysession.SessionID = sessionIntegritykey
 		sessionmgr.Sessions.Rekey(oldSessionID, sessionIntegritykey)
 		sessionmgr.Sessions.SetIdentity(sessionIntegritykey, trames_content.Username, trames_content.ClientSoftwareID)
+		// Amorce le suivi de l'ordre des trames pour la suite de la session
+		// (remplace le seed fait par l'ancien sync.AddConnectionToMap).
+		sessionmgr.Sessions.SeedTrame(sessionIntegritykey, "01_01")
 
 		message = Prove_Identity(trames_content.Content, sessionIntegritykey)
 	}

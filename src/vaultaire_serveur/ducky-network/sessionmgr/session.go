@@ -46,6 +46,17 @@ type Session struct {
 	Status       SessionStatus
 	CreatedAt    time.Time
 	LastSeen     time.Time
+
+	// ActualTrame / TrameIsSafe portent le suivi de l'ordre des trames
+	// attendu par le protocole (anciennement ConnData, dans
+	// ducky-network/sync). TrameIsSafe passe à true une fois la séquence
+	// obligatoire terminée (dernière trame de networkSecurity.ExpectedTrames,
+	// ou "04_01" pour un host) : au-delà, l'ordre n'est plus contrôlé. Nom
+	// volontairement différent de storage.DuckySession.IsSafe (qui lui
+	// indique le mode de chiffrement, symétrique ou non) pour ne pas
+	// confondre les deux notions.
+	ActualTrame string
+	TrameIsSafe bool
 }
 
 // Manager est un registre de sessions actives, indexé par SessionID et

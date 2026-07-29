@@ -25,9 +25,10 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 |                             |             |               |                                  |                                                                                     |
 | serveur                     |             | 15            | ask GPO                          | le client demande au serveur de lui envoyé les GPO de l'utilisateur                 |
 | client                      |             | 16            | send GPO                         | Envoie au client toutes ses GPOs                                                    |
+| server                      |             | 17            | ask list proxy/core              | le client Demande la liste des serveurs a joindre pour se connecter au réseau       |
+| client                      |             | 18            | respond list                     | le serveur repond la liste des serveur joignable |
 |                             |             |               |                                  |                                                                                     |
-|                             |             |               |                                  |                                                                                     |
-| SSH                         | 03          |               |                                  |                                                                                     |
+| SSH                         | 0-3         |               |                                  |                                                                                     |
 | server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user |
 | client                      |             | 02            | server awnser   succes           | le server renvoie un succes  avec les clé public du user et le boolean admin        |
 | client                      |             | 03            | server anwser failed             | le server renvoie un failed avec la raison de l'echec                               |

@@ -14,6 +14,10 @@ import (
 // Retourne :
 // - bool : true si au moins un domaine est autorisé
 // - string : résumé textuel
+//
+// Niveaux de log : DEBUG pour le déroulé normal (silencieux par défaut, activable via storage.Debug
+// dans l'admin), WARNING pour un refus ou une action invalide (visible par défaut, utile pour l'audit
+// sécurité), ERROR uniquement pour un vrai problème système (DB indisponible, etc.).
 func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToCheck []string) (bool, string) {
 	anyAllowed := false
 	var sb strings.Builder
@@ -22,7 +26,8 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 	action, ok := IsValidAction(action)
 	if !ok {
 		for _, domain := range domainsToCheck {
-			logs.Write_Log("INFO", fmt.Sprintf("Action '%s' non valide pour le domaine '%s'", action, domain))
+			logs.Write_LogCode("WARNING", logs.CodeAuthPermission,
+				fmt.Sprintf("Action '%s' non valide pour le domaine '%s'", action, domain))
 			sb.WriteString(fmt.Sprintf("Action '%s' non valide sur %s", action, domain))
 		}
 		return false, sb.String()
@@ -34,31 +39,37 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 		for _, groupID := range groupIDs {
 			content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
 			if err != nil {
-				logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
+				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
 				continue
 			}
 
 			parsedPermission := ParsePermissionContent(content)
 			if parsedPermission.All {
-				logs.Write_Log("INFO", fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d (super admin)", action, groupID))
+				logs.Write_LogCode("DEBUG", logs.CodeNone,
+					fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d (super admin)", action, groupID))
 				return true, fmt.Sprintf("Permission super admin via groupe %d", groupID)
 			}
 		}
-		logs.Write_Log("INFO", fmt.Sprintf("Action '%s' refusée (aucun domaine et pas de super admin)", action))
+		logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied,
+			fmt.Sprintf("Action '%s' refusée (aucun domaine et pas de super admin)", action))
 		return false, "Refusée : aucun domaine pour l'entité et aucun super admin"
 	}
 
 	for _, domain := range domainsToCheck {
 		allowed := false
 		for _, groupID := range groupIDs {
-			logs.Write_Log("INFO", fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domain))
+			logs.Write_LogCode("DEBUG", logs.CodeNone,
+				fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domain))
 			content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
 			if err != nil {
-				logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
+				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
 				continue
 			}
 
-			logs.Write_Log("INFO", fmt.Sprintf("Permission brute pour le groupe %d, action '%s': %s", groupID, action, content))
+			logs.Write_LogCode("DEBUG", logs.CodeNone,
+				fmt.Sprintf("Permission brute pour le groupe %d, action '%s': %s", groupID, action, content))
 			parsedPermission = ParsePermissionContent(content)
 
 			if parsedPermission.Deny {
@@ -66,7 +77,8 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 			}
 
 			if parsedPermission.All {
-				logs.Write_Log("INFO", fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d", action, groupID))
+				logs.Write_LogCode("DEBUG", logs.CodeNone,
+					fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d", action, groupID))
 				sb.WriteString(fmt.Sprintf("%s : autorisée partout (*) via groupe %d", domain, groupID))
 				allowed = true
 				break
@@ -74,7 +86,8 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 			for _, d := range parsedPermission.NoPropagation {
 				if domain == d {
-					logs.Write_Log("INFO", fmt.Sprintf("Action '%s' autorisée uniquement sur %s (sans propagation) via groupe %d", action, domain, groupID))
+					logs.Write_LogCode("DEBUG", logs.CodeNone,
+						fmt.Sprintf("Action '%s' autorisée uniquement sur %s (sans propagation) via groupe %d", action, domain, groupID))
 					sb.WriteString(fmt.Sprintf("%s : autorisée (sans propagation) via groupe %d", domain, groupID))
 					allowed = true
 					break
@@ -86,7 +99,8 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 			for _, d := range parsedPermission.WithPropagation {
 				if domain == d || strings.HasSuffix(domain, "."+d) {
-					logs.Write_Log("INFO", fmt.Sprintf("Action '%s' autorisée sur %s (avec propagation depuis %s) via groupe %d", action, domain, d, groupID))
+					logs.Write_LogCode("DEBUG", logs.CodeNone,
+						fmt.Sprintf("Action '%s' autorisée sur %s (avec propagation depuis %s) via groupe %d", action, domain, d, groupID))
 					sb.WriteString(fmt.Sprintf("%s : autorisée (avec propagation depuis %s) via groupe %d", domain, d, groupID))
 					allowed = true
 					break
@@ -98,9 +112,9 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 		}
 
 		if !allowed {
-			logs.Write_Log("INFO", fmt.Sprintf(
-				"Action '%s' refusée sur le domaine '%s' (aucune règle applicable dans les groupes %v) - ParsedPermission: %+v",
-				action, domain, groupIDs, parsedPermission,
+			logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied, fmt.Sprintf(
+				"Action '%s' refusée sur le domaine '%s' (aucune règle applicable dans les groupes %v)",
+				action, domain, groupIDs,
 			))
 			sb.WriteString(fmt.Sprintf("%s : refusée", domain))
 		} else {

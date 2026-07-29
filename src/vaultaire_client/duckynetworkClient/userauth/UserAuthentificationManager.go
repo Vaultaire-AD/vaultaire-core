@@ -68,11 +68,11 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 		storage.Authentification_PAM <- "failed"
 
 	case "11":
-		lines := strings.Split(trames_content.Content, "\n")
-		username := lines[0]
+		// lines := strings.Split(trames_content.Content, "\n")
+		// username := lines[0]
 		activeSession, _ := getlocalinformation.GetActiveUsers()
 
-		logs.Write_log("INFO", fmt.Sprintf("%s en ligne (session id=%s)", username, duckysession.SessionID))
+		// logs.Write_log("INFO", fmt.Sprintf("%s en ligne (session id=%s)", username, duckysession.SessionID))
 
 		// La session vaultaire a déjà été enregistrée (Pending) sous
 		// MotherSessionID dès l'ouverture de la connexion ; on la passe

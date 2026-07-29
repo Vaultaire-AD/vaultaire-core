@@ -4,23 +4,27 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"time"
 	"vaultaire/core/logs"
 )
 
+// CleanUpExpiredSessions supprime les entrées did_login dont key_time_validity
+// est dépassé.
+//
+// La comparaison se fait entièrement côté SQL (WHERE key_time_validity <
+// NOW()) plutôt qu'en récupérant la date en Go pour la reparser : le driver
+// MySQL (DSN parseTime=true) renvoie un TIMESTAMP scanné dans un string sous
+// forme RFC3339Nano (ex "2026-07-28T15:43:41Z"), alors que le code
+// attendait un format "2006-01-02 15:04:05" — ça ne matchait jamais et
+// faisait échouer le nettoyage à chaque tick, en boucle, sans jamais rien
+// supprimer. Laisser MySQL faire la comparaison de dates élimine ce problème
+// de format une fois pour toutes.
 func CleanUpExpiredSessions(db *sql.DB) error {
-	// Obtenir l'heure actuelle
-	now := time.Now()
-
-	// Sélectionner les IDs des sessions expirées
-	rows, err := db.Query("SELECT d_id_user, key_time_validity FROM did_login")
+	rows, err := db.Query("SELECT d_id_user FROM did_login WHERE key_time_validity < NOW()")
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la lecture des sessions : "+err.Error())
-		return fmt.Errorf("erreur lors de la lecture des sessions : %v", err)
+		return fmt.Errorf("erreur lors de la lecture des sessions expirées : %v", err)
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			// Handle or log the error
 			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 		}
 	}()
@@ -28,31 +32,19 @@ func CleanUpExpiredSessions(db *sql.DB) error {
 	var expiredUserIDs []int
 	for rows.Next() {
 		var userID int
-		var keyTimeValidity string
-		err := rows.Scan(&userID, &keyTimeValidity)
-		if err != nil {
-			logs.WriteLog("db", "erreur lors de l'extraction des données : "+err.Error())
+		if err := rows.Scan(&userID); err != nil {
 			return fmt.Errorf("erreur lors de l'extraction des données : %v", err)
 		}
-
-		// Convertir key_time_validity en type time.Time
-		expirationTime, err := time.Parse("2006-01-02 15:04:05", keyTimeValidity)
-		if err != nil {
-			logs.WriteLog("db", "erreur lors de la conversion de la date : "+err.Error())
-			return fmt.Errorf("erreur lors de la conversion de la date : %v", err)
-		}
-
-		// Vérifier si l'entrée est expirée
-		if now.After(expirationTime) {
-			expiredUserIDs = append(expiredUserIDs, userID)
-		}
+		expiredUserIDs = append(expiredUserIDs, userID)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("erreur lors de la lecture des sessions expirées : %v", err)
 	}
 
 	// Supprimer les sessions expirées
 	for _, userID := range expiredUserIDs {
 		_, err := db.Exec("DELETE FROM did_login WHERE d_id_user = ?", userID)
 		if err != nil {
-			logs.WriteLog("db", "erreur lors de la suppression des sessions expirées : "+err.Error())
 			return fmt.Errorf("erreur lors de la suppression des sessions expirées : %v", err)
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Session expirée pour user_id %d supprimée", userID))

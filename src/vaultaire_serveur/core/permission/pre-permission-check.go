@@ -19,7 +19,7 @@ func GetGroupIDsForUser(username string) ([]int, error) {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération domaines pour %s : %v", username, err))
 		return nil, fmt.Errorf("erreur récupération domaines")
 	}
-	logs.Write_Log("INFO", fmt.Sprintf("Domaines pour %s (ID %d) : %v", username, acUserID, domainList))
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("Domaines pour %s (ID %d) : %v", username, acUserID, domainList))
 	groupsID, err := database.GetGroupIDsFromDomains(database.DB, domainList)
 	if err != nil {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err))

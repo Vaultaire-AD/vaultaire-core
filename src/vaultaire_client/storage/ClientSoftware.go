@@ -1,6 +1,6 @@
 package storage
 
-var SoftwarePath = "/opt/vaultaire_client/.ssh/client_software.yaml"
+var SoftwarePath = "/etc/vaultaire_client/.ssh/client_software.yaml"
 var Computeur_ID string
 var LogicielType string
 var IsServeur bool

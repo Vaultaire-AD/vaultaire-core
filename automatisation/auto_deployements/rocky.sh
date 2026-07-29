@@ -6,18 +6,18 @@ echo "🔧 Déploiement Vaultaire Client..."
 
 # Déplacement des fichiers
 mv -f /opt/vaultaire/vaultaire_client/pam*.so /usr/lib64/security/
-mkdir -p /opt/vaultaire_client/.ssh
-mv /opt/vaultaire/vaultaire_client/vaultaire_client /opt/vaultaire_client/
-mv /opt/vaultaire/client_software.yaml /opt/vaultaire_client/.ssh/client_software.yaml
-mv /opt/vaultaire/*.pem /opt/vaultaire_client/.ssh/
+mkdir -p /etc/vaultaire_client/.ssh
+mv /opt/vaultaire/vaultaire_client/vaultaire_client /usr/bin/vaultaire_client/
+mv /opt/vaultaire/client_software.yaml /etc/vaultaire_client/.ssh/client_software.yaml
+mv /opt/vaultaire/*.pem /etc/vaultaire_client/.ssh/
 
 mv /opt/vaultaire/vaultaire_client/libnss_vaultaire.so.2 /lib64/
 chmod 755 /lib64/libnss_vaultaire.so.2
-chmod 750 /opt/vaultaire_client/vaultaire_client
+chmod 750 /usr/bin/vaultaire_client/
 
 # Permissions
-chmod 700 -R /opt/vaultaire_client/
-chmod 400 -R /opt/vaultaire_client/.ssh/*
+chmod 700 -R /etc/vaultaire_client/
+chmod 400 -R /etc/vaultaire_client/.ssh/*
 chmod 755 /usr/lib64/security/pam_login_custom_module.so
 chmod 755 /usr/lib64/security/pam_logout_custom_module.so
 chmod 755 /usr/lib64/security/pam_ssh_auth_module.so
@@ -34,23 +34,25 @@ After=network.target
 [Service]
 User=root
 Group=root
-ExecStart=/opt/vaultaire_client/vaultaire_client
-WorkingDirectory=/opt/vaultaire_client
+ExecStart=/usr/bin/vaultaire_client
+WorkingDirectory=/etc/vaultaire_client
 Environment=USER=root
 LimitNOFILE=4096
-PrivateTmp=false
-ProtectSystem=true
-ReadOnlyPaths=/etc /usr /lib /bin
-ReadWritePaths=/tmp /etc /home /var/log/vaultaire /etc/passwd /etc/shadow /etc/group /etc/gshadow
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # Configuration client
-cat > /opt/vaultaire_client/client_conf.yaml <<'EOF'
-serveurlistenport: 6666
-serveur_ip: 192.168.30.3
+cat > /etc/vaultaire_client/client_conf.json <<'EOF'
+{
+  "servers": [
+    {
+      "ip": "192.168.30.3",
+      "port": 6666
+    }
+  ]
+}
 EOF
 
 

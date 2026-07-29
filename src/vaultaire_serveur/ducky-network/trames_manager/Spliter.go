@@ -10,7 +10,7 @@ import (
 	autssh "vaultaire/ducky-network/authentification/ssh"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	"vaultaire/ducky-network/sendmessage"
-	sync "vaultaire/ducky-network/sync"
+	"vaultaire/ducky-network/sessionmgr"
 )
 
 func Split_Action(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) {
@@ -18,7 +18,7 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 	message := ""
 	//println(trames_content.Message_Order[0]+"_"+trames_content.Message_Order[1])
 	messageOrder := strings.Join(trames_content.Message_Order, "_")
-	err := sync.UpdateConnectionTrame(trames_content.SessionIntegritykey, messageOrder)
+	err := sessionmgr.Sessions.UpdateConnectionTrame(trames_content.SessionIntegritykey, messageOrder)
 
 	if err != nil && messageOrder != "01_01" {
 		logs.Write_Log("ERROR", "Error during the update of the connection: "+err.Error())

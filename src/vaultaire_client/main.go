@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"vaultaire_client/config"
 	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
@@ -13,14 +14,7 @@ import (
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
 	yaml_vaultaire "vaultaire_client/yaml"
-
-	"gopkg.in/yaml.v2"
 )
-
-type config struct {
-	ServerListenPort string `yaml:"serveurlistenport"`
-	ServerIP         string `yaml:"serveur_ip"`
-}
 
 func StartDailyUserCleanup() {
 	go func() {
@@ -44,37 +38,9 @@ func StartDailyUserCleanup() {
 	}()
 }
 
-func loadConfig(filePath string) error {
-	// Ouvrir le fichier
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// Handle or log the error
-			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la fermeture du fichier de configuration: %v", err))
-		}
-	}()
-
-	// Initialiser une variable pour stocker les données du fichier
-	var config config
-
-	// Décoder le fichier YAML dans la structure Config
-	decoder := yaml.NewDecoder(file)
-	err = decoder.Decode(&config)
-	if err != nil {
-		return err
-	}
-	storage.C_serveurIP = config.ServerIP
-	storage.C_serveurListenPort = config.ServerListenPort
-	// Retourner la configuration lue
-	return nil
-}
-
 func main() {
 	// ... chargement config ...
-	err := loadConfig("/opt/vaultaire_client/client_conf.yaml")
+	err := config.LoadConfig("/etc/vaultaire_client/client_conf.json")
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 

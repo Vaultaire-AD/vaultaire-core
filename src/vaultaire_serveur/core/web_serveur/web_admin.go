@@ -2,11 +2,11 @@ package webserveur
 
 import (
 	"html/template"
-	"log"
 	"net/http"
 	"strings"
 	"vaultaire/core/command"
 	dbcert "vaultaire/core/database/db-certificates"
+	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 	"vaultaire/core/web_serveur/session"
@@ -114,7 +114,7 @@ func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := executeAdminPage(w, "admin.html", data); err != nil {
-		log.Printf("admin template: %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "admin template: "+err.Error())
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
 }

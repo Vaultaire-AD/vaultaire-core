@@ -6,13 +6,14 @@ import (
 	"vaultaire/core/storage"
 	keymanagement "vaultaire/ducky-network/key_management"
 	"vaultaire/ducky-network/sessionmgr"
-	sync "vaultaire/ducky-network/sync"
 )
 
 // --- Initialisation globale ---
 
 func initializeServer() {
-	sync.Sync_InitMapDuckyIntegrity()
+	// Le registre de sessions (sessionmgr.Sessions) s'auto-initialise à
+	// l'import (var package-level), plus besoin d'un init explicite ici
+	// comme pour l'ancienne sync.Map.
 	go clearSession()
 	go checkServeurOnline()
 }
