@@ -7,6 +7,7 @@ import (
 	"vaultaire/core/database"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
 
@@ -93,6 +94,14 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 	// Logique : Le client demande les clés publiques pour l'utilisateur X
 	username, domaine := domain.ExctractDomainFromUsername(content[0])
 	db := database.GetDatabase()
+
+	ok, _ := permission.CanUserConnectToDomain(username + "@" + domaine)
+	if !ok {
+		logs.Write_Log("WARNING", username+" permission denied for machine "+trames_content.ClientSoftwareID)
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "@" + domaine + "\npermission denied"
+		// 03_03\nserveur_central\n<session_integrity_key>\n<username>@<domain>\n<reason>
+		// reason explique pourquoi (refusé, utilisateur inconnu, etc.)
+	}
 
 	// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
 	can, err := database.DidUserCanLogin(db, username, trames_content.ClientSoftwareID)

@@ -47,24 +47,15 @@ void vaultaire_log_err(const char *fmt, ...) {
     va_end(ap);
 }
 
-/* --- Validation des domaines & usernames --- */
-static const char *vaultaire_allowed_domains[] = { "corp.local", "vaultaire.fr" };
-
-bool vaultaire_is_allowed_domain(const char *domain) {
-    if (!domain || domain[0] == '\0') return false;
-    for (size_t i = 0; i < sizeof(vaultaire_allowed_domains) / sizeof(vaultaire_allowed_domains[0]); i++) {
-        if (strcasecmp(domain, vaultaire_allowed_domains[i]) == 0)
-            return true;
-    }
-    return false;
-}
 
 
 int is_vaultaire_user(const char *username) {
-    const char *at = strchr(username, '@');
-    if (!at) return 0;
-    return vaultaire_is_allowed_domain(at + 1) ? 1 : 0;
+    if (username == NULL)
+        return 0;
+
+    return strchr(username, '@') != NULL;
 }
+
 bool vaultaire_is_valid_username(const char *username) {
     if (!username) return false;
     if (strpbrk(username, "/ ;&:\n\r\t")) return false;

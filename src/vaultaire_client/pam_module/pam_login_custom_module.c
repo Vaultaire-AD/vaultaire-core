@@ -48,7 +48,7 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 
     if (strcmp(status, "success") != 0) {
         vaultaire_log_err("Auth rejected for %s (status: %s)", username, status);
-        return PAM_AUTH_ERR;
+        return PAM_PERM_DENIED;
     }
 
     // 3. User local & Mot de passe local (shadow)
