@@ -3,47 +3,48 @@ package display
 import (
 	"fmt"
 	"strings"
-	"text/tabwriter"
-	"vaultaire/core/storage"
+
+	dbgpo "vaultaire/core/database/db_gpo"
 
 	"github.com/fatih/color"
 )
 
-// DisplayAllGPOs affiche toutes les GPO dans un format lisible
-func DisplayAllGPOs(gpos []*storage.LinuxGPO) string {
-	if len(gpos) == 0 {
+// DisplayAllGPOs affiche la liste des GPO : scope, version, activation, nombre
+// de modules et groupes liés. Le détail des paramètres n'est pas montré ici,
+// c'est le rôle de DisplayGPOByName.
+func DisplayAllGPOs(policies []dbgpo.PolicySummary) string {
+	if len(policies) == 0 {
 		return color.RedString("❌ Aucune GPO trouvée.")
 	}
 
-	// Configurer les couleurs
 	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
 	header := color.New(color.FgYellow, color.Bold).SprintFunc()
+	dim := color.New(color.FgHiBlack).SprintFunc()
 
-	// Utilisation d'un StringBuilder pour accumuler la sortie
 	var sb strings.Builder
-
-	// Ajouter le titre
 	sb.WriteString(title("🔒 Liste des GPO") + "\n")
 	sb.WriteString("--------------------------------------------------\n")
 
-	// Créer un tableau formaté avec tabwriter
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
+	for _, p := range policies {
+		state := color.GreenString("activée")
+		if !p.Enabled {
+			state = color.RedString("désactivée")
+		}
+		groups := "aucun groupe"
+		if len(p.Groups) > 0 {
+			groups = strings.Join(p.Groups, ", ")
+		}
 
-	// Affichage des GPO
-	for _, gpo := range gpos {
-		fmt.Fprintf(w, "%-20s: %-30s\n", header("ID"), fmt.Sprintf("%d", gpo.ID))
-		fmt.Fprintf(w, "%-20s: %-30s\n", header("Nom de la GPO"), gpo.GPOName)
-		fmt.Fprintf(w, "%-20s: %-30s\n", header("Ubuntu Commande"), gpo.Ubuntu)
-		fmt.Fprintf(w, "%-20s: %-30s\n", header("Debian Commande"), gpo.Debian)
-		fmt.Fprintf(w, "%-20s: %-30s\n", header("Rocky Commande"), gpo.Rocky)
-		sb.WriteString(b.String())
-		b.Reset()
+		sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Nom"), p.Name))
+		sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Scope"), p.Scope))
+		sb.WriteString(fmt.Sprintf("%-16s: v%d (%s)\n", header("Version"), p.Version, state))
+		sb.WriteString(fmt.Sprintf("%-16s: %d\n", header("Modules"), p.ModuleCount))
+		sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Groupes"), groups))
+		if p.Description != "" {
+			sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Description"), p.Description))
+		}
+		sb.WriteString(dim("  id "+fmt.Sprint(p.ID)) + "\n")
+		sb.WriteString("--------------------------------------------------\n")
 	}
-
-	// Ajouter la ligne de séparation
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Retourner la chaîne accumulée
 	return sb.String()
 }

@@ -145,23 +145,13 @@ func Create_DataBase(db *sql.DB) {
 			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
 		);`,
 
-		// ----- GPO Linux par distribution -----
-		`CREATE TABLE IF NOT EXISTS linux_gpo_distributions (
-			id INT AUTO_INCREMENT PRIMARY KEY,
-			gpo_name VARCHAR(255) NOT NULL,
-			ubuntu TEXT,
-			debian TEXT,
-			rocky TEXT
-		);`,
-
-		// Groupes ↔ GPO
-		`CREATE TABLE IF NOT EXISTS group_linux_gpo (
-			d_id_group INT NOT NULL,
-			d_id_gpo INT NOT NULL,
-			PRIMARY KEY (d_id_group, d_id_gpo),
-			FOREIGN KEY (d_id_group) REFERENCES groups(id_group) ON DELETE CASCADE,
-			FOREIGN KEY (d_id_gpo) REFERENCES linux_gpo_distributions(id) ON DELETE CASCADE
-		);`,
+		// ----- GPO -----
+		// Le schéma GPO (gpo, gpo_module, gpo_group) est créé par le package
+		// dédié core/database/db_gpo, appelé depuis main après cette fonction.
+		// Il y remplace l'ancien modèle linux_gpo_distributions / group_linux_gpo,
+		// qui stockait une commande shell brute par distribution — donc de
+		// l'exécution de code arbitraire en root, sans catalogue ni garde-fou.
+		// dbgpo.CreateTables supprime ces deux tables si elles subsistent.
 
 		`CREATE TABLE IF NOT EXISTS user_public_keys (
     		id_key INT AUTO_INCREMENT PRIMARY KEY,

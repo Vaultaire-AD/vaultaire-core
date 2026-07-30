@@ -7,6 +7,7 @@
   <a href="/admin/clients" {{if eq .Section "clients"}}class="active"{{end}}>Clients</a>
   <a href="/admin/cluster" {{if eq .Section "cluster"}}class="active"{{end}}>Cluster</a>
   <a href="/admin/permissions" {{if eq .Section "permissions"}}class="active"{{end}}>Permissions</a>
+  <a href="/admin/gpo" {{if eq .Section "gpo"}}class="active"{{end}}>GPO</a>
   <a href="/admin/certificates" {{if eq .Section "certificates"}}class="active"{{end}}>Certificats</a>
   <a href="/admin/logs" {{if eq .Section "logs"}}class="active"{{end}}>Logs</a>
   {{if .DnsEnable}}<a href="/admin/dns" {{if eq .Section "dns"}}class="active"{{end}}>DNS</a>{{end}}

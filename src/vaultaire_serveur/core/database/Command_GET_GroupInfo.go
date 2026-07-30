@@ -28,7 +28,7 @@ func Command_GET_GroupInfo(db *sql.DB, groupName string) (*storage.GroupInfo, er
 		COALESCE(GROUP_CONCAT(DISTINCT l.computeur_id ORDER BY l.computeur_id SEPARATOR ', '), '') AS clients,
 		-- Permissions clients/logiciels (table client_permission)
 		COALESCE(GROUP_CONCAT(DISTINCT cp.name_permission ORDER BY cp.name_permission SEPARATOR ', '), '') AS client_permissions,
-		COALESCE(GROUP_CONCAT(DISTINCT gpo.gpo_name ORDER BY gpo.gpo_name SEPARATOR ', '), '') AS gpos
+		COALESCE(GROUP_CONCAT(DISTINCT gp.gpo_name ORDER BY gp.gpo_name SEPARATOR ', '), '') AS gpos
 	FROM groups g
 	LEFT JOIN domain_group dg ON g.id_group = dg.d_id_group
 	LEFT JOIN users_group ug ON g.id_group = ug.d_id_group
@@ -39,8 +39,8 @@ func Command_GET_GroupInfo(db *sql.DB, groupName string) (*storage.GroupInfo, er
 	LEFT JOIN id_logiciels l ON lg.d_id_logiciel = l.id_logiciel
 	LEFT JOIN group_permission_logiciel gpl ON g.id_group = gpl.d_id_group
 	LEFT JOIN client_permission cp ON gpl.d_id_permission = cp.id_permission
-	LEFT JOIN group_linux_gpo gg ON g.id_group = gg.d_id_group
-	LEFT JOIN linux_gpo_distributions gpo ON gg.d_id_gpo = gpo.id
+	LEFT JOIN gpo_group gg ON g.id_group = gg.d_id_group
+	LEFT JOIN gpo gp ON gg.d_id_gpo = gp.id_gpo
 	WHERE g.group_name = ?
 	GROUP BY g.id_group, g.group_name, dg.domain_name;
 	`

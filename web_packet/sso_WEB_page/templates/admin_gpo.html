@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>GPO — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>GPO</h1>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+
+    <section class="section">
+      <h2>Créer une GPO</h2>
+      <p class="muted small">
+        Une GPO est une liste de modules choisis dans un catalogue figé : elle ne contient jamais de commande
+        ni de script. Le scope est définitif — il détermine quels modules sont disponibles et à quel moment la
+        politique est appliquée.
+      </p>
+      <form method="post">
+        <input type="hidden" name="action" value="create_gpo">
+        <label>Nom</label>
+        <input name="gpo_name" placeholder="durcissement_ssh" required>
+        <label>Scope</label>
+        <select name="scope" required>
+          {{ range .Scopes }}<option value="{{ . }}">{{ . }}</option>{{ end }}
+        </select>
+        <label>Description</label>
+        <input name="description" placeholder="À quoi sert cette GPO">
+        <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Créer</button></div>
+      </form>
+    </section>
+
+    <hr>
+    <h2 class="h2">Liste des GPO</h2>
+    {{ if not .Policies }}
+      <p class="muted">Aucune GPO définie pour le moment.</p>
+    {{ end }}
+    <div class="perm-list">
+      {{ range .Policies }}
+      <article class="perm-card">
+        <div class="perm-card-main">
+          <h3 class="perm-card-title"><a href="/admin/gpo?gpo={{ .Name }}">{{ .Name }}</a></h3>
+          {{ if .Description }}<p class="perm-card-desc">{{ .Description }}</p>{{ end }}
+          <div class="perm-card-meta">
+            <span class="perm-id muted small">ID {{ .ID }}</span>
+            <span class="perm-badge">scope {{ .Scope }}</span>
+            <span class="perm-badge">v{{ .Version }}</span>
+            {{ if .Enabled }}<span class="perm-badge perm-badge-admin">activée</span>
+            {{ else }}<span class="perm-badge">désactivée</span>{{ end }}
+            <span class="muted small">{{ .ModuleCount }} module(s)</span>
+          </div>
+          <div class="perm-card-meta">
+            {{ if .Groups }}
+              <span class="muted small">Groupes :</span>
+              {{ range .Groups }}<span class="perm-badge">{{ . }}</span>{{ end }}
+            {{ else }}
+              <span class="muted small">Aucun groupe lié — cette GPO ne s'applique à personne.</span>
+            {{ end }}
+          </div>
+        </div>
+        <div class="perm-card-actions">
+          <a href="/admin/gpo?gpo={{ .Name }}" class="btn btn-secondary">Détail</a>
+          <form method="post" class="perm-card-delete" onsubmit="return confirm('Supprimer la GPO {{ .Name }} et tous ses modules ?');">
+            <input type="hidden" name="action" value="delete_gpo">
+            <input type="hidden" name="gpo_name" value="{{ .Name }}">
+            <button type="submit" class="btn btn-ghost btn-danger">Supprimer</button>
+          </form>
+        </div>
+      </article>
+      {{ end }}
+    </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

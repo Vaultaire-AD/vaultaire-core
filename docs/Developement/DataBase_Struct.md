@@ -98,16 +98,32 @@ DATABASE: DUCKY
 │   ├─ d_id_logiciel FK -> id_logiciels.id_logiciel
 │   └─ recent_utilisation TIMESTAMP
 │
-├─ linux_gpo_distributions
-│   ├─ PK: id
-│   ├─ gpo_name, ubuntu (TEXT), debian (TEXT), rocky (TEXT)
+├─ gpo   [* créée par core/database/db_gpo, pas par Create_DataBase *]
+│   ├─ PK: id_gpo
+│   ├─ gpo_name VARCHAR(64) UNIQUE
+│   ├─ scope VARCHAR(16)  -- 'machine' ou 'user' (jamais 'both' : réservé aux schémas de module)
+│   ├─ description TEXT, version INT, enabled BOOLEAN
+│   ├─ created_at / updated_at DATETIME
 │   └─ Relations:
-│       └─ group_linux_gpo.d_id_gpo ← FK -> linux_gpo_distributions.id
+│       ├─ gpo_module.d_id_gpo ← FK -> gpo.id_gpo (ON DELETE CASCADE)
+│       └─ gpo_group.d_id_gpo  ← FK -> gpo.id_gpo (ON DELETE CASCADE)
 │
-├─ group_linux_gpo   [* association groups ↔ linux_gpo_distributions *]
-│   ├─ PK composite: (d_id_group, d_id_gpo)
-│   ├─ d_id_group FK -> groups.id_group
-│   └─ d_id_gpo FK -> linux_gpo_distributions.id
+├─ gpo_module   [* un module déclaratif par ligne *]
+│   ├─ PK: id_gpo_module
+│   ├─ d_id_gpo FK -> gpo.id_gpo
+│   ├─ module_type VARCHAR(64)   -- type du catalogue core/gpo (registry.go)
+│   ├─ module_scope VARCHAR(16)  -- recopie du scope de la GPO porteuse
+│   ├─ apply_order INT           -- issu du catalogue, pas de l'ordre de saisie
+│   └─ params TEXT (JSON)        -- champs validés contre le schéma du module
+│
+├─ gpo_group   [* association groups ↔ gpo ; une GPO ne cible que des groupes *]
+│   ├─ PK composite: (d_id_gpo, d_id_group)
+│   ├─ d_id_gpo FK -> gpo.id_gpo
+│   └─ d_id_group FK -> groups.id_group
+│
+│  Tables supprimées (ancien modèle) : linux_gpo_distributions, group_linux_gpo.
+│  Elles stockaient une commande shell brute par distribution, donc de l'exécution
+│  de code arbitraire en root. dbgpo.CreateTables les DROP si elles subsistent.
 │
 ├─ user_public_keys
 │   ├─ PK: id_key

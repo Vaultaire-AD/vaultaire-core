@@ -31,6 +31,9 @@ func Run() int {
 	// --- Unit: ExecuteCommand (sans DB: help, inconnu) ---
 	results = append(results, testExecuteCommand()...)
 
+	// --- Unit: garde-fous GPO (catalogue, scopes, chemins, résolution) ---
+	results = append(results, testGPO()...)
+
 	// --- Intégration optionnelle: DB (si config chargée et connexion OK) ---
 	if db := database.GetDatabase(); db != nil {
 		results = append(results, testDatabase(db)...)
@@ -88,7 +91,7 @@ func testSplitArgs() []Result {
 		out = append(out, Result{"SplitArgs(create -u)", true, ""})
 	}
 	// --key value
-	args = command.SplitArgsPreserveBlocks("create -gpo mygpo --cmd \"alias x=y\"")
+	args = command.SplitArgsPreserveBlocks("create -gpo mygpo --scope machine --desc \"durcissement SSH\"")
 	if len(args) < 3 {
 		out = append(out, Result{"SplitArgs(--key value)", false, fmt.Sprintf("got %v", args)})
 	} else {

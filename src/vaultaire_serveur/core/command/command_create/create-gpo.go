@@ -2,76 +2,82 @@ package commandcreate
 
 import (
 	"fmt"
+	"strings"
+
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbgpo "vaultaire/core/database/db_gpo"
+	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
 )
 
-// create_GPO handles the creation of a Group Policy Object (GPO).
-// It expects a command list with the format: ["-gpo", "gpo_name", "--cmd", "command"] or ["-gpo", "gpo_name", "--ubuntu", "command", "--debian", "command", "--rocky", "command"].
-// If the command is valid, it creates the GPO and returns its details.
-// If the command is invalid or an error occurs, it logs the error and returns an error message.
-// It also prints the command list for debugging purposes.
-// Example usage:
-// create_GPO([]string{"-gpo", "exampleGPO", "--cmd", "exampleCommand"})
-// create_GPO([]string{"-gpo", "exampleGPO", "--ubuntu", "ubuntuCommand", "--debian", "debianCommand", "--rocky", "rockyCommand"})
+// create_GPO crée une GPO vide.
+//
+// Usage : create -gpo <nom> --scope <machine|user> [--desc "texte"]
+//
+// La commande ne prend volontairement plus de commande shell : l'ancienne forme
+// (--cmd / --ubuntu / --debian / --rocky) revenait à pousser du code arbitraire
+// exécuté en root sur tout le parc. Les modules s'ajoutent ensuite depuis
+// l'interface web, où le catalogue guide la saisie champ par champ.
 func create_GPO(command_list []string) string {
 	if len(command_list) < 2 {
-		return "Erreur : -gpo <nom_de_la_gpo> [--cmd <commande>] ou [--ubuntu ... --debian ...]"
-	}
-	fmt.Println("Command list:")
-	for i, arg := range command_list {
-		fmt.Printf("  [%d] %s\n", i, arg)
+		return gpoCreateUsage("nom de la GPO manquant")
 	}
 
 	gpoName := command_list[1]
-	ubuntu := ""
-	debian := ""
-	rocky := ""
+	scope := gpo.ScopeMachine
+	scopeGiven := false
+	description := ""
 
-	// Parser les arguments
 	for i := 2; i < len(command_list); i++ {
 		switch command_list[i] {
-		case "--cmd":
-			if i+1 < len(command_list) {
-				ubuntu = command_list[i+1]
-				debian = command_list[i+1]
-				rocky = command_list[i+1]
+		case "--scope", "-s":
+			if i+1 >= len(command_list) {
+				return gpoCreateUsage("valeur manquante après --scope")
 			}
-		case "--ubuntu":
-			if i+1 < len(command_list) {
-				ubuntu = command_list[i+1]
-				i++
+			candidate := gpo.Scope(strings.ToLower(command_list[i+1]))
+			if !gpo.IsValidPolicyScope(candidate) {
+				return gpoCreateUsage(fmt.Sprintf("scope %q invalide (attendu : machine ou user)", command_list[i+1]))
 			}
-		case "--debian":
-			if i+1 < len(command_list) {
-				debian = command_list[i+1]
-				i++
+			scope, scopeGiven = candidate, true
+			i++
+		case "--desc", "-d":
+			if i+1 >= len(command_list) {
+				return gpoCreateUsage("valeur manquante après --desc")
 			}
-		case "--rocky":
-			if i+1 < len(command_list) {
-				rocky = command_list[i+1]
-				i++
-			}
+			description = command_list[i+1]
+			i++
+		case "--cmd", "--ubuntu", "--debian", "--rocky":
+			return ">> -L'option " + command_list[i] + " n'existe plus : une GPO ne transporte plus de commande shell.\n" +
+				"   Créez la GPO puis ajoutez-y des modules du catalogue depuis /admin/gpo."
+		default:
+			return gpoCreateUsage("option inconnue : " + command_list[i])
 		}
 	}
 
-	if ubuntu == "" && debian == "" && rocky == "" {
-		return "Erreur : aucune commande spécifiée pour la GPO"
+	if !scopeGiven {
+		return gpoCreateUsage("--scope est requis : une GPO est soit machine, soit user")
 	}
 
-	_, err := database.CreateGPO(database.GetDatabase(), gpoName, ubuntu, debian, rocky)
-	if err != nil {
+	db := database.GetDatabase()
+	if _, err := dbgpo.CreatePolicy(db, gpoName, scope, description); err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la création de la GPO "+gpoName+" : "+err.Error())
-		return (">> -" + err.Error())
+		return ">> -" + err.Error()
 	}
 
-	logs.Write_Log("INFO", "GPO créée avec succès : "+gpoName)
-	gpoDetails, err := database.Command_GET_GPOInfoByName(database.GetDatabase(), gpoName)
+	logs.Write_Log("INFO", fmt.Sprintf("GPO créée avec succès : %s (scope %s)", gpoName, scope))
+	policy, err := dbgpo.GetPolicyByName(db, gpoName)
 	if err != nil {
-		logs.Write_Log("WARNING", "Erreur lors de la récupération des détails de la GPO "+gpoName+" : "+err.Error())
-		return (">> -" + err.Error())
+		return ">> -" + err.Error()
 	}
+	return display.DisplayGPOByName(policy)
+}
 
-	return display.DisplayGPOByName(&gpoDetails)
+// gpoCreateUsage rend le message d'usage accompagné du motif du refus.
+func gpoCreateUsage(reason string) string {
+	return "Erreur : " + reason + "\n" +
+		"Usage : create -gpo <nom> --scope <machine|user> [--desc \"description\"]\n" +
+		"   machine : appliquée à l'ordinateur (démarrage + rafraîchissement périodique)\n" +
+		"   user    : appliquée à l'utilisateur après authentification\n" +
+		"Les modules s'ajoutent ensuite depuis la page /admin/gpo."
 }

@@ -20,7 +20,8 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		"-u path to yaml user pour crée un nouvelle utilisateur"
 		"-c <type_client> <yes/not(serveur or not)> pour crée un nouveau client software"
 		"-g <nom_du_goupe> <nom_de_la_perm> pour crée un nouveau groupe"
-		"-p <nom_de_la_permissions> <yes/not> pour crée un nouvelle permisions admin ou non"`)
+		"-p <nom_de_la_permissions> <yes/not> pour crée un nouvelle permisions admin ou non"
+		"-gpo <nom> --scope <machine|user> [--desc 'texte'] pour crée une nouvelle GPO (les modules s'ajoutent ensuite depuis /admin/gpo)"`)
 	case "-u":
 		actionKey = "write:create:user"
 	case "-c":

@@ -98,13 +98,10 @@ type GroupInfo struct {
 	GPOs        []string
 }
 
-type LinuxGPO struct {
-	ID      int    // ID unique pour la GPO
-	GPOName string // Nom de la GPO
-	Ubuntu  string // Commande Ubuntu
-	Debian  string // Commande Debian
-	Rocky   string // Commande Rocky
-}
+// Les GPO ne sont plus décrites ici : leur modèle (Policy, Module, Scope) vit
+// dans le package core/gpo, avec son catalogue et ses garde-fous. L'ancien type
+// LinuxGPO portait une commande shell par distribution, ce que le modèle
+// déclaratif remplace entièrement.
 
 type GroupDomain struct {
 	GroupName  string

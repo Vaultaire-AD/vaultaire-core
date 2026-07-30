@@ -8,6 +8,7 @@ import (
 	"vaultaire/cluster"
 	configurationfile "vaultaire/core/configuration_file"
 	db "vaultaire/core/database"
+	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/dns"
 	ldap "vaultaire/core/ldap"
 	"vaultaire/core/logs"
@@ -37,6 +38,14 @@ func main() {
 
 	db.InitDatabase()
 	db.Create_DataBase(db.GetDatabase())
+
+	// Le schéma GPO est créé après les tables de base (gpo_group référence
+	// groups) et par son propre package, qui détient aussi la suppression des
+	// tables de l'ancien modèle.
+	if err := dbgpo.CreateTables(db.GetDatabase()); err != nil {
+		log.Fatalf("Erreur lors de la création du schéma GPO : %v", err)
+	}
+
 	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
 

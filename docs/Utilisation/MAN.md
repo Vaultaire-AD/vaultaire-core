@@ -231,11 +231,29 @@ create -c <type_client> <yes|not> -join <IP> <Username>
 ### 5.6 GPO
 
 ```bash
-create -gpo <nom_gpo> [--cmd <commande>]
-create -gpo <nom_gpo> --ubuntu <cmd_ubuntu> --debian <cmd_debian> --rocky <cmd_rocky>
+create -gpo <nom_gpo> --scope <machine|user> [--desc "description"]
 ```
 
-Exemple : `create -gpo alias --cmd "alias vlt=vaultaire"`
+Exemple : `create -gpo durcissement_ssh --scope machine --desc "Baseline SSH du domaine"`
+
+Une GPO ne contient **jamais** de commande ni de script : elle est une liste de
+**modules** choisis dans un catalogue figé côté serveur, chacun paramétré par les
+seuls champs de son schéma. Les options `--cmd`, `--ubuntu`, `--debian` et
+`--rocky` de l'ancien modèle n'existent plus.
+
+Le **scope** est définitif et détermine deux choses :
+
+| Scope | Quand elle s'applique | Modules disponibles |
+|-------|-----------------------|---------------------|
+| `machine` | Au démarrage du client puis par rafraîchissement périodique, indépendamment de l'utilisateur connecté | Tous, y compris ceux touchant aux privilèges (SSH serveur, sudo, sysctl, paquets, services) |
+| `user` | Après une authentification réussie, pour l'utilisateur authentifié | Uniquement les modules sans effet sur les privilèges (environnement, tâches planifiées user, fichiers sous le home) |
+
+Cette séparation est le garde-fou anti-élévation de privilège : les modules
+`machine` sont refusés dans une GPO `user` côté serveur **et** côté agent, même
+si la politique est signée par le serveur central.
+
+L'ajout et l'édition des modules se font depuis l'interface web
+**Admin → GPO**, où les formulaires sont générés depuis le catalogue.
 
 ---
 

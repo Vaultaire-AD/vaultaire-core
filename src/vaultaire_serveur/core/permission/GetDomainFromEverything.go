@@ -3,6 +3,7 @@ package permission
 import (
 	"fmt"
 	"vaultaire/core/database"
+	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 )
@@ -67,8 +68,11 @@ func GetDomainslistFromClientpermission(permissionName string) ([]string, error)
 	return domainsClient, nil
 }
 
+// GetDomainslistFromGPO retourne les domaines couverts par une GPO, via les
+// groupes auxquels elle est liée. Les permissions RBAC étant exprimées par
+// domaine, c'est cette liste qui détermine qui a le droit d'agir sur la GPO.
 func GetDomainslistFromGPO(gpoName string) ([]string, error) {
-	domainsGPO, err := db_permission.GetDomainsByGPO(gpoName)
+	domainsGPO, err := dbgpo.GetDomainsByGPO(database.GetDatabase(), gpoName)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des domaines pour la GPO "+gpoName+" : "+err.Error())
 		return nil, err
