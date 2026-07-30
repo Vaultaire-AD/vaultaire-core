@@ -44,14 +44,49 @@ const (
 // cible dans les chemins de scope user.
 const UserHomePlaceholder = "/%h"
 
+// Definition est le contenu d'une valeur nommée référencée par un paramètre.
+//
+// L'agent ne connaît PAS le contenu des jeux de commandes : il le reçoit avec le
+// module. C'est ce qui permet de créer un jeu custom depuis l'interface sans
+// déployer un nouvel agent — sinon un jeu inconnu localement échouerait, quel
+// que soit son contenu en base.
+type Definition struct {
+	Name    string `json:"name"`
+	Kind    string `json:"kind"`
+	Payload string `json:"payload"`
+}
+
+// Lines découpe le contenu en lignes utiles (vides et commentaires exclus).
+func (d Definition) Lines() []string {
+	var out []string
+	for _, line := range strings.Split(d.Payload, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	return out
+}
+
 // Module est un module de politique reçu du serveur.
 type Module struct {
-	Type        string            `json:"type"`
-	Scope       string            `json:"scope"`
-	ApplyOrder  int               `json:"apply_order"`
-	Params      map[string]string `json:"params"`
-	StateKey    string            `json:"state_key"`
-	Fingerprint string            `json:"fingerprint"`
+	Type        string                `json:"type"`
+	Scope       string                `json:"scope"`
+	ApplyOrder  int                   `json:"apply_order"`
+	Params      map[string]string     `json:"params"`
+	StateKey    string                `json:"state_key"`
+	Fingerprint string                `json:"fingerprint"`
+	Definitions map[string]Definition `json:"definitions,omitempty"`
+}
+
+// Definition retourne le contenu de la valeur nommée référencée par un champ.
+func (m Module) Definition(fieldName string) (Definition, bool) {
+	if m.Definitions == nil {
+		return Definition{}, false
+	}
+	definition, ok := m.Definitions[fieldName]
+	return definition, ok
 }
 
 // Param retourne un paramètre, débarrassé de ses blancs de bord.

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"vaultaire/core/database"
+	"vaultaire/core/domain"
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -52,7 +53,7 @@ func handleAskMachine(trames storage.Trames_struct_client) string {
 func handleAskUser(trames storage.Trames_struct_client) string {
 	clientID := trames.ClientSoftwareID
 	lines := contentLines(trames.Content)
-	targetUser := strings.TrimSpace(lineAt(lines, 0))
+	targetUser, _ := domain.ExctractDomainFromUsername(lines[0])
 	appliedFingerprint := normalizeFingerprint(lineAt(lines, 1))
 
 	logs.Write_LogCode("DEBUG", logs.CodeGPOTransport, fmt.Sprintf(

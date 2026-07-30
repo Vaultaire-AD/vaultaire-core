@@ -120,11 +120,13 @@ func applySysctl(ctx Context, m Module) (string, error) {
 	return fmt.Sprintf("%s = %s (%s)", key, value, path), nil
 }
 
-// applySudoersRule génère un fichier sudoers depuis un template contrôlé.
+// applySudoersRule génère un fichier sudoers depuis le jeu de commandes reçu.
 //
-// Le contenu du jeu de commandes n'est pas transmis dans le module : le module
-// ne porte que son nom. L'agent ne peut donc pas écrire une règle sudoers
-// arbitraire, même si la politique était forgée.
+// Le contenu du jeu voyage AVEC le module : l'agent n'a aucune table locale de
+// jeux, sinon créer un jeu custom depuis l'interface serait sans effet sur le
+// parc. La règle reste bornée par la validation faite côté serveur à
+// l'enregistrement du jeu — chemins absolus, pas de métacaractère shell, pas de
+// joker — et revérifiée ici avant écriture.
 func applySudoersRule(ctx Context, m Module) (string, error) {
 	group := m.Param("group")
 	commandSet := m.Param("command_set")
@@ -132,8 +134,17 @@ func applySudoersRule(ctx Context, m Module) (string, error) {
 		return "", fmt.Errorf("groupe ou jeu de commandes manquant")
 	}
 
-	commands, err := sudoCommandsFor(commandSet)
-	if err != nil {
+	definition, ok := m.Definition("command_set")
+	if !ok {
+		return "", fmt.Errorf(
+			"jeu de commandes %q non transmis par le serveur : agent trop ancien pour cette politique", commandSet)
+	}
+	commands := definition.Lines()
+	if len(commands) == 0 {
+		return "", fmt.Errorf(
+			"jeu de commandes %q vide cote serveur : definissez son contenu dans Admin -> GPO -> Restrictions", commandSet)
+	}
+	if err := checkSudoCommands(commands); err != nil {
 		return "", err
 	}
 
@@ -164,37 +175,33 @@ func applySudoersRule(ctx Context, m Module) (string, error) {
 	return fmt.Sprintf("groupe %s : %s (%d commande(s))", group, commandSet, len(commands)), nil
 }
 
-// sudoCommandsFor traduit un identifiant de jeu de commandes en liste concrète.
+// sudoForbiddenChars reprend les caractères refusés par le serveur à
+// l'enregistrement d'un jeu : chaînage, redirection, substitution, jokers.
 //
-// Les jeux vivent côté serveur dans gpo_value_definition, mais l'agent ne reçoit
-// que leur nom : il faut donc que l'implémentation existe ici. Un jeu créé côté
-// serveur sans correspondance ici est rapporté en échec explicite, ce qui rend
-// le défaut visible dans l'interface au lieu de produire un sudoers vide.
-func sudoCommandsFor(name string) ([]string, error) {
-	sets := map[string][]string{
-		"ALL": {"ALL"},
-		"pkg_management": {
-			"/usr/bin/apt-get", "/usr/bin/apt", "/usr/bin/dnf", "/usr/bin/yum",
-			"/usr/bin/rpm", "/usr/bin/dpkg",
-		},
-		"service_control": {
-			"/usr/bin/systemctl start", "/usr/bin/systemctl stop",
-			"/usr/bin/systemctl restart", "/usr/bin/systemctl reload",
-			"/usr/bin/systemctl status",
-		},
-		"network_diagnostics": {
-			"/usr/bin/ping", "/usr/sbin/ip", "/usr/bin/ss",
-			"/usr/sbin/tcpdump", "/usr/bin/traceroute", "/usr/bin/dig",
-		},
-		"log_read":  {"/usr/bin/journalctl", "/usr/bin/dmesg", "/usr/bin/tail", "/usr/bin/less"},
-		"disk_read": {"/usr/bin/df", "/usr/bin/du", "/usr/sbin/blkid", "/usr/bin/lsblk", "/usr/bin/smartctl"},
+// La vérification est refaite ici en défense en profondeur. Le contenu vient
+// d'un serveur authentifié, mais il finit dans un fichier sudoers : un seul
+// caractère non filtré y transformerait une règle bornée en accès root complet,
+// et le coût de la revérification est nul comparé à celui de l'erreur.
+const sudoForbiddenChars = ";&|<>$`(){}[]*?!\\\"'\t\n\r"
+
+// checkSudoCommands valide la forme des commandes avant écriture.
+func checkSudoCommands(commands []string) error {
+	for i, command := range commands {
+		if command == "ALL" {
+			if len(commands) > 1 {
+				return fmt.Errorf("ligne %d : ALL ne peut pas etre combine avec d'autres commandes", i+1)
+			}
+			return nil
+		}
+		if strings.ContainsAny(command, sudoForbiddenChars) {
+			return fmt.Errorf("ligne %d : caractere interdit dans %q", i+1, command)
+		}
+		fields := strings.Fields(command)
+		if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
+			return fmt.Errorf("ligne %d : chemin absolu attendu, recu %q", i+1, command)
+		}
 	}
-	commands, ok := sets[name]
-	if !ok {
-		return nil, fmt.Errorf(
-			"jeu de commandes %q inconnu de cet agent : il existe cote serveur mais pas son implementation locale", name)
-	}
-	return commands, nil
+	return nil
 }
 
 // applyPackage installe ou retire un paquet.

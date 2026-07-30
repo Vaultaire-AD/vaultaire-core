@@ -33,6 +33,18 @@ import (
 // sans multiplier les allers-retours.
 const ChunkSize = 32 * 1024
 
+// DeliveryDefinition est le contenu d'une valeur nommée, transmis avec le module
+// qui la référence.
+//
+// Sans elle, l'agent ne recevrait que le NOM du jeu de commandes et devrait en
+// connaître le contenu localement : créer un jeu custom depuis l'interface
+// n'aurait alors aucun effet sur le parc, ce qui vide le mécanisme de son sens.
+type DeliveryDefinition struct {
+	Name    string      `json:"name"`
+	Kind    PayloadKind `json:"kind"`
+	Payload string      `json:"payload"`
+}
+
 // DeliveryModule est un module tel que transmis à l'agent.
 //
 // StateKey et Fingerprint sont calculés par le serveur et transmis, plutôt que
@@ -46,6 +58,65 @@ type DeliveryModule struct {
 	Params      map[string]string `json:"params"`
 	StateKey    string            `json:"state_key"`
 	Fingerprint string            `json:"fingerprint"`
+	// Definitions porte le contenu des valeurs nommées référencées par les
+	// paramètres, indexé par nom de champ.
+	Definitions map[string]DeliveryDefinition `json:"definitions,omitempty"`
+}
+
+// ResolveModuleDefinitions retourne le contenu des définitions référencées par
+// un module, indexé par nom de champ.
+//
+// Seuls les champs déclarés porteurs de contenu (voir PayloadKindFor) sont
+// résolus. Une valeur sans définition correspondante retourne une entrée vide :
+// c'est un défaut de configuration côté serveur, et il vaut mieux que l'agent le
+// rapporte explicitement que de recevoir un module amputé sans le savoir.
+func ResolveModuleDefinitions(m Module) map[string]DeliveryDefinition {
+	schema, ok := BaseSchemaFor(m.Type)
+	if !ok {
+		return nil
+	}
+
+	var out map[string]DeliveryDefinition
+	for _, f := range schema.Fields {
+		kind := PayloadKindFor(m.Type, f.Name)
+		if kind == PayloadNone {
+			continue
+		}
+		value := strings.TrimSpace(m.Params[f.Name])
+		if value == "" {
+			continue
+		}
+		if out == nil {
+			out = map[string]DeliveryDefinition{}
+		}
+		definition, found := Restrictions().Definition(m.Type, f.Name, value)
+		if !found {
+			out[f.Name] = DeliveryDefinition{Name: value, Kind: kind}
+			continue
+		}
+		out[f.Name] = DeliveryDefinition{
+			Name: definition.Name, Kind: kind, Payload: definition.Payload,
+		}
+	}
+	return out
+}
+
+// definitionsForHash aplatit les définitions d'un module pour le hachage.
+//
+// Le contenu des définitions DOIT entrer dans les empreintes : sans cela,
+// modifier la liste de commandes d'un jeu sudo ne changerait ni l'empreinte du
+// module ni celle de la politique, et le parc conserverait indéfiniment
+// l'ancienne règle en se croyant à jour.
+func definitionsForHash(m Module) map[string]string {
+	resolved := ResolveModuleDefinitions(m)
+	if len(resolved) == 0 {
+		return nil
+	}
+	out := make(map[string]string, len(resolved))
+	for field, definition := range resolved {
+		out[field] = string(definition.Kind) + "\x00" + definition.Name + "\x00" + definition.Payload
+	}
+	return out
 }
 
 // DeliveryPolicy est la politique effective telle que transmise à l'agent.
@@ -104,11 +175,14 @@ func ModuleStateKey(m Module) string {
 // réapplication inutile de tous les modules après une simple modification de code.
 func ModuleFingerprint(m Module) (string, error) {
 	type canonical struct {
-		Type   string            `json:"type"`
-		Scope  Scope             `json:"scope"`
-		Params map[string]string `json:"params"`
+		Type        string            `json:"type"`
+		Scope       Scope             `json:"scope"`
+		Params      map[string]string `json:"params"`
+		Definitions map[string]string `json:"definitions,omitempty"`
 	}
-	data, err := json.Marshal(canonical{Type: m.Type, Scope: m.Scope, Params: m.Params})
+	data, err := json.Marshal(canonical{
+		Type: m.Type, Scope: m.Scope, Params: m.Params, Definitions: definitionsForHash(m),
+	})
 	if err != nil {
 		return "", fmt.Errorf("empreinte de module impossible : %v", err)
 	}
@@ -149,6 +223,7 @@ func BuildDeliveryPolicy(p Policy, username string) (DeliveryPolicy, error) {
 			Params:      m.Params,
 			StateKey:    ModuleStateKey(m),
 			Fingerprint: moduleFP,
+			Definitions: ResolveModuleDefinitions(m),
 		})
 	}
 	return out, nil

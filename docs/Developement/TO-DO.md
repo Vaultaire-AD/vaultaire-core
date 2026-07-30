@@ -27,3 +27,4 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
     au lieu de l'intersection avec ceux de la machine (ecart avec la doc du protocole).
     A prevoir ensuite, TO-DO separee : signature de la politique par le serveur central. Le tunnel
     Ducky couvre l'ecoute et la modification en transit, pas un serveur central compromis.
+6.[GPO] -> sur l'interface web il faut que les GPO soit visible et clickable depuis le page details d'un groupe

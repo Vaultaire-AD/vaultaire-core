@@ -65,10 +65,15 @@ var stateMu sync.Mutex
 func LoadState() *State {
 	stateMu.Lock()
 	defer stateMu.Unlock()
-	return loadStateLocked()
+	return loadStateLocked(true)
 }
 
-func loadStateLocked() *State {
+// loadStateLocked lit l'état sous verrou.
+//
+// verbose distingue une lecture demandée par un cycle d'une relecture interne
+// faite avant écriture : la seconde répéterait le même message et donnerait
+// l'impression que l'état est relu en boucle.
+func loadStateLocked(verbose bool) *State {
 	empty := &State{Users: map[string]*ScopeState{}}
 
 	data, err := os.ReadFile(StatePath)
@@ -76,7 +81,7 @@ func loadStateLocked() *State {
 		if !os.IsNotExist(err) {
 			logs.Write_log("WARNING", fmt.Sprintf(
 				"GPO: etat local illisible (%s), toutes les GPO seront reappliquees : %v", StatePath, err))
-		} else {
+		} else if verbose {
 			logs.Write_log("DEBUG", "GPO: aucun etat local, premier demarrage")
 		}
 		return empty
@@ -129,7 +134,7 @@ func SaveScopeState(scope, username string, scopeState *ScopeState) error {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	state := loadStateLocked()
+	state := loadStateLocked(false)
 	scopeState.AppliedAt = time.Now().UTC().Format(time.RFC3339)
 
 	if scope == ScopeUser {
@@ -203,7 +208,7 @@ func ForgetUser(username string) error {
 	stateMu.Lock()
 	defer stateMu.Unlock()
 
-	state := loadStateLocked()
+	state := loadStateLocked(false)
 	if state.Users == nil {
 		return nil
 	}

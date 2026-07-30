@@ -412,13 +412,46 @@ par `gpo.CanonicalJSON` :
   "name": "effective_machine",
   "scope": "machine",
   "version": 7,
-  "enabled": true,
+  "fingerprint": "752bf78712f8…",
   "modules": [
     { "type": "sysctl", "scope": "machine", "apply_order": 11,
-      "params": { "key": "net.ipv4.ip_forward", "value": "0" } }
+      "params": { "key": "net.ipv4.ip_forward", "value": "0" },
+      "state_key": "sysctl:net.ipv4.ip_forward",
+      "fingerprint": "f3dad3533bb3…" },
+
+    { "type": "sudoers_rule", "scope": "machine", "apply_order": 12,
+      "params": { "group": "ops", "command_set": "nginx_restart", "nopasswd": "false" },
+      "state_key": "sudoers_rule:ops",
+      "fingerprint": "a91c0e4471bd…",
+      "definitions": {
+        "command_set": {
+          "name": "nginx_restart",
+          "kind": "command_list",
+          "payload": "/usr/bin/systemctl restart nginx\n/usr/bin/systemctl status nginx"
+        }
+      } }
   ]
 }
 ```
+
+Trois champs méritent d'être détaillés, parce qu'ils portent des garanties :
+
+- **`state_key`** et **`fingerprint`** par module sont calculés par le serveur et
+  transmis, jamais recalculés par l'agent. Le client est un module Go séparé :
+  deux implémentations du même hachage finiraient par diverger, et une machine se
+  croirait à jour sans l'être.
+
+- **`definitions`** porte le CONTENU des valeurs nommées référencées par les
+  paramètres. Un module `sudoers_rule` ne transmet pas seulement le nom du jeu de
+  commandes mais sa liste réelle : sans cela, créer un jeu custom depuis
+  l'interface n'aurait aucun effet sur le parc, puisque l'agent ne saurait pas ce
+  que ce nom recouvre.
+
+  Conséquence sur les empreintes : le contenu des définitions **entre dans le
+  calcul** de l'empreinte du module et de celle de la politique. Modifier la liste
+  de commandes d'un jeu ne change aucun paramètre de module, mais change bel et
+  bien ce qui sera appliqué — sans cela le serveur répondrait « rien à faire » et
+  le parc conserverait indéfiniment l'ancienne règle.
 
 Les modules sont triés par ordre d'application et les clés de paramètres sont
 ordonnées : le document est reproductible, et son empreinte stable d'un envoi à

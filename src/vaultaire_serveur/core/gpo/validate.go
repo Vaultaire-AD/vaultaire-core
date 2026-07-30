@@ -460,6 +460,11 @@ func CanonicalJSON(p Policy) ([]byte, error) {
 		Scope      Scope             `json:"scope"`
 		ApplyOrder int               `json:"apply_order"`
 		Params     map[string]string `json:"params"`
+		// Le contenu des définitions référencées entre dans l'empreinte : modifier
+		// la liste de commandes d'un jeu sudo ne change aucun paramètre de module,
+		// mais change bel et bien ce qui sera appliqué. Sans cela le serveur
+		// répondrait « rien à faire » et le parc garderait l'ancienne règle.
+		Definitions map[string]string `json:"definitions,omitempty"`
 	}
 	type canonicalPolicy struct {
 		Name    string            `json:"name"`
@@ -473,6 +478,7 @@ func CanonicalJSON(p Policy) ([]byte, error) {
 	for _, m := range modules {
 		cp.Modules = append(cp.Modules, canonicalModule{
 			Type: m.Type, Scope: m.Scope, ApplyOrder: m.ApplyOrder, Params: m.Params,
+			Definitions: definitionsForHash(m),
 		})
 	}
 	return json.Marshal(cp)

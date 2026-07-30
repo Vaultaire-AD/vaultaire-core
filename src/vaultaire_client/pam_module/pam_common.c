@@ -76,7 +76,7 @@ static int run_useradd(const char *username) {
     pid_t pid = fork();
     if (pid < 0) return 0;
     if (pid == 0) {
-        execl("/usr/sbin/useradd", "useradd", "-m", "--shell", "/bin/bash", username, (char *)NULL);
+        execl("/usr/sbin/useradd", "useradd", "-m", "--shell","-c","vaultaire_user_account", "/bin/bash", username, (char *)NULL);
         _exit(127);
     }
     int status;
