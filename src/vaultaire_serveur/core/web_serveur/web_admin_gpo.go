@@ -43,6 +43,18 @@ type gpoFieldView struct {
 	IsText   bool
 	IsInt    bool
 	IsPath   bool
+	// Definitions expose le contenu des valeurs nommées, pour que l'administrateur
+	// voie ce qu'un choix accorde réellement. Choisir un jeu de commandes sudo
+	// sans en voir la liste serait une décision prise à l'aveugle.
+	Definitions []gpoDefinitionView
+}
+
+// gpoDefinitionView est le contenu d'une valeur nommée, affiché en lecture seule.
+type gpoDefinitionView struct {
+	Name    string
+	Note    string
+	Lines   []string
+	Current bool
 }
 
 // gpoModuleView est un module existant, avec ses champs valorisés.
@@ -84,7 +96,7 @@ func buildFieldViews(schema gpo.ModuleSchema, params map[string]string) []gpoFie
 				value = v
 			}
 		}
-		views = append(views, gpoFieldView{
+		view := gpoFieldView{
 			Name:     f.Name,
 			Label:    f.Label,
 			Help:     f.Help,
@@ -99,7 +111,17 @@ func buildFieldViews(schema gpo.ModuleSchema, params map[string]string) []gpoFie
 			IsText:   f.Type == gpo.FieldText,
 			IsInt:    f.Type == gpo.FieldInt,
 			IsPath:   f.Type == gpo.FieldPath,
-		})
+		}
+
+		if gpo.FieldHasPayload(schema.Type, f.Name) {
+			for _, d := range gpo.Restrictions().DefinitionsFor(schema.Type, f.Name) {
+				view.Definitions = append(view.Definitions, gpoDefinitionView{
+					Name: d.Name, Note: d.Note, Lines: d.Lines(), Current: d.Name == value,
+				})
+			}
+		}
+
+		views = append(views, view)
 	}
 	return views
 }

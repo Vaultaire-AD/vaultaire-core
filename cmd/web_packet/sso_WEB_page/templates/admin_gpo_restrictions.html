@@ -119,6 +119,61 @@
           <div><button type="submit" class="btn btn-primary">Enregistrer la règle</button></div>
         </form>
 
+        {{ if .HasPayload }}
+        <h4 style="margin-top:1rem">Définitions ({{ len .Definitions }})</h4>
+        <p class="muted small">
+          Chaque définition porte un nom — utilisé comme valeur dans les GPO — et un contenu, qui est ce que
+          l'agent appliquera réellement. {{ .PayloadHelp }}
+        </p>
+        {{ if not .Definitions }}<p class="muted small">Aucune définition.</p>{{ end }}
+        {{ range .Definitions }}
+        <details class="gpo-block" style="margin-top:0.5rem">
+          <summary>
+            <code>{{ .Name }}</code>
+            {{ if .Note }}<span class="muted small">— {{ .Note }}</span>{{ end }}
+            {{ if .UpdatedBy }}<span class="muted small"> · {{ .UpdatedBy }}</span>{{ end }}
+          </summary>
+          <form method="post" style="margin-top:0.6rem">
+            <input type="hidden" name="action" value="save_definition">
+            <input type="hidden" name="module_type" value="{{ .ModuleType }}">
+            <input type="hidden" name="field_name" value="{{ .FieldName }}">
+            <input type="hidden" name="name" value="{{ .Name }}">
+            <label>Contenu</label>
+            <textarea class="gpo-mono" name="payload" rows="8" spellcheck="false" style="width:100%">{{ .Payload }}</textarea>
+            <label>Note</label>
+            <input name="note" value="{{ .Note }}">
+            <div class="gpo-inline">
+              <div><button type="submit" class="btn btn-primary">Enregistrer</button></div>
+            </div>
+          </form>
+          <form method="post" onsubmit="return confirm('Supprimer la définition {{ .Name }} ?');">
+            <input type="hidden" name="action" value="delete_definition">
+            <input type="hidden" name="definition_id" value="{{ .ID }}">
+            <button type="submit" class="btn btn-ghost btn-danger btn-sm">Supprimer cette définition</button>
+          </form>
+        </details>
+        {{ end }}
+
+        <details class="gpo-block" style="margin-top:0.7rem">
+          <summary>Créer une définition</summary>
+          <form method="post" style="margin-top:0.6rem">
+            <input type="hidden" name="action" value="save_definition">
+            <input type="hidden" name="module_type" value="{{ .ModuleType }}">
+            <input type="hidden" name="field_name" value="{{ .FieldName }}">
+            <label>Nom</label>
+            <input class="gpo-mono" name="name" placeholder="monitoring_ops" required spellcheck="false">
+            <label>{{ .PayloadLabel }}</label>
+            <textarea class="gpo-mono" name="payload" rows="8" required spellcheck="false" style="width:100%" placeholder="{{ .PayloadPlaceholder }}"></textarea>
+            <label>Note</label>
+            <input name="note" placeholder="à quoi ça sert">
+            <div class="gpo-inline">
+              <div><button type="submit" class="btn btn-secondary">Créer</button></div>
+            </div>
+          </form>
+        </details>
+
+        {{ else }}
+
         {{ if .IsList }}
         <h4 style="margin-top:1rem">Valeurs autorisées ({{ len .Values }})</h4>
         {{ else }}
@@ -141,6 +196,7 @@
           </div>
           <div><button type="submit" class="btn btn-secondary">Ajouter</button></div>
         </form>
+        {{ end }}
       </details>
       {{ end }}
     </section>

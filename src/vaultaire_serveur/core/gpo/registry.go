@@ -66,8 +66,6 @@ var baseCatalog = []ModuleSchema{
 				Options: []string{"unchanged", "yes", "no", "local", "remote"}, Default: "unchanged"},
 			{Name: "x11_forwarding", Label: "X11Forwarding", Type: FieldEnum,
 				Options: []string{"unchanged", "yes", "no"}, Default: "unchanged"},
-			{Name: "extra_directives", Label: "Directives supplémentaires", Type: FieldText, MaxLen: 8192,
-				Help: "Une directive sshd par ligne (ex. « Ciphers aes256-gcm@openssh.com »). Validées par sshd -t avant rechargement, avec retour arrière automatique en cas d'échec."},
 			{Name: "banner_text", Label: "Bannière de connexion", Type: FieldText, MaxLen: 4096,
 				Help: "Déposée dans un fichier dédié et référencée par la directive Banner."},
 		},
@@ -81,8 +79,8 @@ var baseCatalog = []ModuleSchema{
 		ApplyOrder:  11,
 		Fields: []FieldSchema{
 			{Name: "key", Label: "Clé", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
-			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 64,
-				Help: "Valeur numérique ou liste d'entiers séparés par des espaces."},
+			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, Dynamic: true, MaxLen: 128,
+				Help: "Forme acceptée définie par la règle sysctl/value dans les Restrictions."},
 		},
 	},
 	{

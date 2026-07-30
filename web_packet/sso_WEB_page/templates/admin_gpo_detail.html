@@ -15,6 +15,17 @@
       <input name="p_{{ .Name }}" value="{{ .Value }}" spellcheck="false">
     {{ end }}
     {{ if .Help }}<p class="muted small">{{ .Help }}</p>{{ end }}
+    {{ if .Definitions }}
+    <details class="gpo-defs">
+      <summary class="muted small">Contenu des valeurs proposées</summary>
+      {{ range .Definitions }}
+      <div class="gpo-def{{ if .Current }} gpo-def-current{{ end }}">
+        <code>{{ .Name }}</code>{{ if .Note }} <span class="muted small">— {{ .Note }}</span>{{ end }}
+        <ul class="gpo-def-lines">{{ range .Lines }}<li><code>{{ . }}</code></li>{{ end }}</ul>
+      </div>
+      {{ end }}
+    </details>
+    {{ end }}
   </div>
 {{end}}
 
@@ -34,6 +45,12 @@
     .gpo-module-summary { display: block; margin-top: 0.35rem; font-weight: normal; }
     .gpo-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; flex-wrap: wrap; }
     .gpo-cat { margin-bottom: 1.2rem; }
+    .gpo-defs { margin-top: 0.35rem; }
+    .gpo-defs > summary { cursor: pointer; }
+    .gpo-def { margin: 0.5rem 0 0.5rem 0.4rem; padding-left: 0.6rem; border-left: 2px solid var(--border, #d5d9e0); }
+    .gpo-def-current { border-left-color: var(--primary, #3b6fd4); }
+    .gpo-def-lines { margin: 0.2rem 0 0 0; padding-left: 1.1rem; }
+    .gpo-def-lines li { font-size: 0.85rem; }
   </style>
 </head>
 <body>

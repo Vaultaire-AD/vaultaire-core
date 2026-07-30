@@ -130,6 +130,18 @@ DATABASE: DUCKY
 │   ├─ note, updated_by, updated_at
 │   └─ UNIQUE (kind, module_type, field_name, scope, value(191))
 │
+├─ gpo_value_definition   [* valeurs nommées porteuses d'un contenu *]
+│   ├─ PK: id_gpo_value_definition
+│   ├─ module_type, field_name, name
+│   ├─ payload_kind VARCHAR(32)  -- command_list (extensible : core/gpo/payload.go)
+│   ├─ payload TEXT              -- contenu réel (ex. une commande sudo par ligne)
+│   ├─ note, updated_by, updated_at
+│   └─ UNIQUE (module_type, field_name, name)
+│
+│  Table distincte de gpo_restriction car le contenu est long et multiligne, ce
+│  qui ne tient pas dans une colonne indexée. Premier utilisateur : les jeux de
+│  commandes sudo (sudoers_rule/command_set).
+│
 ├─ gpo_field_rule   [* mode de validation d'un champ de module *]
 │   ├─ PK: id_gpo_field_rule
 │   ├─ module_type, field_name

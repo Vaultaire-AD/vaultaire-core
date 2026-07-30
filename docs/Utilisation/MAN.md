@@ -278,6 +278,39 @@ Sont également éditables : les emplacements de fichiers autorisés et refusés
 scope), et les variables d'environnement interdites. Le bouton **Réinitialiser**
 réécrit le socle par défaut, qui correspond aux restrictions historiques.
 
+**Champs à contenu (définitions).** Certains champs ne se contentent pas d'un
+nom. Un *jeu de commandes sudo* porte un nom — utilisé comme valeur dans la GPO —
+et la liste réelle des commandes qu'il autorise, qui est ce que l'agent rend dans
+le fichier `/etc/sudoers.d/` généré. Créer un jeu custom se fait entièrement
+depuis l'interface, sans code côté agent :
+
+```
+Nom      : monitoring_ops
+Contenu  : /usr/bin/systemctl restart mon-monitoring.service
+           /usr/bin/journalctl -u mon-monitoring.service
+```
+
+Une commande par ligne, chemin absolu obligatoire, arguments fixes acceptés ;
+`ALL` seul autorise tout. Les métacaractères shell et les jokers sont refusés :
+sans cela, `/bin/sh` ou `/usr/bin/*` rendrait le jeu équivalent à un accès root
+complet sans que ce soit visible dans son nom. Une définition encore référencée
+par un module de GPO ne peut pas être supprimée.
+
+Le mécanisme est générique : un futur module dont un champ a besoin d'un contenu
+se branche en déclarant un `PayloadKind` et son validateur dans
+`core/gpo/payload.go` — rien à modifier dans la couche base ni dans l'interface.
+
+**Récapitulatif par module :**
+
+| Module | Ce qui est extensible |
+|--------|----------------------|
+| Service systemd | Ajouter l'unité dans les Restrictions, puis en choisir l'état comme les autres |
+| Paquet logiciel | Ajouter le nom du paquet ; présence, absence et version épinglée suivent |
+| Paramètre noyau | Ajouter la clé ; la forme de la valeur se règle via la règle `sysctl/value` |
+| Droits sudo | Créer un jeu de commandes avec son contenu |
+| Fichier | Emplacements autorisés / refusés par scope |
+| SSH serveur | Jeu de directives fixe, volontairement non extensible |
+
 #### Identité d'amorçage protégée
 
 L'utilisateur `vaultaire`, le groupe `vaultaire` et les permissions

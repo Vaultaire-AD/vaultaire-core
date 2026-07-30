@@ -40,12 +40,41 @@ var defaultPackages = []string{
 	"vsftpd", "xinetd", "zsh",
 }
 
-// defaultSudoCommandSets liste les jeux de commandes sudo attribuables au départ.
-// Chaque identifiant correspond à un template rendu côté agent client : ajouter
-// une entrée ici sans implémentation côté agent donnera un module sans effet.
-var defaultSudoCommandSets = []string{
-	"ALL", "pkg_management", "service_control", "network_diagnostics", "log_read", "disk_read",
+// defaultSudoCommandSets liste les jeux de commandes sudo initiaux, avec leur
+// contenu réel. Contrairement aux autres listes, ce ne sont pas de simples noms :
+// un jeu de commandes n'a de sens que si l'on sait ce qu'il autorise, et c'est ce
+// contenu que l'agent rend dans le fichier /etc/sudoers.d/ généré.
+//
+// Un administrateur peut créer ses propres jeux depuis
+// Admin → GPO → Restrictions, sans qu'aucun code n'ait à changer.
+var defaultSudoCommandSets = []struct {
+	Name    string
+	Payload string
+	Note    string
+}{
+	{"ALL", "ALL", "toutes les commandes — équivalent à un accès root complet"},
+	{"pkg_management",
+		"/usr/bin/apt-get\n/usr/bin/apt\n/usr/bin/dnf\n/usr/bin/yum\n/usr/bin/rpm\n/usr/bin/dpkg",
+		"installation et mise à jour de paquets"},
+	{"service_control",
+		"/usr/bin/systemctl start\n/usr/bin/systemctl stop\n/usr/bin/systemctl restart\n/usr/bin/systemctl reload\n/usr/bin/systemctl status",
+		"pilotage des services systemd"},
+	{"network_diagnostics",
+		"/usr/bin/ping\n/usr/sbin/ip\n/usr/bin/ss\n/usr/sbin/tcpdump\n/usr/bin/traceroute\n/usr/bin/dig",
+		"diagnostic réseau"},
+	{"log_read",
+		"/usr/bin/journalctl\n/usr/bin/dmesg\n/usr/bin/tail\n/usr/bin/less",
+		"lecture des journaux système"},
+	{"disk_read",
+		"/usr/bin/df\n/usr/bin/du\n/usr/sbin/blkid\n/usr/bin/lsblk\n/usr/bin/smartctl",
+		"inspection du stockage"},
 }
+
+// defaultSysctlValuePattern borne les valeurs sysctl acceptées au départ : un
+// entier ou une liste d'entiers, ce qui couvre l'immense majorité des clés de
+// durcissement. Une clé custom attendant une valeur textuelle se traite en
+// élargissant ce motif depuis l'interface Restrictions.
+const defaultSysctlValuePattern = `^-?[0-9]+( -?[0-9]+)*$`
 
 // defaultCronCommandIDs liste les tâches planifiables en scope user au départ.
 // Même remarque : l'identifiant réfère à une implémentation côté agent.
@@ -137,34 +166,29 @@ var defaultDeniedEnv = []struct {
 	{"NSS_WRAPPER_PASSWD", "détournement de la base de comptes"},
 }
 
-// SSHDirectiveField est la clé de champ virtuelle qui contrôle les directives
-// sshd acceptées dans le champ « Directives supplémentaires ». Ce n'est pas un
-// champ de formulaire : c'est une règle appliquée ligne à ligne au contenu du
-// champ extra_directives, ce qui permet au superadmin d'ouvrir ou de fermer des
-// directives sans changer le code.
-const SSHDirectiveField = "directive"
-
-// defaultSSHDirectiveDeny refuse les directives sshd qui permettraient une
-// exécution de code en root, ainsi que celles déjà pilotées par un champ dédié
-// du module (les régler deux fois donnerait un résultat dépendant de l'ordre).
-const defaultSSHDirectiveDeny = `^(?i)(Include|AuthorizedKeysCommand|AuthorizedKeysCommandUser|` +
-	`AuthorizedPrincipalsCommand|AuthorizedPrincipalsCommandUser|ForceCommand|Subsystem|` +
-	`ChrootDirectory|Match|SetEnv|AcceptEnv|PermitUserEnvironment|PermitRootLogin|` +
-	`PasswordAuthentication|PubkeyAuthentication|AllowTcpForwarding|X11Forwarding|` +
-	`MaxAuthTries|ClientAliveInterval|Banner)$`
-
-// defaultSSHDirectiveAllow n'accepte qu'un mot-clé sshd bien formé.
-const defaultSSHDirectiveAllow = `^[A-Za-z][A-Za-z0-9]{1,40}$`
+// seedDefinition est une définition à contenu écrite au premier démarrage.
+type seedDefinition struct {
+	Name    string
+	Payload string
+	Note    string
+}
 
 // dynamicFields associe chaque champ à domaine dynamique au module qui le porte.
 // C'est la liste des champs dont les valeurs viennent de la base plutôt que du
 // code, et donc ceux que l'interface Restrictions expose à l'édition.
+//
+// Un champ est soit une liste de noms simples (SeedValues), soit une liste de
+// définitions porteuses d'un contenu (PayloadKind + SeedDefinitions) — voir
+// payload.go pour ajouter un nouveau type de contenu.
 var dynamicFields = []struct {
 	ModuleType string
 	FieldName  string
 	Label      string
-	// SeedValues est la liste initiale écrite en base au premier démarrage.
+	// SeedValues est la liste initiale de noms simples.
 	SeedValues []string
+	// PayloadKind et SeedDefinitions sont utilisés pour les champs à contenu.
+	PayloadKind     PayloadKind
+	SeedDefinitions []seedDefinition
 	// SeedMode, SeedAllowPattern et SeedDenyPattern sont la règle initiale.
 	SeedMode         string
 	SeedAllowPattern string
@@ -174,23 +198,31 @@ var dynamicFields = []struct {
 }{
 	{ModuleType: ModuleSystemdService, FieldName: "service", Label: "Unités systemd gérables",
 		SeedValues: defaultServices, SeedMode: FieldModeList,
-		Help: "Nom complet de l'unité, extension incluse (ex. mon-monitoring.service). Passez ce champ en mode motif pour accepter toute une famille d'unités d'un coup."},
+		Help: "Nom complet de l'unité, extension incluse (ex. mon-monitoring.service). Une fois l'unité ajoutée ici, le module GPO permet d'en choisir l'état comme pour n'importe quelle autre. Passez le champ en mode motif pour accepter toute une famille d'unités d'un coup."},
 	{ModuleType: ModuleSysctl, FieldName: "key", Label: "Clés sysctl réglables",
 		SeedValues: defaultSysctlKeys, SeedMode: FieldModeList,
-		Help: "Clé sysctl en notation pointée (ex. net.ipv4.ip_forward)."},
+		Help: "Clé sysctl en notation pointée (ex. net.ipv4.ip_forward). Ajoutez ici toute clé propre à votre parc."},
+	{ModuleType: ModuleSysctl, FieldName: "value", Label: "Valeurs sysctl acceptées",
+		SeedMode: FieldModePattern, SeedAllowPattern: defaultSysctlValuePattern,
+		Help: "Contrôle la forme des valeurs sysctl. Par défaut un entier ou une liste d'entiers, ce qui couvre les clés de durcissement usuelles. Élargissez le motif si une clé custom attend une valeur textuelle."},
 	{ModuleType: ModulePackage, FieldName: "package", Label: "Paquets gérables",
 		SeedValues: defaultPackages, SeedMode: FieldModeList,
-		Help: "Nom de paquet tel que le gestionnaire de la distribution l'attend."},
+		Help: "Nom de paquet tel que le gestionnaire de la distribution l'attend. Ajoutez ici vos paquets internes ; le module gère ensuite présence, absence et version épinglée."},
 	{ModuleType: ModuleSudoersRule, FieldName: "command_set", Label: "Jeux de commandes sudo",
-		SeedValues: defaultSudoCommandSets, SeedMode: FieldModeList,
-		Help: "Identifiant d'un template sudoers implémenté côté agent client. Un identifiant sans implémentation donnera un module sans effet."},
+		PayloadKind: PayloadCommandList, SeedDefinitions: sudoSeedDefinitions(), SeedMode: FieldModeList,
+		Help: "Un jeu porte un nom et la liste des commandes qu'il autorise. C'est cette liste que l'agent rend dans le fichier /etc/sudoers.d/ généré : créer un jeu custom ne demande aucun code côté agent."},
 	{ModuleType: ModuleUserCron, FieldName: "command_id", Label: "Tâches planifiables (user)",
 		SeedValues: defaultCronCommandIDs, SeedMode: FieldModeList,
-		Help: "Identifiant d'une commande implémentée côté agent client."},
-	{ModuleType: ModuleSSHServerConfig, FieldName: SSHDirectiveField, Label: "Directives sshd acceptées",
-		SeedMode: FieldModePattern, SeedAllowPattern: defaultSSHDirectiveAllow,
-		SeedDenyPattern: defaultSSHDirectiveDeny,
-		Help: "Contrôle les mots-clés utilisables dans « Directives supplémentaires » du module SSH. En mode motif par défaut : tout mot-clé bien formé est accepté, sauf ceux du motif d'exclusion (exécution de code, ou déjà pilotés par un champ dédié)."},
+		Help: "Identifiant d'une commande implémentée côté agent client. Un identifiant sans implémentation donnera une tâche sans effet."},
+}
+
+// sudoSeedDefinitions convertit les jeux de commandes par défaut en définitions.
+func sudoSeedDefinitions() []seedDefinition {
+	out := make([]seedDefinition, 0, len(defaultSudoCommandSets))
+	for _, s := range defaultSudoCommandSets {
+		out = append(out, seedDefinition{Name: s.Name, Payload: s.Payload, Note: s.Note})
+	}
+	return out
 }
 
 // DynamicFieldDescriptor décrit un champ à domaine dynamique, pour l'interface
@@ -201,10 +233,22 @@ type DynamicFieldDescriptor struct {
 	Label            string
 	Help             string
 	SeedValues       []string
+	PayloadKind      PayloadKind
+	SeedDefinitions  []DefinitionSeed
 	SeedMode         string
 	SeedAllowPattern string
 	SeedDenyPattern  string
 }
+
+// DefinitionSeed est une définition initiale exposée hors du package.
+type DefinitionSeed struct {
+	Name    string
+	Payload string
+	Note    string
+}
+
+// HasPayload indique si le champ porte des définitions à contenu.
+func (d DynamicFieldDescriptor) HasPayload() bool { return d.PayloadKind != PayloadNone }
 
 // ModuleLabelFor retourne le libellé du module portant ce champ.
 func (d DynamicFieldDescriptor) ModuleLabelFor() string { return ModuleLabel(d.ModuleType) }
@@ -216,9 +260,14 @@ func (d DynamicFieldDescriptor) Key() string { return FieldKey(d.ModuleType, d.F
 func DynamicFields() []DynamicFieldDescriptor {
 	out := make([]DynamicFieldDescriptor, 0, len(dynamicFields))
 	for _, f := range dynamicFields {
+		defs := make([]DefinitionSeed, 0, len(f.SeedDefinitions))
+		for _, d := range f.SeedDefinitions {
+			defs = append(defs, DefinitionSeed{Name: d.Name, Payload: d.Payload, Note: d.Note})
+		}
 		out = append(out, DynamicFieldDescriptor{
 			ModuleType: f.ModuleType, FieldName: f.FieldName, Label: f.Label,
 			Help: f.Help, SeedValues: append([]string(nil), f.SeedValues...),
+			PayloadKind: f.PayloadKind, SeedDefinitions: defs,
 			SeedMode: f.SeedMode, SeedAllowPattern: f.SeedAllowPattern,
 			SeedDenyPattern: f.SeedDenyPattern,
 		})
@@ -240,6 +289,7 @@ func IsDynamicField(moduleType, fieldName string) bool {
 func DefaultRestrictions() RestrictionSet {
 	rs := RestrictionSet{
 		AllowedValues: map[string][]AllowedValue{},
+		Definitions:   map[string][]ValueDefinition{},
 		FieldRules:    map[string]FieldRule{},
 	}
 
@@ -252,6 +302,16 @@ func DefaultRestrictions() RestrictionSet {
 			})
 		}
 		rs.AllowedValues[key] = entries
+
+		defs := make([]ValueDefinition, 0, len(f.SeedDefinitions))
+		for _, d := range f.SeedDefinitions {
+			defs = append(defs, ValueDefinition{
+				ModuleType: f.ModuleType, FieldName: f.FieldName, Name: d.Name,
+				Kind: f.PayloadKind, Payload: d.Payload, Note: d.Note,
+			})
+		}
+		rs.Definitions[key] = defs
+
 		mode := f.SeedMode
 		if !IsValidFieldMode(mode) {
 			mode = FieldModeList

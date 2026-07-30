@@ -39,6 +39,15 @@ type restrictionFieldView struct {
 	IsList      bool
 	IsPattern   bool
 	IsFree      bool
+
+	// Champs à contenu : le domaine du champ est une liste de définitions
+	// nommées portant chacune un contenu, et non de simples noms.
+	HasPayload         bool
+	PayloadLabel       string
+	PayloadHelp        string
+	PayloadPlaceholder string
+	PayloadMultiline   bool
+	Definitions        []dbgpo.DefinitionRow
 }
 
 // modeLabel traduit un mode de champ en explication courte.
@@ -122,6 +131,21 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 			err := dbgpo.AddEnvDeny(db, username, r.FormValue("env_name"), r.FormValue("note"))
 			setRestrictionOutcome(&data.Message, &data.Error, err, "Variable interdite ajoutée.")
 
+		case "save_definition":
+			err := dbgpo.SaveDefinition(db, username,
+				r.FormValue("module_type"), r.FormValue("field_name"),
+				r.FormValue("name"), r.FormValue("payload"), r.FormValue("note"))
+			setRestrictionOutcome(&data.Message, &data.Error, err, "Définition enregistrée.")
+
+		case "delete_definition":
+			id, convErr := strconv.Atoi(r.FormValue("definition_id"))
+			if convErr != nil {
+				data.Error = "Identifiant invalide."
+				break
+			}
+			err := dbgpo.DeleteDefinition(db, username, id)
+			setRestrictionOutcome(&data.Message, &data.Error, err, "Définition supprimée.")
+
 		case "delete_restriction":
 			id, convErr := strconv.Atoi(r.FormValue("restriction_id"))
 			if convErr != nil {
@@ -150,20 +174,41 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 			data.Error = appendError(data.Error, err.Error())
 			continue
 		}
-		values, err := dbgpo.ListAllowedValuesForField(db, f.ModuleType, f.FieldName)
-		if err != nil {
-			data.Error = appendError(data.Error, err.Error())
-		}
-		data.Fields = append(data.Fields, restrictionFieldView{
+		view := restrictionFieldView{
 			ModuleType: f.ModuleType, ModuleLabel: gpo.ModuleLabel(f.ModuleType),
 			FieldName: f.FieldName, Label: f.Label, Help: f.Help, Key: f.Key(),
 			Mode: rule.Mode, ModeLabel: modeLabel(rule.Mode),
 			AllowPatt: rule.AllowPattern, DenyPatt: rule.DenyPattern, UpdatedBy: rule.UpdatedBy,
-			Values:    values,
-			IsList:    rule.Mode == gpo.FieldModeList || rule.Mode == "",
-			IsPattern: rule.Mode == gpo.FieldModePattern,
-			IsFree:    rule.Mode == gpo.FieldModeFree,
-		})
+			IsList:     rule.Mode == gpo.FieldModeList || rule.Mode == "",
+			IsPattern:  rule.Mode == gpo.FieldModePattern,
+			IsFree:     rule.Mode == gpo.FieldModeFree,
+			HasPayload: f.HasPayload(),
+		}
+
+		// Un champ à contenu et un champ à liste simple ne se gèrent pas de la
+		// même façon : le premier édite des définitions (nom + contenu), le
+		// second une simple liste de valeurs. On ne charge que ce qui sert.
+		if view.HasPayload {
+			if desc, ok := gpo.PayloadDescriptorFor(f.PayloadKind); ok {
+				view.PayloadLabel = desc.Label
+				view.PayloadHelp = desc.Help
+				view.PayloadPlaceholder = desc.Placeholder
+				view.PayloadMultiline = desc.Multiline
+			}
+			defs, err := dbgpo.ListDefinitionsForField(db, f.ModuleType, f.FieldName)
+			if err != nil {
+				data.Error = appendError(data.Error, err.Error())
+			}
+			view.Definitions = defs
+		} else {
+			values, err := dbgpo.ListAllowedValuesForField(db, f.ModuleType, f.FieldName)
+			if err != nil {
+				data.Error = appendError(data.Error, err.Error())
+			}
+			view.Values = values
+		}
+
+		data.Fields = append(data.Fields, view)
 	}
 
 	var err error

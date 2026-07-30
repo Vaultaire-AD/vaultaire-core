@@ -154,6 +154,101 @@ func testGPORestrictions() []Result {
 	out = append(out, Result{"GPO/restrictions: motif valide accepté",
 		gpo.ValidatePatternSyntax(`^[a-z]+\.service$`) == nil, "devrait accepter"})
 
+	out = append(out, testGPOPayload()...)
+	return out
+}
+
+// testGPOPayload vérifie le mécanisme générique des définitions à contenu, dont
+// les jeux de commandes sudo sont le premier utilisateur.
+func testGPOPayload() []Result {
+	var out []Result
+
+	defer func() {
+		gpo.SetRestrictionProvider(nil)
+		gpo.InvalidateRestrictionCache()
+	}()
+
+	// Le champ command_set porte un contenu, les autres non : c'est ce qui pilote
+	// l'affichage d'un éditeur de contenu et le choix du validateur.
+	out = append(out, Result{"GPO/payload: command_set identifié comme champ à contenu",
+		gpo.FieldHasPayload(gpo.ModuleSudoersRule, "command_set"), "devrait porter un contenu"})
+	out = append(out, Result{"GPO/payload: service identifié comme liste simple",
+		!gpo.FieldHasPayload(gpo.ModuleSystemdService, "service"), "ne devrait pas porter de contenu"})
+
+	// Validation du contenu : commandes bien formées acceptées.
+	okPayload := "/usr/bin/systemctl restart mon-monitoring.service\n# commentaire ignoré\n/usr/bin/journalctl -u mon-monitoring.service"
+	out = append(out, Result{"GPO/payload: liste de commandes valide acceptée",
+		gpo.ValidatePayload(gpo.PayloadCommandList, okPayload) == nil,
+		fmt.Sprint(gpo.ValidatePayload(gpo.PayloadCommandList, okPayload))})
+
+	// Refus de la forme : métacaractères, jokers, chemins relatifs, vide.
+	rejected := map[string]string{
+		"chaînage":         "/usr/bin/systemctl restart x; /bin/sh",
+		"substitution":     "/usr/bin/echo $(id)",
+		"joker":            "/usr/bin/*",
+		"chemin relatif":   "systemctl restart x",
+		"redirection":      "/usr/bin/tee /etc/sudoers",
+		"ALL combiné":      "ALL\n/usr/bin/ls",
+		"contenu vide":     "   \n# rien\n",
+		"backtick":         "/usr/bin/echo `id`",
+		"guillemet simple": "/usr/bin/find / -name 'x'",
+	}
+	bad := ""
+	for label, payload := range rejected {
+		if label == "redirection" {
+			// /usr/bin/tee /etc/sudoers est syntaxiquement valide : la forme ne
+			// permet pas de deviner l'intention. On ne l'attend pas en refus.
+			continue
+		}
+		if gpo.ValidatePayload(gpo.PayloadCommandList, payload) == nil {
+			bad += label + " "
+		}
+	}
+	if bad != "" {
+		out = append(out, Result{"GPO/payload: formes dangereuses refusées", false, "acceptées à tort : " + bad})
+	} else {
+		out = append(out, Result{"GPO/payload: formes dangereuses refusées", true, ""})
+	}
+
+	// Un kind vide n'accepte pas de contenu, et un kind inconnu est refusé.
+	out = append(out, Result{"GPO/payload: contenu refusé sur un champ sans contenu",
+		gpo.ValidatePayload(gpo.PayloadNone, "quelque chose") != nil, "devrait refuser"})
+	out = append(out, Result{"GPO/payload: kind inconnu refusé",
+		gpo.ValidatePayload(gpo.PayloadKind("inexistant"), "x") != nil, "devrait refuser"})
+
+	// Un jeu custom injecté par le fournisseur devient utilisable dans une GPO,
+	// sans qu'aucun code n'ait changé — c'est l'objectif du mécanisme.
+	custom := gpo.DefaultRestrictions()
+	key := gpo.FieldKey(gpo.ModuleSudoersRule, "command_set")
+	custom.Definitions[key] = append(custom.Definitions[key], gpo.ValueDefinition{
+		ModuleType: gpo.ModuleSudoersRule, FieldName: "command_set", Name: "monitoring_ops",
+		Kind:    gpo.PayloadCommandList,
+		Payload: "/usr/bin/systemctl restart mon-monitoring.service",
+	})
+	gpo.SetRestrictionProvider(fakeRestrictions{set: custom})
+	gpo.InvalidateRestrictionCache()
+
+	_, err := gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type:   gpo.ModuleSudoersRule,
+		Params: map[string]string{"group": "ops", "command_set": "monitoring_ops", "nopasswd": "false"},
+	})
+	out = append(out, Result{"GPO/payload: jeu de commandes custom utilisable en GPO", err == nil, fmt.Sprint(err)})
+
+	// Le nom de la définition doit apparaître dans les options du champ.
+	schema, ok := gpo.SchemaFor(gpo.ModuleSudoersRule)
+	found := false
+	if ok {
+		if field, has := schema.Field("command_set"); has {
+			for _, o := range field.Options {
+				if o == "monitoring_ops" {
+					found = true
+				}
+			}
+		}
+	}
+	out = append(out, Result{"GPO/payload: définition custom visible dans les options du champ", found,
+		"la définition n'apparaît pas dans les options"})
+
 	return out
 }
 
@@ -287,6 +382,21 @@ func testGPOFieldValidation() []Result {
 	})
 	out = append(out, Result{"GPO/champ: sudo ALL+NOPASSWD refusé", err != nil, "devrait refuser"})
 
+	// Un jeu de commandes sans définition en base est refusé : l'agent recevrait
+	// un nom vide et générerait un fichier sudoers incomplet.
+	_, err = gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type:   gpo.ModuleSudoersRule,
+		Params: map[string]string{"group": "ops", "command_set": "jeu_inexistant", "nopasswd": "false"},
+	})
+	out = append(out, Result{"GPO/champ: jeu de commandes sudo non défini refusé", err != nil, "devrait refuser"})
+
+	// Un jeu par défaut avec contenu réel est accepté.
+	_, err = gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type:   gpo.ModuleSudoersRule,
+		Params: map[string]string{"group": "ops", "command_set": "service_control", "nopasswd": "false"},
+	})
+	out = append(out, Result{"GPO/champ: jeu de commandes sudo défini accepté", err == nil, fmt.Sprint(err)})
+
 	// SSH : couper mot de passe ET clé rendrait les machines inaccessibles.
 	_, err = gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
 		Type: gpo.ModuleSSHServerConfig,
@@ -296,6 +406,18 @@ func testGPOFieldValidation() []Result {
 		},
 	})
 	out = append(out, Result{"GPO/champ: SSH sans aucune méthode d'auth refusé", err != nil, "devrait refuser"})
+
+	// Valeur sysctl : la forme est contrôlée par la règle sysctl/value (motif).
+	_, errNum := gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type:   gpo.ModuleSysctl,
+		Params: map[string]string{"key": "net.ipv4.ip_forward", "value": "0"},
+	})
+	_, errTxt := gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type:   gpo.ModuleSysctl,
+		Params: map[string]string{"key": "net.ipv4.ip_forward", "value": "pas-un-entier"},
+	})
+	out = append(out, Result{"GPO/champ: valeur sysctl numérique acceptée, textuelle refusée",
+		errNum == nil && errTxt != nil, fmt.Sprintf("num=%v txt=%v", errNum, errTxt)})
 
 	// Cron : expression invalide.
 	_, err = gpo.ValidateModule(gpo.ScopeUser, gpo.Module{

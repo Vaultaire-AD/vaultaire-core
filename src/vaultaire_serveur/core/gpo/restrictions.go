@@ -89,16 +89,80 @@ type AllowedValue struct {
 	Label      string `json:"label,omitempty"`
 }
 
+// PayloadKind décrit la nature du contenu porté par une définition de valeur.
+//
+// Certains champs ne se contentent pas d'un nom : un « jeu de commandes sudo »,
+// par exemple, n'a de sens que si l'on sait quelles commandes il autorise. Pour
+// ces champs, la valeur utilisée dans une GPO est le NOM d'une définition, et le
+// contenu réel vit à côté, dans la même table de restrictions.
+//
+// Le mécanisme est générique par construction : ajouter un futur module dont un
+// champ a besoin d'un contenu se fait en déclarant un nouveau PayloadKind et son
+// validateur dans payloadValidators — sans toucher à la couche base, à
+// l'interface web ni au reste du catalogue.
+type PayloadKind string
+
+const (
+	// PayloadNone : la valeur est un simple nom, sans contenu associé
+	// (unités systemd, clés sysctl, paquets, identifiants de tâche).
+	PayloadNone PayloadKind = ""
+	// PayloadCommandList : une commande par ligne, ou le mot-clé ALL.
+	// Utilisé par les jeux de commandes sudo.
+	PayloadCommandList PayloadKind = "command_list"
+)
+
+// ValueDefinition est une valeur nommée accompagnée de son contenu.
+type ValueDefinition struct {
+	ModuleType string      `json:"module_type"`
+	FieldName  string      `json:"field_name"`
+	Name       string      `json:"name"`
+	Kind       PayloadKind `json:"kind"`
+	Payload    string      `json:"payload"`
+	Note       string      `json:"note,omitempty"`
+	UpdatedBy  string      `json:"updated_by,omitempty"`
+}
+
+// Lines découpe la charge utile en lignes utiles (vides et commentaires exclus).
+func (d ValueDefinition) Lines() []string {
+	var out []string
+	for _, l := range strings.Split(d.Payload, "\n") {
+		t := strings.TrimSpace(l)
+		if t == "" || strings.HasPrefix(t, "#") {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
 // RestrictionSet est l'ensemble complet des restrictions en vigueur.
 type RestrictionSet struct {
 	// AllowedValues est indexé par clé "module_type/field_name".
 	AllowedValues map[string][]AllowedValue
+	// Definitions est indexé par clé "module_type/field_name" et contient les
+	// valeurs nommées porteuses d'un contenu.
+	Definitions map[string][]ValueDefinition
 	// FieldRules est indexé par clé "module_type/field_name".
 	FieldRules map[string]FieldRule
 	// PathRules regroupe autorisations et refus de préfixes de chemins.
 	PathRules []PathRule
 	// EnvDenied liste les variables d'environnement interdites.
 	EnvDenied []EnvRule
+}
+
+// DefinitionsFor retourne les définitions d'un champ.
+func (rs RestrictionSet) DefinitionsFor(moduleType, fieldName string) []ValueDefinition {
+	return rs.Definitions[FieldKey(moduleType, fieldName)]
+}
+
+// Definition retourne une définition par son nom.
+func (rs RestrictionSet) Definition(moduleType, fieldName, name string) (ValueDefinition, bool) {
+	for _, d := range rs.DefinitionsFor(moduleType, fieldName) {
+		if d.Name == name {
+			return d, true
+		}
+	}
+	return ValueDefinition{}, false
 }
 
 // FieldKey construit la clé d'indexation d'un champ.
@@ -112,12 +176,27 @@ func (rs RestrictionSet) Rule(moduleType, fieldName string) FieldRule {
 	return FieldRule{ModuleType: moduleType, FieldName: fieldName, Mode: FieldModeList}
 }
 
-// Values retourne les valeurs autorisées d'un champ, triées.
+// Values retourne les valeurs autorisées d'un champ, triées et dédupliquées.
+//
+// Les deux sources sont fusionnées : les entrées de liste simple et les noms des
+// définitions porteuses de contenu. Un champ n'utilise en pratique qu'une des
+// deux, mais fusionner évite à l'appelant d'avoir à savoir laquelle.
 func (rs RestrictionSet) Values(moduleType, fieldName string) []string {
-	entries := rs.AllowedValues[FieldKey(moduleType, fieldName)]
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, e.Value)
+	key := FieldKey(moduleType, fieldName)
+	seen := map[string]bool{}
+	var out []string
+	add := func(v string) {
+		if v == "" || seen[v] {
+			return
+		}
+		seen[v] = true
+		out = append(out, v)
+	}
+	for _, e := range rs.AllowedValues[key] {
+		add(e.Value)
+	}
+	for _, d := range rs.Definitions[key] {
+		add(d.Name)
 	}
 	sort.Strings(out)
 	return out

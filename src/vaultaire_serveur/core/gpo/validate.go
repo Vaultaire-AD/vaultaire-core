@@ -28,7 +28,6 @@ var (
 	envNameRe    = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]{0,63}$`)
 	modeRe       = regexp.MustCompile(`^0?[0-7]{3}$`)
 	cronFieldRe  = regexp.MustCompile(`^(\*|[0-9]+)([-/,][0-9]+)*(/[0-9]+)?$`)
-	sysctlValRe  = regexp.MustCompile(`^-?[0-9]+( -?[0-9]+)*$`)
 
 	packageVersionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:+~-]{0,63}$`)
 )
@@ -255,11 +254,6 @@ func validateFieldValue(moduleType string, f FieldSchema, val string, scope Scop
 // même module, celles qu'un validateur champ par champ ne peut pas voir.
 func validateModuleSemantics(moduleType string, p map[string]string) error {
 	switch moduleType {
-	case ModuleSysctl:
-		if !sysctlValRe.MatchString(p["value"]) {
-			return fmt.Errorf("module %s : valeur sysctl invalide (entiers séparés par des espaces attendus) : %q", moduleType, p["value"])
-		}
-
 	case ModuleSystemdService:
 		if p["masked"] == "true" && (p["state"] == "started" || p["state"] == "restarted") {
 			return fmt.Errorf("module %s : une unité masquée ne peut pas être démarrée (masked=true et state=%s)", moduleType, p["state"])
@@ -269,8 +263,19 @@ func validateModuleSemantics(moduleType string, p map[string]string) error {
 		}
 
 	case ModuleSudoersRule:
-		if p["command_set"] == "ALL" && p["nopasswd"] == "true" {
-			return fmt.Errorf("module %s : la combinaison commandes=ALL et NOPASSWD équivaut à un accès root sans authentification ; refusée", moduleType)
+		// Le jeu de commandes est une définition : on refuse une valeur qui n'a
+		// pas de contenu en base, sinon l'agent recevrait un nom de jeu vide et
+		// générerait un fichier sudoers sans effet — ou pire, incomplet.
+		set := p["command_set"]
+		def, found := Restrictions().Definition(ModuleSudoersRule, "command_set", set)
+		if !found {
+			return fmt.Errorf("module %s : le jeu de commandes %q n'est pas défini ; créez-le dans Admin → GPO → Restrictions", moduleType, set)
+		}
+		if len(def.Lines()) == 0 {
+			return fmt.Errorf("module %s : le jeu de commandes %q est vide", moduleType, set)
+		}
+		if p["nopasswd"] == "true" && grantsAllCommands(def) {
+			return fmt.Errorf("module %s : le jeu %q autorise toutes les commandes ; combiné à NOPASSWD cela équivaut à un accès root sans authentification, refusé", moduleType, set)
 		}
 
 	case ModuleFileDeploy:
@@ -298,58 +303,20 @@ func validateModuleSemantics(moduleType string, p map[string]string) error {
 				allUnchanged = false
 			}
 		}
-		if allUnchanged && p["max_auth_tries"] == "" && p["client_alive_interval"] == "" &&
-			p["banner_text"] == "" && p["extra_directives"] == "" {
+		if allUnchanged && p["max_auth_tries"] == "" && p["client_alive_interval"] == "" && p["banner_text"] == "" {
 			return fmt.Errorf("module %s : aucun réglage renseigné, le module serait sans effet", moduleType)
 		}
 		if p["password_authentication"] == "no" && p["pubkey_authentication"] == "no" {
 			return fmt.Errorf("module %s : désactiver à la fois l'authentification par mot de passe et par clé rendrait les machines inaccessibles en SSH", moduleType)
 		}
-		if err := validateSSHExtraDirectives(p["extra_directives"]); err != nil {
-			return fmt.Errorf("module %s : %v", moduleType, err)
-		}
 	}
 	return nil
 }
 
-// validateSSHExtraDirectives valide le champ libre de directives sshd.
-//
-// Chaque ligne doit être une directive « Mot-clé valeur ». Le mot-clé est soumis
-// à la règle de restriction ssh_server_config/directive, éditable par le
-// superadmin : c'est là qu'on autorise une directive de durcissement maison ou
-// qu'on referme une directive jugée dangereuse. La valeur, elle, n'est vérifiée
-// que sur sa forme — sshd -t côté agent reste l'arbitre final de sa validité.
-func validateSSHExtraDirectives(raw string) error {
-	if strings.TrimSpace(raw) == "" {
-		return nil
-	}
-	rule := RuleFor(ModuleSSHServerConfig, SSHDirectiveField)
-	allowed := AllowedValuesFor(ModuleSSHServerConfig, SSHDirectiveField)
-
-	for i, line := range strings.Split(raw, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		lineNo := i + 1
-		if strings.ContainsRune(trimmed, '\x00') {
-			return fmt.Errorf("directive ligne %d : caractère nul interdit", lineNo)
-		}
-		parts := strings.Fields(trimmed)
-		keyword := parts[0]
-		if len(parts) < 2 {
-			return fmt.Errorf("directive ligne %d : valeur manquante après %q", lineNo, keyword)
-		}
-		if err := checkAgainstRule(rule, allowed, keyword); err != nil {
-			return fmt.Errorf("directive ligne %d : %v", lineNo, err)
-		}
-		// Refus des caractères qui permettraient de sortir du fichier de
-		// configuration ou d'y injecter une seconde directive.
-		if strings.ContainsAny(trimmed, "\r`$;|&<>") {
-			return fmt.Errorf("directive ligne %d : caractère interdit dans la valeur", lineNo)
-		}
-	}
-	return nil
+// grantsAllCommands indique si un jeu de commandes équivaut à un accès total.
+func grantsAllCommands(def ValueDefinition) bool {
+	lines := def.Lines()
+	return len(lines) == 1 && lines[0] == "ALL"
 }
 
 // ValidatePolicy valide une GPO complète : nom, scope, description, puis chaque

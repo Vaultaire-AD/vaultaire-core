@@ -3,6 +3,7 @@ package dbgpo
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -10,6 +11,11 @@ import (
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
 )
+
+// definitionNameRe borne les noms de définition : ce nom est écrit tel quel dans
+// les paramètres JSON d'un module, et recherché par motif lors de la suppression.
+// Le restreindre garantit que les deux opérations restent exactes.
+var definitionNameRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$`)
 
 // Persistance des restrictions GPO.
 //
@@ -50,6 +56,23 @@ var restrictionTablesDDL = []string{
 		INDEX idx_gpo_restriction_field (module_type, field_name)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
+	// Valeurs nommées porteuses d'un contenu (ex. jeux de commandes sudo).
+	// Table distincte de gpo_restriction : le contenu peut être long et
+	// multiligne, ce qui ne tient pas dans une colonne indexée.
+	`CREATE TABLE IF NOT EXISTS gpo_value_definition (
+		id_gpo_value_definition INT AUTO_INCREMENT PRIMARY KEY,
+		module_type VARCHAR(64) NOT NULL,
+		field_name VARCHAR(64) NOT NULL,
+		name VARCHAR(128) NOT NULL,
+		payload_kind VARCHAR(32) NOT NULL,
+		payload TEXT NOT NULL,
+		note VARCHAR(255) DEFAULT NULL,
+		updated_by VARCHAR(255) DEFAULT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		UNIQUE KEY uk_gpo_value_definition (module_type, field_name, name),
+		INDEX idx_gpo_value_definition_field (module_type, field_name)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
 	`CREATE TABLE IF NOT EXISTS gpo_field_rule (
 		id_gpo_field_rule INT AUTO_INCREMENT PRIMARY KEY,
 		module_type VARCHAR(64) NOT NULL,
@@ -75,6 +98,19 @@ type RestrictionRow struct {
 	Note       string
 	UpdatedBy  string
 	UpdatedAt  time.Time
+}
+
+// DefinitionRow est une définition à contenu telle qu'affichée dans l'interface.
+type DefinitionRow struct {
+	ID          int
+	ModuleType  string
+	FieldName   string
+	Name        string
+	PayloadKind string
+	Payload     string
+	Note        string
+	UpdatedBy   string
+	UpdatedAt   time.Time
 }
 
 // FieldRuleRow est une règle de champ telle qu'affichée dans l'interface.
@@ -182,6 +218,17 @@ func writeDefaults(db *sql.DB, actor string) error {
 				return fmt.Errorf("gpo: peuplement de %s/%s impossible : %v", field.ModuleType, field.FieldName, err)
 			}
 		}
+		for _, d := range field.SeedDefinitions {
+			if _, err := db.Exec(
+				`INSERT IGNORE INTO gpo_value_definition (module_type, field_name, name, payload_kind, payload, note, updated_by)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				field.ModuleType, field.FieldName, d.Name, string(field.PayloadKind), d.Payload,
+				nullIfEmpty(d.Note), actor,
+			); err != nil {
+				return fmt.Errorf("gpo: peuplement de la définition %s/%s/%s impossible : %v",
+					field.ModuleType, field.FieldName, d.Name, err)
+			}
+		}
 		rule := defaults.Rule(field.ModuleType, field.FieldName)
 		if _, err := db.Exec(
 			`INSERT INTO gpo_field_rule (module_type, field_name, mode, allow_pattern, deny_pattern, note, updated_by)
@@ -233,6 +280,9 @@ func ResetRestrictionsToDefaults(db *sql.DB, actor string) error {
 	if _, err := db.Exec(`DELETE FROM gpo_field_rule`); err != nil {
 		return fmt.Errorf("gpo: purge des règles de champ impossible : %v", err)
 	}
+	if _, err := db.Exec(`DELETE FROM gpo_value_definition`); err != nil {
+		return fmt.Errorf("gpo: purge des définitions impossible : %v", err)
+	}
 	if err := writeDefaults(db, actor); err != nil {
 		return err
 	}
@@ -266,6 +316,7 @@ func (Provider) LoadRestrictions() (gpo.RestrictionSet, error) {
 func loadRestrictions(db *sql.DB) (gpo.RestrictionSet, error) {
 	rs := gpo.RestrictionSet{
 		AllowedValues: map[string][]gpo.AllowedValue{},
+		Definitions:   map[string][]gpo.ValueDefinition{},
 		FieldRules:    map[string]gpo.FieldRule{},
 	}
 
@@ -325,7 +376,209 @@ func loadRestrictions(db *sql.DB) (gpo.RestrictionSet, error) {
 		}
 		rs.FieldRules[gpo.FieldKey(r.ModuleType, r.FieldName)] = r
 	}
-	return rs, ruleRows.Err()
+	if err := ruleRows.Err(); err != nil {
+		closeRows(ruleRows)
+		return rs, err
+	}
+	closeRows(ruleRows)
+
+	defRows, err := db.Query(
+		`SELECT module_type, field_name, name, payload_kind, payload, COALESCE(note, ''), COALESCE(updated_by, '')
+		 FROM gpo_value_definition ORDER BY module_type, field_name, name`)
+	if err != nil {
+		return rs, fmt.Errorf("lecture des définitions impossible : %v", err)
+	}
+	defer closeRows(defRows)
+
+	for defRows.Next() {
+		var d gpo.ValueDefinition
+		var kind string
+		if err := defRows.Scan(&d.ModuleType, &d.FieldName, &d.Name, &kind, &d.Payload, &d.Note, &d.UpdatedBy); err != nil {
+			return rs, err
+		}
+		d.Kind = gpo.PayloadKind(kind)
+		key := gpo.FieldKey(d.ModuleType, d.FieldName)
+		rs.Definitions[key] = append(rs.Definitions[key], d)
+	}
+	return rs, defRows.Err()
+}
+
+// ListDefinitionsForField retourne les définitions d'un champ, pour l'interface.
+func ListDefinitionsForField(db *sql.DB, moduleType, fieldName string) ([]DefinitionRow, error) {
+	rows, err := db.Query(
+		`SELECT id_gpo_value_definition, module_type, field_name, name, payload_kind, payload,
+		        COALESCE(note, ''), COALESCE(updated_by, ''), updated_at
+		 FROM gpo_value_definition WHERE module_type = ? AND field_name = ? ORDER BY name`,
+		moduleType, fieldName)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des définitions de %s/%s impossible : %v", moduleType, fieldName, err)
+	}
+	defer closeRows(rows)
+
+	var out []DefinitionRow
+	for rows.Next() {
+		var d DefinitionRow
+		var updatedAt sql.NullTime
+		if err := rows.Scan(&d.ID, &d.ModuleType, &d.FieldName, &d.Name, &d.PayloadKind,
+			&d.Payload, &d.Note, &d.UpdatedBy, &updatedAt); err != nil {
+			return nil, err
+		}
+		if updatedAt.Valid {
+			d.UpdatedAt = updatedAt.Time
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// SaveDefinition crée ou met à jour une définition à contenu.
+//
+// C'est le point d'entrée pour créer un jeu de commandes sudo custom, ou tout
+// futur champ à contenu : le kind attendu est déduit du catalogue, jamais fourni
+// par l'appelant, pour qu'on ne puisse pas stocker un contenu d'un type que le
+// champ ne sait pas interpréter.
+func SaveDefinition(db *sql.DB, actor, moduleType, fieldName, name, payload, note string) error {
+	if err := requireSuperadmin(db, actor, "l'enregistrement d'une définition"); err != nil {
+		return err
+	}
+	if err := validateFieldTarget(moduleType, fieldName); err != nil {
+		return err
+	}
+	kind := gpo.PayloadKindFor(moduleType, fieldName)
+	if kind == gpo.PayloadNone {
+		return fmt.Errorf("le champ %s/%s n'attend pas de contenu : utilisez la liste de valeurs", moduleType, fieldName)
+	}
+
+	name = strings.TrimSpace(name)
+	if err := validateRestrictionValue(name, 128); err != nil {
+		return err
+	}
+	if !definitionNameRe.MatchString(name) {
+		return fmt.Errorf("nom invalide %q (lettres, chiffres, point, tiret, souligné ; 2 à 64 caractères)", name)
+	}
+	if err := database.SanitizeInput(moduleType, fieldName, name); err != nil {
+		return err
+	}
+	if err := gpo.ValidatePayload(kind, payload); err != nil {
+		return err
+	}
+
+	previous, existed, err := getDefinition(db, moduleType, fieldName, name)
+	if err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(
+		`INSERT INTO gpo_value_definition (module_type, field_name, name, payload_kind, payload, note, updated_by)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE payload_kind = VALUES(payload_kind), payload = VALUES(payload),
+		   note = VALUES(note), updated_by = VALUES(updated_by)`,
+		moduleType, fieldName, name, string(kind), payload, nullIfEmpty(strings.TrimSpace(note)), actor,
+	); err != nil {
+		return fmt.Errorf("enregistrement de la définition %q impossible : %v", name, err)
+	}
+
+	action := "création de définition"
+	detail := fmt.Sprintf("%s/%s/%s (%s) : %s", moduleType, fieldName, name, kind, oneLine(payload))
+	if existed {
+		action = "modification de définition"
+		detail = fmt.Sprintf("%s/%s/%s (%s) : %s → %s",
+			moduleType, fieldName, name, kind, oneLine(previous.Payload), oneLine(payload))
+	}
+	auditRestriction(actor, action, detail)
+	return nil
+}
+
+// DeleteDefinition supprime une définition à contenu.
+//
+// Refuse la suppression si la définition est encore référencée par un module de
+// GPO : sans ce contrôle, la GPO deviendrait invalide et son application
+// échouerait sur le parc, avec une cause difficile à retrouver.
+func DeleteDefinition(db *sql.DB, actor string, id int) error {
+	if err := requireSuperadmin(db, actor, "la suppression d'une définition"); err != nil {
+		return err
+	}
+	var moduleType, fieldName, name, payload string
+	err := db.QueryRow(
+		`SELECT module_type, field_name, name, payload FROM gpo_value_definition WHERE id_gpo_value_definition = ?`, id,
+	).Scan(&moduleType, &fieldName, &name, &payload)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("définition %d introuvable", id)
+	}
+	if err != nil {
+		return fmt.Errorf("lecture de la définition %d impossible : %v", id, err)
+	}
+
+	users, err := findModulesUsingValue(db, moduleType, fieldName, name)
+	if err != nil {
+		return err
+	}
+	if len(users) > 0 {
+		return fmt.Errorf("la définition %q est utilisée par %d module(s) de GPO (%s) : retirez-les d'abord",
+			name, len(users), strings.Join(users, ", "))
+	}
+
+	if _, err := db.Exec(`DELETE FROM gpo_value_definition WHERE id_gpo_value_definition = ?`, id); err != nil {
+		return fmt.Errorf("suppression de la définition %d impossible : %v", id, err)
+	}
+	auditRestriction(actor, "suppression de définition",
+		fmt.Sprintf("%s/%s/%s : %s", moduleType, fieldName, name, oneLine(payload)))
+	return nil
+}
+
+// getDefinition lit une définition par sa clé naturelle.
+func getDefinition(db *sql.DB, moduleType, fieldName, name string) (DefinitionRow, bool, error) {
+	var d DefinitionRow
+	err := db.QueryRow(
+		`SELECT id_gpo_value_definition, module_type, field_name, name, payload_kind, payload, COALESCE(note, '')
+		 FROM gpo_value_definition WHERE module_type = ? AND field_name = ? AND name = ?`,
+		moduleType, fieldName, name,
+	).Scan(&d.ID, &d.ModuleType, &d.FieldName, &d.Name, &d.PayloadKind, &d.Payload, &d.Note)
+	if err == sql.ErrNoRows {
+		return d, false, nil
+	}
+	if err != nil {
+		return d, false, fmt.Errorf("lecture de la définition %q impossible : %v", name, err)
+	}
+	return d, true, nil
+}
+
+// findModulesUsingValue retourne les GPO dont un module utilise cette valeur.
+//
+// Les paramètres sont stockés en JSON : la recherche se fait sur le motif
+// "field":"value", ce qui est exact pour des noms sans caractère spécial (le
+// format des noms de définition l'impose déjà).
+func findModulesUsingValue(db *sql.DB, moduleType, fieldName, value string) ([]string, error) {
+	needle := `"` + fieldName + `":"` + value + `"`
+	rows, err := db.Query(
+		`SELECT DISTINCT g.gpo_name FROM gpo g
+		 INNER JOIN gpo_module m ON m.d_id_gpo = g.id_gpo
+		 WHERE m.module_type = ? AND m.params LIKE CONCAT('%', ?, '%')
+		 ORDER BY g.gpo_name`,
+		moduleType, needle)
+	if err != nil {
+		return nil, fmt.Errorf("recherche des utilisateurs de %q impossible : %v", value, err)
+	}
+	defer closeRows(rows)
+
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		out = append(out, name)
+	}
+	return out, rows.Err()
+}
+
+// oneLine condense un contenu multiligne pour le journal d'audit.
+func oneLine(payload string) string {
+	compact := strings.Join(strings.Fields(strings.ReplaceAll(payload, "\n", " ; ")), " ")
+	if len(compact) > 200 {
+		return compact[:200] + "…"
+	}
+	return compact
 }
 
 // ListRestrictionsByKind retourne les lignes d'une catégorie, pour l'interface.
@@ -420,6 +673,12 @@ func AddAllowedValue(db *sql.DB, actor, moduleType, fieldName, value, label stri
 	value = strings.TrimSpace(value)
 	if err := validateFieldTarget(moduleType, fieldName); err != nil {
 		return err
+	}
+	// Sur un champ à contenu, un nom sans contenu serait accepté ici mais rejeté
+	// à la validation de la GPO (« jeu vide »). Autant refuser tout de suite avec
+	// le bon message, plutôt que de laisser une entrée inutilisable en base.
+	if gpo.FieldHasPayload(moduleType, fieldName) {
+		return fmt.Errorf("le champ %s/%s attend une définition avec son contenu, pas un simple nom", moduleType, fieldName)
 	}
 	if err := validateRestrictionValue(value, 512); err != nil {
 		return err
