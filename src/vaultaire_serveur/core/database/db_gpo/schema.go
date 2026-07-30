@@ -91,14 +91,12 @@ func CreateTables(db *sql.DB) error {
 		return err
 	}
 
-	// Tables de restrictions, puis peuplement du socle par défaut, puis
-	// enregistrement du fournisseur auprès de core/gpo. L'ordre compte : le
-	// fournisseur est installé en dernier, pour qu'aucune validation ne lise des
-	// tables encore vides et ne conclue à tort qu'aucune valeur n'est autorisée.
-	if err := createRestrictionTables(db); err != nil {
-		return err
-	}
-	if err := SeedRestrictions(db); err != nil {
+	// Tables de restrictions, peuplement initial des seules tables nouvellement
+	// créées, puis enregistrement du fournisseur auprès de core/gpo. L'ordre
+	// compte : le fournisseur est installé en dernier, pour qu'aucune validation
+	// ne lise des tables encore vides et ne conclue à tort qu'aucune valeur n'est
+	// autorisée — la lecture étant désormais fail-closed.
+	if err := SetupRestrictions(db); err != nil {
 		return err
 	}
 	RegisterRestrictionProvider()

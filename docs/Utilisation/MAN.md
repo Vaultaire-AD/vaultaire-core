@@ -12,6 +12,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 4. [Commandes principales](#4-commandes-principales)
 5. [create — Création](#5-create--création)
    - [5.0 Modèle des permissions (user)](#50-modèle-des-permissions-user)
+   - [5.6 GPO](#56-gpo) — modèle déclaratif, restrictions, définitions
 6. [status — État des sessions](#6-status--état-des-sessions)
 7. [clear — Nettoyage des sessions](#7-clear--nettoyage-des-sessions)
 8. [get — Consultation](#8-get--consultation)
@@ -145,7 +146,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 
 | Commande | Description |
 |----------|-------------|
-| `create` | Créer utilisateur, groupe, permission, client, GPO |
+| `create` | Créer utilisateur, groupe, permission, client, GPO (`-gpo <nom> --scope <machine\|user>`) |
 | `status` | Sessions (utilisateurs connectés, clients) |
 | `clear`  | Nettoyer les sessions expirées |
 | `get`    | Lister / détail utilisateurs, groupes, clients, permissions, GPO |
@@ -275,8 +276,32 @@ c'est ce qui permet d'ouvrir largement un champ tout en gardant des refus fermes
 (ex. mode motif sur les unités systemd, mais exclusion de `^(sshd|systemd-)`).
 
 Sont également éditables : les emplacements de fichiers autorisés et refusés (par
-scope), et les variables d'environnement interdites. Le bouton **Réinitialiser**
-réécrit le socle par défaut, qui correspond aux restrictions historiques.
+scope), et les variables d'environnement interdites.
+
+**Où vivent ces valeurs.** Uniquement en base, dans `gpo_restriction`,
+`gpo_field_rule` et `gpo_value_definition`. Aucune liste n'existe en dur dans le
+code Go. Le socle initial est un script SQL embarqué dans le binaire
+(`core/database/db_gpo/seed/gpo_seed.sql`), exécuté **une seule fois** : au
+premier démarrage, quand les tables n'existent pas encore. Deux conséquences
+pratiques :
+
+- une valeur supprimée depuis l'interface ne réapparaît **jamais** au
+  redémarrage — il n'y a rien pour la réécrire ;
+- pour revenir au socle initial, il faut le demander explicitement via le bouton
+  **Réinitialiser** (purge puis rejeu du script, réservé au groupe superadmin et
+  journalisé).
+
+Seule exception : les *règles de champ* (le mode et les motifs) sont vérifiées à
+chaque démarrage et créées si absentes. Une règle n'est pas une valeur, c'est la
+définition de la façon dont le champ se valide ; un champ ajouté au catalogue
+sans règle refuserait tout sur les bases existantes. Les règles déjà présentes,
+même modifiées, ne sont jamais écrasées.
+
+**Si la base ne répond pas.** La lecture des restrictions est *fail-closed* :
+aucune valeur n'est considérée comme autorisée, donc aucune GPO ne valide ni ne
+s'applique, et un bandeau l'indique dans l'interface. Il n'y a volontairement
+aucun repli sur un socle interne — un repli rétablirait le temps de la panne des
+valeurs que vous auriez retirées.
 
 **Champs à contenu (définitions).** Certains champs ne se contentent pas d'un
 nom. Un *jeu de commandes sudo* porte un nom — utilisé comme valeur dans la GPO —
@@ -302,14 +327,16 @@ se branche en déclarant un `PayloadKind` et son validateur dans
 
 **Récapitulatif par module :**
 
-| Module | Ce qui est extensible |
-|--------|----------------------|
-| Service systemd | Ajouter l'unité dans les Restrictions, puis en choisir l'état comme les autres |
-| Paquet logiciel | Ajouter le nom du paquet ; présence, absence et version épinglée suivent |
-| Paramètre noyau | Ajouter la clé ; la forme de la valeur se règle via la règle `sysctl/value` |
-| Droits sudo | Créer un jeu de commandes avec son contenu |
-| Fichier | Emplacements autorisés / refusés par scope |
-| SSH serveur | Jeu de directives fixe, volontairement non extensible |
+| Module | Champ extensible | Comment |
+|--------|------------------|---------|
+| Service systemd | `systemd_service/service` | Ajouter l'unité (liste) ou ouvrir une famille (motif), puis en choisir l'état comme n'importe quelle autre |
+| Paquet logiciel | `package/package` | Ajouter le nom du paquet ; présence, absence et version épinglée suivent |
+| Paramètre noyau | `sysctl/key` et `sysctl/value` | Ajouter la clé ; élargir le motif de `sysctl/value` si elle attend une valeur non numérique |
+| Droits sudo | `sudoers_rule/command_set` | Créer une définition : un nom et sa liste de commandes |
+| Tâche planifiée user | `user_cron/command_id` | Ajouter l'identifiant — nécessite l'implémentation correspondante côté agent |
+| Fichier | (règles de chemin) | Emplacements autorisés / refusés par scope |
+| SSH serveur | — | Jeu de directives fixe, volontairement non extensible |
+| Variable d'environnement | (liste d'interdits) | Retirer ou ajouter une variable interdite |
 
 #### Identité d'amorçage protégée
 
@@ -390,9 +417,19 @@ get -c "computeur_id"
 ### 8.5 GPO
 
 ```bash
-get -gpo
-get -gpo "nom_gpo"
+get -gpo              # liste : nom, scope, version, activation, nb de modules, groupes liés
+get -gpo "nom_gpo"    # détail : métadonnées, groupes, puis modules dans leur ordre d'application
 ```
+
+Le détail affiche aussi l'**empreinte** de la politique (SHA-256 de sa forme
+canonique). C'est ce hash qui décidera, côté agent, s'il faut réappliquer la GPO :
+il change dès qu'un module, un paramètre ou la version bouge, et il est stable
+quel que soit l'ordre de lecture en base.
+
+Les droits requis suivent les domaines des groupes liés à la GPO. Une GPO sans
+groupe ne couvre aucun domaine : la consultation exige alors le droit global,
+pour qu'une GPO en attente de rattachement ne soit pas visible ou modifiable par
+n'importe quel délégué.
 
 ---
 
@@ -676,6 +713,14 @@ dns delete ptr 192.168.1.1
 | Permission user : tous domaines (auth) | `update -pu PERM auth all` |
 | Permission user : un domaine (auth) | `update -pu PERM auth -a 1 domain.fr` |
 | Permission user : lecture utilisateurs (RBAC) | `update -pu PERM read:get:user all` |
+| Créer une GPO machine | `create -gpo durcissement_ssh --scope machine --desc "Baseline SSH"` |
+| Créer une GPO utilisateur | `create -gpo env_dev --scope user` |
+| Lister / détailler les GPO | `get -gpo` ; `get -gpo "nom_gpo"` |
+| Lier une GPO à un groupe | `add -gpo "nom_gpo" -g "group"` |
+| Délier une GPO d'un groupe | `remove -gpo "nom_gpo" -g "group"` |
+| Supprimer une GPO | `delete -gpo "nom_gpo"` |
+| Ajouter / éditer les modules d'une GPO | Interface web : **Admin → GPO → détail** |
+| Déclarer un service, paquet ou jeu sudo custom | Interface web : **Admin → GPO → Restrictions** (groupe `vaultaire`) |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |

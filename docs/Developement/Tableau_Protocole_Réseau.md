@@ -23,12 +23,10 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 12            | serveur_information              | la trame d'information envoyé par les softwares serveur                             |
 | serveur                     |             | 13            | client_information               | la trame d'information envoyé par les softwares client                              |
 |                             |             |               |                                  |                                                                                     |
-| serveur                     |             | 15            | ask GPO                          | le client demande au serveur de lui envoyé les GPO de l'utilisateur                 |
-| client                      |             | 16            | send GPO                         | Envoie au client toutes ses GPOs                                                    |
 | server                      |             | 17            | ask list proxy/core              | le client Demande la liste des serveurs a joindre pour se connecter au réseau       |
-| client                      |             | 18            | respond list                     | le serveur repond la liste des serveur joignable |
+| client                      |             | 18            | respond list                     | le serveur repond la liste des serveur joignable                                    |
 |                             |             |               |                                  |                                                                                     |
-| SSH                         | 0-3         |               |                                  |                                                                                     |
+| SSH                         | 03          |               |                                  |                                                                                     |
 | server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user |
 | client                      |             | 02            | server awnser   succes           | le server renvoie un succes  avec les clé public du user et le boolean admin        |
 | client                      |             | 03            | server anwser failed             | le server renvoie un failed avec la raison de l'echec                               |
@@ -45,6 +43,20 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                           |
 | serveur                     |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                    |
 |                             |             |               |                                  |                                                                                     |
+| GPO                         | 05          |               |                                  |                                                                                     |
+| serveur                     |             | 01            | client ask for GPO Machine       | le client demande au serveur de lui envoyé l'ensemble de ses GPO machines           |
+| client                      |             | 02            | Server send GPO Machine          | le client recoit les GPO qu'il doit appliquer par le serveur central                |
+|                             |             | 03            |                                  |                                                                                     |
+|                             |             | 04            |                                  |                                                                                     |
+| server                      |             | 05            | client ask for GPO User          | le client demande a la suite d'une connection d'un utilisateur les GPO user         |
+|                             |             |               |                                  | attention ne seront appliquer les GPO user via les groupes auquelle appartient      |
+|                             |             |               |                                  | a la fois la machine et a la fois le client                                         |
+|                             |             |               |                                  | et non l'ensemble des GPO user liées a l'utilisateurs                               |
+| client                      |             | 06            | server send gpo user             | le client recoit les GPO user a applqiuer suite a une connection user               |
+|                             |             | 07            |                                  |                                                                                     |
+|                             |             | 08            |                                  |                                                                                     |
+|                             |             | 09            |                                  |                                                                                     |
+|                             |             | 10            |                                  |                                                                                     |
 
 
 ## Format Client → Serveur

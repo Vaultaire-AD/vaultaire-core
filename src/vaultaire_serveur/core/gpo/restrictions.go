@@ -263,6 +263,22 @@ func InvalidateRestrictionCache() {
 	cacheMu.Unlock()
 }
 
+// emptyRestrictions retourne un jeu vide : aucune valeur autorisée, aucune règle.
+//
+// Conséquence voulue : toute validation de module échoue. C'est le comportement
+// fail-closed, et il n'existe volontairement AUCUN repli sur un socle codé en
+// dur. Si un tel repli existait, une valeur retirée depuis l'interface web
+// redeviendrait acceptée le temps d'une panne de base — exactement le genre
+// d'écart silencieux entre configuration voulue et configuration appliquée qu'on
+// veut rendre impossible.
+func emptyRestrictions() RestrictionSet {
+	return RestrictionSet{
+		AllowedValues: map[string][]AllowedValue{},
+		Definitions:   map[string][]ValueDefinition{},
+		FieldRules:    map[string]FieldRule{},
+	}
+}
+
 // Restrictions retourne les restrictions en vigueur.
 //
 // Le résultat est mis en cache : la validation d'un module interroge plusieurs
@@ -270,9 +286,9 @@ func InvalidateRestrictionCache() {
 // champ serait coûteux pour rien. Le cache est invalidé explicitement à chaque
 // écriture (voir InvalidateRestrictionCache).
 //
-// Si aucun fournisseur n'est installé (outils CLI hors serveur, tests unitaires)
-// ou si la lecture échoue, on retombe sur DefaultRestrictions() : le socle
-// historique. Une panne de base ne doit pas faire disparaître les restrictions.
+// Sans fournisseur installé, ou si la lecture échoue, le jeu retourné est VIDE :
+// plus aucune valeur n'est acceptée. Voir emptyRestrictions pour le raisonnement.
+// Les tests doivent donc installer un fournisseur explicite.
 func Restrictions() RestrictionSet {
 	cacheMu.RLock()
 	if cached != nil {
@@ -286,30 +302,82 @@ func Restrictions() RestrictionSet {
 	p := provider
 	providerMu.RUnlock()
 
-	loaded := DefaultRestrictions()
-	if p != nil {
-		if rs, err := p.LoadRestrictions(); err == nil {
-			loaded = rs
+	loaded := emptyRestrictions()
+	loadErr := ""
+	switch {
+	case p == nil:
+		loadErr = "aucune source de restrictions installée : les restrictions ne sont pas chargées"
+	default:
+		rs, err := p.LoadRestrictions()
+		if err != nil {
+			loadErr = err.Error()
 		} else {
-			cacheMu.Lock()
-			cacheErrOnce = err.Error()
-			cacheMu.Unlock()
+			loaded = normalizeRestrictions(rs)
 		}
 	}
 
 	cacheMu.Lock()
 	cached = &loaded
+	cacheErrOnce = loadErr
 	cacheMu.Unlock()
+
+	if loadErr != "" {
+		// Journalisé à chaque rechargement manqué, pas une seule fois : une base
+		// injoignable bloque toute gestion de GPO, l'exploitant doit le voir.
+		logRestrictionFailure(loadErr)
+	}
 	return loaded
 }
 
+// normalizeRestrictions garantit que les maps ne sont jamais nil, pour que les
+// accesseurs de RestrictionSet soient utilisables sans test préalable.
+func normalizeRestrictions(rs RestrictionSet) RestrictionSet {
+	if rs.AllowedValues == nil {
+		rs.AllowedValues = map[string][]AllowedValue{}
+	}
+	if rs.Definitions == nil {
+		rs.Definitions = map[string][]ValueDefinition{}
+	}
+	if rs.FieldRules == nil {
+		rs.FieldRules = map[string]FieldRule{}
+	}
+	return rs
+}
+
+// restrictionFailureLogger permet à la couche appelante de brancher son
+// journal sans que core/gpo dépende du package logs.
+var restrictionFailureLogger func(string)
+
+// SetRestrictionFailureLogger installe le journal des échecs de chargement.
+func SetRestrictionFailureLogger(fn func(string)) {
+	providerMu.Lock()
+	restrictionFailureLogger = fn
+	providerMu.Unlock()
+}
+
+// logRestrictionFailure remonte un échec de chargement s'il y a un journal.
+func logRestrictionFailure(message string) {
+	providerMu.RLock()
+	fn := restrictionFailureLogger
+	providerMu.RUnlock()
+	if fn != nil {
+		fn(message)
+	}
+}
+
 // LastRestrictionError retourne la dernière erreur de chargement, pour affichage
-// dans l'interface d'administration (le repli silencieux sur les valeurs par
-// défaut serait trompeur sans cette information).
+// dans l'interface d'administration : un jeu vide sans explication serait
+// incompréhensible pour l'administrateur.
 func LastRestrictionError() string {
 	cacheMu.RLock()
 	defer cacheMu.RUnlock()
 	return cacheErrOnce
+}
+
+// RestrictionsAreLoaded indique si les restrictions ont pu être chargées.
+func RestrictionsAreLoaded() bool {
+	Restrictions()
+	return LastRestrictionError() == ""
 }
 
 // patternCache évite de recompiler les mêmes expressions régulières à chaque

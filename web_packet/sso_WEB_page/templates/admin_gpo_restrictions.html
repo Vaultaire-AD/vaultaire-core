@@ -75,7 +75,14 @@
 
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
     {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
-    {{ if .LoadError }}<div class="alert alert-error">Dernière erreur de chargement des restrictions : {{ .LoadError }} — les valeurs par défaut sont utilisées en repli.</div>{{ end }}
+    {{ if .LoadError }}
+    <div class="alert alert-error">
+      <strong>Restrictions non chargées :</strong> {{ .LoadError }}<br>
+      Aucune valeur n'est actuellement considérée comme autorisée : par sécurité, aucune GPO ne peut être
+      validée ni appliquée tant que la base ne répond pas. Il n'y a pas de repli sur un socle interne — c'est
+      délibéré, pour qu'une panne ne rétablisse jamais une valeur que vous avez retirée.
+    </div>
+    {{ end }}
 
     <hr>
     <section class="section">

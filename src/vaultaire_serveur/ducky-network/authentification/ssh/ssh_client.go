@@ -96,7 +96,7 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 	db := database.GetDatabase()
 
 	ok, _ := permission.CanUserConnectToDomain(username + "@" + domaine)
-	if !ok {
+	if !ok || username == "vaultaire" {
 		logs.Write_Log("WARNING", username+" permission denied for machine "+trames_content.ClientSoftwareID)
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "@" + domaine + "\npermission denied"
 		// 03_03\nserveur_central\n<session_integrity_key>\n<username>@<domain>\n<reason>
@@ -140,7 +140,7 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 
 	// 1. Verification des droits (peut-il se connecter sur cette machine ?)
 	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
-	if err != nil || !can {
+	if err != nil || !can || sshUser == "vaultaire" {
 		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID+" (fetch-key)")
 		return "" // Pas de reponse : on ne revele pas si le user existe ou non
 	}

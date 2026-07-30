@@ -35,10 +35,7 @@ const (
 	KindPathAllow  = "path_allow"  // préfixe de chemin autorisé
 	KindPathDeny   = "path_deny"   // préfixe de chemin refusé
 	KindEnvDeny    = "env_deny"    // variable d'environnement interdite
-	kindMeta       = "meta"        // usage interne (marqueur de peuplement)
 )
-
-const seedMarkerValue = "seeded"
 
 var restrictionTablesDDL = []string{
 	`CREATE TABLE IF NOT EXISTS gpo_restriction (
@@ -164,129 +161,66 @@ func auditRestriction(actor, action, detail string) {
 // Peuplement initial et réinitialisation
 // ---------------------------------------------------------------------------
 
-// isSeeded indique si le peuplement initial a déjà eu lieu.
+// SetupRestrictions crée les tables de restrictions et n'exécute le peuplement
+// initial que pour celles qui viennent d'être créées.
 //
-// Le marqueur est une ligne dédiée plutôt qu'un simple « la table est vide » :
-// sans lui, un administrateur qui supprime volontairement toutes les entrées
-// verrait le socle par défaut réapparaître au prochain redémarrage.
-func isSeeded(db *sql.DB) (bool, error) {
-	var count int
-	err := db.QueryRow(
-		`SELECT COUNT(*) FROM gpo_restriction WHERE kind = ? AND value = ?`, kindMeta, seedMarkerValue,
-	).Scan(&count)
+// L'existence des tables est constatée AVANT leur création : c'est ce qui
+// distingue un premier démarrage d'un redémarrage, et c'est ce qui garantit
+// qu'une valeur supprimée depuis l'interface ne réapparaît jamais. Un marqueur
+// stocké en base ne l'aurait pas garanti, puisqu'il est lui-même supprimable.
+func SetupRestrictions(db *sql.DB) error {
+	missing, err := missingRestrictionTables(db)
 	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
-// SeedRestrictions écrit le socle par défaut si ce n'est pas déjà fait.
-// Appelée au démarrage ; idempotente.
-func SeedRestrictions(db *sql.DB) error {
-	seeded, err := isSeeded(db)
-	if err != nil {
-		return fmt.Errorf("gpo: vérification du peuplement des restrictions impossible : %v", err)
-	}
-	if seeded {
-		return nil
-	}
-	if err := writeDefaults(db, "system"); err != nil {
 		return err
 	}
-	if _, err := db.Exec(
-		`INSERT IGNORE INTO gpo_restriction (kind, value, note, updated_by) VALUES (?, ?, ?, ?)`,
-		kindMeta, seedMarkerValue, "marqueur de peuplement initial des restrictions", "system",
-	); err != nil {
-		return fmt.Errorf("gpo: écriture du marqueur de peuplement impossible : %v", err)
+	if err := createRestrictionTables(db); err != nil {
+		return err
 	}
-	logs.Write_Log("INFO", "gpo: restrictions peuplées avec le socle par défaut")
-	gpo.InvalidateRestrictionCache()
-	return nil
-}
-
-// writeDefaults insère le socle par défaut (sans écraser l'existant).
-func writeDefaults(db *sql.DB, actor string) error {
-	defaults := gpo.DefaultRestrictions()
-
-	for _, field := range gpo.DynamicFields() {
-		for _, v := range field.SeedValues {
-			if _, err := db.Exec(
-				`INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, updated_by)
-				 VALUES (?, ?, ?, 'any', ?, ?)`,
-				KindAllowValue, field.ModuleType, field.FieldName, v, actor,
-			); err != nil {
-				return fmt.Errorf("gpo: peuplement de %s/%s impossible : %v", field.ModuleType, field.FieldName, err)
+	if len(missing) > 0 {
+		var names []string
+		for _, t := range restrictionTables {
+			if missing[t] {
+				names = append(names, t)
 			}
 		}
-		for _, d := range field.SeedDefinitions {
-			if _, err := db.Exec(
-				`INSERT IGNORE INTO gpo_value_definition (module_type, field_name, name, payload_kind, payload, note, updated_by)
-				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-				field.ModuleType, field.FieldName, d.Name, string(field.PayloadKind), d.Payload,
-				nullIfEmpty(d.Note), actor,
-			); err != nil {
-				return fmt.Errorf("gpo: peuplement de la définition %s/%s/%s impossible : %v",
-					field.ModuleType, field.FieldName, d.Name, err)
-			}
-		}
-		rule := defaults.Rule(field.ModuleType, field.FieldName)
-		if _, err := db.Exec(
-			`INSERT INTO gpo_field_rule (module_type, field_name, mode, allow_pattern, deny_pattern, note, updated_by)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)
-			 ON DUPLICATE KEY UPDATE mode = VALUES(mode), allow_pattern = VALUES(allow_pattern),
-			   deny_pattern = VALUES(deny_pattern), note = VALUES(note), updated_by = VALUES(updated_by)`,
-			field.ModuleType, field.FieldName, rule.Mode,
-			nullIfEmpty(rule.AllowPattern), nullIfEmpty(rule.DenyPattern), nullIfEmpty(field.Help), actor,
-		); err != nil {
-			return fmt.Errorf("gpo: peuplement de la règle %s/%s impossible : %v", field.ModuleType, field.FieldName, err)
+		logs.Write_Log("INFO", "gpo: tables de restrictions créées ("+strings.Join(names, ", ")+"), peuplement initial")
+		if err := runSeed(db, missing); err != nil {
+			return err
 		}
 	}
 
-	for _, r := range defaults.PathRules {
-		kind := KindPathAllow
-		if r.Deny {
-			kind = KindPathDeny
-		}
-		if _, err := db.Exec(
-			`INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES (?, ?, ?, ?, ?)`,
-			kind, r.Scope, r.Prefix, nullIfEmpty(r.Note), actor,
-		); err != nil {
-			return fmt.Errorf("gpo: peuplement de la règle de chemin %s impossible : %v", r.Prefix, err)
-		}
+	// Les règles de champ sont vérifiées à chaque démarrage : elles définissent
+	// COMMENT un champ se valide, pas quelles valeurs sont permises. Un champ
+	// ajouté au catalogue doit obtenir sa règle même sur une base existante,
+	// sinon son module refuserait tout.
+	if err := ensureFieldRules(db); err != nil {
+		return err
 	}
 
-	for _, e := range defaults.EnvDenied {
-		if _, err := db.Exec(
-			`INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES (?, 'any', ?, ?, ?)`,
-			KindEnvDeny, e.Name, nullIfEmpty(e.Note), actor,
-		); err != nil {
-			return fmt.Errorf("gpo: peuplement de la variable interdite %s impossible : %v", e.Name, err)
-		}
-	}
-	return nil
+	// Rattrapage des bases antérieures : un champ devenu porteur de définitions
+	// ne doit plus avoir de valeurs de liste simple orphelines.
+	return pruneOrphanAllowValues(db)
 }
 
-// ResetRestrictionsToDefaults efface les restrictions et réécrit le socle.
+// ResetRestrictionsToDefaults purge les restrictions et rejoue le peuplement.
 //
-// Fournit une sortie de secours : puisque tout est éditable, il faut pouvoir
-// revenir à un état connu après une modification malheureuse.
+// Sortie de secours : puisque tout est éditable, il faut pouvoir revenir à un
+// état connu après une modification malheureuse. C'est le SEUL chemin par lequel
+// le socle initial est réécrit sur des tables existantes, et il est explicite,
+// réservé au superadmin et journalisé.
 func ResetRestrictionsToDefaults(db *sql.DB, actor string) error {
 	if err := requireSuperadmin(db, actor, "la réinitialisation"); err != nil {
 		return err
 	}
-	if _, err := db.Exec(`DELETE FROM gpo_restriction WHERE kind <> ?`, kindMeta); err != nil {
-		return fmt.Errorf("gpo: purge des restrictions impossible : %v", err)
+	for _, table := range []string{"gpo_restriction", "gpo_field_rule", "gpo_value_definition"} {
+		if _, err := db.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("gpo: purge de %s impossible : %v", table, err)
+		}
 	}
-	if _, err := db.Exec(`DELETE FROM gpo_field_rule`); err != nil {
-		return fmt.Errorf("gpo: purge des règles de champ impossible : %v", err)
-	}
-	if _, err := db.Exec(`DELETE FROM gpo_value_definition`); err != nil {
-		return fmt.Errorf("gpo: purge des définitions impossible : %v", err)
-	}
-	if err := writeDefaults(db, actor); err != nil {
+	if err := runSeed(db, nil); err != nil {
 		return err
 	}
-	auditRestriction(actor, "réinitialisation complète", "socle par défaut réécrit")
+	auditRestriction(actor, "réinitialisation complète", "socle initial réécrit depuis le script de peuplement embarqué")
 	return nil
 }
 
@@ -297,9 +231,14 @@ func ResetRestrictionsToDefaults(db *sql.DB, actor string) error {
 // Provider lit les restrictions depuis la base pour le compte de core/gpo.
 type Provider struct{}
 
-// RegisterRestrictionProvider installe le fournisseur base dans core/gpo.
+// RegisterRestrictionProvider installe le fournisseur base dans core/gpo, et
+// branche le journal des échecs de chargement.
 // Appelée depuis CreateTables, après création et peuplement des tables.
 func RegisterRestrictionProvider() {
+	gpo.SetRestrictionFailureLogger(func(message string) {
+		logs.Write_LogCode("ERROR", logs.CodeDBGeneric,
+			"gpo: restrictions non chargées, aucune GPO ne peut être validée — "+message)
+	})
 	gpo.SetRestrictionProvider(Provider{})
 }
 
@@ -322,7 +261,7 @@ func loadRestrictions(db *sql.DB) (gpo.RestrictionSet, error) {
 
 	rows, err := db.Query(
 		`SELECT kind, module_type, field_name, scope, value, COALESCE(note, '')
-		 FROM gpo_restriction WHERE kind <> ? ORDER BY kind, module_type, field_name, value`, kindMeta)
+		 FROM gpo_restriction ORDER BY kind, module_type, field_name, value`)
 	if err != nil {
 		return rs, fmt.Errorf("lecture des restrictions impossible : %v", err)
 	}
@@ -583,9 +522,6 @@ func oneLine(payload string) string {
 
 // ListRestrictionsByKind retourne les lignes d'une catégorie, pour l'interface.
 func ListRestrictionsByKind(db *sql.DB, kind string) ([]RestrictionRow, error) {
-	if kind == kindMeta {
-		return nil, fmt.Errorf("catégorie interne non consultable")
-	}
 	rows, err := db.Query(
 		`SELECT id_gpo_restriction, kind, module_type, field_name, scope, value,
 		        COALESCE(note, ''), COALESCE(updated_by, ''), updated_at
@@ -720,10 +656,6 @@ func DeleteRestriction(db *sql.DB, actor string, id int) error {
 	if err != nil {
 		return fmt.Errorf("lecture de la restriction %d impossible : %v", id, err)
 	}
-	if kind == kindMeta {
-		return fmt.Errorf("cette entrée est interne et n'est pas supprimable")
-	}
-
 	if _, err := db.Exec(`DELETE FROM gpo_restriction WHERE id_gpo_restriction = ?`, id); err != nil {
 		return fmt.Errorf("suppression de la restriction %d impossible : %v", id, err)
 	}

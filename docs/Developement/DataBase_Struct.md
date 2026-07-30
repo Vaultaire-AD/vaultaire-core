@@ -151,10 +151,23 @@ DATABASE: DUCKY
 │   ├─ note, updated_by, updated_at
 │   └─ UNIQUE (module_type, field_name)
 │
-│  Le socle par défaut (anciennes listes en dur) est écrit au premier démarrage
-│  par dbgpo.SeedRestrictions, tracé par une ligne kind='meta' value='seeded' :
-│  sans ce marqueur, une purge volontaire des restrictions serait annulée au
-│  redémarrage suivant. Toute écriture est journalisée en SECURITY avec son auteur.
+│  Peuplement initial : core/database/db_gpo/seed/gpo_seed.sql, embarqué dans le
+│  binaire (go:embed). Une instruction n'est exécutée que si sa TABLE CIBLE vient
+│  d'être créée — l'existence des tables est constatée avant leur création. Une
+│  valeur supprimée depuis l'interface ne peut donc pas réapparaître au
+│  redémarrage, et une base créée par une version antérieure ne reçoit que les
+│  tables qui lui manquaient.
+│
+│  Exception : les lignes de gpo_field_rule sont vérifiées à chaque démarrage
+│  (INSERT IGNORE). Une règle définit COMMENT un champ se valide, pas quelles
+│  valeurs sont permises ; un champ ajouté au catalogue sans règle refuserait tout.
+│  Les règles existantes, même modifiées, ne sont jamais écrasées.
+│
+│  Lecture fail-closed : si la base ne répond pas, le jeu de restrictions est vide
+│  et aucune GPO ne valide. Aucun repli sur un socle codé en dur, pour qu'une
+│  panne ne rétablisse pas une valeur volontairement retirée.
+│
+│  Toute écriture est journalisée en SECURITY avec son auteur.
 │
 │  Tables supprimées (ancien modèle) : linux_gpo_distributions, group_linux_gpo.
 │  Elles stockaient une commande shell brute par distribution, donc de l'exécution

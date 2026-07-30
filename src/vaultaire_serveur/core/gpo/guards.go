@@ -18,14 +18,6 @@ import (
 //   - un refus l'emporte toujours sur une autorisation, pour que l'ouverture
 //     large d'un champ reste compatible avec des exclusions fermes.
 
-// userHomePlaceholder est le marqueur substitué par l'agent client par le home
-// réel de l'utilisateur cible. Il évite d'écrire des chemins absolus vers
-// /home/<user>, qui seraient justes pour un utilisateur et faux pour un autre.
-const userHomePlaceholder = "/%h"
-
-// UserHomePlaceholder expose le marqueur de home pour l'interface web.
-func UserHomePlaceholder() string { return userHomePlaceholder }
-
 // AllowedValuesFor retourne les valeurs autorisées d'un champ, telles que
 // définies en base.
 func AllowedValuesFor(moduleType, fieldName string) []string {

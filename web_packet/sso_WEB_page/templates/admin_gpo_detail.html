@@ -16,15 +16,15 @@
     {{ end }}
     {{ if .Help }}<p class="muted small">{{ .Help }}</p>{{ end }}
     {{ if .Definitions }}
-    <details class="gpo-defs">
-      <summary class="muted small">Contenu des valeurs proposées</summary>
+    <div class="gpo-defs" data-gpo-def-group>
+      <p class="muted small gpo-def-title">Contenu de la valeur sélectionnée :</p>
       {{ range .Definitions }}
-      <div class="gpo-def{{ if .Current }} gpo-def-current{{ end }}">
+      <div class="gpo-def" data-gpo-def-value="{{ .Name }}"{{ if not .Current }} hidden{{ end }}>
         <code>{{ .Name }}</code>{{ if .Note }} <span class="muted small">— {{ .Note }}</span>{{ end }}
         <ul class="gpo-def-lines">{{ range .Lines }}<li><code>{{ . }}</code></li>{{ end }}</ul>
       </div>
       {{ end }}
-    </details>
+    </div>
     {{ end }}
   </div>
 {{end}}
@@ -46,9 +46,8 @@
     .gpo-actions { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.75rem; flex-wrap: wrap; }
     .gpo-cat { margin-bottom: 1.2rem; }
     .gpo-defs { margin-top: 0.35rem; }
-    .gpo-defs > summary { cursor: pointer; }
-    .gpo-def { margin: 0.5rem 0 0.5rem 0.4rem; padding-left: 0.6rem; border-left: 2px solid var(--border, #d5d9e0); }
-    .gpo-def-current { border-left-color: var(--primary, #3b6fd4); }
+    .gpo-def-title { margin: 0 0 0.2rem 0; }
+    .gpo-def { margin: 0.2rem 0 0.5rem 0.4rem; padding-left: 0.6rem; border-left: 2px solid var(--primary, #3b6fd4); }
     .gpo-def-lines { margin: 0.2rem 0 0 0; padding-left: 1.1rem; }
     .gpo-def-lines li { font-size: 0.85rem; }
   </style>
@@ -235,5 +234,24 @@
   </div>
   <script src="/static/app.js"></script>
   <script src="/static/admin_sidebar.js"></script>
+  <script>
+    // Un champ dont les valeurs sont des définitions affiche le contenu de la
+    // SEULE valeur sélectionnée. Le serveur pré-affiche déjà la bonne (attribut
+    // hidden), ce script ne fait que suivre les changements de sélection — la
+    // page reste donc correcte sans JavaScript.
+    document.querySelectorAll('.gpo-field').forEach(function (field) {
+      var select = field.querySelector('select');
+      var group = field.querySelector('[data-gpo-def-group]');
+      if (!select || !group) { return; }
+      var blocks = group.querySelectorAll('[data-gpo-def-value]');
+      function sync() {
+        blocks.forEach(function (block) {
+          block.hidden = block.getAttribute('data-gpo-def-value') !== select.value;
+        });
+      }
+      select.addEventListener('change', sync);
+      sync();
+    });
+  </script>
 </body>
 </html>
