@@ -7,6 +7,13 @@ echo "🔧 Déploiement Vaultaire Client..."
 # Déplacement des fichiers
 mv -f /opt/vaultaire/vaultaire_client/pam*.so /usr/lib64/security/
 mkdir -p /etc/vaultaire_client/.ssh
+
+# Dossier de logs des modules PAM (pam_common.c écrit dans
+# /var/log/vaultaire/vaultaire_pam.log). Sans ça, fopen() échoue en
+# silence et les modules tournent sans jamais rien logger nulle part —
+# ça ressemble à un module qui ne se charge pas alors qu'il tourne bien.
+mkdir -p /var/log/vaultaire
+chmod 700 /var/log/vaultaire
 mv /opt/vaultaire/vaultaire_client/vaultaire_client /usr/bin/
 mv /opt/vaultaire/client_software.yaml /etc/vaultaire_client/.ssh/client_software.yaml
 mv /opt/vaultaire/*.pem /etc/vaultaire_client/.ssh/

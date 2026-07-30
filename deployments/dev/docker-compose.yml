@@ -70,9 +70,13 @@ services:
   #   volumes:
   #     # Monte le dossier des sources (adapte le chemin relatif si besoin)
   #     - ../../cmd/vaultaire_client:/tmp
+  #     # .so déjà compilés (auto_compil.sh) + script de test pamtester
+  #     - ./test-pam-login.sh:/tmp/test-pam-login.sh:ro
   #   # Connexion: ssh -p 5656 root@localhost (mdp: root)
   #   # Depuis vaultaire-dev: ssh -o StrictHostKeyChecking=no root@rocky-ssh-dev (mdp: root)
-  #   # commande pour ajouter le client ----> create -c test yes -join rocky-ssh-dev root 
+  #   # commande pour ajouter le client ----> create -c test yes -join rocky-ssh-dev root
+  #   # Test du module PAM "login" (sans passer par un vrai login) :
+  #   #   docker compose -f deployments/dev/docker-compose.yml exec rocky-ssh bash /tmp/test-pam-login.sh root 
 
   vaultaire-keycloak:
     image: quay.io/keycloak/keycloak:latest

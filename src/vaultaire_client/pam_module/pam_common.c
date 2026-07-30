@@ -24,6 +24,14 @@
 
 /* --- Logging --- */
 static void vaultaire_log_v(const char *prefix, const char *fmt, va_list ap) {
+    /* Si /var/log/vaultaire/ n'existe pas (déploiement qui a oublié de le
+     * créer avant d'installer les modules PAM), fopen() échoue silencieusement
+     * et tous les logs du module disparaissent sans aucune trace nulle part —
+     * on a alors l'impression que le module n'est même pas chargé. On
+     * s'assure donc que le dossier existe avant chaque écriture ; mkdir()
+     * échoue silencieusement (et sans conséquence) s'il existe déjà. */
+    mkdir("/var/log/vaultaire", 0755);
+
     FILE *f = fopen("/var/log/vaultaire/vaultaire_pam.log", "a");
     if (f) {
         fprintf(f, "[%s] ", prefix);
@@ -68,8 +76,7 @@ static int run_useradd(const char *username) {
     pid_t pid = fork();
     if (pid < 0) return 0;
     if (pid == 0) {
-        execl("/usr/sbin/useradd", "useradd", "-m", "--shell", "/bin/bash",
-              "-c", "vaultaire", username, (char *)NULL);
+        execl("/usr/sbin/useradd", "useradd", "-m", "--shell", "/bin/bash", username, (char *)NULL);
         _exit(127);
     }
     int status;
