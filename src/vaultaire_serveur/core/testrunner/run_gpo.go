@@ -122,6 +122,9 @@ func testGPO() []Result {
 
 	installFixture(baseFixture())
 	out = append(out, testGPOResolution()...)
+
+	// Transport (trames 05_XX) : découpage, empreintes, réassemblage, rapport.
+	out = append(out, testGPOTransport()...)
 	return out
 }
 

@@ -7,6 +7,7 @@ import (
 	"os"
 	"time"
 	"vaultaire_client/config"
+	"vaultaire_client/gpo"
 	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
 	serveurcommunication "vaultaire_client/serveur_communication"
@@ -74,6 +75,13 @@ func main() {
 				go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 			}
 		}
+
+		// Transport des GPO. Le comportement est identique pour un client
+		// serveur et un client poste : seule la liste des groupes diffère côté
+		// serveur. Le premier cycle attend qu'une session mère soit disponible,
+		// donc l'appel n'a pas à être ordonné avec l'ouverture du tunnel.
+		gpo.Bootstrap()
+
 		pamcommunication.UnixSocketServer()
 	}
 

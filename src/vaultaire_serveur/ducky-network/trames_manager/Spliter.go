@@ -8,6 +8,7 @@ import (
 	autc "vaultaire/ducky-network/authentification/client"
 	auts "vaultaire/ducky-network/authentification/serveur"
 	autssh "vaultaire/ducky-network/authentification/ssh"
+	gpomanager "vaultaire/ducky-network/gpo_manager"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/sessionmgr"
@@ -42,6 +43,8 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			} else {
 				message = msg
 			}
+		case "05":
+			message = gpomanager.GPO_Trame_Manager(trames_content, duckysession)
 		default:
 			logs.Write_Log("WARNING", "Unknown service: "+service[0])
 		}

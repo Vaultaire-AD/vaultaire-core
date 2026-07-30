@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"vaultaire_client/gpo"
 	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 	localusermanagement "vaultaire_client/tools/local_user_management"
@@ -40,6 +41,18 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			} else {
 				logs.Write_log("INFO", fmt.Sprintf("Utilisateur %s provisionné avec succès (Admin: %t)", sshUser, isAdmin))
 			}
+
+			// GPO de scope user : le compte local existe et est validé, mais le
+			// droit de connexion n'est pas encore rendu au module PAM. C'est le
+			// seul moment où l'utilisateur trouvera son environnement en place
+			// dès l'ouverture de session.
+			//
+			// Un échec ou un dépassement de délai n'empêche PAS la connexion :
+			// aucun module de scope user ne touche aux privilèges, alors qu'un
+			// annuaire qui bloque les connexions sur incident GPO serait un
+			// incident d'exploitation majeur. L'incident part dans les journaux
+			// et dans le rapport 05_12.
+			applyUserGPO(sshUser, trames_content.SessionIntegritykey)
 			result := storage.AuthResult{
 				IsAdmin: isAdmin,
 			}
@@ -93,6 +106,30 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 	}
 
 	return message
+}
+
+// applyUserGPO applique les GPO de scope user avant de rendre la main à PAM.
+//
+// Le cycle est borné par gpo.FetchTimeout : le module PAM attend lui-même la
+// réponse du client, et une attente non bornée ici se traduirait par un timeout
+// de connexion côté utilisateur, sans explication.
+func applyUserGPO(username, sessionKey string) {
+	if sessionKey == "" {
+		logs.Write_log("WARNING", "GPO: pas de cle de session, GPO user non appliquees pour "+username)
+		return
+	}
+
+	logs.Write_log("DEBUG", "GPO: application des GPO user pour "+username+" avant octroi de la connexion")
+	report := gpo.RunUserCycle(sessionKey, username)
+
+	if report.Status != gpo.StatusApplied {
+		// La connexion est accordée malgré tout : c'est le comportement décidé
+		// et documenté. Le niveau WARNING garantit que l'incident est visible
+		// même sans mode debug.
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"GPO: politique user incomplete pour %s, connexion tout de meme accordee — %s",
+			username, report.Summary()))
+	}
 }
 
 func SSH_Handle_Fetch_Pubkey(trames_content storage.Trames_struct_client) {

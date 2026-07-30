@@ -2,7 +2,7 @@
 
 -   ## 🔰 Alpha
 
-    - ### 🚀 **Alpha 1.0** - *06/03/2025*  
+    - ### 🚀 **Alpha 1.0** *(nom de code : ROCKET)* - *06/03/2025*  
         **Première version Alpha de Vaultaire_AD**  
 
         📌 **Fonctionnalités incluses :**  
@@ -60,7 +60,7 @@
             - Ajout de la feature LDAPS - Lorens Viguie
             - Optimisation mineur de certain de la sanitize fonction - Lorens Viguie
             - Ajout du site internet pour que les utilisateurs puissent mettre a jour leur information personnel - Lorens Viguie
-        - ### 🛠️ Patch**Alpha 1.1.3** - *//* 
+        - ### 🛠️ Patch**Alpha 1.1.4** - *20/07/2026* 
             - Changement sur la table user_permission ("api_write_permission, api_read_permission) - Lorens Viguie
             - Debut de l'api REST pour vaultaire - Lorens Viguie
             - Changement sur la gestion des clé pour les differents services cle unique mtn - Lorens Viguie
@@ -68,6 +68,37 @@
             - Ajout de la logique des permission pour l'api et ldap par encore implémenter - Lorens Viguie
             - Intégration des permissions dans les commandes toutes a faire sauf - Lorens Viguie
             - Intégration des permissions dans ldap toutes a faire / en cour search
+    - ### 🐷 **Alpha 2.0.0** *(nom de code : PIG)* - *a Venir Fin Aout*
+        📌 **Changements depuis Alpha 1.1.4 :**
+
+        - 🔐 **Sécurité**
+            - Correction d'un bug **critique** sur la vérification du mot de passe lors de l'authentification - Lorens Viguie
+            - Le droit super-admin `*` (tous domaines) donnait accès à des domaines inexistants ou mal tapés (ex `vault.fr` au lieu de `vaultaire.fr`) ; vérification de l'existence réelle du domaine avant d'accorder l'accès - Lorens Viguie
+            - Immuabilité de l'identité d'amorçage : user `vaultaire`, groupe `vaultaire` et permissions `vaultaire_all`/`vaultaire_admin` non supprimables et non renommables, sur CLI, web, LDAP et API - Lorens Viguie
+            - Le mot de passe ne transite plus en clair dans le Ducky-Network lors de l'authentification SSH - Lorens Viguie
+            - Vérification du domaine du client déplacée du module PAM vers le serveur central (plus fiable, plus difficile à contourner) - Lorens Viguie
+
+        - 🩹 **Session management (Ducky-Network, client & serveur)**
+            - Refonte complète de la gestion des sessions avec un système map + mutex propre (remplace plusieurs variables globales non synchronisées : liste d'auth partagée, statut serveur en ligne, ancien package `sync`) - Lorens Viguie
+            - Le SessionID devient la source de vérité pour identifier une session (plusieurs sessions peuvent partager le même username) - Lorens Viguie
+            - Suivi du statut de connexion (authentifié / en attente / fermé) par session, côté client comme serveur - Lorens Viguie
+            - Nombreux correctifs sur le flux d'authentification SSH (challenge / salt / nonce, transmission de l'ID client dans les trames, réponses 03_02/03_05, timeouts de fetch de clé) - Lorens Viguie
+
+        - 🧹 **Logs & lisibilité**
+            - Nettoyage complet du système de logs : plus aucun log en fonctionnement normal, WARNING pour ce qui est inhabituel, ERROR/WARNING pour les vrais problèmes (permissions, web, base de données) - Lorens Viguie
+            - Correction des logs de la base de données systématiquement marqués `[ERROR]` même pour des messages informationnels - Lorens Viguie
+            - Le module PAM crée maintenant son dossier de logs s'il est manquant (auparavant les logs disparaissaient silencieusement, donnant l'impression que le module n'était pas chargé) - Lorens Viguie
+            - Correction d'un bug récurrent de parsing de date dans le nettoyage des sessions expirées - Lorens Viguie
+
+        - ⚙️ **GPO**
+            - Les restrictions GPO ne sont plus stockées en JSON en dur mais en base de données (tables `gpo_restriction`, `gpo_field_rule`, `gpo_value_definition`), éditables via une page d'administration `/admin/gpo/restrictions` réservée au groupe `vaultaire` - Lorens Viguie
+            - Modes par champ (liste / motif regex / libre) avec motif d'exclusion prioritaire, socle par défaut réinitialisable - Lorens Viguie
+            - Lecture fail-closed : plus aucun repli sur des valeurs internes si la base ne répond pas - Lorens Viguie
+            - Peuplement initial via `gpo_seed.sql` (embarqué, exécuté uniquement au premier démarrage) - Lorens Viguie
+            - Correction des jeux de commandes sudo par défaut absents du menu déroulant, et de l'aperçu qui affichait toutes les valeurs custom au lieu de la sélection - Lorens Viguie
+
+        - 📖 **Documentation**
+            - Mise à jour du `MAN.md` (modèle déclaratif GPO, restrictions, définitions, lecture fail-closed) et de `DataBase_Struct.md` (nouvelles tables GPO) - Lorens Viguie
 
 ---
 

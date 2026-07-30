@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	"vaultaire_client/duckynetworkClient/sendmessage"
-	"vaultaire_client/gpo"
 	"vaultaire_client/logs"
 	"vaultaire_client/sessionmgr"
 	"vaultaire_client/storage"
@@ -50,16 +49,10 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 			getlocalinformation.GetAllLocalInfForServeur() + "\n" +
 			strings.Join(activeSession, ",")
 
-	case "16":
-		lines := strings.Split(trames_content.Content, "\n")
-		username := lines[0]
-
-		for i := 1; i < len(lines); i++ {
-			err := gpo.ApplyGPOsAsUser(username, lines[i])
-			if err != nil {
-				logs.Write_log("ERROR", fmt.Sprintf("Erreur GPO : %v", err))
-			}
-		}
+	// Le transport des GPO a quitté la catégorie 02 : il a désormais sa propre
+	// catégorie 05 (voir Tableau_Protocole_Réseau.md). L'ancien 02_16 recevait
+	// une liste de commandes shell exécutées telles quelles, ce que le modèle
+	// déclaratif remplace entièrement.
 
 	case "07":
 		lines := strings.Split(trames_content.Content, "\n")

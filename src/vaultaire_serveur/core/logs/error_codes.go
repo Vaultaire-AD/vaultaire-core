@@ -48,6 +48,13 @@ const (
 	CodeFileConfig = "VLT-FILE001"
 	CodeFileSocket = "VLT-FILE002"
 
+	// GPO (VLT-GPOxxx) — transport et application des politiques
+	CodeGPOResolve      = "VLT-GPO001" // résolution des GPO applicables
+	CodeGPOTransport    = "VLT-GPO002" // trames 05_XX, découpage, réassemblage
+	CodeGPOTransfer     = "VLT-GPO003" // transfert de fragments (empreinte périmée, index invalide)
+	CodeGPOApplyReport  = "VLT-GPO004" // rapport d'application remonté par un agent
+	CodeGPORestrictions = "VLT-GPO005" // restrictions indisponibles (fail-closed)
+
 	// Générique
 	CodeInternal = "VLT-ERR000"
 )

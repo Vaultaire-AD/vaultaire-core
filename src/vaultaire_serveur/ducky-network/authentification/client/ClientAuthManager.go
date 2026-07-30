@@ -3,7 +3,6 @@ package client
 import (
 	"vaultaire/core/storage"
 	getinformation "vaultaire/ducky-network/ducky_tools"
-	gpomanager "vaultaire/ducky-network/gpo_manager"
 )
 
 // Client_Auth_Manager manages the authentication requests from clients.
@@ -22,8 +21,9 @@ func Client_Auth_Manager(trames_content storage.Trames_struct_client, duckysessi
 		closeSession(trames_content, duckysession)
 	case "12":
 		getinformation.GetSoftwareServeurInformation(trames_content)
-	case "15":
-		message = gpomanager.GPO_Manager(trames_content, duckysession)
 	}
+	// Le transport des GPO a quitté la catégorie 02 : il a désormais sa propre
+	// catégorie 05 (voir Tableau_Protocole_Réseau.md). L'ancien couple 02_15/02_16
+	// envoyait une liste de commandes shell, ce que le modèle déclaratif remplace.
 	return message
 }
