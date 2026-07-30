@@ -23,13 +23,24 @@ import (
 // fichier tient donc les transferts en cours et réveille l'appelant quand la
 // politique est complète ou qu'un refus est arrivé.
 
-// FetchTimeout borne l'attente d'une politique complète.
+// Bornes d'attente d'une politique complète.
 //
-// Volontairement court : en scope utilisateur, cette attente est intercalée
-// entre la validation du compte et l'octroi de la connexion. Dépasser ce délai
-// n'empêche pas de se connecter (voir OnFetchTimeout dans la doc), mais fait
-// patienter l'utilisateur pour rien.
-const FetchTimeout = 20 * time.Second
+// Deux budgets distincts, parce que les deux moments n'ont pas les mêmes
+// contraintes :
+//
+//   - au démarrage de la machine, personne n'attend devant un écran : on peut
+//     laisser au serveur le temps de répondre ;
+//   - à la connexion d'un utilisateur, l'attente s'ajoute aux deux étapes
+//     d'authentification déjà écoulées et retarde d'autant l'ouverture de
+//     session. Un budget serré vaut mieux qu'un utilisateur qui croit que sa
+//     machine a planté.
+const (
+	// FetchTimeout borne l'attente en scope machine.
+	FetchTimeout = 20 * time.Second
+	// UserFetchTimeout borne l'attente en scope utilisateur, sur le chemin de
+	// connexion. Dépasser ce délai n'empêche pas de se connecter.
+	UserFetchTimeout = 6 * time.Second
+)
 
 // Outcome décrit l'issue d'une demande de politique.
 type Outcome struct {
@@ -178,16 +189,16 @@ func getFetch(scope, username string) (*pendingFetch, bool) {
 
 // RequestMachinePolicy demande la politique machine et attend son issue.
 func RequestMachinePolicy(sessionKey string) Outcome {
-	return requestPolicy(sessionKey, ScopeMachine, "")
+	return requestPolicy(sessionKey, ScopeMachine, "", FetchTimeout)
 }
 
 // RequestUserPolicy demande la politique d'un utilisateur et attend son issue.
 func RequestUserPolicy(sessionKey, username string) Outcome {
-	return requestPolicy(sessionKey, ScopeUser, username)
+	return requestPolicy(sessionKey, ScopeUser, username, UserFetchTimeout)
 }
 
-// requestPolicy émet la demande puis attend la réponse ou le délai.
-func requestPolicy(sessionKey, scope, username string) Outcome {
+// requestPolicy émet la demande puis attend la réponse ou le délai imparti.
+func requestPolicy(sessionKey, scope, username string, timeout time.Duration) Outcome {
 	applied := AppliedFingerprint(scope, username)
 	done := startFetch(scope, username)
 
@@ -210,10 +221,10 @@ func requestPolicy(sessionKey, scope, username string) Outcome {
 	select {
 	case outcome := <-done:
 		return outcome
-	case <-time.After(FetchTimeout):
+	case <-time.After(timeout):
 		finishFetch(scope, username, Outcome{})
 		logs.Write_log("WARNING", fmt.Sprintf(
-			"GPO: aucune reponse du serveur en %s pour le scope %s%s", FetchTimeout, scope, userLabel(username)))
+			"GPO: aucune reponse du serveur en %s pour le scope %s%s", timeout, scope, userLabel(username)))
 		return Outcome{ErrorCode: "timeout", ErrorMessage: "aucune reponse du serveur"}
 	}
 }

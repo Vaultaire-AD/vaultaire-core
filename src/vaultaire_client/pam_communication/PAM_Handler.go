@@ -9,6 +9,7 @@ import (
 	duckytool "vaultaire_client/duckynetworkClient/ducky_tool"
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/duckynetworkClient/userauth"
+	"vaultaire_client/gpo"
 	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 	"vaultaire_client/tools/sshreq"
@@ -108,11 +109,46 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		statusRep = "timeout"
 	}
 
+	// GPO de scope user : le compte local est provisionné (fait à la réception de
+	// 03_02) et l'authentification est validée, mais le droit de connexion n'est
+	// pas encore rendu à PAM. C'est le seul moment où l'utilisateur trouvera son
+	// environnement en place dès l'ouverture de session.
+	//
+	// Le cycle est lancé ICI et non dans le gestionnaire de trames : ce dernier
+	// tourne dans la goroutine qui lit la connexion, et y attendre une réponse du
+	// serveur bloquerait la lecture de cette même réponse. Cette goroutine-ci est
+	// indépendante du lecteur, elle peut donc attendre sans rien bloquer.
+	if statusRep == "success" {
+		applyUserGPO(req.User, string(sess.DuckySession.SessionKey))
+	}
+
 	sendResponse(conn, Response{
 		Status:  statusRep,
 		IsAdmin: isAdminResult,
 		SSHKeys: sshKeys,
 	})
+}
+
+// applyUserGPO applique les GPO de scope user avant de rendre la main à PAM.
+//
+// Un échec ou un dépassement du délai n'empêche PAS la connexion : aucun module
+// de scope user ne touche aux privilèges, alors qu'un annuaire qui bloque les
+// connexions sur incident GPO serait un incident d'exploitation majeur.
+// L'incident part dans les journaux et dans le rapport 05_12.
+func applyUserGPO(username, sessionKey string) {
+	if sessionKey == "" {
+		logs.Write_log("WARNING", "GPO: pas de cle de session, GPO user non appliquees pour "+username)
+		return
+	}
+
+	logs.Write_log("DEBUG", "GPO: application des GPO user pour "+username+" avant octroi de la connexion")
+	report := gpo.RunUserCycle(sessionKey, username)
+
+	if report.Status != gpo.StatusApplied {
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"GPO: politique user incomplete pour %s, connexion tout de meme accordee — %s",
+			username, report.Summary()))
+	}
 }
 
 // Helper interne d'envoi JSON vers le socket PAM

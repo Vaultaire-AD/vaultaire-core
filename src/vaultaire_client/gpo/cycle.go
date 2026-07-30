@@ -65,7 +65,7 @@ func RunMachineCycle(sessionKey string) Report {
 		cycleMu.Unlock()
 	}()
 
-	return runCycle(sessionKey, ScopeMachine, "")
+	return runCycle(sessionKey, ScopeMachine, "", FetchTimeout)
 }
 
 // RunUserCycle exécute un cycle complet de politique utilisateur.
@@ -80,16 +80,16 @@ func RunMachineCycle(sessionKey string) Report {
 // alors qu'un annuaire qui bloque les connexions sur incident GPO est un
 // incident d'exploitation majeur.
 func RunUserCycle(sessionKey, username string) Report {
-	return runCycle(sessionKey, ScopeUser, username)
+	return runCycle(sessionKey, ScopeUser, username, UserFetchTimeout)
 }
 
 // runCycle enchaîne demande, application, enregistrement et rapport.
-func runCycle(sessionKey, scope, username string) Report {
+func runCycle(sessionKey, scope, username string, timeout time.Duration) Report {
 	label := scope + userLabel(username)
 	started := time.Now()
 	logs.Write_log("DEBUG", "GPO: debut du cycle "+label)
 
-	outcome := requestPolicy(sessionKey, scope, username)
+	outcome := requestPolicy(sessionKey, scope, username, timeout)
 
 	switch {
 	case outcome.Unchanged:

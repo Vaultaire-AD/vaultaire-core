@@ -53,39 +53,50 @@ func handleAskMachine(trames storage.Trames_struct_client) string {
 func handleAskUser(trames storage.Trames_struct_client) string {
 	clientID := trames.ClientSoftwareID
 	lines := contentLines(trames.Content)
-	targetUser, _ := domain.ExctractDomainFromUsername(lines[0])
+
+	// Deux formes du même utilisateur, et les confondre casse le protocole :
+	//
+	//   - requestedUser est la chaîne exacte envoyée par le client, domaine
+	//     compris (admin@vaultaire.fr). C'est son jeton de corrélation : il
+	//     attend les réponses sur cette clé, et c'est aussi le nom du compte
+	//     local que l'agent doit configurer. Toutes les réponses la reprennent
+	//     telle quelle ;
+	//   - directoryUser est la forme sans domaine (admin), seule connue de
+	//     l'annuaire. Elle ne sert qu'aux recherches en base.
+	requestedUser := strings.TrimSpace(lineAt(lines, 0))
+	directoryUser, _ := domain.ExctractDomainFromUsername(requestedUser)
 	appliedFingerprint := normalizeFingerprint(lineAt(lines, 1))
 
 	logs.Write_LogCode("DEBUG", logs.CodeGPOTransport, fmt.Sprintf(
-		"gpo: 05_05 du client %s pour l'utilisateur %q, empreinte appliquée %s",
-		clientID, targetUser, shortFingerprint(appliedFingerprint)))
+		"gpo: 05_05 du client %s pour l'utilisateur %q (annuaire : %q), empreinte appliquée %s",
+		clientID, requestedUser, directoryUser, shortFingerprint(appliedFingerprint)))
 
-	if targetUser == "" {
+	if requestedUser == "" || directoryUser == "" {
 		logs.Write_LogCode("WARNING", logs.CodeGPOTransport,
 			"gpo: 05_05 sans utilisateur cible reçue du client "+clientID)
-		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, "",
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
 			errMalformedRequest, "utilisateur cible manquant")
 	}
 
 	db := database.GetDatabase()
 	if db == nil {
 		logs.Write_LogCode("ERROR", logs.CodeGPOResolve, "gpo: base indisponible pour la résolution user")
-		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, targetUser, errInternal, "base indisponible")
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser, errInternal, "base indisponible")
 	}
 
 	if !gpo.RestrictionsAreLoaded() {
 		reason := gpo.LastRestrictionError()
 		logs.Write_LogCode("ERROR", logs.CodeGPORestrictions, fmt.Sprintf(
 			"gpo: restrictions non chargées, refus de livrer une politique user à %s/%s — %s",
-			clientID, targetUser, reason))
-		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, targetUser,
+			clientID, requestedUser, reason))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
 			errRestrictionsUnavailable, reason)
 	}
 
-	if _, err := database.Get_User_ID_By_Username(db, targetUser); err != nil {
+	if _, err := database.Get_User_ID_By_Username(db, directoryUser); err != nil {
 		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
-			"gpo: utilisateur %s inconnu, demandé par le client %s", targetUser, clientID))
-		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, targetUser,
+			"gpo: utilisateur %s inconnu, demandé par le client %s", directoryUser, clientID))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
 			errUnknownUser, "utilisateur inconnu de l'annuaire")
 	}
 
@@ -93,22 +104,24 @@ func handleAskUser(trames storage.Trames_struct_client) string {
 	// normal d'un utilisateur qui se connecte à une machine hors de ses groupes.
 	// On le distingue quand même d'une politique vide, pour que le client puisse
 	// le journaliser correctement plutôt que de croire à une GPO sans module.
-	if !HasSharedGroup(db, targetUser, clientID) {
+	if !HasSharedGroup(db, directoryUser, clientID) {
 		logs.Write_LogCode("DEBUG", logs.CodeGPOResolve, fmt.Sprintf(
-			"gpo: aucun groupe commun entre %s et %s", targetUser, clientID))
-		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, targetUser,
+			"gpo: aucun groupe commun entre %s et %s", directoryUser, clientID))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
 			errNoSharedGroup, "aucun groupe commun entre l'utilisateur et la machine")
 	}
 
-	policy, err := resolveUserPolicy(db, targetUser, clientID)
+	policy, err := resolveUserPolicy(db, directoryUser, clientID)
 	if err != nil {
 		code, message := classifyResolveError(err)
 		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
-			"gpo: résolution user échouée pour %s sur %s (%s) : %s", targetUser, clientID, code, message))
-		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, targetUser, code, message)
+			"gpo: résolution user échouée pour %s sur %s (%s) : %s", directoryUser, clientID, code, message))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser, code, message)
 	}
 
-	return serveScope(trames, gpo.ScopeUser, targetUser, policy, appliedFingerprint)
+	// requestedUser et non directoryUser : c'est la clé de corrélation du client,
+	// et c'est aussi le nom du compte local que l'agent doit configurer.
+	return serveScope(trames, gpo.ScopeUser, requestedUser, policy, appliedFingerprint)
 }
 
 // serveScope compare l'empreinte annoncée par le client à celle de la politique

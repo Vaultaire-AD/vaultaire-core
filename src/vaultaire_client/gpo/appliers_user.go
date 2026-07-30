@@ -228,8 +228,10 @@ func runUserSystemctl(ctx Context, args ...string) error {
 	if !commandExists("runuser") {
 		return fmt.Errorf("runuser absent de cette machine")
 	}
+	// Délai court : cette commande est sur le chemin d'ouverture de session et
+	// attend le bus utilisateur, qui peut ne jamais démarrer hors session.
 	full := append([]string{"-u", ctx.Username, "--", "systemctl", "--user"}, args...)
-	_, err := runCommand("runuser", full...)
+	_, err := runCommandTimeout(UserCommandTimeout, "runuser", full...)
 	return err
 }
 

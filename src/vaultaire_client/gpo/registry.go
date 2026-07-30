@@ -1,12 +1,14 @@
 package gpo
 
 import (
+	"context"
 	"fmt"
 	"os/exec"
 	"os/user"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Registre des appliqueurs de modules.
@@ -95,15 +97,42 @@ func replaceManagedBlock(existing, content string) string {
 	return existing[:start] + block
 }
 
+// Délais maximaux d'exécution des commandes système.
+//
+// Aucune commande ne doit pouvoir bloquer indéfiniment : celles du scope
+// utilisateur s'exécutent sur le chemin d'ouverture de session, et
+// « systemctl --user » attend le bus de l'utilisateur, qui peut ne pas être
+// démarré. Sans borne, une session se figerait sans explication.
+const (
+	// DefaultCommandTimeout couvre les opérations machine, installation de
+	// paquets comprise.
+	DefaultCommandTimeout = 5 * time.Minute
+	// UserCommandTimeout couvre les opérations du scope utilisateur, sur le
+	// chemin de connexion.
+	UserCommandTimeout = 10 * time.Second
+)
+
 // runCommand exécute une commande système et retourne sa sortie combinée.
 //
 // Les commandes exécutées ici ne viennent JAMAIS de la politique : elles sont
 // écrites en dur dans les appliqueurs. La politique ne fournit que des valeurs,
 // passées en arguments distincts — jamais interprétées par un shell.
 func runCommand(name string, args ...string) (string, error) {
-	cmd := exec.Command(name, args...)
+	return runCommandTimeout(DefaultCommandTimeout, name, args...)
+}
+
+// runCommandTimeout exécute une commande avec un délai maximal.
+func runCommandTimeout(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
 	output, err := cmd.CombinedOutput()
 	trimmed := strings.TrimSpace(string(output))
+
+	if ctx.Err() == context.DeadlineExceeded {
+		return trimmed, fmt.Errorf("%s %s : delai de %s depasse", name, strings.Join(args, " "), timeout)
+	}
 	if err != nil {
 		if trimmed != "" {
 			return trimmed, fmt.Errorf("%s %s : %v (%s)", name, strings.Join(args, " "), err, trimmed)
