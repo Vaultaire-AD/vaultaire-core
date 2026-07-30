@@ -29,6 +29,8 @@ var (
 	modeRe       = regexp.MustCompile(`^0?[0-7]{3}$`)
 	cronFieldRe  = regexp.MustCompile(`^(\*|[0-9]+)([-/,][0-9]+)*(/[0-9]+)?$`)
 	sysctlValRe  = regexp.MustCompile(`^-?[0-9]+( -?[0-9]+)*$`)
+
+	packageVersionRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:+~-]{0,63}$`)
 )
 
 const (
@@ -118,8 +120,29 @@ func ValidateModule(policyScope Scope, m Module) (map[string]string, error) {
 }
 
 // validateFieldValue applique le validateur du type de champ.
+//
+// Les champs dynamiques sont traités en premier et court-circuitent le switch de
+// type : leur domaine est défini en base (liste, motif ou libre) et non par le
+// code, donc le type ne sert plus qu'à choisir le widget d'affichage.
 func validateFieldValue(moduleType string, f FieldSchema, val string, scope Scope) error {
 	prefix := fmt.Sprintf("module %s, champ %s", moduleType, f.Name)
+
+	if f.Dynamic {
+		maxLen := f.MaxLen
+		if maxLen == 0 {
+			maxLen = defaultStringMaxLen
+		}
+		if len(val) > maxLen {
+			return fmt.Errorf("%s : %d caractères maximum", prefix, maxLen)
+		}
+		if strings.ContainsAny(val, "\x00\n\r") {
+			return fmt.Errorf("%s : caractère de contrôle interdit", prefix)
+		}
+		if err := checkAgainstRule(RuleFor(moduleType, f.Name), AllowedValuesFor(moduleType, f.Name), val); err != nil {
+			return fmt.Errorf("%s : %v", prefix, err)
+		}
+		return nil
+	}
 
 	switch f.Type {
 	case FieldString:
@@ -258,6 +281,16 @@ func validateModuleSemantics(moduleType string, p map[string]string) error {
 			return fmt.Errorf("module %s : un contenu est renseigné alors que l'état demandé est absent", moduleType)
 		}
 
+	case ModulePackage:
+		if v := p["version"]; v != "" {
+			if !packageVersionRe.MatchString(v) {
+				return fmt.Errorf("module %s : version épinglée invalide (%q)", moduleType, v)
+			}
+			if p["state"] == "absent" {
+				return fmt.Errorf("module %s : une version ne peut pas être épinglée pour un paquet à retirer", moduleType)
+			}
+		}
+
 	case ModuleSSHServerConfig:
 		allUnchanged := true
 		for _, k := range []string{"permit_root_login", "password_authentication", "pubkey_authentication", "allow_tcp_forwarding", "x11_forwarding"} {
@@ -265,11 +298,55 @@ func validateModuleSemantics(moduleType string, p map[string]string) error {
 				allUnchanged = false
 			}
 		}
-		if allUnchanged && p["max_auth_tries"] == "" && p["client_alive_interval"] == "" && p["banner_text"] == "" {
+		if allUnchanged && p["max_auth_tries"] == "" && p["client_alive_interval"] == "" &&
+			p["banner_text"] == "" && p["extra_directives"] == "" {
 			return fmt.Errorf("module %s : aucun réglage renseigné, le module serait sans effet", moduleType)
 		}
 		if p["password_authentication"] == "no" && p["pubkey_authentication"] == "no" {
 			return fmt.Errorf("module %s : désactiver à la fois l'authentification par mot de passe et par clé rendrait les machines inaccessibles en SSH", moduleType)
+		}
+		if err := validateSSHExtraDirectives(p["extra_directives"]); err != nil {
+			return fmt.Errorf("module %s : %v", moduleType, err)
+		}
+	}
+	return nil
+}
+
+// validateSSHExtraDirectives valide le champ libre de directives sshd.
+//
+// Chaque ligne doit être une directive « Mot-clé valeur ». Le mot-clé est soumis
+// à la règle de restriction ssh_server_config/directive, éditable par le
+// superadmin : c'est là qu'on autorise une directive de durcissement maison ou
+// qu'on referme une directive jugée dangereuse. La valeur, elle, n'est vérifiée
+// que sur sa forme — sshd -t côté agent reste l'arbitre final de sa validité.
+func validateSSHExtraDirectives(raw string) error {
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	rule := RuleFor(ModuleSSHServerConfig, SSHDirectiveField)
+	allowed := AllowedValuesFor(ModuleSSHServerConfig, SSHDirectiveField)
+
+	for i, line := range strings.Split(raw, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		lineNo := i + 1
+		if strings.ContainsRune(trimmed, '\x00') {
+			return fmt.Errorf("directive ligne %d : caractère nul interdit", lineNo)
+		}
+		parts := strings.Fields(trimmed)
+		keyword := parts[0]
+		if len(parts) < 2 {
+			return fmt.Errorf("directive ligne %d : valeur manquante après %q", lineNo, keyword)
+		}
+		if err := checkAgainstRule(rule, allowed, keyword); err != nil {
+			return fmt.Errorf("directive ligne %d : %v", lineNo, err)
+		}
+		// Refus des caractères qui permettraient de sortir du fichier de
+		// configuration ou d'y injecter une seconde directive.
+		if strings.ContainsAny(trimmed, "\r`$;|&<>") {
+			return fmt.Errorf("directive ligne %d : caractère interdit dans la valeur", lineNo)
 		}
 	}
 	return nil

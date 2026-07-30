@@ -91,7 +91,19 @@ func CreateTables(db *sql.DB) error {
 		return err
 	}
 
-	logs.Write_Log("INFO", "gpo: schéma déclaratif prêt (gpo, gpo_module, gpo_group)")
+	// Tables de restrictions, puis peuplement du socle par défaut, puis
+	// enregistrement du fournisseur auprès de core/gpo. L'ordre compte : le
+	// fournisseur est installé en dernier, pour qu'aucune validation ne lise des
+	// tables encore vides et ne conclue à tort qu'aucune valeur n'est autorisée.
+	if err := createRestrictionTables(db); err != nil {
+		return err
+	}
+	if err := SeedRestrictions(db); err != nil {
+		return err
+	}
+	RegisterRestrictionProvider()
+
+	logs.Write_Log("INFO", "gpo: schéma déclaratif prêt (gpo, gpo_module, gpo_group, gpo_restriction, gpo_field_rule)")
 	return nil
 }
 

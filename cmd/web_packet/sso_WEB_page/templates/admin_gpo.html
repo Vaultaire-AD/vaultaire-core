@@ -26,6 +26,12 @@
       <div class="app-content">
         <div class="app-container animate-in">
     <h1>GPO</h1>
+    {{ if .IsSuperadmin }}
+      <p class="muted small">
+        <a href="/admin/gpo/restrictions">Restrictions GPO →</a>
+        Domaines de valeurs, emplacements de fichiers et variables interdites. Réservé au groupe {{ .SuperadminGrp }}.
+      </p>
+    {{ end }}
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
     {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 

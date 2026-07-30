@@ -121,6 +121,29 @@ DATABASE: DUCKY
 │   ├─ d_id_gpo FK -> gpo.id_gpo
 │   └─ d_id_group FK -> groups.id_group
 │
+├─ gpo_restriction   [* restrictions éditables, réservées au groupe vaultaire *]
+│   ├─ PK: id_gpo_restriction
+│   ├─ kind VARCHAR(24)      -- allow_value | path_allow | path_deny | env_deny | meta
+│   ├─ module_type, field_name  -- renseignés pour kind='allow_value'
+│   ├─ scope VARCHAR(16)     -- any | machine | user
+│   ├─ value VARCHAR(512)    -- valeur autorisée, préfixe de chemin, ou nom de variable
+│   ├─ note, updated_by, updated_at
+│   └─ UNIQUE (kind, module_type, field_name, scope, value(191))
+│
+├─ gpo_field_rule   [* mode de validation d'un champ de module *]
+│   ├─ PK: id_gpo_field_rule
+│   ├─ module_type, field_name
+│   ├─ mode VARCHAR(16)          -- list | pattern | free
+│   ├─ allow_pattern VARCHAR(512) -- regex, requis en mode pattern
+│   ├─ deny_pattern VARCHAR(512)  -- regex d'exclusion, prioritaire dans tous les modes
+│   ├─ note, updated_by, updated_at
+│   └─ UNIQUE (module_type, field_name)
+│
+│  Le socle par défaut (anciennes listes en dur) est écrit au premier démarrage
+│  par dbgpo.SeedRestrictions, tracé par une ligne kind='meta' value='seeded' :
+│  sans ce marqueur, une purge volontaire des restrictions serait annulée au
+│  redémarrage suivant. Toute écriture est journalisée en SECURITY avec son auteur.
+│
 │  Tables supprimées (ancien modèle) : linux_gpo_distributions, group_linux_gpo.
 │  Elles stockaient une commande shell brute par distribution, donc de l'exécution
 │  de code arbitraire en root. dbgpo.CreateTables les DROP si elles subsistent.

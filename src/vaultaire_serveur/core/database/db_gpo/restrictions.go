@@ -1,0 +1,633 @@
+package dbgpo
+
+import (
+	"database/sql"
+	"fmt"
+	"strings"
+	"time"
+
+	"vaultaire/core/database"
+	"vaultaire/core/gpo"
+	"vaultaire/core/logs"
+)
+
+// Persistance des restrictions GPO.
+//
+// Les listes d'autorisation, les règles de champ, les règles de chemin et les
+// variables d'environnement interdites vivent en base et sont éditables par les
+// membres du groupe superadmin `vaultaire` — et par eux seuls.
+//
+// La vérification d'appartenance est faite ICI, dans la couche base, et non
+// seulement dans le handler web : c'est la seule façon de garantir qu'aucun
+// appelant présent ou futur (CLI, API, LDAP) ne contourne la porte. Chaque
+// écriture est journalisée en SECURITY avec son auteur, parce que modifier une
+// restriction change ce que l'ensemble du parc accepte d'appliquer.
+
+// Catégories de lignes dans gpo_restriction.
+const (
+	KindAllowValue = "allow_value" // valeur autorisée pour un champ de module
+	KindPathAllow  = "path_allow"  // préfixe de chemin autorisé
+	KindPathDeny   = "path_deny"   // préfixe de chemin refusé
+	KindEnvDeny    = "env_deny"    // variable d'environnement interdite
+	kindMeta       = "meta"        // usage interne (marqueur de peuplement)
+)
+
+const seedMarkerValue = "seeded"
+
+var restrictionTablesDDL = []string{
+	`CREATE TABLE IF NOT EXISTS gpo_restriction (
+		id_gpo_restriction INT AUTO_INCREMENT PRIMARY KEY,
+		kind VARCHAR(24) NOT NULL,
+		module_type VARCHAR(64) NOT NULL DEFAULT '',
+		field_name VARCHAR(64) NOT NULL DEFAULT '',
+		scope VARCHAR(16) NOT NULL DEFAULT 'any',
+		value VARCHAR(512) NOT NULL,
+		note VARCHAR(255) DEFAULT NULL,
+		updated_by VARCHAR(255) DEFAULT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		UNIQUE KEY uk_gpo_restriction (kind, module_type, field_name, scope, value(191)),
+		INDEX idx_gpo_restriction_kind (kind),
+		INDEX idx_gpo_restriction_field (module_type, field_name)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+	`CREATE TABLE IF NOT EXISTS gpo_field_rule (
+		id_gpo_field_rule INT AUTO_INCREMENT PRIMARY KEY,
+		module_type VARCHAR(64) NOT NULL,
+		field_name VARCHAR(64) NOT NULL,
+		mode VARCHAR(16) NOT NULL DEFAULT 'list',
+		allow_pattern VARCHAR(512) DEFAULT NULL,
+		deny_pattern VARCHAR(512) DEFAULT NULL,
+		note VARCHAR(512) DEFAULT NULL,
+		updated_by VARCHAR(255) DEFAULT NULL,
+		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+		UNIQUE KEY uk_gpo_field_rule (module_type, field_name)
+	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+}
+
+// RestrictionRow est une ligne de restriction telle qu'affichée dans l'interface.
+type RestrictionRow struct {
+	ID         int
+	Kind       string
+	ModuleType string
+	FieldName  string
+	Scope      string
+	Value      string
+	Note       string
+	UpdatedBy  string
+	UpdatedAt  time.Time
+}
+
+// FieldRuleRow est une règle de champ telle qu'affichée dans l'interface.
+type FieldRuleRow struct {
+	ID           int
+	ModuleType   string
+	FieldName    string
+	Mode         string
+	AllowPattern string
+	DenyPattern  string
+	Note         string
+	UpdatedBy    string
+	UpdatedAt    time.Time
+}
+
+// createRestrictionTables crée les tables de restrictions.
+func createRestrictionTables(db *sql.DB) error {
+	for _, ddl := range restrictionTablesDDL {
+		if _, err := db.Exec(ddl); err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeDBGeneric, "gpo: création des tables de restrictions échouée : "+err.Error())
+			return fmt.Errorf("gpo: création des tables de restrictions échouée : %v", err)
+		}
+	}
+	return nil
+}
+
+// requireSuperadmin refuse l'opération si l'acteur n'est pas membre du groupe
+// superadmin. Le nom de l'acteur est obligatoire : une écriture anonyme sur les
+// restrictions serait intraçable, donc inacceptable.
+func requireSuperadmin(db *sql.DB, actor, operation string) error {
+	actor = strings.TrimSpace(actor)
+	if actor == "" {
+		return fmt.Errorf("auteur non identifié : opération refusée sur les restrictions GPO")
+	}
+	if !database.IsSuperadmin(db, actor) {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"gpo: %s a tenté %s sur les restrictions sans appartenir au groupe %s — refusé",
+			actor, operation, database.ProtectedGroupName))
+		return fmt.Errorf("réservé aux membres du groupe %s", database.ProtectedGroupName)
+	}
+	return nil
+}
+
+// auditRestriction journalise une modification de restriction.
+func auditRestriction(actor, action, detail string) {
+	logs.Write_Log("SECURITY", fmt.Sprintf("gpo/restrictions: %s par %s — %s", action, actor, detail))
+	gpo.InvalidateRestrictionCache()
+}
+
+// ---------------------------------------------------------------------------
+// Peuplement initial et réinitialisation
+// ---------------------------------------------------------------------------
+
+// isSeeded indique si le peuplement initial a déjà eu lieu.
+//
+// Le marqueur est une ligne dédiée plutôt qu'un simple « la table est vide » :
+// sans lui, un administrateur qui supprime volontairement toutes les entrées
+// verrait le socle par défaut réapparaître au prochain redémarrage.
+func isSeeded(db *sql.DB) (bool, error) {
+	var count int
+	err := db.QueryRow(
+		`SELECT COUNT(*) FROM gpo_restriction WHERE kind = ? AND value = ?`, kindMeta, seedMarkerValue,
+	).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// SeedRestrictions écrit le socle par défaut si ce n'est pas déjà fait.
+// Appelée au démarrage ; idempotente.
+func SeedRestrictions(db *sql.DB) error {
+	seeded, err := isSeeded(db)
+	if err != nil {
+		return fmt.Errorf("gpo: vérification du peuplement des restrictions impossible : %v", err)
+	}
+	if seeded {
+		return nil
+	}
+	if err := writeDefaults(db, "system"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(
+		`INSERT IGNORE INTO gpo_restriction (kind, value, note, updated_by) VALUES (?, ?, ?, ?)`,
+		kindMeta, seedMarkerValue, "marqueur de peuplement initial des restrictions", "system",
+	); err != nil {
+		return fmt.Errorf("gpo: écriture du marqueur de peuplement impossible : %v", err)
+	}
+	logs.Write_Log("INFO", "gpo: restrictions peuplées avec le socle par défaut")
+	gpo.InvalidateRestrictionCache()
+	return nil
+}
+
+// writeDefaults insère le socle par défaut (sans écraser l'existant).
+func writeDefaults(db *sql.DB, actor string) error {
+	defaults := gpo.DefaultRestrictions()
+
+	for _, field := range gpo.DynamicFields() {
+		for _, v := range field.SeedValues {
+			if _, err := db.Exec(
+				`INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, updated_by)
+				 VALUES (?, ?, ?, 'any', ?, ?)`,
+				KindAllowValue, field.ModuleType, field.FieldName, v, actor,
+			); err != nil {
+				return fmt.Errorf("gpo: peuplement de %s/%s impossible : %v", field.ModuleType, field.FieldName, err)
+			}
+		}
+		rule := defaults.Rule(field.ModuleType, field.FieldName)
+		if _, err := db.Exec(
+			`INSERT INTO gpo_field_rule (module_type, field_name, mode, allow_pattern, deny_pattern, note, updated_by)
+			 VALUES (?, ?, ?, ?, ?, ?, ?)
+			 ON DUPLICATE KEY UPDATE mode = VALUES(mode), allow_pattern = VALUES(allow_pattern),
+			   deny_pattern = VALUES(deny_pattern), note = VALUES(note), updated_by = VALUES(updated_by)`,
+			field.ModuleType, field.FieldName, rule.Mode,
+			nullIfEmpty(rule.AllowPattern), nullIfEmpty(rule.DenyPattern), nullIfEmpty(field.Help), actor,
+		); err != nil {
+			return fmt.Errorf("gpo: peuplement de la règle %s/%s impossible : %v", field.ModuleType, field.FieldName, err)
+		}
+	}
+
+	for _, r := range defaults.PathRules {
+		kind := KindPathAllow
+		if r.Deny {
+			kind = KindPathDeny
+		}
+		if _, err := db.Exec(
+			`INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES (?, ?, ?, ?, ?)`,
+			kind, r.Scope, r.Prefix, nullIfEmpty(r.Note), actor,
+		); err != nil {
+			return fmt.Errorf("gpo: peuplement de la règle de chemin %s impossible : %v", r.Prefix, err)
+		}
+	}
+
+	for _, e := range defaults.EnvDenied {
+		if _, err := db.Exec(
+			`INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES (?, 'any', ?, ?, ?)`,
+			KindEnvDeny, e.Name, nullIfEmpty(e.Note), actor,
+		); err != nil {
+			return fmt.Errorf("gpo: peuplement de la variable interdite %s impossible : %v", e.Name, err)
+		}
+	}
+	return nil
+}
+
+// ResetRestrictionsToDefaults efface les restrictions et réécrit le socle.
+//
+// Fournit une sortie de secours : puisque tout est éditable, il faut pouvoir
+// revenir à un état connu après une modification malheureuse.
+func ResetRestrictionsToDefaults(db *sql.DB, actor string) error {
+	if err := requireSuperadmin(db, actor, "la réinitialisation"); err != nil {
+		return err
+	}
+	if _, err := db.Exec(`DELETE FROM gpo_restriction WHERE kind <> ?`, kindMeta); err != nil {
+		return fmt.Errorf("gpo: purge des restrictions impossible : %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM gpo_field_rule`); err != nil {
+		return fmt.Errorf("gpo: purge des règles de champ impossible : %v", err)
+	}
+	if err := writeDefaults(db, actor); err != nil {
+		return err
+	}
+	auditRestriction(actor, "réinitialisation complète", "socle par défaut réécrit")
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Lecture (fournisseur pour core/gpo)
+// ---------------------------------------------------------------------------
+
+// Provider lit les restrictions depuis la base pour le compte de core/gpo.
+type Provider struct{}
+
+// RegisterRestrictionProvider installe le fournisseur base dans core/gpo.
+// Appelée depuis CreateTables, après création et peuplement des tables.
+func RegisterRestrictionProvider() {
+	gpo.SetRestrictionProvider(Provider{})
+}
+
+// LoadRestrictions implémente gpo.RestrictionProvider.
+func (Provider) LoadRestrictions() (gpo.RestrictionSet, error) {
+	db := database.GetDatabase()
+	if db == nil {
+		return gpo.RestrictionSet{}, fmt.Errorf("connexion base indisponible")
+	}
+	return loadRestrictions(db)
+}
+
+// loadRestrictions construit le jeu de restrictions depuis la base.
+func loadRestrictions(db *sql.DB) (gpo.RestrictionSet, error) {
+	rs := gpo.RestrictionSet{
+		AllowedValues: map[string][]gpo.AllowedValue{},
+		FieldRules:    map[string]gpo.FieldRule{},
+	}
+
+	rows, err := db.Query(
+		`SELECT kind, module_type, field_name, scope, value, COALESCE(note, '')
+		 FROM gpo_restriction WHERE kind <> ? ORDER BY kind, module_type, field_name, value`, kindMeta)
+	if err != nil {
+		return rs, fmt.Errorf("lecture des restrictions impossible : %v", err)
+	}
+
+	for rows.Next() {
+		var kind, moduleType, fieldName, scope, value, note string
+		if err := rows.Scan(&kind, &moduleType, &fieldName, &scope, &value, &note); err != nil {
+			closeRows(rows)
+			return rs, err
+		}
+		switch kind {
+		case KindAllowValue:
+			key := gpo.FieldKey(moduleType, fieldName)
+			rs.AllowedValues[key] = append(rs.AllowedValues[key], gpo.AllowedValue{
+				ModuleType: moduleType, FieldName: fieldName, Value: value, Label: note,
+			})
+		case KindPathAllow:
+			rs.PathRules = append(rs.PathRules, gpo.PathRule{Scope: scope, Deny: false, Prefix: value, Note: note})
+		case KindPathDeny:
+			rs.PathRules = append(rs.PathRules, gpo.PathRule{Scope: scope, Deny: true, Prefix: value, Note: note})
+		case KindEnvDeny:
+			rs.EnvDenied = append(rs.EnvDenied, gpo.EnvRule{Name: value, Note: note})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		closeRows(rows)
+		return rs, err
+	}
+	// Le premier curseur est fermé avant d'ouvrir le second : un *sql.Rows non
+	// fermé retient une connexion du pool, et cette fonction est appelée à chaque
+	// rechargement du cache de restrictions.
+	closeRows(rows)
+
+	ruleRows, err := db.Query(
+		`SELECT module_type, field_name, mode, COALESCE(allow_pattern, ''), COALESCE(deny_pattern, ''), COALESCE(note, ''), COALESCE(updated_by, '')
+		 FROM gpo_field_rule`)
+	if err != nil {
+		return rs, fmt.Errorf("lecture des règles de champ impossible : %v", err)
+	}
+	defer closeRows(ruleRows)
+
+	for ruleRows.Next() {
+		var r gpo.FieldRule
+		if err := ruleRows.Scan(&r.ModuleType, &r.FieldName, &r.Mode, &r.AllowPattern, &r.DenyPattern, &r.Note, &r.UpdatedBy); err != nil {
+			return rs, err
+		}
+		if !gpo.IsValidFieldMode(r.Mode) {
+			logs.Write_Log("WARNING", fmt.Sprintf(
+				"gpo: mode de champ inconnu %q pour %s/%s — repli sur le mode liste", r.Mode, r.ModuleType, r.FieldName))
+			r.Mode = gpo.FieldModeList
+		}
+		rs.FieldRules[gpo.FieldKey(r.ModuleType, r.FieldName)] = r
+	}
+	return rs, ruleRows.Err()
+}
+
+// ListRestrictionsByKind retourne les lignes d'une catégorie, pour l'interface.
+func ListRestrictionsByKind(db *sql.DB, kind string) ([]RestrictionRow, error) {
+	if kind == kindMeta {
+		return nil, fmt.Errorf("catégorie interne non consultable")
+	}
+	rows, err := db.Query(
+		`SELECT id_gpo_restriction, kind, module_type, field_name, scope, value,
+		        COALESCE(note, ''), COALESCE(updated_by, ''), updated_at
+		 FROM gpo_restriction WHERE kind = ?
+		 ORDER BY module_type, field_name, scope, value`, kind)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des restrictions (%s) impossible : %v", kind, err)
+	}
+	defer closeRows(rows)
+
+	var out []RestrictionRow
+	for rows.Next() {
+		var r RestrictionRow
+		var updatedAt sql.NullTime
+		if err := rows.Scan(&r.ID, &r.Kind, &r.ModuleType, &r.FieldName, &r.Scope, &r.Value, &r.Note, &r.UpdatedBy, &updatedAt); err != nil {
+			return nil, err
+		}
+		if updatedAt.Valid {
+			r.UpdatedAt = updatedAt.Time
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// ListAllowedValuesForField retourne les valeurs autorisées d'un champ précis.
+func ListAllowedValuesForField(db *sql.DB, moduleType, fieldName string) ([]RestrictionRow, error) {
+	rows, err := db.Query(
+		`SELECT id_gpo_restriction, kind, module_type, field_name, scope, value,
+		        COALESCE(note, ''), COALESCE(updated_by, ''), updated_at
+		 FROM gpo_restriction WHERE kind = ? AND module_type = ? AND field_name = ?
+		 ORDER BY value`, KindAllowValue, moduleType, fieldName)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des valeurs autorisées de %s/%s impossible : %v", moduleType, fieldName, err)
+	}
+	defer closeRows(rows)
+
+	var out []RestrictionRow
+	for rows.Next() {
+		var r RestrictionRow
+		var updatedAt sql.NullTime
+		if err := rows.Scan(&r.ID, &r.Kind, &r.ModuleType, &r.FieldName, &r.Scope, &r.Value, &r.Note, &r.UpdatedBy, &updatedAt); err != nil {
+			return nil, err
+		}
+		if updatedAt.Valid {
+			r.UpdatedAt = updatedAt.Time
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// GetFieldRule retourne la règle enregistrée pour un champ.
+func GetFieldRule(db *sql.DB, moduleType, fieldName string) (FieldRuleRow, error) {
+	var r FieldRuleRow
+	var updatedAt sql.NullTime
+	err := db.QueryRow(
+		`SELECT id_gpo_field_rule, module_type, field_name, mode,
+		        COALESCE(allow_pattern, ''), COALESCE(deny_pattern, ''), COALESCE(note, ''), COALESCE(updated_by, ''), updated_at
+		 FROM gpo_field_rule WHERE module_type = ? AND field_name = ?`, moduleType, fieldName,
+	).Scan(&r.ID, &r.ModuleType, &r.FieldName, &r.Mode, &r.AllowPattern, &r.DenyPattern, &r.Note, &r.UpdatedBy, &updatedAt)
+	if err == sql.ErrNoRows {
+		return FieldRuleRow{ModuleType: moduleType, FieldName: fieldName, Mode: gpo.FieldModeList}, nil
+	}
+	if err != nil {
+		return r, fmt.Errorf("lecture de la règle %s/%s impossible : %v", moduleType, fieldName, err)
+	}
+	if updatedAt.Valid {
+		r.UpdatedAt = updatedAt.Time
+	}
+	return r, nil
+}
+
+// ---------------------------------------------------------------------------
+// Écriture (réservée au groupe superadmin)
+// ---------------------------------------------------------------------------
+
+// AddAllowedValue ajoute une valeur autorisée à un champ.
+// C'est le point d'entrée pour déclarer un besoin custom : une unité systemd
+// maison, un paquet interne, un identifiant de tâche propre au client.
+func AddAllowedValue(db *sql.DB, actor, moduleType, fieldName, value, label string) error {
+	if err := requireSuperadmin(db, actor, "l'ajout d'une valeur autorisée"); err != nil {
+		return err
+	}
+	value = strings.TrimSpace(value)
+	if err := validateFieldTarget(moduleType, fieldName); err != nil {
+		return err
+	}
+	if err := validateRestrictionValue(value, 512); err != nil {
+		return err
+	}
+	if err := database.SanitizeInput(moduleType, fieldName, value); err != nil {
+		return err
+	}
+
+	res, err := db.Exec(
+		`INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, note, updated_by)
+		 VALUES (?, ?, ?, 'any', ?, ?, ?)`,
+		KindAllowValue, moduleType, fieldName, value, nullIfEmpty(strings.TrimSpace(label)), actor)
+	if err != nil {
+		return fmt.Errorf("ajout de la valeur %q impossible : %v", value, err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return fmt.Errorf("la valeur %q est déjà autorisée pour %s/%s", value, moduleType, fieldName)
+	}
+	auditRestriction(actor, "ajout de valeur autorisée", fmt.Sprintf("%s/%s += %q", moduleType, fieldName, value))
+	return nil
+}
+
+// DeleteRestriction supprime une ligne de restriction par son identifiant.
+//
+// Le retrait est journalisé avec la valeur exacte retirée : supprimer un refus
+// de chemin élargit ce que le parc entier accepte d'écrire, il faut pouvoir
+// retracer qui l'a fait et quoi.
+func DeleteRestriction(db *sql.DB, actor string, id int) error {
+	if err := requireSuperadmin(db, actor, "la suppression d'une restriction"); err != nil {
+		return err
+	}
+	var kind, moduleType, fieldName, scope, value string
+	err := db.QueryRow(
+		`SELECT kind, module_type, field_name, scope, value FROM gpo_restriction WHERE id_gpo_restriction = ?`, id,
+	).Scan(&kind, &moduleType, &fieldName, &scope, &value)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("restriction %d introuvable", id)
+	}
+	if err != nil {
+		return fmt.Errorf("lecture de la restriction %d impossible : %v", id, err)
+	}
+	if kind == kindMeta {
+		return fmt.Errorf("cette entrée est interne et n'est pas supprimable")
+	}
+
+	if _, err := db.Exec(`DELETE FROM gpo_restriction WHERE id_gpo_restriction = ?`, id); err != nil {
+		return fmt.Errorf("suppression de la restriction %d impossible : %v", id, err)
+	}
+	auditRestriction(actor, "suppression de restriction",
+		fmt.Sprintf("kind=%s %s/%s scope=%s valeur=%q", kind, moduleType, fieldName, scope, value))
+	return nil
+}
+
+// SetFieldRule définit le mode de validation d'un champ et ses motifs.
+//
+// Les motifs sont compilés avant écriture : un motif invalide en base bloquerait
+// ensuite toute validation du champ, avec un message incompréhensible pour
+// l'administrateur suivant.
+func SetFieldRule(db *sql.DB, actor, moduleType, fieldName, mode, allowPattern, denyPattern string) error {
+	if err := requireSuperadmin(db, actor, "la modification d'une règle de champ"); err != nil {
+		return err
+	}
+	if err := validateFieldTarget(moduleType, fieldName); err != nil {
+		return err
+	}
+	if !gpo.IsValidFieldMode(mode) {
+		return fmt.Errorf("mode %q invalide (attendu : %s)", mode, strings.Join(gpo.AllFieldModes(), ", "))
+	}
+	allowPattern = strings.TrimSpace(allowPattern)
+	denyPattern = strings.TrimSpace(denyPattern)
+	if err := gpo.ValidatePatternSyntax(allowPattern); err != nil {
+		return fmt.Errorf("motif d'autorisation : %v", err)
+	}
+	if err := gpo.ValidatePatternSyntax(denyPattern); err != nil {
+		return fmt.Errorf("motif d'exclusion : %v", err)
+	}
+	if mode == gpo.FieldModePattern && allowPattern == "" {
+		return fmt.Errorf("le mode motif exige un motif d'autorisation")
+	}
+
+	previous, _ := GetFieldRule(db, moduleType, fieldName)
+
+	if _, err := db.Exec(
+		`INSERT INTO gpo_field_rule (module_type, field_name, mode, allow_pattern, deny_pattern, updated_by)
+		 VALUES (?, ?, ?, ?, ?, ?)
+		 ON DUPLICATE KEY UPDATE mode = VALUES(mode), allow_pattern = VALUES(allow_pattern),
+		   deny_pattern = VALUES(deny_pattern), updated_by = VALUES(updated_by)`,
+		moduleType, fieldName, mode, nullIfEmpty(allowPattern), nullIfEmpty(denyPattern), actor,
+	); err != nil {
+		return fmt.Errorf("enregistrement de la règle %s/%s impossible : %v", moduleType, fieldName, err)
+	}
+
+	auditRestriction(actor, "modification de règle de champ", fmt.Sprintf(
+		"%s/%s : mode %s→%s, allow %q→%q, deny %q→%q",
+		moduleType, fieldName, previous.Mode, mode,
+		previous.AllowPattern, allowPattern, previous.DenyPattern, denyPattern))
+	return nil
+}
+
+// AddPathRule ajoute une règle de chemin (autorisation ou refus).
+func AddPathRule(db *sql.DB, actor, scope string, deny bool, prefix, note string) error {
+	operation := "l'ajout d'une autorisation de chemin"
+	if deny {
+		operation = "l'ajout d'un refus de chemin"
+	}
+	if err := requireSuperadmin(db, actor, operation); err != nil {
+		return err
+	}
+	if scope != gpo.PathScopeAny && scope != string(gpo.ScopeMachine) && scope != string(gpo.ScopeUser) {
+		return fmt.Errorf("scope %q invalide (attendu : any, machine ou user)", scope)
+	}
+	prefix = strings.TrimSpace(prefix)
+	if !strings.HasPrefix(prefix, "/") {
+		return fmt.Errorf("un préfixe de chemin doit être absolu : %q", prefix)
+	}
+	if err := validateRestrictionValue(prefix, 512); err != nil {
+		return err
+	}
+	if err := database.SanitizeInput(prefix); err != nil {
+		return err
+	}
+
+	kind := KindPathAllow
+	if deny {
+		kind = KindPathDeny
+	}
+	res, err := db.Exec(
+		`INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES (?, ?, ?, ?, ?)`,
+		kind, scope, prefix, nullIfEmpty(strings.TrimSpace(note)), actor)
+	if err != nil {
+		return fmt.Errorf("ajout de la règle de chemin %q impossible : %v", prefix, err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return fmt.Errorf("cette règle existe déjà pour le préfixe %q", prefix)
+	}
+	auditRestriction(actor, "ajout de règle de chemin",
+		fmt.Sprintf("kind=%s scope=%s préfixe=%q", kind, scope, prefix))
+	return nil
+}
+
+// AddEnvDeny interdit une variable d'environnement en scope user.
+func AddEnvDeny(db *sql.DB, actor, name, note string) error {
+	if err := requireSuperadmin(db, actor, "l'interdiction d'une variable d'environnement"); err != nil {
+		return err
+	}
+	name = strings.ToUpper(strings.TrimSpace(name))
+	if name == "" {
+		return fmt.Errorf("nom de variable requis")
+	}
+	if err := validateRestrictionValue(name, 64); err != nil {
+		return err
+	}
+	if err := database.SanitizeInput(name); err != nil {
+		return err
+	}
+
+	res, err := db.Exec(
+		`INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES (?, 'any', ?, ?, ?)`,
+		KindEnvDeny, name, nullIfEmpty(strings.TrimSpace(note)), actor)
+	if err != nil {
+		return fmt.Errorf("interdiction de %s impossible : %v", name, err)
+	}
+	if affected, _ := res.RowsAffected(); affected == 0 {
+		return fmt.Errorf("la variable %s est déjà interdite", name)
+	}
+	auditRestriction(actor, "interdiction de variable d'environnement", name)
+	return nil
+}
+
+// ---------------------------------------------------------------------------
+// Utilitaires
+// ---------------------------------------------------------------------------
+
+// validateFieldTarget vérifie que le couple module/champ existe et que son
+// domaine est bien géré en base. Sans ce contrôle, on pourrait accumuler des
+// restrictions sur un champ inexistant, qui ne s'appliqueraient jamais tout en
+// donnant l'illusion d'une protection.
+func validateFieldTarget(moduleType, fieldName string) error {
+	if _, ok := gpo.BaseSchemaFor(moduleType); !ok {
+		return fmt.Errorf("module inconnu : %s", moduleType)
+	}
+	for _, f := range gpo.DynamicFields() {
+		if f.ModuleType == moduleType && f.FieldName == fieldName {
+			return nil
+		}
+	}
+	return fmt.Errorf("le champ %s/%s n'a pas de domaine géré en base", moduleType, fieldName)
+}
+
+// validateRestrictionValue vérifie la forme d'une valeur de restriction.
+func validateRestrictionValue(value string, maxLen int) error {
+	if value == "" {
+		return fmt.Errorf("valeur vide")
+	}
+	if len(value) > maxLen {
+		return fmt.Errorf("valeur trop longue (%d caractères maximum)", maxLen)
+	}
+	if strings.ContainsAny(value, "\x00\n\r\t") {
+		return fmt.Errorf("valeur contenant un caractère de contrôle")
+	}
+	return nil
+}
+
+// nullIfEmpty convertit une chaîne vide en NULL SQL, pour distinguer « pas de
+// note » d'une note vide.
+func nullIfEmpty(s string) interface{} {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	return s
+}

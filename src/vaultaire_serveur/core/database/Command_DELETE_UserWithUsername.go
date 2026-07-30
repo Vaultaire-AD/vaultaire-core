@@ -12,6 +12,10 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
 	if injection != nil {
 		return injection
 	}
+	// Le compte d'amorçage n'est pas supprimable : voir protected.go.
+	if err := GuardProtectedUserDeletion(username); err != nil {
+		return err
+	}
 	// Vérifier si l'utilisateur existe
 	var userID int
 	queryUser := `SELECT id_user FROM users WHERE username = ?`

@@ -31,7 +31,10 @@ func Run() int {
 	// --- Unit: ExecuteCommand (sans DB: help, inconnu) ---
 	results = append(results, testExecuteCommand()...)
 
-	// --- Unit: garde-fous GPO (catalogue, scopes, chemins, résolution) ---
+	// --- Unit: immuabilité de l'identité d'amorçage vaultaire ---
+	results = append(results, testProtectedIdentity()...)
+
+	// --- Unit: garde-fous GPO (catalogue, scopes, chemins, restrictions, résolution) ---
 	results = append(results, testGPO()...)
 
 	// --- Intégration optionnelle: DB (si config chargée et connexion OK) ---

@@ -4,15 +4,20 @@ import "sort"
 
 // Catalogue des modules GPO.
 //
-// C'est la surface d'attaque complète et bornée du système : un administrateur
-// ne peut composer une GPO qu'avec ces types, paramétrés par ces champs, avec
-// ces valeurs. Ajouter une capacité = ajouter une entrée ici et l'implémenter
-// côté agent client — il n'existe aucun chemin pour exécuter autre chose.
+// Le catalogue définit les TYPES de modules et la FORME de leurs champs : c'est
+// la partie structurelle, qui reste dans le code parce qu'elle correspond à ce
+// que l'agent client sait faire. Ajouter un type ici sans écrire le handler
+// correspondant côté agent donnerait un module sans effet.
+//
+// Le DOMAINE de valeurs des champs marqués Dynamic, lui, vit en base et est
+// éditable par le groupe superadmin (voir restrictions.go). C'est ce qui permet
+// d'accueillir un besoin custom — un service de monitoring maison, un paquet
+// interne — sans toucher au code : soit en ajoutant la valeur à la liste, soit
+// en passant le champ en mode motif.
 //
 // ApplyOrder impose l'ordre d'application indépendamment de l'ordre de saisie :
 // réseau/sécurité (10-19), puis paquets/services (20-29), puis fichiers (30-39),
-// puis personnalisation utilisateur (40+). Un réordonnancement accidentel de la
-// liste en base ne peut donc pas changer le résultat.
+// puis personnalisation utilisateur (40+).
 
 // Types de modules du catalogue.
 const (
@@ -34,7 +39,10 @@ const (
 	CategoryUser     = "Environnement utilisateur"
 )
 
-var catalog = []ModuleSchema{
+// baseCatalog est le catalogue tel que défini dans le code, avant résolution des
+// restrictions en base. Les champs Dynamic y ont Options vide : leurs valeurs
+// sont injectées par resolveSchema.
+var baseCatalog = []ModuleSchema{
 	{
 		Type:        ModuleSSHServerConfig,
 		Label:       "Configuration SSH serveur",
@@ -58,6 +66,8 @@ var catalog = []ModuleSchema{
 				Options: []string{"unchanged", "yes", "no", "local", "remote"}, Default: "unchanged"},
 			{Name: "x11_forwarding", Label: "X11Forwarding", Type: FieldEnum,
 				Options: []string{"unchanged", "yes", "no"}, Default: "unchanged"},
+			{Name: "extra_directives", Label: "Directives supplémentaires", Type: FieldText, MaxLen: 8192,
+				Help: "Une directive sshd par ligne (ex. « Ciphers aes256-gcm@openssh.com »). Validées par sshd -t avant rechargement, avec retour arrière automatique en cas d'échec."},
 			{Name: "banner_text", Label: "Bannière de connexion", Type: FieldText, MaxLen: 4096,
 				Help: "Déposée dans un fichier dédié et référencée par la directive Banner."},
 		},
@@ -66,11 +76,11 @@ var catalog = []ModuleSchema{
 		Type:        ModuleSysctl,
 		Label:       "Paramètre noyau (sysctl)",
 		Category:    CategorySecurity,
-		Description: "Fixe une clé sysctl parmi une liste blanche de durcissement. Écrit dans /etc/sysctl.d/, jamais dans /etc/sysctl.conf.",
+		Description: "Fixe une clé sysctl. Écrit dans /etc/sysctl.d/, jamais dans /etc/sysctl.conf. Les clés disponibles sont éditables dans Admin → GPO → Restrictions.",
 		Scope:       ScopeMachine,
 		ApplyOrder:  11,
 		Fields: []FieldSchema{
-			{Name: "key", Label: "Clé", Type: FieldEnum, Required: true, Options: allowedSysctlKeys},
+			{Name: "key", Label: "Clé", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
 			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 64,
 				Help: "Valeur numérique ou liste d'entiers séparés par des espaces."},
 		},
@@ -79,13 +89,13 @@ var catalog = []ModuleSchema{
 		Type:        ModuleSudoersRule,
 		Label:       "Droits sudo (par groupe)",
 		Category:    CategorySecurity,
-		Description: "Génère un fichier /etc/sudoers.d/ depuis un template contrôlé côté agent. Aucune ligne sudoers brute n'est acceptée : seuls un groupe et un jeu de commandes prédéfini sont transmis.",
+		Description: "Génère un fichier /etc/sudoers.d/ depuis un template contrôlé côté agent. Aucune ligne sudoers brute n'est transmise : seuls un groupe et un identifiant de jeu de commandes circulent.",
 		Scope:       ScopeMachine,
 		ApplyOrder:  12,
 		Fields: []FieldSchema{
 			{Name: "group", Label: "Groupe POSIX bénéficiaire", Type: FieldIdent, Required: true, MaxLen: 32},
 			{Name: "command_set", Label: "Jeu de commandes", Type: FieldEnum, Required: true,
-				Options: allowedSudoCommandSets, Default: "service_control"},
+				Dynamic: true, Default: "service_control", MaxLen: 64},
 			{Name: "nopasswd", Label: "Sans mot de passe (NOPASSWD)", Type: FieldBool, Default: "false",
 				Help: "À éviter : supprime la ré-authentification avant élévation."},
 		},
@@ -94,24 +104,26 @@ var catalog = []ModuleSchema{
 		Type:        ModulePackage,
 		Label:       "Paquet logiciel",
 		Category:    CategorySystem,
-		Description: "Garantit la présence ou l'absence d'un paquet de la liste blanche. Appliqué avant les modules de service, pour qu'une unité dépendante d'un paquet existe au moment de son activation.",
+		Description: "Garantit la présence ou l'absence d'un paquet. Appliqué avant les modules de service, pour qu'une unité dépendante d'un paquet existe au moment de son activation. Les paquets disponibles sont éditables dans les Restrictions.",
 		Scope:       ScopeMachine,
 		ApplyOrder:  20,
 		Fields: []FieldSchema{
-			{Name: "package", Label: "Paquet", Type: FieldEnum, Required: true, Options: allowedPackages},
+			{Name: "package", Label: "Paquet", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present"},
+			{Name: "version", Label: "Version épinglée", Type: FieldString, MaxLen: 64,
+				Help: "Laisser vide pour la dernière version disponible dans les dépôts configurés."},
 		},
 	},
 	{
 		Type:        ModuleSystemdService,
 		Label:       "Service systemd",
 		Category:    CategorySystem,
-		Description: "Force l'état d'une unité systemd de la liste blanche (activation au boot, état courant, masquage).",
+		Description: "Force l'état d'une unité systemd (activation au boot, état courant, masquage). Les unités disponibles sont éditables dans les Restrictions — c'est là qu'on déclare un service maison.",
 		Scope:       ScopeMachine,
 		ApplyOrder:  21,
 		Fields: []FieldSchema{
-			{Name: "service", Label: "Unité", Type: FieldEnum, Required: true, Options: allowedServices},
+			{Name: "service", Label: "Unité", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
 			{Name: "enabled", Label: "Activation au démarrage", Type: FieldEnum, Required: true,
 				Options: []string{"unchanged", "enabled", "disabled"}, Default: "unchanged"},
 			{Name: "state", Label: "État courant", Type: FieldEnum, Required: true,
@@ -124,15 +136,15 @@ var catalog = []ModuleSchema{
 		Type:        ModuleFileDeploy,
 		Label:       "Déploiement de fichier",
 		Category:    CategoryFiles,
-		Description: "Dépose un fichier avec contenu, permissions et propriétaire. En scope user, le chemin doit être exprimé sous " + userHomePlaceholder + "/ ; les chemins système sont refusés localement par l'agent même si le serveur les envoie.",
+		Description: "Dépose un fichier avec contenu, permissions et propriétaire. Les emplacements autorisés et refusés sont éditables dans les Restrictions ; en scope user, le chemin s'exprime sous " + userHomePlaceholder + "/.",
 		Scope:       ScopeBoth,
 		ApplyOrder:  30,
 		Fields: []FieldSchema{
 			{Name: "path", Label: "Chemin", Type: FieldPath, Required: true, MaxLen: 512,
-				Help: "Scope machine : chemin absolu hors zones protégées. Scope user : " + userHomePlaceholder + "/chemin/relatif."},
-			{Name: "content", Label: "Contenu", Type: FieldText, MaxLen: 65536},
+				Help: "Scope machine : chemin absolu hors zones refusées. Scope user : " + userHomePlaceholder + "/chemin/relatif."},
+			{Name: "content", Label: "Contenu", Type: FieldText, MaxLen: 262144},
 			{Name: "mode", Label: "Permissions", Type: FieldMode, Required: true, Default: "0644",
-				Help: "Notation octale. Les bits setuid/setgid sont refusés."},
+				Help: "Notation octale à 3 chiffres. Les bits setuid/setgid ne sont pas exprimables."},
 			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32,
 				Help: "Laisser vide pour root en scope machine, pour l'utilisateur cible en scope user."},
 			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32},
@@ -144,7 +156,7 @@ var catalog = []ModuleSchema{
 		Type:        ModuleUserEnv,
 		Label:       "Variable d'environnement utilisateur",
 		Category:    CategoryUser,
-		Description: "Définit une variable dans un fichier dédié sourcé depuis le shell de l'utilisateur (bloc balisé, le .bashrc n'est jamais réécrit). Les variables permettant de détourner l'exécution de binaires sont refusées.",
+		Description: "Définit une variable dans un fichier dédié sourcé depuis le shell de l'utilisateur (bloc balisé, le .bashrc n'est jamais réécrit). La liste des variables interdites est éditable dans les Restrictions.",
 		Scope:       ScopeUser,
 		ApplyOrder:  40,
 		Fields: []FieldSchema{
@@ -156,32 +168,86 @@ var catalog = []ModuleSchema{
 		Type:        ModuleUserCron,
 		Label:       "Tâche planifiée utilisateur",
 		Category:    CategoryUser,
-		Description: "Crée un timer systemd --user. La tâche référence un identifiant de commande implémenté côté agent : aucune ligne de shell ne transite dans la GPO.",
+		Description: "Crée un timer systemd --user. La tâche référence un identifiant de commande implémenté côté agent ; la liste des identifiants est éditable dans les Restrictions.",
 		Scope:       ScopeUser,
 		ApplyOrder:  41,
 		Fields: []FieldSchema{
 			{Name: "schedule", Label: "Planification (cron 5 champs)", Type: FieldCron, Required: true,
 				Default: "0 9 * * *", MaxLen: 128},
-			{Name: "command_id", Label: "Commande", Type: FieldEnum, Required: true, Options: allowedCronCommandIDs},
+			{Name: "command_id", Label: "Commande", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 64},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present"},
 		},
 	},
 }
 
-// schemaIndex permet une résolution par type en O(1).
-var schemaIndex = func() map[string]ModuleSchema {
-	m := make(map[string]ModuleSchema, len(catalog))
-	for _, s := range catalog {
+// baseIndex permet une résolution par type en O(1).
+var baseIndex = func() map[string]ModuleSchema {
+	m := make(map[string]ModuleSchema, len(baseCatalog))
+	for _, s := range baseCatalog {
 		m[s.Type] = s
 	}
 	return m
 }()
 
-// Catalog retourne le catalogue complet des modules, trié par ordre
-// d'application puis par libellé.
+// resolveSchema renseigne les champs Dynamic depuis les restrictions en vigueur.
+//
+// Le schéma est copié en profondeur (le slice Fields et chaque slice Options),
+// pour qu'une résolution ne modifie jamais le catalogue de base. Sans cette
+// copie, deux appels concurrents se marcheraient dessus.
+func resolveSchema(s ModuleSchema) ModuleSchema {
+	rs := Restrictions()
+	resolved := s
+	resolved.Fields = make([]FieldSchema, len(s.Fields))
+
+	for i, f := range s.Fields {
+		field := f
+		if f.Options != nil {
+			field.Options = append([]string(nil), f.Options...)
+		}
+		if f.Dynamic {
+			rule := rs.Rule(s.Type, f.Name)
+			field.Mode = rule.Mode
+			field.AllowPattern = rule.AllowPattern
+			field.DenyPattern = rule.DenyPattern
+			field.Options = rs.Values(s.Type, f.Name)
+
+			// Hors mode liste, la valeur est saisie librement : le type d'entrée
+			// devient une chaîne pour que l'interface web affiche un champ texte
+			// plutôt qu'un menu déroulant vide.
+			if rule.Mode != FieldModeList {
+				field.Type = FieldString
+			}
+		}
+		resolved.Fields[i] = field
+	}
+	return resolved
+}
+
+// BaseSchemaFor retourne le schéma brut d'un module, sans consulter les
+// restrictions. Utilisé par les vérifications structurelles (scope), qui n'ont
+// pas besoin du domaine de valeurs et ne doivent pas dépendre de la base.
+func BaseSchemaFor(moduleType string) (ModuleSchema, bool) {
+	s, ok := baseIndex[moduleType]
+	return s, ok
+}
+
+// SchemaFor retourne le schéma résolu d'un module : forme issue du code, domaine
+// de valeurs issu de la base.
+func SchemaFor(moduleType string) (ModuleSchema, bool) {
+	s, ok := baseIndex[moduleType]
+	if !ok {
+		return ModuleSchema{}, false
+	}
+	return resolveSchema(s), true
+}
+
+// Catalog retourne le catalogue résolu, trié par ordre d'application puis libellé.
 func Catalog() []ModuleSchema {
-	out := append([]ModuleSchema(nil), catalog...)
+	out := make([]ModuleSchema, 0, len(baseCatalog))
+	for _, s := range baseCatalog {
+		out = append(out, resolveSchema(s))
+	}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].ApplyOrder != out[j].ApplyOrder {
 			return out[i].ApplyOrder < out[j].ApplyOrder
@@ -202,23 +268,26 @@ func CatalogForScope(policyScope Scope) []ModuleSchema {
 	return out
 }
 
-// SchemaFor retourne le schéma d'un type de module.
-func SchemaFor(moduleType string) (ModuleSchema, bool) {
-	s, ok := schemaIndex[moduleType]
-	return s, ok
-}
-
 // ModuleTypes retourne tous les types du catalogue.
 func ModuleTypes() []string {
-	out := make([]string, 0, len(catalog))
-	for _, s := range Catalog() {
+	out := make([]string, 0, len(baseCatalog))
+	for _, s := range baseCatalog {
 		out = append(out, s.Type)
 	}
+	sort.Strings(out)
 	return out
 }
 
-// DefaultParams construit la map de paramètres par défaut d'un module,
-// utilisée pour préremplir les formulaires web.
+// ModuleLabel retourne le libellé lisible d'un type de module.
+func ModuleLabel(moduleType string) string {
+	if s, ok := baseIndex[moduleType]; ok {
+		return s.Label
+	}
+	return moduleType
+}
+
+// DefaultParams construit la map de paramètres par défaut d'un module, utilisée
+// pour préremplir les formulaires web.
 func DefaultParams(moduleType string) map[string]string {
 	schema, ok := SchemaFor(moduleType)
 	if !ok {

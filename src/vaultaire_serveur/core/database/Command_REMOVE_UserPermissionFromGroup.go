@@ -12,6 +12,10 @@ func Command_Remove_UserPermissionFromGroup(db *sql.DB, groupName, permissionNam
 	if injection != nil {
 		return injection
 	}
+	// Dernier maillon de la chaîne d'accès administrateur : voir protected.go.
+	if err := GuardProtectedUserPermissionUnlink(groupName, permissionName); err != nil {
+		return err
+	}
 
 	// Vérifier si le groupe existe
 	var groupID int

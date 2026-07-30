@@ -50,6 +50,7 @@ func StartWebServer() {
 	http.HandleFunc("/admin/clients", AdminClientsHandler)
 	http.HandleFunc("/admin/permissions", AdminPermissionsHandler)
 	http.HandleFunc("/admin/gpo", AdminGPOHandler)
+	http.HandleFunc("/admin/gpo/restrictions", AdminGPORestrictionsHandler)
 	http.HandleFunc("/admin/certificates", AdminCertificatesHandler)
 	http.HandleFunc("/admin/logs", AdminLogsHandler)
 	http.HandleFunc("/admin/api/logs", AdminLogsAPIHandler)

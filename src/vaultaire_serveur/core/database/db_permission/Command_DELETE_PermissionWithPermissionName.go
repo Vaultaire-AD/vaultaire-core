@@ -13,6 +13,10 @@ func Command_DELETE_ClientPermissionByName(db *sql.DB, permissionName string) er
 	if injection != nil {
 		return injection
 	}
+	// La permission client d'administration n'est pas supprimable.
+	if err := database.GuardProtectedClientPermissionDeletion(permissionName); err != nil {
+		return err
+	}
 	query := `DELETE FROM client_permission WHERE name_permission = ?`
 	_, err := db.Exec(query, permissionName)
 	if err != nil {
@@ -27,6 +31,11 @@ func Command_DELETE_UserPermissionByName(db *sql.DB, permissionName string) erro
 	injection := database.SanitizeInput(permissionName)
 	if injection != nil {
 		return injection
+	}
+	// La permission complète du groupe superadmin n'est pas supprimable :
+	// voir core/database/protected.go.
+	if err := database.GuardProtectedUserPermissionDeletion(permissionName); err != nil {
+		return err
 	}
 	query := `DELETE FROM user_permission WHERE name = ?`
 	_, err := db.Exec(query, permissionName)

@@ -12,6 +12,10 @@ func Command_DELETE_GroupWithGroupName(db *sql.DB, groupName string) error {
 	if injection != nil {
 		return injection
 	}
+	// Le groupe superadmin n'est pas supprimable : voir protected.go.
+	if err := GuardProtectedGroupDeletion(groupName); err != nil {
+		return err
+	}
 	query := `DELETE FROM groups WHERE group_name = ?`
 	_, err := db.Exec(query, groupName)
 	if err != nil {

@@ -20,7 +20,140 @@ func testGPO() []Result {
 	out = append(out, testGPOScopeGuard()...)
 	out = append(out, testGPOPathGuard()...)
 	out = append(out, testGPOFieldValidation()...)
+	out = append(out, testGPORestrictions()...)
 	out = append(out, testGPOResolution()...)
+	return out
+}
+
+// fakeRestrictions permet d'injecter un jeu de restrictions en test, sans base.
+type fakeRestrictions struct{ set gpo.RestrictionSet }
+
+func (f fakeRestrictions) LoadRestrictions() (gpo.RestrictionSet, error) { return f.set, nil }
+
+// testGPORestrictions vérifie le mécanisme de restrictions externalisées :
+// les valeurs viennent bien du fournisseur, les modes liste/motif/libre se
+// comportent comme annoncé, et le motif d'exclusion reste prioritaire.
+func testGPORestrictions() []Result {
+	var out []Result
+
+	// Le fournisseur est restauré à la fin pour ne pas polluer les tests suivants.
+	defer func() {
+		gpo.SetRestrictionProvider(nil)
+		gpo.InvalidateRestrictionCache()
+	}()
+
+	// 1. Mode liste : une valeur ajoutée par le fournisseur devient acceptée,
+	//    alors qu'elle ne figure nulle part dans le code.
+	custom := gpo.DefaultRestrictions()
+	key := gpo.FieldKey(gpo.ModuleSystemdService, "service")
+	custom.AllowedValues[key] = append(custom.AllowedValues[key], gpo.AllowedValue{
+		ModuleType: gpo.ModuleSystemdService, FieldName: "service", Value: "mon-monitoring.service",
+	})
+	gpo.SetRestrictionProvider(fakeRestrictions{set: custom})
+
+	_, err := gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type: gpo.ModuleSystemdService,
+		Params: map[string]string{
+			"service": "mon-monitoring.service", "enabled": "enabled", "state": "started", "masked": "false",
+		},
+	})
+	out = append(out, Result{"GPO/restrictions: service custom accepté après ajout en base", err == nil, fmt.Sprint(err)})
+
+	// 2. Le catalogue résolu doit exposer la nouvelle valeur à l'interface web.
+	schema, ok := gpo.SchemaFor(gpo.ModuleSystemdService)
+	found := false
+	if ok {
+		if field, has := schema.Field("service"); has {
+			for _, o := range field.Options {
+				if o == "mon-monitoring.service" {
+					found = true
+				}
+			}
+		}
+	}
+	out = append(out, Result{"GPO/restrictions: valeur custom visible dans le catalogue résolu", found,
+		"la valeur ajoutée n'apparaît pas dans les options du champ"})
+
+	// 3. Mode motif : accepte une famille de valeurs, refuse ce qui sort du motif.
+	pattern := gpo.DefaultRestrictions()
+	pattern.FieldRules[key] = gpo.FieldRule{
+		ModuleType: gpo.ModuleSystemdService, FieldName: "service",
+		Mode:         gpo.FieldModePattern,
+		AllowPattern: `^[a-z0-9@._-]+\.(service|socket|timer)$`,
+		DenyPattern:  `^(sshd|systemd-)`,
+	}
+	gpo.SetRestrictionProvider(fakeRestrictions{set: pattern})
+	gpo.InvalidateRestrictionCache()
+
+	_, err = gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type: gpo.ModuleSystemdService,
+		Params: map[string]string{
+			"service": "agent-maison.timer", "enabled": "enabled", "state": "started", "masked": "false",
+		},
+	})
+	out = append(out, Result{"GPO/restrictions: mode motif accepte une valeur conforme", err == nil, fmt.Sprint(err)})
+
+	_, err = gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type: gpo.ModuleSystemdService,
+		Params: map[string]string{
+			"service": "PasDeExtension", "enabled": "enabled", "state": "started", "masked": "false",
+		},
+	})
+	out = append(out, Result{"GPO/restrictions: mode motif refuse une valeur non conforme", err != nil, "devrait refuser"})
+
+	// 4. Le motif d'exclusion est prioritaire, même sur une valeur conforme au
+	//    motif d'autorisation.
+	_, err = gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type: gpo.ModuleSystemdService,
+		Params: map[string]string{
+			"service": "sshd.service", "enabled": "disabled", "state": "stopped", "masked": "false",
+		},
+	})
+	out = append(out, Result{"GPO/restrictions: motif d'exclusion prioritaire sur l'autorisation", err != nil, "devrait refuser"})
+
+	// 5. Mode libre : plus de contrainte de domaine, mais l'exclusion tient.
+	free := gpo.DefaultRestrictions()
+	free.FieldRules[key] = gpo.FieldRule{
+		ModuleType: gpo.ModuleSystemdService, FieldName: "service",
+		Mode: gpo.FieldModeFree, DenyPattern: `^interdit-`,
+	}
+	gpo.SetRestrictionProvider(fakeRestrictions{set: free})
+	gpo.InvalidateRestrictionCache()
+
+	_, errFree := gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type: gpo.ModuleSystemdService,
+		Params: map[string]string{
+			"service": "n-importe-quoi", "enabled": "enabled", "state": "started", "masked": "false",
+		},
+	})
+	_, errDenied := gpo.ValidateModule(gpo.ScopeMachine, gpo.Module{
+		Type: gpo.ModuleSystemdService,
+		Params: map[string]string{
+			"service": "interdit-service", "enabled": "enabled", "state": "started", "masked": "false",
+		},
+	})
+	out = append(out, Result{"GPO/restrictions: mode libre accepte, exclusion refuse",
+		errFree == nil && errDenied != nil, fmt.Sprintf("libre=%v exclu=%v", errFree, errDenied)})
+
+	// 6. Une variable d'environnement retirée de la liste des interdits devient
+	//    autorisée : c'est bien la base qui décide, plus le code.
+	envOpen := gpo.DefaultRestrictions()
+	envOpen.EnvDenied = nil
+	gpo.SetRestrictionProvider(fakeRestrictions{set: envOpen})
+	gpo.InvalidateRestrictionCache()
+	_, err = gpo.ValidateModule(gpo.ScopeUser, gpo.Module{
+		Type:   gpo.ModuleUserEnv,
+		Params: map[string]string{"name": "LD_PRELOAD", "value": "/tmp/x.so"},
+	})
+	out = append(out, Result{"GPO/restrictions: interdictions de variables pilotées par la base", err == nil,
+		"la liste vidée devrait tout autoriser : " + fmt.Sprint(err)})
+
+	// 7. Un motif syntaxiquement invalide doit être refusé à l'enregistrement.
+	out = append(out, Result{"GPO/restrictions: motif invalide rejeté",
+		gpo.ValidatePatternSyntax(`^[a-z`) != nil, "devrait refuser"})
+	out = append(out, Result{"GPO/restrictions: motif valide accepté",
+		gpo.ValidatePatternSyntax(`^[a-z]+\.service$`) == nil, "devrait accepter"})
+
 	return out
 }
 

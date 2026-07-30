@@ -75,6 +75,21 @@ type FieldSchema struct {
 	// MaxLen borne la longueur des champs texte (0 = valeur par défaut du type).
 	MaxLen int    `json:"max_len,omitempty"`
 	Help   string `json:"help,omitempty"`
+
+	// Dynamic marque un champ dont le domaine de valeurs est défini en base
+	// (table gpo_restriction) et non dans le code. Les trois champs suivants
+	// sont renseignés à la résolution du schéma, depuis les restrictions en
+	// vigueur — ils sont vides dans le catalogue de base.
+	Dynamic      bool   `json:"dynamic,omitempty"`
+	Mode         string `json:"mode,omitempty"`          // list | pattern | free
+	AllowPattern string `json:"allow_pattern,omitempty"` // mode pattern
+	DenyPattern  string `json:"deny_pattern,omitempty"`  // exclusion, tous modes
+}
+
+// IsListMode indique si le champ propose une liste fermée de valeurs (le seul
+// cas où l'interface web peut afficher un menu déroulant).
+func (f FieldSchema) IsListMode() bool {
+	return !f.Dynamic || f.Mode == "" || f.Mode == FieldModeList
 }
 
 // ModuleSchema décrit une brique du catalogue : ce qu'elle fait, dans quel

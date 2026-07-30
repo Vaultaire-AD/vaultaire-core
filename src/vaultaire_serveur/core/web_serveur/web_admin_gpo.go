@@ -234,14 +234,20 @@ func AdminGPOHandler(w http.ResponseWriter, r *http.Request) {
 // adminGPOList gère la vue liste : création et suppression de GPO.
 func adminGPOList(w http.ResponseWriter, r *http.Request, db *sql.DB, username string, groupIDs []int) {
 	data := struct {
-		Policies  []dbgpo.PolicySummary
-		Scopes    []gpo.Scope
-		Message   string
-		Error     string
-		Username  string
-		DnsEnable bool
-		Section   string
-	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "gpo", Scopes: gpo.AllScopes()}
+		Policies      []dbgpo.PolicySummary
+		Scopes        []gpo.Scope
+		Message       string
+		Error         string
+		Username      string
+		DnsEnable     bool
+		Section       string
+		IsSuperadmin  bool
+		SuperadminGrp string
+	}{
+		Username: username, DnsEnable: storage.Dns_Enable, Section: "gpo", Scopes: gpo.AllScopes(),
+		IsSuperadmin:  database.IsSuperadmin(db, username),
+		SuperadminGrp: database.ProtectedGroupName,
+	}
 
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")

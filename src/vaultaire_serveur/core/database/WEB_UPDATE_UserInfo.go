@@ -22,6 +22,22 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 		return injection
 	}
 
+	// Le compte d'amorçage ne peut pas être renommé (son nom est câblé dans
+	// l'authentification serveur et le bind LDAP). Le changement de mot de passe
+	// reste autorisé : le compte naît avec un mot de passe par défaut connu,
+	// bloquer sa rotation serait contre-productif. Voir protected.go.
+	var currentUsername string
+	if err := db.QueryRow(`SELECT username FROM users WHERE id_user = ?`, userID).Scan(&currentUsername); err != nil {
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("utilisateur %d introuvable", userID)
+		}
+		logs.WriteLog("db", "Erreur lecture username courant: "+err.Error())
+		return fmt.Errorf("erreur lecture de l'utilisateur %d: %v", userID, err)
+	}
+	if err := GuardProtectedUserRename(currentUsername, username); err != nil {
+		return err
+	}
+
 	tx, err := db.Begin()
 	if err != nil {
 		logs.WriteLog("db", "Erreur début transaction update: "+err.Error())

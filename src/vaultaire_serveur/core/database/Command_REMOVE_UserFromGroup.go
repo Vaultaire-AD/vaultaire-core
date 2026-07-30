@@ -12,6 +12,11 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	if injection != nil {
 		return injection
 	}
+	// Retirer vaultaire du groupe vaultaire lui ôterait toutes ses permissions :
+	// l'effet est équivalent à une suppression du compte. Voir protected.go.
+	if err := GuardProtectedMembership(username, groupName); err != nil {
+		return err
+	}
 	// Vérifier si l'utilisateur existe
 	var userID int
 	queryUser := `SELECT id_user FROM users WHERE username = ?`

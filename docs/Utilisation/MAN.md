@@ -255,6 +255,38 @@ si la politique est signée par le serveur central.
 L'ajout et l'édition des modules se font depuis l'interface web
 **Admin → GPO**, où les formulaires sont générés depuis le catalogue.
 
+#### Restrictions et besoins custom
+
+Ce que les modules acceptent comme valeurs n'est pas figé dans le code : les
+listes vivent en base et s'éditent dans **Admin → GPO → Restrictions**, page
+réservée aux membres du groupe superadmin `vaultaire`. Chaque modification est
+journalisée en `SECURITY` avec son auteur.
+
+Chaque champ à domaine dynamique a un **mode** :
+
+| Mode | Comportement | Quand l'utiliser |
+|------|--------------|------------------|
+| `list` | Seules les valeurs énumérées passent | Cas normal : on déclare explicitement `mon-monitoring.service` ou un paquet interne |
+| `pattern` | Toute valeur conforme à une expression régulière passe | Familles de valeurs : `^[a-z0-9@._-]+\.(service\|socket\|timer)$` |
+| `free` | Aucune contrainte de domaine | Champ totalement ouvert |
+
+Le **motif d'exclusion** (`deny_pattern`) est prioritaire dans les trois modes :
+c'est ce qui permet d'ouvrir largement un champ tout en gardant des refus fermes
+(ex. mode motif sur les unités systemd, mais exclusion de `^(sshd|systemd-)`).
+
+Sont également éditables : les emplacements de fichiers autorisés et refusés (par
+scope), et les variables d'environnement interdites. Le bouton **Réinitialiser**
+réécrit le socle par défaut, qui correspond aux restrictions historiques.
+
+#### Identité d'amorçage protégée
+
+L'utilisateur `vaultaire`, le groupe `vaultaire` et les permissions
+`vaultaire_all` / `vaultaire_admin` ne sont ni supprimables ni renommables, et le
+compte ne peut pas être retiré de son groupe. Les refus sont posés dans la couche
+base, donc valent pour le CLI, l'interface web, LDAP et l'API. Le **changement de
+mot de passe du compte `vaultaire` reste autorisé** : le compte naît avec un mot
+de passe par défaut connu, bloquer sa rotation serait contre-productif.
+
 ---
 
 ## 6. status — État des sessions
