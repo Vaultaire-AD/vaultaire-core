@@ -5,7 +5,6 @@ import (
 	"vaultaire_client/logs"
 	"vaultaire_client/storage"
 	"vaultaire_client/storage/stosession"
-	sto_session "vaultaire_client/storage/stosession"
 )
 
 // Amorçage du transport GPO côté agent.
@@ -18,14 +17,18 @@ import (
 // Bootstrap configure le transport puis démarre le cycle machine et son
 // rafraîchissement périodique.
 //
-// Appelé une fois au démarrage du service, après le lancement de la session
-// mère. Le premier cycle attend qu'une session vaultaire soit disponible : au
-// démarrage, le tunnel n'est pas encore établi et une demande partirait dans le
-// vide.
+// Appelé au démarrage du service, AVANT que le tunnel ne soit monté : la
+// connexion s'établit ensuite, et la session mère ne devient authentifiée que
+// quelques secondes plus tard. C'est StartMachineRefresh qui attend cette
+// session (voir InitialSessionWait) ; Bootstrap se contente d'armer le tout et
+// rend la main immédiatement.
 func Bootstrap() {
 	Configure(func(trame string) {
-		session, _ := sto_session.SessionsUser.WaitForVaultaireSession()
-		if session == nil || session.DuckySession == nil {
+		// WaitForVaultaireSession plutôt qu'un simple Get : au moment de l'envoi
+		// le tunnel peut être en cours de rétablissement après une coupure, et
+		// abandonner la trame ferait perdre un cycle entier.
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
 			logs.Write_log("WARNING", "GPO: aucune session vaultaire valide, trame non envoyee")
 			return
 		}

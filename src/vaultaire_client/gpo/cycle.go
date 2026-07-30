@@ -21,6 +21,25 @@ import (
 // journée, assez long pour ne pas transformer le parc en générateur de trafic.
 const MachineRefreshInterval = 1 * time.Hour
 
+// Attente de la session mère avant un cycle machine.
+//
+// Le service démarre son transport GPO avant que le tunnel ne soit monté : la
+// connexion s'établit puis la session mère s'authentifie, quelques secondes plus
+// tard. Sans attente, le premier cycle repartirait à vide et il faudrait
+// attendre le tour de ticker suivant — une heure — pour que la machine reçoive
+// sa politique.
+const (
+	// InitialSessionWait borne l'attente au démarrage du service. Large, parce
+	// qu'un serveur central lent à répondre ne doit pas coûter une heure de
+	// retard à toute une flotte qui redémarre.
+	InitialSessionWait = 3 * time.Minute
+	// RetrySessionWait borne l'attente des cycles périodiques. Courte : le
+	// tunnel est censé être déjà établi, et le prochain tour arrive de toute façon.
+	RetrySessionWait = 30 * time.Second
+	// SessionPollInterval est le pas de scrutation de la session.
+	SessionPollInterval = 2 * time.Second
+)
+
 var (
 	cycleMu       sync.Mutex
 	machineActive bool
@@ -128,24 +147,56 @@ func StartMachineRefresh(sessionKeyProvider func() string) {
 	go func() {
 		// Premier cycle immédiat : la machine doit être conforme dès le
 		// démarrage du service, pas au bout d'un intervalle.
-		runMachineCycleWith(sessionKeyProvider)
+		//
+		// L'attente est indispensable : Bootstrap est appelé avant que le tunnel
+		// ne soit monté, et la session mère n'est authentifiée que quelques
+		// secondes plus tard. Sans elle, le premier cycle repartait sans rien
+		// faire et le suivant n'arrivait qu'au tour de ticker, une heure après.
+		runMachineCycleWith(sessionKeyProvider, InitialSessionWait)
 
 		ticker := time.NewTicker(MachineRefreshInterval)
 		defer ticker.Stop()
 		for range ticker.C {
-			runMachineCycleWith(sessionKeyProvider)
+			runMachineCycleWith(sessionKeyProvider, RetrySessionWait)
 		}
 	}()
 	logs.Write_log("INFO", fmt.Sprintf(
 		"GPO: rafraichissement machine actif (intervalle %s)", MachineRefreshInterval))
 }
 
-// runMachineCycleWith exécute un cycle si une clé de session est disponible.
-func runMachineCycleWith(sessionKeyProvider func() string) {
-	sessionKey := sessionKeyProvider()
+// runMachineCycleWith attend une session utilisable puis exécute un cycle.
+func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) {
+	sessionKey := waitForSessionKey(sessionKeyProvider, wait)
 	if sessionKey == "" {
-		logs.Write_log("DEBUG", "GPO: pas de session vaultaire disponible, cycle machine reporte")
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"GPO: aucune session vaultaire etablie apres %s, cycle machine abandonne "+
+				"(nouvelle tentative dans %s)", wait, MachineRefreshInterval))
 		return
 	}
 	RunMachineCycle(sessionKey)
+}
+
+// waitForSessionKey attend qu'une session mère utilisable soit disponible.
+//
+// Scrutation plutôt qu'événement : la session est établie par une autre
+// goroutine dans un paquet qui n'expose pas de notification, et ajouter un canal
+// dans la couche d'authentification pour un seul consommateur coûterait plus
+// cher que ce sondage de deux secondes.
+func waitForSessionKey(provider func() string, timeout time.Duration) string {
+	if key := provider(); key != "" {
+		return key
+	}
+
+	logs.Write_log("DEBUG", fmt.Sprintf(
+		"GPO: session vaultaire pas encore etablie, attente jusqu'a %s", timeout))
+
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		time.Sleep(SessionPollInterval)
+		if key := provider(); key != "" {
+			logs.Write_log("DEBUG", "GPO: session vaultaire disponible, demarrage du cycle machine")
+			return key
+		}
+	}
+	return ""
 }
