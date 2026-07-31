@@ -24,7 +24,6 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
 COMPOSE_FILE="deployments/pre-prod/docker-compose.yml"
-BRANCH="${VAULTAIRE_BRANCH:-feature/pre-prod}"
 DOCKERFILE="deployments/pre-prod/Dockerfile"
 ENTRYPOINT="deployments/pre-prod/entrypoint.sh"
 
@@ -52,8 +51,8 @@ fi
 BEFORE=""
 if [ "$DO_PULL" -eq 1 ]; then
     BEFORE="$(git rev-parse HEAD)"
-    echo "==> git pull origin $BRANCH"
-    git pull origin "$BRANCH" --no-rebase
+    echo "==> git pull origin"
+    git pull origin --no-rebase
 fi
 
 # --- L'image doit-elle être reconstruite ? --------------------------
