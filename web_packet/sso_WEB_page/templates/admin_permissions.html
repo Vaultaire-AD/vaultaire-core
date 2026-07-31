@@ -44,6 +44,13 @@
         <input name="name" placeholder="nom_permission">
         <label>Description</label>
         <input name="description" placeholder="Description">
+        <label class="perm-checkbox">
+          <input type="checkbox" name="web_admin"> Accès à l'interface d'administration (<code>web_admin</code>)
+        </label>
+        <p class="muted small">
+          Les autres actions RBAC (lecture, création, suppression par objet et par domaine) se règlent
+          ensuite depuis le détail de la permission.
+        </p>
         <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Créer</button></div>
       </form>
     </section>
@@ -84,7 +91,7 @@
         <input type="hidden" name="action" value="create_client_permission">
         <label>Nom</label>
         <input name="name" placeholder="nom_permission_client">
-        <label class="perm-checkbox" style="display:inline-flex;align-items:center;gap:0.4rem;font-weight:normal;margin-top:0.6rem">
+        <label class="perm-checkbox">
           <input type="checkbox" name="is_admin"> Permission d'administration
         </label>
         <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Créer</button></div>
@@ -104,6 +111,14 @@
             <span class="perm-id muted small">ID {{ .ID }}</span>
             {{ if .IsAdmin }}<span class="perm-badge perm-badge-admin">admin</span>{{ end }}
           </div>
+          <form method="post" style="margin-top:0.5rem">
+            <input type="hidden" name="action" value="update_client_permission">
+            <input type="hidden" name="permission_name" value="{{ .Name }}">
+            <label class="perm-checkbox">
+              <input type="checkbox" name="is_admin"{{ if .IsAdmin }} checked{{ end }}> Permission d'administration
+            </label>
+            <button type="submit" class="btn btn-secondary btn-sm" style="margin-left:0.5rem">Enregistrer</button>
+          </form>
         </div>
         <div class="perm-card-actions">
           <form method="post" class="perm-card-delete" onsubmit="return confirm('Supprimer la permission client {{ .Name }} ?');">

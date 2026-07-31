@@ -81,7 +81,7 @@ func verifyServersOnline() {
 
 func CheckClientOnline(sess *sessionmgr.Session) bool {
 
-	logs.Write_Log("INFO", fmt.Sprintf(
+	logs.Write_Log("DEBUG", fmt.Sprintf(
 		"Check session ID=%s User=%s LastSeen=%s",
 		sess.SessionID,
 		sess.Username,
@@ -98,13 +98,6 @@ func CheckClientOnline(sess *sessionmgr.Session) bool {
 
 		removeOfflineServer(sess)
 		return false
-	} else {
-
-		logs.Write_Log("INFO", fmt.Sprintf(
-			"Session maintenue ID=%s User=%s",
-			sess.SessionID,
-			sess.Username,
-		))
 	}
 	return true
 }

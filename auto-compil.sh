@@ -52,9 +52,9 @@ go build -buildvcs=false -o "$CTL_BIN"
 echo "🛠 Build modules PAM..."
 cd "$ROOT_DIR/src/vaultaire_client/pam_module"
 
-gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c pam_common.c -lcurl -lpam
-gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c pam_common.c -lcurl -lpam
-gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c pam_common.c -lcurl -lpam
+gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c pam_common.c -lcurl -lpam -lcrypt
+gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c pam_common.c -lcurl -lpam -lcrypt
+gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c pam_common.c -lcurl -lpam -lcrypt
 gcc -fPIC -shared -o libnss_vaultaire.so.2 nss_vaultaire.c
 
 cp ./pam*.so "$BUILD_DIR/vaultaire_client/"

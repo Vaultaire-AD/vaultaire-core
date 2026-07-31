@@ -833,7 +833,27 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		if action == "delete_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
 			return
 		}
+		if action == "update_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:update:permission") {
+			return
+		}
 		switch action {
+		case "update_client_permission":
+			name := r.FormValue("permission_name")
+			isAdmin := r.FormValue("is_admin") == "on"
+			if name == "" {
+				break
+			}
+			if err := dbperm.Command_UPDATE_ClientPermission(db, name, isAdmin); err != nil {
+				data.Error = err.Error()
+				break
+			}
+			data.Message = "Permission client mise à jour."
+			// Accorder ou retirer l'administration à des machines est un
+			// changement de privilège : il est tracé au même titre que la
+			// création d'une permission admin.
+			logs.Write_Log("SECURITY", fmt.Sprintf(
+				"webadmin: permission client %q passee a admin=%t par %s", name, isAdmin, username))
+
 		case "create_client_permission":
 			name := strings.TrimSpace(r.FormValue("name"))
 			isAdmin := r.FormValue("is_admin") == "on"
@@ -869,16 +889,32 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		case "create_permission":
 			name := r.FormValue("name")
 			description := r.FormValue("description")
+			webAdmin := r.FormValue("web_admin") == "on"
 			if name == "" {
-				data.Message = "Nom de la permission requis."
+				data.Error = "Nom de la permission requis."
+				break
+			}
+
+			// Une permission utilisateur naissait avec toutes ses actions à
+			// « nil » : il fallait la créer, ouvrir son détail, puis régler
+			// web_admin pour qu'elle serve à quelque chose. Le raccourci évite
+			// cet aller-retour pour le cas le plus courant.
+			var err error
+			if webAdmin {
+				_, err = dbperm.CreateUserPermission(db, name, description, "nil", "all", "nil", "nil", "nil")
 			} else {
-				_, err := dbperm.CreateUserPermissionDefault(db, name, description)
-				if err != nil {
-					data.Message = "Erreur création : " + err.Error()
-					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create permission failed: "+err.Error())
-				} else {
-					data.Message = "Permission créée."
-				}
+				_, err = dbperm.CreateUserPermissionDefault(db, name, description)
+			}
+			if err != nil {
+				data.Error = "Erreur création : " + err.Error()
+				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create permission failed: "+err.Error())
+				break
+			}
+
+			data.Message = "Permission créée. Ouvrez son détail pour régler les actions RBAC."
+			if webAdmin {
+				logs.Write_Log("SECURITY", fmt.Sprintf(
+					"webadmin: permission utilisateur %q creee avec web_admin par %s", name, username))
 			}
 		case "delete_permission":
 			permName := r.FormValue("permission_name")

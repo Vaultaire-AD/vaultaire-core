@@ -15,6 +15,7 @@
 #include <pwd.h>
 #include <grp.h>
 #include <shadow.h>
+#include <crypt.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <sys/stat.h>
@@ -106,6 +107,53 @@ static int run_chpasswd(const char *username, const char *password) {
     return WIFEXITED(status) && WEXITSTATUS(status) == 0;
 }
 
+/* Indique si le hash deja present dans /etc/shadow correspond au mot de passe
+ * fourni.
+ *
+ * Le hash stocke sert de reglage a crypt_r : il porte l'algorithme, le cout et
+ * le sel. Rechiffrer le mot de passe avec ce reglage doit redonner exactement
+ * la meme chaine si le mot de passe est le meme.
+ *
+ * Retourne 1 si identique, 0 sinon (y compris quand la comparaison est
+ * impossible : dans le doute on reecrit, c'est le comportement sur.) */
+static int local_password_matches(const char *username, const char *password) {
+    struct spwd *sp = getspnam(username);
+    if (!sp || !sp->sp_pwdp) {
+        /* Pas d'entree shadow lisible : compte tout juste cree, ou processus
+         * sans les droits. On ne peut rien comparer. */
+        return 0;
+    }
+
+    const char *stored = sp->sp_pwdp;
+
+    /* Un hash exploitable commence par '$' ($6$, $y$, $2b$...). Les valeurs
+     * "", "!", "*", "!!" designent un compte verrouille ou sans mot de passe :
+     * ce ne sont pas des reglages crypt valides, et il faut poser un vrai hash. */
+    if (stored[0] != '$') {
+        return 0;
+    }
+
+    /* struct crypt_data fait plusieurs dizaines de kilo-octets avec libxcrypt :
+     * trop pour la pile d'un module PAM, on l'alloue sur le tas. */
+    struct crypt_data *cd = calloc(1, sizeof(*cd));
+    if (!cd) {
+        vaultaire_log_err("calloc crypt_data failed for %s", username);
+        return 0;
+    }
+
+    char *computed = crypt_r(password, stored, cd);
+    /* crypt_r signale un echec en renvoyant NULL ou une chaine commencant par
+     * '*', qui ne peut jamais egaler un hash valide. */
+    int match = (computed && computed[0] != '*' && strcmp(computed, stored) == 0);
+
+    /* Le buffer contient un derive du mot de passe : on l'efface avant de
+     * rendre la memoire, plutot que de la laisser reutilisable telle quelle. */
+    explicit_bzero(cd, sizeof(*cd));
+    free(cd);
+
+    return match;
+}
+
 int ensure_local_user_with_password(const char *username, const char *password) {
     if (!getpwnam(username)) {
         if (!run_useradd(username)) {
@@ -116,10 +164,22 @@ int ensure_local_user_with_password(const char *username, const char *password) 
     }
 
     if (password && password[0] != '\0') {
+        /* Comparaison avant reecriture. chpasswd etait lance a CHAQUE
+         * connexion reussie, ce qui reecrivait /etc/shadow sans raison et
+         * remettait a zero la date de dernier changement du mot de passe
+         * (champ sp_lstchg) — de quoi fausser toute politique de peremption.
+         * Le mot de passe central ne change que rarement : la comparaison
+         * evite l'ecriture dans l'immense majorite des connexions. */
+        if (local_password_matches(username, password)) {
+            vaultaire_log_info("Local password already in sync for %s", username);
+            return 1;
+        }
+
         if (!run_chpasswd(username, password)) {
             vaultaire_log_err("chpasswd failed for %s", username);
             return 0;
         }
+        vaultaire_log_info("Local password updated for %s (differed from central)", username);
     }
     return 1;
 }

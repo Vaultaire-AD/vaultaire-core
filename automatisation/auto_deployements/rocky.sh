@@ -100,15 +100,37 @@ echo "ChallengeResponseAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "AuthenticationMethods publickey,keyboard-interactive" >> "/etc/ssh/sshd_config"
 echo "Include /etc/ssh/sshd_config.d/*.conf/d" >> "/etc/ssh/sshd_config"
 
-# PAM login
+# ---------------------------------------------------------------------------
+# PAM login — connexion sur console/tty (programme /bin/login)
+# ---------------------------------------------------------------------------
+#
+# Drapeau de contrôle : [success=done ignore=ignore default=die], le même que
+# pour sshd, et NON « required ».
+#
+#   success=done  utilisateur Vaultaire authentifié  -> on s'arrête, succès
+#   ignore=ignore utilisateur local (le module rend PAM_IGNORE) -> on continue
+#                 vers system-auth, qui authentifie les comptes locaux
+#   default=die   utilisateur Vaultaire refusé       -> on s'arrête, échec
+#
+# La version précédente utilisait « required » avec system-auth commenté :
+# un compte local, root compris, ne pouvait alors plus se connecter en console,
+# puisque le seul module de la pile rendait PAM_IGNORE et qu'aucun autre ne
+# prenait le relais. C'est un risque de verrouillage sur une machine sans SSH.
 cat > /etc/pam.d/login <<'EOF'
 #%PAM-1.0
-#auth       substack     system-auth
-#auth       include      postlogin
-auth       required     pam_login_custom_module.so
+# --- AUTHENTICATION ---
+auth       [success=done ignore=ignore default=die]   pam_login_custom_module.so
+auth       substack     system-auth
+auth       include      postlogin
+
+# --- ACCOUNT ---
 account    required     pam_nologin.so
 account    include      system-auth
+
+# --- PASSWORD ---
 password   include      system-auth
+
+# --- SESSION ---
 # pam_selinux.so close should be the first session rule
 session    required     pam_selinux.so close
 session    required     pam_loginuid.so
@@ -121,6 +143,71 @@ session    include      system-auth
 session    include      postlogin
 -session   optional     pam_ck_connector.so
 EOF
+
+# ---------------------------------------------------------------------------
+# PAM gdm-password — connexion graphique GNOME
+# ---------------------------------------------------------------------------
+#
+# GDM n'utilise PAS /etc/pam.d/login : la connexion graphique a sa propre pile.
+# Sans ce fichier, le module Vaultaire n'est jamais appelé depuis l'interface
+# graphique — aucune requête n'arrive au daemon, ce qui donne exactement
+# l'impression d'un module qui ne se charge pas.
+#
+# Le fichier n'est écrit que si GDM est présent : l'installer sur une machine
+# sans environnement graphique créerait une pile PAM pour un service inexistant.
+if [ -f /etc/pam.d/gdm-password ]; then
+
+    cat > /etc/pam.d/gdm-password <<'EOF'
+#%PAM-1.0
+# --- AUTHENTICATION ---
+# pam_selinux_permit doit rester en tête : il autorise la connexion en mode
+# permissif après un échec de relabel SELinux, avant toute autre décision.
+auth       [success=done ignore=ignore default=die]   pam_login_custom_module.so
+auth       [success=done ignore=ignore default=bad]   pam_selinux_permit.so
+auth       substack     password-auth
+auth       optional     pam_gnome_keyring.so
+auth       include      postlogin
+
+# --- ACCOUNT ---
+account    required     pam_nologin.so
+account    include      password-auth
+
+# --- PASSWORD ---
+password   substack     password-auth
+-password  optional     pam_gnome_keyring.so use_authtok
+
+# --- SESSION ---
+session    required     pam_selinux.so close
+session    required     pam_loginuid.so
+session    optional     pam_console.so
+-session   optional     pam_ck_connector.so
+session    required     pam_selinux.so open
+session    required     pam_logout_custom_module.so
+session    optional     pam_keyinit.so force revoke
+session    required     pam_namespace.so
+session    include      password-auth
+session    optional     pam_gnome_keyring.so auto_start
+session    include      postlogin
+EOF
+
+    # GDM n'affiche que les comptes locaux existants. Un utilisateur Vaultaire
+    # qui ne s'est jamais connecté sur cette machine n'apparaît donc dans aucune
+    # liste : il faut « Non répertorié ? » pour saisir son identifiant. Sans
+    # cette option, l'utilisateur conclut que son compte n'existe pas.
+    mkdir -p /etc/dconf/db/gdm.d
+    cat > /etc/dconf/db/gdm.d/10-vaultaire-userlist <<'EOF'
+# Genere par Vaultaire.
+# Masque la liste des comptes locaux : les comptes Vaultaire n'y figurent pas
+# tant qu'ils ne se sont pas connectes au moins une fois sur cette machine.
+[org/gnome/login-screen]
+disable-user-list=true
+EOF
+    dconf update 2>/dev/null || true
+
+    echo "✅ PAM GDM configuré (connexion graphique)"
+else
+    echo "ℹ️  GDM absent, pile PAM graphique non configurée"
+fi
 
 # PAM sudo
 # cat > /etc/pam.d/sudo <<'EOF'

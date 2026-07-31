@@ -1052,3 +1052,17 @@ body.dark .tree-domain-block { border-color: var(--border); }
 body.dark .tree-group-card { border-color: var(--border); }
 body.dark .perm-card { border-color: var(--border); }
 body.dark .perm-card:hover { border-color: var(--border-strong); }
+/* Case à cocher inline des formulaires de permission.
+   Le libellé enveloppe la case : cliquer sur le texte coche, ce qui évite une
+   cible de clic de quelques pixels. */
+.perm-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: normal;
+  margin-top: 0.6rem;
+}
+.perm-checkbox input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
