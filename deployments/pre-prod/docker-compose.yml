@@ -25,7 +25,21 @@ services:
     networks:
       - Ducky-network
 
-  # --- APPLICATION VAULTAIRE (Image compilée) ---
+  # --- APPLICATION VAULTAIRE ---
+  #
+  # Les binaires et les fichiers statiques sont MONTÉS, pas embarqués dans
+  # l'image. Une mise à jour se réduit donc à :
+  #
+  #     ./deployments/pre-prod/docker-update.sh
+  #     (git pull + docker compose restart vaultaire-ad)
+  #
+  # L'image ne se reconstruit que lorsque le Dockerfile change. Reconstruire à
+  # chaque itération rejouait la couche dnf, qui ne change jamais, pour ne
+  # déplacer que des binaires déjà compilés.
+  #
+  # Montages en lecture seule : le conteneur ne doit pas pouvoir modifier les
+  # sources de l'hôte. Un binaire réécrit depuis l'intérieur du conteneur serait
+  # ensuite committé sans qu'on comprenne d'où il vient.
   vaultaire-ad:
     build:
       context: ../..
@@ -39,6 +53,15 @@ services:
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=preprod
+    volumes:
+      # Binaires serveur et CLI
+      - ../../cmd/vaultaire_server:/opt/vaultaire/bin:ro
+      # Binaire client et modules PAM, distribués aux postes depuis le serveur
+      - ../../cmd/vaultaire_client:/opt/vaultaire/vaultaire_client:ro
+      # Templates et fichiers statiques de l'interface d'administration.
+      # Montés séparément : modifier un template ne demande alors ni
+      # recompilation ni reconstruction, seulement un rechargement de page.
+      - ../../web_packet:/opt/vaultaire/web_packet:ro
     ports:
       - "6666:6666"
       - "4443:4443"
