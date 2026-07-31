@@ -15,12 +15,33 @@ import (
 // root dans le home d'un utilisateur l'empêcherait de le modifier et
 // ressemblerait à une panne inexplicable de son côté.
 
-const (
-	// userEnvFileName est le fichier sourcé depuis le shell de l'utilisateur.
-	userEnvFileName = ".vaultaire_env"
-	// userProfileHook est le fichier où Vaultaire pose l'instruction de sourcing.
-	userProfileHook = ".profile.d-vaultaire"
-)
+// userEnvFileName est le fichier, appartenant à Vaultaire, qui porte les
+// variables. Les fichiers de démarrage du shell ne contiennent qu'une ligne de
+// sourcing vers lui : ainsi une variable retirée d'une GPO disparaît en
+// réécrivant ce seul fichier, sans retoucher aux fichiers de l'utilisateur.
+const userEnvFileName = ".vaultaire_env"
+
+// legacyProfileHook est un fichier créé par une version antérieure de cet
+// agent. Il contenait l'instruction de sourcing... mais aucun shell ne lit un
+// fichier de ce nom : la variable était bien écrite et jamais chargée. On le
+// supprime au passage pour ne pas laisser un fichier trompeur dans les homes.
+const legacyProfileHook = ".profile.d-vaultaire"
+
+// shellStartupFiles liste les fichiers de démarrage susceptibles de charger
+// l'environnement d'une session.
+//
+// Vaultaire n'y écrit qu'un bloc délimité par ses marqueurs, jamais le fichier
+// entier : ces fichiers appartiennent à l'utilisateur et contiennent sa propre
+// configuration. C'est la différence avec le module file_deploy, à qui le
+// serveur interdit ces chemins — lui remplacerait tout le contenu.
+//
+// Plusieurs fichiers plutôt qu'un seul, parce qu'aucun n'est garanti :
+// bash lit .bash_profile s'il existe, sinon .bash_login, sinon .profile, et
+// .bashrc pour les shells interactifs non-login. Poser le bloc dans chacun de
+// ceux qui existent couvre les cas sans avoir à deviner la distribution ni le
+// shell. Sourcer deux fois le même fichier est sans effet de bord : il ne
+// contient que des export.
+var shellStartupFiles = []string{".bashrc", ".bash_profile", ".profile", ".zshrc"}
 
 // applyUserEnv pose une variable d'environnement pour l'utilisateur.
 //
@@ -67,18 +88,56 @@ func applyUserEnv(ctx Context, m Module) (string, error) {
 	if err := writeUserFile(ctx, envPath, content, 0o644); err != nil {
 		return "", err
 	}
-	if err := ensureProfileHook(ctx, envPath); err != nil {
+	hooked, err := ensureProfileHook(ctx, envPath)
+	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s defini pour %s", name, ctx.Username), nil
+
+	// Le détail mentionne les fichiers accrochés, et pas seulement « défini » :
+	// la version précédente écrivait bien la variable et rapportait un succès,
+	// alors que rien ne la chargeait. Un rapport qui ne distingue pas « écrit »
+	// de « effectif » ne sert à rien pour diagnostiquer.
+	return fmt.Sprintf("%s defini pour %s (charge depuis %s)",
+		name, ctx.Username, strings.Join(hooked, ", ")), nil
 }
 
-// ensureProfileHook garantit que le fichier d'environnement est sourcé.
-func ensureProfileHook(ctx Context, envPath string) error {
-	hookPath := filepath.Join(ctx.HomeDir, userProfileHook)
-	existing, _ := readFileIfExists(hookPath)
-	block := fmt.Sprintf("if [ -r %q ]; then . %q; fi", envPath, envPath)
-	return writeUserFile(ctx, hookPath, replaceManagedBlock(existing, block), 0o644)
+// ensureProfileHook fait charger le fichier d'environnement par le shell.
+//
+// Retourne les fichiers de démarrage effectivement accrochés.
+func ensureProfileHook(ctx Context, envPath string) ([]string, error) {
+	// Forme « if ... fi » et non « [ -r x ] && . x » : cette dernière renvoie un
+	// code non nul quand le fichier est absent, ce qui ferait échouer le
+	// .bashrc entier s'il s'agit de sa dernière instruction.
+	block := fmt.Sprintf("if [ -r %s ]; then . %s; fi", shellQuote(envPath), shellQuote(envPath))
+
+	var hooked []string
+	for _, name := range shellStartupFiles {
+		path := filepath.Join(ctx.HomeDir, name)
+		existing, exists := readFileIfExists(path)
+		if !exists {
+			continue
+		}
+		if err := writeUserFile(ctx, path, replaceManagedBlock(existing, block), 0o644); err != nil {
+			return nil, fmt.Errorf("accrochage dans %s impossible : %v", name, err)
+		}
+		hooked = append(hooked, name)
+	}
+
+	// Aucun fichier de démarrage : home fraîchement créé sans squelette. On crée
+	// .bashrc, lu par les shells interactifs et sourcé par le .bash_profile de
+	// la plupart des distributions.
+	if len(hooked) == 0 {
+		path := filepath.Join(ctx.HomeDir, ".bashrc")
+		if err := writeUserFile(ctx, path, replaceManagedBlock("", block), 0o644); err != nil {
+			return nil, fmt.Errorf("creation de .bashrc impossible : %v", err)
+		}
+		hooked = append(hooked, ".bashrc")
+	}
+
+	// Nettoyage du fichier inerte créé par la version précédente.
+	_ = os.Remove(filepath.Join(ctx.HomeDir, legacyProfileHook))
+
+	return hooked, nil
 }
 
 // applyUserCron installe ou retire un timer systemd utilisateur.

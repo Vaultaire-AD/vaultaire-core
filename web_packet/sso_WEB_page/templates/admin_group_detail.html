@@ -27,6 +27,7 @@
         <div class="app-container animate-in">
     <h1>Détail groupe : {{ .Group }}</h1>
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
     <section class="section">
       <h2>Utilisateurs</h2>
@@ -49,7 +50,9 @@
 
     <section class="section">
       <h2>Clients</h2>
-      <ul style="list-style:none;padding:0">{{ range .Clients }}<li>{{ . }}</li>{{ end }}</ul>
+      <ul style="list-style:none;padding:0">
+        {{ range .Clients }}<li><a href="/admin/clients?client={{ . }}">{{ . }}</a></li>{{ else }}<li class="muted">Aucun client.</li>{{ end }}
+      </ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_client">
         <input type="hidden" name="target_group" value="{{ .Group }}">
@@ -67,8 +70,11 @@
     </section>
 
     <section class="section">
-      <h2>Permissions</h2>
-      <ul style="list-style:none;padding:0">{{ range .Perms }}<li><a href="/admin/permissions?perm={{ . }}">{{ . }}</a></li>{{ end }}</ul>
+      <h2>Permissions utilisateur</h2>
+      <p class="muted small">Ce que les membres du groupe ont le droit de faire dans l'annuaire (RBAC, LDAP, interface d'administration).</p>
+      <ul style="list-style:none;padding:0">
+        {{ range .Perms }}<li><a href="/admin/permissions?perm={{ . }}">{{ . }}</a></li>{{ else }}<li class="muted">Aucune permission utilisateur.</li>{{ end }}
+      </ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_permission">
         <input type="hidden" name="target_group" value="{{ .Group }}">
@@ -83,6 +89,70 @@
         <select name="permission">{{ range .Perms }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
       </form>
+    </section>
+
+    <section class="section">
+      <h2>Permissions client</h2>
+      <p class="muted small">
+        Ce que les machines du groupe ont le droit de faire. Distinctes des permissions utilisateur :
+        elles portent sur les logiciels clients, pas sur les comptes.
+      </p>
+      <ul style="list-style:none;padding:0">
+        {{ range .ClientPerms }}<li><code>{{ . }}</code></li>{{ else }}<li class="muted">Aucune permission client.</li>{{ end }}
+      </ul>
+      {{ if .AllClientPerms }}
+      <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
+        <input type="hidden" name="action" value="add_client_permission">
+        <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Ajouter une permission client</label>
+        <select name="client_permission">
+          {{ range .AllClientPerms }}<option value="{{ .Name }}">{{ .Name }}{{ if .IsAdmin }} (admin){{ end }}</option>{{ end }}
+        </select>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
+      </form>
+      {{ end }}
+      {{ if .ClientPerms }}
+      <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
+        <input type="hidden" name="action" value="remove_client_permission">
+        <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Retirer une permission client</label>
+        <select name="client_permission">{{ range .ClientPerms }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
+      </form>
+      {{ end }}
+    </section>
+
+    <section class="section">
+      <h2>GPO</h2>
+      <p class="muted small">
+        Politiques appliquées aux machines et aux utilisateurs de ce groupe. Une GPO de scope
+        <code>user</code> ne s'applique que si le groupe contient à la fois l'utilisateur et la machine.
+      </p>
+      <ul style="list-style:none;padding:0">
+        {{ range .GPOs }}<li><a href="/admin/gpo?gpo={{ . }}">{{ . }}</a></li>{{ else }}<li class="muted">Aucune GPO liée à ce groupe.</li>{{ end }}
+      </ul>
+      {{ if .AllGPOs }}
+      <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
+        <input type="hidden" name="action" value="add_gpo">
+        <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Lier une GPO</label>
+        <select name="gpo">{{ range .AllGPOs }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Lier</button>
+      </form>
+      {{ else }}
+      <p class="muted small" style="margin-top:0.75rem">
+        Toutes les GPO existantes sont déjà liées à ce groupe. <a href="/admin/gpo">Gérer les GPO →</a>
+      </p>
+      {{ end }}
+      {{ if .GPOs }}
+      <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
+        <input type="hidden" name="action" value="remove_gpo">
+        <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>Délier une GPO</label>
+        <select name="gpo">{{ range .GPOs }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Délier</button>
+      </form>
+      {{ end }}
     </section>
 
     <section class="section">

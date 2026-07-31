@@ -91,12 +91,14 @@ sed -i '/^KbdInteractiveAuthentication/d' "/etc/ssh/sshd_config"
 sed -i '/^ChallengeResponseAuthentication/d' "/etc/ssh/sshd_config"
 sed -i '/^AuthenticationMethods/d' "/etc/ssh/sshd_config"
 sed -i '/^PubkeyAuthentication/d' "/etc/ssh/sshd_config"
+sed -i '/^Include/d' "/etc/ssh/sshd_config"
 # Ré-injection propre
 echo "UsePAM yes" >> "/etc/ssh/sshd_config"
 echo "PubkeyAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "KbdInteractiveAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "ChallengeResponseAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "AuthenticationMethods publickey,keyboard-interactive" >> "/etc/ssh/sshd_config"
+echo "Include /etc/ssh/sshd_config.d/*.conf/d" >> "/etc/ssh/sshd_config"
 
 # PAM login
 cat > /etc/pam.d/login <<'EOF'

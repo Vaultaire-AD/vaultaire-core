@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	"vaultaire/core/database"
 	dbcert "vaultaire/core/database/db-certificates"
+	dbgpo "vaultaire/core/database/db_gpo"
 	dbperm "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -277,19 +279,31 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Groupe introuvable", http.StatusNotFound)
 			return
 		}
+		// Les permissions client et les GPO étaient déjà lues par
+		// Command_GET_GroupInfo mais n'étaient exposées nulle part dans
+		// l'interface : elles n'étaient gérables qu'en ligne de commande.
 		detailData := struct {
-			Group      string
-			Users      []string
-			Clients    []string
-			Perms      []string
-			AllUsers   []storage.GetUsers
-			AllClients []storage.GetClientsByPermission
-			AllPerms   []storage.UserPermission
-			Message    string
-			Username   string
-			DnsEnable  bool
-			Section    string
-		}{Group: info.Name, Users: info.Users, Clients: info.Clients, Perms: info.Permissions, Username: username, DnsEnable: storage.Dns_Enable, Section: "groups"}
+			Group          string
+			Users          []string
+			Clients        []string
+			Perms          []string
+			ClientPerms    []string
+			GPOs           []string
+			AllUsers       []storage.GetUsers
+			AllClients     []storage.GetClientsByPermission
+			AllPerms       []storage.UserPermission
+			AllClientPerms []storage.ClientPermission
+			AllGPOs        []string
+			Message        string
+			Error          string
+			Username       string
+			DnsEnable      bool
+			Section        string
+		}{
+			Group: info.Name, Users: info.Users, Clients: info.Clients,
+			Perms: info.Permissions, ClientPerms: info.ClientPerms, GPOs: info.GPOs,
+			Username: username, DnsEnable: storage.Dns_Enable, Section: "groups",
+		}
 
 		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
@@ -311,6 +325,14 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				actionKey = "write:add:permission"
 			case "remove_permission":
 				actionKey = "write:delete:group"
+			case "add_client_permission":
+				actionKey = "write:add:permission"
+			case "remove_client_permission":
+				actionKey = "write:delete:permission"
+			case "add_gpo":
+				actionKey = "write:add:gpo"
+			case "remove_gpo":
+				actionKey = "write:delete:gpo"
 			case "delete_group":
 				actionKey = "write:delete:group"
 			}
@@ -364,6 +386,45 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Perms = info.Permissions
 				}
+
+			case "add_client_permission":
+				p := r.FormValue("client_permission")
+				if p != "" {
+					if err := database.Command_ADD_PermissionToSoftwareGroup(db, p, targetGroup); err != nil {
+						detailData.Error = "Permission client : " + err.Error()
+					} else {
+						detailData.Message = "Permission client ajoutée."
+					}
+				}
+			case "remove_client_permission":
+				p := r.FormValue("client_permission")
+				if p != "" {
+					if err := database.Command_Remove_ClientPermissionFromGroup(db, targetGroup, p); err != nil {
+						detailData.Error = "Permission client : " + err.Error()
+					} else {
+						detailData.Message = "Permission client retirée."
+					}
+				}
+
+			case "add_gpo":
+				g := r.FormValue("gpo")
+				if g != "" {
+					if err := dbgpo.LinkPolicyToGroup(db, g, targetGroup); err != nil {
+						detailData.Error = "GPO : " + err.Error()
+					} else {
+						detailData.Message = "GPO liée au groupe."
+					}
+				}
+			case "remove_gpo":
+				g := r.FormValue("gpo")
+				if g != "" {
+					if err := dbgpo.UnlinkPolicyFromGroup(db, g, targetGroup); err != nil {
+						detailData.Error = "GPO : " + err.Error()
+					} else {
+						detailData.Message = "GPO retirée du groupe."
+					}
+				}
+
 			case "delete_group":
 				if database.Command_DELETE_GroupWithGroupName(db, targetGroup) == nil {
 					http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
@@ -371,11 +432,38 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				detailData.Message = "Erreur suppression."
 			}
+
+			// Relecture après toute action : plusieurs sections dépendent du même
+			// enregistrement, et n'en rafraîchir qu'une afficherait un état
+			// partiellement périmé juste après une modification.
+			if refreshed, err := database.Command_GET_GroupInfo(db, targetGroup); err == nil {
+				info = refreshed
+				detailData.Users, detailData.Clients = info.Users, info.Clients
+				detailData.Perms, detailData.ClientPerms = info.Permissions, info.ClientPerms
+				detailData.GPOs = info.GPOs
+			}
 		}
+
 		allUsers, _ := database.Command_GET_AllUsers(db)
 		allClients, _ := database.Command_GET_AllClients(db)
 		allPerms, _ := dbperm.Command_GET_AllUserPermissions(db)
-		detailData.AllUsers, detailData.AllClients, detailData.AllPerms = allUsers, allClients, allPerms
+		allClientPerms, _ := database.Command_GET_AllClientPermissions(db)
+		detailData.AllUsers, detailData.AllClients = allUsers, allClients
+		detailData.AllPerms, detailData.AllClientPerms = allPerms, allClientPerms
+
+		// Seules les GPO non encore liées sont proposées à l'ajout : offrir une
+		// GPO déjà présente ne produirait qu'une erreur « déjà liée ».
+		if policies, err := dbgpo.GetAllPolicies(db); err == nil {
+			linked := make(map[string]bool, len(detailData.GPOs))
+			for _, name := range detailData.GPOs {
+				linked[name] = true
+			}
+			for _, p := range policies {
+				if !linked[p.Name] {
+					detailData.AllGPOs = append(detailData.AllGPOs, p.Name)
+				}
+			}
+		}
 
 		_ = executeAdminPage(w, "admin_group_detail.html", detailData)
 		return
@@ -718,12 +806,18 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Deux familles de permissions cohabitent et sont souvent confondues :
+	// celles des UTILISATEURS (RBAC, LDAP, interface) et celles des CLIENTS
+	// (les logiciels installés sur les machines). Les secondes n'étaient
+	// gérables qu'en ligne de commande ; elles ont maintenant leur section.
 	data := struct {
-		Perms     []storage.UserPermission
-		Message   string
-		Username  string
-		DnsEnable bool
-		Section   string
+		Perms       []storage.UserPermission
+		ClientPerms []storage.ClientPermission
+		Message     string
+		Error       string
+		Username    string
+		DnsEnable   bool
+		Section     string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
@@ -733,7 +827,45 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		if action == "delete_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
 			return
 		}
+		if action == "create_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:permission") {
+			return
+		}
+		if action == "delete_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
+			return
+		}
 		switch action {
+		case "create_client_permission":
+			name := strings.TrimSpace(r.FormValue("name"))
+			isAdmin := r.FormValue("is_admin") == "on"
+			if name == "" {
+				data.Error = "Nom de la permission client requis."
+				break
+			}
+			if _, err := dbperm.CreateClientPermission(db, name, isAdmin); err != nil {
+				data.Error = "Erreur création : " + err.Error()
+				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client permission failed: "+err.Error())
+			} else {
+				data.Message = "Permission client créée."
+				if isAdmin {
+					// Une permission client admin donne les droits d'administration
+					// aux machines du groupe qui la porte : la création mérite une
+					// trace au même titre qu'un changement de privilège.
+					logs.Write_Log("SECURITY", fmt.Sprintf(
+						"webadmin: permission client ADMIN %q creee par %s", name, username))
+				}
+			}
+
+		case "delete_client_permission":
+			name := r.FormValue("permission_name")
+			if name == "" {
+				break
+			}
+			if err := dbperm.Command_DELETE_ClientPermissionByName(db, name); err != nil {
+				data.Error = "Erreur suppression : " + err.Error()
+			} else {
+				data.Message = "Permission client supprimée."
+			}
+
 		case "create_permission":
 			name := r.FormValue("name")
 			description := r.FormValue("description")
@@ -766,6 +898,18 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Perms = perms
+
+	// L'échec de lecture des permissions client n'empêche pas d'afficher les
+	// permissions utilisateur : la page reste utile, et le bandeau d'erreur
+	// signale ce qui manque plutôt que de renvoyer une page blanche.
+	clientPerms, err := database.Command_GET_AllClientPermissions(db)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list client permissions failed: "+err.Error())
+		data.Error = appendError(data.Error, "Permissions client illisibles : "+err.Error())
+	} else {
+		data.ClientPerms = clientPerms
+	}
+
 	if err := executeAdminPage(w, "admin_permissions.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}

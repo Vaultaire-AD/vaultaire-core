@@ -33,7 +33,12 @@ Vaultaire est un contrôleur de domaine / annuaire centralisé. Les administrate
 
 - **vaultaire** (CLI sur le serveur, via socket) pour les commandes ci-dessous.
 - **vaultaire_ctl** (vlt) pour les mêmes commandes à distance via l’API (voir [vaultairectl.md](./vaultairectl.md)).
-- L’**interface web** (/admin) pour la gestion des utilisateurs, groupes, permissions, clients et DNS.
+- L’**interface web** (/admin) pour la gestion des utilisateurs, groupes, permissions (utilisateur et client), clients, GPO et DNS.
+
+Le **détail d'un groupe** (`/admin/groups?group=<nom>`) rassemble tout ce qui est
+attaché au groupe : membres, clients, permissions utilisateur, permissions
+client et GPO — chacun avec son ajout et son retrait, et un lien vers la fiche
+de l'élément.
 
 Les entités gérées : **Utilisateurs**, **Groupes**, **Permissions** (user et client), **Clients** (machines), **GPO**, **Zones DNS**.
 
@@ -721,6 +726,9 @@ dns delete ptr 192.168.1.1
 | Supprimer une GPO | `delete -gpo "nom_gpo"` |
 | Ajouter / éditer les modules d'une GPO | Interface web : **Admin → GPO → détail** |
 | Déclarer un service, paquet ou jeu sudo custom | Interface web : **Admin → GPO → Restrictions** (groupe `vaultaire`) |
+| Voir tout ce qui est attaché à un groupe | Interface web : **Admin → Groupes → détail** |
+| Créer une permission client | Interface web : **Admin → Permissions** |
+| Attribuer une permission client à un groupe | `add -pc "perm" -g "group"` ou **Admin → Groupes → détail** |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
