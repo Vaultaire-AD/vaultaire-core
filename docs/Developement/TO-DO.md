@@ -2,33 +2,49 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
 
 
 1.[FAIT-H] [DOC]mettre a jour la Documentation pour séparé entierement les GPO voir trames struct (si il a des changement a faire dans le protcole dabord mettre ajour la documentation et demander ensuite validation)
-2.[PAM] -> Verification du module login (pb pour la création des users si il existe pas)
-    [CORRIGE-IA] Connexion graphique : aucune requete n'arrivait au daemon.
-       Cause : GDM n'utilise pas /etc/pam.d/login mais /etc/pam.d/gdm-password, que rocky.sh
-       n'ecrivait pas. Le module n'etait donc jamais appele depuis l'interface graphique.
-       rocky.sh ecrit maintenant la pile gdm-password (si GDM est present) et pose
-       disable-user-list, sans quoi un compte Vaultaire jamais connecte sur la machine
-       n'apparait dans aucune liste et l'utilisateur croit que son compte n'existe pas.
-    [CORRIGE-IA] Risque de verrouillage sur /etc/pam.d/login.
-       La pile utilisait « auth required pam_login_custom_module.so » avec system-auth commente :
-       un compte local, root compris, ne pouvait plus se connecter en console, puisque le seul
-       module rendait PAM_IGNORE sans que personne prenne le relais.
-       Remplace par [success=done ignore=ignore default=die] + substack system-auth, le meme
-       schema que la pile sshd qui, elle, etait correcte.
-    Reste a traiter : la creation des users quand ils n'existent pas encore localement.
-3.[FAIT-IA] [PAM] -> Ajout d'une mecanique pour mettre a jour le mot de passe de l'utilisateur en local
-       ensure_local_user_with_password lancait chpasswd a CHAQUE connexion reussie, sans rien
-       comparer. Ajout de local_password_matches() : le hash deja present dans /etc/shadow sert de
-       reglage a crypt_r (il porte l'algorithme, le cout et le sel), on rechiffre le mot de passe
-       fourni avec ce reglage et on compare. chpasswd n'est lance que si le resultat differe.
-       Pourquoi ca comptait : reecrire /etc/shadow a chaque connexion remettait a zero la date de
-       dernier changement (sp_lstchg), ce qui fausse toute politique de peremption de mot de passe.
-       Cas traites : compte verrouille ("!", "!!", "*"), champ vide, hash tronque, entree shadow
-       illisible -> on reecrit, comportement sur en cas de doute.
-       struct crypt_data fait 32 Ko avec libxcrypt : allouee sur le tas, pas sur la pile d'un module
-       PAM, et effacee (explicit_bzero) avant liberation car elle contient un derive du mot de passe.
-       ATTENTION build : -lcrypt ajoute dans auto-compil.sh et pam_module/auto_compil.sh. Sans lui le
-       .so se construit quand meme (les objets partages tolerent les symboles non resolus) mais PAM
-       echoue a le charger a l'execution — meme symptome que le module absent de la pile.
-4.[FAIT-H][PAM] -> Verification de l'expiration des comptes sur les clients :
-      les comptes sont supprimé au bout de 6 d'inactivité uniquement si il y a plus de 3 comptes vaultaires sur le client
+3.[FAIT-H] [GPO-WEB] : Amelioration de l'ergonomie de la page GPO
+            Actuellement il faut scroler avec la souris et plus on va rajouter de module plus cela va etre compliquer de s'y retrouver il faut trouver un moyen de rentre le site plus ergonomique pour les administrateur (ne pas toucher le bandeau de navigation a gauche de la page)
+2.[GPO] Ajout de nouveaux Module
+            A. Modules manquants — Sécurité & réseau
+Module	Description	Scope
+firewall_rule	Règles nftables/firewalld dédiées (table séparée, jamais mélangée aux règles manuelles)	Machine
+pam_policy	Complexité mot de passe (pam_pwquality), verrouillage après N échecs (pam_faillock), délai anti-bruteforce	Machine
+auditd_rule	Règles d'audit (auditctl//etc/audit/rules.d/) — qui a modifié quoi, tracé au niveau noyau	Machine
+selinux_mode	Mode SELinux (enforcing/permissive) + booleans spécifiques, whitelist comme pour sysctl	Machine
+trusted_ca	Déploiement/révocation de CA internes dans le trust store	Machine
+dns_resolver	Serveurs DNS, domaine de recherche, entrées hosts forcées (bloc balisé)	Machine
+mount_hardening	Options de montage forcées (noexec, nodev, nosuid sur /tmp, /home)	Machine
+kernel_module_policy	Blacklist de modules noyau (ex: usb-storage pour bloquer les clés USB)	Machine
+local_account_policy	Désactive l'auth password pour les comptes locaux non-Vaultaire, expiration de compte (chage)	Machine
+ssh_known_hosts	Entrées known_hosts globales pré-remplies, StrictHostKeyChecking	Machine ou User
+            B. Modules manquants — Système & services
+Module	Description	Scope
+package_repository	Définit les dépôts autorisés (apt/yum) — nécessaire pour que package n'installe que depuis des sources de confiance	Machine
+log_policy	Rotation/rétention (logrotate.d, journald.conf.d)	Machine
+ntp_config	Serveurs NTP/chrony	Machine
+boot_params	Paramètres kernel au boot (GRUB), distinct de sysctl (runtime)	Machine
+update_policy	Mises à jour automatiques on/off, fenêtre de maintenance	Machine
+system_env	/etc/environment — variables globales, distinct de user_env	Machine
+resource_limits	ulimits/slices systemd machine-wide (pas seulement user cgroups)	Machine
+            C. Modules manquants — Fichiers
+Module	Description	Scope
+directory_manage	Création de dossier avec perms/owner (le catalogue actuel ne gère que des fichiers)	Both
+file_acl	ACL POSIX (setfacl) au-delà de owner/group/mode simple	Both
+file_retention	Purge de fichiers selon âge/pattern (ex: vieux logs applicatifs)	Machine
+templated_file_deploy	Variante de file_deploy avec substitution de variables ({{hostname}}, {{username}}) — évite de dupliquer un module par machine	Both
+            D. Modules manquants — Environnement utilisateur
+Module	Description	Scope
+user_shell	Force le shell de connexion (chsh géré, ou shell restreint rbash)	User
+user_resource_limits	Quota CPU/mémoire par utilisateur (cgroups user slice) — discuté hier, absent du catalogue actuel	User
+user_git_config	.gitconfig par champs contrôlés (pas de fichier brut)	User
+user_ssh_client_config	~/.ssh/config (proxy jump, host aliases)	User
+user_password_policy	Force changement au prochain login, expiration individuelle	User
+user_group_membership	Ajout/retrait d'un groupe POSIX local (distinct de sudoers_rule, plus générique)	User
+4.[GPO] - Détection de dérive (drift detection)
+            Rien dans le catalogue ne vérifie qu'un module resté "appliqué avec succès" (version à jour dans applied_policies.json) correspond encore à l'état réel du système — un admin qui modifie manuellement sshd_config.d/99-vaultaire-gpo.conf en SSH direct fausserait l'état sans que rien ne le détecte. Il faut un scan périodique de conformité, pas seulement une application ponctuelle.
+5.[GPO] - Révocation d'urgence ("kill switch")
+            Un module dédié, prioritaire sur tout le reste, pour désactiver immédiatement un compte partout (offboarding) ou révoquer une clé SSH compromise sans attendre le cycle normal de refresh des GPO — doit pouvoir se propager en push, pas seulement au prochain gpupdate.
+6.[TICKET] - TICKETING
+            Certaine action ou alerte ou autre devrait necesiter une intervention Humain je veux donc mettre en place un systeme de Ticket interne a vaultaire les ticket sont généré par vaultaire de facon automatique (il doit pouvoir etre gère depuis la web interface mais aussi depuis le CLI et l'api pour le module vlt comme kubectl) avec un systeme ou seulement les users de l'administration vaultaire peuvent voire les ticket 
+7.[GPO] - Reporting de conformité centralisé
+            Vue d'ensemble côté serveur : quelle version de policy chaque machine a effectivement appliquée avec succès, quelles machines sont en échec/en retard — sans ça, tu n'as aucune visibilité sur l'état réel du parc.

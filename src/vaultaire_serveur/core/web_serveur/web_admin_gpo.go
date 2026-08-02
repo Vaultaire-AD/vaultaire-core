@@ -3,6 +3,7 @@ package webserveur
 import (
 	"database/sql"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -67,6 +68,14 @@ type gpoModuleView struct {
 	ApplyOrder  int
 	Fields      []gpoFieldView
 	Summary     string
+	// Target est la cible du module — la clé qui le distingue des autres du
+	// même type (une clé sysctl, un nom de service, un chemin). Affichée en
+	// colonne dédiée : c'est l'information qu'on cherche en parcourant une liste,
+	// bien avant le détail des paramètres.
+	Target string
+	// SearchText concatène ce sur quoi le filtre porte, en minuscules, pour que
+	// le script n'ait pas à reconstruire la chaîne à chaque frappe.
+	SearchText string
 }
 
 // gpoCatalogEntry est une entrée du catalogue proposée à l'ajout.
@@ -76,6 +85,7 @@ type gpoCatalogEntry struct {
 	Category    string
 	Description string
 	Fields      []gpoFieldView
+	SearchText  string
 }
 
 // gpoCatalogCategory regroupe les entrées du catalogue par catégorie.
@@ -137,6 +147,7 @@ func buildModuleViews(modules []gpo.Module) []gpoModuleView {
 			Label:      m.Type,
 			ApplyOrder: m.ApplyOrder,
 			Summary:    moduleSummary(m),
+			Target:     moduleTarget(m),
 		}
 		if known {
 			view.Label = schema.Label
@@ -144,22 +155,51 @@ func buildModuleViews(modules []gpo.Module) []gpoModuleView {
 			view.Description = schema.Description
 			view.Fields = buildFieldViews(schema, m.Params)
 		}
+		view.SearchText = strings.ToLower(strings.Join(
+			[]string{view.Label, view.Type, view.Target, view.Summary, view.Category}, " "))
 		views = append(views, view)
 	}
 	return views
 }
 
+// moduleTarget extrait la cible d'un module : ce qui le distingue des autres du
+// même type.
+//
+// Dérivée de la clé d'état côté serveur (« sysctl:net.ipv4.ip_forward »), dont
+// on ne garde que la partie après le préfixe de type. Recalculer la logique ici
+// la ferait diverger de celle qui sert réellement au suivi des modules.
+func moduleTarget(m gpo.Module) string {
+	key := gpo.ModuleStateKey(m)
+	if idx := strings.Index(key, ":"); idx >= 0 {
+		target := key[idx+1:]
+		if target == "-" {
+			// Module unique par politique (SSH serveur) : pas de cible à afficher.
+			return ""
+		}
+		return target
+	}
+	return ""
+}
+
 // moduleSummary produit une ligne de résumé lisible d'un module, pour que la
 // liste reste compréhensible sans déplier chaque formulaire.
+//
+// La cible est volontairement exclue : elle a sa propre colonne dans le tableau,
+// la répéter dans le résumé mangerait la place des autres paramètres.
 func moduleSummary(m gpo.Module) string {
 	schema, known := gpo.SchemaFor(m.Type)
 	if !known {
 		return ""
 	}
+	target := moduleTarget(m)
+
 	var parts []string
 	for _, f := range schema.Fields {
 		val := strings.TrimSpace(m.Params[f.Name])
 		if val == "" || val == "unchanged" || strings.Contains(val, "\n") {
+			continue
+		}
+		if val == target {
 			continue
 		}
 		parts = append(parts, f.Label+" = "+val)
@@ -181,6 +221,8 @@ func buildCatalogForScope(scope gpo.Scope) []gpoCatalogCategory {
 			Category:    schema.Category,
 			Description: schema.Description,
 			Fields:      buildFieldViews(schema, nil),
+			SearchText: strings.ToLower(strings.Join(
+				[]string{schema.Label, schema.Type, schema.Category, schema.Description}, " ")),
 		})
 	}
 	var out []gpoCatalogCategory
@@ -332,19 +374,30 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 	}
 
 	data := struct {
-		Policy      *gpo.Policy
-		ScopeLabel  string
-		Modules     []gpoModuleView
-		Catalog     []gpoCatalogCategory
-		AllGroups   []string
-		Hash        string
-		Message     string
-		Error       string
-		Username    string
-		DnsEnable   bool
-		Section     string
-		HomeMarker  string
-		MachineOnly []string
+		Policy     *gpo.Policy
+		ScopeLabel string
+		Modules    []gpoModuleView
+		Catalog    []gpoCatalogCategory
+		// CatalogFlat est le catalogue à plat, trié par libellé : c'est sur lui
+		// que porte la recherche. Le regroupement par catégorie reste disponible
+		// dans Catalog pour l'affichage sans JavaScript.
+		CatalogFlat  []gpoCatalogEntry
+		AllGroups    []string
+		Hash         string
+		Message      string
+		Error        string
+		Username     string
+		DnsEnable    bool
+		Section      string
+		HomeMarker   string
+		MachineOnly  []string
+		ModuleCount  int
+		GroupCount   int
+		CatalogCount int
+		// ActiveTab est l'onglet à ouvrir au chargement. Après une action, on
+		// revient sur l'onglet d'où elle a été lancée : sans cela, ajouter un
+		// module renverrait l'administrateur sur le premier onglet à chaque fois.
+		ActiveTab string
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "gpo",
 		HomeMarker: gpo.UserHomePlaceholder(), MachineOnly: gpo.MachineOnlyModuleTypes(),
@@ -352,6 +405,11 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
+
+		// L'onglet d'origine est transporté par le formulaire pour être rouvert
+		// après l'action. Sans lui, chaque ajout de module ramènerait sur le
+		// premier onglet et il faudrait re-naviguer à chaque fois.
+		data.ActiveTab = sanitizeTab(r.FormValue("active_tab"))
 
 		// Toutes les actions de cette page portent sur une GPO existante :
 		// une seule vérification de permission, sur la clé propre à l'action.
@@ -482,6 +540,13 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 	data.Policy = policy
 	data.Modules = buildModuleViews(policy.Modules)
 	data.Catalog = buildCatalogForScope(policy.Scope)
+	data.CatalogFlat = flattenCatalog(data.Catalog)
+	data.ModuleCount = len(data.Modules)
+	data.GroupCount = len(policy.Groups)
+	data.CatalogCount = len(data.CatalogFlat)
+	if data.ActiveTab == "" {
+		data.ActiveTab = "modules"
+	}
 	if hash, hashErr := gpo.PolicyHash(*policy); hashErr == nil {
 		data.Hash = hash
 	}
@@ -508,4 +573,43 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin: template admin_gpo_detail.html: "+err.Error())
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
+}
+
+// flattenCatalog aplatit le catalogue et le trie par libellé.
+//
+// La recherche porte sur cette liste : filtrer une liste plate est immédiat,
+// alors que filtrer une structure groupée obligerait à masquer aussi les
+// catégories devenues vides, puis à les faire réapparaître quand le filtre
+// change.
+func flattenCatalog(categories []gpoCatalogCategory) []gpoCatalogEntry {
+	var out []gpoCatalogEntry
+	for _, c := range categories {
+		out = append(out, c.Entries...)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Label < out[j].Label })
+	return out
+}
+
+// gpoTabs liste les onglets de la page de détail.
+//
+// La liste est en dur côté serveur plutôt que déduite du formulaire : une valeur
+// forgée dans active_tab se retrouverait sinon telle quelle dans un attribut
+// HTML, et désignerait un onglet qui n'existe pas.
+var gpoTabs = []string{"modules", "add", "groups", "settings"}
+
+// gpoRestrictionTabs liste les onglets de la page des restrictions.
+var gpoRestrictionTabs = []string{"fields", "paths", "env", "reset"}
+
+// sanitizeTab ne retient qu'un identifiant d'onglet connu.
+func sanitizeTab(raw string) string { return sanitizeTabFrom(raw, gpoTabs) }
+
+// sanitizeTabFrom ne retient qu'un identifiant appartenant à la liste fournie.
+func sanitizeTabFrom(raw string, allowed []string) string {
+	value := strings.TrimSpace(raw)
+	for _, tab := range allowed {
+		if tab == value {
+			return value
+		}
+	}
+	return ""
 }

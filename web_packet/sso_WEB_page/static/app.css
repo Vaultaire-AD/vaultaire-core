@@ -1066,3 +1066,148 @@ body.dark .perm-card:hover { border-color: var(--border-strong); }
   width: auto;
   margin: 0;
 }
+
+/* ==========================================================================
+   Onglets, tableau de modules et catalogue filtrable — pages GPO
+   ==========================================================================
+   Le catalogue passera d'environ 8 à près de 40 types de modules. Une page qui
+   rend tous les formulaires à la suite devient alors impraticable : ces règles
+   servent à garder une hauteur de page constante quel que soit ce nombre.
+
+   Principe de repli : SANS JavaScript, .gpo-tabs reste caché et tous les
+   panneaux restent visibles — on retrouve exactement la page d'avant, longue
+   mais complète. C'est le script qui active le découpage en onglets en posant
+   la classe .gpo-js sur le conteneur. */
+
+.gpo-tabs { display: none; }
+
+.gpo-js .gpo-tabs {
+  display: flex;
+  gap: 0.25rem;
+  border-bottom: 1px solid var(--border, #d5d9e0);
+  margin: 1rem 0 1.25rem;
+  flex-wrap: wrap;
+}
+
+.gpo-tab {
+  appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  padding: 0.55rem 0.9rem;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  opacity: 0.7;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.gpo-tab:hover { opacity: 1; }
+.gpo-tab[aria-selected="true"] {
+  opacity: 1;
+  font-weight: 600;
+  border-bottom-color: var(--primary, #3b6fd4);
+}
+
+/* Compteur d'éléments par onglet : savoir qu'un onglet est vide évite d'aller
+   y voir pour rien. */
+.gpo-tab-count {
+  font-size: 0.75rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  background: var(--border, #e2e5ea);
+  opacity: 0.9;
+}
+
+.gpo-js .gpo-panel[hidden] { display: none; }
+
+/* --- Tableau des modules d'une GPO ------------------------------------- */
+
+.gpo-modules { width: 100%; border-collapse: collapse; }
+.gpo-modules th,
+.gpo-modules td {
+  text-align: left;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border, #e2e5ea);
+  vertical-align: top;
+}
+.gpo-modules th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  opacity: 0.75;
+  white-space: nowrap;
+}
+.gpo-modules td.gpo-col-order { width: 4rem; opacity: 0.65; font-variant-numeric: tabular-nums; }
+.gpo-modules td.gpo-col-actions { width: 1%; white-space: nowrap; text-align: right; }
+.gpo-modules tr.gpo-row-edit > td { padding-top: 0; }
+.gpo-modules .gpo-target { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+
+/* La ligne d'édition n'est visible que pour la ligne dépliée : garder les
+   formulaires dans le tableau évite un aller-retour vers une autre page pour
+   changer une valeur.
+
+   Sans JavaScript, l'attribut hidden est neutralisé et tous les formulaires
+   restent visibles — sinon la page deviendrait consultable mais pas éditable,
+   ce qui serait pire que longue. Le bouton « Modifier », lui, n'aurait alors
+   rien à déplier : il est masqué dans ce cas. */
+.gpo-row-edit[hidden] { display: table-row; }
+.gpo-js .gpo-row-edit[hidden] { display: none; }
+.gpo-modules [data-gpo-edit] { display: none; }
+.gpo-js .gpo-modules [data-gpo-edit] { display: inline-flex; }
+.gpo-edit-box {
+  border-left: 2px solid var(--primary, #3b6fd4);
+  padding: 0.6rem 0 0.6rem 0.8rem;
+  margin-bottom: 0.4rem;
+}
+
+/* --- Catalogue filtrable ------------------------------------------------ */
+
+.gpo-search { margin-bottom: 0.9rem; }
+.gpo-search input { width: 100%; max-width: 32rem; }
+
+.gpo-catalog-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid var(--border, #d5d9e0);
+  border-radius: 8px;
+}
+.gpo-catalog-item { border-bottom: 1px solid var(--border, #eceff3); }
+.gpo-catalog-item:last-child { border-bottom: none; }
+.gpo-catalog-item[hidden] { display: none; }
+
+.gpo-catalog-btn {
+  appearance: none;
+  background: none;
+  border: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  width: 100%;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.8rem;
+}
+.gpo-catalog-btn:hover { background: var(--border, #f2f4f7); }
+.gpo-catalog-btn[aria-pressed="true"] {
+  background: var(--border, #eaf0fb);
+  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--primary, #3b6fd4);
+}
+.gpo-catalog-cat { font-size: 0.75rem; opacity: 0.65; white-space: nowrap; }
+
+.gpo-catalog-form[hidden] { display: none; }
+.gpo-empty { padding: 0.8rem; opacity: 0.7; }
+
+/* Sans JavaScript, le champ de recherche ne filtre rien : autant ne pas le
+   montrer, et laisser le catalogue complet visible. */
+.gpo-search, .gpo-catalog-list { display: none; }
+.gpo-js .gpo-search, .gpo-js .gpo-catalog-list { display: block; }
+.gpo-js .gpo-catalog-fallback { display: none; }

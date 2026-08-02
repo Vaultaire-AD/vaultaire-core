@@ -249,6 +249,39 @@ Déclarés dans `core/gpo/types.go`, chacun avec son validateur dans
 | `cron` | expression à 5 champs | champ texte |
 | `env_name` | nom de variable, hors liste interdite | champ texte |
 
+### Ce que le catalogue produit dans l'interface
+
+Les pages `/admin/gpo` sont entièrement dérivées du catalogue : ajouter un module
+à `baseCatalog` le rend visible, cherchable et éditable sans écrire une ligne de
+HTML. Trois éléments de l'entrée de catalogue se retrouvent directement à
+l'écran, ce qui vaut la peine d'être soigné :
+
+| Élément du schéma | Où il apparaît |
+|-------------------|----------------|
+| `Label` | Titre du module, et clé de tri du catalogue (liste alphabétique) |
+| `Category` | Regroupement dans le repli sans JavaScript, et texte de recherche |
+| `Description` | Sous le titre du formulaire d'ajout, et texte de recherche |
+| `ModuleStateKey` (transport.go) | Colonne **Cible** du tableau des modules |
+
+Le dernier point mérite une note. La colonne « Cible » n'est pas recalculée : elle
+est extraite de `ModuleStateKey`, la clé qui sert au suivi d'état côté agent. Un
+module dont la clé d'état est mal choisie — deux modules distincts partageant la
+même clé, par exemple — se voit donc immédiatement dans le tableau, deux lignes
+affichant la même cible. C'est délibéré : recalculer la cible pour l'affichage
+aurait produit une colonne jolie et fausse, qui aurait masqué le défaut au lieu
+de le montrer.
+
+La page de détail est découpée en quatre onglets (Modules, Ajouter un module,
+Groupes, Réglages) et le catalogue est présenté comme une liste filtrable dont un
+seul formulaire est monté à la fois. La raison est le passage à une quarantaine
+de types de modules : rendre quarante formulaires dans une même page, même
+repliés, rendait la page inutilisable. Ce découpage est **du JavaScript
+d'agrément** — `web_packet/sso_WEB_page/static/gpo_admin.js`. Sans lui, la classe
+`.gpo-js` n'est jamais posée, les onglets restent masqués et toutes les sections
+s'affichent à la suite, formulaires d'édition dépliés : la page redevient longue,
+jamais inutilisable. Aucune vérification de sécurité ne dépend de ce script — les
+contrôles RBAC et de schéma sont côté serveur, comme pour le CLI.
+
 ---
 
 ## 6. Les restrictions

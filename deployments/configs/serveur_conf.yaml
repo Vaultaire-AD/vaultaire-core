@@ -20,7 +20,7 @@ dns:
 database:
   username: root
   password: root
-  ip_database: "vaultaire-db"
+  ip_database: "localhost"
   port_database: "3306"
   databaseName: "vaultaire"
 

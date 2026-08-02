@@ -48,6 +48,11 @@ type restrictionFieldView struct {
 	PayloadPlaceholder string
 	PayloadMultiline   bool
 	Definitions        []dbgpo.DefinitionRow
+
+	// SearchText concatène en minuscules ce sur quoi porte le filtre de la page.
+	// Calculé ici plutôt que dans le navigateur : le texte de recherche d'un
+	// champ ne change pas d'une frappe à l'autre.
+	SearchText string
 }
 
 // modeLabel traduit un mode de champ en explication courte.
@@ -100,6 +105,12 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 		PathScopes    []string
 		HomeMarker    string
 		SuperadminGrp string
+		FieldCount    int
+		PathCount     int
+		EnvCount      int
+		// ActiveTab est l'onglet rouvert après une action : sans lui, ajouter un
+		// chemin refusé renverrait sur la liste des champs à chaque fois.
+		ActiveTab string
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "gpo",
 		Modes:      gpo.AllFieldModes(),
@@ -108,6 +119,7 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
+		data.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), gpoRestrictionTabs)
 		switch r.FormValue("action") {
 		case "add_value":
 			err := dbgpo.AddAllowedValue(db, username,
@@ -208,6 +220,12 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 			view.Values = values
 		}
 
+		// Le filtre porte sur le libellé du champ, celui du module, la clé
+		// technique et le mode : on cherche un champ soit par son nom métier,
+		// soit par sa clé, soit pour voir tout ce qui est encore en mode libre.
+		view.SearchText = strings.ToLower(strings.Join(
+			[]string{view.Label, view.ModuleLabel, view.ModuleType, view.FieldName, view.Key, view.Mode}, " "))
+
 		data.Fields = append(data.Fields, view)
 	}
 
@@ -222,6 +240,12 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 		data.Error = appendError(data.Error, err.Error())
 	}
 	data.LoadError = gpo.LastRestrictionError()
+	data.FieldCount = len(data.Fields)
+	data.PathCount = len(data.PathDeny) + len(data.PathAllow)
+	data.EnvCount = len(data.EnvDeny)
+	if data.ActiveTab == "" {
+		data.ActiveTab = "fields"
+	}
 
 	if err := executeAdminPage(w, "admin_gpo_restrictions.html", data); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin: template admin_gpo_restrictions.html: "+err.Error())

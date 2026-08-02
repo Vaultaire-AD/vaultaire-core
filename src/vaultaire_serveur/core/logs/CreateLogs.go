@@ -19,7 +19,7 @@ func WriteLog(filename string, content string) {
 	content = strings.TrimSpace(content)
 	switch filename {
 	case "db", "auth":
-		Write_LogCode("ERROR", CodeDBGeneric, "database: "+content)
+		Write_LogCode("DATABASE", CodeDBGeneric, "database: "+content)
 		return
 	}
 

@@ -24,7 +24,7 @@
         </div>
       </header>
       <div class="app-content">
-        <div class="app-container animate-in">
+        <div class="app-container animate-in" data-gpo-page>
     <h1>GPO</h1>
     {{ if .IsSuperadmin }}
       <p class="muted small">
@@ -61,9 +61,16 @@
     {{ if not .Policies }}
       <p class="muted">Aucune GPO définie pour le moment.</p>
     {{ end }}
-    <div class="perm-list">
+
+    <!-- Le filtre porte aussi sur les groupes liés : « quelles GPO touchent ce
+         groupe ? » est la question qu'on se pose le plus souvent devant la liste. -->
+    <div class="gpo-search">
+      <input type="search" placeholder="Filtrer par nom, scope, groupe…" data-gpo-filter="gpo-policy-list" autocomplete="off">
+    </div>
+
+    <div class="perm-list" id="gpo-policy-list">
       {{ range .Policies }}
-      <article class="perm-card">
+      <article class="perm-card" data-gpo-search="{{ .Name }} {{ .Description }} {{ .Scope }}{{ range .Groups }} {{ . }}{{ end }}">
         <div class="perm-card-main">
           <h3 class="perm-card-title"><a href="/admin/gpo?gpo={{ .Name }}">{{ .Name }}</a></h3>
           {{ if .Description }}<p class="perm-card-desc">{{ .Description }}</p>{{ end }}
@@ -95,6 +102,7 @@
       </article>
       {{ end }}
     </div>
+    <p class="muted gpo-empty" data-gpo-empty hidden>Aucune GPO ne correspond au filtre.</p>
         </div>
       </div>
     </main>
@@ -117,5 +125,6 @@
   </div>
   <script src="/static/app.js"></script>
   <script src="/static/admin_sidebar.js"></script>
+  <script src="/static/gpo_admin.js"></script>
 </body>
 </html>
