@@ -8,7 +8,7 @@ import (
 
 // Supprime une permission client d'un groupe
 func Command_Remove_ClientPermissionFromGroup(db *sql.DB, groupName, permissionName string) error {
-	injection := SanitizeInput(groupName, permissionName)
+	injection := SanitizeIdentifier(groupName, permissionName)
 	if injection != nil {
 		return injection
 	}

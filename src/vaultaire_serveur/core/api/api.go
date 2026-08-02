@@ -21,9 +21,13 @@ import (
 
 // CommandRequest représente la requête JSON du client
 type CommandRequest struct {
-	Username  string `json:"username"`
-	Command   string `json:"command"`
-	Nonce     string `json:"nonce"`
+	Username string `json:"username"`
+	Command  string `json:"command"`
+	Nonce    string `json:"nonce"`
+	// Timestamp est l'heure d'émission en secondes Unix. Il entre dans le corps
+	// signé : sans lui, une requête capturée resterait valide pour toujours
+	// puisque la signature ne dit rien de la date. Voir replay.go.
+	Timestamp int64  `json:"timestamp"`
 	Signature string `json:"signature"` // en base64
 }
 
@@ -73,6 +77,15 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fraîcheur vérifiée APRÈS la signature, et c'est volontaire : l'horodatage
+	// et le nonce font partie du corps signé, les contrôler avant reviendrait à
+	// se prononcer sur des valeurs que n'importe qui peut écrire.
+	if err := checkFreshness(req); err != nil {
+		logRequest(requestID, userID, req, "", err)
+		http.Error(w, "Requête rejetée : "+err.Error(), http.StatusUnauthorized)
+		return
+	}
+
 	result := command.ExecuteCommand(req.Command, req.Username)
 	logRequest(requestID, userID, req, result, nil)
 	writeJSON(w, CommandResponse{Result: result})
@@ -119,13 +132,15 @@ func fetchUserID(username string) (int, error) {
 // buildSignedBody reconstruit le JSON que le client a signé
 func buildSignedBody(req *CommandRequest) ([]byte, error) {
 	body, err := json.Marshal(struct {
-		Command  string `json:"command"`
-		Username string `json:"username"`
-		Nonce    string `json:"nonce"`
+		Command   string `json:"command"`
+		Username  string `json:"username"`
+		Nonce     string `json:"nonce"`
+		Timestamp int64  `json:"timestamp"`
 	}{
-		Command:  req.Command,
-		Username: req.Username,
-		Nonce:    req.Nonce,
+		Command:   req.Command,
+		Username:  req.Username,
+		Nonce:     req.Nonce,
+		Timestamp: req.Timestamp,
 	})
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeAPISign, "api: signed body build failed: "+err.Error())

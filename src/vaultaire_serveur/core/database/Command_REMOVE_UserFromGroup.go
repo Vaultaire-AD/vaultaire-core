@@ -8,7 +8,7 @@ import (
 
 // Command_Remove_UserFromGroup supprime un utilisateur d'un groupe
 func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error {
-	injection := SanitizeInput(username, groupName)
+	injection := SanitizeIdentifier(username, groupName)
 	if injection != nil {
 		return injection
 	}

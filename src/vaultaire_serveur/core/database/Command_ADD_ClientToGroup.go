@@ -7,7 +7,7 @@ import (
 )
 
 func Command_ADD_SoftwareToGroup(db *sql.DB, computeur_id, groupName string) error {
-	injection := SanitizeInput(computeur_id, groupName)
+	injection := SanitizeIdentifier(computeur_id, groupName)
 	if injection != nil {
 		return injection
 	}

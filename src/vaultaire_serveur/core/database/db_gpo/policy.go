@@ -16,7 +16,7 @@ import (
 // Le nom et le scope sont validés par core/gpo avant écriture : une GPO dont le
 // scope serait invalide rendrait la précédence machine/user indécidable.
 func CreatePolicy(db *sql.DB, name string, scope gpo.Scope, description string) (int, error) {
-	if err := database.SanitizeInput(name); err != nil {
+	if err := database.SanitizeIdentifier(name); err != nil {
 		return 0, err
 	}
 	if err := gpo.ValidatePolicyName(name); err != nil {
@@ -47,7 +47,7 @@ func CreatePolicy(db *sql.DB, name string, scope gpo.Scope, description string) 
 
 // GetPolicyIDByName résout l'identifiant d'une GPO depuis son nom.
 func GetPolicyIDByName(db *sql.DB, name string) (int, error) {
-	if err := database.SanitizeInput(name); err != nil {
+	if err := database.SanitizeIdentifier(name); err != nil {
 		return 0, err
 	}
 	var id int
@@ -86,7 +86,7 @@ const policySelect = `SELECT id_gpo, gpo_name, scope, description, version, enab
 // GetPolicyByName retourne une GPO complète : métadonnées, modules triés dans
 // leur ordre d'application, et noms des groupes auxquels elle est liée.
 func GetPolicyByName(db *sql.DB, name string) (*gpo.Policy, error) {
-	if err := database.SanitizeInput(name); err != nil {
+	if err := database.SanitizeIdentifier(name); err != nil {
 		return nil, err
 	}
 	row := db.QueryRow(policySelect+` WHERE gpo_name = ?`, name)
@@ -240,7 +240,7 @@ func BumpVersion(db *sql.DB, id int) error {
 // DeletePolicyByName supprime une GPO. Les modules et les liaisons de groupe
 // partent en cascade via les clés étrangères.
 func DeletePolicyByName(db *sql.DB, name string) error {
-	if err := database.SanitizeInput(name); err != nil {
+	if err := database.SanitizeIdentifier(name); err != nil {
 		return err
 	}
 	res, err := db.Exec(`DELETE FROM gpo WHERE gpo_name = ?`, name)
@@ -258,7 +258,7 @@ func DeletePolicyByName(db *sql.DB, name string) error {
 
 // PolicyExists indique si une GPO de ce nom existe.
 func PolicyExists(db *sql.DB, name string) bool {
-	if err := database.SanitizeInput(name); err != nil {
+	if err := database.SanitizeIdentifier(name); err != nil {
 		return false
 	}
 	var count int

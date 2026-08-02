@@ -88,6 +88,22 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		Challenge: strings.Join(message_reconstruction[1:], "\n"),
 	}
 	randomAuth, username := GetRandomAuthByAuthID(message_content.AuthID)
+
+	// Garde-fou sur le cas vide.
+	//
+	// Un AuthID inconnu fait renvoyer (nil, "") par le store. Plus bas, la
+	// comparaison est bytes.Equal(randomAuth, returnchack) : en Go,
+	// bytes.Equal(nil, []byte("")) vaut true. Une trame 02_03 dont le contenu
+	// est vide franchissait donc la comparaison du challenge avec un username
+	// vide. Elle était arrêtée juste après par DidUserCanLogin — aucun
+	// utilisateur ne porte le nom vide — mais elle l'était par accident, pas
+	// par décision. On refuse explicitement.
+	if message_content.AuthID == "" || len(randomAuth) == 0 || username == "" {
+		logs.Write_LogCodeMeta("WARNING", logs.CodeNone,
+			"Challenge d'authentification inconnu ou vide, trame 02_03 rejetée", meta)
+		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nYou are not authentificate")
+	}
+
 	if username == "vaultaire" {
 		sessionmgr.Sessions.SetIdentity(duckysession.SessionID, username, trames_content.ClientSoftwareID)
 		sessionmgr.Sessions.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)

@@ -9,7 +9,7 @@ import (
 )
 
 func Command_GET_ClientByComputeurID(db *sql.DB, computeurID string) (*storage.Software, error) {
-	if err := SanitizeInput(computeurID); err != nil {
+	if err := SanitizeIdentifier(computeurID); err != nil {
 		return nil, err
 	}
 

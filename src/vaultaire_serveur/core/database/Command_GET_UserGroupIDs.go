@@ -8,7 +8,7 @@ import (
 
 // Command_GET_UserGroupIDs retourne la liste des ID de groupes pour un username donné
 func Command_GET_UserGroupIDs(db *sql.DB, username string) ([]int, error) {
-	injection := SanitizeInput(username)
+	injection := SanitizeIdentifier(username)
 	if injection != nil {
 		return nil, injection
 	}

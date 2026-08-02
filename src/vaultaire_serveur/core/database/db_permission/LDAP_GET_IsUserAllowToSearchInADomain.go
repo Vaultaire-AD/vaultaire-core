@@ -8,7 +8,7 @@ import (
 
 // GetUserPermissionsForAction récupère toutes les valeurs d'action d'un utilisateur
 func GetUserPermissionsForAction(db *sql.DB, username, action string) ([]string, error) {
-	injection := database.SanitizeInput(username, action)
+	injection := database.SanitizeIdentifier(username, action)
 	if injection != nil {
 		return nil, nil
 	}

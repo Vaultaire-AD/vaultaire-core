@@ -23,7 +23,7 @@ import (
 //     jointure sur logiciel_group le faisait passer pour inexistant, alors qu'un
 //     client sans groupe est un état normal juste après sa création.
 func Get_ClientID_By_ComputerID(db *sql.DB, computerID string) (int, error) {
-	if err := SanitizeInput(computerID); err != nil {
+	if err := SanitizeIdentifier(computerID); err != nil {
 		return 0, err
 	}
 

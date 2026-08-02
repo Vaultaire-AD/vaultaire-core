@@ -272,6 +272,21 @@ func checkGPORBAC(groupIDs []int, actionKey, gpoName string) (bool, string) {
 			domains = d
 		}
 	}
+
+	// Une GPO peut couvrir plusieurs domaines, et elle s'applique à tous à la
+	// fois. La modifier exige donc le droit sur chacun.
+	//
+	// Sans cela, la portée était extensible : je lie la GPO à un groupe de mon
+	// domaine, ce qui me donne le droit d'écriture ; je la lie ensuite à un
+	// groupe d'un domaine que je ne contrôle pas, et je continue de passer les
+	// contrôles grâce au premier. La GPO — donc des règles sudo et des fichiers
+	// déposés — s'applique alors à un parc qui ne m'appartient pas.
+	//
+	// La lecture reste tolérante : voir la liste des GPO d'un domaine qu'on
+	// administre partiellement n'accorde aucun pouvoir.
+	if strings.HasPrefix(actionKey, "write:") {
+		return permission.CheckPermissionsAllDomains(groupIDs, actionKey, domains)
+	}
 	return permission.CheckPermissionsMultipleDomains(groupIDs, actionKey, domains)
 }
 

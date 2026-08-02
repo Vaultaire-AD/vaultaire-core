@@ -44,7 +44,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 		return fmt.Sprintf("Erreur récupération domaines de la permission %s : %v", permissionName, err)
 	}
 
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, Useraction, domains)
+	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, Useraction, domains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s permission=%s reason=%s", sender_Username, Useraction, permissionName, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de modifier la permission %s (domaines : %v) — %s", sender_Username, permissionName, domains, reason))

@@ -8,7 +8,7 @@ import (
 )
 
 func Command_STATUS_GetClientsConnectedByLogicielType(db *sql.DB, logicielType string) ([]storage.ClientConnected, error) {
-	injection := SanitizeInput(logicielType)
+	injection := SanitizeIdentifier(logicielType)
 	if injection != nil {
 		return nil, injection
 	}

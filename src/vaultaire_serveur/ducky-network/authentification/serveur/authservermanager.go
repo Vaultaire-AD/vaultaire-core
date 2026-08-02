@@ -38,6 +38,13 @@ func Serveur_Auth_Manager(trames_content storage.Trames_struct_client, duckysess
 		duckysession.SessionID = sessionIntegritykey
 		sessionmgr.Sessions.Rekey(oldSessionID, sessionIntegritykey)
 		sessionmgr.Sessions.SetIdentity(sessionIntegritykey, trames_content.Username, trames_content.ClientSoftwareID)
+
+		// Fige la machine pour toute la durée de la connexion. La réponse 01_02
+		// est chiffrée avec la clé publique de cet identifiant et transporte la
+		// clé de session : seul son vrai propriétaire pourra lire la suite.
+		// Toutes les trames ultérieures seront comparées à cette valeur (voir
+		// tramesmanager.Split_Action).
+		duckysession.BoundClientSoftwareID = trames_content.ClientSoftwareID
 		// Amorce le suivi de l'ordre des trames pour la suite de la session
 		// (remplace le seed fait par l'ancien sync.AddConnectionToMap).
 		sessionmgr.Sessions.SeedTrame(sessionIntegritykey, "01_01")

@@ -7,7 +7,7 @@ import (
 )
 
 func Command_ADD_UserToGroup(db *sql.DB, username, groupName string) error {
-	injection := SanitizeInput(username, groupName)
+	injection := SanitizeIdentifier(username, groupName)
 	if injection != nil {
 		return injection
 	}

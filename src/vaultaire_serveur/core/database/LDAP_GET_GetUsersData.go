@@ -76,7 +76,7 @@ func GetUsersByGroup(group string, db *sql.DB) ([]ldapstorage.User, error) {
 
 // GetUserByUsername récupère un utilisateur par son nom d'utilisateur.
 func GetUserByUsername(username string, db *sql.DB) (ldapstorage.User, error) {
-	injection := SanitizeInput(username)
+	injection := SanitizeIdentifier(username)
 	if injection != nil {
 		return ldapstorage.User{}, injection
 	}

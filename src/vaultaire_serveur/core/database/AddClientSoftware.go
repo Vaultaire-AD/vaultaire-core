@@ -9,7 +9,7 @@ import (
 )
 
 func Create_ClientSoftware(db *sql.DB, computeurID, logicielType, publicKey string, isServeur bool) error {
-	injection := SanitizeInput(computeurID, logicielType)
+	injection := SanitizeIdentifier(computeurID, logicielType)
 	if injection != nil {
 		return injection
 	}
@@ -43,7 +43,13 @@ func Create_ClientSoftware(db *sql.DB, computeurID, logicielType, publicKey stri
 }
 
 func UpdateHostname(db *sql.DB, computeurID, hostname, os, ram, proc string) error {
-	injection := SanitizeInput(computeurID, hostname, os, ram, proc)
+	// L'identifiant machine nomme une entité : liste blanche. Les informations
+	// matérielles sont du texte libre — « Intel(R) Core(TM) i7 », « Ubuntu 22.04
+	// LTS » — et ne passeraient pas une liste blanche d'identifiant.
+	if err := SanitizeIdentifier(computeurID); err != nil {
+		return err
+	}
+	injection := SanitizeInput(hostname, os, ram, proc)
 	if injection != nil {
 		return injection
 	}

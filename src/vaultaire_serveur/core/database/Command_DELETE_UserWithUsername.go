@@ -8,7 +8,7 @@ import (
 
 // Command_Remove_User supprime un utilisateur et toutes ses relations
 func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
-	injection := SanitizeInput(username)
+	injection := SanitizeIdentifier(username)
 	if injection != nil {
 		return injection
 	}

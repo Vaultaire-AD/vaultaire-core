@@ -43,7 +43,7 @@ func delete_Permission_Command_Parser(command_list []string, sender_groupsIDs []
 	}
 
 	// 🔹 Étape 2 : Vérification de la permission du demandeur
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s permission=%s reason=%s", sender_Username, action, permName, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer la permission %s (%s) — %s", sender_Username, permName, flag, reason))

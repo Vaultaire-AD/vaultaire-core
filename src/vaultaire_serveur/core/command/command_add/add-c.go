@@ -25,7 +25,7 @@ func add_Client_Command_Parser(command_list []string, sender_groupsIDs []int, ac
 	}
 
 	// 🔹 Étape 2 : Vérification des permissions sur les domaines
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s client=%s group=%s reason=%s", sender_Username, action, clientID, groupName, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente d'ajouter le client %s au groupe %s (domaines : %v) — %s", sender_Username, clientID, groupName, domains, reason))

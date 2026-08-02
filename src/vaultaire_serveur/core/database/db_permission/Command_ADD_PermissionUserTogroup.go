@@ -9,7 +9,7 @@ import (
 
 // AddPermissionToGroup ajoute une permission à un groupe
 func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupName string) error {
-	injection := database.SanitizeInput(permissionName, groupName)
+	injection := database.SanitizeIdentifier(permissionName, groupName)
 	if injection != nil {
 		return injection
 	}

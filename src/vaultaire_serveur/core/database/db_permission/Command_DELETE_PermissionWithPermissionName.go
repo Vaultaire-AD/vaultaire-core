@@ -9,7 +9,7 @@ import (
 
 // Supprime une permission via son nom
 func Command_DELETE_ClientPermissionByName(db *sql.DB, permissionName string) error {
-	injection := database.SanitizeInput(permissionName)
+	injection := database.SanitizeIdentifier(permissionName)
 	if injection != nil {
 		return injection
 	}
@@ -28,7 +28,7 @@ func Command_DELETE_ClientPermissionByName(db *sql.DB, permissionName string) er
 }
 
 func Command_DELETE_UserPermissionByName(db *sql.DB, permissionName string) error {
-	injection := database.SanitizeInput(permissionName)
+	injection := database.SanitizeIdentifier(permissionName)
 	if injection != nil {
 		return injection
 	}

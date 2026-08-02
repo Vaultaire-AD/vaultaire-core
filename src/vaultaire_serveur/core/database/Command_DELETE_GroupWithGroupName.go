@@ -8,7 +8,7 @@ import (
 
 // Supprime un groupe via son nom
 func Command_DELETE_GroupWithGroupName(db *sql.DB, groupName string) error {
-	injection := SanitizeInput(groupName)
+	injection := SanitizeIdentifier(groupName)
 	if injection != nil {
 		return injection
 	}

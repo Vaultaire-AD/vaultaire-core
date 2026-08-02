@@ -395,7 +395,7 @@ func SaveDefinition(db *sql.DB, actor, moduleType, fieldName, name, payload, not
 	if !definitionNameRe.MatchString(name) {
 		return fmt.Errorf("nom invalide %q (lettres, chiffres, point, tiret, souligné ; 2 à 64 caractères)", name)
 	}
-	if err := database.SanitizeInput(moduleType, fieldName, name); err != nil {
+	if err := database.SanitizeIdentifier(moduleType, fieldName, name); err != nil {
 		return err
 	}
 	if err := gpo.ValidatePayload(kind, payload); err != nil {
@@ -619,7 +619,13 @@ func AddAllowedValue(db *sql.DB, actor, moduleType, fieldName, value, label stri
 	if err := validateRestrictionValue(value, 512); err != nil {
 		return err
 	}
-	if err := database.SanitizeInput(moduleType, fieldName, value); err != nil {
+	// Le type de module et le nom de champ sont des identifiants du catalogue.
+	// La valeur, elle, peut être un chemin, un nom de paquet ou un motif : elle
+	// est déjà bornée par validateRestrictionValue juste au-dessus.
+	if err := database.SanitizeIdentifier(moduleType, fieldName); err != nil {
+		return err
+	}
+	if err := database.SanitizeInput(value); err != nil {
 		return err
 	}
 
@@ -763,7 +769,7 @@ func AddEnvDeny(db *sql.DB, actor, name, note string) error {
 	if err := validateRestrictionValue(name, 64); err != nil {
 		return err
 	}
-	if err := database.SanitizeInput(name); err != nil {
+	if err := database.SanitizeIdentifier(name); err != nil {
 		return err
 	}
 

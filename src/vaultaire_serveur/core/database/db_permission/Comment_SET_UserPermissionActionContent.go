@@ -3,12 +3,37 @@ package db_permission
 import (
 	"database/sql"
 	"fmt"
+
+	"vaultaire/core/database"
 	"vaultaire/core/logs"
 )
+
+// getPermissionNameByID résout le nom d'une permission depuis son identifiant.
+//
+// Une erreur (permission absente) n'est pas traitée comme un refus par
+// l'appelant : l'écriture qui suit échouera de toute façon sur une permission
+// inexistante, et bloquer ici masquerait la vraie cause.
+func getPermissionNameByID(db *sql.DB, id int64) (string, error) {
+	var name string
+	err := db.QueryRow(
+		"SELECT name FROM user_permission WHERE id_user_permission = ? LIMIT 1", id,
+	).Scan(&name)
+	return name, err
+}
 
 // Command_SET_UserPermissionAction met à jour le contenu d'une action.
 // Actions legacy : UPDATE user_permission. Actions RBAC : INSERT/UPDATE user_permission_action.
 func Command_SET_UserPermissionAction(db *sql.DB, id int64, action string, newValue string) error {
+	// La permission d'amorçage n'est pas modifiable, y compris de l'intérieur.
+	// Le contrôle porte sur l'identifiant reçu, pas sur un nom passé par
+	// l'appelant : c'est la seule façon de couvrir tous les chemins, y compris
+	// ceux qui ne connaissent que l'ID.
+	if name, err := getPermissionNameByID(db, id); err == nil {
+		if guardErr := database.GuardProtectedPermissionContent(name, action); guardErr != nil {
+			return guardErr
+		}
+	}
+
 	if legacyColumns[action] {
 		query := fmt.Sprintf("UPDATE user_permission SET %s = ? WHERE id_user_permission = ?", action)
 		_, err := db.Exec(query, newValue, id)

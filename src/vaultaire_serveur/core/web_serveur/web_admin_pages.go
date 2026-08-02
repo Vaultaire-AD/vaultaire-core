@@ -104,8 +104,19 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			case "delete_user":
 				actionKey = "write:delete:user"
 			}
-			if actionKey != "" && !checkWebAdminRBAC(w, r, groupIDs, actionKey) {
-				return
+			// Le droit est exigé sur les domaines de l'utilisateur visé, et sur
+			// tous. Un utilisateur membre de groupes dans plusieurs domaines
+			// n'est administrable que par quelqu'un qui les couvre tous : sinon
+			// un délégué d'un seul domaine pourrait changer le mot de passe
+			// d'un compte qui détient des droits ailleurs.
+			if actionKey != "" {
+				domains := entityDomainsOrGlobal(permission.GetDomainListFromUsername(target))
+				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, actionKey, domains); !allowed {
+					logs.Write_Log("SECURITY", fmt.Sprintf(
+						"webadmin: %s tente %s sur l'utilisateur %s — %s", username, action, target, reason))
+					detailData.Message = "Permission refusée : " + reason
+					action = ""
+				}
 			}
 			switch action {
 			case "update_user":
@@ -336,8 +347,18 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			case "delete_group":
 				actionKey = "write:delete:group"
 			}
-			if actionKey != "" && !checkWebAdminRBAC(w, r, groupIDs, actionKey) {
-				return
+			// Le droit est exigé sur les domaines du groupe visé. Un groupe
+			// porte les permissions et les GPO de ses membres : y ajouter un
+			// utilisateur, une machine ou une permission revient à distribuer
+			// des droits dans ce ou ces domaines.
+			if actionKey != "" {
+				domains := entityDomainsOrGlobal(permission.GetDomainsFromGroupName(targetGroup))
+				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, actionKey, domains); !allowed {
+					logs.Write_Log("SECURITY", fmt.Sprintf(
+						"webadmin: %s tente %s sur le groupe %s — %s", username, action, targetGroup, reason))
+					detailData.Message = "Permission refusée : " + reason
+					action = ""
+				}
 			}
 			switch action {
 			case "add_user":
@@ -561,8 +582,15 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			case "delete_client":
 				actionKey = "write:delete:client"
 			}
-			if actionKey != "" && !checkWebAdminRBAC(w, r, groupIDs, actionKey) {
-				return
+			// Le droit est exigé sur les domaines de la machine visée.
+			if actionKey != "" {
+				domains := entityDomainsOrGlobal(permission.GetDomainsFromClientByComputerID(targetClient))
+				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, actionKey, domains); !allowed {
+					logs.Write_Log("SECURITY", fmt.Sprintf(
+						"webadmin: %s tente %s sur le client %s — %s", username, action, targetClient, reason))
+					detailData.Message = "Permission refusée : " + reason
+					action = ""
+				}
 			}
 			switch action {
 			case "update_client":
@@ -692,11 +720,24 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
 			detailData.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), permissionTabs)
-			if action == "delete_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
-				return
+			// Les domaines d'une permission sont ceux des groupes qui la
+			// portent : la modifier change les droits dans tous ces domaines à
+			// la fois, donc on les exige tous.
+			permActionKey := ""
+			switch action {
+			case "delete_permission":
+				permActionKey = "write:delete:permission"
+			case "update_permission_action":
+				permActionKey = "write:update:permission"
 			}
-			if action == "update_permission_action" && !checkWebAdminRBAC(w, r, groupIDs, "write:update:permission") {
-				return
+			if permActionKey != "" {
+				domains := entityDomainsOrGlobal(permission.GetDomainslistFromUserpermission(detailPerm))
+				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, permActionKey, domains); !allowed {
+					logs.Write_Log("SECURITY", fmt.Sprintf(
+						"webadmin: %s tente %s sur la permission %s — %s", username, action, detailPerm, reason))
+					detailData.Error = "Permission refusée : " + reason
+					action = ""
+				}
 			}
 			switch action {
 			case "delete_permission":
@@ -1035,9 +1076,15 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 			action := r.FormValue("action")
 			switch action {
 			case "delete_certificate":
+				if !canDeleteCertificate(username) {
+					detailData.Message = "Réservé aux membres du groupe " + database.ProtectedGroupName + "."
+					break
+				}
 				if err := dbcert.DeleteCertificate(certID); err != nil {
 					detailData.Message = "Erreur suppression : " + err.Error()
 				} else {
+					logs.Write_Log("SECURITY", fmt.Sprintf(
+						"webadmin: certificat %d supprimé par %s", certID, username))
 					http.Redirect(w, r, "/admin/certificates", http.StatusSeeOther)
 					return
 				}
@@ -1059,6 +1106,10 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		action := r.FormValue("action")
 		switch action {
 		case "delete_certificate":
+			if !canDeleteCertificate(username) {
+				data.Message = "Réservé aux membres du groupe " + database.ProtectedGroupName + "."
+				break
+			}
 			certIDStr := r.FormValue("certificate_id")
 			if certIDStr != "" {
 				certID, err := strconv.Atoi(certIDStr)
@@ -1068,6 +1119,8 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 					if err := dbcert.DeleteCertificate(certID); err != nil {
 						data.Message = "Erreur suppression : " + err.Error()
 					} else {
+						logs.Write_Log("SECURITY", fmt.Sprintf(
+							"webadmin: certificat %d supprimé par %s", certID, username))
 						data.Message = "Certificat supprimé."
 					}
 				}

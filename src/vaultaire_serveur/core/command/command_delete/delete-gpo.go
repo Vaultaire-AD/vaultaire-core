@@ -36,7 +36,7 @@ func delete_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, ac
 		domains = []string{"*"}
 	}
 
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s gpo=%s reason=%s", sender_Username, action, gpoName, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer la GPO %s (domaines : %v) — %s", sender_Username, gpoName, domains, reason))

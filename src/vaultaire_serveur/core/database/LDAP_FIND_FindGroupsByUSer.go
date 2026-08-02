@@ -7,7 +7,7 @@ import (
 )
 
 func FindGroupsByUserInDomainTree(db *sql.DB, username string, baseDomain string) ([]string, error) {
-	injection := SanitizeInput(username, baseDomain)
+	injection := SanitizeIdentifier(username, baseDomain)
 	if injection != nil {
 		return nil, injection
 	}

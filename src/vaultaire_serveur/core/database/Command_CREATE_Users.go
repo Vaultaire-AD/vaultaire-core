@@ -10,7 +10,13 @@ import (
 )
 
 func Create_New_User(db *sql.DB, username, firstname, lastname, email, password, salt, birthdate, createdAt string) error {
-	injection := SanitizeInput(username, password, birthdate)
+	// Le nom d'utilisateur nomme une entité : liste blanche. Le mot de passe est
+	// du texte libre et doit le rester — y interdire espaces et parenthèses
+	// affaiblirait les mots de passe au lieu de protéger la base.
+	if err := SanitizeIdentifier(username); err != nil {
+		return err
+	}
+	injection := SanitizeInput(password, birthdate)
 	if injection != nil {
 		return injection
 	}

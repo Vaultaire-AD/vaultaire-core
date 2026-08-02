@@ -7,7 +7,7 @@ import (
 )
 
 func GetUserGroupNameWhenLogin(db *sql.DB, username, computeur_id string) (string, error) {
-	injection := SanitizeInput(username, computeur_id)
+	injection := SanitizeIdentifier(username, computeur_id)
 	if injection != nil {
 		return "", injection
 	}

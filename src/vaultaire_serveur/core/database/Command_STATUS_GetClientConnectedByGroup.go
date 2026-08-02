@@ -8,7 +8,7 @@ import (
 )
 
 func Command_STATUS_GetClientsConnectedByGroup(db *sql.DB, groupName string) ([]storage.ClientConnected, error) {
-	injection := SanitizeInput(groupName)
+	injection := SanitizeIdentifier(groupName)
 	if injection != nil {
 		return nil, injection
 	}

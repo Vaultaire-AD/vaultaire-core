@@ -37,9 +37,13 @@ type Client struct {
 }
 
 type commandRequest struct {
-	Command   string `json:"command"`
-	Username  string `json:"username"`
-	Nonce     string `json:"nonce"`
+	Command  string `json:"command"`
+	Username string `json:"username"`
+	Nonce    string `json:"nonce"`
+	// Timestamp entre dans le corps signé : le serveur refuse les requêtes hors
+	// d'une fenêtre de deux minutes et mémorise les nonces vus pendant cette
+	// fenêtre, ce qui rend une requête capturée inutilisable.
+	Timestamp int64  `json:"timestamp"`
 	Signature string `json:"signature"`
 }
 
@@ -96,14 +100,20 @@ func (c *Client) Execute(ctx context.Context, command string) (string, error) {
 	}
 
 	nonce := generateNonce()
+	// L'ordre des champs n'a pas d'importance (json.Marshal suit celui de la
+	// structure), mais la structure DOIT rester identique à celle du serveur :
+	// c'est l'octet à octet de ce JSON qui est signé puis revérifié.
+	timestamp := time.Now().Unix()
 	bodyToSign := struct {
-		Command  string `json:"command"`
-		Username string `json:"username"`
-		Nonce    string `json:"nonce"`
+		Command   string `json:"command"`
+		Username  string `json:"username"`
+		Nonce     string `json:"nonce"`
+		Timestamp int64  `json:"timestamp"`
 	}{
-		Command:  command,
-		Username: c.username,
-		Nonce:    nonce,
+		Command:   command,
+		Username:  c.username,
+		Nonce:     nonce,
+		Timestamp: timestamp,
 	}
 
 	bodyToSignRaw, err := json.Marshal(bodyToSign)
@@ -120,6 +130,7 @@ func (c *Client) Execute(ctx context.Context, command string) (string, error) {
 		Command:   command,
 		Username:  c.username,
 		Nonce:     nonce,
+		Timestamp: timestamp,
 		Signature: signatureB64,
 	}
 	payloadRaw, err := json.Marshal(reqPayload)

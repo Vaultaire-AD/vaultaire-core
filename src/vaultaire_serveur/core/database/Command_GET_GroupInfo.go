@@ -12,7 +12,7 @@ import (
 
 // Récupérer toutes les infos d'un groupe via son nom
 func Command_GET_GroupInfo(db *sql.DB, groupName string) (*storage.GroupInfo, error) {
-	injection := SanitizeInput(groupName)
+	injection := SanitizeIdentifier(groupName)
 	if injection != nil {
 		return nil, injection
 	}

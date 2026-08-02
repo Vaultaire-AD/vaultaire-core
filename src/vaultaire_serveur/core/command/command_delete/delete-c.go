@@ -54,7 +54,7 @@ func delete_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 	}
 
 	// 🔹 Étape 3 : Vérification des permissions sur les domaines liés
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s client=%s reason=%s", sender_Username, action, clientID, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer le client %s (domaines : %v) — %s", sender_Username, clientID, domains, reason))

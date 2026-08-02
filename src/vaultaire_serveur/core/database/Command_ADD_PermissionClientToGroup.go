@@ -8,7 +8,7 @@ import (
 
 // AddPermissionToSoftware ajoute une permission à un logiciel dans un groupe
 func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, groupName string) error {
-	injection := SanitizeInput(permissionName, groupName)
+	injection := SanitizeIdentifier(permissionName, groupName)
 	if injection != nil {
 		return injection
 	}

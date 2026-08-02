@@ -8,7 +8,7 @@ import (
 )
 
 func Command_GET_UsersByGroup(db *sql.DB, groupName string) ([]storage.DisplayUsersByGroup, error) {
-	injection := SanitizeInput(groupName)
+	injection := SanitizeIdentifier(groupName)
 	if injection != nil {
 		return nil, injection
 	}

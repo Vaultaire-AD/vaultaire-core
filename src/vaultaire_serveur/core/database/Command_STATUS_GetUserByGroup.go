@@ -9,7 +9,7 @@ import (
 
 // Command_STATUS_GetUsersByGroup récupère les utilisateurs appartenant à un groupe spécifié.
 func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.UserConnected, error) {
-	injection := SanitizeInput(groupName)
+	injection := SanitizeIdentifier(groupName)
 	if injection != nil {
 		return nil, injection
 	}

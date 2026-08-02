@@ -2,9 +2,9 @@ package client
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"math/big"
 	"vaultaire/core/database"
 	logs "vaultaire/core/logs"
 )
@@ -51,12 +51,23 @@ func encryptAndGenerateID(publicKeyStr string) ([]byte, string, error) {
 	// 	return nil, nil, "", fmt.Errorf("erreur lors du chiffrement : %v", err)
 	// }
 
-	id, err := rand.Int(rand.Reader, new(big.Int).Exp(big.NewInt(10), big.NewInt(10), nil))
-	if err != nil {
-		logs.Write_Log("ERROR", "Error during the generation of the unique identifiant : %v")
+	// AuthID : identifiant du challenge en attente, clé de authStore.
+	//
+	// L'ancienne version tirait un entier dans [0, 10^10) puis faisait
+	// string(rune(id)). rune est un int32 : la conversion tronquait, et toute
+	// valeur hors plage Unicode ou en zone de substituts devenait U+FFFD. La
+	// quasi-totalité des identifiants s'effondrait donc sur la même chaîne, si
+	// bien que deux authentifications simultanées s'écrasaient dans le store —
+	// des échecs de login aléatoires dès qu'il y avait de la charge.
+	//
+	// 16 octets aléatoires en hexadécimal : 32 caractères ASCII, pas de
+	// troncature, pas de collision en pratique.
+	idBytes := make([]byte, 16)
+	if _, err := rand.Read(idBytes); err != nil {
+		logs.Write_Log("ERROR", "Error during the generation of the unique identifiant : "+err.Error())
 		return nil, "", fmt.Errorf("error during the generation of the unique identifiant : %v", err)
 	}
-	alphacheck := string(rune(id.Int64()))
+	alphacheck := hex.EncodeToString(idBytes)
 	return randomData, alphacheck, nil
 }
 

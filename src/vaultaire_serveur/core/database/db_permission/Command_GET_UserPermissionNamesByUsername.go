@@ -8,7 +8,7 @@ import (
 
 // Command_GET_UserPermissionNamesByUsername returns permission names the user gets through their groups.
 func Command_GET_UserPermissionNamesByUsername(db *sql.DB, username string) ([]string, error) {
-	if err := database.SanitizeInput(username); err != nil {
+	if err := database.SanitizeIdentifier(username); err != nil {
 		return nil, err
 	}
 	query := `

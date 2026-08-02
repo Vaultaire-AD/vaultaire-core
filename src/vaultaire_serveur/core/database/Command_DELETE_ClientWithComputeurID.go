@@ -8,7 +8,7 @@ import (
 
 // Supprime un client via son computeur_id
 func Command_DELETE_ClientWithComputeurID(db *sql.DB, computeurID string) error {
-	injection := SanitizeInput(computeurID)
+	injection := SanitizeIdentifier(computeurID)
 	if injection != nil {
 		return injection
 	}

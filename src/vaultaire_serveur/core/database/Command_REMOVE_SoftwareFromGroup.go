@@ -8,7 +8,7 @@ import (
 
 // Command_Remove_SoftwareFromGroup supprime un logiciel d'un groupe
 func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string) error {
-	injection := SanitizeInput(computeur_id, groupName)
+	injection := SanitizeIdentifier(computeur_id, groupName)
 	if injection != nil {
 		return injection
 	}

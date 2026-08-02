@@ -21,7 +21,7 @@ import (
 // Pour renommer, il faut créer une nouvelle permission et rebasculer les
 // groupes, ce qui rend le changement visible et réversible.
 func Command_UPDATE_ClientPermission(db *sql.DB, permissionName string, isAdmin bool) error {
-	if err := database.SanitizeInput(permissionName); err != nil {
+	if err := database.SanitizeIdentifier(permissionName); err != nil {
 		return err
 	}
 

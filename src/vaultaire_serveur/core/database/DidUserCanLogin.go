@@ -8,7 +8,7 @@ import (
 
 // Vérifie si un utilisateur peut se connecter avec un client (partage un groupe ou une permission)
 func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
-	injection := SanitizeInput(username, computeur_id)
+	injection := SanitizeIdentifier(username, computeur_id)
 	if injection != nil {
 		return false, injection
 	}

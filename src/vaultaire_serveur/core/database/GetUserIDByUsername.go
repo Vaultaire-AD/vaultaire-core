@@ -7,7 +7,7 @@ import (
 )
 
 func Get_User_ID_By_Username(db *sql.DB, username string) (int, error) {
-	injection := SanitizeInput(username)
+	injection := SanitizeIdentifier(username)
 	if injection != nil {
 		return 0, injection
 	}

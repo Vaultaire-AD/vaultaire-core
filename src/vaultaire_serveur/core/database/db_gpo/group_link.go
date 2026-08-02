@@ -19,7 +19,7 @@ import (
 
 // LinkPolicyToGroup rattache une GPO à un groupe.
 func LinkPolicyToGroup(db *sql.DB, gpoName, groupName string) error {
-	if err := database.SanitizeInput(gpoName, groupName); err != nil {
+	if err := database.SanitizeIdentifier(gpoName, groupName); err != nil {
 		return err
 	}
 	gpoID, err := GetPolicyIDByName(db, gpoName)
@@ -51,7 +51,7 @@ func LinkPolicyToGroup(db *sql.DB, gpoName, groupName string) error {
 
 // UnlinkPolicyFromGroup retire la liaison entre une GPO et un groupe.
 func UnlinkPolicyFromGroup(db *sql.DB, gpoName, groupName string) error {
-	if err := database.SanitizeInput(gpoName, groupName); err != nil {
+	if err := database.SanitizeIdentifier(gpoName, groupName); err != nil {
 		return err
 	}
 	gpoID, err := GetPolicyIDByName(db, gpoName)
@@ -102,7 +102,7 @@ func GetGroupsForPolicy(db *sql.DB, policyID int) ([]string, error) {
 
 // GetPolicyNamesForGroup retourne les noms des GPO liées à un groupe.
 func GetPolicyNamesForGroup(db *sql.DB, groupName string) ([]string, error) {
-	if err := database.SanitizeInput(groupName); err != nil {
+	if err := database.SanitizeIdentifier(groupName); err != nil {
 		return nil, err
 	}
 	rows, err := db.Query(
@@ -190,7 +190,7 @@ func GetPoliciesForGroupIDs(db *sql.DB, groupIDs []int, scope gpo.Scope) ([]gpo.
 // domaine — l'appelant doit alors traiter le cas explicitement plutôt que de
 // laisser passer une liste vide comme un blanc-seing.
 func GetDomainsByGPO(db *sql.DB, gpoName string) ([]string, error) {
-	if err := database.SanitizeInput(gpoName); err != nil {
+	if err := database.SanitizeIdentifier(gpoName); err != nil {
 		return nil, err
 	}
 	rows, err := db.Query(

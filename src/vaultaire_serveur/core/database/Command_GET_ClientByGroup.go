@@ -8,7 +8,7 @@ import (
 )
 
 func Command_GET_ClientsByGroup(db *sql.DB, groupName string) ([]storage.GetClientsByGroup, error) {
-	injection := SanitizeInput(groupName)
+	injection := SanitizeIdentifier(groupName)
 	if injection != nil {
 		return nil, injection
 	}

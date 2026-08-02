@@ -31,7 +31,7 @@ func add_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, actio
 		return fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err)
 	}
 
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, domains)
+	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s gpo=%s group=%s reason=%s", sender_Username, action, gpoName, groupName, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de lier la GPO %s au groupe %s (domaines : %v) — %s", sender_Username, gpoName, groupName, domains, reason))

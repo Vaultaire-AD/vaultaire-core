@@ -54,7 +54,7 @@ func CleanUpExpiredSessions(db *sql.DB) error {
 }
 
 func DeleteDidLogin(db *sql.DB, Username string, computeurID string) error {
-	injection := SanitizeInput(computeurID, Username)
+	injection := SanitizeIdentifier(computeurID, Username)
 	if injection != nil {
 		return injection
 	}

@@ -3,6 +3,8 @@ package testrunner
 import (
 	"database/sql"
 	"fmt"
+	"strconv"
+
 	"vaultaire/core/command"
 	"vaultaire/core/database"
 	"vaultaire/core/permission"
@@ -21,6 +23,9 @@ func Run() int {
 
 	// --- Unit: SanitizeInput ---
 	results = append(results, testSanitizeInput())
+
+	// --- Unit: SanitizeIdentifier (liste blanche) ---
+	results = append(results, testSanitizeIdentifier()...)
 
 	// --- Unit: SplitArgsPreserveBlocks ---
 	results = append(results, testSplitArgs()...)
@@ -75,6 +80,57 @@ func testSanitizeInput() Result {
 		return Result{"SanitizeInput(quote)", false, "devrait rejeter"}
 	}
 	return Result{"SanitizeInput", true, ""}
+}
+
+// testSanitizeIdentifier vérifie la liste blanche des identifiants.
+//
+// Les cas de REFUS comptent autant que les cas d'acceptation : c'est la
+// séparation entre identifiant et texte libre qui est testée ici. Un
+// identifiant qui accepterait un espace ou une parenthèse trahirait un retour
+// à la liste noire.
+func testSanitizeIdentifier() []Result {
+	var out []Result
+
+	accepte := []string{"alice", "admin@vaultaire.fr", "compta.vaultaire.fr", "poste-042", "user_name"}
+	for _, v := range accepte {
+		out = append(out, Result{
+			"SanitizeIdentifier accepte " + v,
+			database.SanitizeIdentifier(v) == nil,
+			"identifiant légitime rejeté",
+		})
+	}
+
+	refuse := []string{
+		"alice bob",                  // espace
+		"Intel(R) Core",              // parenthèses
+		"groupe[1]",                  // crochets
+		"a<b",                        // chevrons
+		"alice'; DROP TABLE users;--", // injection classique
+		"",                           // vide
+		"admin\ttab",                 // caractère de contrôle
+	}
+	for _, v := range refuse {
+		out = append(out, Result{
+			"SanitizeIdentifier refuse " + strconv.Quote(v),
+			database.SanitizeIdentifier(v) != nil,
+			"devrait refuser",
+		})
+	}
+
+	// Le texte libre reste autorisé par SanitizeInput : c'est toute la raison
+	// d'avoir gardé deux fonctions. Si ces cas venaient à échouer, les mots de
+	// passe, les modèles de processeur et les motifs des restrictions GPO
+	// cesseraient de fonctionner.
+	libre := []string{"mot de passe avec espaces", "Intel(R) Core(TM) i7", `^[a-z0-9._-]+\.service$`, "/etc/mon-app/"}
+	for _, v := range libre {
+		out = append(out, Result{
+			"SanitizeInput accepte le texte libre " + strconv.Quote(v),
+			database.SanitizeInput(v) == nil,
+			"texte libre légitime rejeté",
+		})
+	}
+
+	return out
 }
 
 func testSplitArgs() []Result {

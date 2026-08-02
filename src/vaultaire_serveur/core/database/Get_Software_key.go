@@ -7,7 +7,7 @@ import (
 )
 
 func Get_Client_Software_PublicKey(db *sql.DB, clientSoftwareID string) (string, error) {
-	injection := SanitizeInput(clientSoftwareID)
+	injection := SanitizeIdentifier(clientSoftwareID)
 	if injection != nil {
 		return "", injection
 	}

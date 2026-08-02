@@ -28,9 +28,13 @@ type Config struct {
 
 // Structure de la requête/ réponse API
 type CommandRequest struct {
-	Command   string `json:"command"`
-	Username  string `json:"username"`
-	Nonce     string `json:"nonce"`
+	Command  string `json:"command"`
+	Username string `json:"username"`
+	Nonce    string `json:"nonce"`
+	// Timestamp entre dans le corps signé. Le serveur refuse au-delà de deux
+	// minutes d'écart et mémorise les nonces de la fenêtre courante : une
+	// requête capturée sur le réseau n'est plus rejouable.
+	Timestamp int64  `json:"timestamp"`
 	Signature string `json:"signature"`
 }
 
@@ -128,14 +132,19 @@ func main() {
 	nonce := generateNonce()
 
 	// 4. Préparer le body JSON sans signature pour le signer
+	// Structure strictement identique à celle du serveur : c'est ce JSON exact
+	// qui est signé puis revérifié octet à octet.
+	timestamp := time.Now().Unix()
 	reqBodyToSign := struct {
-		Command  string `json:"command"`
-		Username string `json:"username"`
-		Nonce    string `json:"nonce"`
+		Command   string `json:"command"`
+		Username  string `json:"username"`
+		Nonce     string `json:"nonce"`
+		Timestamp int64  `json:"timestamp"`
 	}{
-		Command:  command,
-		Username: cfg.Username,
-		Nonce:    nonce,
+		Command:   command,
+		Username:  cfg.Username,
+		Nonce:     nonce,
+		Timestamp: timestamp,
 	}
 	bodyBytesToSign, _ := json.Marshal(reqBodyToSign)
 
@@ -151,6 +160,7 @@ func main() {
 		Command:   command,
 		Username:  cfg.Username,
 		Nonce:     nonce,
+		Timestamp: timestamp,
 		Signature: sig,
 	}
 	bodyBytes, _ := json.Marshal(reqBody)

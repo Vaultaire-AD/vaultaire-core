@@ -17,7 +17,12 @@ func generateSalt(length int) ([]byte, error) {
 }
 
 func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, password, birthdate string) error {
-	injection := SanitizeInput(username, password, birthdate)
+	// Même séparation qu'à la création : identifiant en liste blanche, mot de
+	// passe en texte libre.
+	if err := SanitizeIdentifier(username); err != nil {
+		return err
+	}
+	injection := SanitizeInput(password, birthdate)
 	if injection != nil {
 		return injection
 	}

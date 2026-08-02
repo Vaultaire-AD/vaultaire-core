@@ -8,7 +8,7 @@ import (
 
 // Get the client OS from the database with clientsoftwareId
 func GetClientOS(db *sql.DB, clientsoftwareId string) (string, error) {
-	injection := SanitizeInput(clientsoftwareId)
+	injection := SanitizeIdentifier(clientsoftwareId)
 	if injection != nil {
 		return "", injection
 	}

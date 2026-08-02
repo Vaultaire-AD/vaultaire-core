@@ -6,7 +6,7 @@ import (
 )
 
 func GetIdLogicielByComputeurID(db *sql.DB, computeurID string) (string, error) {
-	injection := SanitizeInput(computeurID)
+	injection := SanitizeIdentifier(computeurID)
 	if injection != nil {
 		return "", injection
 	}

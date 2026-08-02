@@ -38,7 +38,7 @@ func update_UserPassword_Command_Parser(commandList []string, senderGroupsIDs []
 		return fmt.Sprintf("Erreur lors de la recuperation des domaines de %s : %v", targetUsername, err)
 	}
 
-	ok, reason := permission.CheckPermissionsMultipleDomains(senderGroupsIDs, action, targetDomains)
+	ok, reason := permission.CheckPermissionsAllDomains(senderGroupsIDs, action, targetDomains)
 	if !ok {
 		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s target=%s reason=%s", senderUsername, action, targetUsername, reason))
 		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de mettre a jour le password de %s (domaines: %v) - %s", senderUsername, targetUsername, targetDomains, reason))

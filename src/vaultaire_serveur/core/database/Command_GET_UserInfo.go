@@ -8,7 +8,7 @@ import (
 )
 
 func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSingle, error) {
-	injection := SanitizeInput(username)
+	injection := SanitizeIdentifier(username)
 	if injection != nil {
 		return nil, injection
 	}
