@@ -115,6 +115,107 @@ func HasActionAnywhere(groupIDs []int, action string) bool {
 	return false
 }
 
+// AllowedDomains décrit sur quels domaines une action est accordée.
+//
+// Sert au filtrage des LISTES de l'interface web. Répondre « oui » ou « non »
+// ne suffit pas là : il faut savoir CE QUE l'appelant a le droit de voir, pour
+// ne lui montrer que cela.
+type AllowedDomains struct {
+	// Global vaut vrai si l'action est accordée partout. Les autres champs sont
+	// alors sans objet.
+	Global bool
+	// Exact liste les domaines accordés sans propagation.
+	Exact []string
+	// Propagated liste les domaines accordés avec propagation : eux et leurs
+	// sous-domaines.
+	Propagated []string
+}
+
+// Allows dit si un domaine précis entre dans le périmètre.
+//
+// Un domaine vide n'est jamais autorisé, sauf droit global : une entité dont on
+// ignore le domaine ne doit pas apparaître dans une liste filtrée, sinon le
+// filtre laisserait passer précisément ce qu'on n'a pas su classer.
+func (a AllowedDomains) Allows(domain string) bool {
+	if a.Global {
+		return true
+	}
+	domain = strings.TrimSpace(domain)
+	if domain == "" {
+		return false
+	}
+	for _, d := range a.Exact {
+		if domain == d {
+			return true
+		}
+	}
+	for _, d := range a.Propagated {
+		if domain == d || strings.HasSuffix(domain, "."+d) {
+			return true
+		}
+	}
+	return false
+}
+
+// IsEmpty dit si aucun domaine n'est accordé.
+func (a AllowedDomains) IsEmpty() bool {
+	return !a.Global && len(a.Exact) == 0 && len(a.Propagated) == 0
+}
+
+// DomainsWhereAllowed retourne le périmètre d'une action pour un jeu de groupes.
+//
+// POURQUOI CETTE FONCTION EXISTE. Les pages d'administration vérifiaient
+// autrefois le droit GLOBAL avant d'afficher quoi que ce soit ; la question du
+// périmètre ne se posait donc pas, puisque seul un administrateur global entrait.
+// Depuis que l'ouverture d'une page ne demande plus que le droit sur au moins
+// un domaine, la question se pose : sans filtrage, un délégué d'un domaine
+// voyait l'annuaire entier.
+//
+// Un refus explicite (nil) sur un groupe n'annule pas ce qu'un autre groupe
+// accorde — même règle que l'évaluation d'accès, pour que voir et pouvoir
+// restent cohérents.
+func DomainsWhereAllowed(groupIDs []int, action string) AllowedDomains {
+	var out AllowedDomains
+
+	normalizedAction, ok := IsValidAction(action)
+	if !ok {
+		return out
+	}
+
+	seenExact := map[string]bool{}
+	seenProp := map[string]bool{}
+
+	for _, groupID := range groupIDs {
+		content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+		if err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
+			continue
+		}
+		parsed := ParsePermissionContent(content)
+		if parsed.Deny {
+			continue
+		}
+		if parsed.All {
+			out.Global = true
+			return out
+		}
+		for _, d := range parsed.NoPropagation {
+			if d != "" && !seenExact[d] {
+				seenExact[d] = true
+				out.Exact = append(out.Exact, d)
+			}
+		}
+		for _, d := range parsed.WithPropagation {
+			if d != "" && !seenProp[d] {
+				seenProp[d] = true
+				out.Propagated = append(out.Propagated, d)
+			}
+		}
+	}
+	return out
+}
+
 // isDomainAllowed évalue un domaine unique pour un jeu de groupes.
 //
 // Reprend exactement la règle utilisée en lecture : un refus explicite (nil)

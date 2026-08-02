@@ -33,5 +33,11 @@ func Command_GET_Groups_ByUserPermission(db *sql.DB, permissionName string) ([]s
 		groups = append(groups, g)
 	}
 
+	// rows.Err() distingue « la lecture est terminée » de « la lecture s'est
+	// interrompue ». Sans ce contrôle, une coupure en cours d'itération rend un
+	// résultat PARTIEL présenté comme complet.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return groups, nil
 }

@@ -329,7 +329,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Erreur liste utilisateurs", http.StatusInternalServerError)
 		return
 	}
-	data.Users = users
+	// La liste est réduite au périmètre de l'appelant : ouvrir la page ne donne
+	// pas le droit de voir tout l'annuaire.
+	scope := newDomainScope(groupIDs, "read:get:user")
+	filtered := filterUsers(scope, users)
+	logScopeFiltering(username, "utilisateurs", len(users), len(filtered))
+	data.Users = filtered
 	if err := executeAdminPage(w, "admin_users.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 		return
@@ -602,7 +607,10 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Erreur liste groupes", http.StatusInternalServerError)
 		return
 	}
-	data.Groups = groups
+	scope := newDomainScope(groupIDs, "read:get:group")
+	filteredGroups := filterGroups(scope, groups)
+	logScopeFiltering(username, "groupes", len(groups), len(filteredGroups))
+	data.Groups = filteredGroups
 	if err := executeAdminPage(w, "admin_groups.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
@@ -730,7 +738,10 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Erreur liste clients", http.StatusInternalServerError)
 		return
 	}
-	data.Clients = clients
+	scope := newDomainScope(groupIDs, "read:get:client")
+	filteredClients := filterClients(scope, clients)
+	logScopeFiltering(username, "clients", len(clients), len(filteredClients))
+	data.Clients = filteredClients
 	if err := executeAdminPage(w, "admin_clients.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
@@ -1084,7 +1095,10 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Erreur liste permissions", http.StatusInternalServerError)
 		return
 	}
-	data.Perms = perms
+	scope := newDomainScope(groupIDs, "read:get:permission")
+	filteredPerms := filterUserPermissions(scope, perms)
+	logScopeFiltering(username, "permissions", len(perms), len(filteredPerms))
+	data.Perms = filteredPerms
 
 	// L'échec de lecture des permissions client n'empêche pas d'afficher les
 	// permissions utilisateur : la page reste utile, et le bandeau d'erreur
@@ -1207,13 +1221,21 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminLogsHandler affiche la page des logs avec filtres.
-// Access: web_admin + read:get:user (same as command get -u for viewing data).
+// Access: web_admin + read:log. Les journaux couvrent tous les domaines, ils ne
+// se rattachent donc à aucun droit de lecture par entité.
 func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
 		return
 	}
-	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:user") {
+	// read:log, et non read:get:user comme auparavant.
+	//
+	// Les journaux ne se filtrent pas par domaine : une ligne de journal n'en
+	// porte pas. Les adosser au droit de lire les utilisateurs revenait donc à
+	// donner l'activité de TOUT le parc — tentatives d'authentification, refus
+	// de permission, déclenchements de kill switch — à quiconque pouvait
+	// consulter un annuaire, fût-ce sur un seul domaine.
+	if !checkWebAdminRBAC(w, r, groupIDs, permission.ActionReadLog) {
 		return
 	}
 
@@ -1236,15 +1258,18 @@ func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // AdminLogsAPIHandler retourne les logs filtrés en JSON.
-// Access: web_admin + read:get:user.
+// Access: web_admin + read:log, revérifié ici et pas seulement sur la page.
 func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
-	_, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
 		http.Error(w, "Non autorisé", http.StatusUnauthorized)
 		return
 	}
-	allowed, _ := permission.CheckPermissionsMultipleDomains(groupIDs, "read:get:user", []string{"*"})
-	if !allowed {
+	// Même droit que la page, vérifié séparément : l'API est appelée
+	// directement par le navigateur et doit se défendre seule. S'en remettre au
+	// contrôle de la page laisserait l'endpoint ouvert à qui connaît son URL.
+	if !permission.HasActionAnywhere(groupIDs, permission.ActionReadLog) {
+		logs.Write_Log("SECURITY", "webadmin: "+username+" tente de lire les journaux sans le droit "+permission.ActionReadLog)
 		http.Error(w, "Permission refusée", http.StatusForbidden)
 		return
 	}

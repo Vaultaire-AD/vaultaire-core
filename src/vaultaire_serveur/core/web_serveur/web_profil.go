@@ -1,13 +1,15 @@
 package webserveur
 
 import (
+	"fmt"
 	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
+
 	"vaultaire/core/database"
 	dbuser "vaultaire/core/database/db-user"
+	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -84,41 +86,83 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 
 	switch action {
 	case "update_info":
-		// même code qu'avant pour update profil
 		newUsername := r.FormValue("username")
 		firstname := r.FormValue("firstname")
 		lastname := r.FormValue("lastname")
 		password := r.FormValue("password")
 		confirm := r.FormValue("confirm_password")
+		currentPassword := r.FormValue("current_password")
 
 		if password != "" && password != confirm {
-			http.Error(w, "Mot de passe non confirmé", 400)
+			http.Error(w, "Mot de passe non confirmé", http.StatusBadRequest)
 			return
 		}
 
 		currentUsername, _ := session.ValidateToken(tokenCookie.Value)
 		userID, err := database.Get_User_ID_By_Username(db, currentUsername)
 		if err != nil {
-			http.Error(w, "Utilisateur introuvable", 500)
+			http.Error(w, "Utilisateur introuvable", http.StatusInternalServerError)
 			return
+		}
+
+		// MOT DE PASSE ACTUEL EXIGÉ pour en changer.
+		//
+		// Il ne l'était pas. Combiné à l'absence d'invalidation des autres
+		// sessions, un jeton volé — poste laissé ouvert, sauvegarde de
+		// navigateur — permettait de changer le mot de passe sans connaître
+		// l'ancien, et le propriétaire légitime ne pouvait plus reprendre la
+		// main : changer son propre mot de passe n'évinçait pas l'intrus.
+		if password != "" {
+			storedHash, salt, err := database.Get_User_Password_By_ID(db, userID)
+			if err != nil {
+				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+					"profil: lecture du mot de passe impossible pour "+currentUsername+" : "+err.Error())
+				http.Error(w, "Erreur interne", http.StatusInternalServerError)
+				return
+			}
+			if !gc.ComparePasswords(currentPassword, salt, storedHash) {
+				logs.Write_Log("SECURITY",
+					"profil: changement de mot de passe refusé pour "+currentUsername+" — mot de passe actuel incorrect")
+				http.Error(w, "Mot de passe actuel incorrect", http.StatusForbidden)
+				return
+			}
 		}
 
 		err = database.Update_User_Info(db, userID, newUsername, firstname, lastname, password, "")
 		if err != nil {
-			http.Error(w, "Erreur mise à jour: "+err.Error(), 500)
+			http.Error(w, "Erreur mise à jour: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
 
-		if newUsername != currentUsername {
+		if newUsername != "" && newUsername != currentUsername {
+			// Les sessions suivent le nouveau nom, puis un jeton neuf est émis.
+			// Sans le report, les autres sessions pointeraient vers un compte
+			// qui n'existe plus et échoueraient sur « utilisateur introuvable »
+			// sans explication.
+			session.RenameSessions(currentUsername, newUsername)
+			currentUsername = newUsername
+
 			newToken := session.CreateSession(newUsername)
-			http.SetCookie(w, &http.Cookie{
-				Name:     "session_token",
-				Value:    newToken,
-				HttpOnly: true,
-				Secure:   true,
-				Path:     "/",
-				Expires:  time.Now().Add(30 * time.Minute),
-			})
+			if newToken == "" {
+				http.Error(w, "Session non renouvelée, reconnectez-vous", http.StatusInternalServerError)
+				return
+			}
+			session.DeleteSession(tokenCookie.Value)
+			setSessionCookie(w, newToken)
+			tokenCookie.Value = newToken
+		}
+
+		if password != "" {
+			// Toutes les AUTRES sessions sont fermées. La session courante est
+			// conservée : déconnecter l'auteur du changement lui ferait croire
+			// que l'opération a échoué.
+			if closed := session.DeleteOtherSessionsOf(currentUsername, tokenCookie.Value); closed > 0 {
+				logs.Write_Log("INFO", fmt.Sprintf(
+					"profil: mot de passe de %s changé, %d autre(s) session(s) fermée(s)",
+					currentUsername, closed))
+			} else {
+				logs.Write_Log("INFO", "profil: mot de passe de "+currentUsername+" changé")
+			}
 		}
 
 	case "delete_key":

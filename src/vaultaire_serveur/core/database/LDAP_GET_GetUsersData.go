@@ -71,6 +71,12 @@ func GetUsersByGroup(group string, db *sql.DB) ([]ldapstorage.User, error) {
 		users = append(users, user)
 	}
 
+	// rows.Err() distingue « la lecture est terminée » de « la lecture s'est
+	// interrompue ». Sans ce contrôle, une coupure en cours d'itération rend un
+	// résultat PARTIEL présenté comme complet.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return users, nil
 }
 

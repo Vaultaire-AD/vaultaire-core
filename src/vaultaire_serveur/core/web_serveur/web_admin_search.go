@@ -2,10 +2,13 @@ package webserveur
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
+
 	"vaultaire/core/database"
 	dbperm "vaultaire/core/database/db_permission"
+	"vaultaire/core/logs"
 )
 
 // SearchResult represents one search hit for the global search API.
@@ -23,13 +26,26 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	_, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
 		return
 	}
 	if !checkWebAdminRBAC(w, r, groupIDs, "search") {
 		return
 	}
+
+	// La recherche interroge les quatre familles d'un coup : sans filtrage, elle
+	// devenait le chemin le plus court pour énumérer tout l'annuaire depuis une
+	// simple barre de recherche, y compris pour un administrateur délégué sur un
+	// seul domaine.
+	//
+	// Le périmètre est calculé par famille et non une fois pour toutes : on peut
+	// légitimement avoir le droit de lire les groupes d'un domaine sans avoir
+	// celui d'en lire les comptes.
+	userScope := newDomainScope(groupIDs, "read:get:user")
+	groupScope := newDomainScope(groupIDs, "read:get:group")
+	clientScope := newDomainScope(groupIDs, "read:get:client")
+	permScope := newDomainScope(groupIDs, "read:get:permission")
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
 	if len(q) < 2 {
 		w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -47,6 +63,9 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var users []SearchResult
 	allUsers, _ := database.Command_GET_AllUsers(db)
 	for _, u := range allUsers {
+		if !userScope.allowsAny(userScope.domainsOfUser(u.Username)) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(u.Username), qLower) || strings.Contains(strings.ToLower(u.Email), qLower) {
 			users = append(users, SearchResult{Type: "user", ID: u.Username, Name: u.Username, URL: "/admin/users?user=" + u.Username})
 		}
@@ -55,6 +74,9 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var groups []SearchResult
 	allGroups, _ := database.Command_GET_GroupDetails(db)
 	for _, g := range allGroups {
+		if !groupScope.allowsAny([]string{g.DomainName}) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(g.GroupName), qLower) || strings.Contains(strings.ToLower(g.DomainName), qLower) {
 			groups = append(groups, SearchResult{Type: "group", ID: g.GroupName, Name: g.GroupName + " (" + g.DomainName + ")", URL: "/admin/groups?group=" + g.GroupName})
 		}
@@ -63,6 +85,9 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var clients []SearchResult
 	allClients, _ := database.Command_GET_AllClients(db)
 	for _, c := range allClients {
+		if !clientScope.allowsAny(clientScope.domainsOfClient(c.ComputeurID)) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(c.ComputeurID), qLower) || strings.Contains(strings.ToLower(c.Hostname), qLower) {
 			clients = append(clients, SearchResult{Type: "client", ID: c.ComputeurID, Name: c.Hostname + " (" + c.ComputeurID + ")", URL: "/admin/clients?client=" + c.ComputeurID})
 		}
@@ -71,10 +96,17 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	var perms []SearchResult
 	allPerms, _ := dbperm.Command_GET_AllUserPermissions(db)
 	for _, p := range allPerms {
+		if !permScope.allowsAny(permScope.domainsOfPermission(p.Name)) {
+			continue
+		}
 		if strings.Contains(strings.ToLower(p.Name), qLower) || strings.Contains(strings.ToLower(p.Description), qLower) {
 			perms = append(perms, SearchResult{Type: "permission", ID: p.Name, Name: p.Name, URL: "/admin/permissions?perm=" + p.Name})
 		}
 	}
+
+	logs.Write_Log("DEBUG", fmt.Sprintf(
+		"webadmin: recherche de %s — %d utilisateur(s), %d groupe(s), %d client(s), %d permission(s) dans son périmètre",
+		username, len(users), len(groups), len(clients), len(perms)))
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	_ = json.NewEncoder(w).Encode(map[string][]SearchResult{

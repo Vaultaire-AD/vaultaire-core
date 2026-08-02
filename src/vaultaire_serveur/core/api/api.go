@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"vaultaire/core/command"
 	"vaultaire/core/database"
 	dbuser "vaultaire/core/database/db-user"
@@ -243,6 +244,12 @@ func StartAPI() {
 		Addr:      ":" + strconv.Itoa(storage.API_Port),
 		Handler:   mux,
 		TLSConfig: tlsConfig,
+		// Mêmes délais que l'interface web, et pour la même raison : sans eux
+		// une connexion lente retient une goroutine sans limite de temps.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 
 	logs.Write_Log("INFO", "api: REST HTTPS listening on port "+strconv.Itoa(storage.API_Port))

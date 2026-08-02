@@ -25,7 +25,7 @@ modèle :
 | Variable | Contenu | Pourquoi c'est à part |
 |----------|---------|-----------------------|
 | `legacyActions` | `none`, `web_admin`, `auth`, `compare`, `search` | Héritées du modèle LDAP d'origine. Stockées dans des colonnes de `user_permission`, pas dans `user_permission_action`. |
-| `specialActions` | `write:dns`, `write:eyes` | Commandes précises, sans objet au sens RBAC. |
+| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log` | Actions sans objet au sens RBAC. |
 
 La couche base masque la différence de stockage : `Command_GET_UserPermissionAction`
 et `Command_SET_UserPermissionAction` routent vers la colonne ou vers la table
@@ -49,7 +49,7 @@ l'écrit, `UpdatePermissionAction` ajoute ou retire un domaine.
 Certaines actions sont **toujours** contrôlées contre le domaine `*` :
 
 ```go
-var globalOnlyActions = []string{"web_admin", "write:dns"}
+var globalOnlyActions = []string{"web_admin", "write:dns", "read:log"}
 ```
 
 Leur donner une liste de domaines ne les restreint pas — cela les **refuse**,
@@ -64,6 +64,24 @@ l'interface ne doit jamais être la seule barrière.
 **Si vous modifiez un appelant** pour qu'il transmette un domaine réel, retirez
 l'entrée correspondante de `globalOnlyActions`. Les appelants concernés sont
 nommés en commentaire à côté de la déclaration.
+
+`read:log` est dans cette liste pour une raison différente des deux autres : ce
+n'est pas l'appelant qui impose `*`, c'est la donnée qui n'a pas de domaine. Une
+ligne de journal enregistre une tentative d'authentification ou un refus de
+permission ; elle n'appartient à aucun domaine de l'annuaire, et la restreindre
+n'aurait donc pas de sens.
+
+### `read:log` — consultation des journaux
+
+Sépare l'audit de l'administration. Auparavant les pages `/admin/logs` et
+`/admin/api/logs` étaient adossées à `read:get:user` : quiconque pouvait
+consulter l'annuaire d'un seul domaine lisait l'activité de **tout le parc** —
+tentatives d'authentification, refus de permission, déclenchements de kill
+switch, toutes machines confondues.
+
+Le droit est désormais distinct dans les deux sens : on peut confier l'audit à
+quelqu'un qui n'administre rien, et administrer un domaine sans lire les
+journaux des autres.
 
 ---
 

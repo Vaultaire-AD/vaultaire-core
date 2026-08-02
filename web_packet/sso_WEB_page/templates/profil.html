@@ -36,10 +36,16 @@
         <input type="text" id="lastname" name="lastname" value="{{.User.Lastname}}" required>
         <label for="email">Email</label>
         <input type="email" id="email" name="email" value="{{.User.Email}}" readonly>
+        <label for="current_password">Mot de passe actuel</label>
+        <input type="password" id="current_password" name="current_password" autocomplete="current-password">
+        <p class="muted small">Requis uniquement pour changer de mot de passe.</p>
         <label for="password">Nouveau mot de passe</label>
-        <input type="password" id="password" name="password">
+        <input type="password" id="password" name="password" autocomplete="new-password">
         <label for="confirm_password">Confirmer le mot de passe</label>
-        <input type="password" id="confirm_password" name="confirm_password">
+        <input type="password" id="confirm_password" name="confirm_password" autocomplete="new-password">
+        <p class="muted small">
+          Changer votre mot de passe ferme toutes vos autres sessions ouvertes.
+        </p>
         <button type="submit" class="btn btn-primary" style="margin-top:0.75rem">Enregistrer</button>
       </form>
     </section>

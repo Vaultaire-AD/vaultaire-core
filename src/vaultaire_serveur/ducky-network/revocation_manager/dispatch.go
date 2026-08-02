@@ -19,6 +19,7 @@ import (
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/revocation"
+	websession "vaultaire/core/web_serveur/session"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/sessionmgr"
 )
@@ -159,20 +160,32 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 	return out, nil
 }
 
-// killSessions ferme les sessions Ducky ouvertes au nom d'un utilisateur.
+// killSessions ferme TOUTES les sessions ouvertes au nom d'un utilisateur.
 //
 // Sans ça, une personne déjà connectée continuerait de travailler jusqu'à
 // l'expiration de sa session : sur un compte compromis, c'est le temps qu'on
 // cherche justement à supprimer.
+//
+// Les deux registres sont traités. Ne fermer que les sessions Ducky laissait le
+// compte révoqué accéder à l'interface web pendant trente minutes : il ne
+// pouvait plus rien faire — GetGroupIDsForUser lui refuse toutes ses
+// permissions — mais il continuait de voir.
 func killSessions(username string) int {
-	sessions := sessionmgr.Sessions.ListAuthenticatedByUsername(username)
-	for _, sess := range sessions {
+	ducky := sessionmgr.Sessions.ListAuthenticatedByUsername(username)
+	for _, sess := range ducky {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone,
-			"revocation: fermeture de la session de "+username,
+			"revocation: fermeture de la session Ducky de "+username,
 			logs.WithMeta(sess.SessionID, username))
 		sessionmgr.Sessions.RemoveSession(sess.SessionID)
 	}
-	return len(sessions)
+
+	web := websession.DeleteSessionsOf(username)
+	if web > 0 {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: %d session(s) web de %s fermée(s)", web, username))
+	}
+
+	return len(ducky) + web
 }
 
 // pushToOnline envoie l'ordre aux machines actuellement connectées.

@@ -38,6 +38,12 @@ func Command_GET_AllClientPermissions(db *sql.DB) ([]storage.ClientPermission, e
 		permissions = append(permissions, permission)
 	}
 
+	// rows.Err() distingue « la lecture est terminée » de « la lecture s'est
+	// interrompue ». Sans ce contrôle, une coupure en cours d'itération rend un
+	// résultat PARTIEL présenté comme complet.
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return permissions, nil
 }
 

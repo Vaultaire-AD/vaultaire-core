@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"time"
 	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -39,6 +40,7 @@ func StartWebServer() {
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./web_packet/sso_WEB_page/static"))))
 	http.HandleFunc("/", LoginPageHandler)
 	http.HandleFunc("/login", LoginHandler)
+	http.HandleFunc("/logout", LogoutHandler)
 	http.HandleFunc("/profil", ProfilHandler)
 	http.HandleFunc("/admin", AdminIndexHandler)
 	http.HandleFunc("/admin/tree", AdminTreePageHandler)
@@ -63,5 +65,20 @@ func StartWebServer() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Fatal(http.Serve(listener, nil))
+
+	// DÉLAIS D'ATTENTE. http.Serve n'en pose aucun : une connexion qui envoie
+	// ses en-têtes octet par octet immobilise une goroutine indéfiniment, et
+	// quelques centaines suffisent à rendre l'interface d'administration
+	// injoignable — précisément quand on en a besoin pour réagir.
+	//
+	// Les valeurs sont larges à dessein : l'envoi d'une clé publique ou d'une
+	// GPO volumineuse doit passer sans être coupé.
+	server := &http.Server{
+		Handler:           nil, // DefaultServeMux, où les routes ci-dessus sont posées
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
+	log.Fatal(server.Serve(listener))
 }

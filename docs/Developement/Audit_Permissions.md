@@ -16,8 +16,7 @@ suit est un constat de lecture de code, avec le chemin exact.
 
 | # | Gravité | Point d'entrée | Constat | Décision |
 |---|---------|----------------|---------|----------|
-| 1 | **Critique** | Ducky | `04_01` ouvre la session sans authentification et débloque toutes les autres trames | Reporté — 04 expérimental |
-| 2 | **Critique** | Ducky | `04_01` crée groupe et domaine en base, sans authentification | Reporté — 04 expérimental |
+| 1 et 2 | **Critique** | Ducky | `04_01` contourne l'authentification, crée groupe et domaine, et désarme le contrôle d'ordre | Reporté — 04 expérimental. **Analyse à jour dans `Audit_Serveur.md` §11** |
 | 3 | **Moyenne** | LDAP | Le contrôle `search` distingue la propagation, la résolution l'ignore | Reporté — avec les autres sujets LDAP |
 | 4 | **Moyenne** | CLI / web | Rien n'empêche d'ajouter un utilisateur au groupe `vaultaire` | **Accepté** — responsabilité administrateur |
 | 5 | **Faible** | Transverse | Deux parseurs de permission aux sémantiques divergentes | Ouvert |
@@ -29,52 +28,22 @@ suit est un constat de lecture de code, avec le chemin exact.
 ## 1 et 2. Critique — le chemin `04_01` (reporté)
 
 > **Décision : la partie 04 est expérimentale. À traiter quand le sujet cluster
-> sera repris.** Ces deux constats sont conservés ici tels quels pour que le
-> travail ne redémarre pas de zéro.
+> sera repris.**
 
-**Chemins :** `ducky-network/networkSecurity/CheckIntegrity.go`,
-`ducky-network/sessionmgr/trames.go:82`, `ducky-network/host_handler/handler.go:66`
+**Analyse à jour déplacée dans [`Audit_Serveur.md`](./Audit_Serveur.md), point
+11.** Elle y a été reprise et corrigée : la portée du problème a changé depuis
+que le `ClientSoftwareID` est figé et vérifié à chaque trame.
 
-L'automate d'ordre des trames attend `01_01 → 02_01 → 02_03`. Deux lignes le
-court-circuitent :
+En résumé de ce qui reste : `04_01` est atteignable sans aucun identifiant —
+tout ce qui précède `IsSafe` est chiffré avec la clé publique du serveur, elle
+même obtenable par un `askkey` non authentifié — il crée un groupe et un domaine
+depuis des chaînes de la trame, et il désarme le contrôle d'ordre pour le reste
+de la session.
 
-```go
-// CheckIntegrity.go
-if lastTrame == "01_01" && newTrame == "04_01" { return true }
-
-// trames.go
-if newTrame == "04_01" { s.TrameIsSafe = true }
-```
-
-Et en tête de `UpdateConnectionTrame` :
-
-```go
-if s.TrameIsSafe { return nil }   // plus aucun contrôle d'ordre ensuite
-```
-
-Or `01_01` n'authentifie rien : `Prove_Identity` se contente de renvoyer le
-contenu reçu — c'est le *serveur* qui prouve son identité au client.
-
-**Chaîne d'attaque, sans aucune donnée d'authentification :**
-
-1. TCP vers le port Ducky
-2. `askkey` → clé publique RSA du serveur, avant toute session
-3. `01_01` → clé de session AES établie
-4. `04_01` → `TrameIsSafe = true`, **et** création d'un groupe et d'un domaine
-   arbitraires (`handleRegisterHost` : `groupName` et `domain` viennent du
-   contenu de la trame)
-5. Toutes les autres trames deviennent accessibles
-
-**Atténuation depuis l'audit.** L'étape 5 a perdu l'essentiel de son intérêt : le
-`ClientSoftwareID` est désormais figé à `01_01` et vérifié à chaque trame (voir
-DO/2.0, entrée 10-1). Un attaquant ne peut plus réclamer les GPO ni le sel d'une
-machine autre que celle dont il possède la clé privée. **Restent ouverts :** la
-création de groupe et de domaine sans authentification, et le fait que la porte
-elle-même n'est pas fermée.
-
-**Correction proposée :** ne poser `TrameIsSafe` qu'après une authentification
-réellement établie. Le chemin host a besoin de la sienne — un secret de nœud, ou
-le même challenge que les clients. Le raccourci `04_01` devrait disparaître.
+Le volet lecture (GPO, sel, clés publiques d'autres machines) est **fermé** :
+les réponses sont chiffrées avec la clé publique du client annoncé, que
+l'attaquant ne possède pas. Il reste donc une **écriture non authentifiée, sans
+lecture**.
 
 ---
 

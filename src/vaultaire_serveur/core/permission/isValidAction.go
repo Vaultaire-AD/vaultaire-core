@@ -16,8 +16,25 @@ var (
 	// l'interface web, le CLI) : la liste vit désormais ici seule, sinon en
 	// ajouter une la rendrait invisible dans l'interface sans que rien ne le
 	// signale.
-	specialActions = []string{"write:dns", "write:eyes", ActionKillSwitch}
+	specialActions = []string{"write:dns", "write:eyes", ActionKillSwitch, ActionReadLog}
 )
+
+// ActionReadLog est le droit de consulter les journaux du serveur.
+//
+// Action spéciale et non clé RBAC à trois segments : un journal n'est pas un
+// objet de l'annuaire. Le déclarer comme tel créerait six clés
+// (read:get:log, write:create:log…) dont une seule aurait un sens.
+//
+// Séparée des autres droits de lecture à dessein. Les journaux traversent tous
+// les domaines : ils contiennent les tentatives d'authentification, les refus de
+// permission et les déclenchements de kill switch de TOUT le parc. Quelqu'un qui
+// administre un domaine n'a pas à y lire l'activité des autres, et quelqu'un qui
+// doit auditer le serveur n'a pas besoin de pouvoir modifier l'annuaire pour
+// autant.
+//
+// Voir aussi globalOnlyActions : ce droit ne se restreint pas par domaine,
+// puisqu'une ligne de journal n'en porte pas.
+const ActionReadLog = "read:log"
 
 // ActionKillSwitch est le droit de déclencher une révocation de compte.
 //
@@ -44,7 +61,7 @@ const ActionKillSwitch = "write:killswitch"
 // web_profil.go, write:dns dans command_dns/command_dns_manager.go. Si un de ces
 // appels venait à transmettre un domaine réel, il faudrait retirer l'entrée
 // correspondante ici.
-var globalOnlyActions = []string{"web_admin", "write:dns"}
+var globalOnlyActions = []string{"web_admin", "write:dns", ActionReadLog}
 
 // IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte
 // donc que nil ou all.
