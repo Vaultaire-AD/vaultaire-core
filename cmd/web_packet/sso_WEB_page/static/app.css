@@ -1211,3 +1211,121 @@ body.dark .perm-card:hover { border-color: var(--border-strong); }
 .gpo-search, .gpo-catalog-list { display: none; }
 .gpo-js .gpo-search, .gpo-js .gpo-catalog-list { display: block; }
 .gpo-js .gpo-catalog-fallback { display: none; }
+
+/* ==========================================================================
+   Matrice des permissions RBAC
+   ==========================================================================
+   Les clés RBAC sont le produit objet × verbe : une ligne par objet, une
+   colonne par verbe. Les dimensions viennent du serveur, donc ajouter un objet
+   ou un verbe n'impose aucune retouche ici. */
+
+.perm-matrix { width: 100%; border-collapse: collapse; }
+.perm-matrix th,
+.perm-matrix td {
+  padding: 0.35rem 0.45rem;
+  border-bottom: 1px solid var(--border, #e2e5ea);
+  text-align: center;
+}
+.perm-matrix thead th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  vertical-align: bottom;
+  border-bottom-width: 2px;
+}
+/* Lectures et écritures se distinguent au premier coup d'œil : c'est la
+   séparation qui compte quand on audite une permission. */
+.perm-matrix-read { box-shadow: inset 0 -2px 0 var(--primary, #3b6fd4); }
+.perm-matrix-write { box-shadow: inset 0 -2px 0 var(--danger, #c0392b); }
+.perm-matrix-verb-key {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: normal;
+  opacity: 0.6;
+  text-transform: none;
+  letter-spacing: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.perm-matrix-corner { text-align: left; }
+.perm-matrix-object { text-align: left; white-space: nowrap; font-weight: 600; }
+.perm-matrix-object-key {
+  display: block;
+  font-size: 0.7rem;
+  font-weight: normal;
+  opacity: 0.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.perm-matrix-cell { width: 5.5rem; }
+
+/* Une pastille par case. La couleur porte l'information : refus, ouverture
+   totale, ou domaines énumérés. */
+.perm-chip {
+  display: inline-block;
+  min-width: 3.6rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: var(--radius-sm, 6px);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  color: inherit;
+  border: 1px solid transparent;
+}
+a.perm-chip:hover { border-color: var(--primary, #3b6fd4); }
+.perm-chip-nil { opacity: 0.4; }
+.perm-chip-all {
+  background: rgba(192, 57, 43, 0.14);
+  font-weight: 600;
+}
+.perm-chip-custom { background: rgba(59, 111, 212, 0.14); }
+.perm-chip-na { opacity: 0.25; cursor: not-allowed; }
+.perm-chip-selected {
+  border-color: var(--primary, #3b6fd4);
+  box-shadow: 0 0 0 2px rgba(59, 111, 212, 0.25);
+}
+
+/* Actions hors matrice : liste simple, elles sont peu nombreuses et sans
+   structure croisée. */
+.perm-flat-list { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.5rem 0 1.2rem; }
+.perm-flat-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--border, #d5d9e0);
+  border-radius: var(--radius-sm, 6px);
+  text-decoration: none;
+  color: inherit;
+}
+.perm-flat-item:hover { border-color: var(--primary, #3b6fd4); }
+.perm-flat-selected {
+  border-color: var(--primary, #3b6fd4);
+  box-shadow: 0 0 0 2px rgba(59, 111, 212, 0.25);
+}
+
+/* Éditeur unique, sous la matrice. */
+.perm-editor {
+  border: 1px solid var(--primary, #3b6fd4);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-top: 1rem;
+}
+.perm-editor[hidden] { display: none; }
+.perm-editor-head { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.perm-editor-head h3 { margin: 0; }
+.perm-editor-shortcuts { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 0.5rem 0 0.9rem; }
+
+.perm-domain-list { list-style: none; padding: 0; margin: 0 0 0.9rem; }
+.perm-domain {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--border, #eceff3);
+}
+.perm-domain:last-child { border-bottom: none; }
+.perm-domain-remove { margin-left: auto; }
+.perm-badge-flat { opacity: 0.7; }
+
+.perm-domain-add { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.perm-domain-add input[type="text"] { min-width: 14rem; }

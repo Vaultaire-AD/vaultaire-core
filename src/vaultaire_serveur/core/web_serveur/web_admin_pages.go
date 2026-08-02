@@ -643,58 +643,11 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// PermissionActionRow est une ligne d'action pour le détail permission (template).
-type PermissionActionRow struct{ Field, Label, Value string }
+// permissionTabs liste les onglets de la page de détail d'une permission.
+var permissionTabs = []string{"matrix", "groups", "settings"}
 
-// PermissionActionGroup est un groupe d'actions pour le détail permission (template).
-type PermissionActionGroup struct {
-	GroupName string
-	Actions   []PermissionActionRow
-}
-
-// buildPermissionActionsGrouped construit les actions groupées par catégorie pour une lecture plus claire.
-func buildPermissionActionsGrouped(db *sql.DB, perm *storage.UserPermission) []PermissionActionGroup {
-	row := func(field, label, value string) PermissionActionRow { return PermissionActionRow{field, label, value} }
-	legacy := []PermissionActionRow{
-		row("auth", "Auth", perm.Auth),
-		row("compare", "Compare", perm.Compare),
-		row("search", "Search", perm.Search),
-		row("web_admin", "Web admin", perm.Web_admin),
-		row("none", "None", perm.None),
-	}
-	objectLabels := map[string]string{
-		"user": "Utilisateurs (user)", "group": "Groupes (group)", "client": "Clients (client)",
-		"permission": "Permissions (permission)", "gpo": "GPO",
-	}
-	groups := []PermissionActionGroup{{GroupName: "Legacy", Actions: legacy}}
-	byObject := map[string][]PermissionActionRow{}
-	for _, key := range permission.AllRBACActionKeys() {
-		val, _ := dbperm.Command_GET_UserPermissionAction(db, int64(perm.ID), key)
-		parts := strings.SplitN(key, ":", 3)
-		obj := ""
-		if len(parts) == 3 {
-			obj = parts[2]
-		}
-		label := objectLabels[obj]
-		if label == "" {
-			label = obj
-		}
-		byObject[obj] = append(byObject[obj], PermissionActionRow{key, key, val})
-	}
-	for _, obj := range []string{"user", "group", "client", "permission", "gpo"} {
-		if actions, ok := byObject[obj]; ok {
-			name := objectLabels[obj]
-			groups = append(groups, PermissionActionGroup{GroupName: name, Actions: actions})
-		}
-	}
-	special := []PermissionActionRow{}
-	for _, key := range []string{"write:dns", "write:eyes"} {
-		val, _ := dbperm.Command_GET_UserPermissionAction(db, int64(perm.ID), key)
-		special = append(special, PermissionActionRow{key, key, val})
-	}
-	groups = append(groups, PermissionActionGroup{GroupName: "Spécial (DNS, Eyes)", Actions: special})
-	return groups
-}
+// permissionListTabs liste les onglets de la page liste des permissions.
+var permissionListTabs = []string{"users", "clients", "create"}
 
 // AdminPermissionsHandler lists permissions or shows permission detail when ?perm= is set.
 // Access: web_admin + read:get:permission to view; write:create|update|delete:permission for POST (same as command package).
@@ -717,19 +670,28 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		groups, _ := dbperm.Command_GET_Groups_ByUserPermission(db, detailPerm)
 		allDomains := getUniqueDomains(db)
-		groupedActions := buildPermissionActionsGrouped(db, perm)
 		detailData := struct {
-			Perm           *storage.UserPermission
-			Groups         []string
-			AllDomains     []string
-			GroupedActions []PermissionActionGroup
-			Message        string
-			Username       string
-			DnsEnable      bool
-			Section        string
-		}{Perm: perm, Groups: groups, AllDomains: allDomains, GroupedActions: groupedActions, Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
+			Perm       *storage.UserPermission
+			Groups     []string
+			AllDomains []string
+			Matrix     permissionMatrixView
+			// Editor est la case ouverte dans l'éditeur unique. Une seule action
+			// est éditable à la fois : c'est ce qui rend la page insensible au
+			// nombre d'objets RBAC déclarés.
+			Editor     permissionCell
+			HasEditor  bool
+			GroupCount int
+			Message    string
+			Error      string
+			Username   string
+			DnsEnable  bool
+			Section    string
+			ActiveTab  string
+		}{Perm: perm, Groups: groups, AllDomains: allDomains,
+			Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
 		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
+			detailData.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), permissionTabs)
 			if action == "delete_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
 				return
 			}
@@ -744,7 +706,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 				detailData.Message = "Erreur suppression."
 			case "update_permission_action":
-				field := r.FormValue("field")
+				field := strings.TrimSpace(r.FormValue("field"))
 				op := r.FormValue("op")
 				domain := strings.TrimSpace(r.FormValue("domain"))
 				if domain == "" {
@@ -754,55 +716,134 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				if propagation == "" {
 					propagation = "0"
 				}
+
+				// Le champ vient d'un formulaire : il est vérifié contre la
+				// liste des actions réellement administrables. Sans ce contrôle,
+				// une clé inventée s'insérerait dans user_permission_action et
+				// y resterait — jamais évaluée par le moteur RBAC, donc sans
+				// effet, mais indétectable dans l'interface.
+				if !permissionFieldExists(field) {
+					logs.Write_Log("SECURITY", "webadmin: "+username+" tente d'écrire l'action inconnue '"+field+"' sur la permission "+detailPerm)
+					detailData.Error = "Action inconnue."
+					break
+				}
+
+				// Une action évaluée uniquement sur « * » n'accepte que nil ou
+				// all. Lui donner des domaines la refuse au lieu de la
+				// restreindre — et pour web_admin, cela retire l'accès à
+				// l'interface d'administration, y compris à l'auteur du
+				// changement. Le refus est ici et pas seulement dans le
+				// formulaire : l'interface ne doit jamais être la seule barrière.
+				if permission.IsGlobalOnlyAction(field) && (op == "add" || op == "remove") {
+					detailData.Error = "L'action " + field + " s'évalue sur tous les domaines : elle accepte seulement nil ou all."
+					break
+				}
+
 				permID, errID := dbperm.Command_GET_UserPermissionID(db, detailPerm)
 				if errID != nil {
-					detailData.Message = "Permission introuvable."
+					detailData.Error = "Permission introuvable."
 					break
 				}
 				current, errGet := dbperm.Command_GET_UserPermissionAction(db, permID, field)
 				if errGet != nil {
-					detailData.Message = "Erreur lecture action: " + errGet.Error()
+					detailData.Error = "Erreur lecture action: " + errGet.Error()
 					break
 				}
 				parsed := permission.ParsePermissionAction(current)
 				switch op {
 				case "nil":
-					_ = dbperm.Command_SET_UserPermissionAction(db, permID, field, "nil")
-					detailData.Message = "Action " + field + " mise à nil."
-				case "all":
-					_ = dbperm.Command_SET_UserPermissionAction(db, permID, field, "all")
-					detailData.Message = "Action " + field + " mise à all."
-				case "add":
-					if domain != "" {
-						permission.UpdatePermissionAction(&parsed, domain, propagation, true)
-						newVal := permission.ConvertPermissionActionToString(parsed)
-						if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
-							detailData.Message = "Erreur: " + err.Error()
-						} else {
-							detailData.Message = "Domaine " + domain + " ajouté."
-						}
+					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, "nil"); err != nil {
+						detailData.Error = "Erreur: " + err.Error()
 					} else {
-						detailData.Message = "Domaine requis."
+						detailData.Message = "Action " + field + " mise à nil."
+					}
+				case "all":
+					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, "all"); err != nil {
+						detailData.Error = "Erreur: " + err.Error()
+					} else {
+						detailData.Message = "Action " + field + " mise à all."
+					}
+				case "add":
+					if domain == "" {
+						detailData.Error = "Domaine requis."
+						break
+					}
+					permission.UpdatePermissionAction(&parsed, domain, propagation, true)
+					newVal := permission.ConvertPermissionActionToString(parsed)
+					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
+						detailData.Error = "Erreur: " + err.Error()
+					} else {
+						detailData.Message = "Domaine " + domain + " ajouté à " + field + "."
 					}
 				case "remove":
-					if domain != "" {
-						permission.UpdatePermissionAction(&parsed, domain, propagation, false)
-						newVal := "nil"
-						if len(parsed.WithPropagation) > 0 || len(parsed.WithoutPropagation) > 0 {
-							newVal = permission.ConvertPermissionActionToString(parsed)
-						}
-						_ = dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal)
-						detailData.Message = "Domaine " + domain + " retiré."
+					if domain == "" {
+						detailData.Error = "Domaine requis."
+						break
+					}
+					// Le retrait doit désigner un domaine réellement présent.
+					// UpdatePermissionAction est silencieux sur un domaine
+					// absent : sans ce contrôle, une faute de frappe affichait
+					// « domaine retiré » sans que rien n'ait changé.
+					if !domainGranted(parsed, domain, propagation) {
+						detailData.Error = "Le domaine " + domain + " n'est pas accordé sur " + field + "."
+						break
+					}
+					permission.UpdatePermissionAction(&parsed, domain, propagation, false)
+					newVal := "nil"
+					if len(parsed.WithPropagation) > 0 || len(parsed.WithoutPropagation) > 0 {
+						newVal = permission.ConvertPermissionActionToString(parsed)
+					}
+					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
+						detailData.Error = "Erreur: " + err.Error()
+					} else {
+						detailData.Message = "Domaine " + domain + " retiré de " + field + "."
 					}
 				default:
-					detailData.Message = "Opération invalide."
+					detailData.Error = "Opération invalide."
 				}
-				perm, _ = dbperm.Command_GET_UserPermissionByName(db, detailPerm)
-				detailData.Perm = perm
-				detailData.GroupedActions = buildPermissionActionsGrouped(db, perm)
+
+				// L'éditeur reste ouvert sur l'action qu'on vient de modifier :
+				// on enchaîne souvent plusieurs domaines sur la même action.
+				detailData.Editor.Field = field
+
+				// Relecture après écriture. Un échec conserve l'objet précédent
+				// plutôt que de le remplacer par nil : la page affichera des
+				// valeurs d'avant l'écriture, ce qui est déroutant, mais une
+				// déréférence de nil planterait la requête entière.
+				if reloaded, reloadErr := dbperm.Command_GET_UserPermissionByName(db, detailPerm); reloadErr == nil && reloaded != nil {
+					perm = reloaded
+					detailData.Perm = perm
+				} else {
+					detailData.Error = appendError(detailData.Error, "Relecture de la permission impossible, l'affichage peut être en retard.")
+				}
 			}
 		}
-		_ = executeAdminPage(w, "admin_permission_detail.html", detailData)
+
+		// Construction de la vue après les écritures, pour refléter la base et
+		// non l'état supposé.
+		detailData.Matrix = buildPermissionMatrix(db, detailData.Perm)
+		detailData.GroupCount = len(groups)
+		if detailData.ActiveTab == "" {
+			detailData.ActiveTab = "matrix"
+		}
+		// L'action à ouvrir dans l'éditeur peut venir d'un POST précédent ou du
+		// lien ?field= — dans les deux cas elle est relue depuis la matrice, pas
+		// reconstruite, pour que l'éditeur montre la valeur réellement en base.
+		editorField := detailData.Editor.Field
+		if editorField == "" {
+			editorField = r.URL.Query().Get("field")
+		}
+		if cell, ok := detailData.Matrix.editorCell(editorField); ok {
+			detailData.Editor = cell
+			detailData.HasEditor = true
+		} else {
+			detailData.Editor = permissionCell{}
+		}
+
+		if err := executeAdminPage(w, "admin_permission_detail.html", detailData); err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin: template admin_permission_detail.html: "+err.Error())
+			http.Error(w, "Template manquant", http.StatusInternalServerError)
+		}
 		return
 	}
 
@@ -818,9 +859,13 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		Username    string
 		DnsEnable   bool
 		Section     string
+		UserCount   int
+		ClientCount int
+		ActiveTab   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
 	if r.Method == http.MethodPost {
 		action := r.FormValue("action")
+		data.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), permissionListTabs)
 		if action == "create_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:permission") {
 			return
 		}
@@ -944,6 +989,12 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		data.Error = appendError(data.Error, "Permissions client illisibles : "+err.Error())
 	} else {
 		data.ClientPerms = clientPerms
+	}
+
+	data.UserCount = len(data.Perms)
+	data.ClientCount = len(data.ClientPerms)
+	if data.ActiveTab == "" {
+		data.ActiveTab = "users"
 	}
 
 	if err := executeAdminPage(w, "admin_permissions.html", data); err != nil {

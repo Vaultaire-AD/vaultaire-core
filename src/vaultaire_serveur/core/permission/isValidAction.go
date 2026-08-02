@@ -6,11 +6,49 @@ import (
 
 // Objets et actions RBAC (catégorie:action:objet)
 var (
-	RBACObjects  = []string{"user", "group", "client", "permission", "gpo"}
-	RBACRead     = []string{"get", "status"}
-	RBACWrite    = []string{"create", "delete", "update", "add"}
+	RBACObjects   = []string{"user", "group", "client", "permission", "gpo"}
+	RBACRead      = []string{"get", "status"}
+	RBACWrite     = []string{"create", "delete", "update", "add"}
 	legacyActions = []string{"none", "web_admin", "auth", "compare", "search"}
+
+	// specialActions sont les commandes qui ne se rangent pas dans le modèle
+	// catégorie:action:objet. Elles étaient énumérées à trois endroits (ici,
+	// l'interface web, le CLI) : la liste vit désormais ici seule, sinon en
+	// ajouter une la rendrait invisible dans l'interface sans que rien ne le
+	// signale.
+	specialActions = []string{"write:dns", "write:eyes"}
 )
+
+// globalOnlyActions sont les actions dont le contrôle passe toujours le domaine
+// « * », quelle que soit la cible.
+//
+// Leur donner une liste de domaines ne les restreint pas : cela les refuse,
+// puisque aucun domaine nommé ne correspond à « * ». Pour web_admin la
+// conséquence est brutale — l'auteur du changement perd l'accès à l'interface
+// d'administration, y compris pour se corriger.
+//
+// Vérifié aux appelants : web_admin dans web_serveur/web_admin.go et
+// web_profil.go, write:dns dans command_dns/command_dns_manager.go. Si un de ces
+// appels venait à transmettre un domaine réel, il faudrait retirer l'entrée
+// correspondante ici.
+var globalOnlyActions = []string{"web_admin", "write:dns"}
+
+// IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte
+// donc que nil ou all.
+func IsGlobalOnlyAction(key string) bool {
+	for _, a := range globalOnlyActions {
+		if a == key {
+			return true
+		}
+	}
+	return false
+}
+
+// LegacyActionKeys retourne les actions historiques, hors modèle RBAC.
+func LegacyActionKeys() []string { return append([]string(nil), legacyActions...) }
+
+// SpecialActionKeys retourne les commandes spéciales, hors modèle RBAC.
+func SpecialActionKeys() []string { return append([]string(nil), specialActions...) }
 
 // Liste des actions valides (legacy + RBAC)
 var validActions = buildValidActions()
@@ -26,7 +64,7 @@ func buildValidActions() []string {
 			list = append(list, "write:"+a+":"+obj)
 		}
 	}
-	list = append(list, "write:dns", "write:eyes") // commandes spéciales
+	list = append(list, specialActions...)
 	return list
 }
 

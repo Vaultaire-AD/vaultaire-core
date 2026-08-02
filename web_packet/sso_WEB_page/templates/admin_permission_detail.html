@@ -24,77 +24,240 @@
         </div>
       </header>
       <div class="app-content">
-        <div class="app-container animate-in">
-          <h1>Détail permission : {{ .Perm.Name }}</h1>
-          {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+        <div class="app-container animate-in" data-gpo-page data-gpo-active="{{ .ActiveTab }}">
 
-          <section class="section">
-            <h2>Groupes ayant cette permission</h2>
-            <ul style="list-style:none;padding:0">{{ range .Groups }}<li><a href="/admin/groups?group={{ . }}">{{ . }}</a></li>{{ end }}</ul>
+          <p class="muted small"><a href="/admin/permissions">← Toutes les permissions</a></p>
+          <h1>{{ .Perm.Name }}</h1>
+          {{ if .Perm.Description }}<p class="muted">{{ .Perm.Description }}</p>{{ end }}
+
+          {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+          {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+
+          <div class="gpo-tabs" role="tablist">
+            <button type="button" class="gpo-tab" role="tab" data-gpo-tab="matrix">Droits</button>
+            <button type="button" class="gpo-tab" role="tab" data-gpo-tab="groups">
+              Groupes <span class="gpo-tab-count">{{ .GroupCount }}</span>
+            </button>
+            <button type="button" class="gpo-tab" role="tab" data-gpo-tab="settings">Réglages</button>
+          </div>
+
+          <datalist id="domains-list">{{ range .AllDomains }}<option value="{{ . }}">{{ end }}</datalist>
+
+          <!-- ================= Onglet : droits ================= -->
+          <section class="gpo-panel" data-gpo-panel="matrix">
+            <p class="muted small">
+              Chaque case croise un objet et un verbe. <code>—</code> refuse, <code>tous</code> accorde sur
+              l'ensemble des domaines, <code>n dom.</code> énumère les domaines. Cliquez une case pour la modifier ;
+              l'éditeur s'ouvre sous la matrice.
+            </p>
+
+            <div class="table-wrap">
+              <table class="perm-matrix">
+                <thead>
+                  <tr>
+                    <th class="perm-matrix-corner">Objet</th>
+                    {{ range .Matrix.Verbs }}
+                    <th class="perm-matrix-verb perm-matrix-{{ .Category }}">
+                      {{ .Label }}<span class="perm-matrix-verb-key">{{ .Action }}</span>
+                    </th>
+                    {{ end }}
+                  </tr>
+                </thead>
+                <tbody>
+                  {{ range .Matrix.Rows }}
+                  <tr>
+                    <th class="perm-matrix-object" scope="row">
+                      {{ .Label }}
+                      <span class="perm-matrix-object-key">{{ .Object }}</span>
+                    </th>
+                    {{ range .Cells }}
+                    <td class="perm-matrix-cell">
+                      {{ if .Available }}
+                      <!-- Chaque case est un simple lien vers la même page avec
+                           ?field=. L'éditeur est rendu par le serveur, en un
+                           seul endroit : pas de duplication de la logique
+                           d'affichage en JavaScript, donc rien qui puisse
+                           diverger. La page fonctionne à l'identique sans JS. -->
+                      <a class="perm-chip perm-chip-{{ .State }}{{ if eq .Field $.Editor.Field }} perm-chip-selected{{ end }}"
+                         href="/admin/permissions?perm={{ $.Perm.Name }}&amp;field={{ .Field }}#matrix"
+                         title="{{ .Field }} = {{ .Value }}">{{ .Summary }}</a>
+                      {{ else }}
+                      <span class="perm-chip perm-chip-na" title="Combinaison non applicable">{{ .Summary }}</span>
+                      {{ end }}
+                    </td>
+                    {{ end }}
+                  </tr>
+                  {{ end }}
+                </tbody>
+              </table>
+            </div>
+
+            <h3>Actions hors matrice</h3>
+            <p class="muted small">
+              Ces actions ne se rangent pas dans le modèle objet × verbe : les <strong>legacy</strong> viennent du
+              modèle LDAP d'origine, les <strong>spéciales</strong> ciblent des commandes précises.
+            </p>
+            <div class="perm-flat-list">
+              {{ range .Matrix.Legacy }}
+              <a class="perm-flat-item{{ if eq .Field $.Editor.Field }} perm-flat-selected{{ end }}"
+                 href="/admin/permissions?perm={{ $.Perm.Name }}&amp;field={{ .Field }}#matrix">
+                <code>{{ .Field }}</code>
+                <span class="perm-chip perm-chip-{{ .State }}">{{ .Summary }}</span>
+              </a>
+              {{ end }}
+              {{ range .Matrix.Special }}
+              <a class="perm-flat-item{{ if eq .Field $.Editor.Field }} perm-flat-selected{{ end }}"
+                 href="/admin/permissions?perm={{ $.Perm.Name }}&amp;field={{ .Field }}#matrix">
+                <code>{{ .Field }}</code>
+                <span class="perm-chip perm-chip-{{ .State }}">{{ .Summary }}</span>
+              </a>
+              {{ end }}
+            </div>
+
+            <!-- Éditeur unique. Un seul formulaire quel que soit le nombre
+                 d'actions déclarées : c'est ce qui rend la page insensible à
+                 l'ajout d'objets RBAC. -->
+            <div class="perm-editor" id="perm-editor"{{ if not .HasEditor }} hidden{{ end }}>
+              {{ if .HasEditor }}
+              <div class="perm-editor-head">
+                <h3>Modifier <code>{{ .Editor.Field }}</code></h3>
+                <span class="perm-chip perm-chip-{{ .Editor.State }}">{{ .Editor.Summary }}</span>
+              </div>
+
+              <p class="muted small">
+                Valeur en base : <code>{{ .Editor.Value }}</code>
+              </p>
+
+              <div class="perm-editor-shortcuts">
+                <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}">
+                  <input type="hidden" name="action" value="update_permission_action">
+                  <input type="hidden" name="active_tab" value="matrix">
+                  <input type="hidden" name="field" value="{{ .Editor.Field }}">
+                  <button type="submit" name="op" value="nil" class="btn btn-ghost btn-sm">Tout refuser (nil)</button>
+                </form>
+                <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}">
+                  <input type="hidden" name="action" value="update_permission_action">
+                  <input type="hidden" name="active_tab" value="matrix">
+                  <input type="hidden" name="field" value="{{ .Editor.Field }}">
+                  <button type="submit" name="op" value="all" class="btn btn-ghost btn-sm">Tous domaines (all)</button>
+                </form>
+              </div>
+
+              {{ if .Editor.GlobalOnly }}
+              <p class="muted small">
+                Cette action est toujours contrôlée sur l'ensemble des domaines : elle n'accepte que
+                <code>nil</code> ou <code>all</code>. Lui donner une liste de domaines ne la restreindrait pas,
+                cela la refuserait — pour <code>web_admin</code>, cela retirerait l'accès à cette interface,
+                y compris à vous. Les boutons de domaine sont donc absents, et le serveur refuse l'opération
+                même si la requête est forgée.
+              </p>
+              {{ else }}
+              <h4>Domaines accordés</h4>
+              {{ if .Editor.Domains }}
+              <ul class="perm-domain-list">
+                {{ range .Editor.Domains }}
+                <li class="perm-domain">
+                  <code>{{ .Name }}</code>
+                  {{ if .Inherited }}
+                    <span class="perm-badge">sous-domaines inclus</span>
+                  {{ else }}
+                    <span class="perm-badge perm-badge-flat">ce domaine seul</span>
+                  {{ end }}
+                  <!-- Le domaine et son mode de propagation sont transmis en
+                       champs cachés : plus de ressaisie, donc plus de retrait
+                       silencieusement sans effet sur une faute de frappe. -->
+                  <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" class="perm-domain-remove">
+                    <input type="hidden" name="action" value="update_permission_action">
+                    <input type="hidden" name="active_tab" value="matrix">
+                    <input type="hidden" name="field" value="{{ $.Editor.Field }}">
+                    <input type="hidden" name="op" value="remove">
+                    <input type="hidden" name="domain" value="{{ .Name }}">
+                    <input type="hidden" name="propagation" value="{{ .Propagation }}">
+                    <button type="submit" class="btn btn-ghost btn-danger btn-sm">Retirer</button>
+                  </form>
+                </li>
+                {{ end }}
+              </ul>
+              {{ else if eq .Editor.State "all" }}
+              <p class="muted small">Tous les domaines sont couverts. Retirez <code>all</code> pour énumérer.</p>
+              {{ else }}
+              <p class="muted small">Aucun domaine accordé — cette action est refusée.</p>
+              {{ end }}
+
+              <h4>Ajouter un domaine</h4>
+              <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}" class="perm-domain-add">
+                <input type="hidden" name="action" value="update_permission_action">
+                <input type="hidden" name="active_tab" value="matrix">
+                <input type="hidden" name="field" value="{{ .Editor.Field }}">
+                <input type="hidden" name="op" value="add">
+                <input type="text" name="domain" placeholder="domaine" list="domains-list" required spellcheck="false">
+                <select name="propagation">
+                  <option value="0">ce domaine seul</option>
+                  <option value="1">sous-domaines inclus</option>
+                </select>
+                <button type="submit" class="btn btn-secondary">Ajouter</button>
+              </form>
+              {{ end }}
+              {{ end }}
+            </div>
           </section>
 
-          <section class="section">
-            <h2>Actions par catégorie</h2>
-            <p class="muted small">nil = refuser, all = tous domaines. Ajouter/retirer des domaines : 0 = sans propagation, 1 = avec propagation (sous-domaines inclus).</p>
-            <datalist id="domains-list">{{ range .AllDomains }}<option value="{{ . }}">{{ end }}</datalist>
-            {{ range .GroupedActions }}
-            <div class="perm-detail-group">
-              <h3 class="perm-detail-group-title">{{ .GroupName }}</h3>
-              <div class="table-wrap">
-                <table>
-                  <thead>
-                    <tr><th>Action</th><th>Valeur actuelle</th><th>Modifier</th></tr>
-                  </thead>
-                  <tbody>
-                    {{ range .Actions }}
-                    <tr>
-                      <td><strong>{{ .Label }}</strong></td>
-                      <td><code class="perm-value-cell">{{ .Value }}</code></td>
-                      <td class="perm-actions-cell">
-                        <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" class="perm-action-form">
-                          <input type="hidden" name="action" value="update_permission_action">
-                          <input type="hidden" name="field" value="{{ .Field }}">
-                          <button type="submit" name="op" value="nil" class="btn btn-ghost btn-sm">nil</button>
-                          <button type="submit" name="op" value="all" class="btn btn-ghost btn-sm">all</button>
-                          <span class="muted perm-form-label">Ajouter</span>
-                          <select name="propagation">
-                            <option value="0">0 (sans prop.)</option>
-                            <option value="1">1 (avec prop.)</option>
-                          </select>
-                          <input type="text" name="domain" placeholder="domaine" list="domains-list">
-                          <button type="submit" name="op" value="add" class="btn btn-secondary btn-sm">+</button>
-                        </form>
-                        <form method="post" action="/admin/permissions?perm={{ $.Perm.Name }}" class="perm-action-form perm-remove-form">
-                          <input type="hidden" name="action" value="update_permission_action">
-                          <input type="hidden" name="field" value="{{ .Field }}">
-                          <input type="hidden" name="op" value="remove">
-                          <input type="text" name="domain_remove" placeholder="retirer domaine" list="domains-list">
-                          <button type="submit" class="btn btn-ghost btn-sm">−</button>
-                        </form>
-                      </td>
-                    </tr>
-                    {{ end }}
-                  </tbody>
-                </table>
-              </div>
+          <!-- ================= Onglet : groupes ================= -->
+          <section class="gpo-panel" data-gpo-panel="groups">
+            <p class="muted small">Groupes qui portent cette permission. Les membres de ces groupes en héritent.</p>
+            {{ if .Groups }}
+            <div class="perm-list">
+              {{ range .Groups }}
+              <article class="perm-card">
+                <div class="perm-card-main">
+                  <h3 class="perm-card-title"><a href="/admin/groups?group={{ . }}">{{ . }}</a></h3>
+                </div>
+              </article>
+              {{ end }}
             </div>
+            {{ else }}
+            <p class="muted">Aucun groupe ne porte cette permission — elle n'a d'effet sur personne.</p>
             {{ end }}
           </section>
 
-          <section class="section">
-            <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}" onsubmit="return confirm('Supprimer cette permission ?');">
+          <!-- ================= Onglet : réglages ================= -->
+          <section class="gpo-panel" data-gpo-panel="settings">
+            <h3>Supprimer la permission</h3>
+            <p class="muted small">
+              Retire la permission et toutes ses actions. Les groupes qui la portaient perdent les droits
+              correspondants. Irréversible.
+            </p>
+            <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}"
+                  onsubmit="return confirm('Supprimer la permission {{ .Perm.Name }} ?');">
               <input type="hidden" name="action" value="delete_permission">
+              <input type="hidden" name="active_tab" value="settings">
               <input type="hidden" name="target_perm" value="{{ .Perm.Name }}">
-              <button type="submit" class="btn btn-danger">Supprimer la permission</button>
+              <button type="submit" class="btn btn-ghost btn-danger">Supprimer la permission</button>
             </form>
           </section>
 
-          <p class="muted" style="margin-top:1.5rem"><a href="/admin/permissions">← Retour à la liste</a></p>
         </div>
       </div>
     </main>
   </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
   <script src="/static/app.js"></script>
   <script src="/static/admin_sidebar.js"></script>
+  <script src="/static/gpo_admin.js"></script>
 </body>
 </html>
