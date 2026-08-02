@@ -55,6 +55,14 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 			trames_content.SessionIntegritykey + "\n" + fullUsername + "\nverification error"
 	}
 	if isauth {
+		// KILL SWITCH : même une preuve valide ne rouvre pas un compte révoqué.
+		// Ce contrôle vient après la vérification pour ne pas révéler l'état du
+		// compte à qui n'en détient pas les identifiants.
+		if permission.IsRevoked(sshUser) {
+			logs.Write_Log("SECURITY", sshUser+" : preuve valide mais compte révoqué, accès SSH refusé sur "+trames_content.ClientSoftwareID)
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\npermission denied"
+		}
+
 		// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
 		can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 		if err != nil || !can {
@@ -94,6 +102,14 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 	// Logique : Le client demande les clés publiques pour l'utilisateur X
 	username, domaine := domain.ExctractDomainFromUsername(content[0])
 	db := database.GetDatabase()
+
+	// KILL SWITCH : ni salt ni nonce pour un compte révoqué. Le salt sert à
+	// dériver la preuve d'authentification ; le donner reviendrait à laisser la
+	// suite de l'échange se dérouler.
+	if permission.IsRevoked(username) {
+		logs.Write_Log("SECURITY", username+" : demande de salt sur un compte révoqué depuis "+trames_content.ClientSoftwareID)
+		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "@" + domaine + "\npermission denied"
+	}
 
 	ok, _ := permission.CanUserConnectToDomain(username + "@" + domaine)
 	if !ok || username == "vaultaire" {
@@ -139,6 +155,12 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	sshUser, domaine := domain.ExctractDomainFromUsername(content[0])
 
 	// 1. Verification des droits (peut-il se connecter sur cette machine ?)
+	// KILL SWITCH inclus : les clés publiques d'un compte révoqué ne sont plus
+	// distribuées, sans quoi l'agent les réinstallerait dans authorized_keys.
+	if permission.IsRevoked(sshUser) {
+		logs.Write_Log("SECURITY", sshUser+" : demande de clés publiques sur un compte révoqué (fetch-key)")
+		return ""
+	}
 	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 	if err != nil || !can || sshUser == "vaultaire" {
 		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID+" (fetch-key)")

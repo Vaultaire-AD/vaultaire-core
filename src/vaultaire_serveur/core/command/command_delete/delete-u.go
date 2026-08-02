@@ -2,57 +2,57 @@ package commanddelete
 
 import (
 	"fmt"
-	"vaultaire/core/database"
+
 	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/revocation"
+	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
-// delete_users_Command_Parser supprime un utilisateur par son nom.
+// delete_users_Command_Parser supprime un utilisateur, partout.
+//
 // Format attendu : ["-u", "username"]
-// Vérifie les permissions sur le domaine du groupe auquel appartient l'utilisateur.
+//
+// LA SUPPRESSION PASSE PAR LE KILL SWITCH, en mode hard. Auparavant cette
+// commande retirait le compte de l'annuaire et s'arrêtait là : le compte local
+// restait vivant sur chaque machine où l'utilisateur s'était connecté, avec son
+// mot de passe toujours dans /etc/shadow, écrit par le module PAM. Le compte
+// survivait donc à sa propre suppression, et rien dans l'interface ne le
+// laissait deviner.
+//
+// Déléguer à revocationmanager.Trigger apporte, en plus de la propagation :
+//
+//   - la liste des machines cibles calculée AVANT la suppression, sans quoi
+//     l'appartenance aux groupes disparaîtrait avec le compte ;
+//   - un ordre durable, rejoué aux machines hors ligne à leur reconnexion ;
+//   - la fermeture immédiate des sessions ouvertes ;
+//   - une trace d'audit qui survit au compte supprimé.
+//
+// Les contrôles RBAC sont faits par Trigger : write:killswitch ET
+// write:delete:user, tous deux sur l'ensemble des domaines de la cible. La
+// suppression reste donc au moins aussi difficile qu'avant.
 func delete_users_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
-	db := database.GetDatabase()
-
-	// Vérification syntaxe
 	if len(command_list) != 2 || command_list[0] != "-u" {
 		return "Invalid request. Try 'delete -h' for more information."
 	}
-
 	username := command_list[1]
 
-	// 🔹 Étape 1 : Récupération du domaine de l’utilisateur cible
-	userGroups, err := permission.GetGroupIDsFromUsername(username)
+	out, err := revocationmanager.Trigger(sender_Username, sender_groupsIDs, username,
+		revocation.ModeHard, revocation.ReasonOffboarding)
 	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Échec récupération groupes de %s : %v", username, err))
-		return fmt.Sprintf("Erreur lors de la récupération des groupes de %s : %v", username, err)
-	}
-	if len(userGroups) == 0 {
-		return fmt.Sprintf("Utilisateur %s introuvable ou sans groupe associé", username)
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"delete -u refusé : %s sur %s — %v", sender_Username, username, err))
+		return ">> -" + err.Error()
 	}
 
-	// 🔹 Étape 2 : Récupération des domaines associés aux groupes de l’utilisateur
-	domains, err := permission.GetDomainListsFromGroupIDs(userGroups)
-	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines de %s : %v", username, err))
-		return fmt.Sprintf("Erreur lors de la récupération des domaines de %s : %v", username, err)
-	}
+	logs.Write_Log("INFO", fmt.Sprintf(
+		"Utilisateur %s supprimé par %s (ordre de révocation %d, %d machine(s) visée(s))",
+		username, sender_Username, out.OrderID, out.TargetCount))
 
-	// 🔹 Étape 3 : Vérification de permission sur les domaines concernés
-	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s target=%s reason=%s", sender_Username, action, username, reason))
-		logs.Write_Log("SECURITY", fmt.Sprintf("Suppression refusée : %s tente de supprimer %s (domaines : %v) — %s", sender_Username, username, domains, reason))
-		return fmt.Sprintf("Permission refusée : %s", reason)
+	msg := fmt.Sprintf("Utilisateur %s supprimé (ordre %d).\n", username, out.OrderID)
+	msg += fmt.Sprintf("  Machines visées : %d, nettoyées immédiatement : %d\n",
+		out.TargetCount, out.PushedNow)
+	if remaining := out.TargetCount - out.PushedNow; remaining > 0 {
+		msg += fmt.Sprintf("  %d machine(s) hors ligne : le compte local y sera supprimé à leur reconnexion\n", remaining)
 	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (delete user)", sender_Username, action))
-
-	// 🔹 Étape 4 : Suppression sécurisée
-	err = database.Command_DELETE_UserWithUsername(db, username)
-	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("Erreur suppression utilisateur %s : %v", username, err))
-		return fmt.Sprintf("Erreur lors de la suppression de l'utilisateur %s : %v", username, err)
-	}
-
-	logs.Write_Log("INFO", fmt.Sprintf("Utilisateur %s supprimé avec succès par %s", username, sender_Username))
-	return fmt.Sprintf("Utilisateur %s supprimé avec succès", username)
+	return msg
 }

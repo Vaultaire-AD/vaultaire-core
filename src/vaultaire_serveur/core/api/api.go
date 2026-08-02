@@ -13,6 +13,7 @@ import (
 	dbuser "vaultaire/core/database/db-user"
 	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 	duckykey "vaultaire/ducky-network/key_management"
 
@@ -46,6 +47,16 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		logRequest(requestID, 0, req, "", err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// KILL SWITCH — avant même de chercher les clés publiques. Un compte révoqué
+	// conserve ses clés SSH en base : sans ce refus, sa signature resterait
+	// parfaitement valide et l'API continuerait de lui obéir.
+	if permission.IsRevoked(strings.TrimSpace(req.Username)) {
+		err := fmt.Errorf("compte révoqué")
+		logRequest(requestID, 0, req, "", err)
+		http.Error(w, "Utilisateur introuvable", http.StatusUnauthorized)
 		return
 	}
 

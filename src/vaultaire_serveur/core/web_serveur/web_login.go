@@ -6,6 +6,7 @@ import (
 	"vaultaire/core/database"
 	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/web_serveur/session"
 )
 
@@ -26,6 +27,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	username := r.FormValue("username")
 	password := r.FormValue("password")
+
+	// KILL SWITCH — avant toute lecture du mot de passe, et avec la même
+	// redirection muette que les autres échecs : la page de connexion ne doit
+	// pas distinguer un compte révoqué d'un mot de passe faux.
+	if permission.IsRevoked(username) {
+		logs.Write_LogCode("SECURITY", logs.CodeAuthLoginDenied,
+			"Tentative de connexion web sur le compte révoqué "+username)
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 
 	db := database.GetDatabase()
 	userID, err := database.Get_User_ID_By_Username(db, username)

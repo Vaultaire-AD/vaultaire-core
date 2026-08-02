@@ -16,8 +16,21 @@ var (
 	// l'interface web, le CLI) : la liste vit désormais ici seule, sinon en
 	// ajouter une la rendrait invisible dans l'interface sans que rien ne le
 	// signale.
-	specialActions = []string{"write:dns", "write:eyes"}
+	specialActions = []string{"write:dns", "write:eyes", ActionKillSwitch}
 )
+
+// ActionKillSwitch est le droit de déclencher une révocation de compte.
+//
+// Une action spéciale plutôt qu'un verbe RBAC : les verbes sont un produit
+// cartésien avec les objets, ajouter « revoke » créerait six clés
+// (write:revoke:user, :group, :client…) dont une seule aurait un sens.
+//
+// Séparée de write:delete:user à dessein. On veut pouvoir confier la
+// désactivation d'urgence à une équipe de permanence — support, astreinte —
+// sans lui donner le droit de supprimer des comptes au quotidien. Et
+// inversement : gérer les départs ne devrait pas emporter le pouvoir de couper
+// n'importe qui instantanément. Le mode `hard`, lui, exige les deux.
+const ActionKillSwitch = "write:killswitch"
 
 // globalOnlyActions sont les actions dont le contrôle passe toujours le domaine
 // « * », quelle que soit la cible.

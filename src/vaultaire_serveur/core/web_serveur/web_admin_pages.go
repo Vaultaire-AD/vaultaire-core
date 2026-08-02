@@ -17,11 +17,14 @@ import (
 	dbcert "vaultaire/core/database/db-certificates"
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbperm "vaultaire/core/database/db_permission"
+	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/revocation"
 	"vaultaire/core/storage"
 	"vaultaire/core/tools"
 	newclient "vaultaire/ducky-network/new_client"
+	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
 func generateSalt(length int) ([]byte, error) {
@@ -70,10 +73,20 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			AllGroups []string
 			UserPerms []string
 			Message   string
+			Error     string
 			Username  string
 			DnsEnable bool
 			Section   string
-		}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
+			// Kill switch : état de révocation du compte affiché, et historique
+			// des ordres. L'historique survit à une suppression hard, c'est même
+			// sa raison d'être — mais la page n'est alors plus atteignable, donc
+			// il ne sert ici qu'aux verrouillages soft et à leurs levées.
+			IsRevoked   bool
+			Revocations []dbrevocation.Record
+			KillReasons []revocation.Reason
+			CanKill     bool
+		}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users",
+			KillReasons: revocation.AllReasons()}
 		userInfo, err := database.Command_GET_UserInfo(db, detailUser)
 		if err != nil {
 			http.Error(w, "Utilisateur introuvable", http.StatusNotFound)
@@ -104,6 +117,39 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			case "delete_user":
 				actionKey = "write:delete:user"
 			}
+			// Kill switch : les contrôles RBAC sont faits par Trigger, qui
+			// exige write:killswitch sur tous les domaines de la cible (et
+			// write:delete:user en plus pour le mode hard). On ne les redouble
+			// pas ici — un contrôle dupliqué finit toujours par diverger de
+			// celui qui compte.
+			if action == "kill_user" {
+				mode := revocation.Mode(r.FormValue("kill_mode"))
+				reason := revocation.Reason(r.FormValue("kill_reason"))
+
+				// Le mode destructeur exige de retaper le nom du compte. Ce
+				// n'est pas une confirmation de confort : hard supprime le
+				// compte et son répertoire personnel sur tout le parc, sans
+				// retour possible. Le mode soft, réversible, n'en demande pas.
+				if mode == revocation.ModeHard && r.FormValue("confirm_username") != target {
+					detailData.Error = "Suppression définitive : saisissez exactement le nom du compte pour confirmer."
+					action = ""
+				} else if out, err := revocationmanager.Trigger(username, groupIDs, target, mode, reason); err != nil {
+					detailData.Error = err.Error()
+					action = ""
+				} else {
+					if mode == revocation.ModeHard {
+						// Le compte n'existe plus : rester sur sa page
+						// afficherait une fiche vide.
+						http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+						return
+					}
+					detailData.Message = fmt.Sprintf(
+						"Ordre %d — %s. %d machine(s) visée(s), %d jointe(s) immédiatement, %d session(s) fermée(s).",
+						out.OrderID, out.Mode.Label(), out.TargetCount, out.PushedNow, out.SessionsKilled)
+					action = ""
+				}
+			}
+
 			// Le droit est exigé sur les domaines de l'utilisateur visé, et sur
 			// tous. Un utilisateur membre de groupes dans plusieurs domaines
 			// n'est administrable que par quelqu'un qui les couvre tous : sinon
@@ -182,6 +228,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			userPerms, _ = dbperm.Command_GET_UserPermissionNamesByUsername(db, detailUser)
 			detailData.UserPerms = userPerms
 		}
+
+		// État de révocation relu APRÈS les actions : un verrouillage qui vient
+		// d'être posé ou levé doit se voir immédiatement sur la page.
+		detailData.IsRevoked = dbrevocation.IsRevoked(db, detailUser)
+		detailData.Revocations, _ = dbrevocation.HistoryFor(db, detailUser)
+		detailData.CanKill = permission.HasActionAnywhere(groupIDs, permission.ActionKillSwitch)
 
 		if err := executeAdminPage(w, "admin_user_detail.html", detailData); err != nil {
 			http.Error(w, "Template manquant", http.StatusInternalServerError)

@@ -3,6 +3,7 @@ package gpo
 import (
 	"vaultaire_client/duckynetworkClient/sendmessage"
 	"vaultaire_client/logs"
+	"vaultaire_client/revocation"
 	"vaultaire_client/storage"
 	"vaultaire_client/storage/stosession"
 )
@@ -37,6 +38,43 @@ func Bootstrap() {
 
 	StartMachineRefresh(CurrentSessionKey)
 	logs.Write_log("INFO", "GPO: transport initialise, cycle machine programme")
+
+	bootstrapRevocation()
+}
+
+// bootstrapRevocation arme le transport du kill switch.
+//
+// Amorcé ici plutôt que dans son propre point d'entrée : les deux mécanismes
+// partagent exactement la même couche d'envoi et le même moment de démarrage.
+// Les séparer imposerait de dupliquer l'attente de session, avec le risque que
+// l'un des deux dérive de l'autre.
+//
+// La demande d'ordres en attente part dans une goroutine : elle attend la
+// session, et Bootstrap doit rendre la main tout de suite pour que le tunnel
+// puisse justement s'établir.
+func bootstrapRevocation() {
+	revocation.Configure(func(trame string) {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "revocation: aucune session vaultaire valide, trame non envoyee")
+			return
+		}
+		sendmessage.SendMessage(trame, session.DuckySession)
+	})
+
+	go func() {
+		// WaitForVaultaireSession bloque jusqu'à ce que le tunnel soit monté et
+		// authentifié : c'est exactement le moment où le serveur acceptera une
+		// demande 06_04.
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "revocation: session indisponible, ordres en attente non reclames")
+			return
+		}
+		revocation.AskPending(string(session.DuckySession.SessionKey))
+	}()
+
+	logs.Write_log("INFO", "revocation: transport initialise, ordres en attente reclames")
 }
 
 // CurrentSessionKey retourne la clé de la session mère vaultaire, ou "" si

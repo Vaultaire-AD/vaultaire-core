@@ -27,6 +27,14 @@
         <div class="app-container animate-in">
     <h1>Détail utilisateur : {{ .User.Username }}</h1>
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+    {{ if .IsRevoked }}
+    <div class="alert alert-error">
+      <strong>Compte verrouillé.</strong> Il ne peut plus s'authentifier (Ducky, SSH, LDAP, interface web, API),
+      il n'a plus aucune permission, et son compte local est verrouillé sur les machines du parc.
+      Les données et le répertoire personnel sont intacts.
+    </div>
+    {{ end }}
 
     <section class="section">
       <h2>Informations</h2>
@@ -86,13 +94,103 @@
       </ul>
     </section>
 
+    {{ if .CanKill }}
+    <hr>
     <section class="section">
-      <form method="post" action="/admin/users?user={{ .User.Username }}" onsubmit="return confirm('Supprimer cet utilisateur ?');">
-        <input type="hidden" name="action" value="delete_user">
+      <h2>Désactivation d'urgence</h2>
+
+      {{ if .IsRevoked }}
+      <p class="muted small">
+        Le compte est verrouillé. La levée le réactive partout et déverrouille son compte local
+        sur les machines du parc.
+      </p>
+      <form method="post" action="/admin/users?user={{ .User.Username }}">
+        <input type="hidden" name="action" value="kill_user">
         <input type="hidden" name="target_user" value="{{ .User.Username }}">
-        <button type="submit" class="btn btn-danger">Supprimer l'utilisateur</button>
+        <input type="hidden" name="kill_mode" value="unlock">
+        <input type="hidden" name="kill_reason" value="admin_request">
+        <button type="submit" class="btn btn-primary">Lever le verrouillage</button>
       </form>
+
+      {{ else }}
+      <!-- Bouton d'urgence : pas de dialogue de confirmation. Le verrouillage
+           est réversible et l'urgence prime — une personne compromise reste
+           active tant qu'on lit une boîte de dialogue. -->
+      <p class="muted small">
+        Coupe immédiatement l'accès : plus aucune authentification, plus aucune permission,
+        sessions en cours fermées, compte local verrouillé sur toutes les machines partageant
+        un de ses groupes. <strong>Réversible</strong> — aucune donnée n'est détruite.
+      </p>
+      <form method="post" action="/admin/users?user={{ .User.Username }}" class="kill-form">
+        <input type="hidden" name="action" value="kill_user">
+        <input type="hidden" name="target_user" value="{{ .User.Username }}">
+        <input type="hidden" name="kill_mode" value="soft">
+        <label>Motif</label>
+        <select name="kill_reason">
+          {{ range .KillReasons }}<option value="{{ . }}">{{ .Label }}</option>{{ end }}
+        </select>
+        <button type="submit" class="btn btn-danger">Verrouiller le compte</button>
+      </form>
+      {{ end }}
+
+      <div class="kill-danger-zone">
+        <h3>Suppression définitive</h3>
+        <p class="muted small">
+          Supprime le compte de l'annuaire, <strong>et</strong> le compte local ainsi que son
+          répertoire personnel sur chaque machine partageant un de ses groupes.
+          <strong>Irréversible</strong> : les données de l'utilisateur sont détruites, y compris
+          les traces d'une éventuelle compromission. Les machines hors ligne appliqueront
+          l'ordre à leur reconnexion.
+        </p>
+        <!-- Confirmation par saisie du nom, et non par dialogue : ici le clic
+             est irréversible et détruit des données. Recopier le nom oblige à
+             regarder de quel compte il s'agit. -->
+        <form method="post" action="/admin/users?user={{ .User.Username }}" class="kill-form">
+          <input type="hidden" name="action" value="kill_user">
+          <input type="hidden" name="target_user" value="{{ .User.Username }}">
+          <input type="hidden" name="kill_mode" value="hard">
+          <label>Motif</label>
+          <select name="kill_reason">
+            {{ range .KillReasons }}<option value="{{ . }}">{{ .Label }}</option>{{ end }}
+          </select>
+          <label>Saisir <code>{{ .User.Username }}</code> pour confirmer</label>
+          <input name="confirm_username" autocomplete="off" spellcheck="false" required>
+          <button type="submit" class="btn btn-ghost btn-danger">Supprimer définitivement</button>
+        </form>
+      </div>
+
+      {{ if .Revocations }}
+      <h3 style="margin-top:1.2rem">Historique</h3>
+      <div class="table-wrap">
+        <table class="gpo-modules">
+          <thead>
+            <tr><th>Ordre</th><th>Action</th><th>Motif</th><th>Par</th><th>Le</th><th>Machines</th><th>Levé</th></tr>
+          </thead>
+          <tbody>
+            {{ range .Revocations }}
+            <tr>
+              <td>{{ .ID }}</td>
+              <td>{{ .Mode.Label }}</td>
+              <td class="muted small">{{ .Reason.Label }}</td>
+              <td class="muted small">{{ .IssuedBy }}</td>
+              <td class="muted small">{{ .IssuedAt.Format "2006-01-02 15:04" }}</td>
+              <td class="muted small">
+                {{ if .Pending }}<strong>{{ .Pending }}</strong> en attente / {{ .Total }}
+                {{ else }}{{ .Total }} / {{ .Total }}{{ end }}
+              </td>
+              <td class="muted small">{{ if .LiftedBy }}{{ .LiftedBy }}{{ else }}—{{ end }}</td>
+            </tr>
+            {{ end }}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted small">
+        « En attente » compte les machines qui n'ont pas encore acquitté l'ordre — éteintes,
+        ou injoignables. Elles l'appliqueront à leur reconnexion.
+      </p>
+      {{ end }}
     </section>
+    {{ end }}
 
     <p class="muted" style="margin-top:1.5rem"><a href="/admin/users">← Retour à la liste</a></p>
         </div>

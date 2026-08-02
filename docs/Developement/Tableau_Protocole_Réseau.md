@@ -61,6 +61,14 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 12            | gpo_apply_report                 | le client rapporte le résultat de l'application, module par module (les deux scopes) |
 | client                      |             | 13            | gpo_apply_report_ack             | réponse succès à 05_12                                                              |
 | client                      |             | 14            | gpo_apply_report_error           | réponse erreur à 05_12 : rapport malformé ou empreinte inconnue                     |
+|                             |             |               |                                  |                                                                                     |
+| Révocation (kill switch)    | 06          |               | (plage utilisée : 06_01 à 06_06) | voir « Détail de la révocation » en fin de document                                  |
+| client                      |             | 01            | revoke_order                     | le serveur ordonne de verrouiller, déverrouiller ou supprimer un compte local        |
+| serveur                     |             | 02            | revoke_ack                       | réponse succès à 06_01 : ordre appliqué                                             |
+| serveur                     |             | 03            | revoke_error                     | réponse erreur à 06_01                                                              |
+| serveur                     |             | 04            | ask_revocations                  | le client réclame les ordres en attente (démarrage, reconnexion)                    |
+| client                      |             | 05            | revocations_list                 | réponse succès à 06_04 : liste des ordres non acquittés                             |
+| client                      |             | 06            | revocations_error                | réponse erreur à 06_04                                                              |
 
 
 ## Format Client → Serveur
@@ -505,3 +513,251 @@ accordée** et l'incident part en `WARNING` + `SECURITY`, avec un rapport `05_12
 statut `partial` ou `failed`. Aucun module de scope user ne touche aux privilèges :
 une variable d'environnement non posée ne crée pas de faille, alors qu'un annuaire
 qui bloque les connexions sur incident GPO est un incident d'exploitation majeur.
+
+---
+
+# Détail de la révocation — kill switch (catégorie 06)
+
+> **Statut : validé et implémenté.** Numérotation, bascule de `delete -u` en mode
+> hard et confirmation par saisie du nom pour le mode destructeur : les trois ont
+> été validés. Le point ouvert n° 4 (lecture des groupes par domaine) était un
+> défaut et a été corrigé — voir `migrations/rbac_groupes_stricts.md`.
+
+## Pourquoi une catégorie séparée des GPO
+
+Le transport est très proche de celui des GPO — ordre déclaratif, jamais de
+commande shell — mais trois différences justifient de ne pas le loger dans 05 :
+
+| | GPO (05) | Révocation (06) |
+|---|---|---|
+| Initiative | Le client tire, quand il veut | Le serveur pousse, tout de suite |
+| Délai acceptable | Le prochain cycle (1 h) | Immédiat |
+| Cible | La machine ou l'utilisateur connecté | Un compte nommé, sur des machines où il n'est pas connecté |
+| Cumul | La politique remplace la précédente | Chaque ordre est un événement distinct, à tracer |
+
+Mélanger les deux ferait dépendre une révocation d'urgence du cycle de
+rafraîchissement des GPO. C'est précisément ce qu'un kill switch doit éviter.
+
+## Les trois ordres
+
+| Mode | Annuaire | Machines | Réversible |
+|------|----------|----------|------------|
+| `soft` | Compte marqué révoqué : plus aucune authentification, plus aucune permission | `usermod -L` + `chage -E 1` — compte verrouillé, home intact | Oui, via `unlock` |
+| `unlock` | Marque levée | `usermod -U` + `chage -E -1` | — |
+| `hard` | Compte **supprimé** de l'annuaire | `userdel -r` — compte et répertoire personnel supprimés | **Non** |
+
+**Pourquoi le verrouillage local est indispensable, y compris en `soft`.** Le
+module PAM écrit le mot de passe dans le `/etc/shadow` de chaque machine où
+l'utilisateur se connecte (`pam_common.c`, `ensure_local_user_with_password`).
+Une révocation limitée au serveur laisserait donc le compte utilisable en local
+sur toutes ces machines. Un kill switch qui ne coupe pas l'accès n'est pas un
+kill switch.
+
+**Le mode `hard` détruit le répertoire personnel** (`userdel -r`), conformément
+au choix retenu. À garder en tête : sur un compte compromis, cela détruit aussi
+les traces de la compromission. Si un jour l'analyse post-incident devient un
+besoin, c'est ici qu'il faudra revenir.
+
+## Quelles machines reçoivent l'ordre
+
+Celles qui partagent au moins un groupe avec l'utilisateur — la même règle que
+les GPO utilisateur, et la fonction existe déjà (`HasSharedGroup`). C'est
+exactement l'ensemble des machines où l'utilisateur a pu se connecter, donc
+l'ensemble où un compte local a pu être créé.
+
+En `hard`, la liste est **figée au moment du déclenchement**, avant la
+suppression du compte en base : après la suppression, l'appartenance aux groupes
+n'existe plus et la liste serait vide.
+
+## Machines hors ligne
+
+Un ordre est **durable**, pas un message éphémère. Il est écrit en base avec la
+liste de ses cibles, poussé immédiatement aux machines connectées, et rejoué
+tant qu'il n'est pas acquitté. Une machine éteinte au moment de la révocation
+reçoit l'ordre à sa prochaine connexion, via 06_04.
+
+Sans cette persistance, éteindre son poste suffirait à échapper à une
+révocation — le seul cas où la précaution compte vraiment.
+
+## Séquence
+
+```
+ Déclenchement (CLI, web ou API)
+        │
+        ├─ écriture en base : ordre + liste des machines cibles
+        ├─ marquage du compte / suppression selon le mode
+        ├─ fermeture immédiate des sessions Ducky de l'utilisateur
+        │
+        └─ pour chaque machine EN LIGNE :
+                serveur ──── 06_01 revoke_order ────► client
+                serveur ◄─── 06_02 revoke_ack ─────── client      cible passée à « acquittée »
+                        ◄─── 06_03 revoke_error ─────            cible passée à « en échec », réessai au cycle suivant
+
+ Machine qui se (re)connecte
+                serveur ◄─── 06_04 ask_revocations ── client      après authentification
+                serveur ──── 06_05 revocations_list ► client
+                serveur ◄─── 06_02 revoke_ack ─────── client      un acquittement par ordre
+```
+
+## Format des trames
+
+### 06_01 — revoke_order (serveur → client)
+
+```
+06_01
+serveur_central
+<session_integrity_key>
+<order_id>            identifiant unique de l'ordre
+<mode>                soft | unlock | hard
+<username>            forme complète, domaine compris (admin@vaultaire.fr)
+<reason_code>         compromised | offboarding | admin_request
+```
+
+`reason_code` est un code fermé, jamais du texte libre : le motif détaillé reste
+côté serveur. Une raison saisie par un administrateur n'a pas à voyager jusqu'à
+une machine potentiellement compromise, et du texte libre sur le fil est une
+surface d'injection dans les journaux de l'agent.
+
+### 06_02 — revoke_ack (client → serveur)
+
+```
+06_02
+serveur_central
+<session_integrity_key>
+<username_de_session>
+<client_software_id>
+<order_id>
+<result>              applied | already_absent | not_applicable
+```
+
+`already_absent` (compte local inexistant) et `not_applicable` sont des succès,
+pas des erreurs : une machine où l'utilisateur ne s'est jamais connecté n'a rien
+à faire, et le signaler comme un échec provoquerait des réessais sans fin.
+
+### 06_03 — revoke_error (client → serveur)
+
+```
+06_03
+...
+<order_id>
+<code>                unknown_mode | command_failed | permission_denied | internal
+<message>
+```
+
+### 06_04 — ask_revocations (client → serveur)
+
+```
+06_04
+serveur_central
+<session_integrity_key>
+<username_de_session>
+<client_software_id>
+```
+
+Aucun contenu : le serveur connaît déjà la machine, puisque le
+`ClientSoftwareID` est figé à la poignée de main et vérifié à chaque trame.
+
+### 06_05 — revocations_list (serveur → client)
+
+```
+06_05
+serveur_central
+<session_integrity_key>
+<nombre_d_ordres>
+<order_id>|<mode>|<username>|<reason_code>
+<order_id>|<mode>|<username>|<reason_code>
+...
+```
+
+Plafonné à 200 ordres par trame ; au-delà, le client rappelle 06_04. Un ordre
+pèse une centaine d'octets, la limite utile d'une trame est d'environ 48 Kio.
+
+### 06_06 — revocations_error (serveur → client)
+
+```
+06_06
+serveur_central
+<session_integrity_key>
+<code>
+<message>
+```
+
+## Idempotence
+
+Un ordre peut arriver deux fois : poussé puis rejoué après une reconnexion, ou
+réémis après un acquittement perdu. Les trois modes sont naturellement
+idempotents (`usermod -L` deux fois de suite, `userdel` sur un compte absent),
+et l'agent tient la liste des `order_id` déjà appliqués dans son état local, à
+côté de `applied_policies.json`. Un ordre déjà appliqué est ré-acquitté sans
+être rejoué.
+
+## Intégration RBAC côté serveur
+
+**Point de passage unique.** `permission.GetGroupIDsForUser` est traversé par
+tous les chemins RBAC : le routeur CLI, `requireWebAdminWithGroupIDs`,
+`PrePermissionCheck`. Un compte révoqué y retourne zéro groupe, donc aucune
+permission nulle part — CLI, web, API et LDAP compris.
+
+**Refus explicite aux points d'authentification**, en plus, pour la trace et
+pour couper avant même d'évaluer un mot de passe :
+
+| Chemin | Fonction |
+|--------|----------|
+| Ducky | `SendAuthRequest` (02_01) |
+| SSH | `SSH_SEND_SALT` (03_04), `SSH_SEND_Pubkey_AUTH` (03_01), `SSH_SEND_Fetch_Pubkey` (03_06) |
+| LDAP | `CanUserConnectToDomain` |
+| Web | `LoginHandler` |
+| API | `commandHandler`, avant la vérification de signature |
+
+**Déclenchement** : action spéciale `write:killswitch`, ajoutée à
+`specialActions` — donc aucune colonne supplémentaire dans la matrice objet ×
+verbe. Vérifiée sur **tous** les domaines de l'utilisateur visé, via
+`CheckPermissionsAllDomains`. Le mode `hard` exige en plus `write:delete:user`.
+
+**Le compte `vaultaire` n'est pas révocable.** Nouvelle garde
+`GuardProtectedUserRevocation` dans `core/database/protected.go`, au même
+endroit que les autres : la couche base couvre ainsi le CLI, le web et l'API
+d'un seul coup.
+
+## Schéma de base
+
+```sql
+CREATE TABLE IF NOT EXISTS user_revocation (
+    id_revocation  INT AUTO_INCREMENT PRIMARY KEY,
+    username       VARCHAR(255) NOT NULL,   -- texte, pas de clé étrangère : voir ci-dessous
+    mode           VARCHAR(16)  NOT NULL,   -- soft | hard
+    reason_code    VARCHAR(32)  NOT NULL,
+    issued_by      VARCHAR(255) NOT NULL,
+    issued_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    lifted_by      VARCHAR(255) NULL,
+    lifted_at      DATETIME NULL,
+    INDEX (username)
+);
+
+CREATE TABLE IF NOT EXISTS user_revocation_target (
+    d_id_revocation INT NOT NULL,
+    computeur_id    VARCHAR(255) NOT NULL,
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending | acked | failed
+    last_attempt    DATETIME NULL,
+    detail          TEXT NULL,
+    PRIMARY KEY (d_id_revocation, computeur_id),
+    FOREIGN KEY (d_id_revocation) REFERENCES user_revocation(id_revocation) ON DELETE CASCADE
+);
+```
+
+**`username` est stocké en texte, sans clé étrangère vers `users`, et c'est
+délibéré.** En mode `hard` le compte est supprimé de l'annuaire : une clé
+étrangère `ON DELETE CASCADE` effacerait la révocation au moment même où elle
+devient utile, et le parc n'aurait plus rien à appliquer. La trace doit survivre
+à son sujet.
+
+Le marquage `soft` se lit dans `user_revocation` (une ligne active, `lifted_at`
+nul), plutôt que par une colonne ajoutée à `users` — sans quoi le mode `hard`
+n'aurait nulle part où vivre une fois le compte supprimé.
+
+## Décisions validées
+
+1. **Numérotation 06_01 à 06_06**, demandes et réponses contiguës. Libre à partir de 06_07.
+2. **`delete -u` déclenche une révocation `hard`.** Corrige un défaut réel : la suppression retirait le compte de l'annuaire et laissait le compte local vivant sur chaque machine, mot de passe compris dans `/etc/shadow`. Le compte survivait à sa propre suppression.
+3. **Confirmation** : aucune pour le mode `soft` (réversible, c'est un bouton d'urgence) ; saisie du nom du compte exigée pour le mode `hard` (irréversible, détruit le répertoire personnel).
+4. **Lecture des groupes** : `GetGroupIDsForUser` retournait tous les groupes des domaines de l'utilisateur au lieu de ceux dont il est membre. C'était bien un défaut — une élévation de privilèges silencieuse — et il est corrigé. Procédure de bascule et requêtes de diagnostic dans `migrations/rbac_groupes_stricts.md`.

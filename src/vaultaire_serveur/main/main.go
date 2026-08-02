@@ -9,9 +9,11 @@ import (
 	configurationfile "vaultaire/core/configuration_file"
 	db "vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
+	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/dns"
 	ldap "vaultaire/core/ldap"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 	"vaultaire/core/testrunner"
 	"vaultaire/core/vaultairegoroutine"
@@ -45,6 +47,22 @@ func main() {
 	if err := dbgpo.CreateTables(db.GetDatabase()); err != nil {
 		log.Fatalf("Erreur lors de la création du schéma GPO : %v", err)
 	}
+
+	// Schéma du kill switch, puis branchement du vérificateur de révocation.
+	//
+	// L'inversion de dépendance évite un cycle : core/permission ne peut pas
+	// importer db_revocation, qui dépend lui-même de la validation des
+	// identifiants. C'est main, qui voit les deux, qui fait la liaison.
+	//
+	// L'ordre compte : tant que ce branchement n'a pas eu lieu, aucun compte
+	// n'est considéré comme révoqué. Il doit donc précéder le démarrage de tout
+	// service acceptant des connexions.
+	if err := dbrevocation.CreateTables(db.GetDatabase()); err != nil {
+		log.Fatalf("Erreur lors de la création du schéma de révocation : %v", err)
+	}
+	permission.SetRevokedChecker(func(username string) bool {
+		return dbrevocation.IsRevoked(db.GetDatabase(), username)
+	})
 
 	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()

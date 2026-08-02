@@ -1329,3 +1329,25 @@ a.perm-chip:hover { border-color: var(--primary, #3b6fd4); }
 
 .perm-domain-add { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
 .perm-domain-add input[type="text"] { min-width: 14rem; }
+
+/* ==========================================================================
+   Kill switch — désactivation d'urgence d'un compte
+   ==========================================================================
+   Deux niveaux visuellement distincts, et l'écart est délibéré : le
+   verrouillage est réversible et doit rester rapide à déclencher, la
+   suppression détruit des données et doit ralentir la main. */
+
+.kill-form { display: flex; gap: 0.6rem; align-items: flex-end; flex-wrap: wrap; margin-top: 0.6rem; }
+.kill-form label { display: block; margin-bottom: 0.2rem; }
+.kill-form > label { align-self: center; }
+.kill-form input, .kill-form select { min-width: 12rem; }
+
+/* La zone destructrice est encadrée de rouge et détachée du reste : on ne doit
+   pas pouvoir y cliquer en croyant être encore dans la partie réversible. */
+.kill-danger-zone {
+  border: 1px solid var(--danger, #c0392b);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  margin-top: 1.4rem;
+}
+.kill-danger-zone h3 { margin-top: 0; color: var(--danger, #c0392b); }

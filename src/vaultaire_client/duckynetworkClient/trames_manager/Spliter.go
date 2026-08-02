@@ -7,6 +7,7 @@ import (
 	"vaultaire_client/duckynetworkClient/userauth"
 	"vaultaire_client/duckynetworkClient/userauth/sshauth"
 	"vaultaire_client/gpo"
+	"vaultaire_client/revocation"
 	"vaultaire_client/storage"
 )
 
@@ -27,6 +28,14 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 		// demandes de fragments, donc rien n'est renvoyé ici.
 		if len(trames_content.Message_Order) > 1 {
 			gpo.HandleTrame(trames_content.Message_Order[1],
+				trames_content.SessionIntegritykey, trames_content.Content)
+		}
+	case "06":
+		// Kill switch. Contrairement aux GPO, la réponse est synchrone : l'agent
+		// applique l'ordre puis acquitte immédiatement. Le serveur compte sur
+		// cet acquittement pour arrêter de rejouer.
+		if len(trames_content.Message_Order) > 1 {
+			message = revocation.HandleTrame(trames_content.Message_Order[1],
 				trames_content.SessionIntegritykey, trames_content.Content)
 		}
 	default:

@@ -11,6 +11,7 @@ import (
 	commanddns "vaultaire/core/command/command_dns"
 	commandeyes "vaultaire/core/command/command_eyes"
 	commandget "vaultaire/core/command/command_get"
+	commandkill "vaultaire/core/command/command_kill"
 	commandremove "vaultaire/core/command/command_remove"
 	commandstatus "vaultaire/core/command/command_status"
 	commandupdate "vaultaire/core/command/command_update"
@@ -48,6 +49,7 @@ func ExecuteCommand(input, sender string) string {
 		"get":     commandget.Get_Command,
 		"eyes":    commandeyes.Eyes_Command,
 		"cluster": commandcluster.Cluster_Command,
+		"kill":    commandkill.Kill_Command,
 	}
 
 	if cmd == "clear" {
@@ -56,7 +58,13 @@ func ExecuteCommand(input, sender string) string {
 	if cmd == "help" {
 		return `Commandes disponibles :
   create [OPTIONS] : crée une nouvelle entrée.
+  get    [OPTIONS] : consulte utilisateurs, groupes, permissions, clients, GPO.
+  add / remove     : rattache ou détache une entité.
+  update [OPTIONS] : modifie une entité existante.
+  delete [OPTIONS] : supprime une entité (delete -u supprime aussi les comptes locaux).
+  kill   [OPTIONS] : désactivation d'urgence d'un compte. Voir kill -h.
   status [OPTIONS] : Vérifie l'état du serveur.
+  eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.
   help             : Affiche cette aide.`
 	}

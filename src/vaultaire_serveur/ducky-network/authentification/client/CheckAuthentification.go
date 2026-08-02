@@ -8,6 +8,7 @@ import (
 	dbuser "vaultaire/core/database/db-user"
 	gc "vaultaire/core/global/security"
 	logs "vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/ducky_tools"
 	"vaultaire/ducky-network/sessionmgr"
@@ -40,6 +41,18 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 			trames_content.ClientSoftwareID+" try to login by auth server Has User = vaultaire", meta)
 		return ("02_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + alphaCheck + "\n" + string(token))
 	}
+	// KILL SWITCH — refus avant toute évaluation du mot de passe.
+	//
+	// Le message renvoyé est le même que pour un mot de passe faux : un compte
+	// révoqué ne doit pas se distinguer d'un compte inexistant vu du réseau,
+	// sinon le kill switch devient un oracle qui confirme qu'un compte existe
+	// et qu'il vient d'être coupé.
+	if permission.IsRevoked(trames_content.Username) {
+		logs.Write_LogCodeMeta("SECURITY", logs.CodeNone,
+			trames_content.Username+" : tentative d'authentification sur un compte révoqué", meta)
+		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+	}
+
 	user_ID, err := database.Get_User_ID_By_Username(database.GetDatabase(), trames_content.Username)
 	if err != nil {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but user does not exist", meta)

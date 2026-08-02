@@ -51,6 +51,15 @@ func CanUserConnectToDomain(login string) (bool, string) {
 		}
 	}
 
+	// KILL SWITCH : couvre le bind LDAP et tout appelant de cette fonction.
+	// Redondant avec le refus de GetGroupIDsForUser appelé juste après, mais il
+	// produit un message explicite au lieu d'une erreur de lecture de groupes.
+	if IsRevoked(username) {
+		logs.Write_LogCode("SECURITY", logs.CodeAuthLoginDenied,
+			"Connexion refusée pour "+login+" : compte révoqué")
+		return false, "compte révoqué"
+	}
+
 	groupIDs, action, err := PrePermissionCheck(username, "auth")
 	if err != nil {
 		return false, err.Error()
