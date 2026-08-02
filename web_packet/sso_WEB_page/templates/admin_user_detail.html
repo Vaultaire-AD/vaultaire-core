@@ -94,6 +94,22 @@
       </ul>
     </section>
 
+    <hr>
+    <section class="section">
+      <h2>Supprimer l'utilisateur</h2>
+      <p class="muted small">
+        Retire le compte de l'annuaire et supprime le compte local ainsi que son répertoire
+        personnel sur chaque machine partageant un de ses groupes. Les machines hors ligne
+        appliqueront l'ordre à leur reconnexion.
+      </p>
+      <form method="post" action="/admin/users?user={{ .User.Username }}"
+            onsubmit="return confirm('Supprimer {{ .User.Username }} ? Le compte et son répertoire personnel seront détruits sur toutes les machines.');">
+        <input type="hidden" name="action" value="delete_user">
+        <input type="hidden" name="target_user" value="{{ .User.Username }}">
+        <button type="submit" class="btn btn-danger">Supprimer l'utilisateur</button>
+      </form>
+    </section>
+
     {{ if .CanKill }}
     <hr>
     <section class="section">

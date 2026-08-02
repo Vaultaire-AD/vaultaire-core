@@ -64,6 +64,14 @@ func main() {
 		return dbrevocation.IsRevoked(db.GetDatabase(), username)
 	})
 
+	// La permission d'amorçage reçoit toutes les actions connues du code, pas
+	// une liste recopiée dans du SQL. Passe à chaque démarrage, en INSERT
+	// IGNORE : les bases existantes récupèrent ainsi les clés apparues depuis
+	// leur création, sans script de migration.
+	if err := db.EnsureSuperadminActions(db.GetDatabase(), permission.AllActionKeys()); err != nil {
+		logs.Write_Log("ERROR", "bootstrap: actions du groupe superadmin non accordées : "+err.Error())
+	}
+
 	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
 

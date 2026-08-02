@@ -57,6 +57,23 @@ func IsGlobalOnlyAction(key string) bool {
 	return false
 }
 
+// AllActionKeys retourne TOUTES les actions administrables : RBAC, legacy et
+// spéciales.
+//
+// Source de vérité unique pour tout ce qui doit énumérer les droits. Le
+// peuplement de la permission d'amorçage `vaultaire_all` s'appuie dessus : sa
+// liste était auparavant recopiée à la main dans le SQL de Create_DataBase, et
+// elle a dérivé dès le premier ajout — `write:killswitch` n'y figurait pas, si
+// bien que le groupe superadmin lui-même n'avait pas le droit de déclencher le
+// kill switch, et que le bouton n'apparaissait dans aucune interface.
+func AllActionKeys() []string {
+	keys := make([]string, 0, len(legacyActions)+len(specialActions)+len(RBACObjects)*6)
+	keys = append(keys, legacyActions...)
+	keys = append(keys, AllRBACActionKeys()...)
+	keys = append(keys, specialActions...)
+	return keys
+}
+
 // LegacyActionKeys retourne les actions historiques, hors modèle RBAC.
 func LegacyActionKeys() []string { return append([]string(nil), legacyActions...) }
 

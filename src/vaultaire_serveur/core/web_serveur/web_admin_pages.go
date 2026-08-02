@@ -114,8 +114,6 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 				actionKey = "write:add:user"
 			case "remove_group":
 				actionKey = "write:delete:user"
-			case "delete_user":
-				actionKey = "write:delete:user"
 			}
 			// Kill switch : les contrôles RBAC sont faits par Trigger, qui
 			// exige write:killswitch sur tous les domaines de la cible (et
@@ -218,9 +216,24 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			case "delete_user":
-				if err := database.Command_DELETE_UserWithUsername(db, target); err != nil {
-					detailData.Message = err.Error()
+				// Même chemin que `vlt delete -u` : une révocation hard.
+				//
+				// L'appel direct à Command_DELETE_UserWithUsername ne retirait
+				// le compte que de l'annuaire. Le compte local restait vivant
+				// sur chaque machine, avec son mot de passe dans /etc/shadow —
+				// le compte survivait à sa propre suppression. Passer par
+				// Trigger apporte le nettoyage du parc, le rejeu aux machines
+				// hors ligne et la trace d'audit.
+				//
+				// Contrôles RBAC assurés par Trigger : write:killswitch ET
+				// write:delete:user, sur tous les domaines de la cible.
+				if out, err := revocationmanager.Trigger(username, groupIDs, target,
+					revocation.ModeHard, revocation.ReasonOffboarding); err != nil {
+					detailData.Error = err.Error()
 				} else {
+					logs.Write_Log("INFO", fmt.Sprintf(
+						"webadmin: %s supprimé par %s (ordre %d, %d machine(s) visée(s), %d jointe(s))",
+						target, username, out.OrderID, out.TargetCount, out.PushedNow))
 					http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 					return
 				}

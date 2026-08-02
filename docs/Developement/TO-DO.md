@@ -40,8 +40,6 @@ user_password_policy	Force changement au prochain login, expiration individuelle
 user_group_membership	Ajout/retrait d'un groupe POSIX local (distinct de sudoers_rule, plus générique)	User
 4.[GPO] - Détection de dérive (drift detection)
             Rien dans le catalogue ne vérifie qu'un module resté "appliqué avec succès" (version à jour dans applied_policies.json) correspond encore à l'état réel du système — un admin qui modifie manuellement sshd_config.d/99-vaultaire-gpo.conf en SSH direct fausserait l'état sans que rien ne le détecte. Il faut un scan périodique de conformité, pas seulement une application ponctuelle.
-5.[FAIT-IA] [GPO] - Révocation d'urgence ("kill switch")
-            Un module dédié, prioritaire sur tout le reste, pour désactiver immédiatement un compte partout (offboarding) ou révoquer une clé SSH compromise sans attendre le cycle normal de refresh des GPO — doit pouvoir se propager en push, pas seulement au prochain gpupdate.
 6.[TICKET] - TICKETING
             Certaine action ou alerte ou autre devrait necesiter une intervention Humain je veux donc mettre en place un systeme de Ticket interne a vaultaire les ticket sont généré par vaultaire de facon automatique (il doit pouvoir etre gère depuis la web interface mais aussi depuis le CLI et l'api pour le module vlt comme kubectl) avec un systeme de gestion de permission pas tous le monde voit les ticket de tous le monde
 7.[GPO] - Reporting de conformité centralisé
