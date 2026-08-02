@@ -229,13 +229,30 @@ func applyPackage(ctx Context, m Module) (string, error) {
 
 	var args []string
 	switch {
-	case state == "absent" && manager == "apt-get":
-		args = []string{"-y", "remove", pkg}
 	case state == "absent":
 		args = []string{"-y", "remove", pkg}
 	case manager == "apt-get":
-		args = []string{"-y", "install", target}
+		// --force-confold : conserver le fichier de configuration DÉJÀ PRÉSENT.
+		//
+		// Conséquence directe de l'ordre d'application : les modules de fichiers
+		// (phase 10-19) passent avant les paquets (phase 30). L'installeur
+		// trouve donc une configuration déjà déposée par la GPO et la considère
+		// comme un « conffile » modifié localement.
+		//
+		// Sans cette option, le comportement dépend du frontend : en mode
+		// interactif dpkg pose la question et bloque, en non interactif il
+		// applique une valeur par défaut qui a varié selon les versions. Une
+		// configuration déployée par GPO ne doit jamais être écrasée par le
+		// paquet — c'est elle qui fait foi, c'est tout l'intérêt de la déposer
+		// avant.
+		args = []string{"-y",
+			"-o", "Dpkg::Options::=--force-confold",
+			"-o", "Dpkg::Options::=--force-confdef",
+			"install", target}
 	default:
+		// dnf/yum/zypper ne remplacent jamais un fichier de configuration
+		// modifié : ils écrivent le leur à côté en .rpmnew. Le comportement
+		// voulu est donc déjà celui par défaut, rien à forcer.
 		args = []string{"-y", "install", target}
 	}
 

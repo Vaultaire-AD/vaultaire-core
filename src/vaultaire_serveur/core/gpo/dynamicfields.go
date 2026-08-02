@@ -64,6 +64,14 @@ var dynamicFields = []dynamicField{
 		Help: "Identifiant d'une commande implémentée côté agent client. " +
 			"Un identifiant sans implémentation donnera une tâche sans effet.",
 	},
+	{
+		ModuleType: ModulePackageRepo, FieldName: "url",
+		Label: "Dépôts de paquets autorisés",
+		Help: "URL de base d'un dépôt. Ce champ est en mode motif : le motif initial n'accepte que le HTTPS, " +
+			"parce qu'un dépôt en HTTP laisse un intermédiaire réseau substituer les paquets installés en root " +
+			"sur tout le parc. Ajoutez ici vos miroirs internes, ou élargissez le motif si vous exploitez un " +
+			"dépôt local sur un réseau maîtrisé.",
+	},
 }
 
 // DynamicFieldDescriptor décrit un champ à domaine dynamique, pour l'interface

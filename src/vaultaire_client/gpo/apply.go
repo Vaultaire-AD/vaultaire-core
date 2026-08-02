@@ -79,6 +79,13 @@ type Context struct {
 	Username string
 	// HomeDir est le home réel de l'utilisateur cible, substitué au marqueur %h.
 	HomeDir string
+
+	// Identité de la machine, pour la substitution des marqueurs du module
+	// templated_file_deploy. Résolue une fois par cycle plutôt qu'à chaque
+	// module : os.Hostname et la résolution du FQDN peuvent toucher le réseau.
+	Hostname string
+	FQDN     string
+	Domain   string
 }
 
 // Applier applique un module et décrit ce qu'il a fait.
@@ -104,6 +111,7 @@ func ApplyPolicy(policy *Policy, previous *ScopeState) Report {
 	}
 
 	ctx := Context{Scope: policy.Scope, Username: policy.Username}
+	ctx.Hostname, ctx.FQDN, ctx.Domain = machineIdentity()
 	if policy.Scope == ScopeUser {
 		home, err := resolveHomeDir(policy.Username)
 		if err != nil {

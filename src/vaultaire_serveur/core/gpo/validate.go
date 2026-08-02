@@ -378,6 +378,18 @@ func moduleIdentity(m Module) string {
 		return "la variable " + strings.ToUpper(m.Params["name"])
 	case ModuleUserCron:
 		return "la tâche " + m.Params["command_id"]
+	case ModuleDirectoryManage:
+		return "le répertoire " + m.Params["path"]
+	case ModuleTemplatedFile:
+		return "le fichier " + m.Params["path"]
+	case ModuleTrustedCA:
+		return "l'autorité de certification " + m.Params["name"]
+	case ModulePackageRepo:
+		return "le dépôt " + m.Params["name"]
+	case ModuleFirewallRule:
+		return "la règle de pare-feu " + m.Params["port"] + "/" + m.Params["protocol"]
+	case ModuleDNSResolver:
+		return "la résolution DNS"
 	case ModuleSSHServerConfig, ModuleSudoersRule:
 		if m.Type == ModuleSudoersRule {
 			return "les droits sudo du groupe " + m.Params["group"]

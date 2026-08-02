@@ -81,7 +81,7 @@ un seul point de vérité pour la portée.
 | Fichier | Rôle |
 |---------|------|
 | `core/gpo/types.go` | `Policy`, `Module`, `Scope`, `ModuleSchema`, `FieldSchema` |
-| `core/gpo/registry.go` | **Le catalogue** : les 8 types de modules et leurs champs |
+| `core/gpo/registry.go` | **Le catalogue** : les types de modules, leurs champs et leur ordre d'application |
 | `core/gpo/dynamicfields.go` | Quels champs ont leur domaine en base (structure, pas valeurs) |
 | `core/gpo/restrictions.go` | Modèle des restrictions, fournisseur injectable, cache |
 | `core/gpo/payload.go` | Types de contenu et leurs validateurs — **point d'extension** |
@@ -105,6 +105,8 @@ un seul point de vérité pour la portée.
 | `apply.go` | Moteur : diff par module, ordre, construction du rapport |
 | `registry.go` | **Le registre d'appliqueurs** — point d'extension |
 | `appliers_machine.go` | ssh, sysctl, sudoers, package, systemd |
+| `appliers_sources.go` | répertoires, fichiers à substitution, CA, DNS, dépôts |
+| `appliers_firewall.go` | règles de pare-feu (firewalld ou nftables) |
 | `appliers_user.go` | env, cron, file_deploy |
 | `cycle.go` | Cycles complets, rafraîchissement périodique |
 | `bootstrap.go` | Amorçage : émetteur de trames et clé de session |
@@ -214,22 +216,69 @@ configuration *réelle*.
 
 Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 
-| Type | Scope | Ordre | Ce qu'il fait |
-|------|-------|-------|---------------|
-| `ssh_server_config` | machine | 10 | Fragment `/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf` |
-| `sysctl` | machine | 11 | Un fichier par clé dans `/etc/sysctl.d/` |
-| `sudoers_rule` | machine | 12 | Fichier dans `/etc/sudoers.d/` depuis un jeu de commandes |
-| `package` | machine | 20 | Présence, absence, version épinglée |
-| `systemd_service` | machine | 21 | Activation, état courant, masquage |
-| `file_deploy` | **both** | 30 | Dépose un fichier avec permissions et propriétaire |
-| `user_env` | user | 40 | Variable d'environnement |
-| `user_cron` | user | 41 | Timer `systemd --user` |
+| Ordre | Type | Scope | Ce qu'il fait |
+|-------|------|-------|---------------|
+| 10 | `directory_manage` | **both** | Crée un répertoire avec permissions et propriétaire |
+| 11 | `file_deploy` | **both** | Dépose un fichier avec permissions et propriétaire |
+| 12 | `templated_file_deploy` | **both** | Idem, avec substitution de `{{hostname}}`, `{{fqdn}}`, `{{username}}`, `{{domain}}` |
+| 14 | `trusted_ca` | machine | Installe une CA interne dans le magasin de confiance |
+| 20 | `dns_resolver` | machine | Serveurs DNS et domaine de recherche (`resolved.conf.d/`) |
+| 21 | `package_repository` | machine | Déclare un dépôt de paquets autorisé |
+| 30 | `package` | machine | Présence, absence, version épinglée |
+| 40 | `sysctl` | machine | Un fichier par clé dans `/etc/sysctl.d/` |
+| 44 | `ssh_server_config` | machine | Fragment `/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf` |
+| 50 | `firewall_rule` | machine | Ouvre ou ferme un port, dans une zone dédiée |
+| 56 | `sudoers_rule` | machine | Fichier `/etc/sudoers.d/` depuis un jeu de commandes |
+| 60 | `systemd_service` | machine | Activation, état courant, masquage |
+| 83 | `user_env` | user | Variable d'environnement |
+| 87 | `user_cron` | user | Timer `systemd --user` |
 
-**L'ordre d'application est imposé par le catalogue**, pas par l'ordre de
-saisie : réseau et sécurité (10-19), paquets et services (20-29), fichiers
-(30-39), environnement utilisateur (40+). Un paquet doit être installé avant que
-son service ne soit activé ; réordonner le JSON en base ne doit pas pouvoir
-changer le résultat.
+## L'ordre d'application
+
+**Imposé par le catalogue, jamais par l'ordre de saisie.** Réordonner les
+modules dans l'interface ne change pas le résultat.
+
+L'ordre suit les **dépendances réelles** entre modules, pas un classement
+thématique :
+
+| Phase | Plage | Contenu |
+|-------|-------|---------|
+| 1 | 10-19 | Fichiers et contenus |
+| 2 | 20-29 | Sources et résolution (DNS, dépôts) |
+| 3 | 30-39 | Paquets |
+| 4 | 40-59 | Configuration système |
+| 5 | 60-69 | Services |
+| 6 | 70-79 | Ménage |
+| 7 | 80+ | Environnement utilisateur |
+
+**Pourquoi les fichiers en premier**, alors que la version initiale du catalogue
+les plaçait en 30, après les paquets et les services. Trois raisons, chacune
+suffisante :
+
+- un dépôt de paquets a besoin de sa clé de signature, qui est un fichier ;
+- un service doit démarrer avec sa configuration définitive. L'ancien ordre le
+  faisait démarrer sur la configuration par défaut du paquet, puis déposait la
+  vraie sans rien relancer : la machine tournait avec une configuration que
+  personne n'avait choisie, jusqu'au prochain redémarrage ;
+- `file_deploy` crée ses répertoires parents, il n'a donc pas besoin que le
+  paquet ait créé `/etc/<produit>/` au préalable.
+
+Exemple, un client VPN — l'enchaînement se lit dans les numéros :
+
+```
+10-19  dépose /etc/openvpn/client.conf et la clé GPG du dépôt éditeur
+20-29  déclare le dépôt de l'éditeur
+30-39  installe le paquet openvpn
+40-59  règle le pare-feu et les paramètres noyau
+60-69  démarre le service, qui lit une configuration déjà correcte
+```
+
+**Conséquence sur l'installation des paquets.** Déployer une configuration avant
+d'installer le paquet qui la possède crée un conflit de « conffile ». L'agent
+force donc la conservation du fichier déjà présent (`--force-confold` côté dpkg) :
+sans cela le comportement dépendrait de la distribution et de son mode
+interactif. Sur les distributions RPM c'est déjà le comportement par défaut, le
+paquet écrit son fichier en `.rpmnew` à côté.
 
 ### Types de champs
 

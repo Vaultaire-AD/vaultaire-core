@@ -156,6 +156,23 @@ func ModuleStateKey(m Module) string {
 		suffix = m.Params["command_id"]
 	case ModuleSudoersRule:
 		suffix = m.Params["group"]
+	case ModuleDirectoryManage:
+		suffix = m.Params["path"]
+	case ModuleTemplatedFile:
+		suffix = m.Params["path"]
+	case ModuleTrustedCA:
+		suffix = m.Params["name"]
+	case ModulePackageRepo:
+		suffix = m.Params["name"]
+	case ModuleFirewallRule:
+		// Un port seul ne suffit pas : 443/tcp et 443/udp sont deux règles
+		// distinctes, et les confondre ferait que la seconde écraserait l'état
+		// de la première dans le suivi de l'agent.
+		suffix = m.Params["port"] + "/" + m.Params["protocol"]
+	case ModuleDNSResolver:
+		// Un seul jeu de résolveurs par machine : deux modules qui se
+		// contrediraient sont un conflit, pas deux réglages coexistants.
+		suffix = "-"
 	case ModuleSSHServerConfig:
 		// Un seul module SSH par politique (clé naturelle unique) : pas de suffixe.
 		suffix = "-"

@@ -3,6 +3,8 @@ package gpo
 import (
 	"context"
 	"fmt"
+	"net"
+	"os"
 	"os/exec"
 	"os/user"
 	"sort"
@@ -31,6 +33,16 @@ var appliers = map[string]Applier{
 	ModuleFileDeploy:      applyFileDeploy,
 	ModuleUserEnv:         applyUserEnv,
 	ModuleUserCron:        applyUserCron,
+
+	// Phase fichiers et sources — appliqués avant les paquets et les services.
+	ModuleDirectoryManage: applyDirectory,
+	ModuleTemplatedFile:   applyTemplatedFile,
+	ModuleTrustedCA:       applyTrustedCA,
+	ModuleDNSResolver:     applyDNSResolver,
+	ModulePackageRepo:     applyPackageRepo,
+
+	// Phase configuration système — avant le démarrage des services.
+	ModuleFirewallRule: applyFirewallRule,
 }
 
 // ApplierFor retourne l'appliqueur d'un type de module.
@@ -110,6 +122,11 @@ const (
 	// UserCommandTimeout couvre les opérations du scope utilisateur, sur le
 	// chemin de connexion.
 	UserCommandTimeout = 10 * time.Second
+	// RepoRefreshTimeout borne le rafraîchissement de l'index des paquets.
+	// Plus court que DefaultCommandTimeout : un miroir injoignable ne doit pas
+	// retenir le cycle cinq minutes, la déclaration du dépôt est déjà écrite et
+	// l'installation qui suit signalera le vrai problème.
+	RepoRefreshTimeout = 90 * time.Second
 )
 
 // runCommand exécute une commande système et retourne sa sortie combinée.
@@ -211,4 +228,34 @@ func parseFileMode(raw string) (uint32, error) {
 		return 0, fmt.Errorf("permissions %q hors des trois chiffres autorises", raw)
 	}
 	return uint32(parsed), nil
+}
+
+// machineIdentity résout le nom de la machine, son FQDN et son domaine.
+//
+// Alimente les marqueurs du module templated_file_deploy. Résolue une fois par
+// cycle et non par module : la résolution du FQDN interroge le résolveur, donc
+// potentiellement le réseau, et la refaire pour chaque fichier déployé
+// multiplierait les allers-retours sans rien apporter.
+//
+// Chaque valeur est indépendante : un FQDN introuvable — machine sans entrée
+// DNS, résolveur momentanément muet — n'empêche pas la substitution du nom
+// court. Une valeur vide laisse simplement son marqueur en place dans le
+// fichier, ce qui se voit, plutôt que d'écrire du vide, ce qui ne se voit pas.
+func machineIdentity() (hostname, fqdn, domain string) {
+	hostname, err := os.Hostname()
+	if err != nil {
+		return "", "", ""
+	}
+
+	fqdn = hostname
+	if names, err := net.LookupAddr(hostname); err == nil && len(names) > 0 {
+		fqdn = strings.TrimSuffix(names[0], ".")
+	} else if canonical, err := net.LookupCNAME(hostname); err == nil && canonical != "" {
+		fqdn = strings.TrimSuffix(canonical, ".")
+	}
+
+	if idx := strings.Index(fqdn, "."); idx > 0 {
+		domain = fqdn[idx+1:]
+	}
+	return hostname, fqdn, domain
 }

@@ -165,8 +165,15 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		// Ajouter la clé en base
 		err = dbuser.AddUserKey(userid, keyStr, label)
 		if err != nil {
-			logs.Write_Log("ERROR", "Erreur ajout clé publique : "+err.Error())
-			http.Error(w, "Erreur lors de l'ajout de la clé", http.StatusInternalServerError)
+			// Le message d'AddUserKey est déjà explicite : on ne le préfixe pas
+			// une seconde fois. Le journal affichait « Erreur ajout clé
+			// publique : Erreur ajout clé publique : Error 1062... ».
+			logs.Write_Log("WARNING", "profil: ajout de clé refusé pour l'utilisateur "+
+				strconv.Itoa(userid)+" : "+err.Error())
+			// 409 et non 500 : une clé déjà enregistrée est un conflit, pas une
+			// panne du serveur. Et le message part à l'utilisateur, sinon il
+			// voit « Erreur lors de l'ajout » sans savoir quoi corriger.
+			http.Error(w, err.Error(), http.StatusConflict)
 			return
 		}
 

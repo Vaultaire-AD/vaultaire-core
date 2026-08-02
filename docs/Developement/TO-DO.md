@@ -2,7 +2,13 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
 
 
 1.[FAIT-H] [DOC]mettre a jour la Documentation pour séparé entierement les GPO voir trames struct (si il a des changement a faire dans le protcole dabord mettre ajour la documentation et demander ensuite validation)
-2.[GPO] Ajout de nouveaux Module
+2.[EN COURS] [GPO] Ajout de nouveaux Module
+            [FAIT] Ordre d'application repense en phases (fichiers -> sources -> paquets -> config -> services).
+                   L'ancien ordre mettait les fichiers APRES les services : un service demarrait sur la conf
+                   par defaut du paquet. Voir GPO.md section 5.
+            [FAIT] 6 modules : directory_manage, templated_file_deploy, trusted_ca, dns_resolver,
+                   package_repository, firewall_rule.
+            [RESTE] les ~24 autres modules listes ci-dessous.
             A. Modules manquants — Sécurité & réseau
 Module	Description	Scope
 firewall_rule	Règles nftables/firewalld dédiées (table séparée, jamais mélangée aux règles manuelles)	Machine
@@ -40,7 +46,5 @@ user_password_policy	Force changement au prochain login, expiration individuelle
 user_group_membership	Ajout/retrait d'un groupe POSIX local (distinct de sudoers_rule, plus générique)	User
 4.[GPO] - Détection de dérive (drift detection)
             Rien dans le catalogue ne vérifie qu'un module resté "appliqué avec succès" (version à jour dans applied_policies.json) correspond encore à l'état réel du système — un admin qui modifie manuellement sshd_config.d/99-vaultaire-gpo.conf en SSH direct fausserait l'état sans que rien ne le détecte. Il faut un scan périodique de conformité, pas seulement une application ponctuelle.
-6.[TICKET] - TICKETING
-            Certaine action ou alerte ou autre devrait necesiter une intervention Humain je veux donc mettre en place un systeme de Ticket interne a vaultaire les ticket sont généré par vaultaire de facon automatique (il doit pouvoir etre gère depuis la web interface mais aussi depuis le CLI et l'api pour le module vlt comme kubectl) avec un systeme de gestion de permission pas tous le monde voit les ticket de tous le monde
 7.[GPO] - Reporting de conformité centralisé
             Vue d'ensemble côté serveur : quelle version de policy chaque machine a effectivement appliquée avec succès, quelles machines sont en échec/en retard — sans ça, tu n'as aucune visibilité sur l'état réel du parc.

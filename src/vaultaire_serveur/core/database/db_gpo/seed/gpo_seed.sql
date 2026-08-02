@@ -27,7 +27,12 @@ INSERT IGNORE INTO gpo_field_rule (module_type, field_name, mode, allow_pattern,
   ('sysctl',          'value',       'pattern', '^-?[0-9]+( -?[0-9]+)*$', NULL, 'system'),
   ('package',         'package',     'list',    NULL, NULL, 'system'),
   ('sudoers_rule',    'command_set', 'list',    NULL, NULL, 'system'),
-  ('user_cron',       'command_id',  'list',    NULL, NULL, 'system');
+  ('user_cron',       'command_id',  'list',    NULL, NULL, 'system'),
+  -- Depots de paquets : mode motif, HTTPS exige.
+  -- Un depot en HTTP laisse un intermediaire reseau substituer les paquets, qui
+  -- sont ensuite installes en root sur tout le parc. Le motif est elargissable
+  -- depuis l'interface pour un miroir local sur reseau maitrise.
+  ('package_repository', 'url',        'pattern', '^https://[A-Za-z0-9._-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$', NULL, 'system');
 
 -- ---------------------------------------------------------------------------
 -- Unités systemd gérables

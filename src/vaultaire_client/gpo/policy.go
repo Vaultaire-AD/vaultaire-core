@@ -38,6 +38,13 @@ const (
 	ModuleFileDeploy      = "file_deploy"
 	ModuleUserEnv         = "user_env"
 	ModuleUserCron        = "user_cron"
+
+	ModuleDirectoryManage = "directory_manage"
+	ModuleTemplatedFile   = "templated_file_deploy"
+	ModuleTrustedCA       = "trusted_ca"
+	ModuleDNSResolver     = "dns_resolver"
+	ModulePackageRepo     = "package_repository"
+	ModuleFirewallRule    = "firewall_rule"
 )
 
 // UserHomePlaceholder est le marqueur remplacé par le home réel de l'utilisateur
