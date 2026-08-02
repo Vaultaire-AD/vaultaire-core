@@ -65,6 +65,29 @@ var dynamicFields = []dynamicField{
 			"Un identifiant sans implémentation donnera une tâche sans effet.",
 	},
 	{
+		ModuleType: ModuleKernelModulePolicy, FieldName: "module",
+		Label: "Modules noyau interdictibles",
+		Help: "Nom du module tel que modprobe l'attend (ex. usb-storage). La liste initiale couvre les " +
+			"vecteurs de stockage amovible et les protocoles rarement utilisés. Ajoutez-y les modules " +
+			"propres à votre parc.",
+	},
+	{
+		ModuleType: ModuleUserShell, FieldName: "shell",
+		Label: "Shells attribuables",
+		Help: "Chemin absolu d'un shell. /usr/sbin/nologin interdit la connexion interactive, /bin/rbash " +
+			"donne un shell restreint. N'ajoutez ici que des shells réellement installés sur le parc : " +
+			"un shell inexistant rend le compte inutilisable.",
+	},
+	{
+		ModuleType: ModuleUserGroupMembership, FieldName: "group",
+		Label: "Groupes locaux attribuables",
+		Help: "ATTENTION — cette liste est un point d'élévation de privilèges. Appartenir à docker, lxd, " +
+			"disk ou kvm équivaut en pratique à un accès root sur la machine : ces groupes donnent la main " +
+			"sur des ressources permettant de lire ou modifier n'importe quel fichier. N'y placez que des " +
+			"groupes dont vous avez évalué la portée. La liste initiale ne contient que des groupes de " +
+			"périphériques sans conséquence sur les privilèges.",
+	},
+	{
 		ModuleType: ModulePackageRepo, FieldName: "url",
 		Label: "Dépôts de paquets autorisés",
 		Help: "URL de base d'un dépôt. Ce champ est en mode motif : le motif initial n'accepte que le HTTPS, " +

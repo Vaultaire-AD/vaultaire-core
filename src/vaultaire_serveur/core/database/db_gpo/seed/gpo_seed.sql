@@ -32,7 +32,10 @@ INSERT IGNORE INTO gpo_field_rule (module_type, field_name, mode, allow_pattern,
   -- Un depot en HTTP laisse un intermediaire reseau substituer les paquets, qui
   -- sont ensuite installes en root sur tout le parc. Le motif est elargissable
   -- depuis l'interface pour un miroir local sur reseau maitrise.
-  ('package_repository', 'url',        'pattern', '^https://[A-Za-z0-9._-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$', NULL, 'system');
+  ('package_repository', 'url',        'pattern', '^https://[A-Za-z0-9._-]+(:[0-9]{1,5})?(/[A-Za-z0-9._~/-]*)?$', NULL, 'system'),
+  ('kernel_module_policy',    'module', 'list',    NULL, NULL, 'system'),
+  ('user_shell',              'shell',  'list',    NULL, NULL, 'system'),
+  ('user_group_membership',   'group',  'list',    NULL, NULL, 'system');
 
 -- ---------------------------------------------------------------------------
 -- Unités systemd gérables
@@ -253,3 +256,65 @@ INSERT IGNORE INTO gpo_restriction (kind, scope, value, note, updated_by) VALUES
   ('env_deny', 'any', 'SUDO_ASKPASS',       'programme de saisie de mot de passe sudo', 'system'),
   ('env_deny', 'any', 'HOSTALIASES',        'detournement de la resolution de noms', 'system'),
   ('env_deny', 'any', 'NSS_WRAPPER_PASSWD', 'detournement de la base de comptes', 'system');
+
+
+-- ---------------------------------------------------------------------------
+-- Modules noyau interdictibles
+-- ---------------------------------------------------------------------------
+-- Stockage amovible et protocoles rarement utilises : les vecteurs classiques
+-- d'exfiltration ou de surface d'attaque inutile. Aucun n'est necessaire au
+-- fonctionnement d'un poste de travail ou d'un serveur standard.
+
+INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, updated_by) VALUES
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'usb-storage', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'firewire-core', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'thunderbolt', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'cramfs', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'freevxfs', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'jffs2', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'hfs', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'hfsplus', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'udf', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'dccp', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'sctp', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'rds', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'tipc', 'system'),
+  ('allow_value', 'kernel_module_policy', 'module', 'any', 'bluetooth', 'system');
+
+-- ---------------------------------------------------------------------------
+-- Shells attribuables
+-- ---------------------------------------------------------------------------
+-- nologin interdit la connexion interactive tout en laissant les services
+-- fonctionner sous ce compte. rbash est un shell restreint : pas de cd, pas de
+-- redirection, pas d'execution par chemin absolu.
+
+INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, updated_by) VALUES
+  ('allow_value', 'user_shell', 'shell', 'user', '/bin/bash', 'system'),
+  ('allow_value', 'user_shell', 'shell', 'user', '/bin/sh', 'system'),
+  ('allow_value', 'user_shell', 'shell', 'user', '/bin/rbash', 'system'),
+  ('allow_value', 'user_shell', 'shell', 'user', '/usr/bin/zsh', 'system'),
+  ('allow_value', 'user_shell', 'shell', 'user', '/usr/sbin/nologin', 'system'),
+  ('allow_value', 'user_shell', 'shell', 'user', '/sbin/nologin', 'system');
+
+-- ---------------------------------------------------------------------------
+-- Groupes locaux attribuables
+-- ---------------------------------------------------------------------------
+-- ATTENTION : cette liste est un point d'elevation de privileges.
+--
+-- Volontairement limitee a des groupes de PERIPHERIQUES, sans consequence sur
+-- les privileges. Sont deliberement ABSENTS : docker, lxd, kvm, libvirt, disk,
+-- adm, shadow, sudo, wheel. Chacun permet, directement ou non, de lire ou
+-- modifier n'importe quel fichier de la machine — appartenir a docker revient
+-- a etre root, puisqu'on peut monter / dans un conteneur.
+--
+-- Les ajouter reste possible depuis l'interface, mais c'est alors une decision
+-- explicite d'un membre du groupe vaultaire, pas un defaut livre.
+
+INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, updated_by) VALUES
+  ('allow_value', 'user_group_membership', 'group', 'user', 'audio', 'system'),
+  ('allow_value', 'user_group_membership', 'group', 'user', 'video', 'system'),
+  ('allow_value', 'user_group_membership', 'group', 'user', 'plugdev', 'system'),
+  ('allow_value', 'user_group_membership', 'group', 'user', 'dialout', 'system'),
+  ('allow_value', 'user_group_membership', 'group', 'user', 'lp', 'system'),
+  ('allow_value', 'user_group_membership', 'group', 'user', 'scanner', 'system'),
+  ('allow_value', 'user_group_membership', 'group', 'user', 'cdrom', 'system');

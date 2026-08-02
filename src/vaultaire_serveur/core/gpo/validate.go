@@ -390,6 +390,46 @@ func moduleIdentity(m Module) string {
 		return "la règle de pare-feu " + m.Params["port"] + "/" + m.Params["protocol"]
 	case ModuleDNSResolver:
 		return "la résolution DNS"
+	case ModuleFileACL:
+		return "l'ACL " + m.Params["kind"] + ":" + m.Params["target"] + " sur " + m.Params["path"]
+	case ModuleBootParams:
+		return "le paramètre de démarrage " + m.Params["parameter"]
+	case ModuleKernelModulePolicy:
+		return "le module noyau " + m.Params["module"]
+	case ModuleSSHKnownHosts:
+		return "l'hôte SSH connu " + m.Params["host"]
+	case ModuleAuditdRule:
+		return "la règle d'audit sur " + m.Params["path"]
+	case ModulePAMPolicy:
+		return "la politique de mot de passe"
+	case ModuleLocalAccountPolicy:
+		return "la politique des comptes locaux"
+	case ModuleSELinuxMode:
+		return "le mode SELinux"
+	case ModuleNTPConfig:
+		return "la synchronisation horaire"
+	case ModuleLogPolicy:
+		return "la rétention des journaux"
+	case ModuleUpdatePolicy:
+		return "la politique de mise à jour"
+	case ModuleSystemEnv:
+		return "la variable système " + strings.ToUpper(m.Params["name"])
+	case ModuleResourceLimits:
+		return "la limite " + m.Params["item"] + " pour " + m.Params["domain"]
+	case ModuleFileRetention:
+		return "la purge de " + m.Params["directory"] + "/" + m.Params["pattern"]
+	case ModuleUserGroupMembership:
+		return "l'appartenance au groupe " + m.Params["group"]
+	case ModuleUserShell:
+		return "le shell de connexion"
+	case ModuleUserPasswordPolicy:
+		return "l'expiration du mot de passe"
+	case ModuleUserSSHClientConfig:
+		return "l'alias SSH " + m.Params["host_alias"]
+	case ModuleUserGitConfig:
+		return "la clé git " + m.Params["key"]
+	case ModuleUserResourceLimits:
+		return "le quota de ressources"
 	case ModuleSSHServerConfig, ModuleSudoersRule:
 		if m.Type == ModuleSudoersRule {
 			return "les droits sudo du groupe " + m.Params["group"]

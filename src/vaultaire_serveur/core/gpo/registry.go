@@ -83,7 +83,33 @@ const (
 	ModulePackageRepo = "package_repository"
 
 	// Phase 4 — configuration système
-	ModuleFirewallRule = "firewall_rule"
+	ModuleFirewallRule       = "firewall_rule"
+	ModuleBootParams         = "boot_params"
+	ModuleKernelModulePolicy = "kernel_module_policy"
+	ModuleSSHKnownHosts      = "ssh_known_hosts"
+	ModulePAMPolicy          = "pam_policy"
+	ModuleLocalAccountPolicy = "local_account_policy"
+	ModuleAuditdRule         = "auditd_rule"
+	ModuleSELinuxMode        = "selinux_mode"
+	ModuleNTPConfig          = "ntp_config"
+	ModuleLogPolicy          = "log_policy"
+	ModuleUpdatePolicy       = "update_policy"
+	ModuleSystemEnv          = "system_env"
+	ModuleResourceLimits     = "resource_limits"
+
+	// Phase 1 — fichiers (suite)
+	ModuleFileACL = "file_acl"
+
+	// Phase 6 — ménage
+	ModuleFileRetention = "file_retention"
+
+	// Phase 7 — environnement utilisateur
+	ModuleUserGroupMembership = "user_group_membership"
+	ModuleUserShell           = "user_shell"
+	ModuleUserPasswordPolicy  = "user_password_policy"
+	ModuleUserSSHClientConfig = "user_ssh_client_config"
+	ModuleUserGitConfig       = "user_git_config"
+	ModuleUserResourceLimits  = "user_resource_limits"
 )
 
 // Bornes de phase, pour que les ApplyOrder ci-dessous se lisent comme un plan
@@ -322,6 +348,346 @@ var baseCatalog = []ModuleSchema{
 				Help: "Adresse ou réseau CIDR. Laisser vide pour toute origine."},
 			{Name: "action", Label: "Action", Type: FieldEnum, Required: true,
 				Options: []string{"allow", "deny"}, Default: "allow"},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleFileACL,
+		Label:       "ACL POSIX",
+		Category:    CategoryFiles,
+		Description: "Pose une ACL POSIX sur un fichier ou un répertoire, au-delà du couple propriétaire/groupe. Appliqué après les modules de dépôt, pour que la cible existe.",
+		Scope:       ScopeBoth,
+		ApplyOrder:  phaseFiles + 3,
+		Fields: []FieldSchema{
+			{Name: "path", Label: "Chemin", Type: FieldPath, Required: true, MaxLen: 512},
+			{Name: "kind", Label: "Bénéficiaire", Type: FieldEnum, Required: true,
+				Options: []string{"user", "group"}, Default: "group"},
+			{Name: "target", Label: "Utilisateur ou groupe", Type: FieldIdent, Required: true, MaxLen: 32},
+			{Name: "permissions", Label: "Droits", Type: FieldEnum, Required: true,
+				Options: []string{"r", "rw", "rx", "rwx", "---"}, Default: "r",
+				Help: "« --- » retire tout droit sans supprimer l'entrée : utile pour exclure explicitement."},
+			{Name: "recursive", Label: "Récursif", Type: FieldBool, Default: "false",
+				Help: "Sur un répertoire uniquement. Applique aussi l'ACL par défaut, héritée par les fichiers créés ensuite."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleBootParams,
+		Label:       "Paramètres noyau au démarrage (GRUB)",
+		Category:    CategorySystem,
+		Description: "Ajoute des paramètres à la ligne de commande du noyau. Distinct de sysctl, qui agit à chaud : ceux-ci ne prennent effet qu'au prochain redémarrage. La configuration GRUB est régénérée puis validée ; en cas d'échec, l'état précédent est restauré.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 1,
+		Fields: []FieldSchema{
+			{Name: "parameter", Label: "Paramètre", Type: FieldString, Required: true, MaxLen: 128,
+				Help: "Forme « clé=valeur » ou drapeau seul (ex. audit=1, quiet). Un seul paramètre par module."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleKernelModulePolicy,
+		Label:       "Module noyau interdit",
+		Category:    CategorySecurity,
+		Description: "Empêche le chargement d'un module noyau — par exemple usb-storage pour bloquer les clés USB. Écrit dans /etc/modprobe.d/ et retire le module s'il est déjà chargé. La liste des modules gérables est éditable dans les Restrictions.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 2,
+		Fields: []FieldSchema{
+			{Name: "module", Label: "Module noyau", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 64},
+			{Name: "unload_now", Label: "Décharger immédiatement", Type: FieldBool, Default: "false",
+				Help: "Sans cette option, l'interdiction ne vaut que pour les chargements futurs : un module déjà en mémoire le reste jusqu'au redémarrage."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleSSHKnownHosts,
+		Label:       "Serveurs SSH connus",
+		Category:    CategorySecurity,
+		Description: "Pré-remplit /etc/ssh/ssh_known_hosts, la liste de confiance commune à tous les utilisateurs de la machine, et règle StrictHostKeyChecking. Évite que chacun accepte une empreinte au petit bonheur à la première connexion.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 5,
+		Fields: []FieldSchema{
+			{Name: "host", Label: "Hôte", Type: FieldString, Required: true, MaxLen: 256,
+				Help: "Nom d'hôte ou adresse. Plusieurs formes séparées par des virgules (ex. srv1,srv1.example.fr,10.0.0.1)."},
+			{Name: "key", Label: "Clé publique du serveur", Type: FieldText, Required: true, MaxLen: 4096,
+				Help: "Ligne complète telle que produite par ssh-keyscan, type de clé compris."},
+			{Name: "strict_host_key_checking", Label: "StrictHostKeyChecking", Type: FieldEnum,
+				Options: []string{"unchanged", "yes", "accept-new", "no"}, Default: "unchanged",
+				Help: "« yes » refuse tout serveur absent de cette liste. À n'activer qu'une fois la liste complète."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModulePAMPolicy,
+		Label:       "Politique de mot de passe et de verrouillage",
+		Category:    CategorySecurity,
+		Description: "Règle la complexité des mots de passe (pam_pwquality) et le verrouillage après échecs (pam_faillock). N'écrit QUE dans des fichiers .d/ dédiés — les piles /etc/pam.d/ ne sont jamais touchées, car une pile PAM fautive rend la machine inaccessible, y compris en console.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 6,
+		Fields: []FieldSchema{
+			{Name: "min_length", Label: "Longueur minimale", Type: FieldInt, Min: 0, Max: 64,
+				Help: "0 ou vide : ne pas imposer."},
+			{Name: "min_classes", Label: "Classes de caractères minimales", Type: FieldInt, Min: 0, Max: 4,
+				Help: "Minuscules, majuscules, chiffres, symboles."},
+			{Name: "remember", Label: "Historique interdit", Type: FieldInt, Min: 0, Max: 50,
+				Help: "Nombre d'anciens mots de passe refusés à la réutilisation."},
+			{Name: "deny_after", Label: "Verrouillage après N échecs", Type: FieldInt, Min: 0, Max: 100,
+				Help: "0 ou vide : pas de verrouillage."},
+			{Name: "unlock_time", Label: "Déverrouillage automatique (s)", Type: FieldInt, Min: 0, Max: 86400,
+				Help: "0 signifie verrouillage permanent jusqu'à intervention. Une valeur non nulle est fortement conseillée : sans elle, une attaque par échecs répétés verrouille durablement des comptes légitimes."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleLocalAccountPolicy,
+		Label:       "Politique des comptes locaux",
+		Category:    CategorySecurity,
+		Description: "Applique une expiration ou désactive l'authentification par mot de passe des comptes locaux non gérés par Vaultaire. root et les comptes système (uid < 1000) sont exclus par construction : les inclure couperait le dernier accès de secours à la machine.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 7,
+		Fields: []FieldSchema{
+			{Name: "action", Label: "Action", Type: FieldEnum, Required: true,
+				Options: []string{"report_only", "lock_password", "expire"}, Default: "report_only",
+				Help: "« report_only » se contente de lister les comptes concernés dans le rapport, sans rien modifier. À utiliser d'abord pour vérifier la portée."},
+			{Name: "max_age_days", Label: "Âge maximal du mot de passe (jours)", Type: FieldInt, Min: 0, Max: 3650,
+				Help: "0 ou vide : ne pas imposer."},
+			{Name: "inactive_days", Label: "Désactivation après inactivité (jours)", Type: FieldInt, Min: 0, Max: 3650},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleAuditdRule,
+		Label:       "Règle d'audit",
+		Category:    CategorySecurity,
+		Description: "Trace les accès à un chemin au niveau noyau, via /etc/audit/rules.d/. Répond à « qui a modifié ce fichier, et quand ». La règle est décrite par champs, jamais fournie en syntaxe auditctl brute.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 8,
+		Fields: []FieldSchema{
+			{Name: "path", Label: "Chemin surveillé", Type: FieldPath, Required: true, MaxLen: 512},
+			{Name: "permissions", Label: "Accès tracés", Type: FieldEnum, Required: true,
+				Options: []string{"wa", "rwa", "rwxa", "x"}, Default: "wa",
+				Help: "w écriture, a changement d'attribut, r lecture, x exécution. « wa » couvre la modification sans noyer le journal sous les lectures."},
+			{Name: "key", Label: "Étiquette", Type: FieldIdent, Required: true, MaxLen: 32,
+				Help: "Sert à retrouver les événements : ausearch -k <étiquette>."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleSELinuxMode,
+		Label:       "Mode SELinux",
+		Category:    CategorySecurity,
+		Description: "Fixe le mode SELinux. Le passage en enforcing est refusé si le système n'a jamais été réétiqueté : sur un système resté permissive, des étiquettes manquantes empêcheraient des services de démarrer — parfois sshd, donc sans accès pour corriger.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 9,
+		Fields: []FieldSchema{
+			{Name: "mode", Label: "Mode", Type: FieldEnum, Required: true,
+				Options: []string{"unchanged", "permissive", "enforcing"}, Default: "unchanged"},
+			{Name: "boolean_name", Label: "Booléen SELinux", Type: FieldIdent, MaxLen: 64,
+				Help: "Facultatif. Nom d'un booléen à régler en plus du mode (ex. httpd_can_network_connect)."},
+			{Name: "boolean_value", Label: "Valeur du booléen", Type: FieldEnum,
+				Options: []string{"unchanged", "on", "off"}, Default: "unchanged"},
+		},
+	},
+	{
+		Type:        ModuleNTPConfig,
+		Label:       "Synchronisation horaire (NTP)",
+		Category:    CategorySystem,
+		Description: "Fixe les serveurs de temps. Une horloge décalée casse la validation des certificats et l'authentification Kerberos, et rend les journaux incomparables entre machines.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 11,
+		Fields: []FieldSchema{
+			{Name: "servers", Label: "Serveurs NTP", Type: FieldString, Required: true, MaxLen: 512,
+				Help: "Noms ou adresses séparés par des virgules."},
+			{Name: "fallback_servers", Label: "Serveurs de secours", Type: FieldString, MaxLen: 512},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleLogPolicy,
+		Label:       "Rétention des journaux",
+		Category:    CategorySystem,
+		Description: "Règle la rotation et la rétention : taille maximale du journal systemd et durée de conservation. Un disque saturé par les journaux met une machine hors service aussi sûrement qu'une panne.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 12,
+		Fields: []FieldSchema{
+			{Name: "max_use", Label: "Taille maximale du journal", Type: FieldString, MaxLen: 16,
+				Help: "Forme systemd : 500M, 2G. Laisser vide pour ne pas imposer."},
+			{Name: "max_retention_days", Label: "Conservation (jours)", Type: FieldInt, Min: 0, Max: 3650},
+			{Name: "forward_to_syslog", Label: "Transférer vers syslog", Type: FieldEnum,
+				Options: []string{"unchanged", "yes", "no"}, Default: "unchanged"},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleUpdatePolicy,
+		Label:       "Mises à jour automatiques",
+		Category:    CategorySystem,
+		Description: "Active ou désactive les mises à jour automatiques. Le redémarrage automatique est un champ distinct et vaut « non » par défaut : une machine qui redémarre seule en pleine journée est un incident, pas une mise à jour.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 13,
+		Fields: []FieldSchema{
+			{Name: "enabled", Label: "Mises à jour automatiques", Type: FieldEnum, Required: true,
+				Options: []string{"unchanged", "enabled", "disabled"}, Default: "unchanged"},
+			{Name: "security_only", Label: "Sécurité uniquement", Type: FieldBool, Default: "true"},
+			{Name: "reboot_if_needed", Label: "Redémarrer si nécessaire", Type: FieldBool, Default: "false"},
+			{Name: "reboot_time", Label: "Heure de redémarrage", Type: FieldString, MaxLen: 8,
+				Help: "Forme HH:MM. Ignoré si le redémarrage automatique est désactivé."},
+		},
+	},
+	{
+		Type:        ModuleSystemEnv,
+		Label:       "Variable d'environnement système",
+		Category:    CategorySystem,
+		Description: "Définit une variable dans /etc/environment, visible par tous les utilisateurs et tous les services. Distinct de la variable utilisateur, qui ne vaut que pour une session. La liste des variables interdites des Restrictions s'applique ici aussi.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 14,
+		Fields: []FieldSchema{
+			{Name: "name", Label: "Nom", Type: FieldEnvName, Required: true, MaxLen: 64},
+			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 1024},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleResourceLimits,
+		Label:       "Limites de ressources (machine)",
+		Category:    CategorySystem,
+		Description: "Fixe une limite système via /etc/security/limits.d/. S'applique à tous les utilisateurs ou à un groupe. Distinct des quotas par utilisateur, qui passent par les slices systemd.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseConfig + 15,
+		Fields: []FieldSchema{
+			{Name: "domain", Label: "Portée", Type: FieldString, Required: true, MaxLen: 64, Default: "*",
+				Help: "« * » pour tous, « @groupe » pour un groupe, ou un nom d'utilisateur."},
+			{Name: "limit_type", Label: "Type", Type: FieldEnum, Required: true,
+				Options: []string{"soft", "hard"}, Default: "hard"},
+			{Name: "item", Label: "Ressource", Type: FieldEnum, Required: true,
+				Options: []string{"nofile", "nproc", "memlock", "core", "fsize", "stack"}, Default: "nofile"},
+			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 16,
+				Help: "Entier, ou « unlimited »."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleFileRetention,
+		Label:       "Purge de fichiers",
+		Category:    CategoryFiles,
+		Description: "Supprime les fichiers d'un répertoire au-delà d'un âge. Appliqué en dernier, après tout ce qui dépose des fichiers. Le motif ne peut pas contenir de séparateur de chemin, l'âge minimal est d'un jour, les liens symboliques ne sont jamais suivis, et les emplacements refusés des Restrictions s'appliquent.",
+		Scope:       ScopeMachine,
+		ApplyOrder:  phaseCleanup,
+		Fields: []FieldSchema{
+			{Name: "directory", Label: "Répertoire", Type: FieldPath, Required: true, MaxLen: 512},
+			{Name: "pattern", Label: "Motif", Type: FieldString, Required: true, MaxLen: 128, Default: "*.log",
+				Help: "Motif de nom de fichier, sans « / ». Un motif traversant l'arborescence est refusé."},
+			{Name: "older_than_days", Label: "Plus vieux que (jours)", Type: FieldInt, Required: true, Min: 1, Max: 3650,
+				Default: "30", Help: "Minimum 1 : une purge à 0 jour effacerait un fichier au moment même où il est écrit."},
+			{Name: "recursive", Label: "Récursif", Type: FieldBool, Default: "false"},
+		},
+	},
+	{
+		Type:        ModuleUserGroupMembership,
+		Label:       "Appartenance à un groupe local",
+		Category:    CategoryUser,
+		Description: "Ajoute ou retire l'utilisateur d'un groupe POSIX local. Appliqué en premier de la phase utilisateur, parce qu'un droit accordé par un groupe conditionne ce que les modules suivants peuvent faire. La liste des groupes attribuables est éditable dans les Restrictions — c'est un point de vigilance : certains groupes (docker, lxd, disk) équivalent à un accès root sur la machine.",
+		Scope:       ScopeUser,
+		ApplyOrder:  phaseUser,
+		Fields: []FieldSchema{
+			{Name: "group", Label: "Groupe local", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 32},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleUserShell,
+		Label:       "Shell de connexion",
+		Category:    CategoryUser,
+		Description: "Force le shell de connexion de l'utilisateur. Les shells attribuables sont éditables dans les Restrictions, ce qui permet de proposer un shell restreint (rbash) ou d'interdire la connexion interactive (nologin) sans toucher au code.",
+		Scope:       ScopeUser,
+		ApplyOrder:  phaseUser + 1,
+		Fields: []FieldSchema{
+			{Name: "shell", Label: "Shell", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 64},
+		},
+	},
+	{
+		Type:        ModuleUserPasswordPolicy,
+		Label:       "Expiration du mot de passe (utilisateur)",
+		Category:    CategoryUser,
+		Description: "Force le changement au prochain login, ou fixe une expiration propre à cet utilisateur. Distinct de la politique machine, qui règle la complexité pour tout le monde.",
+		Scope:       ScopeUser,
+		ApplyOrder:  phaseUser + 2,
+		Fields: []FieldSchema{
+			{Name: "force_change", Label: "Changement au prochain login", Type: FieldBool, Default: "false",
+				Help: "Attention : combiné à un shell nologin, l'utilisateur ne peut plus changer son mot de passe et se retrouve bloqué."},
+			{Name: "max_age_days", Label: "Validité (jours)", Type: FieldInt, Min: 0, Max: 3650,
+				Help: "0 ou vide : ne pas imposer."},
+			{Name: "warn_days", Label: "Avertissement avant expiration (jours)", Type: FieldInt, Min: 0, Max: 365},
+		},
+	},
+	{
+		Type:        ModuleUserSSHClientConfig,
+		Label:       "Configuration cliente SSH",
+		Category:    CategoryUser,
+		Description: "Écrit une entrée Host dans ~/.ssh/config, dans un bloc balisé. Le reste du fichier, écrit par l'utilisateur, n'est jamais touché.",
+		Scope:       ScopeUser,
+		ApplyOrder:  phaseUser + 4,
+		Fields: []FieldSchema{
+			{Name: "host_alias", Label: "Alias", Type: FieldString, Required: true, MaxLen: 64,
+				Help: "Le nom tapé après « ssh »."},
+			{Name: "hostname", Label: "Hôte réel", Type: FieldString, Required: true, MaxLen: 256},
+			{Name: "user", Label: "Utilisateur distant", Type: FieldIdent, MaxLen: 32},
+			{Name: "port", Label: "Port", Type: FieldInt, Min: 1, Max: 65535},
+			{Name: "proxy_jump", Label: "Rebond (ProxyJump)", Type: FieldString, MaxLen: 256},
+			{Name: "identity_file", Label: "Clé à utiliser", Type: FieldString, MaxLen: 256,
+				Help: "Chemin relatif au home, ex. .ssh/id_ed25519_prod."},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleUserGitConfig,
+		Label:       "Configuration git",
+		Category:    CategoryUser,
+		Description: "Règle une clé du ~/.gitconfig de l'utilisateur. Les clés sont choisies dans une liste fermée plutôt que libres : git permet de définir des commandes exécutées automatiquement (core.pager, filtres, hooks), qui donneraient une exécution de code arbitraire dans le contexte de l'utilisateur.",
+		Scope:       ScopeUser,
+		ApplyOrder:  phaseUser + 5,
+		Fields: []FieldSchema{
+			{Name: "key", Label: "Clé", Type: FieldEnum, Required: true,
+				Options: []string{
+					"user.name", "user.email", "user.signingkey",
+					"init.defaultBranch", "pull.rebase", "push.default",
+					"commit.gpgsign", "tag.gpgsign",
+					"core.autocrlf", "core.fileMode",
+					"http.sslVerify", "credential.helper",
+				},
+				Default: "user.email",
+				Help:    "Liste fermée. Les clés permettant d'exécuter une commande (core.pager, alias, filtres) sont volontairement absentes."},
+			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 256},
+			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
+				Options: []string{"present", "absent"}, Default: "present"},
+		},
+	},
+	{
+		Type:        ModuleUserResourceLimits,
+		Label:       "Quota de ressources (utilisateur)",
+		Category:    CategoryUser,
+		Description: "Limite la consommation CPU et mémoire de l'utilisateur via sa slice systemd. Empêche une session de saturer une machine partagée. Distinct des limites machine, qui passent par limits.d.",
+		Scope:       ScopeUser,
+		ApplyOrder:  phaseUser + 6,
+		Fields: []FieldSchema{
+			{Name: "cpu_quota", Label: "Quota CPU", Type: FieldString, MaxLen: 8,
+				Help: "En pourcentage, ex. 200% pour deux cœurs. Laisser vide pour ne pas limiter."},
+			{Name: "memory_max", Label: "Mémoire maximale", Type: FieldString, MaxLen: 16,
+				Help: "Forme systemd : 512M, 4G. Au-delà, les processus de l'utilisateur sont tués par le noyau."},
+			{Name: "tasks_max", Label: "Processus maximum", Type: FieldInt, Min: 0, Max: 100000},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present"},
 		},

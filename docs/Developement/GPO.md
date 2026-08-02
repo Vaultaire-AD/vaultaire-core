@@ -107,6 +107,9 @@ un seul point de vérité pour la portée.
 | `appliers_machine.go` | ssh, sysctl, sudoers, package, systemd |
 | `appliers_sources.go` | répertoires, fichiers à substitution, CA, DNS, dépôts |
 | `appliers_firewall.go` | règles de pare-feu (firewalld ou nftables) |
+| `appliers_hardening.go` | pam, comptes locaux, modules noyau, known_hosts, audit, SELinux |
+| `appliers_system.go` | GRUB, NTP, journaux, mises à jour, environnement, limites, purge |
+| `appliers_user_extra.go` | ACL, groupes locaux, shell, mot de passe, ssh client, git, quotas |
 | `appliers_user.go` | env, cron, file_deploy |
 | `cycle.go` | Cycles complets, rafraîchissement périodique |
 | `bootstrap.go` | Amorçage : émetteur de trames et clé de session |
@@ -218,20 +221,60 @@ Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 
 | Ordre | Type | Scope | Ce qu'il fait |
 |-------|------|-------|---------------|
-| 10 | `directory_manage` | **both** | Crée un répertoire avec permissions et propriétaire |
-| 11 | `file_deploy` | **both** | Dépose un fichier avec permissions et propriétaire |
-| 12 | `templated_file_deploy` | **both** | Idem, avec substitution de `{{hostname}}`, `{{fqdn}}`, `{{username}}`, `{{domain}}` |
-| 14 | `trusted_ca` | machine | Installe une CA interne dans le magasin de confiance |
-| 20 | `dns_resolver` | machine | Serveurs DNS et domaine de recherche (`resolved.conf.d/`) |
-| 21 | `package_repository` | machine | Déclare un dépôt de paquets autorisé |
+| 10 | `directory_manage` | both | Répertoire avec permissions et propriétaire |
+| 11 | `file_deploy` | both | Fichier avec contenu, permissions, propriétaire |
+| 12 | `templated_file_deploy` | both | Idem, avec `{{hostname}}` `{{fqdn}}` `{{username}}` `{{domain}}` |
+| 13 | `file_acl` | both | ACL POSIX (`setfacl`), avec héritage si récursif |
+| 14 | `trusted_ca` | machine | CA interne dans le magasin de confiance |
+| 20 | `dns_resolver` | machine | Serveurs DNS (`resolved.conf.d/`) |
+| 21 | `package_repository` | machine | Dépôt de paquets autorisé |
 | 30 | `package` | machine | Présence, absence, version épinglée |
 | 40 | `sysctl` | machine | Un fichier par clé dans `/etc/sysctl.d/` |
-| 44 | `ssh_server_config` | machine | Fragment `/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf` |
-| 50 | `firewall_rule` | machine | Ouvre ou ferme un port, dans une zone dédiée |
-| 56 | `sudoers_rule` | machine | Fichier `/etc/sudoers.d/` depuis un jeu de commandes |
+| 41 | `boot_params` | machine | Ligne de commande noyau (GRUB), effectif au redémarrage |
+| 42 | `kernel_module_policy` | machine | Interdit le chargement d'un module noyau |
+| 44 | `ssh_server_config` | machine | Fragment `sshd_config.d/99-vaultaire-gpo.conf` |
+| 45 | `ssh_known_hosts` | machine | `/etc/ssh/ssh_known_hosts` + StrictHostKeyChecking |
+| 46 | `pam_policy` | machine | Complexité mot de passe, verrouillage après échecs |
+| 47 | `local_account_policy` | machine | Comptes locaux non-Vaultaire (root et uid<1000 exclus) |
+| 48 | `auditd_rule` | machine | Surveillance d'un chemin (`audit/rules.d/`) |
+| 49 | `selinux_mode` | machine | Mode SELinux + booléens |
+| 50 | `firewall_rule` | machine | Port ouvert ou fermé, zone dédiée |
+| 51 | `ntp_config` | machine | Serveurs de temps |
+| 52 | `log_policy` | machine | Taille et rétention des journaux |
+| 53 | `update_policy` | machine | Mises à jour automatiques |
+| 54 | `system_env` | machine | `/etc/environment` |
+| 55 | `resource_limits` | machine | `limits.d/` (ulimits) |
+| 56 | `sudoers_rule` | machine | `/etc/sudoers.d/` depuis un jeu de commandes |
 | 60 | `systemd_service` | machine | Activation, état courant, masquage |
+| 70 | `file_retention` | machine | Purge par âge et motif |
+| 80 | `user_group_membership` | user | Groupe POSIX local |
+| 81 | `user_shell` | user | Shell de connexion |
+| 82 | `user_password_policy` | user | Expiration, changement forcé |
 | 83 | `user_env` | user | Variable d'environnement |
+| 84 | `user_ssh_client_config` | user | Entrée Host dans `~/.ssh/config` |
+| 85 | `user_git_config` | user | Clé `.gitconfig` (liste fermée) |
+| 86 | `user_resource_limits` | user | Quota CPU/mémoire (slice systemd) |
 | 87 | `user_cron` | user | Timer `systemd --user` |
+
+### Modules capables de rendre une machine inaccessible
+
+Quatre modules touchent l'authentification, le démarrage ou le contrôle d'accès
+obligatoire. Une politique fautive appliquée à tout un parc rendrait les
+machines injoignables **à distance**, donc sans moyen d'y pousser la politique
+corrective. Chacun valide son travail et restaure l'état précédent en cas
+d'échec :
+
+| Module | Garde-fou |
+|--------|-----------|
+| `pam_policy` | N'écrit **jamais** dans `/etc/pam.d/`, seulement dans `pwquality.conf.d/` et `faillock.conf` — des fichiers de paramètres, pas des piles d'instructions. Refuse un verrouillage sans déverrouillage automatique. `even_deny_root = no` : sinon N échecs volontaires sur root suppriment le dernier accès de secours. |
+| `boot_params` | Régénère et **valide** la configuration GRUB avant de l'installer ; restaure et régénère si la validation échoue. |
+| `selinux_mode` | Refuse le passage en `enforcing` sur un système jamais réétiqueté — des étiquettes manquantes empêcheraient sshd de démarrer. |
+| `local_account_policy` | root et uid < 1000 exclus par construction. Mode `report_only` par défaut, qui liste sans modifier. |
+
+`file_retention` est le seul module qui **détruit** des données : motif sans
+séparateur de chemin, âge minimal d'un jour, liens symboliques jamais suivis,
+un seul niveau de récursion, et les règles de chemin des Restrictions
+s'appliquent.
 
 ## L'ordre d'application
 

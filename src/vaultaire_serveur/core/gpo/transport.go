@@ -173,6 +173,38 @@ func ModuleStateKey(m Module) string {
 		// Un seul jeu de résolveurs par machine : deux modules qui se
 		// contrediraient sont un conflit, pas deux réglages coexistants.
 		suffix = "-"
+	case ModuleFileACL:
+		// Un chemin peut porter plusieurs ACL, une par bénéficiaire : la clé les
+		// distingue, sans quoi la seconde écraserait l'état de la première.
+		suffix = m.Params["path"] + "#" + m.Params["kind"] + ":" + m.Params["target"]
+	case ModuleBootParams:
+		suffix = m.Params["parameter"]
+	case ModuleKernelModulePolicy:
+		suffix = m.Params["module"]
+	case ModuleSSHKnownHosts:
+		suffix = m.Params["host"]
+	case ModuleAuditdRule:
+		suffix = m.Params["path"]
+	case ModuleNTPConfig, ModuleLogPolicy, ModuleUpdatePolicy, ModulePAMPolicy,
+		ModuleLocalAccountPolicy, ModuleSELinuxMode:
+		// Réglages uniques par machine : deux modules qui se contrediraient sont
+		// un conflit à signaler, pas deux réglages qui coexistent.
+		suffix = "-"
+	case ModuleSystemEnv:
+		suffix = strings.ToUpper(m.Params["name"])
+	case ModuleResourceLimits:
+		suffix = m.Params["domain"] + ":" + m.Params["limit_type"] + ":" + m.Params["item"]
+	case ModuleFileRetention:
+		suffix = m.Params["directory"] + "#" + m.Params["pattern"]
+	case ModuleUserGroupMembership:
+		suffix = m.Params["group"]
+	case ModuleUserSSHClientConfig:
+		suffix = m.Params["host_alias"]
+	case ModuleUserGitConfig:
+		suffix = m.Params["key"]
+	case ModuleUserShell, ModuleUserPasswordPolicy, ModuleUserResourceLimits:
+		// Un seul par utilisateur.
+		suffix = "-"
 	case ModuleSSHServerConfig:
 		// Un seul module SSH par politique (clé naturelle unique) : pas de suffixe.
 		suffix = "-"

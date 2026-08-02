@@ -45,6 +45,27 @@ const (
 	ModuleDNSResolver     = "dns_resolver"
 	ModulePackageRepo     = "package_repository"
 	ModuleFirewallRule    = "firewall_rule"
+
+	ModuleFileACL             = "file_acl"
+	ModuleBootParams          = "boot_params"
+	ModuleKernelModulePolicy  = "kernel_module_policy"
+	ModuleSSHKnownHosts       = "ssh_known_hosts"
+	ModulePAMPolicy           = "pam_policy"
+	ModuleLocalAccountPolicy  = "local_account_policy"
+	ModuleAuditdRule          = "auditd_rule"
+	ModuleSELinuxMode         = "selinux_mode"
+	ModuleNTPConfig           = "ntp_config"
+	ModuleLogPolicy           = "log_policy"
+	ModuleUpdatePolicy        = "update_policy"
+	ModuleSystemEnv           = "system_env"
+	ModuleResourceLimits      = "resource_limits"
+	ModuleFileRetention       = "file_retention"
+	ModuleUserGroupMembership = "user_group_membership"
+	ModuleUserShell           = "user_shell"
+	ModuleUserPasswordPolicy  = "user_password_policy"
+	ModuleUserSSHClientConfig = "user_ssh_client_config"
+	ModuleUserGitConfig       = "user_git_config"
+	ModuleUserResourceLimits  = "user_resource_limits"
 )
 
 // UserHomePlaceholder est le marqueur remplacé par le home réel de l'utilisateur

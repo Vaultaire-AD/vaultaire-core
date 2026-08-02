@@ -2,13 +2,14 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
 
 
 1.[FAIT-H] [DOC]mettre a jour la Documentation pour séparé entierement les GPO voir trames struct (si il a des changement a faire dans le protcole dabord mettre ajour la documentation et demander ensuite validation)
-2.[EN COURS] [GPO] Ajout de nouveaux Module
+2.[FAIT-IA] [GPO] Ajout de nouveaux Module
             [FAIT] Ordre d'application repense en phases (fichiers -> sources -> paquets -> config -> services).
                    L'ancien ordre mettait les fichiers APRES les services : un service demarrait sur la conf
                    par defaut du paquet. Voir GPO.md section 5.
             [FAIT] 6 modules : directory_manage, templated_file_deploy, trusted_ca, dns_resolver,
                    package_repository, firewall_rule.
-            [RESTE] les ~24 autres modules listes ci-dessous.
+            [FAIT] 20 modules supplementaires (groupes A sauf mount_hardening, B, C, D).
+            Catalogue a 34 modules. Seul mount_hardening reste volontairement de cote.
             A. Modules manquants — Sécurité & réseau
 Module	Description	Scope
 firewall_rule	Règles nftables/firewalld dédiées (table séparée, jamais mélangée aux règles manuelles)	Machine

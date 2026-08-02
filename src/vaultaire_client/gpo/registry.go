@@ -42,7 +42,31 @@ var appliers = map[string]Applier{
 	ModulePackageRepo:     applyPackageRepo,
 
 	// Phase configuration système — avant le démarrage des services.
-	ModuleFirewallRule: applyFirewallRule,
+	ModuleFirewallRule:       applyFirewallRule,
+	ModuleBootParams:         applyBootParams,
+	ModuleKernelModulePolicy: applyKernelModulePolicy,
+	ModuleSSHKnownHosts:      applySSHKnownHosts,
+	ModulePAMPolicy:          applyPAMPolicy,
+	ModuleLocalAccountPolicy: applyLocalAccountPolicy,
+	ModuleAuditdRule:         applyAuditdRule,
+	ModuleSELinuxMode:        applySELinuxMode,
+	ModuleNTPConfig:          applyNTPConfig,
+	ModuleLogPolicy:          applyLogPolicy,
+	ModuleUpdatePolicy:       applyUpdatePolicy,
+	ModuleSystemEnv:          applySystemEnv,
+	ModuleResourceLimits:     applyResourceLimits,
+	ModuleFileACL:            applyFileACL,
+
+	// Phase ménage — après tout ce qui dépose des fichiers.
+	ModuleFileRetention: applyFileRetention,
+
+	// Phase environnement utilisateur.
+	ModuleUserGroupMembership: applyUserGroupMembership,
+	ModuleUserShell:           applyUserShell,
+	ModuleUserPasswordPolicy:  applyUserPasswordPolicy,
+	ModuleUserSSHClientConfig: applyUserSSHClientConfig,
+	ModuleUserGitConfig:       applyUserGitConfig,
+	ModuleUserResourceLimits:  applyUserResourceLimits,
 }
 
 // ApplierFor retourne l'appliqueur d'un type de module.
