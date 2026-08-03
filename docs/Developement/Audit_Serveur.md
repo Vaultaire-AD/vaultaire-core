@@ -15,7 +15,7 @@ constat de lecture, avec chemin et ligne.
 | # | Gravité | Où | Constat | État |
 |---|---------|-----|---------|------|
 | 12 | **Critique** | Crypto | Hachage des mots de passe en SHA-256 à un tour | Ouvert |
-| 13 | **Critique** | Ducky | RSA PKCS#1 v1.5 sur le chemin non authentifié — oracle Bleichenbacher | Ouvert — **TO-DO 11** |
+| ~~13~~ | ~~Critique~~ | Ducky | ~~RSA PKCS#1 v1.5 — oracle Bleichenbacher~~ | **CORRIGÉ** — migration OAEP, voir TO-DO 11 |
 | 14 | **Élevée** | Ducky | Les sessions non authentifiées ne sont jamais balayées | Ouvert |
 | 15 | **Élevée** | Transverse | Aucun `recover()` : une panique dans une goroutine tue tout le serveur | Ouvert |
 | 16 | **Moyenne** | LDAP | Encodeurs BER manuels : forme longue absente, `messageID` tronqué | Ouvert — **TO-DO 12** |

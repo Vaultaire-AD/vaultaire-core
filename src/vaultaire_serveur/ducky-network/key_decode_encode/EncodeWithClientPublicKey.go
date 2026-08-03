@@ -44,9 +44,17 @@ func EncryptMessageWithClientPublic(message string, clientSoftwareID string) ([]
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "The rsa key is not a valid rsa key for "+clientSoftwareID, meta)
 		return nil, fmt.Errorf("the rsa key is not a valid rsa key for %s", clientSoftwareID)
 	}
-	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, []byte(message))
+	// OAEP — voir oaep_params.go. Les paramètres doivent être identiques à ceux
+	// de l'agent, sans quoi le client ne peut plus déchiffrer les réponses.
+	//
+	// L'erreur la plus probable ici n'est plus une clé invalide mais un message
+	// trop long : OAEP réduit la charge utile de 501 à 446 octets sur RSA-4096.
+	// Le message le dit, pour éviter de chercher du côté des clés.
+	ciphertext, err := rsa.EncryptOAEP(oaepHash(), rand.Reader, rsaPublicKey, []byte(message), oaepLabel)
 	if err != nil {
-		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "Error during the encryption for "+clientSoftwareID+": "+err.Error(), meta)
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, fmt.Sprintf(
+			"Error during the encryption for %s (%d octets, maximum %d) : %v",
+			clientSoftwareID, len(message), MaxOAEPPayload(rsaPublicKey.Size()), err), meta)
 		return nil, fmt.Errorf("error during the encryption for %s: %v", clientSoftwareID, err)
 	}
 	return ciphertext, nil

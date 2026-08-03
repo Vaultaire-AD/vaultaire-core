@@ -80,7 +80,12 @@ func encrypt(publicKeyStr string) ([]byte, []byte, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("erreur lors de la génération de données aléatoires : %v", err)
 	}
-	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, randomData)
+	// OAEP, avec les paramètres du paquet key_encode_decode — surtout pas une
+	// copie locale de sha256.New() : les deux extrémités du canal doivent
+	// s'accorder, et un troisième endroit à tenir en cohérence finirait par
+	// diverger.
+	ciphertext, err := rsa.EncryptOAEP(keyencodedecode.OAEPHash(), rand.Reader,
+		rsaPublicKey, randomData, keyencodedecode.OAEPLabel)
 	if err != nil {
 		return nil, nil, fmt.Errorf("erreur lors du chiffrement : %v", err)
 	}
@@ -101,9 +106,11 @@ func EncryptMessageWithPublic(publicKeyStr string, message string) ([]byte, erro
 	if !ok {
 		return nil, fmt.Errorf("la clé n'est pas une clé rsa valide")
 	}
-	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, []byte(message))
+	ciphertext, err := rsa.EncryptOAEP(keyencodedecode.OAEPHash(), rand.Reader,
+		rsaPublicKey, []byte(message), keyencodedecode.OAEPLabel)
 	if err != nil {
-		return nil, fmt.Errorf("erreur lors du chiffrement : %v", err)
+		return nil, fmt.Errorf("erreur lors du chiffrement (%d octets, maximum %d) : %v",
+			len(message), keyencodedecode.MaxOAEPPayload(rsaPublicKey.Size()), err)
 	}
 	return ciphertext, nil
 }

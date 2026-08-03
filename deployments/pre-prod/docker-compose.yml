@@ -62,6 +62,13 @@ services:
       # Montés séparément : modifier un template ne demande alors ni
       # recompilation ni reconstruction, seulement un rechargement de page.
       - ../../web_packet:/opt/vaultaire/web_packet:ro
+      # Scripts d'exploitation et de test (jeu d'essai RBAC).
+      #
+      # Monté et non embarqué, pour la même raison que les binaires : corriger
+      # un scénario de test ne doit pas demander de reconstruire l'image.
+      # En lecture seule — le script écrit son rapport dans /opt/vaultaire,
+      # jamais dans son propre répertoire.
+      - ./scripts:/opt/vaultaire/scripts:ro
     ports:
       - "6666:6666"
       - "4443:4443"

@@ -19,7 +19,10 @@ func DecryptMessageWithPrivate(privateKeyStr string, ciphertext []byte) (string,
 		return "", fmt.Errorf("error parsing private key: %v", err)
 	}
 
-	plaintext, err := rsa.DecryptPKCS1v15(rand.Reader, privateKey, ciphertext)
+	// OAEP — voir oaep_params.go. Le serveur chiffre avec les mêmes paramètres ;
+	// un écart ferait échouer ce déchiffrement sans autre indice qu'une erreur
+	// de bourrage.
+	plaintext, err := rsa.DecryptOAEP(OAEPHash(), rand.Reader, privateKey, ciphertext, OAEPLabel)
 	if err != nil {
 		return "", fmt.Errorf("error decrypting: %v", err)
 	}

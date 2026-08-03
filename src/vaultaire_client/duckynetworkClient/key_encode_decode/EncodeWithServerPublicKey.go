@@ -22,9 +22,16 @@ func EncryptMessageWithPublic(publicKeyStr string, message string) ([]byte, erro
 	if !ok {
 		return nil, fmt.Errorf("la clé n'est pas une clé rsa valide")
 	}
-	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, rsaPublicKey, []byte(message))
+	// OAEP — voir oaep_params.go.
+	//
+	// C'est le chiffrement des trames envoyées au serveur avant l'établissement
+	// de la clé de session : celles-là mêmes que le serveur déchiffrait avec sa
+	// clé privée, et qui constituaient l'oracle de bourrage tant qu'on était en
+	// PKCS#1 v1.5.
+	ciphertext, err := rsa.EncryptOAEP(OAEPHash(), rand.Reader, rsaPublicKey, []byte(message), OAEPLabel)
 	if err != nil {
-		return nil, fmt.Errorf("erreur lors du chiffrement : %v", err)
+		return nil, fmt.Errorf("erreur lors du chiffrement (%d octets, maximum %d) : %v",
+			len(message), MaxOAEPPayload(rsaPublicKey.Size()), err)
 	}
 	return ciphertext, nil
 }
