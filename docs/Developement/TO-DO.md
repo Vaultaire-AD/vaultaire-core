@@ -49,3 +49,6 @@ user_group_membership	Ajout/retrait d'un groupe POSIX local (distinct de sudoers
             Rien dans le catalogue ne vérifie qu'un module resté "appliqué avec succès" (version à jour dans applied_policies.json) correspond encore à l'état réel du système — un admin qui modifie manuellement sshd_config.d/99-vaultaire-gpo.conf en SSH direct fausserait l'état sans que rien ne le détecte. Il faut un scan périodique de conformité, pas seulement une application ponctuelle.
 7.[GPO] - Reporting de conformité centralisé
             Vue d'ensemble côté serveur : quelle version de policy chaque machine a effectivement appliquée avec succès, quelles machines sont en échec/en retard — sans ça, tu n'as aucune visibilité sur l'état réel du parc.
+8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
+9.[MFA] - possibilité d'activer le MFA via code TOTP pour la connection sur l'interface web admin ou non (il faut aussi pouvoir forcer l'activation a la premiere connection )
+10.[AUTH] - il faut pouvoir config un temps d'expiration des mots de passe politique global 
