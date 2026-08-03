@@ -9,7 +9,27 @@ import (
 func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwareID string) {
 	sessionVal := time.Now().Add(10 * time.Minute)
 	formattedTime := sessionVal.Format("2006/01/02 15:04:05")
-	logiciel_id := get_id_logiciel(db, clientSoftwareID)
+
+	// La machine est résolue par le helper commun, et l'échec ARRÊTE la
+	// fonction.
+	//
+	// get_id_logiciel, qui vivait ici, retournait une chaîne vide aussi bien
+	// pour « machine inconnue » que pour « erreur de base ». Cette chaîne vide
+	// partait ensuite dans un INSERT sur d_id_logiciel, une clé étrangère
+	// entière : l'insertion échouait, l'échec n'était que journalisé, et
+	// AddLoginEntry — qui ne retourne rien — laissait l'appelant croire la
+	// session enregistrée. Une connexion réussie sans ligne did_login
+	// correspondante, c'est une session que le nettoyage et le kill switch ne
+	// retrouveront jamais.
+	//
+	// Continuer sans identifiant valide n'a aucun sens : on s'arrête, et on le
+	// dit franchement dans le journal.
+	logiciel_id, err := Get_ClientID_By_ComputerID(db, clientSoftwareID)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: session non enregistrée, machine "+clientSoftwareID+" introuvable : "+err.Error())
+		return
+	}
 
 	tx, err := db.Begin()
 	if err != nil {
@@ -104,22 +124,12 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 	}
 }
 
-func get_id_logiciel(db *sql.DB, logiciel_id string) string {
-	var publicKey string
-	query := `SELECT id_logiciel FROM id_logiciels WHERE computeur_id = ?`
-
-	err := db.QueryRow(query, logiciel_id).Scan(&publicKey)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			logs.Write_LogCode("WARNING", logs.CodeDBQuery, "database: logiciel_id not found for client")
-			return ""
-		}
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: get logiciel id failed: "+err.Error())
-		return ""
-	}
-
-	return publicKey
-}
+// get_id_logiciel a été retirée au profit de Get_ClientID_By_ComputerID.
+//
+// Elle posait la même requête, mais avec trois défauts que le helper n'a pas :
+// pas de sanitisation de l'entrée, une chaîne vide indistinctement retournée
+// pour « introuvable » et pour « erreur de base », et une variable de retour
+// nommée `publicKey` alors qu'elle contient un identifiant.
 
 func RefreshSessionValidity(db *sql.DB, sessionKey []byte) error {
 

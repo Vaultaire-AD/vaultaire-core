@@ -63,18 +63,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ✅ Création d'un token sécurisé
-	token := session.CreateSession(username)
-	if token == "" {
-		// Génération d'entropie en échec : on refuse la connexion plutôt que de
-		// poser un cookie vide, qui serait ensuite validé pour n'importe qui.
-		logs.Write_LogCode("ERROR", logs.CodeWebSession, "Session non créée pour "+username)
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
-
-	setSessionCookie(w, token)
-	http.Redirect(w, r, "/profil", http.StatusSeeOther)
+	// ✅ Mot de passe correct — le reste du parcours est dans web_login_mfa.go.
+	//
+	// Aucun cookie de session n'est posé ici. Le second facteur, quand il est
+	// actif, s'intercale entre ce point et l'ouverture de session : poser le
+	// cookie maintenant puis « exiger » le code ensuite reviendrait à donner la
+	// session d'abord et à demander la preuve après, c'est-à-dire à n'avoir
+	// aucun second facteur pour qui ignore la redirection.
+	//
+	// startSecondFactor écrit la réponse dans tous les cas et retourne true.
+	startSecondFactor(w, r, username)
 }
 
 // setSessionCookie pose le cookie de session.

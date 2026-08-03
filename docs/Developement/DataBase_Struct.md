@@ -185,6 +185,46 @@ DATABASE: DUCKY
        VALUES ('vaultaire','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');
 ```
 
+## Second facteur et expiration des mots de passe
+
+Ajoutés par `core/database/db_authpolicy/schema.go`, appelé à chaque démarrage.
+Ces colonnes **ne sont pas dans `CreateDataBase.go`** : elles étendent des tables
+existantes, donc elles passent par un `ALTER TABLE` conditionné à
+`information_schema` plutôt que par le `CREATE TABLE IF NOT EXISTS` initial. Les
+bases existantes les reçoivent sans script de migration à lancer à la main.
+
+| Table | Colonne | Type | Rôle |
+|-------|---------|------|------|
+| `users` | `mfa_secret` | `VARCHAR(64) NULL` | Secret TOTP partagé, base32 sans remplissage |
+| `users` | `mfa_enabled` | `BOOLEAN NOT NULL DEFAULT FALSE` | Second facteur **actif**. Distinct de la présence du secret : entre la génération et la validation du premier code, le compte a un secret sans second facteur |
+| `users` | `mfa_enrolled_at` | `DATETIME NULL` | Date d'activation |
+| `users` | `mfa_last_counter` | `BIGINT NULL` | Dernier pas de temps consommé (anti-rejeu). En base et non en mémoire : un code vaut 90 s, un registre volatil le rendrait rejouable à chaque redémarrage |
+| `users` | `password_changed_at` | `DATETIME NULL` | Base du calcul d'expiration. Posé à la création et dans la même requête que tout changement de mot de passe |
+| `groups` | `mfa_required` | `BOOLEAN NOT NULL DEFAULT FALSE` | Le groupe impose le second facteur à ses membres |
+
+```sql
+CREATE TABLE IF NOT EXISTS server_settings (
+    setting_key   VARCHAR(64) PRIMARY KEY,
+    setting_value VARCHAR(255) NOT NULL,
+    updated_by    VARCHAR(255) NULL,
+    updated_at    DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+```
+
+Clés reconnues : `password_max_age_days` (0 = pas d'expiration),
+`password_warn_days`. Table clé/valeur et non colonnes typées — le projet n'avait
+aucun endroit où poser un réglage serveur, et il en viendra d'autres. La
+contrepartie, l'absence de typage en base, est absorbée par
+`db_authpolicy/settings.go`, qui valide et borne chaque valeur ; **aucun appelant
+ne lit cette table directement**.
+
+À la mise à jour, les comptes existants reçoivent `password_changed_at =
+created_at`. Laisser NULL aurait donné deux lectures possibles, toutes deux
+mauvaises : « jamais changé donc infiniment expiré » verrouille l'annuaire d'un
+coup, « inconnu donc valide » crée une population qui n'expirera jamais.
+
+Détails et raisonnement dans [`MFA_et_Expiration.md`](./MFA_et_Expiration.md).
+
 ## Notes rapides / observations
 
 * Les tables **d'association** (`users_group`, `logiciel_group`, `group_user_permission`, `group_permission_logiciel`, `group_linux_gpo`, `users_logiciel`) implémentent des relations N-N et ont des PK composites — c'est correct pour l'intégrité.

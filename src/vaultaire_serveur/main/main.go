@@ -8,6 +8,7 @@ import (
 	"vaultaire/cluster"
 	configurationfile "vaultaire/core/configuration_file"
 	db "vaultaire/core/database"
+	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/dns"
@@ -63,6 +64,16 @@ func main() {
 	permission.SetRevokedChecker(func(username string) bool {
 		return dbrevocation.IsRevoked(db.GetDatabase(), username)
 	})
+
+	// Second facteur et expiration des mots de passe.
+	//
+	// Après Create_DataBase, dont ce schéma étend les tables `users` et
+	// `groups` : les colonnes ne peuvent être ajoutées qu'à des tables déjà
+	// créées. Et avant tout service acceptant des connexions, pour qu'aucune
+	// authentification n'ait lieu sur un schéma à moitié posé.
+	if err := dbauthpolicy.CreateSchema(db.GetDatabase()); err != nil {
+		log.Fatalf("Erreur lors de la création du schéma d'authentification : %v", err)
+	}
 
 	// La permission d'amorçage reçoit toutes les actions connues du code, pas
 	// une liste recopiée dans du SQL. Passe à chaque démarrage, en INSERT

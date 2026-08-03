@@ -15,6 +15,21 @@ import (
 type Session struct {
 	Username  string
 	ExpiresAt time.Time
+
+	// MustChangePassword enferme la session sur la page de changement de mot de
+	// passe.
+	//
+	// Posé quand le mot de passe est expiré. La session est bien réelle — le mot
+	// de passe et, s'il y a lieu, le second facteur ont été vérifiés — mais elle
+	// ne donne accès qu'à une seule page. C'est le seul recours laissé à
+	// l'utilisateur : LDAP et Ducky/PAM refusent déjà son mot de passe, et sans
+	// cette porte il faudrait un administrateur pour chaque expiration.
+	//
+	// L'état est porté par la session et non relu en base à chaque requête : ce
+	// serait une lecture supplémentaire sur toutes les pages, pour une valeur qui
+	// ne change qu'à un endroit — le changement de mot de passe, qui appelle
+	// ClearMustChangePassword.
+	MustChangePassword bool
 }
 
 var (
@@ -52,6 +67,12 @@ func generateToken() (string, error) {
 // Retourne une chaîne vide si le jeton n'a pas pu être généré : l'appelant doit
 // alors refuser la connexion plutôt que de poser un cookie vide.
 func CreateSession(username string) string {
+	return CreateSessionWithConstraint(username, false)
+}
+
+// CreateSessionWithConstraint ouvre une session éventuellement restreinte à la
+// page de changement de mot de passe.
+func CreateSessionWithConstraint(username string, mustChangePassword bool) string {
 	token, err := generateToken()
 	if err != nil {
 		return ""
@@ -62,10 +83,39 @@ func CreateSession(username string) string {
 	purgeExpiredLocked()
 
 	sessions[token] = Session{
-		Username:  username,
-		ExpiresAt: time.Now().Add(duration),
+		Username:           username,
+		ExpiresAt:          time.Now().Add(duration),
+		MustChangePassword: mustChangePassword,
 	}
 	return token
+}
+
+// MustChangePassword dit si une session est enfermée sur le changement de mot
+// de passe.
+//
+// Retourne false pour un jeton inconnu : l'appelant a déjà validé le jeton à ce
+// stade, et répondre « oui » sur un jeton inexistant enverrait un visiteur non
+// authentifié vers la page de changement plutôt que vers la connexion.
+func MustChangePassword(token string) bool {
+	mu.RLock()
+	defer mu.RUnlock()
+	s, exists := sessions[token]
+	return exists && s.MustChangePassword
+}
+
+// ClearMustChangePassword lève la restriction après un changement réussi.
+//
+// À appeler depuis le seul endroit qui change un mot de passe. L'oublier
+// laisserait l'utilisateur renvoyé vers la page de changement après avoir
+// changé son mot de passe — une boucle dont il ne sortirait qu'en se
+// reconnectant.
+func ClearMustChangePassword(token string) {
+	mu.Lock()
+	defer mu.Unlock()
+	if s, exists := sessions[token]; exists {
+		s.MustChangePassword = false
+		sessions[token] = s
+	}
 }
 
 // ValidateToken vérifie un jeton et retourne le nom d'utilisateur associé.

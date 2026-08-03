@@ -16,8 +16,28 @@ var (
 	// l'interface web, le CLI) : la liste vit désormais ici seule, sinon en
 	// ajouter une la rendrait invisible dans l'interface sans que rien ne le
 	// signale.
-	specialActions = []string{"write:dns", "write:eyes", ActionKillSwitch, ActionReadLog}
+	specialActions = []string{"write:dns", "write:eyes", ActionKillSwitch, ActionReadLog, ActionManageMFA}
 )
+
+// ActionManageMFA est le droit de réinitialiser le second facteur d'un tiers.
+//
+// Action spéciale et non clé RBAC : le second facteur n'est pas un objet de
+// l'annuaire, et les six clés qu'un objet « mfa » engendrerait n'auraient qu'un
+// seul sens utile.
+//
+// Séparée de write:update:user à dessein, et pour les deux raisons à la fois.
+// Débloquer un téléphone perdu est une tâche de support, fréquente et peu
+// risquée : l'y confier ne doit pas emporter le droit de renommer ou de
+// reconfigurer des comptes. Inversement, qui gère l'annuaire au quotidien ne
+// devrait pas pouvoir retirer silencieusement le second facteur d'un
+// administrateur — ce serait le moyen le plus discret de préparer une reprise de
+// compte.
+//
+// Contrairement à read:log et write:dns, ce droit N'EST PAS dans
+// globalOnlyActions : réinitialiser le MFA vise un compte, qui appartient à des
+// domaines. Il se délègue donc par domaine comme les autres droits sur les
+// utilisateurs, et il est vérifié sur TOUS les domaines de la cible.
+const ActionManageMFA = "write:mfa"
 
 // ActionReadLog est le droit de consulter les journaux du serveur.
 //

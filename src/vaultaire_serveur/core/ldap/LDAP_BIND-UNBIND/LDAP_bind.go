@@ -3,6 +3,7 @@ package ldapbindunbind
 import (
 	"fmt"
 	"net"
+	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
 	gc "vaultaire/core/global/security"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
@@ -151,6 +152,35 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 
 	if !gc.ComparePasswords(string(op.Authentication), salt, Hpassword) {
 		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: invalid password user=%s from %s", user, conn.RemoteAddr().String()))
+		respondInvalidCredentials(messageID, conn)
+		return
+	}
+
+	// ⏳ EXPIRATION DU MOT DE PASSE — après vérification réussie du mot de passe.
+	//
+	// La réponse reste un invalidCredentials générique, contrairement au chemin
+	// Ducky qui, lui, annonce explicitement l'expiration. L'asymétrie n'est pas
+	// une inattention :
+	//
+	//   - LDAP n'a pas de moyen standard de signaler une expiration. Le contrôle
+	//     de politique de mot de passe est resté à l'état de brouillon IETF et
+	//     n'est pas implémenté de façon homogène par les bibliothèques clientes.
+	//     Un code de résultat exotique serait interprété au mieux comme un échec,
+	//     au pire comme une erreur de protocole ;
+	//   - de l'autre côté d'un bind, il y a une application, pas un humain. Elle
+	//     ne peut rien faire de l'information — le changement de mot de passe
+	//     passe par l'interface web, qui reste ouverte.
+	//
+	// Le log serveur, lui, distingue les deux cas : sans cela, un administrateur
+	// verrait une vague de « invalid password » le jour où la politique prend
+	// effet et chercherait une attaque là où il n'y a qu'une expiration.
+	if status, err := passwordpolicy.Check(database.GetDatabase(), user); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"ldap bind: état d'expiration illisible pour user=%s (%v) — connexion autorisée", user, err))
+	} else if status.IsExpired() {
+		logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+			"ldap bind: refusé, mot de passe expiré depuis %d jour(s) user=%s from %s",
+			-status.DaysUntilExpiry, user, conn.RemoteAddr().String()))
 		respondInvalidCredentials(messageID, conn)
 		return
 	}

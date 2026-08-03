@@ -6,31 +6,12 @@ import (
 	"vaultaire/core/logs"
 )
 
-// GetUsersByGroups récupère les utilisateurs appartenant à plusieurs groupes spécifiés.
-func GetUsersByGroups(groups []string, db *sql.DB) ([]ldapstorage.User, error) {
-	if len(groups) == 0 {
-		return []ldapstorage.User{}, nil
-	}
-
-	var allUsers []ldapstorage.User
-	seen := make(map[string]bool) // pour éviter les doublons
-
-	for _, group := range groups {
-		users, err := GetUsersByGroup(group, db)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, user := range users {
-			if !seen[user.Username] {
-				allUsers = append(allUsers, user)
-				seen[user.Username] = true
-			}
-		}
-	}
-
-	return allUsers, nil
-}
+// GetUsersByGroups (au pluriel) a été supprimée : aucun appelant.
+//
+// Elle bouclait sur GetUsersByGroup en dédoublonnant par nom d'utilisateur —
+// donc N requêtes pour N groupes. Si le besoin revient, il vaudra mieux une
+// seule requête avec une clause IN qu'une boucle : c'est la même donnée en un
+// aller-retour au lieu de N.
 
 // GetUsersByGroup récupère les utilisateurs appartenant à un groupe spécifié.
 func GetUsersByGroup(group string, db *sql.DB) ([]ldapstorage.User, error) {

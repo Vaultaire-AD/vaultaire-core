@@ -58,8 +58,28 @@ func DeleteDidLogin(db *sql.DB, Username string, computeurID string) error {
 	if injection != nil {
 		return injection
 	}
-	idUser, _ := Get_User_ID_By_Username(db, Username)
-	idLogiciel, _ := GetIdLogicielByComputeurID(db, computeurID)
+	// Les deux identifiants passent par les helpers dédiés, et leurs erreurs
+	// sont remontées.
+	//
+	// Elles étaient ignorées — `idUser, _ :=` — ce qui envoyait un 0 dans le
+	// DELETE quand le compte ou la machine n'existait plus. La requête ne
+	// supprimait alors rien, la fonction retournait nil, et l'appelant croyait
+	// la ligne de connexion nettoyée. Le seul indice était un log « Aucune ligne
+	// supprimée » noyé dans la sortie standard.
+	//
+	// Get_ClientID_By_ComputerID remplace GetIdLogicielByComputeurID, qui posait
+	// exactement la même requête pour retourner la même colonne en `string` au
+	// lieu d'`int`. Deux fonctions pour une question, avec deux types : c'est ce
+	// qui obligeait le reste du code à convertir dans un sens ou dans l'autre
+	// selon l'endroit.
+	idUser, err := Get_User_ID_By_Username(db, Username)
+	if err != nil {
+		return fmt.Errorf("suppression de la session : utilisateur %s introuvable : %w", Username, err)
+	}
+	idLogiciel, err := Get_ClientID_By_ComputerID(db, computeurID)
+	if err != nil {
+		return fmt.Errorf("suppression de la session : machine %s introuvable : %w", computeurID, err)
+	}
 
 	query := "DELETE FROM did_login WHERE d_id_user = ? AND d_id_logiciel = ?"
 	stmt, err := db.Prepare(query)

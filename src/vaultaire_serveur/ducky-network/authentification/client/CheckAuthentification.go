@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strconv"
 	"strings"
+	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
 	dbuser "vaultaire/core/database/db-user"
 	gc "vaultaire/core/global/security"
@@ -67,6 +68,33 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but password is not correct", meta)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
+
+	// ⏳ EXPIRATION DU MOT DE PASSE — après vérification réussie du mot de passe.
+	//
+	// Ici le message EST explicite, contrairement au bind LDAP. La raison tient
+	// à qui le lit : ce chemin porte PAM, donc un humain devant une invite de
+	// connexion. Lui répondre « Wrong login Data » alors qu'il vient de taper le
+	// bon mot de passe l'enverrait le retaper, puis appeler le support.
+	//
+	// Aucun oracle n'est créé pour autant. Le contrôle est placé APRÈS la
+	// comparaison du mot de passe : qui voit ce message connaît déjà un mot de
+	// passe valide pour ce compte. L'information « il est expiré » ne lui apporte
+	// rien qu'il n'ait déjà. C'est exactement l'inverse du kill switch, dont le
+	// refus est muet parce qu'il précède, lui, toute vérification.
+	//
+	// Aucune trame nouvelle : 02_07 est déjà le refus d'authentification porteur
+	// d'un message libre.
+	if status, err := passwordpolicy.Check(database.GetDatabase(), trames_content.Username); err != nil {
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
+			trames_content.Username+" : état d'expiration illisible ("+err.Error()+") — connexion autorisée", meta)
+	} else if status.IsExpired() {
+		logs.Write_LogCodeMeta("SECURITY", logs.CodeNone,
+			trames_content.Username+" : refus, mot de passe expiré depuis "+
+				strconv.Itoa(-status.DaysUntilExpiry)+" jour(s)", meta)
+		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey +
+			"\nPassword expired, change it on the web interface")
+	}
+
 	token, alphaCheck := Generate_Challenge(trames_content.ClientSoftwareID)
 	if alphaCheck == "no" {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, trames_content.Username+" try to login but error for generate challenge", meta)

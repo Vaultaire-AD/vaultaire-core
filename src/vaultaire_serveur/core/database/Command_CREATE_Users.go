@@ -40,9 +40,16 @@ func Create_New_User(db *sql.DB, username, firstname, lastname, email, password,
 		return fmt.Errorf("format de date invalide: %v", err)
 	}
 	// 1. Insérer un nouvel utilisateur dans la table users
+	//
+	// password_changed_at est posé dès la création, et non laissé à NULL.
+	// Le rattrapage du schéma (db_authpolicy) ne s'exécute qu'au démarrage : un
+	// compte créé ensuite garderait une date nulle jusqu'au prochain
+	// redémarrage, donc un mot de passe qui n'expire jamais. Le trou serait
+	// invisible — le compte fonctionne — et ne se refermerait qu'au hasard des
+	// redémarrages.
 	_, err = tx.Exec(`
-		INSERT INTO users (username, firstname, lastname, email, password, salt, date_naissance, created_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)`, username, firstname, lastname, email, password, salt, birthdate, createdAt)
+		INSERT INTO users (username, firstname, lastname, email, password, salt, date_naissance, created_at, password_changed_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, username, firstname, lastname, email, password, salt, birthdate, createdAt, createdAt)
 	if err != nil {
 		logs.WriteLog("db", "erreur lors de l'insertion de l'utilisateur: "+err.Error())
 		return fmt.Errorf("erreur lors de l'insertion de l'utilisateur: %v", err)

@@ -10,7 +10,6 @@ import (
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
-	"vaultaire/core/web_serveur/session"
 	duckykey "vaultaire/ducky-network/key_management"
 )
 
@@ -27,14 +26,11 @@ func executeAdminPage(w http.ResponseWriter, pageName string, data interface{}) 
 
 // requireWebAdmin checks session and web_admin permission; if not allowed, redirects to / or /profil and returns false.
 func requireWebAdmin(w http.ResponseWriter, r *http.Request) (username string, ok bool) {
-	tokenCookie, err := r.Cookie("session_token")
-	if err != nil || tokenCookie.Value == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return "", false
-	}
-	username, valid := session.ValidateToken(tokenCookie.Value)
-	if !valid {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+	// La validation du jeton ET la restriction « mot de passe expiré » sont dans
+	// requireLogin : aucune page d'administration ne doit être atteignable avec
+	// un mot de passe expiré, et le contrôle ne doit exister qu'à un seul endroit.
+	username, _, ok = requireLogin(w, r, false)
+	if !ok {
 		return "", false
 	}
 	groupIDs, action, err := permission.PrePermissionCheck(username, "web_admin")

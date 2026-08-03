@@ -40,13 +40,12 @@ func (m *Manager) AddOrUpdate(sessionID string, conn net.Conn, status SessionSta
 	}
 }
 
-func (m *Manager) IsSessionExpired(sess *Session) bool {
-	if sess == nil {
-		return true
-	}
-
-	return time.Since(sess.LastSeen) > 5*time.Minute
-}
+// IsSessionExpired a été retirée au profit de StaleSessions.
+//
+// Elle portait un délai en dur de 5 minutes, appliqué indifféremment à toutes
+// les sessions, et surtout elle lisait `sess.LastSeen` hors verrou depuis
+// l'appelant. StaleSessions prend la même décision sous verrou, avec un délai
+// distinct selon que la poignée de main est terminée ou non.
 
 // SetIdentity attache le username / ClientSoftwareID annoncés par le client
 // à une session déjà enregistrée. Appelée dès la première trame (identité
@@ -145,6 +144,84 @@ func (m *Manager) ListAuthenticated() []*Session {
 	return out
 }
 
+// StaleSession décrit une session à fermer, par VALEUR.
+//
+// Pas de pointeur, et c'est le point important. ListAuthenticated retourne des
+// `*Session` que l'appelant lit ensuite hors verrou, pendant que Touch et
+// SetStatus les écrivent depuis les goroutines de connexion : c'est une course
+// de données, bénigne en pratique mais réelle. Ici la décision d'expiration est
+// prise SOUS le verrou et seules des copies en sortent, donc il n'y a plus rien
+// à lire de concurrent.
+type StaleSession struct {
+	SessionID        string
+	Username         string
+	ClientSoftwareID string
+	RemoteAddr       string
+	Status           SessionStatus
+	Idle             time.Duration
+}
+
+// StaleSessions retourne toutes les sessions inactives, authentifiées OU NON.
+//
+// POURQUOI DEUX DÉLAIS. Une session authentifiée est légitimement silencieuse
+// entre deux battements de cœur : son délai doit couvrir plusieurs cycles de
+// heartbeat. Une session qui n'a pas terminé sa poignée de main, elle, n'a
+// aucune raison de traîner — un client réel enchaîne accept(), 01_01 et 02_01
+// en une fraction de seconde. Leur appliquer le même délai reviendrait à
+// accorder cinq minutes de socket ouvert à quiconque ouvre une connexion TCP
+// sans rien envoyer.
+//
+// C'est ce que le registre ne faisait pas : le balayage ne parcourait que
+// ListAuthenticated(), donc les sessions en attente — les seules qu'un
+// attaquant obtient sans posséder le moindre identifiant — n'étaient jamais
+// nettoyées.
+//
+// Les sessions en échec (SessionFailed) suivent le délai court : une
+// authentification refusée n'a pas à conserver son socket.
+func (m *Manager) StaleSessions(authIdle, handshakeIdle time.Duration) []StaleSession {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	now := time.Now()
+	var out []StaleSession
+	for _, s := range m.sessions {
+		idle := now.Sub(s.LastSeen)
+
+		limit := handshakeIdle
+		if s.Status == SessionAuthenticated {
+			limit = authIdle
+		}
+		if idle <= limit {
+			continue
+		}
+
+		out = append(out, StaleSession{
+			SessionID:        s.SessionID,
+			Username:         s.Username,
+			ClientSoftwareID: s.ClientSoftwareID,
+			RemoteAddr:       s.RemoteAddr,
+			Status:           s.Status,
+			Idle:             idle,
+		})
+	}
+	return out
+}
+
+// CountByStatus retourne le nombre de sessions par statut, pour la supervision.
+//
+// Une population de sessions « pending » qui gonfle est la signature d'un
+// balayage qui ne fait pas son travail, ou d'ouvertures de connexions muettes.
+// Sans compteur distinct, Count() les noie dans le total.
+func (m *Manager) CountByStatus() map[SessionStatus]int {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := make(map[SessionStatus]int, 3)
+	for _, s := range m.sessions {
+		out[s.Status]++
+	}
+	return out
+}
+
 // RemoveSession ferme le socket et retire la session du registre.
 func (m *Manager) RemoveSession(sessionID string) {
 	m.mu.Lock()
@@ -157,10 +234,12 @@ func (m *Manager) RemoveSession(sessionID string) {
 	}
 }
 
-// Touch rafraîchit le LastSeen d'une session (purement informatif : le
-// registre ne ferme rien tout seul sur inactivité, contrairement au
-// gestionnaire côté client — une connexion serveur reste ouverte tant que
-// le socket vit).
+// Touch rafraîchit le LastSeen d'une session.
+//
+// Ce n'est plus purement informatif : depuis l'ajout de StaleSessions, c'est
+// cette date qui décide de la fermeture d'une connexion inactive. Un chemin de
+// lecture de trame qui oublierait d'appeler Touch ferait couper des connexions
+// bien vivantes.
 func (m *Manager) Touch(sessionID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

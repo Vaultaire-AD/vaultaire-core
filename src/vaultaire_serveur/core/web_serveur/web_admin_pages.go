@@ -15,6 +15,7 @@ import (
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	"vaultaire/core/database"
 	dbcert "vaultaire/core/database/db-certificates"
+	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbperm "vaultaire/core/database/db_permission"
 	dbrevocation "vaultaire/core/database/db_revocation"
@@ -85,6 +86,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			Revocations []dbrevocation.Record
 			KillReasons []revocation.Reason
 			CanKill     bool
+			// Second facteur : état du compte affiché, et droit de le
+			// réinitialiser. HasActionAnywhere et non un contrôle sur « * » — le
+			// droit se délègue par domaine, comme le kill switch, et le contrôle
+			// strict sur tous les domaines de la cible est fait à l'action.
+			MFAEnabled  bool
+			CanResetMFA bool
 		}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users",
 			KillReasons: revocation.AllReasons()}
 		userInfo, err := database.Command_GET_UserInfo(db, detailUser)
@@ -114,6 +121,13 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 				actionKey = "write:add:user"
 			case "remove_group":
 				actionKey = "write:delete:user"
+			case "reset_mfa":
+				// Droit dédié, pas write:update:user. Débloquer un téléphone perdu
+				// est une tâche de support ; elle ne doit pas emporter le pouvoir
+				// de modifier l'annuaire, ni l'inverse — retirer discrètement le
+				// second facteur d'un administrateur serait le meilleur préalable
+				// à une reprise de compte.
+				actionKey = permission.ActionManageMFA
 			}
 			// Kill switch : les contrôles RBAC sont faits par Trigger, qui
 			// exige write:killswitch sur tous les domaines de la cible (et
@@ -193,6 +207,17 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 						detailData.Message = "Mot de passe changé."
 					}
 				}
+			case "reset_mfa":
+				// Le secret est effacé, pas seulement désactivé : un secret
+				// conservé resterait une clé valide si le drapeau venait à être
+				// remis par un autre chemin. L'utilisateur ré-enrôle depuis son
+				// profil, ce qui est aussi ce qui garantit que c'est bien lui qui
+				// détient le nouveau téléphone.
+				if err := dbauthpolicy.ResetMFA(db, target, username); err != nil {
+					detailData.Message = "Erreur : " + err.Error()
+				} else {
+					detailData.Message = "Second facteur réinitialisé. L'utilisateur devra le réenrôler à sa prochaine connexion."
+				}
 			case "add_group":
 				groupName := r.FormValue("group")
 				if groupName != "" {
@@ -247,6 +272,13 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		detailData.IsRevoked = dbrevocation.IsRevoked(db, detailUser)
 		detailData.Revocations, _ = dbrevocation.HistoryFor(db, detailUser)
 		detailData.CanKill = permission.HasActionAnywhere(groupIDs, permission.ActionKillSwitch)
+
+		// Second facteur, relu après les actions pour la même raison : une
+		// réinitialisation qui vient d'avoir lieu doit se voir sans recharger.
+		if st, err := dbauthpolicy.GetAuthState(db, detailUser); err == nil {
+			detailData.MFAEnabled = st.MFAEnabled && st.MFASecret != ""
+		}
+		detailData.CanResetMFA = permission.HasActionAnywhere(groupIDs, permission.ActionManageMFA)
 
 		if err := executeAdminPage(w, "admin_user_detail.html", detailData); err != nil {
 			http.Error(w, "Template manquant", http.StatusInternalServerError)
@@ -380,6 +412,11 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			Username       string
 			DnsEnable      bool
 			Section        string
+			// MFARequired : le groupe impose-t-il le second facteur à ses membres ?
+			// Porté par le groupe et non par le compte, pour qu'un nouvel arrivant
+			// y soit soumis du seul fait de son entrée, sans geste à ne pas
+			// oublier.
+			MFARequired bool
 		}{
 			Group: info.Name, Users: info.Users, Clients: info.Clients,
 			Perms: info.Permissions, ClientPerms: info.ClientPerms, GPOs: info.GPOs,
@@ -410,6 +447,12 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				actionKey = "write:add:permission"
 			case "remove_client_permission":
 				actionKey = "write:delete:permission"
+			case "set_mfa_required":
+				// write:mfa et non write:update:group : imposer ou lever le second
+				// facteur d'un groupe entier pèse plus lourd que d'y ajouter un
+				// membre, et c'est la même famille de décision que la
+				// réinitialisation d'un compte.
+				actionKey = permission.ActionManageMFA
 			case "add_gpo":
 				actionKey = "write:add:gpo"
 			case "remove_gpo":
@@ -431,6 +474,20 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 			switch action {
+			case "set_mfa_required":
+				required := r.FormValue("mfa_required") == "on"
+				if err := dbauthpolicy.SetGroupMFARequired(db, targetGroup, required, username); err != nil {
+					detailData.Message = "Erreur : " + err.Error()
+				} else if required {
+					// Les membres déjà connectés ne sont pas déconnectés : ils
+					// enrôleront à leur prochaine connexion. Couper les sessions
+					// en cours transformerait un réglage de sécurité en incident
+					// d'exploitation, et n'apporterait rien — leur mot de passe a
+					// bien été vérifié, c'est le facteur suivant qu'on ajoute.
+					detailData.Message = "Second facteur imposé. Les membres l'enrôleront à leur prochaine connexion."
+				} else {
+					detailData.Message = "Second facteur redevenu facultatif pour ce groupe."
+				}
 			case "add_user":
 				u := r.FormValue("username")
 				if u != "" && database.Command_ADD_UserToGroup(db, u, targetGroup) == nil {
@@ -555,6 +612,11 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 		}
+
+		// Exigence de second facteur, relue après les actions pour que le réglage
+		// qui vient d'être posé s'affiche sans recharger la page.
+		_ = db.QueryRow(`SELECT mfa_required FROM groups WHERE group_name = ?`,
+			detailGroup).Scan(&detailData.MFARequired)
 
 		_ = executeAdminPage(w, "admin_group_detail.html", detailData)
 		return

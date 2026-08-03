@@ -20,20 +20,31 @@ type ProfilPageData struct {
 	User        storage.GetUserInfoSingle
 	Keys        []storage.PublicKey
 	HasWebAdmin bool
+
+	// MustChangePassword réduit la page au seul formulaire de mot de passe.
+	// La session est authentique, mais c'est la seule chose qu'elle autorise.
+	MustChangePassword bool
+
+	// PasswordWarning est le préavis affiché quand l'expiration approche.
+	// Vide le reste du temps.
+	PasswordWarning string
+
+	// MFAEnabled et MFARequired pilotent l'encart « second facteur ».
+	MFAEnabled  bool
+	MFARequired bool
 }
 
 func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 	// ✅ Authentification
-	tokenCookie, err := r.Cookie("session_token")
-	if err != nil || tokenCookie.Value == "" {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
+	//
+	// allowPasswordChange = true : c'est LA page vers laquelle une session au mot
+	// de passe expiré est renvoyée. La restreindre ici créerait une boucle de
+	// redirection sur elle-même.
+	username, sessionToken, ok := requireLogin(w, r, true)
+	if !ok {
 		return
 	}
-	username, valid := session.ValidateToken(tokenCookie.Value)
-	if !valid {
-		http.Redirect(w, r, "/", http.StatusSeeOther)
-		return
-	}
+	mustChange := session.MustChangePassword(sessionToken)
 
 	db := database.GetDatabase()
 	userInfo, err := database.Command_GET_UserInfo(db, username)
@@ -62,10 +73,12 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	data := ProfilPageData{
-		User:        *userInfo,
-		Keys:        keys,
-		HasWebAdmin: hasAdmin,
+		User:               *userInfo,
+		Keys:               keys,
+		HasWebAdmin:        hasAdmin,
+		MustChangePassword: mustChange,
 	}
+	data.PasswordWarning, data.MFAEnabled, data.MFARequired = profilAuthState(db, username)
 
 	if r.Method == "GET" {
 		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/profil.html")
@@ -84,6 +97,23 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 	// 🎯 Gestion POST (update user ou clés)
 	action := r.FormValue("action")
 
+	// MOT DE PASSE EXPIRÉ : une seule action reste possible.
+	//
+	// Le contrôle est ici, côté serveur, et pas seulement dans le rendu de la
+	// page. Masquer les formulaires suffirait à un utilisateur ordinaire, mais
+	// un POST forgé — ou un onglet resté ouvert avant l'expiration — atteindrait
+	// « ajouter une clé publique » sur un compte dont le mot de passe n'est plus
+	// valide. Or ajouter une clé publique, c'est se donner un accès SSH qui ne
+	// dépend plus du mot de passe : exactement ce que l'expiration cherche à
+	// interrompre.
+	if mustChange && !(action == "update_info" && r.FormValue("password") != "") {
+		logs.Write_Log("SECURITY", "profil: action « "+action+" » refusée pour "+
+			username+" — mot de passe expiré, changement obligatoire")
+		http.Error(w, "Votre mot de passe a expiré : changez-le avant toute autre action.",
+			http.StatusForbidden)
+		return
+	}
+
 	switch action {
 	case "update_info":
 		newUsername := r.FormValue("username")
@@ -98,7 +128,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		currentUsername, _ := session.ValidateToken(tokenCookie.Value)
+		currentUsername := username
 		userID, err := database.Get_User_ID_By_Username(db, currentUsername)
 		if err != nil {
 			http.Error(w, "Utilisateur introuvable", http.StatusInternalServerError)
@@ -147,16 +177,26 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "Session non renouvelée, reconnectez-vous", http.StatusInternalServerError)
 				return
 			}
-			session.DeleteSession(tokenCookie.Value)
+			session.DeleteSession(sessionToken)
 			setSessionCookie(w, newToken)
-			tokenCookie.Value = newToken
+			sessionToken = newToken
 		}
 
 		if password != "" {
 			// Toutes les AUTRES sessions sont fermées. La session courante est
 			// conservée : déconnecter l'auteur du changement lui ferait croire
 			// que l'opération a échoué.
-			if closed := session.DeleteOtherSessionsOf(currentUsername, tokenCookie.Value); closed > 0 {
+			// La restriction est levée sur la session courante. Sans cette ligne,
+			// l'utilisateur qui vient de changer son mot de passe expiré serait
+			// renvoyé sur cette même page à la requête suivante — une boucle dont
+			// il ne sortirait qu'en se reconnectant, en croyant que rien n'a été
+			// enregistré.
+			//
+			// Les AUTRES sessions ne sont pas à corriger : elles sont fermées
+			// juste en dessous.
+			session.ClearMustChangePassword(sessionToken)
+
+			if closed := session.DeleteOtherSessionsOf(currentUsername, sessionToken); closed > 0 {
 				logs.Write_Log("INFO", fmt.Sprintf(
 					"profil: mot de passe de %s changé, %d autre(s) session(s) fermée(s)",
 					currentUsername, closed))

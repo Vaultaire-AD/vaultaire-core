@@ -42,6 +42,12 @@ func Run() int {
 	// --- Unit: garde-fous GPO (catalogue, scopes, chemins, restrictions, résolution) ---
 	results = append(results, testGPO()...)
 
+	// --- Unit: TOTP contre les vecteurs de la RFC 6238 ---
+	results = append(results, testTOTP()...)
+
+	// --- Unit: états de la politique d'expiration des mots de passe ---
+	results = append(results, testPasswordPolicy()...)
+
 	// --- Intégration optionnelle: DB (si config chargée et connexion OK) ---
 	if db := database.GetDatabase(); db != nil {
 		results = append(results, testDatabase(db)...)

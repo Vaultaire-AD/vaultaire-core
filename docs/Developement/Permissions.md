@@ -25,7 +25,7 @@ modèle :
 | Variable | Contenu | Pourquoi c'est à part |
 |----------|---------|-----------------------|
 | `legacyActions` | `none`, `web_admin`, `auth`, `compare`, `search` | Héritées du modèle LDAP d'origine. Stockées dans des colonnes de `user_permission`, pas dans `user_permission_action`. |
-| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log` | Actions sans objet au sens RBAC. |
+| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log`, `write:mfa` | Actions sans objet au sens RBAC. |
 
 La couche base masque la différence de stockage : `Command_GET_UserPermissionAction`
 et `Command_SET_UserPermissionAction` routent vers la colonne ou vers la table
@@ -82,6 +82,23 @@ switch, toutes machines confondues.
 Le droit est désormais distinct dans les deux sens : on peut confier l'audit à
 quelqu'un qui n'administre rien, et administrer un domaine sans lire les
 journaux des autres.
+
+### `write:mfa` — second facteur
+
+Réinitialise le second facteur d'un compte (téléphone perdu) et règle
+l'exigence `mfa_required` d'un groupe.
+
+**N'est PAS dans `globalOnlyActions`**, contrairement aux deux précédentes : un
+second facteur appartient à un compte, qui appartient à des domaines. Le droit se
+délègue donc par domaine comme les autres droits sur les utilisateurs, et il est
+vérifié en contrôle strict — sur **tous** les domaines de la cible.
+
+Séparé de `write:update:user` dans les deux sens : débloquer un téléphone est une
+tâche de support qui ne doit pas emporter le droit de reconfigurer des comptes,
+et gérer l'annuaire au quotidien ne doit pas permettre de retirer discrètement le
+second facteur d'un administrateur.
+
+Détails dans [`MFA_et_Expiration.md`](./MFA_et_Expiration.md).
 
 ---
 

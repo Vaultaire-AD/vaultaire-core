@@ -185,7 +185,20 @@ func killSessions(username string) int {
 			"revocation: %d session(s) web de %s fermée(s)", web, username))
 	}
 
-	return len(ducky) + web
+	// Les authentifications à mi-chemin comptent aussi.
+	//
+	// Un compte révoqué entre la saisie de son mot de passe et celle de son code
+	// à usage unique conserverait sinon un jeton valant « mot de passe déjà
+	// vérifié », et terminerait sa connexion après la coupure. La fenêtre est
+	// courte — cinq minutes — mais c'est exactement la fenêtre pendant laquelle
+	// on déclenche un kill switch sur quelqu'un qu'on voit se connecter.
+	pending := websession.DeletePendingOf(username)
+	if pending > 0 {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: %d authentification(s) en cours de %s interrompue(s)", pending, username))
+	}
+
+	return len(ducky) + web + pending
 }
 
 // pushToOnline envoie l'ordre aux machines actuellement connectées.

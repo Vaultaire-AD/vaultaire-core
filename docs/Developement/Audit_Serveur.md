@@ -14,6 +14,12 @@ constat de lecture, avec chemin et ligne.
 
 | # | Gravité | Où | Constat | État |
 |---|---------|-----|---------|------|
+| 12 | **Critique** | Crypto | Hachage des mots de passe en SHA-256 à un tour | Ouvert |
+| 13 | **Critique** | Ducky | RSA PKCS#1 v1.5 sur le chemin non authentifié — oracle Bleichenbacher | Ouvert — **TO-DO 11** |
+| 14 | **Élevée** | Ducky | Les sessions non authentifiées ne sont jamais balayées | Ouvert |
+| 15 | **Élevée** | Transverse | Aucun `recover()` : une panique dans une goroutine tue tout le serveur | Ouvert |
+| 16 | **Moyenne** | LDAP | Encodeurs BER manuels : forme longue absente, `messageID` tronqué | Ouvert — **TO-DO 12** |
+| 17 | **Moyenne** | DNS | Résolution strictement séquentielle, pas d'EDNS0, pas de limitation de débit | Ouvert |
 | 11 | **Critique** | Ducky | Le chemin `04_01` contourne l'authentification et désarme le contrôle d'ordre des trames | **Ouvert — reporté** |
 | 7 | **Faible** | database | Même requête recopiée dans 10 fonctions, alors que le helper existe | Ouvert |
 | 8 | **Faible** | database | Doublons fonctionnels et nommage incohérent | Ouvert |
@@ -149,6 +155,106 @@ fabriquer lui-même.
 
 ---
 
+## 12. Critique — le hachage des mots de passe
+
+**Chemin :** `core/global/security/password.go`
+
+```go
+hash := sha256.Sum256(append(salt, []byte(password)...))
+```
+
+Une itération de SHA-256. C'est une fonction conçue pour être **rapide** : un GPU
+grand public en fait de l'ordre de 10¹¹ par seconde. Un mot de passe de huit
+caractères alphanumériques tombe en quelques minutes, une base entière en une
+nuit. Le sel empêche les tables précalculées, il ne ralentit rien.
+
+Pour un annuaire — dont la base *est* la cible d'une exfiltration — il faut une
+fonction à coût paramétrable : **argon2id**, ou bcrypt à défaut.
+
+`golang.org/x/crypto` est **déjà dans le `go.mod`** : `argon2.IDKey` ne coûte
+aucune dépendance nouvelle.
+
+**Migration sans rupture :** préfixer les nouveaux hachages (`$argon2id$…`),
+faire reconnaître les deux formats à `ComparePasswords`, et re-hacher au premier
+login réussi de chaque compte. Aucune réinitialisation de masse.
+
+---
+
+## 14. Élevée — les sessions non authentifiées ne sont jamais balayées
+
+**Chemins :** `ducky-network/duckyGoroutine.go:19` et `:47`,
+`ducky-network/sessionmgr/manager.go:136`
+
+`RemoveSession` **ferme bien le socket** (`manager.go:153`). Ce n'est pas là
+qu'est le problème — c'est dans ce qui l'appelle, ou plutôt ne l'appelle pas.
+
+```go
+func handleConnection(duckysession *storage.DuckySession) {
+    logs.Write_LogCodeMeta(...)
+    for processIncomingMessage(duckysession) { }
+}   // ← sortie de boucle : aucun nettoyage
+```
+
+`closeConnection` (`:47`) existe et fait exactement ce qu'il faut. **Elle n'a
+aucun appelant** — vérifié sur tout l'arbre. C'est du code mort.
+
+Le rattrapage périodique existe, mais il ne couvre pas tout le monde :
+`verifyServersOnline` parcourt `ListAuthenticated()`, qui filtre sur
+`Status == SessionAuthenticated` (`manager.go:141`).
+
+| Type de session | Balayée ? |
+|-----------------|-----------|
+| Authentifiée | Oui, par le ticker, après `IsSessionExpired` |
+| **En attente (`SessionPending`)** | **Jamais** |
+
+Or une session est enregistrée en `SessionPending` **dès l'`accept()`**, avant
+la moindre trame. Ce sont donc précisément les connexions qu'un attaquant
+obtient gratuitement — sans identifiant — qui ne sont jamais nettoyées.
+
+S'y ajoute l'absence totale de `SetReadDeadline` dans le projet (seuls les
+`http.Server` ont des délais) : une connexion ouverte qui n'envoie rien bloque
+une goroutine sur `conn.Read` indéfiniment. Et aucun plafond de connexions
+simultanées.
+
+Quelques milliers de connexions TCP muettes épuisent les descripteurs du
+processus — donc LDAP, DNS, web et API avec lui.
+
+**Correctif :** un `defer closeConnection(duckysession)` dans `handleConnection`,
+un délai de lecture glissant, et un plafond par IP.
+
+---
+
+## 15. Élevée — aucun `recover()` dans le serveur
+
+LDAP, DNS, web, API, Ducky et le socket local sont des goroutines d'**un seul
+processus**. En Go, une panique non rattrapée dans n'importe laquelle termine le
+processus entier : une trame malformée ferait tomber l'annuaire complet, pas
+seulement le composant fautif.
+
+**Ce n'est pas une faille identifiée aujourd'hui.** Les indexations sur données
+réseau sont correctement gardées — `getSoftwareServeurInformation`,
+`gpo_manager/handlers.go`, `ssh_client.go` vérifient tous la longueur avant
+d'accéder. Le constat porte sur l'absence de filet pour le code qui sera écrit
+ensuite.
+
+**Correctif :** un `defer` avec `recover()` par goroutine de connexion, qui
+journalise en `CRITICAL` et ferme la seule connexion concernée.
+
+---
+
+## 17. Moyenne — le serveur DNS est strictement séquentiel
+
+**Chemin :** `core/dns/DNS_startServeur.go`
+
+Une boucle, un tampon de 512 octets partagé, chaque requête traitée jusqu'au bout
+avant la suivante. Une lecture lente en base bloque **toute** la résolution — et
+sur un annuaire, le DNS est sur le chemin critique de la jonction de domaine.
+
+S'y ajoutent l'absence d'EDNS0 (tampon figé à 512 octets), l'absence de toute
+limitation de débit, et une écoute sur `0.0.0.0:53` sans condition.
+
+---
+
 ## 7. Faible — la même requête recopiée dans dix fonctions
 
 Analyse des requêtes identiques sur les 84 fichiers du paquet :
@@ -162,15 +268,72 @@ Analyse des requêtes identiques sur les 84 fichiers du paquet :
 | 2 | `SELECT count(*) FROM logiciel_group WHERE ...` | — |
 | 2 | `SELECT count(*) FROM users_group WHERE ...` | — |
 
-Les trois premières ont **déjà un helper dédié**, simplement pas utilisé. Le
-paquet `db_gpo` a même reconstruit le sien (`groupIDByName`, `group_link.go:…`)
-plutôt que d'appeler l'existant.
+Les trois premières ont **déjà un helper dédié**, simplement pas utilisé.
 
-Ce n'est pas qu'une question d'esthétique : ces copies ne se comportent pas
-toutes pareil. Certaines appellent `SanitizeIdentifier`, d'autres non ; certaines
-distinguent `sql.ErrNoRows` d'une vraie erreur, d'autres retournent la même chose
-dans les deux cas. Un durcissement posé sur le helper — comme celui que je viens
-d'ajouter — ne protège donc que le tiers des appels.
+### Recensement complet (inventaire du 03/08/2026)
+
+**194 fonctions** contiennent du SQL littéral, sur 17 paquets, pour **282
+requêtes dont 252 distinctes**. La duplication porte donc sur **11 requêtes**,
+soit 30 occurrences sur 282 — nettement moins que ce que la première rédaction
+de ce point laissait entendre.
+
+### Correction d'une affirmation fausse de cet audit
+
+Il était écrit ici que « certaines copies distinguent `sql.ErrNoRows` d'une
+vraie erreur, d'autres retournent la même chose dans les deux cas ». **C'est
+faux** : les 194 fonctions gèrent `ErrNoRows`. L'inventaire l'a vérifié une par
+une.
+
+La divergence réelle portait sur la sanitisation, et **elle allait dans le sens
+inverse de ce qui était affirmé** :
+
+| Fonction | Sanitisait ? |
+|----------|--------------|
+| `GetGroupIDByName` — *le helper « officiel »* | **non** |
+| `db_gpo/groupIDByName` | non |
+| les 7 copies en ligne (`Command_ADD_*`, `Command_Remove_*`) | oui |
+
+Rediriger les sept copies vers le helper aurait donc **affaibli** ces sept
+appels. La conclusion « un durcissement posé sur le helper ne protège qu'un
+tiers des appels » était juste, mais l'ordre des opérations qu'elle suggérait
+était dangereux : il fallait durcir le helper **avant** toute redirection.
+
+### Ce qui a été corrigé
+
+| Correctif | Effet |
+|-----------|-------|
+| `GetGroupIDByName` : ajout de `SanitizeIdentifier` | le helper devient au moins aussi strict que les copies |
+| `GetGroupIDByName` : messages de journal | disait `permission '%s' introuvable` pour un **groupe** (copier-coller) — un administrateur cherchait au mauvais endroit |
+| `GetIdLogicielByComputeurID` **supprimée** | même requête que `Get_ClientID_By_ComputerID`, mais retour `string` au lieu d'`int`. Un seul appelant, repris. |
+| `get_id_logiciel` **supprimée** | retournait `""` pour « introuvable » *et* pour « erreur de base ». Voir ci-dessous. |
+| `db_gpo/groupIDByName` | délègue désormais au helper |
+| `DeleteDidLogin` | n'ignore plus les erreurs de ses deux résolutions d'identifiant |
+
+**Le défaut le plus sérieux trouvé pendant ce nettoyage** était dans
+`AddLoginEntry` : `get_id_logiciel` retournait une chaîne vide en cas d'échec,
+qui partait ensuite dans un `INSERT` sur `d_id_logiciel` — une clé étrangère
+entière. L'insertion échouait, l'échec n'était que journalisé, et
+`AddLoginEntry`, qui ne retourne rien, laissait l'appelant croire la session
+enregistrée. Une connexion réussie **sans ligne `did_login`** est une session
+que ni le nettoyage périodique ni le kill switch ne retrouvent.
+
+### Ce qui reste
+
+Après correctifs : **10 requêtes recopiées, 24 occurrences en trop.**
+
+| Copies | Requête |
+|--------|---------|
+| 9 | `SELECT id_group FROM groups WHERE group_name = ?` |
+| 7 | `SELECT id_user FROM users WHERE username = ?` |
+| 3 | `SELECT id_logiciel FROM id_logiciels WHERE computeur_id = ?` |
+| 3 | `SELECT id_permission FROM client_permission WHERE name_permission = ?` |
+
+Ces copies-là vivent **à l'intérieur** de fonctions composées
+(`Command_ADD_UserToGroup`, `Command_Remove_SoftwareFromGroup`…), souvent dans
+une transaction, où la résolution d'identifiant n'est qu'une étape parmi
+d'autres. Les rediriger est désormais **sans risque de régression de sécurité**
+— le helper est durci — mais demande de reprendre la gestion d'erreur de chaque
+fonction hôte. À traiter comme un chantier distinct.
 
 ---
 
@@ -184,16 +347,49 @@ d'ajouter — ne protège donc que le tiers des appels.
 | `Command_GET_UsersByGroup` / `Command_STATUS_GetUsersByGroup` | deux fichiers, types de retour différents pour la même question |
 | `GetUsersByGroup` / `GetUsersByGroups` | `LDAP_GET_GetUsersData.go` |
 | `GetGroupWithUsersByName` / `GetGroupsWithUsersByNames` | `LDAP_GET_GetGroupWithUser.go` |
-| `GetGroupIDByName` / `groupIDByName` | paquet racine / `db_gpo` |
+| ~~`GetGroupIDByName` / `groupIDByName`~~ | **résolu** — `db_gpo` délègue au helper |
+| ~~`GetIdLogicielByComputeurID` / `Get_ClientID_By_ComputerID`~~ | **résolu** — la première est supprimée |
 
-**Nommage :** sept conventions coexistent sur 191 fonctions — `Command_GET_`,
-`Command_STATUS_`, `Command_ADD_`, `Command_Remove_` (casse mixte),
-`Get_User_ID_By_Username` (souligné), `GetUserByUsername` (camel), et 114
-fonctions sans préfixe. Deux fichiers portent `Comment_` au lieu de `Command_`
-(`Comment_SET_UserPermissionActionContent.go`).
+**Les trois « utilisateurs d'un groupe » ne sont PAS des doublons.**
+`Command_GET_UsersByGroup`, `Command_STATUS_GetUsersByGroup` et
+`GetUsersByGroup` retournent `DisplayUsersByGroup`, `UserConnected` et
+`ldapstorage.User` — trois consommateurs différents : affichage CLI, état de
+connexion, LDAP. Le défaut n'est pas la redondance, c'est qu'on ne peut pas le
+deviner depuis leur nom.
+
+**Ordre des arguments incohérent :** `GetUsersByGroup(group string, db *sql.DB)`
+prend la base en second, alors que toutes les autres fonctions du projet la
+prennent en premier.
+
+### Nommage, chiffré
+
+Sur les **67 fonctions SQL de `core/database`**, huit conventions coexistent :
+
+| Nombre | Convention |
+|--------|------------|
+| 25 | camelCase nu (`CreateGroup`) |
+| 13 | `Command_GET_` |
+| 11 | souligné mixte (`Get_User_ID_By_Username`) |
+| 6 | `Command_STATUS_` |
+| 4 | `Command_Remove_` (casse mixte, seul verbe non capitalisé) |
+| 3 | `Command_ADD_` |
+| 3 | `Command_DELETE_` |
+| 2 | non exportées |
+
+**26 fichiers sur 57 portent un nom qui ne correspond pas à leur contenu** —
+`Command_ADD_ClientToGroup.go` contient `Command_ADD_SoftwareToGroup`,
+`CheckSession.go` contient `CleanUpExpiredSessions` et `DeleteDidLogin`,
+`protected.go` contient `IsUserInGroup`. Un fichier porte `Comment_` au lieu de
+`Command_` (`db_permission/Comment_SET_UserPermissionActionContent.go`).
 
 Aucune conséquence fonctionnelle, mais c'est ce qui explique le point 7 : on ne
 trouve pas le helper existant, donc on le réécrit.
+
+**Convention retenue si un renommage a lieu :** Go idiomatique, sans préfixe —
+`database.GroupIDByName`, `database.UserIDByName`. Le paquet porte déjà le sens,
+et c'est déjà ce que font `db_gpo`, `db_revocation` et `db_authpolicy`. Le
+chantier n'est pas engagé : il touche ~200 sites d'appel et n'est pas
+vérifiable sans compilateur.
 
 ---
 

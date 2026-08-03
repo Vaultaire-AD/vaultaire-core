@@ -83,9 +83,18 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 	}
 
 	if password != "" {
+		// password_changed_at est remis à jour DANS LA MÊME REQUÊTE que le mot de
+		// passe.
+		//
+		// Un appel séparé après coup — TouchPasswordChanged — aurait marché, et
+		// aurait fini par être oublié : ce chemin est appelé depuis la page profil,
+		// la page d'administration et le CLI, et rien n'aurait signalé l'oubli. Un
+		// compte se serait retrouvé avec un mot de passe changé mais toujours
+		// marqué expiré, donc renvoyé sur la page de changement en boucle.
+		// Ici, changer le mot de passe sans changer la date est impossible.
 		_, err = tx.Exec(`
 		UPDATE users
-		SET username = ?, firstname = ?, lastname = ?, email = ?, password = ?, salt = ?
+		SET username = ?, firstname = ?, lastname = ?, email = ?, password = ?, salt = ?, password_changed_at = NOW()
 		WHERE id_user = ?`,
 			username, firstname, lastname, email, hashHex, saltHex, userID)
 	} else {

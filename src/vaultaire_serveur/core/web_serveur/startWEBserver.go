@@ -40,8 +40,12 @@ func StartWebServer() {
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./web_packet/sso_WEB_page/static"))))
 	http.HandleFunc("/", LoginPageHandler)
 	http.HandleFunc("/login", LoginHandler)
+	// Étape du second facteur : atteignable uniquement avec le cookie
+	// mfa_pending, donc après un mot de passe valide.
+	http.HandleFunc("/login/mfa", MFAPageHandler)
 	http.HandleFunc("/logout", LogoutHandler)
 	http.HandleFunc("/profil", ProfilHandler)
+	http.HandleFunc("/profil/mfa", ProfilMFAHandler)
 	http.HandleFunc("/admin", AdminIndexHandler)
 	http.HandleFunc("/admin/tree", AdminTreePageHandler)
 	http.HandleFunc("/admin/api/ldap-tree", AdminLDAPTreeAPIHandler)
@@ -53,6 +57,9 @@ func StartWebServer() {
 	http.HandleFunc("/admin/permissions", AdminPermissionsHandler)
 	http.HandleFunc("/admin/gpo", AdminGPOHandler)
 	http.HandleFunc("/admin/gpo/restrictions", AdminGPORestrictionsHandler)
+	// Politique d'authentification : réservée au groupe vaultaire, atteinte
+	// depuis le tableau de bord (le bandeau de navigation n'est pas modifié).
+	http.HandleFunc("/admin/authpolicy", AdminAuthPolicyHandler)
 	http.HandleFunc("/admin/certificates", AdminCertificatesHandler)
 	http.HandleFunc("/admin/logs", AdminLogsHandler)
 	http.HandleFunc("/admin/api/logs", AdminLogsAPIHandler)
