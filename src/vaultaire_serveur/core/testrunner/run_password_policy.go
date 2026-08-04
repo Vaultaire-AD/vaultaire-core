@@ -23,12 +23,12 @@ func testPasswordPolicy() []Result {
 	day := func(d int) time.Time { return now.AddDate(0, 0, d) }
 
 	type tc struct {
-		name       string
-		maxAge     int
-		warn       int
-		changedAt  time.Time
-		hasDate    bool
-		wantState  passwordpolicy.State
+		name         string
+		maxAge       int
+		warn         int
+		changedAt    time.Time
+		hasDate      bool
+		wantState    passwordpolicy.State
 		wantDaysLeft int
 	}
 

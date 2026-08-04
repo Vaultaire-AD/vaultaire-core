@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -31,7 +32,7 @@ func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status user)", sender_Username, action))
 
 		// Si permission OK → récupérer les infos
-		users_Login, err := database.Command_STATUS_GetConnectedUser(db, targetUser)
+		users_Login, err := dbsessions.Command_STATUS_GetConnectedUser(db, targetUser)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur récupération utilisateur "+targetUser+" : "+err.Error())
 			return "Erreur lors de la récupération de l'utilisateur"
@@ -58,7 +59,7 @@ func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status user by group)", sender_Username, action))
 
-		users_Login, err := database.Command_STATUS_GetUsersByGroup(db, groupName)
+		users_Login, err := dbsessions.Command_STATUS_GetUsersByGroup(db, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur récupération utilisateurs du groupe "+groupName+" : "+err.Error())
 			return "Erreur lors de la récupération des utilisateurs du groupe"
@@ -77,7 +78,7 @@ func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status all users)", sender_Username, action))
 
-		Users_Login, _ := database.Command_STATUS_GetConnectedUsers(db)
+		Users_Login, _ := dbsessions.Command_STATUS_GetConnectedUsers(db)
 		return display.DisplayUsersByStatus(Users_Login)
 	}
 

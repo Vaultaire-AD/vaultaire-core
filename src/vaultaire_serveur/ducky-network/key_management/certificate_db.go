@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	dbcertificates "vaultaire/core/database/db-certificates"
+	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )

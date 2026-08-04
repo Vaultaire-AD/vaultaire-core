@@ -3,6 +3,7 @@ package commandremove
 import (
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/logs"
 )
 
@@ -30,7 +31,7 @@ func Remove_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 }
 
 func post_displayGroupInfo(groupName string) string {
-	groupInfo, err := database.Command_GET_GroupInfo(database.GetDatabase(), groupName)
+	groupInfo, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", "error during the get of the group "+groupName+" : "+err.Error())
 		return (">> -" + err.Error())

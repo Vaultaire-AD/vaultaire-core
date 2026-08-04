@@ -4,6 +4,8 @@ import (
 	"log"
 	"strings"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -14,7 +16,7 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 		log.Println("Erreur : données incomplètes dans le contenu GetSoftwareServeurInformation")
 		return
 	}
-	err := database.UpdateHostname(database.GetDatabase(), trames_content.ClientSoftwareID, information[0], information[1], information[2], information[3])
+	err := dbclients.UpdateHostname(database.GetDatabase(), trames_content.ClientSoftwareID, information[0], information[1], information[2], information[3])
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur lors de la mise à jour des informations du logiciel serveur : "+err.Error())
 		return
@@ -24,7 +26,7 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 
 	// ✅ Mise à jour de key_time_validity
 
-	err = database.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
+	err = dbsessions.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
 	if err != nil {
 		log.Println(err)
 	}

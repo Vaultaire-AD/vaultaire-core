@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	dbgroups "vaultaire/core/database/db_groups"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
-	"vaultaire/core/database"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
@@ -64,9 +64,9 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 			groupName = parts[0]
 		}
 	}
-	_, err := database.GetGroupIDByName(db, groupName)
+	_, err := dbgroups.GetGroupIDByName(db, groupName)
 	if err != nil {
-		_, errCreate := database.CreateGroup(db, groupName, domain)
+		_, errCreate := dbgroups.CreateGroup(db, groupName, domain)
 		if errCreate != nil {
 			logs.Write_Log("WARNING", "host_handler: CreateGroup failed: "+errCreate.Error())
 		}

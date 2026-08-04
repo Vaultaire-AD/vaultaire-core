@@ -5,6 +5,8 @@ import (
 	commandpermission "vaultaire/core/command/command_permission"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -41,7 +43,7 @@ func handleGetAllGroups(senderGroupsIDs []int, action, senderUsername string) st
 	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, []string{"*"}) {
 		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 	}
-	groups, err := database.Command_GET_GroupDetails(database.GetDatabase())
+	groups, err := dbgroups.Command_GET_GroupDetails(database.GetDatabase())
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération de tous les groupes : "+err.Error())
 		return ">> -" + err.Error()
@@ -57,7 +59,7 @@ func handleGetGroupByName(groupName string, senderGroupsIDs []int, action, sende
 	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domains) {
 		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 	}
-	group, err := database.Command_GET_GroupInfo(database.GetDatabase(), groupName)
+	group, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la récupération du groupe %s : %s", groupName, err.Error()))
 		return ">> -" + err.Error()
@@ -73,7 +75,7 @@ func handleGetUsersByGroup(groupName string, senderGroupsIDs []int, action, send
 	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domains) {
 		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 	}
-	users, err := database.Command_GET_UsersByGroup(database.GetDatabase(), groupName)
+	users, err := dbgroups.Command_GET_UsersByGroup(database.GetDatabase(), groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la récupération des utilisateurs du groupe %s : %s", groupName, err.Error()))
 		return ">> -" + err.Error()
@@ -89,7 +91,7 @@ func handleGetClientsByGroup(groupName string, senderGroupsIDs []int, action, se
 	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domains) {
 		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 	}
-	clients, err := database.Command_GET_ClientsByGroup(database.GetDatabase(), groupName)
+	clients, err := dbclients.Command_GET_ClientsByGroup(database.GetDatabase(), groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la récupération des clients du groupe %s : %s", groupName, err.Error()))
 		return ">> -" + err.Error()

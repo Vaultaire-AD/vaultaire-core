@@ -3,6 +3,7 @@ package commandupdate
 import (
 	"fmt"
 	"vaultaire/core/database"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -47,17 +48,17 @@ func update_UserPassword_Command_Parser(commandList []string, senderGroupsIDs []
 	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (update password user=%s)", senderUsername, action, targetUsername))
 
 	// 2) Charger l'utilisateur courant puis appliquer la MAJ avec hash/salt via la couche DB.
-	targetUserID, err := database.Get_User_ID_By_Username(db, targetUsername)
+	targetUserID, err := dbusers.Get_User_ID_By_Username(db, targetUsername)
 	if err != nil {
 		return fmt.Sprintf("Erreur recuperation ID utilisateur %s : %v", targetUsername, err)
 	}
 
-	current, err := database.Command_GET_UserInfo(db, targetUsername)
+	current, err := dbusers.Command_GET_UserInfo(db, targetUsername)
 	if err != nil {
 		return fmt.Sprintf("Erreur recuperation infos utilisateur %s : %v", targetUsername, err)
 	}
 
-	if err := database.Update_User_Info(db, targetUserID, current.Username, current.Firstname, current.Lastname, newPassword, ""); err != nil {
+	if err := dbusers.Update_User_Info(db, targetUserID, current.Username, current.Firstname, current.Lastname, newPassword, ""); err != nil {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur mise a jour mot de passe pour %s : %v", targetUsername, err))
 		return fmt.Sprintf("Erreur mise a jour du mot de passe pour %s : %v", targetUsername, err)
 	}

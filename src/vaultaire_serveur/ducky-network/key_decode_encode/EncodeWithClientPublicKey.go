@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/ducky-network/sessionmgr"
 )
@@ -23,7 +24,7 @@ func EncryptMessageWithClientPublic(message string, clientSoftwareID string) ([]
 	}
 	meta := logs.WithMeta(sessionID, clientSoftwareID)
 
-	clt_publicKey, err := database.Get_Client_Software_PublicKey(database.GetDatabase(), clientSoftwareID)
+	clt_publicKey, err := dbclients.Get_Client_Software_PublicKey(database.GetDatabase(), clientSoftwareID)
 	if err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
 			"Error during the recover of the client software pubkey for "+clientSoftwareID+": "+err.Error(), meta)

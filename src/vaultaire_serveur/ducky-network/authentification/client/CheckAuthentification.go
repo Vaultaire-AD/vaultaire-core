@@ -6,7 +6,8 @@ import (
 	"strings"
 	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
-	dbuser "vaultaire/core/database/db-user"
+	dbsessions "vaultaire/core/database/db_sessions"
+	dbusers "vaultaire/core/database/db_users"
 	gc "vaultaire/core/global/security"
 	logs "vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -54,12 +55,12 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
 
-	user_ID, err := database.Get_User_ID_By_Username(database.GetDatabase(), trames_content.Username)
+	user_ID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), trames_content.Username)
 	if err != nil {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but user does not exist", meta)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
-	Hpassword, salt, err := database.Get_User_Password_By_ID(database.GetDatabase(), user_ID)
+	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(database.GetDatabase(), user_ID)
 	if err != nil {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but error for get password", meta)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
@@ -150,8 +151,8 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		sessionmgr.Sessions.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
 		addOnlineServerToTable(duckysession.SessionID, username, trames_content.ClientSoftwareID)
 		db := database.GetDatabase()
-		userID, _ := database.Get_User_ID_By_Username(db, username)
-		database.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
+		userID, _ := dbusers.Get_User_ID_By_Username(db, username)
+		dbsessions.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
 		logs.Write_LogCodeMeta("INFO", logs.CodeNone, trames_content.ClientSoftwareID+" is online and enter in the system", meta)
 		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nclient_giveinformation")
 
@@ -160,23 +161,23 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 	returnchack := []byte(message_content.Challenge)
 	if bytes.Equal(randomAuth, returnchack) {
 		db := database.GetDatabase()
-		userID, _ := database.Get_User_ID_By_Username(db, username)
+		userID, _ := dbusers.Get_User_ID_By_Username(db, username)
 
-		can, err := database.DidUserCanLogin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
+		can, err := dbusers.DidUserCanLogin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 		if err != nil {
 			logs.Write_LogCodeMeta("ERROR", logs.CodeNone, username+" try to login but error for get user can login", meta)
 			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "\nSomething go wrong contact you administrator")
 		}
 		if can {
-			database.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
+			dbsessions.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
 			sessionmgr.Sessions.SetIdentity(duckysession.SessionID, username, trames_content.ClientSoftwareID)
 			sessionmgr.Sessions.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
 			logs.Write_LogCodeMeta("INFO", logs.CodeNone, username+" login with succes with clientsoftware "+trames_content.ClientSoftwareID, meta)
-			admin, _ := database.IsUserAdmin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
+			admin, _ := dbusers.IsUserAdmin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 			if admin {
 				logs.Write_LogCodeMeta("INFO", logs.CodeNone, username+" is admin for the client : "+trames_content.ClientSoftwareID, meta)
 			}
-			userpukey, err := dbuser.GetUserKeys(userID)
+			userpukey, err := dbusers.GetUserKeys(userID)
 			if err != nil {
 				logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
 					"Erreur lors de la récupération de la clé publique de l'utilisateur "+username+" : "+err.Error(), meta)

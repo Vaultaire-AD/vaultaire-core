@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -20,7 +21,7 @@ func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status all clients)", sender_Username, action))
 
-		client_Login, err := database.Command_STATUS_GetClientsConnected(db)
+		client_Login, err := dbsessions.Command_STATUS_GetClientsConnected(db)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur récupération clients : "+err.Error())
 			return ">> -" + err.Error()
@@ -46,7 +47,7 @@ func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status clients by group)", sender_Username, action))
 
-		client_Login, err := database.Command_STATUS_GetClientsConnectedByGroup(db, groupName)
+		client_Login, err := dbsessions.Command_STATUS_GetClientsConnectedByGroup(db, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur récupération clients du groupe "+groupName+" : "+err.Error())
 			return ">> -" + err.Error()
@@ -66,7 +67,7 @@ func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status clients by type)", sender_Username, action))
 
-		Client_Login, err := database.Command_STATUS_GetClientsConnectedByLogicielType(db, clientType)
+		Client_Login, err := dbsessions.Command_STATUS_GetClientsConnectedByLogicielType(db, clientType)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur récupération clients du type "+clientType+" : "+err.Error())
 			return ">> -" + err.Error()

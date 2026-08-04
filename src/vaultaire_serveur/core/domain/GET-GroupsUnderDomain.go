@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"vaultaire/core/database"
+	dbdomains "vaultaire/core/database/db_domains"
 )
 
 // normalizeDomain normalise un nom de domaine : minuscules, trim espaces et point final
@@ -23,7 +23,7 @@ func normalizeDomain(s string) string {
 //	g.DomainName == "vpn.vaultaire.local"     -> included
 //	g.DomainName == "intra.vpn.vaultaire.local" -> included
 func GetGroupsUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]string, error) {
-	allGroups, err := database.GetAllGroupsWithDomains(db)
+	allGroups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func GetGroupsUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]s
 //	g.DomainName == "vpn.vaultaire.local"     -> included (immediate child)
 //	g.DomainName == "intra.vpn.vaultaire.local" -> NOT included
 func GetGroupsDirectlyUnderDomain(domainPath string, db *sql.DB, returnDomain bool) ([]string, error) {
-	allGroups, err := database.GetAllGroupsWithDomains(db)
+	allGroups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +136,7 @@ func GetGroupsDirectlyUnderDomain(domainPath string, db *sql.DB, returnDomain bo
 //	g.DomainName == "vaultaire.local" -> included
 //	g.DomainName == "vpn.vaultaire.local" -> NOT included
 func GetGroupsDirectlyUnderDomainExact(domainPath string, db *sql.DB, returnDomain bool) ([]string, error) {
-	allGroups, err := database.GetAllGroupsWithDomains(db)
+	allGroups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil, err
 	}
@@ -163,7 +163,7 @@ func GetGroupsDirectlyUnderDomainExact(domainPath string, db *sql.DB, returnDoma
 
 // GetAllGroupDomains retourne la liste de tous les DomainName existants dans la base (sans doublons)
 func GetAllGroupDomains(db *sql.DB, returnDomain bool) ([]string, error) {
-	allGroups, err := database.GetAllGroupsWithDomains(db)
+	allGroups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil, err
 	}

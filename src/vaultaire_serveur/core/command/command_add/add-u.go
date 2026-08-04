@@ -5,7 +5,8 @@ import (
 	"strings"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
-	dbuser "vaultaire/core/database/db-user"
+	dbgroups "vaultaire/core/database/db_groups"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -37,12 +38,12 @@ func add_User_Command_Parser(command_list []string, sender_groupsIDs []int, acti
 	switch argType {
 	case "-g":
 		groupName := command_list[3]
-		err := database.Command_ADD_UserToGroup(database.GetDatabase(), username, groupName)
+		err := dbgroups.Command_ADD_UserToGroup(database.GetDatabase(), username, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout %s au groupe %s : %v", username, groupName, err))
 			return ">> -" + err.Error()
 		}
-		userInfo, err := database.Command_GET_UserInfo(database.GetDatabase(), username)
+		userInfo, err := dbusers.Command_GET_UserInfo(database.GetDatabase(), username)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération info utilisateur %s : %v", username, err))
 			return ">> -" + err.Error()
@@ -54,7 +55,7 @@ func add_User_Command_Parser(command_list []string, sender_groupsIDs []int, acti
 		if len(command_list) < 5 {
 			return ">> -Missing argument: label or key is empty. Usage: vlt add user <username> -k <label> <key>"
 		}
-		userId, err := database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
+		userId, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération ID utilisateur %s : %v", username, err))
 			return ">> -" + err.Error()
@@ -66,13 +67,13 @@ func add_User_Command_Parser(command_list []string, sender_groupsIDs []int, acti
 		if !strings.HasPrefix(pubkey, "ssh-rsa") && !strings.HasPrefix(pubkey, "ssh-ed25519") {
 			return ">> -The key must start with 'ssh-rsa' or 'ssh-ed25519'"
 		}
-		err = dbuser.AddUserKey(userId, pubkey, command_list[3])
+		err = dbusers.AddUserKey(userId, pubkey, command_list[3])
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout clé publique à %s : %v", username, err))
 			return ">> -" + err.Error()
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("Clé publique ajoutée à %s", username))
-		pubKeys, err := dbuser.GetUserKeys(userId)
+		pubKeys, err := dbusers.GetUserKeys(userId)
 		if err != nil || len(pubKeys) == 0 {
 			logs.Write_Log("WARNING", fmt.Sprintf("Aucune clé publique trouvée pour %s : %v", username, err))
 			return ">> -No public key found for this user"

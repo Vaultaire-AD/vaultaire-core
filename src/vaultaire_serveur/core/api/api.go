@@ -11,7 +11,7 @@ import (
 	"time"
 	"vaultaire/core/command"
 	"vaultaire/core/database"
-	dbuser "vaultaire/core/database/db-user"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -68,7 +68,7 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pubKeys, err := dbuser.GetUserKeys(userID)
+	pubKeys, err := dbusers.GetUserKeys(userID)
 	if err != nil || len(pubKeys) == 0 {
 		logRequest(requestID, userID, req, "", err)
 		http.Error(w, "Aucune clé publique trouvée", http.StatusUnauthorized)
@@ -138,7 +138,7 @@ func decodeRequest(r *http.Request) (*CommandRequest, error) {
 
 // fetchUserID retourne l’ID utilisateur depuis son username
 func fetchUserID(username string) (int, error) {
-	return database.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
+	return dbusers.Get_User_ID_By_Username(database.GetDatabase(), strings.TrimSpace(username))
 }
 
 // buildSignedBody reconstruit le JSON que le client a signé

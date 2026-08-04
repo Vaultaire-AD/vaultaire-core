@@ -6,9 +6,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	dbusers "vaultaire/core/database/db_users"
 
 	"vaultaire/core/database"
-	dbuser "vaultaire/core/database/db-user"
+
 	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -47,18 +48,18 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 	mustChange := session.MustChangePassword(sessionToken)
 
 	db := database.GetDatabase()
-	userInfo, err := database.Command_GET_UserInfo(db, username)
+	userInfo, err := dbusers.Command_GET_UserInfo(db, username)
 	if err != nil {
 		http.Error(w, "Erreur récupération infos utilisateur", 500)
 		return
 	}
-	userid, err := database.Get_User_ID_By_Username(db, userInfo.Username)
+	userid, err := dbusers.Get_User_ID_By_Username(db, userInfo.Username)
 	if err != nil {
 		http.Error(w, "Erreur récupération ID utilisateur", 500)
 		return
 	}
 
-	keys, err := dbuser.GetUserKeys(userid)
+	keys, err := dbusers.GetUserKeys(userid)
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur récupération clés publiques : "+err.Error())
 		http.Error(w, "Erreur lors de la récupération des clés", http.StatusInternalServerError)
@@ -129,7 +130,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		currentUsername := username
-		userID, err := database.Get_User_ID_By_Username(db, currentUsername)
+		userID, err := dbusers.Get_User_ID_By_Username(db, currentUsername)
 		if err != nil {
 			http.Error(w, "Utilisateur introuvable", http.StatusInternalServerError)
 			return
@@ -143,7 +144,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		// l'ancien, et le propriétaire légitime ne pouvait plus reprendre la
 		// main : changer son propre mot de passe n'évinçait pas l'intrus.
 		if password != "" {
-			storedHash, salt, err := database.Get_User_Password_By_ID(db, userID)
+			storedHash, salt, err := dbusers.Get_User_Password_By_ID(db, userID)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					"profil: lecture du mot de passe impossible pour "+currentUsername+" : "+err.Error())
@@ -158,7 +159,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		err = database.Update_User_Info(db, userID, newUsername, firstname, lastname, password, "")
+		err = dbusers.Update_User_Info(db, userID, newUsername, firstname, lastname, password, "")
 		if err != nil {
 			http.Error(w, "Erreur mise à jour: "+err.Error(), http.StatusInternalServerError)
 			return
@@ -214,7 +215,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Mettre dans un slice pour passer à la fonction
-		err = dbuser.DeleteUserKeys([]int{keyID})
+		err = dbusers.DeleteUserKeys([]int{keyID})
 		if err != nil {
 			logs.Write_Log("ERROR", "Erreur suppression clé : "+err.Error())
 			http.Error(w, "Erreur suppression clé", http.StatusInternalServerError)
@@ -247,7 +248,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Ajouter la clé en base
-		err = dbuser.AddUserKey(userid, keyStr, label)
+		err = dbusers.AddUserKey(userid, keyStr, label)
 		if err != nil {
 			// Le message d'AddUserKey est déjà explicite : on ne le préfixe pas
 			// une seconde fois. Le journal affichait « Erreur ajout clé

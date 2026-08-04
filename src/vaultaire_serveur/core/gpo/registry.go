@@ -170,7 +170,7 @@ var baseCatalog = []ModuleSchema{
 		Category:    CategorySecurity,
 		Description: "Fixe une clé sysctl. Écrit dans /etc/sysctl.d/, jamais dans /etc/sysctl.conf. Les clés disponibles sont éditables dans Admin → GPO → Restrictions.",
 		Scope:       ScopeMachine,
-		ApplyOrder:  phaseConfig,     // sysctl
+		ApplyOrder:  phaseConfig, // sysctl
 		Fields: []FieldSchema{
 			{Name: "key", Label: "Clé", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
 			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, Dynamic: true, MaxLen: 128,
@@ -198,7 +198,7 @@ var baseCatalog = []ModuleSchema{
 		Category:    CategorySystem,
 		Description: "Garantit la présence ou l'absence d'un paquet. Appliqué avant les modules de service, pour qu'une unité dépendante d'un paquet existe au moment de son activation. Les paquets disponibles sont éditables dans les Restrictions.",
 		Scope:       ScopeMachine,
-		ApplyOrder:  phasePackages,   // package
+		ApplyOrder:  phasePackages, // package
 		Fields: []FieldSchema{
 			{Name: "package", Label: "Paquet", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
@@ -213,7 +213,7 @@ var baseCatalog = []ModuleSchema{
 		Category:    CategorySystem,
 		Description: "Force l'état d'une unité systemd (activation au boot, état courant, masquage). Les unités disponibles sont éditables dans les Restrictions — c'est là qu'on déclare un service maison.",
 		Scope:       ScopeMachine,
-		ApplyOrder:  phaseServices,   // systemd_service
+		ApplyOrder:  phaseServices, // systemd_service
 		Fields: []FieldSchema{
 			{Name: "service", Label: "Unité", Type: FieldEnum, Required: true, Dynamic: true, MaxLen: 128},
 			{Name: "enabled", Label: "Activation au démarrage", Type: FieldEnum, Required: true,
@@ -230,7 +230,7 @@ var baseCatalog = []ModuleSchema{
 		Category:    CategoryFiles,
 		Description: "Dépose un fichier avec contenu, permissions et propriétaire. Les emplacements autorisés et refusés sont éditables dans les Restrictions ; en scope user, le chemin s'exprime sous " + userHomePlaceholder + "/.",
 		Scope:       ScopeBoth,
-		ApplyOrder:  phaseFiles + 1,  // file_deploy
+		ApplyOrder:  phaseFiles + 1, // file_deploy
 		Fields: []FieldSchema{
 			{Name: "path", Label: "Chemin", Type: FieldPath, Required: true, MaxLen: 512,
 				Help: "Scope machine : chemin absolu hors zones refusées. Scope user : " + userHomePlaceholder + "/chemin/relatif."},
@@ -698,7 +698,7 @@ var baseCatalog = []ModuleSchema{
 		Category:    CategoryUser,
 		Description: "Définit une variable dans un fichier dédié sourcé depuis le shell de l'utilisateur (bloc balisé, le .bashrc n'est jamais réécrit). La liste des variables interdites est éditable dans les Restrictions.",
 		Scope:       ScopeUser,
-		ApplyOrder:  phaseUser + 3,   // user_env
+		ApplyOrder:  phaseUser + 3, // user_env
 		Fields: []FieldSchema{
 			{Name: "name", Label: "Nom", Type: FieldEnvName, Required: true, MaxLen: 64},
 			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 1024},
@@ -710,7 +710,7 @@ var baseCatalog = []ModuleSchema{
 		Category:    CategoryUser,
 		Description: "Crée un timer systemd --user. La tâche référence un identifiant de commande implémenté côté agent ; la liste des identifiants est éditable dans les Restrictions.",
 		Scope:       ScopeUser,
-		ApplyOrder:  phaseUser + 7,   // user_cron
+		ApplyOrder:  phaseUser + 7, // user_cron
 		Fields: []FieldSchema{
 			{Name: "schedule", Label: "Planification (cron 5 champs)", Type: FieldCron, Required: true,
 				Default: "0 9 * * *", MaxLen: 128},

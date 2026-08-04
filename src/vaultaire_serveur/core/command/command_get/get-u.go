@@ -6,7 +6,8 @@ import (
 	commandpermission "vaultaire/core/command/command_permission"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
-	dbuser "vaultaire/core/database/db-user"
+	dbgroups "vaultaire/core/database/db_groups"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/permission"
 )
 
@@ -35,7 +36,7 @@ func handleGetAllUsers(senderGroupsIDs []int, action, senderUsername string) str
 		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 	}
 
-	users, err := database.Command_GET_AllUsers(database.GetDatabase())
+	users, err := dbusers.Command_GET_AllUsers(database.GetDatabase())
 	if err != nil {
 		return commandpermission.LogAndReturn("Erreur lors de la récupération des utilisateurs : ", err)
 	}
@@ -53,7 +54,7 @@ func handleGetUserInfo(username string, senderGroupsIDs []int, action, senderUse
 		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 	}
 
-	userInfo, err := database.Command_GET_UserInfo(database.GetDatabase(), username)
+	userInfo, err := dbusers.Command_GET_UserInfo(database.GetDatabase(), username)
 	if err != nil {
 		return commandpermission.LogAndReturn("Erreur récupération utilisateur "+username+" : ", err)
 	}
@@ -66,7 +67,7 @@ func handleGetUserSubcommand(commandList []string, senderGroupsIDs []int, action
 
 	switch subcmd {
 	case "-g": // Récupère les utilisateurs par groupe
-		users, err := database.Command_GET_UsersByGroup(database.GetDatabase(), arg)
+		users, err := dbgroups.Command_GET_UsersByGroup(database.GetDatabase(), arg)
 		if err != nil {
 			return commandpermission.LogAndReturn("Erreur récupération utilisateurs du groupe "+arg+" : ", err)
 		}
@@ -76,12 +77,12 @@ func handleGetUserSubcommand(commandList []string, senderGroupsIDs []int, action
 	// Exemple : get user bob -k
 	if arg == "-k" {
 		username := strings.TrimSpace(commandList[1])
-		userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), username)
+		userID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), username)
 		if err != nil {
 			return commandpermission.LogAndReturn("Erreur récupération ID utilisateur "+username+" : ", err)
 		}
 
-		pubKeys, err := dbuser.GetUserKeys(userID)
+		pubKeys, err := dbusers.GetUserKeys(userID)
 		if err != nil || len(pubKeys) == 0 {
 			return ">> -No public key found for this user"
 		}

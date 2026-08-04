@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
-	"vaultaire/core/database"
+	dbldap "vaultaire/core/database/db_ldap"
 	domainpkg "vaultaire/core/domain"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
@@ -87,7 +87,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 		groupNames, _ = domainpkg.GetGroupsUnderDomain(domain, db, false)
 
 		if len(groupNames) > 0 {
-			groupsData, _ := database.GetGroupsWithUsersByNames(db, groupNames)
+			groupsData, _ := dbldap.GetGroupsWithUsersByNames(db, groupNames)
 			for _, g := range groupsData {
 				// On utilise ToRootDN pour la cohérence avec les recherches Keycloak
 				groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
@@ -120,7 +120,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 			groupNames, _ = domainpkg.GetGroupsUnderDomain(domain, db, false)
 		}
 
-		groups, _ := database.GetGroupsWithUsersByNames(db, groupNames)
+		groups, _ := dbldap.GetGroupsWithUsersByNames(db, groupNames)
 
 		for _, g := range groups {
 			// 2️⃣ Ajout du Groupe
@@ -146,7 +146,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					continue // L'utilisateur a déjà été créé avec sa liste complète
 				}
 
-				userObj, err := database.GetUserByUsername(uname, db)
+				userObj, err := dbldap.GetUserByUsername(uname, db)
 				if err != nil {
 					continue
 				}

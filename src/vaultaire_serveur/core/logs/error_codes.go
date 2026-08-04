@@ -5,31 +5,31 @@ const (
 	CodeNone = ""
 
 	// Base de données (VLT-DBxxx)
-	CodeDBGeneric       = "VLT-DB000"
-	CodeDBUserNotFound  = "VLT-DB001"
-	CodeDBQuery         = "VLT-DB002"
-	CodeDBConnection    = "VLT-DB003"
-	CodeDBSession       = "VLT-DB004"
-	CodeDBCreateTable   = "VLT-DB005"
+	CodeDBGeneric      = "VLT-DB000"
+	CodeDBUserNotFound = "VLT-DB001"
+	CodeDBQuery        = "VLT-DB002"
+	CodeDBConnection   = "VLT-DB003"
+	CodeDBSession      = "VLT-DB004"
+	CodeDBCreateTable  = "VLT-DB005"
 
 	// Certificats / clés (VLT-CERTxxx)
-	CodeCertNotFound   = "VLT-CERT001"
-	CodeCertSave       = "VLT-CERT002"
-	CodeCertLoad       = "VLT-CERT003"
+	CodeCertNotFound = "VLT-CERT001"
+	CodeCertSave     = "VLT-CERT002"
+	CodeCertLoad     = "VLT-CERT003"
 
 	// API (VLT-APIxxx)
-	CodeAPIDecode   = "VLT-API001"
-	CodeAPISign     = "VLT-API002"
-	CodeAPITLS      = "VLT-API003"
+	CodeAPIDecode = "VLT-API001"
+	CodeAPISign   = "VLT-API002"
+	CodeAPITLS    = "VLT-API003"
 
 	// LDAP (VLT-LDAPxxx)
 	CodeLDAPListen = "VLT-LDAP001"
 	CodeLDAPTLS    = "VLT-LDAP002"
 
 	// Authentification / permission (VLT-AUTHxxx)
-	CodeAuthFailed       = "VLT-AUTH001"
-	CodeAuthPermission   = "VLT-AUTH002"
-	CodeAuthLoginDenied  = "VLT-AUTH003" // permission denied / security event
+	CodeAuthFailed      = "VLT-AUTH001"
+	CodeAuthPermission  = "VLT-AUTH002"
+	CodeAuthLoginDenied = "VLT-AUTH003" // permission denied / security event
 
 	// Web / admin (VLT-WEBxxx)
 	CodeWebTemplate = "VLT-WEB001"

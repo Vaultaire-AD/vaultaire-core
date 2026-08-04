@@ -261,9 +261,10 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 
 // decodeExtensibleMatchFilter handles extensibleMatch filters (RFC 4511 tag 9)
 // Format: SEQUENCE { matchingRule [0] OBJECT IDENTIFIER OPTIONAL,
-//                    type [1] AttributeDescription OPTIONAL,
-//                    matchValue [2] AssertionValue,
-//                    dnAttributes [3] BOOLEAN DEFAULT FALSE }
+//
+//	type [1] AttributeDescription OPTIONAL,
+//	matchValue [2] AssertionValue,
+//	dnAttributes [3] BOOLEAN DEFAULT FALSE }
 func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 	if len(p.Children) == 0 {
 		return nil, fmt.Errorf("extensibleMatch filter has no children")

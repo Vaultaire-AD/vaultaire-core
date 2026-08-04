@@ -3,6 +3,7 @@ package commanddelete
 import (
 	"fmt"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -36,14 +37,14 @@ func delete_Group_Command_Parser(command_list []string, sender_groupsIDs []int, 
 	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (delete group)", sender_Username, action))
 
 	// 🔹 Étape 3 : Suppression du groupe
-	err = database.Command_DELETE_GroupWithGroupName(db, groupName)
+	err = dbgroups.Command_DELETE_GroupWithGroupName(db, groupName)
 	if err != nil {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur suppression du groupe %s : %v", groupName, err))
 		return fmt.Sprintf("Erreur lors de la suppression du groupe %s : %v", groupName, err)
 	}
 
 	// 🔹 Étape 4 : Vérification que le groupe n’existe plus
-	_, err = database.Command_GET_GroupInfo(db, groupName)
+	_, err = dbgroups.Command_GET_GroupInfo(db, groupName)
 	if err == nil {
 		return fmt.Sprintf("Le groupe %s semble encore exister après suppression.", groupName)
 	}

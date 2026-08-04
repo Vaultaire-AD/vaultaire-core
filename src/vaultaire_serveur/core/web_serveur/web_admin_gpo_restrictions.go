@@ -7,6 +7,7 @@ import (
 
 	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
+	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -74,9 +75,9 @@ func requireSuperadminPage(w http.ResponseWriter, r *http.Request) (string, bool
 	if !ok {
 		return "", false
 	}
-	if !database.IsSuperadmin(database.GetDatabase(), username) {
-		logs.Write_Log("SECURITY", "webadmin: "+username+" a tenté d'accéder aux restrictions GPO sans être membre du groupe "+database.ProtectedGroupName)
-		http.Error(w, "Réservé aux membres du groupe "+database.ProtectedGroupName, http.StatusForbidden)
+	if !isprotected.IsSuperadmin(database.GetDatabase(), username) {
+		logs.Write_Log("SECURITY", "webadmin: "+username+" a tenté d'accéder aux restrictions GPO sans être membre du groupe "+isprotected.ProtectedGroupName)
+		http.Error(w, "Réservé aux membres du groupe "+isprotected.ProtectedGroupName, http.StatusForbidden)
 		return "", false
 	}
 	return username, true
@@ -115,7 +116,7 @@ func AdminGPORestrictionsHandler(w http.ResponseWriter, r *http.Request) {
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "gpo",
 		Modes:      gpo.AllFieldModes(),
 		PathScopes: []string{gpo.PathScopeAny, string(gpo.ScopeMachine), string(gpo.ScopeUser)},
-		HomeMarker: gpo.UserHomePlaceholder(), SuperadminGrp: database.ProtectedGroupName,
+		HomeMarker: gpo.UserHomePlaceholder(), SuperadminGrp: isprotected.ProtectedGroupName,
 	}
 
 	if r.Method == http.MethodPost {

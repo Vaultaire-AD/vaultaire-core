@@ -61,7 +61,7 @@ package scope
 // 			continue
 // 		}
 
-// 		groups, err := database.GetGroupsWithUsersByNames(db, groupNames)
+// 		groups, err := dbldap.GetGroupsWithUsersByNames(db, groupNames)
 // 		if err != nil {
 // 			return nil, err
 // 		}
@@ -95,7 +95,7 @@ package scope
 // 					continue
 // 				}
 
-// 				userObj, err := database.GetUserByUsername(uname, db)
+// 				userObj, err := dbldap.GetUserByUsername(uname, db)
 // 				if err != nil {
 // 					logs.Write_Log("WARNING", fmt.Sprintf("User %s not found", uname))
 // 					continue

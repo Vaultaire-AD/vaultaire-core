@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"time"
 	"vaultaire/core/database"
+	dbusers "vaultaire/core/database/db_users"
 	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -39,7 +40,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := database.GetDatabase()
-	userID, err := database.Get_User_ID_By_Username(db, username)
+	userID, err := dbusers.Get_User_ID_By_Username(db, username)
 	if err != nil {
 		// Tentative de connexion avec un username inconnu : pas une erreur système,
 		// mais un événement de sécurité qu'on veut voir sans activer le mode debug.
@@ -48,7 +49,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Hpassword, salt, err := database.Get_User_Password_By_ID(db, userID)
+	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(db, userID)
 	if err != nil {
 		// Ici l'utilisateur existe : un échec à ce stade est un vrai problème DB, pas
 		// juste un mauvais mot de passe.

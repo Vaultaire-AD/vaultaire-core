@@ -4,8 +4,9 @@ import (
 	"database/sql"
 	"fmt"
 	"sort"
+	dbclients "vaultaire/core/database/db_clients"
+	dbgroups "vaultaire/core/database/db_groups"
 
-	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
@@ -27,11 +28,11 @@ import (
 func resolveMachinePolicy(db *sql.DB, clientSoftwareID string) (gpo.Policy, error) {
 	empty := gpo.Policy{Name: "effective_machine", Scope: gpo.ScopeMachine, Enabled: true}
 
-	clientID, err := database.Get_ClientID_By_ComputerID(db, clientSoftwareID)
+	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, clientSoftwareID)
 	if err != nil {
 		return gpo.Policy{}, fmt.Errorf("client %s introuvable : %v", clientSoftwareID, err)
 	}
-	groupIDs, err := database.Command_GET_GroupIDsFromClientID(db, clientID)
+	groupIDs, err := dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 	if err != nil {
 		return gpo.Policy{}, fmt.Errorf("groupes du client %s illisibles : %v", clientSoftwareID, err)
 	}
@@ -70,15 +71,15 @@ func resolveUserPolicy(db *sql.DB, username, clientSoftwareID string) (gpo.Polic
 		return gpo.Policy{}, fmt.Errorf("utilisateur cible non fourni")
 	}
 
-	userGroupIDs, err := database.Command_GET_UserGroupIDs(db, username)
+	userGroupIDs, err := dbgroups.Command_GET_UserGroupIDs(db, username)
 	if err != nil {
 		return gpo.Policy{}, fmt.Errorf("groupes de l'utilisateur %s illisibles : %v", username, err)
 	}
-	clientID, err := database.Get_ClientID_By_ComputerID(db, clientSoftwareID)
+	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, clientSoftwareID)
 	if err != nil {
 		return gpo.Policy{}, fmt.Errorf("client %s introuvable : %v", clientSoftwareID, err)
 	}
-	clientGroupIDs, err := database.Command_GET_GroupIDsFromClientID(db, clientID)
+	clientGroupIDs, err := dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 	if err != nil {
 		return gpo.Policy{}, fmt.Errorf("groupes du client %s illisibles : %v", clientSoftwareID, err)
 	}
@@ -129,15 +130,15 @@ func intersectGroupIDs(a, b []int) []int {
 // HasSharedGroup indique si l'utilisateur et la machine partagent un groupe.
 // Utilisé pour distinguer « aucun groupe commun » d'une politique simplement vide.
 func HasSharedGroup(db *sql.DB, username, clientSoftwareID string) bool {
-	userGroupIDs, err := database.Command_GET_UserGroupIDs(db, username)
+	userGroupIDs, err := dbgroups.Command_GET_UserGroupIDs(db, username)
 	if err != nil {
 		return false
 	}
-	clientID, err := database.Get_ClientID_By_ComputerID(db, clientSoftwareID)
+	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, clientSoftwareID)
 	if err != nil {
 		return false
 	}
-	clientGroupIDs, err := database.Command_GET_GroupIDsFromClientID(db, clientID)
+	clientGroupIDs, err := dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 	if err != nil {
 		return false
 	}

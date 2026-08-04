@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	keymanagement "vaultaire/ducky-network/key_management"
@@ -53,7 +54,7 @@ func GenerateClientSoftware(logicielType string, isServeur bool) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("key pair generation: %v", err)
 	}
-	err = database.Create_ClientSoftware(database.GetDatabase(), computeurID, logicielType, keymanagement.Convert_Public_Key_To_String(publicKey), isServeur)
+	err = dbclients.Create_ClientSoftware(database.GetDatabase(), computeurID, logicielType, keymanagement.Convert_Public_Key_To_String(publicKey), isServeur)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "newclient: create client software in database failed: "+err.Error())
 		return "", fmt.Errorf("create client software: %v", err)

@@ -154,7 +154,35 @@
             - Nouveau `Audit_Permissions.md` : constats restant ouverts, avec la décision associée à chacun - Lorens Viguie
             - Nouveau `migrations/rbac_groupes_stricts.md` : requêtes de diagnostic à lancer **avant** la bascule du RBAC en appartenance stricte - Lorens Viguie
             - `Tableau_Protocole_Reseau.md` complété : transport GPO (catégorie 05) et révocation (catégorie 06) - Lorens Viguie
-        - - ### 🐷 **Alpha 2.1.0** *refactorisation* - *...*
+    - ### 🐷 **Alpha 2.1.0** *refactorisation* - *...*
+
+        - 🧱 **Nettoyage du paquet `core/database`** *(TO-DO_Database §2.1 à §2.4)*
+            - **79 fichiers → 30**, dont la racine qui passe de 52 fichiers à 12. Le paquet tenait 75 lignes par fichier en moyenne, une fonction par fichier : les fonctions liées vivaient chacune dans son coin, et 26 noms de fichiers sur 57 ne correspondaient plus à leur contenu - Lorens Viguie
+            - Regroupement par sujet : `users.go`, `groups.go`, `clients.go`, `sessions.go`, `domains.go`, `permissions.go`, `ldap_reads.go`, `schema.go`, `sanitize.go`, `db.go`, `resolve.go`, `protected.go`. `db_permission` passe de 13 fichiers à 4 - Lorens Viguie
+            - **Aucun appelant touché** : le regroupement ne change pas de paquet, et l'empreinte de la surface exportée (331 entrées : nom, signature, types, variables) a été comparée avant/après à chaque étape — identique - Lorens Viguie
+            - Noms de paquets alignés sur la convention Go : `db_permission` → `dbpermission`, `db_revocation` → `dbrevocation`, `db_authpolicy` → `dbauthpolicy`. Les alias divergents pour un même paquet (`dbperm` et `db_permission`, `dbcert` et `dbcertificates`) sont unifiés - Lorens Viguie
+            - **Requêtes de résolution d'identifiant dédupliquées** : les mêmes `SELECT id_group FROM groups WHERE group_name = ?` et consorts étaient recopiés dans une vingtaine de fonctions, et ne se comportaient pas tous pareil — certains assainissaient leur entrée, d'autres non. Nouveau `resolve.go` avec cinq résolveurs `Lookup*` - Lorens Viguie
+            - Les résolveurs rendent `found bool` plutôt que de formuler l'absence : chaque appelant conserve **au caractère près** le message que voit l'administrateur. Ils prennent une interface `RowQuerier` que `*sql.DB` et `*sql.Tx` satisfont tous deux, pour qu'une résolution à l'intérieur d'une transaction ne lise jamais en dehors - Lorens Viguie
+            - L'assainissement est fait dans le résolveur, au plus près de la base : `Command_GET_UserPermissionID` et `EnsureSuperadminActions` y gagnent une vérification qu'elles n'avaient pas - Lorens Viguie
+
+        - 📁 **Découpage de `core/database` en sous-paquets, une déclaration par fichier**
+            - Le regroupement thématique précédent produisait des fichiers de 500 lignes, aussi peu praticables que les 52 fichiers d'une fonction qu'ils remplaçaient : on troquait « où est cette fonction ? » contre « où est-elle dans ce fichier ? » - Lorens Viguie
+            - **266 fichiers, 34 lignes en moyenne.** Le nom de chaque fichier est dérivé mécaniquement du nom de sa déclaration (CamelCase → minuscules soulignées, préfixe `Command_` retiré) : un nom de fichier ne peut donc plus mentir sur son contenu, ce qui était le défaut principal de l'organisation d'origine - Lorens Viguie
+            - **En Go un dossier est un paquet** : des dossiers signifiaient de vrais sous-paquets. 637 références qualifiées réécrites dans 155 fichiers, `database.Command_ADD_UserToGroup` devenant `dbgroups.Command_ADD_UserToGroup`. Cohérent avec `db_gpo`, `db_permission` et `db_revocation`, qui étaient déjà des sous-paquets - Lorens Viguie
+            - Douze sous-paquets : `dbusers`, `dbgroups`, `dbclients`, `dbsessions`, `dbdomains`, `dbldap`, `dbschema`, `dbpermission`, `dbgpo`, `dbauthpolicy`, `dbrevocation`, `dbcertificates` - Lorens Viguie
+            - **Le socle `core/database` ne contient plus une seule requête métier** : connexion, filtrage des entrées, résolveurs d'identifiants, gardes d'immuabilité. Il n'importe aucun sous-paquet, ce qui garantit l'absence de cycle - Lorens Viguie
+            - Exception assumée : `IsUserInGroup` reste dans le socle bien que ce soit une lecture d'appartenance, parce que `IsSuperadmin` en a besoin et que `dbgroups` importe déjà les gardes. La déplacer aurait obligé à dupliquer la requête - Lorens Viguie
+            - `permissions.go` rejoint `dbpermission` (deux paquets pour le même sujet n'avaient pas de sens), `db-user` disparaît dans `dbusers` (une clé SSH est un attribut de compte), `db-certificates` devient `db_certificates` - Lorens Viguie
+            - **Piège du découpage : les commentaires d'en-tête de fichier**, ceux qui précèdent la première déclaration sans lui être attachés, sont perdus — et ce sont justement ceux qui portent le raisonnement d'ensemble. Vérifié par comptage (1 173 lignes avant) et restaurés en `doc.go` par paquet, ce qui est leur place correcte en Go - Lorens Viguie
+            - ⚠️ Les 155 fichiers appelants ne sont pas prouvés par le compilateur : vérification au parseur (547 fichiers, 0 échec) et contrôle statique confirmant que les 637 références désignent un symbole réellement exporté. **Recompiler avant de pousser** - Lorens Viguie
+
+        - 🐛 **Correction : retirer une permission utilisateur d'un groupe n'a jamais fonctionné**
+            - `Command_Remove_UserPermissionFromGroup` résolvait le nom de la permission dans `client_permission`, la table des permissions **client**, alors qu'elle retire une permission **utilisateur** — deux familles numérotées séparément - Lorens Viguie
+            - Elle interrogeait ensuite puis supprimait dans `group_permission_user`, **table qui n'existe pas** : le schéma déclare `group_user_permission`. MySQL rendait « table inconnue » dès le `COUNT` - Lorens Viguie
+            - Les deux chemins offerts échouaient : `vlt remove -g <groupe> -pu <permission>` et le bouton de la page groupe. En web l'appelant ne teste que `== nil`, donc le clic ne produisait **aucun message** et la permission restait affichée sans explication - Lorens Viguie
+            - **Portée réelle** : un droit accordé à un groupe ne pouvait plus lui être repris. Le seul contournement était de supprimer la permission entière, donc de la retirer à *tous* les groupes. Une réduction de privilèges était impossible sans en casser d'autres - Lorens Viguie
+            - Trouvé en redirigeant les requêtes recopiées. Même famille que `DeleteGroup`, morte et cassée pour la même raison : du code visant des tables inexistantes, donc jamais exécuté sur une vraie base - Lorens Viguie
+
 ---
 
 

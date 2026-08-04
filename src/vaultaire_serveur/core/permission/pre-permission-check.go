@@ -3,6 +3,7 @@ package permission
 import (
 	"fmt"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/logs"
 )
 
@@ -53,7 +54,7 @@ func GetGroupIDsForUser(username string) ([]int, error) {
 		return nil, fmt.Errorf("compte révoqué")
 	}
 
-	groupsID, err := database.Command_GET_UserGroupIDs(database.GetDatabase(), username)
+	groupsID, err := dbgroups.Command_GET_UserGroupIDs(database.GetDatabase(), username)
 	if err != nil {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err))
 		return nil, fmt.Errorf("erreur récupération groupes")

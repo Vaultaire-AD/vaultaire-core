@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
-	"vaultaire/core/database"
+	dbusers "vaultaire/core/database/db_users"
 )
 
 const challengeTTL = 30 * time.Second
@@ -64,11 +64,11 @@ func VerifyChallengeProof(db *sql.DB, username, fullUsername, sessionID, clientP
 	if time.Now().After(pc.ExpiresAt) {
 		return false, errors.New("challenge expiré")
 	}
-	userID, err := database.Get_User_ID_By_Username(db, username)
+	userID, err := dbusers.Get_User_ID_By_Username(db, username)
 	if err != nil {
 		return false, err
 	}
-	storedHash, err := database.Get_User_PasswordHash_By_UserID(db, userID)
+	storedHash, err := dbusers.Get_User_PasswordHash_By_UserID(db, userID)
 	if err != nil {
 		return false, err
 	}

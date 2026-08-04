@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 	db "vaultaire/core/database"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
@@ -154,7 +155,7 @@ func dropStaleSession(stale sessionmgr.StaleSession) {
 		"ducky: session authentifiée de %s fermée après %s d'inactivité",
 		stale.ClientSoftwareID, stale.Idle.Round(time.Second)), meta)
 
-	if err := db.DeleteDidLogin(db.GetDatabase(), stale.Username, stale.ClientSoftwareID); err != nil {
+	if err := dbsessions.DeleteDidLogin(db.GetDatabase(), stale.Username, stale.ClientSoftwareID); err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
 			"Error deleting session for "+stale.ClientSoftwareID+": "+err.Error(), meta)
 		return
@@ -200,7 +201,7 @@ func clearSession() {
 
 // cleanExpiredSessions nettoie une fois les sessions expirées dans la DB.
 func cleanExpiredSessions() {
-	err := db.CleanUpExpiredSessions(db.GetDatabase())
+	err := dbsessions.CleanUpExpiredSessions(db.GetDatabase())
 	if err != nil {
 		logs.Write_Log("ERROR", "Error during cleanup of user sessions: "+err.Error())
 	}

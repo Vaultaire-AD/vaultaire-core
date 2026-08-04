@@ -6,6 +6,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	logs "vaultaire/core/logs"
 )
 
@@ -77,7 +78,7 @@ func encryptAndGenerateID(publicKeyStr string) ([]byte, string, error) {
 // If the public key cannot be retrieved or is invalid, it returns an error.
 // The function returns the encrypted data as a byte slice and the unique identifier as a string.
 func Generate_Challenge(id string) ([]byte, string) {
-	publickey, _ := database.Get_Client_Software_PublicKey(database.GetDatabase(), id)
+	publickey, _ := dbclients.Get_Client_Software_PublicKey(database.GetDatabase(), id)
 	if publickey == "Error" {
 		return []byte{110}, "no"
 	}

@@ -5,7 +5,8 @@ import (
 	"strconv"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
-	dbuser "vaultaire/core/database/db-user"
+	dbgroups "vaultaire/core/database/db_groups"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -41,12 +42,12 @@ func remove_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 	switch option {
 	case "-g":
 		// 🔹 Retirer l'utilisateur d'un groupe
-		if err := database.Command_Remove_UserFromGroup(db, username, target); err != nil {
+		if err := dbgroups.Command_Remove_UserFromGroup(db, username, target); err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur suppression de %s du groupe %s : %v", username, target, err))
 			return ">> -" + err.Error()
 		}
 
-		userInfo, err := database.Command_GET_UserInfo(db, username)
+		userInfo, err := dbusers.Command_GET_UserInfo(db, username)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération infos utilisateur %s : %v", username, err))
 			return ">> -" + err.Error()
@@ -63,18 +64,18 @@ func remove_User_Command_Parser(command_list []string, sender_groupsIDs []int, a
 			return ">> -" + err.Error()
 		}
 
-		if err := dbuser.DeleteUserKeys([]int{keyID}); err != nil {
+		if err := dbusers.DeleteUserKeys([]int{keyID}); err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur suppression clé ID %d de %s : %v", keyID, username, err))
 			return ">> -" + err.Error()
 		}
 
-		userID, err := database.Get_User_ID_By_Username(db, username)
+		userID, err := dbusers.Get_User_ID_By_Username(db, username)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération ID utilisateur %s : %v", username, err))
 			return ">> -" + err.Error()
 		}
 
-		pubKeys, err := dbuser.GetUserKeys(userID)
+		pubKeys, err := dbusers.GetUserKeys(userID)
 		if err != nil || len(pubKeys) == 0 {
 			logs.Write_Log("WARNING", fmt.Sprintf("Pas de clé publique trouvée pour %s", username))
 			return ">> -No public key found for this user"

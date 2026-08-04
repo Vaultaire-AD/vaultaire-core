@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	dbusers "vaultaire/core/database/db_users"
 
 	"vaultaire/core/database"
 	"vaultaire/core/domain"
@@ -93,7 +94,7 @@ func handleAskUser(trames storage.Trames_struct_client) string {
 			errRestrictionsUnavailable, reason)
 	}
 
-	if _, err := database.Get_User_ID_By_Username(db, directoryUser); err != nil {
+	if _, err := dbusers.Get_User_ID_By_Username(db, directoryUser); err != nil {
 		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
 			"gpo: utilisateur %s inconnu, demandé par le client %s", directoryUser, clientID))
 		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,

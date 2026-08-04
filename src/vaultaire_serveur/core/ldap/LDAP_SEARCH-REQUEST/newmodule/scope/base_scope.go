@@ -4,8 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	dbdomains "vaultaire/core/database/db_domains"
+	dbldap "vaultaire/core/database/db_ldap"
+	dbusers "vaultaire/core/database/db_users"
 
-	"vaultaire/core/database"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
@@ -87,14 +89,14 @@ func isDomainOnlyDN(dn string) bool {
 }
 
 func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.UserEntry, bool) {
-	userObj, err := database.GetUserByUsername(username, db)
+	userObj, err := dbldap.GetUserByUsername(username, db)
 	if err != nil {
 		return candidate.UserEntry{}, false
 	}
 
 	baseDN := ldaptools.ConvertLDAPBaseToDomainName(expectedDN)
-	if userID, err := database.Get_User_ID_By_Username(db, username); err == nil {
-		if domains, err := database.GetDomainsForUser(db, userID); err == nil && len(domains) > 0 {
+	if userID, err := dbusers.Get_User_ID_By_Username(db, username); err == nil {
+		if domains, err := dbdomains.GetDomainsForUser(db, userID); err == nil && len(domains) > 0 {
 			baseDN = domains[0]
 		}
 	}
@@ -115,7 +117,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 }
 
 func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.GroupEntry, bool) {
-	group, err := database.GetGroupWithUsersByName(db, groupName)
+	group, err := dbldap.GetGroupWithUsersByName(db, groupName)
 	if err != nil || group == nil {
 		return candidate.GroupEntry{}, false
 	}
@@ -138,14 +140,14 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 }
 
 func memberOfForUser(db *sql.DB, username string) []string {
-	groups, err := database.GetAllGroupsWithDomains(db)
+	groups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil
 	}
 	var memberOf []string
 	seen := make(map[string]struct{})
 	for _, g := range groups {
-		groupData, err := database.GetGroupWithUsersByName(db, g.GroupName)
+		groupData, err := dbldap.GetGroupWithUsersByName(db, g.GroupName)
 		if err != nil || groupData == nil {
 			continue
 		}

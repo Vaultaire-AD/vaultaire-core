@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	dbclients "vaultaire/core/database/db_clients"
+	dbgroups "vaultaire/core/database/db_groups"
+	dbusers "vaultaire/core/database/db_users"
 
 	"vaultaire/core/database"
 	dbpermission "vaultaire/core/database/db_permission"
@@ -61,7 +64,7 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	db := database.GetDatabase()
 
 	var users []SearchResult
-	allUsers, _ := database.Command_GET_AllUsers(db)
+	allUsers, _ := dbusers.Command_GET_AllUsers(db)
 	for _, u := range allUsers {
 		if !userScope.allowsAny(userScope.domainsOfUser(u.Username)) {
 			continue
@@ -72,7 +75,7 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var groups []SearchResult
-	allGroups, _ := database.Command_GET_GroupDetails(db)
+	allGroups, _ := dbgroups.Command_GET_GroupDetails(db)
 	for _, g := range allGroups {
 		if !groupScope.allowsAny([]string{g.DomainName}) {
 			continue
@@ -83,7 +86,7 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var clients []SearchResult
-	allClients, _ := database.Command_GET_AllClients(db)
+	allClients, _ := dbclients.Command_GET_AllClients(db)
 	for _, c := range allClients {
 		if !clientScope.allowsAny(clientScope.domainsOfClient(c.ComputeurID)) {
 			continue

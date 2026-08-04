@@ -2,6 +2,7 @@ package permission
 
 import (
 	"vaultaire/core/database"
+	dbdomains "vaultaire/core/database/db_domains"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 )
@@ -38,7 +39,7 @@ func CanUserConnectToDomain(login string) (bool, string) {
 	// n'importe quel domaine inventé ou mal tapé (ex "vault.fr" au lieu de
 	// "vaultaire.fr").
 	if targetDomain != "" {
-		exists, err := database.DomainExists(database.GetDatabase(), targetDomain)
+		exists, err := dbdomains.DomainExists(database.GetDatabase(), targetDomain)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				"CanUserConnectToDomain: erreur vérification existence domaine '"+targetDomain+"' : "+err.Error())

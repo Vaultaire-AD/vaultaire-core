@@ -26,19 +26,19 @@ import (
 
 // Codes d'erreur des trames 05_04, 05_08, 05_11 et 05_14.
 const (
-	errNoGroups               = "no_groups"
-	errResolveConflict        = "resolve_conflict"
+	errNoGroups                = "no_groups"
+	errResolveConflict         = "resolve_conflict"
 	errRestrictionsUnavailable = "restrictions_unavailable"
-	errUnknownClient          = "unknown_client"
-	errUnknownUser            = "unknown_user"
-	errNoSharedGroup          = "no_shared_group"
-	errStaleFingerprint       = "stale_fingerprint"
-	errBadIndex               = "bad_index"
-	errUnknownTransfer        = "unknown_transfer"
-	errMalformedReport        = "malformed_report"
-	errUnknownFingerprint     = "unknown_fingerprint"
-	errInternal               = "internal"
-	errMalformedRequest       = "malformed_request"
+	errUnknownClient           = "unknown_client"
+	errUnknownUser             = "unknown_user"
+	errNoSharedGroup           = "no_shared_group"
+	errStaleFingerprint        = "stale_fingerprint"
+	errBadIndex                = "bad_index"
+	errUnknownTransfer         = "unknown_transfer"
+	errMalformedReport         = "malformed_report"
+	errUnknownFingerprint      = "unknown_fingerprint"
+	errInternal                = "internal"
+	errMalformedRequest        = "malformed_request"
 )
 
 // fingerprintNone est la valeur envoyée par un client qui n'a encore rien appliqué.

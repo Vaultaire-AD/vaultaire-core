@@ -12,6 +12,8 @@ package revocationmanager
 import (
 	"fmt"
 	"strings"
+	dbusers "vaultaire/core/database/db_users"
+	guardprotected "vaultaire/core/database/guard_protected"
 
 	"vaultaire/core/database"
 	dbrevocation "vaultaire/core/database/db_revocation"
@@ -26,13 +28,13 @@ import (
 
 // Outcome résume ce qu'un déclenchement a produit, pour l'affichage.
 type Outcome struct {
-	OrderID       int
-	Mode          revocation.Mode
-	Username      string
-	TargetCount   int
-	PushedNow     int
+	OrderID        int
+	Mode           revocation.Mode
+	Username       string
+	TargetCount    int
+	PushedNow      int
 	SessionsKilled int
-	DirectoryNote string
+	DirectoryNote  string
 }
 
 // Trigger déclenche une révocation.
@@ -74,7 +76,7 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 		return out, fmt.Errorf("utilisateur cible manquant")
 	}
 
-	if err := database.GuardProtectedUserRevocation(directoryUser, string(mode)); err != nil {
+	if err := guardprotected.GuardProtectedUserRevocation(directoryUser, string(mode)); err != nil {
 		return out, err
 	}
 
@@ -102,7 +104,7 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 		}
 	}
 
-	if _, err := database.Get_User_ID_By_Username(db, directoryUser); err != nil {
+	if _, err := dbusers.Get_User_ID_By_Username(db, directoryUser); err != nil {
 		return out, fmt.Errorf("utilisateur %s inconnu de l'annuaire", directoryUser)
 	}
 
@@ -132,7 +134,7 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 	out.OrderID = orderID
 
 	if mode.IsDestructive() {
-		if err := database.Command_DELETE_UserWithUsername(db, directoryUser); err != nil {
+		if err := dbusers.Command_DELETE_UserWithUsername(db, directoryUser); err != nil {
 			// L'ordre est déjà écrit : les machines nettoieront leur compte
 			// local même si l'annuaire résiste. On remonte l'erreur sans
 			// annuler, parce qu'un compte compromis à moitié coupé vaut mieux

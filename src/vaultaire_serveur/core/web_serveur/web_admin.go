@@ -6,7 +6,8 @@ import (
 	"strings"
 	"vaultaire/core/command"
 	"vaultaire/core/database"
-	dbcertificates "vaultaire/core/database/db-certificates"
+	dbcertificates "vaultaire/core/database/db_certificates"
+	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -110,10 +111,10 @@ func checkWebAdminRBACOnDomains(groupIDs []int, actionKey string, domains []stri
 // celui des restrictions GPO, pour la même raison — un réglage qui engage tout
 // le parc n'appartient à aucun domaine en particulier.
 func canDeleteCertificate(username string) bool {
-	if !database.IsSuperadmin(database.GetDatabase(), username) {
+	if !isprotected.IsSuperadmin(database.GetDatabase(), username) {
 		logs.Write_Log("SECURITY",
 			"webadmin: "+username+" a tenté de supprimer un certificat sans être membre du groupe "+
-				database.ProtectedGroupName)
+				isprotected.ProtectedGroupName)
 		return false
 	}
 	return true

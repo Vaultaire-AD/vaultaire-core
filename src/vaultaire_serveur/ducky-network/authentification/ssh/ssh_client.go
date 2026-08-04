@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"vaultaire/core/database"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -64,22 +65,22 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 		}
 
 		// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
-		can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
+		can, err := dbusers.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 		if err != nil || !can {
 			logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID)
 			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\npermission denied"
 		}
-		userid, err := database.Get_User_ID_By_Username(db, sshUser)
+		userid, err := dbusers.Get_User_ID_By_Username(db, sshUser)
 		if err != nil {
 			logs.Write_Log("ERROR", "User not found: "+sshUser)
 			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nuser not found"
 		}
-		sshkey, err := database.Get_PublicKeys_ByUserID(db, userid)
+		sshkey, err := dbusers.Get_PublicKeys_ByUserID(db, userid)
 		if err != nil {
 			logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser)
 			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nssh key error"
 		}
-		isadmin, err := database.IsUserAdmin(db, sshUser, trames_content.ClientSoftwareID)
+		isadmin, err := dbusers.IsUserAdmin(db, sshUser, trames_content.ClientSoftwareID)
 		if err != nil {
 			logs.Write_Log("ERROR", "Error checking admin status for user "+sshUser)
 			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\nadmin check error"
@@ -120,18 +121,18 @@ func SSH_SEND_SALT(trames_content storage.Trames_struct_client) string {
 	}
 
 	// 3. VÉRIFICATION DES DROITS (Peut-il se connecter sur cette machine ?)
-	can, err := database.DidUserCanLogin(db, username, trames_content.ClientSoftwareID)
+	can, err := dbusers.DidUserCanLogin(db, username, trames_content.ClientSoftwareID)
 	if err != nil || !can {
 		logs.Write_Log("WARNING", username+" permission denied for machine "+trames_content.ClientSoftwareID)
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "@" + domaine + "\npermission denied"
 	}
 
-	id, err := database.Get_User_ID_By_Username(db, username)
+	id, err := dbusers.Get_User_ID_By_Username(db, username)
 	if err != nil {
 		logs.Write_Log("ERROR", "User not found: "+username)
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\nuser not found"
 	}
-	salt, err := database.Get_User_Salt_By_UserID(db, id)
+	salt, err := dbusers.Get_User_Salt_By_UserID(db, id)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error retrieving salt for user "+username)
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + "vaultaire" + "\n" + "salt error"
@@ -161,20 +162,20 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 		logs.Write_Log("SECURITY", sshUser+" : demande de clés publiques sur un compte révoqué (fetch-key)")
 		return ""
 	}
-	can, err := database.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
+	can, err := dbusers.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 	if err != nil || !can || sshUser == "vaultaire" {
 		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID+" (fetch-key)")
 		return "" // Pas de reponse : on ne revele pas si le user existe ou non
 	}
 
 	// 2. Recuperation des clés publiques
-	userid, err := database.Get_User_ID_By_Username(db, sshUser)
+	userid, err := dbusers.Get_User_ID_By_Username(db, sshUser)
 	if err != nil {
 		logs.Write_Log("ERROR", "User not found: "+sshUser+" (fetch-key)")
 		return ""
 	}
 
-	sshkeys, err := database.Get_PublicKeys_ByUserID(db, userid)
+	sshkeys, err := dbusers.Get_PublicKeys_ByUserID(db, userid)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser+" (fetch-key)")
 		return ""

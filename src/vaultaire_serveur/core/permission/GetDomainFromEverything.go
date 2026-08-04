@@ -3,19 +3,23 @@ package permission
 import (
 	"fmt"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
+	dbdomains "vaultaire/core/database/db_domains"
 	dbgpo "vaultaire/core/database/db_gpo"
+	dbgroups "vaultaire/core/database/db_groups"
 	dbpermission "vaultaire/core/database/db_permission"
+	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/logs"
 )
 
 func GetDomainListFromUsername(username string) ([]string, error) {
-	userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), username)
+	userID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), username)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération de l'ID utilisateur pour "+username+" : "+err.Error())
 		return nil, err
 	}
 
-	domainList, err := database.GetDomainsForUser(database.DB, userID)
+	domainList, err := dbdomains.GetDomainsForUser(database.DB, userID)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des domaines pour l'utilisateur "+username+" : "+err.Error())
 		return nil, err
@@ -31,7 +35,7 @@ func GetDomainListFromUsername(username string) ([]string, error) {
 
 // GetGroupIDsFromUsername retourne la liste des IDs de groupes pour un utilisateur
 func GetGroupIDsFromUsername(username string) ([]int, error) {
-	groupIDs, err := database.Command_GET_UserGroupIDs(database.GetDatabase(), username)
+	groupIDs, err := dbgroups.Command_GET_UserGroupIDs(database.GetDatabase(), username)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des groupes de l'utilisateur "+username+" : "+err.Error())
 		return nil, err
@@ -41,7 +45,7 @@ func GetGroupIDsFromUsername(username string) ([]int, error) {
 
 // GetDomainListsFromGroupIDs retourne la liste des domaines pour une liste d'IDs de groupes
 func GetDomainListsFromGroupIDs(groupIDs []int) ([]string, error) {
-	domainList, err := database.Command_GET_DomainsFromGroupIDs(database.GetDatabase(), groupIDs)
+	domainList, err := dbdomains.Command_GET_DomainsFromGroupIDs(database.GetDatabase(), groupIDs)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des domaines pour les groupes : "+err.Error())
 		return nil, err
@@ -81,7 +85,7 @@ func GetDomainslistFromGPO(gpoName string) ([]string, error) {
 }
 
 func GetDomainsFromGroupName(groupName string) ([]string, error) {
-	domains, err := database.GetDomainsFromGroupName(groupName)
+	domains, err := dbdomains.GetDomainsFromGroupName(groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des domaines pour le groupe "+groupName+" : "+err.Error())
 		return nil, err
@@ -94,14 +98,14 @@ func GetDomainsFromClientByComputerID(computerID string) ([]string, error) {
 	db := database.GetDatabase()
 
 	// Récupérer l'ID du client via le ComputerID
-	clientID, err := database.Get_ClientID_By_ComputerID(db, computerID)
+	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, computerID)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur récupération clientID pour ComputerID "+fmt.Sprint(computerID)+" : "+err.Error())
 		return nil, err
 	}
 
 	// Récupérer tous les groupes associés à ce client
-	groupIDs, err := database.Command_GET_GroupIDsFromClientID(db, clientID)
+	groupIDs, err := dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur récupération groupes pour le client "+fmt.Sprint(clientID)+" : "+err.Error())
 		return nil, err
@@ -112,7 +116,7 @@ func GetDomainsFromClientByComputerID(computerID string) ([]string, error) {
 	}
 
 	// Récupérer tous les domaines liés aux groupes
-	domains, err := database.Command_GET_DomainsFromGroupIDs(db, groupIDs)
+	domains, err := dbdomains.Command_GET_DomainsFromGroupIDs(db, groupIDs)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur récupération domaines pour les groupes du client "+fmt.Sprint(clientID)+" : "+err.Error())
 		return nil, err

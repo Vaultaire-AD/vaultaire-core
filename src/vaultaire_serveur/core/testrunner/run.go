@@ -107,13 +107,13 @@ func testSanitizeIdentifier() []Result {
 	}
 
 	refuse := []string{
-		"alice bob",                  // espace
-		"Intel(R) Core",              // parenthèses
-		"groupe[1]",                  // crochets
-		"a<b",                        // chevrons
+		"alice bob",                   // espace
+		"Intel(R) Core",               // parenthèses
+		"groupe[1]",                   // crochets
+		"a<b",                         // chevrons
 		"alice'; DROP TABLE users;--", // injection classique
-		"",                           // vide
-		"admin\ttab",                 // caractère de contrôle
+		"",                            // vide
+		"admin\ttab",                  // caractère de contrôle
 	}
 	for _, v := range refuse {
 		out = append(out, Result{

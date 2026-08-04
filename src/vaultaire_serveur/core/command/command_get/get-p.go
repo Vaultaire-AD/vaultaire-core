@@ -41,7 +41,7 @@ func handleGetAllPermissions(target string, senderGroupsIDs []int, action, sende
 		return display.DisplayAllUserPermissions(perms)
 
 	case "-c":
-		perms, err := database.Command_GET_AllClientPermissions(database.GetDatabase())
+		perms, err := dbpermission.Command_GET_AllClientPermissions(database.GetDatabase())
 		if err != nil {
 			return commandpermission.LogAndReturn("Erreur récupération permissions clients : ", err)
 		}
@@ -88,7 +88,7 @@ func handleGetPermissionByName(target, name string, senderGroupsIDs []int, actio
 		return display.DisplayUserPermission(*perm)
 
 	case "-c":
-		perm, err := database.Command_GET_ClientPermissionByName(database.GetDatabase(), name)
+		perm, err := dbpermission.Command_GET_ClientPermissionByName(database.GetDatabase(), name)
 		if err != nil {
 			return commandpermission.LogAndReturn(fmt.Sprintf("Erreur récupération permission client %s : ", name), err)
 		}

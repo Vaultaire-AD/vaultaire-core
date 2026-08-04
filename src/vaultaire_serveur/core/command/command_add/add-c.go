@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -36,12 +37,12 @@ func add_Client_Command_Parser(command_list []string, sender_groupsIDs []int, ac
 	// 🔹 Étape 3 : Ajout du client au groupe
 	switch command_list[2] {
 	case "-g":
-		err := database.Command_ADD_SoftwareToGroup(database.GetDatabase(), clientID, groupName)
+		err := dbclients.Command_ADD_SoftwareToGroup(database.GetDatabase(), clientID, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout du client %s au groupe %s : %v", clientID, groupName, err))
 			return ">> -" + err.Error()
 		}
-		client, err := database.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
+		client, err := dbclients.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération client %s : %v", clientID, err))
 			return ">> -" + err.Error()

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 	"vaultaire/core/database"
+	dbusers "vaultaire/core/database/db_users"
 )
 
 // Fonction pour générer un salt aléatoire
@@ -56,7 +57,7 @@ func create_User(command_list []string) string {
 	hashHex := hex.EncodeToString(hash[:])
 
 	// Enregistrer dans la base de données
-	err = database.Create_New_User(
+	err = dbusers.Create_New_User(
 		database.GetDatabase(),
 		username,
 		firstname,

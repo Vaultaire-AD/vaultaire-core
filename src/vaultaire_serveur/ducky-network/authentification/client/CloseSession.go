@@ -2,6 +2,7 @@ package client
 
 import (
 	"vaultaire/core/database"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sessionmgr"
@@ -21,7 +22,7 @@ func closeSession(trames_content storage.Trames_struct_client, duckysession *sto
 	meta := logs.WithMeta(sessionID, trames_content.Username)
 
 	// 1. Nettoyage de la base de données
-	if err := database.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID); err != nil {
+	if err := dbsessions.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID); err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "DB cleanup failed: "+err.Error(), meta)
 	}
 

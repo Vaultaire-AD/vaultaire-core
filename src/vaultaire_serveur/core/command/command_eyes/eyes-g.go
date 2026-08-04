@@ -5,6 +5,7 @@ import (
 	"strings"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbdomains "vaultaire/core/database/db_domains"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -72,7 +73,7 @@ func eyes_by_domain(command_list []string, sender_groupsIDs []int, action, sende
 	}
 
 	// Sinon récupérer tous les groupes pour tous les domaines
-	allGroups, err := database.GetAllGroupsWithDomains(db)
+	allGroups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur lors de la récupération de tous les groupes : "+err.Error())
 		return "Erreur lors de la récupération des groupes : " + err.Error()

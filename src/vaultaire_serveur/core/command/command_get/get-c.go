@@ -5,6 +5,7 @@ import (
 	commandpermission "vaultaire/core/command/command_permission"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -19,7 +20,7 @@ func get_Client_Command_Parser(commandList []string, senderGroupsIDs []int, acti
 		if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, []string{"*"}) {
 			return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 		}
-		allClients, err := database.Command_GET_AllClients(db)
+		allClients, err := dbclients.Command_GET_AllClients(db)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur lors de la récupération de tous les clients : "+err.Error())
 			return ">> -" + err.Error()
@@ -36,7 +37,7 @@ func get_Client_Command_Parser(commandList []string, senderGroupsIDs []int, acti
 		if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, permissionsList) {
 			return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
 		}
-		client, err := database.Command_GET_ClientByComputeurID(database.DB, clientID)
+		client, err := dbclients.Command_GET_ClientByComputeurID(database.DB, clientID)
 		if err != nil {
 			logs.Write_Log("WARNING", "Erreur lors de la récupération du client "+clientID+" : "+err.Error())
 			return ">> -" + err.Error()

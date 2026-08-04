@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	dbschema "vaultaire/core/database/db_schema"
 
 	"vaultaire/cluster"
 	configurationfile "vaultaire/core/configuration_file"
@@ -40,7 +41,7 @@ func main() {
 	}
 
 	db.InitDatabase()
-	db.Create_DataBase(db.GetDatabase())
+	dbschema.Create_DataBase(db.GetDatabase())
 
 	// Le schéma GPO est créé après les tables de base (gpo_group référence
 	// groups) et par son propre package, qui détient aussi la suppression des
@@ -79,7 +80,7 @@ func main() {
 	// une liste recopiée dans du SQL. Passe à chaque démarrage, en INSERT
 	// IGNORE : les bases existantes récupèrent ainsi les clés apparues depuis
 	// leur création, sans script de migration.
-	if err := db.EnsureSuperadminActions(db.GetDatabase(), permission.AllActionKeys()); err != nil {
+	if err := dbschema.EnsureSuperadminActions(db.GetDatabase(), permission.AllActionKeys()); err != nil {
 		logs.Write_Log("ERROR", "bootstrap: actions du groupe superadmin non accordées : "+err.Error())
 	}
 
@@ -87,7 +88,7 @@ func main() {
 	go duckynetwork.StartDuckyServer()
 
 	if storage.Administrateur_Enable {
-		db.CreateDefaultAdminUser(db.GetDatabase())
+		dbschema.CreateDefaultAdminUser(db.GetDatabase())
 	} else {
 		logs.Write_Log("INFO", "bootstrap: default administrator disabled")
 	}

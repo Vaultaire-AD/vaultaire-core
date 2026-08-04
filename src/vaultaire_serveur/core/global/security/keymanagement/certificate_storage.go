@@ -6,7 +6,7 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	dbcertificates "vaultaire/core/database/db-certificates"
+	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
 )
 

@@ -61,7 +61,7 @@ func baseFixture() gpo.RestrictionSet {
 				{ModuleType: gpo.ModuleSudoersRule, FieldName: "command_set", Name: "ALL",
 					Kind: gpo.PayloadCommandList, Payload: "ALL"},
 				{ModuleType: gpo.ModuleSudoersRule, FieldName: "command_set", Name: "service_control",
-					Kind: gpo.PayloadCommandList,
+					Kind:    gpo.PayloadCommandList,
 					Payload: "/usr/bin/systemctl start\n/usr/bin/systemctl stop\n/usr/bin/systemctl restart"},
 			},
 		},

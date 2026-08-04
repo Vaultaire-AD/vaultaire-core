@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	dbusers "vaultaire/core/database/db_users"
 
 	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
@@ -189,11 +190,11 @@ func confirmOwnPassword(db *sql.DB, username, password string) bool {
 	if password == "" {
 		return false
 	}
-	userID, err := database.Get_User_ID_By_Username(db, username)
+	userID, err := dbusers.Get_User_ID_By_Username(db, username)
 	if err != nil {
 		return false
 	}
-	hash, salt, err := database.Get_User_Password_By_ID(db, userID)
+	hash, salt, err := dbusers.Get_User_Password_By_ID(db, userID)
 	if err != nil {
 		return false
 	}

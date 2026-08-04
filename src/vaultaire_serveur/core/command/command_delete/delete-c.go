@@ -3,6 +3,7 @@ package commanddelete
 import (
 	"fmt"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -26,7 +27,7 @@ func delete_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 	}
 
 	// 🔹 Étape 1 : Récupération du client
-	client, err := database.Command_GET_ClientByComputeurID(db, clientID)
+	client, err := dbclients.Command_GET_ClientByComputeurID(db, clientID)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération client %s : %v", clientID, err))
 		return fmt.Sprintf("Erreur récupération client %s : %v", clientID, err)
@@ -63,14 +64,14 @@ func delete_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (delete client)", sender_Username, action))
 
 	// 🔹 Étape 4 : Suppression du client
-	err = database.Command_DELETE_ClientWithComputeurID(db, clientID)
+	err = dbclients.Command_DELETE_ClientWithComputeurID(db, clientID)
 	if err != nil {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur suppression client %s : %v", clientID, err))
 		return fmt.Sprintf("Erreur lors de la suppression du client %s : %v", clientID, err)
 	}
 
 	// 🔹 Étape 5 : Vérification de suppression effective
-	_, err = database.Command_GET_ClientByComputeurID(db, clientID)
+	_, err = dbclients.Command_GET_ClientByComputeurID(db, clientID)
 	if err == nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Le client %s semble encore exister après suppression.", clientID))
 		return fmt.Sprintf("Le client %s semble encore exister après suppression.", clientID)

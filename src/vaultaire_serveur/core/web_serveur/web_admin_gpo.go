@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	dbgroups "vaultaire/core/database/db_groups"
+	isprotected "vaultaire/core/database/is_protected"
 
 	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
@@ -324,8 +326,8 @@ func adminGPOList(w http.ResponseWriter, r *http.Request, db *sql.DB, username s
 		SuperadminGrp string
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "gpo", Scopes: gpo.AllScopes(),
-		IsSuperadmin:  database.IsSuperadmin(db, username),
-		SuperadminGrp: database.ProtectedGroupName,
+		IsSuperadmin:  isprotected.IsSuperadmin(db, username),
+		SuperadminGrp: isprotected.ProtectedGroupName,
 	}
 
 	if r.Method == http.MethodPost {
@@ -572,7 +574,7 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 		data.ScopeLabel = "Utilisateur — appliquée après une authentification réussie, à l'utilisateur authentifié. Les modules touchant aux privilèges (SSH, sudo, sysctl, paquets, services) ne sont pas disponibles dans ce scope."
 	}
 
-	if allDetails, groupErr := database.Command_GET_GroupDetails(db); groupErr == nil {
+	if allDetails, groupErr := dbgroups.Command_GET_GroupDetails(db); groupErr == nil {
 		linked := map[string]bool{}
 		for _, g := range policy.Groups {
 			linked[g] = true

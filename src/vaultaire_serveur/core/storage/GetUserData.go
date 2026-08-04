@@ -32,7 +32,7 @@ type PublicKey struct {
 type Certificate struct {
 	ID              int
 	Name            string
-	CertificateType string // 'rsa_keypair', 'tls_cert', 'ssh_key', etc.
+	CertificateType string  // 'rsa_keypair', 'tls_cert', 'ssh_key', etc.
 	CertificateData *string // Certificat X.509 (PEM) ou certificat SSH
 	PrivateKeyData  *string // Clé privée (PEM)
 	PublicKeyData   *string // Clé publique (PEM)

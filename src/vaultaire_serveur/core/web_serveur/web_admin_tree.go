@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"sort"
 	"vaultaire/core/database"
+	dbdomains "vaultaire/core/database/db_domains"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -39,7 +41,7 @@ func buildTreeFromNode(node *storage.DomainNode, db *sql.DB) TreeDomainNode {
 		Children:   nil,
 	}
 	for _, groupName := range node.Groups {
-		users, err := database.Command_GET_UsersByGroup(db, groupName)
+		users, err := dbgroups.Command_GET_UsersByGroup(db, groupName)
 		if err != nil {
 			users = []storage.DisplayUsersByGroup{}
 		}
@@ -76,7 +78,7 @@ func AdminLDAPTreeAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	db := database.GetDatabase()
-	groups, err := database.GetAllGroupsWithDomains(db)
+	groups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin ldap tree: load failed: "+err.Error())
 		http.Error(w, "Erreur chargement groupes", http.StatusInternalServerError)
@@ -133,7 +135,7 @@ func AdminGroupInfoAPIHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	db := database.GetDatabase()
-	info, err := database.Command_GET_GroupInfo(db, groupName)
+	info, err := dbgroups.Command_GET_GroupInfo(db, groupName)
 	if err != nil {
 		http.Error(w, "group not found", http.StatusNotFound)
 		return

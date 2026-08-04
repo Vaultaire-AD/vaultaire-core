@@ -43,7 +43,7 @@ func add_group_Command_Parser(command_list []string, sender_groupsIDs []int, act
 		}
 		logs.Write_Log("INFO", fmt.Sprintf("user_permission %s ajouté au groupe %s avec succès", permName, groupName))
 	case "-gc":
-		err := database.Command_ADD_PermissionToSoftwareGroup(database.GetDatabase(), permName, groupName)
+		err := dbpermission.Command_ADD_PermissionToSoftwareGroup(database.GetDatabase(), permName, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout client_permission %s au groupe %s : %v", permName, groupName, err))
 			return ">> -" + err.Error()

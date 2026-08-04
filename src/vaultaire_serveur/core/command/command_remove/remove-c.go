@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -23,7 +24,7 @@ func remove_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 	}
 
 	// 🔹 Étape 2 : Récupération des domaines associés aux groupes du client
-	client, err := database.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
+	client, err := dbclients.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération client %s : %v", clientID, err))
 		return fmt.Sprintf("Erreur récupération client %s : %v", clientID, err)
@@ -51,7 +52,7 @@ func remove_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 	// 🔹 Étape 4 : Suppression
 	switch argType {
 	case "-g":
-		err := database.Command_Remove_SoftwareFromGroup(database.GetDatabase(), clientID, groupName)
+		err := dbclients.Command_Remove_SoftwareFromGroup(database.GetDatabase(), clientID, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la suppression du client %s du groupe %s : %v", clientID, groupName, err))
 			return ">> -" + err.Error()
@@ -60,7 +61,7 @@ func remove_Client_Command_Parser(command_list []string, sender_groupsIDs []int,
 		return "Invalid argument. Use -g to specify the group"
 	}
 
-	clientInfo, err := database.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
+	clientInfo, err := dbclients.Command_GET_ClientByComputeurID(database.GetDatabase(), clientID)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération client %s après suppression : %v", clientID, err))
 		return ">> -" + err.Error()

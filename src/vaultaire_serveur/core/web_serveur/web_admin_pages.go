@@ -11,11 +11,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	dbclients "vaultaire/core/database/db_clients"
+	dbdomains "vaultaire/core/database/db_domains"
+	dbgroups "vaultaire/core/database/db_groups"
+	dbusers "vaultaire/core/database/db_users"
+	isprotected "vaultaire/core/database/is_protected"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	"vaultaire/core/database"
-	dbcertificates "vaultaire/core/database/db-certificates"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
+	dbcertificates "vaultaire/core/database/db_certificates"
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbpermission "vaultaire/core/database/db_permission"
 	dbrevocation "vaultaire/core/database/db_revocation"
@@ -35,7 +40,7 @@ func generateSalt(length int) ([]byte, error) {
 }
 
 func getUniqueDomains(db *sql.DB) []string {
-	groups, err := database.GetAllGroupsWithDomains(db)
+	groups, err := dbdomains.GetAllGroupsWithDomains(db)
 	if err != nil {
 		return nil
 	}
@@ -94,7 +99,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			CanResetMFA bool
 		}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users",
 			KillReasons: revocation.AllReasons()}
-		userInfo, err := database.Command_GET_UserInfo(db, detailUser)
+		userInfo, err := dbusers.Command_GET_UserInfo(db, detailUser)
 		if err != nil {
 			http.Error(w, "Utilisateur introuvable", http.StatusNotFound)
 			return
@@ -102,7 +107,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		detailData.User = userInfo
 		userPerms, _ := dbpermission.Command_GET_UserPermissionNamesByUsername(db, detailUser)
 		detailData.UserPerms = userPerms
-		allDetails, _ := database.Command_GET_GroupDetails(db)
+		allDetails, _ := dbgroups.Command_GET_GroupDetails(db)
 		for _, g := range allDetails {
 			detailData.AllGroups = append(detailData.AllGroups, g.GroupName)
 		}
@@ -178,30 +183,30 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			switch action {
 			case "update_user":
-				uid, _ := database.Get_User_ID_By_Username(db, target)
+				uid, _ := dbusers.Get_User_ID_By_Username(db, target)
 				newUsername := r.FormValue("username")
 				firstname := r.FormValue("firstname")
 				lastname := r.FormValue("lastname")
-				if err := database.Update_User_Info(db, uid, newUsername, firstname, lastname, "", ""); err != nil {
+				if err := dbusers.Update_User_Info(db, uid, newUsername, firstname, lastname, "", ""); err != nil {
 					detailData.Message = "Erreur : " + err.Error()
 				} else {
 					detailData.Message = "Profil mis à jour."
 					if newUsername != detailUser {
 						detailUser = newUsername
-						userInfo, _ = database.Command_GET_UserInfo(db, newUsername)
+						userInfo, _ = dbusers.Command_GET_UserInfo(db, newUsername)
 						detailData.User = userInfo
 					}
 				}
 			case "change_password":
-				uid, _ := database.Get_User_ID_By_Username(db, target)
+				uid, _ := dbusers.Get_User_ID_By_Username(db, target)
 				password := r.FormValue("password")
 				if password == "" {
 					detailData.Message = "Mot de passe requis."
 				} else {
-					cur, _ := database.Command_GET_UserInfo(db, target)
+					cur, _ := dbusers.Command_GET_UserInfo(db, target)
 					if cur == nil {
 						detailData.Message = "Utilisateur introuvable."
-					} else if err := database.Update_User_Info(db, uid, cur.Username, cur.Firstname, cur.Lastname, password, ""); err != nil {
+					} else if err := dbusers.Update_User_Info(db, uid, cur.Username, cur.Firstname, cur.Lastname, password, ""); err != nil {
 						detailData.Message = "Erreur : " + err.Error()
 					} else {
 						detailData.Message = "Mot de passe changé."
@@ -221,22 +226,22 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			case "add_group":
 				groupName := r.FormValue("group")
 				if groupName != "" {
-					if err := database.Command_ADD_UserToGroup(db, target, groupName); err != nil {
+					if err := dbgroups.Command_ADD_UserToGroup(db, target, groupName); err != nil {
 						detailData.Message = err.Error()
 					} else {
 						detailData.Message = "Ajouté au groupe."
-						userInfo, _ = database.Command_GET_UserInfo(db, target)
+						userInfo, _ = dbusers.Command_GET_UserInfo(db, target)
 						detailData.User = userInfo
 					}
 				}
 			case "remove_group":
 				groupName := r.FormValue("group")
 				if groupName != "" {
-					if err := database.Command_Remove_UserFromGroup(db, target, groupName); err != nil {
+					if err := dbgroups.Command_Remove_UserFromGroup(db, target, groupName); err != nil {
 						detailData.Message = err.Error()
 					} else {
 						detailData.Message = "Retiré du groupe."
-						userInfo, _ = database.Command_GET_UserInfo(db, target)
+						userInfo, _ = dbusers.Command_GET_UserInfo(db, target)
 						detailData.User = userInfo
 					}
 				}
@@ -334,7 +339,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 						if lastname == "" {
 							lastname = u
 						}
-						err = database.Create_New_User(db, u, firstname, lastname, email, hashHex, saltHex, birthdate, time.Now().Format("2006-01-02 15:04:05"))
+						err = dbusers.Create_New_User(db, u, firstname, lastname, email, hashHex, saltHex, birthdate, time.Now().Format("2006-01-02 15:04:05"))
 						if err != nil {
 							data.Message = "Erreur création : " + err.Error()
 							logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create user failed: "+err.Error())
@@ -347,7 +352,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		case "delete_user":
 			u := r.FormValue("username")
 			if u != "" {
-				if err := database.Command_DELETE_UserWithUsername(db, u); err != nil {
+				if err := dbusers.Command_DELETE_UserWithUsername(db, u); err != nil {
 					data.Message = "Erreur suppression : " + err.Error()
 				} else {
 					data.Message = "Utilisateur supprimé."
@@ -355,7 +360,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	users, err := database.Command_GET_AllUsers(db)
+	users, err := dbusers.Command_GET_AllUsers(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list users failed: "+err.Error())
 		http.Error(w, "Erreur liste utilisateurs", http.StatusInternalServerError)
@@ -387,7 +392,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	detailGroup := r.URL.Query().Get("group")
 
 	if detailGroup != "" {
-		info, err := database.Command_GET_GroupInfo(db, detailGroup)
+		info, err := dbgroups.Command_GET_GroupInfo(db, detailGroup)
 		if err != nil {
 			http.Error(w, "Groupe introuvable", http.StatusNotFound)
 			return
@@ -490,55 +495,55 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			case "add_user":
 				u := r.FormValue("username")
-				if u != "" && database.Command_ADD_UserToGroup(db, u, targetGroup) == nil {
+				if u != "" && dbgroups.Command_ADD_UserToGroup(db, u, targetGroup) == nil {
 					detailData.Message = "Utilisateur ajouté."
-					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
 				} else if u != "" {
 					detailData.Message = "Erreur ajout (déjà membre ?)."
 				}
 			case "remove_user":
 				u := r.FormValue("username")
-				if u != "" && database.Command_Remove_UserFromGroup(db, u, targetGroup) == nil {
+				if u != "" && dbgroups.Command_Remove_UserFromGroup(db, u, targetGroup) == nil {
 					detailData.Message = "Utilisateur retiré."
-					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
 				}
 			case "add_client":
 				cid := r.FormValue("computeur_id")
-				if cid != "" && database.Command_ADD_SoftwareToGroup(db, cid, targetGroup) == nil {
+				if cid != "" && dbclients.Command_ADD_SoftwareToGroup(db, cid, targetGroup) == nil {
 					detailData.Message = "Client ajouté."
-					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
 				}
 			case "remove_client":
 				cid := r.FormValue("computeur_id")
-				if cid != "" && database.Command_Remove_SoftwareFromGroup(db, cid, targetGroup) == nil {
+				if cid != "" && dbclients.Command_Remove_SoftwareFromGroup(db, cid, targetGroup) == nil {
 					detailData.Message = "Client retiré."
-					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
 				}
 			case "add_permission":
 				p := r.FormValue("permission")
 				if p != "" && dbpermission.Command_ADD_UserPermissionToGroup(db, p, targetGroup) == nil {
 					detailData.Message = "Permission ajoutée."
-					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Perms = info.Permissions
 				} else if p != "" {
 					detailData.Message = "Erreur (déjà attribuée ?)."
 				}
 			case "remove_permission":
 				p := r.FormValue("permission")
-				if p != "" && database.Command_Remove_UserPermissionFromGroup(db, targetGroup, p) == nil {
+				if p != "" && dbpermission.Command_Remove_UserPermissionFromGroup(db, targetGroup, p) == nil {
 					detailData.Message = "Permission retirée."
-					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
+					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Perms = info.Permissions
 				}
 
 			case "add_client_permission":
 				p := r.FormValue("client_permission")
 				if p != "" {
-					if err := database.Command_ADD_PermissionToSoftwareGroup(db, p, targetGroup); err != nil {
+					if err := dbpermission.Command_ADD_PermissionToSoftwareGroup(db, p, targetGroup); err != nil {
 						detailData.Error = "Permission client : " + err.Error()
 					} else {
 						detailData.Message = "Permission client ajoutée."
@@ -547,7 +552,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			case "remove_client_permission":
 				p := r.FormValue("client_permission")
 				if p != "" {
-					if err := database.Command_Remove_ClientPermissionFromGroup(db, targetGroup, p); err != nil {
+					if err := dbpermission.Command_Remove_ClientPermissionFromGroup(db, targetGroup, p); err != nil {
 						detailData.Error = "Permission client : " + err.Error()
 					} else {
 						detailData.Message = "Permission client retirée."
@@ -574,7 +579,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 
 			case "delete_group":
-				if database.Command_DELETE_GroupWithGroupName(db, targetGroup) == nil {
+				if dbgroups.Command_DELETE_GroupWithGroupName(db, targetGroup) == nil {
 					http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
 					return
 				}
@@ -584,7 +589,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			// Relecture après toute action : plusieurs sections dépendent du même
 			// enregistrement, et n'en rafraîchir qu'une afficherait un état
 			// partiellement périmé juste après une modification.
-			if refreshed, err := database.Command_GET_GroupInfo(db, targetGroup); err == nil {
+			if refreshed, err := dbgroups.Command_GET_GroupInfo(db, targetGroup); err == nil {
 				info = refreshed
 				detailData.Users, detailData.Clients = info.Users, info.Clients
 				detailData.Perms, detailData.ClientPerms = info.Permissions, info.ClientPerms
@@ -592,10 +597,10 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		allUsers, _ := database.Command_GET_AllUsers(db)
-		allClients, _ := database.Command_GET_AllClients(db)
+		allUsers, _ := dbusers.Command_GET_AllUsers(db)
+		allClients, _ := dbclients.Command_GET_AllClients(db)
 		allPerms, _ := dbpermission.Command_GET_AllUserPermissions(db)
-		allClientPerms, _ := database.Command_GET_AllClientPermissions(db)
+		allClientPerms, _ := dbpermission.Command_GET_AllClientPermissions(db)
 		detailData.AllUsers, detailData.AllClients = allUsers, allClients
 		detailData.AllPerms, detailData.AllClientPerms = allPerms, allClientPerms
 
@@ -644,7 +649,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			if groupName == "" || domain == "" {
 				data.Message = "Nom du groupe et domaine requis."
 			} else {
-				_, err := database.CreateGroup(db, groupName, domain)
+				_, err := dbgroups.CreateGroup(db, groupName, domain)
 				if err != nil {
 					data.Message = "Erreur création : " + err.Error()
 					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create group failed: "+err.Error())
@@ -655,7 +660,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		case "delete_group":
 			groupName := r.FormValue("group_name")
 			if groupName != "" {
-				if err := database.Command_DELETE_GroupWithGroupName(db, groupName); err != nil {
+				if err := dbgroups.Command_DELETE_GroupWithGroupName(db, groupName); err != nil {
 					data.Message = "Erreur suppression : " + err.Error()
 				} else {
 					data.Message = "Groupe supprimé."
@@ -663,7 +668,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	groups, err := database.Command_GET_GroupDetails(db)
+	groups, err := dbgroups.Command_GET_GroupDetails(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list groups failed: "+err.Error())
 		http.Error(w, "Erreur liste groupes", http.StatusInternalServerError)
@@ -692,7 +697,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	detailClient := r.URL.Query().Get("client")
 
 	if detailClient != "" {
-		client, err := database.Command_GET_ClientByComputeurID(db, detailClient)
+		client, err := dbclients.Command_GET_ClientByComputeurID(db, detailClient)
 		if err != nil {
 			http.Error(w, "Client introuvable", http.StatusNotFound)
 			return
@@ -733,15 +738,15 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 				osVal := r.FormValue("os")
 				ram := r.FormValue("ram")
 				proc := r.FormValue("proc")
-				if err := database.UpdateHostname(db, targetClient, hostname, osVal, ram, proc); err != nil {
+				if err := dbclients.UpdateHostname(db, targetClient, hostname, osVal, ram, proc); err != nil {
 					detailData.Message = err.Error()
 				} else {
 					detailData.Message = "Client mis à jour."
-					client, _ = database.Command_GET_ClientByComputeurID(db, targetClient)
+					client, _ = dbclients.Command_GET_ClientByComputeurID(db, targetClient)
 					detailData.Client = client
 				}
 			case "delete_client":
-				if database.Command_DELETE_ClientWithComputeurID(db, targetClient) == nil {
+				if dbclients.Command_DELETE_ClientWithComputeurID(db, targetClient) == nil {
 					http.Redirect(w, r, "/admin/clients", http.StatusSeeOther)
 					return
 				}
@@ -786,7 +791,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		case "delete_client":
 			computeurID := r.FormValue("computeur_id")
 			if computeurID != "" {
-				if err := database.Command_DELETE_ClientWithComputeurID(db, computeurID); err != nil {
+				if err := dbclients.Command_DELETE_ClientWithComputeurID(db, computeurID); err != nil {
 					data.Message = "Erreur suppression : " + err.Error()
 				} else {
 					data.Message = "Client supprimé."
@@ -794,7 +799,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	clients, err := database.Command_GET_AllClients(db)
+	clients, err := dbclients.Command_GET_AllClients(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list clients failed: "+err.Error())
 		http.Error(w, "Erreur liste clients", http.StatusInternalServerError)
@@ -1165,7 +1170,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 	// L'échec de lecture des permissions client n'empêche pas d'afficher les
 	// permissions utilisateur : la page reste utile, et le bandeau d'erreur
 	// signale ce qui manque plutôt que de renvoyer une page blanche.
-	clientPerms, err := database.Command_GET_AllClientPermissions(db)
+	clientPerms, err := dbpermission.Command_GET_AllClientPermissions(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list client permissions failed: "+err.Error())
 		data.Error = appendError(data.Error, "Permissions client illisibles : "+err.Error())
@@ -1218,7 +1223,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 			switch action {
 			case "delete_certificate":
 				if !canDeleteCertificate(username) {
-					detailData.Message = "Réservé aux membres du groupe " + database.ProtectedGroupName + "."
+					detailData.Message = "Réservé aux membres du groupe " + isprotected.ProtectedGroupName + "."
 					break
 				}
 				if err := dbcertificates.DeleteCertificate(certID); err != nil {
@@ -1248,7 +1253,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		switch action {
 		case "delete_certificate":
 			if !canDeleteCertificate(username) {
-				data.Message = "Réservé aux membres du groupe " + database.ProtectedGroupName + "."
+				data.Message = "Réservé aux membres du groupe " + isprotected.ProtectedGroupName + "."
 				break
 			}
 			certIDStr := r.FormValue("certificate_id")

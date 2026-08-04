@@ -5,6 +5,7 @@ import (
 	"net"
 	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
+	dbusers "vaultaire/core/database/db_users"
 	gc "vaultaire/core/global/security"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
@@ -135,7 +136,7 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	}
 
 	// 🔍 Vérification que l'utilisateur existe
-	userID, err := database.Get_User_ID_By_Username(database.GetDatabase(), user)
+	userID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), user)
 	if err != nil {
 		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: unknown user=%s from %s", user, conn.RemoteAddr().String()))
 		respondInvalidCredentials(messageID, conn)
@@ -143,7 +144,7 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	}
 
 	// 🔐 Vérification du mot de passe
-	Hpassword, salt, err := database.Get_User_Password_By_ID(database.GetDatabase(), userID)
+	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(database.GetDatabase(), userID)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf("ldap bind: password lookup failed for user=%s: %v", user, err))
 		respondProtocolError(messageID, conn)

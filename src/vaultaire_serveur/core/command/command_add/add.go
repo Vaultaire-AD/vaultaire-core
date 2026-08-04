@@ -3,6 +3,7 @@ package commandadd
 import (
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/logs"
 )
 
@@ -44,7 +45,7 @@ add -g "group_name" -p "permission_name"
 // post_displayGroupInfo retrieves the group information by its name and returns a formatted string.
 // If an error occurs while retrieving the group information, it logs the error and returns an error message.
 func post_displayGroupInfo(groupName string) string {
-	groupInfo, err := database.Command_GET_GroupInfo(database.GetDatabase(), groupName)
+	groupInfo, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", "Error for get group by id "+groupName+": "+err.Error())
 		return (">> -" + err.Error())

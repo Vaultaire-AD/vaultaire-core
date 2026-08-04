@@ -16,6 +16,7 @@ import (
 	commandstatus "vaultaire/core/command/command_status"
 	commandupdate "vaultaire/core/command/command_update"
 	"vaultaire/core/database"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -93,7 +94,7 @@ func handleClear(sender string) string {
 		return "Permission refusée : " + msg
 	}
 	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=write:update:user (clear)", sender))
-	if err := database.CleanUpExpiredSessions(database.DB); err != nil {
+	if err := dbsessions.CleanUpExpiredSessions(database.DB); err != nil {
 		logs.Write_Log("ERROR", "Erreur nettoyage sessions : "+err.Error())
 		return "Erreur lors du nettoyage des sessions expirées."
 	}

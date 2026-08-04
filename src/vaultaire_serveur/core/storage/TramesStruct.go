@@ -24,9 +24,9 @@ type DuckySession struct {
 	// SessionIntegritykey réel une fois la poignée de main initiale terminée
 	// (voir sessionmgr.Manager.Rekey), pour rester grep-able de façon
 	// interchangeable entre les logs et le protocole réseau.
-	SessionID string
-	Conn      net.Conn
-	IsSafe    bool
+	SessionID  string
+	Conn       net.Conn
+	IsSafe     bool
 	SessionKey []byte
 
 	// BoundClientSoftwareID est l'identifiant de machine lié à cette connexion,

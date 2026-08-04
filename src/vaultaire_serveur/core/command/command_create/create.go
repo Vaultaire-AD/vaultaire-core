@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/tools"
@@ -65,13 +66,13 @@ func create_Group(command_list []string) string {
 	if len(command_list) < 2 {
 		return ("Erreur : -g <nom_du_goupe> <domain>")
 	} else {
-		_, err := database.CreateGroup(database.GetDatabase(), command_list[1], command_list[2])
+		_, err := dbgroups.CreateGroup(database.GetDatabase(), command_list[1], command_list[2])
 		if err != nil {
 			logs.Write_Log("WARNING", "error during the creation of the group "+command_list[1]+" : "+err.Error())
 			return (">> -" + err.Error())
 		}
 		logs.Write_Log("INFO", "new Group create with succes with Name : "+command_list[1])
-		groupDetails, err := database.Command_GET_GroupInfo(database.GetDatabase(), command_list[1])
+		groupDetails, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), command_list[1])
 		if err != nil {
 			return (">> -" + err.Error())
 		}

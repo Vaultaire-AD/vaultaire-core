@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -36,9 +38,9 @@ func remove_Group_Command_Parser(command_list []string, sender_groupsIDs []int, 
 	var errRemove error
 	switch argType {
 	case "-pc":
-		errRemove = database.Command_Remove_ClientPermissionFromGroup(database.GetDatabase(), groupName, permissionName)
+		errRemove = dbpermission.Command_Remove_ClientPermissionFromGroup(database.GetDatabase(), groupName, permissionName)
 	case "-pu":
-		errRemove = database.Command_Remove_UserPermissionFromGroup(database.GetDatabase(), groupName, permissionName)
+		errRemove = dbpermission.Command_Remove_UserPermissionFromGroup(database.GetDatabase(), groupName, permissionName)
 	default:
 		return "Invalid argument. Use -pc for client permission or -pu for user permission"
 	}
@@ -48,7 +50,7 @@ func remove_Group_Command_Parser(command_list []string, sender_groupsIDs []int, 
 		return ">> -" + errRemove.Error()
 	}
 
-	groupInfo, err := database.Command_GET_GroupInfo(database.GetDatabase(), groupName)
+	groupInfo, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), groupName)
 	if err != nil {
 		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération info groupe %s : %v", groupName, err))
 		return ">> -" + err.Error()

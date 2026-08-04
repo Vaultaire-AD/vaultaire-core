@@ -16,8 +16,8 @@ import (
 	"database/sql"
 	"time"
 
-	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
+	isprotected "vaultaire/core/database/is_protected"
 )
 
 // State est l'état d'un mot de passe au regard de la politique.
@@ -140,7 +140,7 @@ func daysBetween(from, to time.Time) int {
 // incident de base une panne d'authentification totale, sur les trois chemins à
 // la fois.
 func Check(db *sql.DB, username string) (Status, error) {
-	if database.IsProtectedUser(username) {
+	if isprotected.IsProtectedUser(username) {
 		return Status{State: StateValid, Exempt: true}, nil
 	}
 
@@ -165,7 +165,7 @@ func Check(db *sql.DB, username string) (Status, error) {
 // trajet le plus fréquent du serveur, et ouvrirait une fenêtre où les deux
 // lectures ne verraient pas le même état.
 func CheckFromState(db *sql.DB, state dbauthpolicy.AuthState) Status {
-	if database.IsProtectedUser(state.Username) {
+	if isprotected.IsProtectedUser(state.Username) {
 		return Status{State: StateValid, Exempt: true}
 	}
 	policy := dbauthpolicy.GetPasswordPolicy(db)
