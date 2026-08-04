@@ -30,6 +30,28 @@
     {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
     <section class="section">
+      <h2>Second facteur</h2>
+      <p class="muted">
+        L'exigence porte sur le GROUPE et non sur les comptes : un nouvel arrivant
+        y est soumis du seul fait de son entrée, et il n'y a pas de liste de
+        comptes à tenir à jour.
+      </p>
+      <form method="post" action="/admin/groups?group={{ .Group }}">
+        <input type="hidden" name="action" value="set_mfa_required">
+        <input type="hidden" name="target_group" value="{{ .Group }}">
+        <label>
+          <input type="checkbox" name="mfa_required" {{ if .MFARequired }}checked{{ end }}>
+          Imposer le second facteur aux membres de ce groupe
+        </label>
+        <p class="muted small">
+          Les membres déjà connectés ne sont pas déconnectés : ils enrôleront à
+          leur prochaine connexion. Demande le droit <code>write:mfa</code>.
+        </p>
+        <button type="submit" class="btn btn-primary">Appliquer</button>
+      </form>
+    </section>
+
+    <section class="section">
       <h2>Utilisateurs</h2>
       <ul style="list-style:none;padding:0">{{ range .Users }}<li><a href="/admin/users?user={{ . }}">{{ . }}</a></li>{{ end }}</ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">

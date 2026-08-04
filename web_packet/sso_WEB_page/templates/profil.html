@@ -24,6 +24,33 @@
     <h1>Profil</h1>
     <p class="muted">{{ .User.Username }}</p>
 
+    {{ if .PasswordWarning }}
+    <div class="alert alert-warning">{{ .PasswordWarning }}</div>
+    {{ end }}
+
+    <section class="section">
+      <h2>Second facteur</h2>
+      {{ if .MFAEnabled }}
+        <p>
+          Le second facteur est <strong>actif</strong> sur ce compte.
+          {{ if .MFARequired }}Votre groupe l'impose : il ne peut pas être désactivé.{{ end }}
+        </p>
+      {{ else if .MFARequired }}
+        <div class="alert alert-warning">
+          Votre groupe impose le second facteur. Vous devez l'activer pour accéder
+          à l'interface.
+        </div>
+      {{ else }}
+        <p class="muted">
+          Le second facteur ajoute un code à usage unique, changeant toutes les
+          trente secondes, en plus de votre mot de passe.
+        </p>
+      {{ end }}
+      <a href="/profil/mfa" class="btn {{ if .MFAEnabled }}btn-ghost{{ else }}btn-primary{{ end }}">
+        {{ if .MFAEnabled }}Gérer le second facteur{{ else }}Activer le second facteur{{ end }}
+      </a>
+    </section>
+
     <section class="section">
       <h2>Informations</h2>
       <form action="/profil" method="POST">

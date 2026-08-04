@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vérification — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card animate-in">
+      <div class="login-theme-wrap">
+        <button type="button" id="theme-toggle" class="btn btn-ghost" title="Changer le thème">Thème</button>
+      </div>
+      {{if .Error}}
+      <div class="alert alert-error">{{.Error}}</div>
+      {{end}}
+      <div class="logo-container">
+        <img src="/static/image/vaultaire_logo.svg" alt="Vaultaire" class="logo">
+      </div>
+      <p class="welcome-text">Saisissez le code de votre application d'authentification</p>
+
+      <!--
+        Le nom du compte n'est volontairement pas affiché : il n'aide pas à
+        recopier six chiffres, et cette page est atteinte avec un mot de passe
+        qui pourrait avoir été volé.
+      -->
+      <form action="/login/mfa" method="POST">
+        <label for="code">Code à usage unique</label>
+        <input type="text" id="code" name="code" required autofocus
+               inputmode="numeric" pattern="[0-9 ]*" maxlength="7"
+               autocomplete="one-time-code" placeholder="123456">
+        <button type="submit" class="btn btn-primary" style="width:100%;margin-top:1rem">Valider</button>
+      </form>
+
+      <p class="muted" style="margin-top:1rem;text-align:center">
+        <a href="/logout">Annuler et revenir à la connexion</a>
+      </p>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+</body>
+</html>

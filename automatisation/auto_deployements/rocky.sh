@@ -4,6 +4,8 @@ set -euo pipefail
 
 echo "🔧 Déploiement Vaultaire Client..."
 
+
+dnf install -y libxcrypt-compat
 # Déplacement des fichiers
 mv -f /opt/vaultaire/vaultaire_client/pam*.so /usr/lib64/security/
 mkdir -p /etc/vaultaire_client/.ssh
@@ -98,7 +100,7 @@ echo "PubkeyAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "KbdInteractiveAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "ChallengeResponseAuthentication yes" >> "/etc/ssh/sshd_config"
 echo "AuthenticationMethods publickey,keyboard-interactive" >> "/etc/ssh/sshd_config"
-echo "Include /etc/ssh/sshd_config.d/*.conf/d" >> "/etc/ssh/sshd_config"
+echo "Include /etc/ssh/sshd_config.d/*.conf" >> "/etc/ssh/sshd_config"
 
 # ---------------------------------------------------------------------------
 # PAM login — connexion sur console/tty (programme /bin/login)
@@ -157,12 +159,12 @@ EOF
 # sans environnement graphique créerait une pile PAM pour un service inexistant.
 if [ -f /etc/pam.d/gdm-password ]; then
 
-    cat > /etc/pam.d/gdm-password <<'EOF'
+cat > /etc/pam.d/gdm-password <<'EOF'
 #%PAM-1.0
 # --- AUTHENTICATION ---
 # pam_selinux_permit doit rester en tête : il autorise la connexion en mode
 # permissif après un échec de relabel SELinux, avant toute autre décision.
-auth       [success=done ignore=ignore default=die]   pam_login_custom_module.so
+auth       [success=done ignore=ignore default=bad]   pam_login_custom_module.so
 auth       [success=done ignore=ignore default=bad]   pam_selinux_permit.so
 auth       substack     password-auth
 auth       optional     pam_gnome_keyring.so
@@ -194,8 +196,8 @@ EOF
     # qui ne s'est jamais connecté sur cette machine n'apparaît donc dans aucune
     # liste : il faut « Non répertorié ? » pour saisir son identifiant. Sans
     # cette option, l'utilisateur conclut que son compte n'existe pas.
-    mkdir -p /etc/dconf/db/gdm.d
-    cat > /etc/dconf/db/gdm.d/10-vaultaire-userlist <<'EOF'
+mkdir -p /etc/dconf/db/gdm.d
+cat > /etc/dconf/db/gdm.d/10-vaultaire-userlist <<'EOF'
 # Genere par Vaultaire.
 # Masque la liste des comptes locaux : les comptes Vaultaire n'y figurent pas
 # tant qu'ils ne se sont pas connectes au moins une fois sur cette machine.

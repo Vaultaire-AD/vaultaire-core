@@ -12,6 +12,7 @@ import (
 	commandeyes "vaultaire/core/command/command_eyes"
 	commandget "vaultaire/core/command/command_get"
 	commandkill "vaultaire/core/command/command_kill"
+	commandmfa "vaultaire/core/command/command_mfa"
 	commandremove "vaultaire/core/command/command_remove"
 	commandstatus "vaultaire/core/command/command_status"
 	commandupdate "vaultaire/core/command/command_update"
@@ -51,6 +52,7 @@ func ExecuteCommand(input, sender string) string {
 		"eyes":    commandeyes.Eyes_Command,
 		"cluster": commandcluster.Cluster_Command,
 		"kill":    commandkill.Kill_Command,
+		"mfa":     commandmfa.MFA_Command,
 	}
 
 	if cmd == "clear" {
@@ -64,6 +66,7 @@ func ExecuteCommand(input, sender string) string {
   update [OPTIONS] : modifie une entité existante.
   delete [OPTIONS] : supprime une entité (delete -u supprime aussi les comptes locaux).
   kill   [OPTIONS] : désactivation d'urgence d'un compte. Voir kill -h.
+  mfa    [OPTIONS] : second facteur et politique de mot de passe. Voir mfa -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.

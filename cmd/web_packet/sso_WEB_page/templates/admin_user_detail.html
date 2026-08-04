@@ -94,6 +94,33 @@
       </ul>
     </section>
 
+    <section class="section">
+      <h2>Second facteur</h2>
+      <p>
+        État : {{ if .MFAEnabled }}<strong>actif</strong>{{ else }}inactif{{ end }}.
+      </p>
+      {{ if .CanResetMFA }}
+        <p class="muted small">
+          La réinitialisation efface le secret : le compte se connectera avec son
+          seul mot de passe jusqu'à ce qu'il enrôle un nouveau téléphone. Si un
+          groupe impose le second facteur, l'enrôlement lui sera redemandé dès la
+          connexion suivante.
+        </p>
+        <form method="post" action="/admin/users?user={{ .User.Username }}">
+          <input type="hidden" name="action" value="reset_mfa">
+          <input type="hidden" name="target_user" value="{{ .User.Username }}">
+          <button type="submit" class="btn btn-danger" {{ if not .MFAEnabled }}disabled{{ end }}>
+            Réinitialiser le second facteur
+          </button>
+        </form>
+      {{ else }}
+        <p class="muted small">
+          La réinitialisation demande le droit <code>write:mfa</code> sur les
+          domaines de ce compte.
+        </p>
+      {{ end }}
+    </section>
+
     <hr>
     <section class="section">
       <h2>Supprimer l'utilisateur</h2>

@@ -1351,3 +1351,32 @@ a.perm-chip:hover { border-color: var(--primary, #3b6fd4); }
   margin-top: 1.4rem;
 }
 .kill-danger-zone h3 { margin-top: 0; color: var(--danger, #c0392b); }
+
+/* Encart du QR code d'enrôlement du second facteur.
+   Le SVG est produit par le serveur (core/global/security/qrcode) : aucune
+   ressource externe n'est chargée, le secret ne quitte pas l'infrastructure.
+   Fond blanc forcé, y compris en thème sombre — un lecteur QR attend des
+   modules sombres sur fond clair, et l'inversion fait échouer beaucoup
+   d'appareils. */
+.qr {
+  display: inline-block;
+  padding: 0.5rem;
+  background: #ffffff;
+  border-radius: 6px;
+  line-height: 0;
+  margin: 0.75rem 0;
+}
+.qr svg { width: 220px; height: 220px; display: block; }
+
+/* Clé TOTP affichée pour saisie manuelle : chasse fixe et lettres espacées,
+   parce qu'elle est recopiée à la main sur un téléphone et qu'un O pris pour
+   un 0 fait échouer l'enrôlement sans message utile. */
+.secret {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.12em;
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
+  background: rgba(127, 127, 127, 0.14);
+  user-select: all;
+}

@@ -12,6 +12,7 @@ import (
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	gc "vaultaire/core/global/security"
+	"vaultaire/core/global/security/qrcode"
 	"vaultaire/core/global/security/totp"
 	"vaultaire/core/logs"
 )
@@ -45,16 +46,44 @@ type MFAEnrollData struct {
 	// quand la caméra ne lit pas le code.
 	SecretDisplay string
 
-	// OtpauthURI est l'URL à encoder en QR code.
-	//
-	// Le QR est dessiné par le NAVIGATEUR, pas par le serveur. Générer une image
-	// côté Go demanderait une bibliothèque d'encodage QR — une dépendance de plus
-	// pour un rendu purement visuel — alors que l'URL seule suffit : elle est
-	// affichée en clair et recopiable, et le rendu graphique n'est qu'un confort.
+	// OtpauthURI est l'URL d'enrôlement, affichée en clair et cliquable.
 	OtpauthURI string
+
+	// QRCode est le rendu SVG de cette URL.
+	//
+	// Il est calculé PAR LE SERVEUR, avec core/global/security/qrcode. Le faire
+	// dessiner par une bibliothèque JavaScript servie depuis un CDN reviendrait
+	// à envoyer le secret TOTP du compte à un tiers ; le faire dessiner par une
+	// dépendance Go ajouterait du code non audité sur le chemin d'un secret
+	// d'authentification. L'encodeur maison ne fait que du mode octet, niveau M,
+	// versions 1 à 10 : c'est tout ce qu'une URI otpauth demande.
+	//
+	// template.HTML : le SVG est inséré tel quel. Il est produit ici, jamais reçu
+	// de l'extérieur, et son seul champ variable est échappé à la génération.
+	QRCode template.HTML
 
 	Error   string
 	Success string
+}
+
+// withEnrollmentSecret remplit les trois représentations du secret : la clé à
+// recopier, l'URI et le QR code. Les trois viennent du MÊME secret relu en base,
+// pour qu'aucune ne puisse diverger des autres.
+func withEnrollmentSecret(data MFAEnrollData, username, secret string) MFAEnrollData {
+	data.SecretDisplay = totp.FormatSecretForDisplay(secret)
+	data.OtpauthURI = totp.ProvisioningURI(mfaIssuer, username, secret)
+
+	svg, err := qrcode.EncodeSVG(data.OtpauthURI, 5, "Code d'enrôlement du second facteur")
+	if err != nil {
+		// L'enrôlement reste possible à la main : la clé et le lien sont
+		// affichés. On journalise sans interrompre — perdre le QR code est une
+		// gêne, pas un motif de refuser l'activation du second facteur.
+		logs.Write_LogCode("WARNING", logs.CodeNone,
+			"profil: QR code d'enrôlement non généré pour "+username+" : "+err.Error())
+		return data
+	}
+	data.QRCode = template.HTML(svg)
+	return data
 }
 
 // ProfilMFAHandler affiche et traite l'enrôlement du second facteur.
@@ -100,9 +129,7 @@ func ProfilMFAHandler(w http.ResponseWriter, r *http.Request) {
 			renderMFAEnroll(w, data)
 			return
 		}
-		data.SecretDisplay = totp.FormatSecretForDisplay(secret)
-		data.OtpauthURI = totp.ProvisioningURI(mfaIssuer, username, secret)
-		renderMFAEnroll(w, data)
+		renderMFAEnroll(w, withEnrollmentSecret(data, username, secret))
 
 	case r.FormValue("action") == "confirm":
 		// Le secret est relu en base et jamais repris d'un champ caché du
@@ -119,9 +146,7 @@ func ProfilMFAHandler(w http.ResponseWriter, r *http.Request) {
 		counter, valid := totp.Validate(fresh.MFASecret, r.FormValue("code"), time.Now())
 		if !valid {
 			data.Error = "Code invalide. Vérifiez l'heure de votre téléphone."
-			data.SecretDisplay = totp.FormatSecretForDisplay(fresh.MFASecret)
-			data.OtpauthURI = totp.ProvisioningURI(mfaIssuer, username, fresh.MFASecret)
-			renderMFAEnroll(w, data)
+			renderMFAEnroll(w, withEnrollmentSecret(data, username, fresh.MFASecret))
 			return
 		}
 		if err := dbauthpolicy.ActivateMFA(db, username, counter); err != nil {
@@ -180,9 +205,7 @@ func prepareEnrollment(db *sql.DB, username string, data MFAEnrollData) MFAEnrol
 	if err != nil || state.MFASecret == "" {
 		return data
 	}
-	data.SecretDisplay = totp.FormatSecretForDisplay(state.MFASecret)
-	data.OtpauthURI = totp.ProvisioningURI(mfaIssuer, username, state.MFASecret)
-	return data
+	return withEnrollmentSecret(data, username, state.MFASecret)
 }
 
 // confirmOwnPassword vérifie le mot de passe du compte courant.
