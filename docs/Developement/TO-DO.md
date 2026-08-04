@@ -2,14 +2,18 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
 
 
 1.[FAIT-H] [DOC]mettre a jour la Documentation pour séparé entierement les GPO voir trames struct (si il a des changement a faire dans le protcole dabord mettre ajour la documentation et demander ensuite validation)
+
 2.[DEPLACE] [GPO] Ajout de nouveaux Module -> voir DO/2.0/2.1.md
             Reste ouvert : mount_hardening (ecarte volontairement) et le volet user de
             ssh_known_hosts (~/.ssh/known_hosts), implemente en scope machine seul.
+
 4.[GPO] - Détection de dérive (drift detection)
             Rien dans le catalogue ne vérifie qu'un module resté "appliqué avec succès" (version à jour dans applied_policies.json) correspond encore à l'état réel du système — un admin qui modifie manuellement sshd_config.d/99-vaultaire-gpo.conf en SSH direct fausserait l'état sans que rien ne le détecte. Il faut un scan périodique de conformité, pas seulement une application ponctuelle.
 7.[GPO] - Reporting de conformité centralisé
             Vue d'ensemble côté serveur : quelle version de policy chaque machine a effectivement appliquée avec succès, quelles machines sont en échec/en retard — sans ça, tu n'as aucune visibilité sur l'état réel du parc.
+
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
+
 9.[FAIT-IA] [MFA] - possibilité d'activer le MFA via code TOTP pour la connection sur l'interface web admin ou non (il faut aussi pouvoir forcer l'activation a la premiere connection )
             [FAIT] TOTP RFC 6238 implemente sans dependance (core/global/security/totp),
                    verifie contre les 6 vecteurs de test de la RFC.
@@ -23,6 +27,7 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             Voir MFA_et_Expiration.md.
             A REVOIR : pas de QR code (clé + lien otpauth seulement) — un generateur
             servi depuis /static serait a ajouter, jamais depuis un CDN.
+
 10.[FAIT-IA] [AUTH] - il faut pouvoir config un temps d'expiration des mots de passe politique global
             [FAIT] Politique globale dans server_settings, page /admin/authpolicy reservee
                    au groupe vaultaire, atteinte depuis le tableau de bord (le bandeau de

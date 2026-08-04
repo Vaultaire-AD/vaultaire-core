@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"vaultaire/core/database"
-	dbperm "vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 )
 
@@ -94,7 +94,7 @@ func AdminSearchAPIHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var perms []SearchResult
-	allPerms, _ := dbperm.Command_GET_AllUserPermissions(db)
+	allPerms, _ := dbpermission.Command_GET_AllUserPermissions(db)
 	for _, p := range allPerms {
 		if !permScope.allowsAny(permScope.domainsOfPermission(p.Name)) {
 			continue

@@ -4,7 +4,7 @@
 // des machines qu'il vise, poussé aux machines connectées, puis rejoué tant
 // qu'il n'est pas acquitté. Sans cette persistance, éteindre son poste
 // suffirait à échapper à une révocation — précisément le cas où elle compte.
-package db_revocation
+package dbrevocation
 
 import (
 	"database/sql"

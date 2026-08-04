@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	dbperm "vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
@@ -172,7 +172,7 @@ func buildPermissionMatrix(db *sql.DB, perm *storage.UserPermission) permissionM
 	}
 
 	read := func(field string) string {
-		value, err := dbperm.Command_GET_UserPermissionAction(db, int64(perm.ID), field)
+		value, err := dbpermission.Command_GET_UserPermissionAction(db, int64(perm.ID), field)
 		if err != nil {
 			// Une action absente en base vaut refus : c'est la lecture sûre.
 			// Afficher un droit qu'on n'a pas pu lire serait le contraire.

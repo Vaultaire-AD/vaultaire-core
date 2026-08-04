@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 )
 
@@ -51,7 +51,7 @@ func CheckPermissionsAllDomains(groupIDs []int, action string, domainsToCheck []
 	// elle est fermée : dans le doute on refuse.
 	if len(domainsToCheck) == 0 {
 		for _, groupID := range groupIDs {
-			content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -98,7 +98,7 @@ func HasActionAnywhere(groupIDs []int, action string) bool {
 		return false
 	}
 	for _, groupID := range groupIDs {
-		content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+		content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -186,7 +186,7 @@ func DomainsWhereAllowed(groupIDs []int, action string) AllowedDomains {
 	seenProp := map[string]bool{}
 
 	for _, groupID := range groupIDs {
-		content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+		content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -224,7 +224,7 @@ func DomainsWhereAllowed(groupIDs []int, action string) AllowedDomains {
 // avec propagation acceptent les sous-domaines.
 func isDomainAllowed(groupIDs []int, action, domain string) bool {
 	for _, groupID := range groupIDs {
-		content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
+		content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))

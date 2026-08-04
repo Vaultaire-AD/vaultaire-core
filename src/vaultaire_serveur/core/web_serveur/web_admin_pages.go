@@ -14,10 +14,10 @@ import (
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	"vaultaire/core/database"
-	dbcert "vaultaire/core/database/db-certificates"
+	dbcertificates "vaultaire/core/database/db-certificates"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbgpo "vaultaire/core/database/db_gpo"
-	dbperm "vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -100,7 +100,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		detailData.User = userInfo
-		userPerms, _ := dbperm.Command_GET_UserPermissionNamesByUsername(db, detailUser)
+		userPerms, _ := dbpermission.Command_GET_UserPermissionNamesByUsername(db, detailUser)
 		detailData.UserPerms = userPerms
 		allDetails, _ := database.Command_GET_GroupDetails(db)
 		for _, g := range allDetails {
@@ -263,7 +263,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
-			userPerms, _ = dbperm.Command_GET_UserPermissionNamesByUsername(db, detailUser)
+			userPerms, _ = dbpermission.Command_GET_UserPermissionNamesByUsername(db, detailUser)
 			detailData.UserPerms = userPerms
 		}
 
@@ -520,7 +520,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			case "add_permission":
 				p := r.FormValue("permission")
-				if p != "" && dbperm.Command_ADD_UserPermissionToGroup(db, p, targetGroup) == nil {
+				if p != "" && dbpermission.Command_ADD_UserPermissionToGroup(db, p, targetGroup) == nil {
 					detailData.Message = "Permission ajoutée."
 					info, _ = database.Command_GET_GroupInfo(db, targetGroup)
 					detailData.Perms = info.Permissions
@@ -594,7 +594,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 
 		allUsers, _ := database.Command_GET_AllUsers(db)
 		allClients, _ := database.Command_GET_AllClients(db)
-		allPerms, _ := dbperm.Command_GET_AllUserPermissions(db)
+		allPerms, _ := dbpermission.Command_GET_AllUserPermissions(db)
 		allClientPerms, _ := database.Command_GET_AllClientPermissions(db)
 		detailData.AllUsers, detailData.AllClients = allUsers, allClients
 		detailData.AllPerms, detailData.AllClientPerms = allPerms, allClientPerms
@@ -829,12 +829,12 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 	detailPerm := r.URL.Query().Get("perm")
 
 	if detailPerm != "" {
-		perm, err := dbperm.Command_GET_UserPermissionByName(db, detailPerm)
+		perm, err := dbpermission.Command_GET_UserPermissionByName(db, detailPerm)
 		if err != nil || perm == nil {
 			http.Error(w, "Permission introuvable", http.StatusNotFound)
 			return
 		}
-		groups, _ := dbperm.Command_GET_Groups_ByUserPermission(db, detailPerm)
+		groups, _ := dbpermission.Command_GET_Groups_ByUserPermission(db, detailPerm)
 		allDomains := getUniqueDomains(db)
 		detailData := struct {
 			Perm       *storage.UserPermission
@@ -879,7 +879,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 			switch action {
 			case "delete_permission":
-				if r.FormValue("target_perm") == detailPerm && dbperm.Command_DELETE_UserPermissionByName(db, detailPerm) == nil {
+				if r.FormValue("target_perm") == detailPerm && dbpermission.Command_DELETE_UserPermissionByName(db, detailPerm) == nil {
 					http.Redirect(w, r, "/admin/permissions", http.StatusSeeOther)
 					return
 				}
@@ -918,12 +918,12 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 					break
 				}
 
-				permID, errID := dbperm.Command_GET_UserPermissionID(db, detailPerm)
+				permID, errID := dbpermission.Command_GET_UserPermissionID(db, detailPerm)
 				if errID != nil {
 					detailData.Error = "Permission introuvable."
 					break
 				}
-				current, errGet := dbperm.Command_GET_UserPermissionAction(db, permID, field)
+				current, errGet := dbpermission.Command_GET_UserPermissionAction(db, permID, field)
 				if errGet != nil {
 					detailData.Error = "Erreur lecture action: " + errGet.Error()
 					break
@@ -931,13 +931,13 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				parsed := permission.ParsePermissionAction(current)
 				switch op {
 				case "nil":
-					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, "nil"); err != nil {
+					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, "nil"); err != nil {
 						detailData.Error = "Erreur: " + err.Error()
 					} else {
 						detailData.Message = "Action " + field + " mise à nil."
 					}
 				case "all":
-					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, "all"); err != nil {
+					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, "all"); err != nil {
 						detailData.Error = "Erreur: " + err.Error()
 					} else {
 						detailData.Message = "Action " + field + " mise à all."
@@ -949,7 +949,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 					}
 					permission.UpdatePermissionAction(&parsed, domain, propagation, true)
 					newVal := permission.ConvertPermissionActionToString(parsed)
-					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
+					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
 						detailData.Error = "Erreur: " + err.Error()
 					} else {
 						detailData.Message = "Domaine " + domain + " ajouté à " + field + "."
@@ -972,7 +972,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 					if len(parsed.WithPropagation) > 0 || len(parsed.WithoutPropagation) > 0 {
 						newVal = permission.ConvertPermissionActionToString(parsed)
 					}
-					if err := dbperm.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
+					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
 						detailData.Error = "Erreur: " + err.Error()
 					} else {
 						detailData.Message = "Domaine " + domain + " retiré de " + field + "."
@@ -989,7 +989,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				// plutôt que de le remplacer par nil : la page affichera des
 				// valeurs d'avant l'écriture, ce qui est déroutant, mais une
 				// déréférence de nil planterait la requête entière.
-				if reloaded, reloadErr := dbperm.Command_GET_UserPermissionByName(db, detailPerm); reloadErr == nil && reloaded != nil {
+				if reloaded, reloadErr := dbpermission.Command_GET_UserPermissionByName(db, detailPerm); reloadErr == nil && reloaded != nil {
 					perm = reloaded
 					detailData.Perm = perm
 				} else {
@@ -1067,7 +1067,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 			if name == "" {
 				break
 			}
-			if err := dbperm.Command_UPDATE_ClientPermission(db, name, isAdmin); err != nil {
+			if err := dbpermission.Command_UPDATE_ClientPermission(db, name, isAdmin); err != nil {
 				data.Error = err.Error()
 				break
 			}
@@ -1085,7 +1085,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				data.Error = "Nom de la permission client requis."
 				break
 			}
-			if _, err := dbperm.CreateClientPermission(db, name, isAdmin); err != nil {
+			if _, err := dbpermission.CreateClientPermission(db, name, isAdmin); err != nil {
 				data.Error = "Erreur création : " + err.Error()
 				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client permission failed: "+err.Error())
 			} else {
@@ -1104,7 +1104,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 			if name == "" {
 				break
 			}
-			if err := dbperm.Command_DELETE_ClientPermissionByName(db, name); err != nil {
+			if err := dbpermission.Command_DELETE_ClientPermissionByName(db, name); err != nil {
 				data.Error = "Erreur suppression : " + err.Error()
 			} else {
 				data.Message = "Permission client supprimée."
@@ -1125,9 +1125,9 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 			// cet aller-retour pour le cas le plus courant.
 			var err error
 			if webAdmin {
-				_, err = dbperm.CreateUserPermission(db, name, description, "nil", "all", "nil", "nil", "nil")
+				_, err = dbpermission.CreateUserPermission(db, name, description, "nil", "all", "nil", "nil", "nil")
 			} else {
-				_, err = dbperm.CreateUserPermissionDefault(db, name, description)
+				_, err = dbpermission.CreateUserPermissionDefault(db, name, description)
 			}
 			if err != nil {
 				data.Error = "Erreur création : " + err.Error()
@@ -1143,7 +1143,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		case "delete_permission":
 			permName := r.FormValue("permission_name")
 			if permName != "" {
-				if err := dbperm.Command_DELETE_UserPermissionByName(db, permName); err != nil {
+				if err := dbpermission.Command_DELETE_UserPermissionByName(db, permName); err != nil {
 					data.Message = "Erreur suppression : " + err.Error()
 				} else {
 					data.Message = "Permission supprimée."
@@ -1151,7 +1151,7 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	perms, err := dbperm.Command_GET_AllUserPermissions(db)
+	perms, err := dbpermission.Command_GET_AllUserPermissions(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list permissions failed: "+err.Error())
 		http.Error(w, "Erreur liste permissions", http.StatusInternalServerError)
@@ -1199,7 +1199,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "ID certificat invalide", http.StatusBadRequest)
 			return
 		}
-		cert, err := dbcert.GetCertificateByID(certID)
+		cert, err := dbcertificates.GetCertificateByID(certID)
 		if err != nil {
 			http.Error(w, "Certificat introuvable", http.StatusNotFound)
 			return
@@ -1221,7 +1221,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 					detailData.Message = "Réservé aux membres du groupe " + database.ProtectedGroupName + "."
 					break
 				}
-				if err := dbcert.DeleteCertificate(certID); err != nil {
+				if err := dbcertificates.DeleteCertificate(certID); err != nil {
 					detailData.Message = "Erreur suppression : " + err.Error()
 				} else {
 					logs.Write_Log("SECURITY", fmt.Sprintf(
@@ -1257,7 +1257,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					data.Message = "ID certificat invalide"
 				} else {
-					if err := dbcert.DeleteCertificate(certID); err != nil {
+					if err := dbcertificates.DeleteCertificate(certID); err != nil {
 						data.Message = "Erreur suppression : " + err.Error()
 					} else {
 						logs.Write_Log("SECURITY", fmt.Sprintf(
@@ -1269,7 +1269,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	certificates, err := dbcert.GetAllCertificates()
+	certificates, err := dbcertificates.GetAllCertificates()
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list certificates failed: "+err.Error())
 		http.Error(w, "Erreur liste certificats", http.StatusInternalServerError)

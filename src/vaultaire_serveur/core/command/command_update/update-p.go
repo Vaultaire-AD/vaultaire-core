@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -53,7 +53,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s permission=%s", sender_Username, Useraction, permissionName))
 
 	// 🔹 Étape 1 : Récupération de l’ID de la permission
-	permissionID, err := db_permission.Command_GET_UserPermissionID(db, permissionName)
+	permissionID, err := dbpermission.Command_GET_UserPermissionID(db, permissionName)
 	if err != nil {
 		return fmt.Sprintf(">> erreur récupération ID de la permission : %v", err)
 	}
@@ -64,7 +64,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 	))
 
 	// 🔹 Étape 2 : Récupération du contenu actuel
-	currentContent, err := db_permission.Command_GET_UserPermissionAction(db, permissionID, action)
+	currentContent, err := dbpermission.Command_GET_UserPermissionAction(db, permissionID, action)
 	if err != nil {
 		logs.Write_Log("ERROR", "Update -pu Get user permission action content : "+err.Error())
 	}
@@ -75,7 +75,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 	switch arg {
 	case "nil", "all":
 		parsedContent.Type = arg
-		if err := db_permission.Command_SET_UserPermissionAction(db, permissionID, action, arg); err != nil {
+		if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, arg); err != nil {
 			logs.Write_Log("ERROR", fmt.Sprintf("Update -pu Set user permission action '%s' : %v", arg, err))
 		}
 
@@ -83,7 +83,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 		// Ajouter domaine
 		permission.UpdatePermissionAction(&parsedContent, domain, childOrAll, true)
 		newValue := permission.ConvertPermissionActionToString(parsedContent)
-		if err := db_permission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
+		if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
 			logs.Write_Log("ERROR", fmt.Sprintf("Impossible d'ajouter le domaine %s : %v", domain, err))
 		} else {
 			logs.Write_Log("DEBUG", fmt.Sprintf("Domaine ajouté %s (option %s)", domain, childOrAll))
@@ -97,7 +97,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 		if len(parsedContent.WithPropagation) == 0 && len(parsedContent.WithoutPropagation) == 0 {
 			parsedContent.Type = "nil"
 			newValue := "nil"
-			if err := db_permission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
+			if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
 				logs.Write_Log("ERROR", fmt.Sprintf("Impossible de passer l'action à nil : %v", err))
 			} else {
 				logs.Write_Log("DEBUG", fmt.Sprintf("Aucun domaine restant, action %s passe en nil", action))
@@ -105,7 +105,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 		} else {
 			// Sinon, sauvegarder la nouvelle valeur
 			newValue := permission.ConvertPermissionActionToString(parsedContent)
-			if err := db_permission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
+			if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
 				logs.Write_Log("ERROR", fmt.Sprintf("Impossible de retirer le domaine %s : %v", domain, err))
 			} else {
 				logs.Write_Log("DEBUG", fmt.Sprintf("Domaine retiré %s (option %s)", domain, childOrAll))
@@ -117,7 +117,7 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 	}
 
 	// 🔹 Étape 4 : Récupération finale de la permission mise à jour
-	perm, err := db_permission.Command_GET_UserPermissionByName(db, permissionName)
+	perm, err := dbpermission.Command_GET_UserPermissionByName(db, permissionName)
 	if err != nil {
 		return ">> -" + err.Error()
 	}

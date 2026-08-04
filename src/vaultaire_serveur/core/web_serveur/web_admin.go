@@ -6,7 +6,7 @@ import (
 	"strings"
 	"vaultaire/core/command"
 	"vaultaire/core/database"
-	dbcert "vaultaire/core/database/db-certificates"
+	dbcertificates "vaultaire/core/database/db-certificates"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -149,7 +149,7 @@ func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "dashboard", Debug: storage.Debug}
 
 	// Load login client public key for "client -join" copy-paste
-	if cert, err := dbcert.GetCertificateByName(duckykey.ServerLoginClientKeyName); err == nil && cert.PublicKeyData != nil {
+	if cert, err := dbcertificates.GetCertificateByName(duckykey.ServerLoginClientKeyName); err == nil && cert.PublicKeyData != nil {
 		pub := strings.TrimSpace(*cert.PublicKeyData)
 		data.LoginClientPublicKey = pub
 		// Escape single quotes for use inside shell '...'

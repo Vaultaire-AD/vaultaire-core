@@ -5,7 +5,7 @@ import (
 	commandpermission "vaultaire/core/command/command_permission"
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/permission"
 )
 
@@ -34,7 +34,7 @@ func handleGetAllPermissions(target string, senderGroupsIDs []int, action, sende
 
 	switch target {
 	case "-u":
-		perms, err := db_permission.Command_GET_AllUserPermissions(database.GetDatabase())
+		perms, err := dbpermission.Command_GET_AllUserPermissions(database.GetDatabase())
 		if err != nil {
 			return commandpermission.LogAndReturn("Erreur récupération permissions utilisateurs : ", err)
 		}
@@ -81,7 +81,7 @@ func handleGetPermissionByName(target, name string, senderGroupsIDs []int, actio
 	// Récupération et affichage des permissions
 	switch target {
 	case "-u":
-		perm, err := db_permission.Command_GET_UserPermissionByName(database.GetDatabase(), name)
+		perm, err := dbpermission.Command_GET_UserPermissionByName(database.GetDatabase(), name)
 		if err != nil {
 			return commandpermission.LogAndReturn(fmt.Sprintf("Erreur récupération permission utilisateur %s : ", name), err)
 		}

@@ -3,7 +3,7 @@ package commandadd
 import (
 	"fmt"
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -36,7 +36,7 @@ func add_group_Command_Parser(command_list []string, sender_groupsIDs []int, act
 	// 🔹 Étape 3 : Ajout de la permission
 	switch command_list[0] {
 	case "-gu":
-		err := db_permission.Command_ADD_UserPermissionToGroup(database.GetDatabase(), permName, groupName)
+		err := dbpermission.Command_ADD_UserPermissionToGroup(database.GetDatabase(), permName, groupName)
 		if err != nil {
 			logs.Write_Log("WARNING", fmt.Sprintf("Erreur ajout user_permission %s au groupe %s : %v", permName, groupName, err))
 			return ">> -" + err.Error()

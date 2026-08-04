@@ -12,7 +12,7 @@
 // valide — appartient à core/auth/passwordpolicy, qui n'a pas d'accès direct à
 // la base et reçoit ses données d'ici. C'est ce qui permet de tester la règle
 // sans base de données.
-package db_authpolicy
+package dbauthpolicy
 
 import (
 	"database/sql"

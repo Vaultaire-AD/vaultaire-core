@@ -3,7 +3,7 @@ package commanddelete
 import (
 	"fmt"
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -54,9 +54,9 @@ func delete_Permission_Command_Parser(command_list []string, sender_groupsIDs []
 	// 🔹 Étape 3 : Suppression selon le type
 	switch flag {
 	case "-u":
-		err = db_permission.Command_DELETE_UserPermissionByName(db, permName)
+		err = dbpermission.Command_DELETE_UserPermissionByName(db, permName)
 	case "-c":
-		err = db_permission.Command_DELETE_ClientPermissionByName(db, permName)
+		err = dbpermission.Command_DELETE_ClientPermissionByName(db, permName)
 	}
 
 	if err != nil {

@@ -2,12 +2,12 @@ package security
 
 import (
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/permission"
 )
 
 func IsAuthorizedToSearch(username, baseDN string) bool {
-	perms, err := db_permission.GetUserPermissionsForAction(
+	perms, err := dbpermission.GetUserPermissionsForAction(
 		database.GetDatabase(),
 		username,
 		"search",

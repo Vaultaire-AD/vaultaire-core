@@ -1,4 +1,4 @@
-package db_revocation
+package dbrevocation
 
 import (
 	"database/sql"

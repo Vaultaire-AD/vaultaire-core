@@ -1,12 +1,47 @@
-package db_permission
+package dbpermission
 
 import (
 	"database/sql"
 	"fmt"
-
 	"vaultaire/core/database"
 	"vaultaire/core/logs"
 )
+
+func CreateClientPermission(db *sql.DB, permissionName string, isAdmin bool) (int64, error) {
+	result, err := db.Exec(`INSERT INTO client_permission (name_permission, is_admin) VALUES (?, ?)`, permissionName, isAdmin)
+	if err != nil {
+		logs.WriteLog("db", "erreur lors de l'insertion de la permission client CreateClientPermission : "+err.Error())
+		return 0, fmt.Errorf("erreur lors de l'insertion de la permission client : %v", err)
+	}
+
+	permissionID, err := result.LastInsertId()
+	if err != nil {
+		logs.WriteLog("db", "erreur lors de la récupération de l'ID de la permission client CreateClientPermission : "+err.Error())
+		return 0, fmt.Errorf("erreur lors de la récupération de l'ID de la permission client : %v", err)
+	}
+
+	return permissionID, nil
+}
+
+// Supprime une permission via son nom
+func Command_DELETE_ClientPermissionByName(db *sql.DB, permissionName string) error {
+	injection := database.SanitizeIdentifier(permissionName)
+	if injection != nil {
+		return injection
+	}
+	// La permission client d'administration n'est pas supprimable.
+	if err := database.GuardProtectedClientPermissionDeletion(permissionName); err != nil {
+		return err
+	}
+	query := `DELETE FROM client_permission WHERE name_permission = ?`
+	_, err := db.Exec(query, permissionName)
+	if err != nil {
+		logs.WriteLog("db", "Erreur lors de la suppression de la permission client : "+err.Error())
+		return fmt.Errorf("erreur lors de la suppression de la permission client %s : %v", permissionName, err)
+	}
+	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Permission client %s supprimée avec succès", permissionName))
+	return nil
+}
 
 // Command_UPDATE_ClientPermission modifie le drapeau d'administration d'une
 // permission client.

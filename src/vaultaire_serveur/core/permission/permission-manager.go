@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"vaultaire/core/database"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -37,7 +37,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 	// Cas spécial : aucun domaine à vérifier => on vérifie seulement le super admin (All)
 	if len(domainsToCheck) == 0 {
 		for _, groupID := range groupIDs {
-			content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
+			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -61,7 +61,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 		for _, groupID := range groupIDs {
 			logs.Write_LogCode("DEBUG", logs.CodeNone,
 				fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domain))
-			content, err := db_permission.GetPermissionContent(database.GetDatabase(), groupID, action)
+			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))

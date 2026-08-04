@@ -1,4 +1,4 @@
-package db_authpolicy
+package dbauthpolicy
 
 import (
 	"database/sql"

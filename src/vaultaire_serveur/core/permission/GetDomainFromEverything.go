@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
-	"vaultaire/core/database/db_permission"
+	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 )
 
@@ -51,7 +51,7 @@ func GetDomainListsFromGroupIDs(groupIDs []int) ([]string, error) {
 }
 
 func GetDomainslistFromUserpermission(permissionName string) ([]string, error) {
-	domainsUser, err := db_permission.Command_GET_Domains_ByUserPermission(database.GetDatabase(), permissionName)
+	domainsUser, err := dbpermission.Command_GET_Domains_ByUserPermission(database.GetDatabase(), permissionName)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des domaines pour la permission utilisateur "+permissionName+" : "+err.Error())
 		return nil, err
@@ -60,7 +60,7 @@ func GetDomainslistFromUserpermission(permissionName string) ([]string, error) {
 }
 
 func GetDomainslistFromClientpermission(permissionName string) ([]string, error) {
-	domainsClient, err := db_permission.Command_GET_Domains_ByClientPermission(database.GetDatabase(), permissionName)
+	domainsClient, err := dbpermission.Command_GET_Domains_ByClientPermission(database.GetDatabase(), permissionName)
 	if err != nil {
 		logs.Write_Log("WARNING", "Erreur lors de la récupération des domaines pour la permission utilisateur "+permissionName+" : "+err.Error())
 		return nil, err

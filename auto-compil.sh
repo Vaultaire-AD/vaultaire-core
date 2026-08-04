@@ -3,7 +3,7 @@
 
 # Variables
 
-ROOT_DIR="./"
+ROOT_DIR="/mnt/c/Users/loren/Documents/git/vaultaire-core"
 BUILD_DIR="$ROOT_DIR/cmd"
 SERVER_BIN="$BUILD_DIR/vaultaire_server/vaultaire_serveur"
 CLI_BIN="$BUILD_DIR/vaultaire_server/vaultaire_cli"
