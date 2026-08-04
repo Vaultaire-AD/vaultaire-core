@@ -1,0 +1,307 @@
+name: "🔒 Audit Sécurité & Qualité - Dev"
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch: {}
+  schedule:
+    # Audit complet hebdomadaire (lundi 03h UTC) même sans push
+    - cron: "0 3 * * 1"
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+concurrency:
+  group: dev-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.20"
+
+jobs:
+
+  # --------------------------------------------------------------------
+  # 1. Lint & format Go
+  # --------------------------------------------------------------------
+  lint:
+    name: "🧹 Lint & Format Go"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Vérification gofmt
+        run: |
+          UNFORMATTED=$(gofmt -l .)
+          if [ -n "$UNFORMATTED" ]; then
+            echo "Fichiers non formatés :"
+            echo "$UNFORMATTED"
+            exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+          args: --timeout=5m
+
+  # --------------------------------------------------------------------
+  # 2. Analyse statique de sécurité (SAST)
+  # --------------------------------------------------------------------
+  sast:
+    name: "🛡️ SAST (gosec + semgrep)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: gosec
+        uses: securego/gosec@master
+        continue-on-error: true
+        with:
+          args: "-fmt sarif -out gosec-results.sarif ./..."
+
+      - name: Upload SARIF gosec
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: gosec-results.sarif
+          category: gosec
+
+      - name: Semgrep
+        uses: semgrep/semgrep-action@v1
+        continue-on-error: true
+        with:
+          config: >-
+            p/golang
+            p/docker
+            p/secrets
+            p/owasp-top-ten
+
+  # --------------------------------------------------------------------
+  # 3. Audit des dépendances / CVE connues
+  # --------------------------------------------------------------------
+  dependency-audit:
+    name: "📦 Audit dépendances (govulncheck + Trivy)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
+
+      - name: Trivy - scan du système de fichiers
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          severity: CRITICAL,HIGH,MEDIUM
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: 0
+
+      - name: Upload SARIF Trivy (fs)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+  # --------------------------------------------------------------------
+  # 4. Détection de secrets
+  # --------------------------------------------------------------------
+  secrets-scan:
+    name: "🔑 Scan de secrets (gitleaks)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # --------------------------------------------------------------------
+  # 5. Audit des images Docker (dockerfile + dockerfile_debian)
+  # --------------------------------------------------------------------
+  docker-audit:
+    name: "🐳 Audit images Docker"
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        dockerfile: [deployments/dockerfile, deployments/dockerfile_debian]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Définir le tag d'image
+        id: vars
+        run: echo "tag=$(basename ${{ matrix.dockerfile }} | tr '_' '-')" >> "$GITHUB_OUTPUT"
+
+      - name: Build de l'image
+        run: docker build -f ${{ matrix.dockerfile }} -t vaultaire-audit:${{ steps.vars.outputs.tag }} .
+
+      - name: Hadolint (bonnes pratiques Dockerfile)
+        uses: hadolint/hadolint-action@v3.1.0
+        continue-on-error: true
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+          format: sarif
+          output-file: hadolint-${{ steps.vars.outputs.tag }}.sarif
+          no-fail: true
+
+      - name: Upload SARIF Hadolint
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: hadolint-${{ steps.vars.outputs.tag }}.sarif
+          category: hadolint-${{ steps.vars.outputs.tag }}
+
+      - name: Trivy - scan de l'image
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          image-ref: vaultaire-audit:${{ steps.vars.outputs.tag }}
+          severity: CRITICAL,HIGH
+          format: sarif
+          output: trivy-image-${{ steps.vars.outputs.tag }}.sarif
+          exit-code: 0
+
+      - name: Upload SARIF Trivy (image)
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image-${{ steps.vars.outputs.tag }}.sarif
+          category: trivy-image-${{ steps.vars.outputs.tag }}
+
+  # --------------------------------------------------------------------
+  # 6. Audit IaC : docker-compose et configs de déploiement
+  # --------------------------------------------------------------------
+  iac-audit:
+    name: "⚙️ Audit IaC (docker-compose / configs)"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkov - scan deployments/
+        uses: bridgecrewio/checkov-action@master
+        continue-on-error: true
+        with:
+          directory: deployments/
+          framework: docker_compose,dockerfile,secrets
+          output_format: sarif
+          output_file_path: checkov-results.sarif
+          soft_fail: true
+
+      - name: Upload SARIF Checkov
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: checkov-results.sarif
+          category: checkov
+
+  # --------------------------------------------------------------------
+  # 7. Génération du SBOM
+  # --------------------------------------------------------------------
+  sbom:
+    name: "📋 Génération SBOM"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Générer le SBOM (SPDX) avec Syft
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: sbom-vaultaire.spdx.json
+
+      - name: Upload SBOM en artefact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom-vaultaire
+          path: sbom-vaultaire.spdx.json
+          retention-days: 90
+
+  # --------------------------------------------------------------------
+  # 8. Vérification des licences des dépendances
+  # --------------------------------------------------------------------
+  license-check:
+    name: "⚖️ Vérification des licences"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: go-licenses
+        run: |
+          go install github.com/google/go-licenses@latest
+          go-licenses report ./... > licenses-report.csv || true
+
+      - name: Upload rapport licences
+        uses: actions/upload-artifact@v4
+        with:
+          name: licenses-report
+          path: licenses-report.csv
+
+  # --------------------------------------------------------------------
+  # 9. Résumé global de l'audit
+  # --------------------------------------------------------------------
+  audit-summary:
+    name: "📊 Résumé de l'audit"
+    runs-on: ubuntu-latest
+    if: always()
+    needs:
+      - lint
+      - sast
+      - dependency-audit
+      - secrets-scan
+      - docker-audit
+      - iac-audit
+      - sbom
+      - license-check
+    steps:
+      - name: Générer le résumé
+        run: |
+          {
+            echo "## 🔍 Résultat de l'audit Vaultaire (branche dev)"
+            echo ""
+            echo "| Contrôle | Statut |"
+            echo "|----------|--------|"
+            echo "| Lint & Format | ${{ needs.lint.result }} |"
+            echo "| SAST (gosec/semgrep) | ${{ needs.sast.result }} |"
+            echo "| Dépendances (govulncheck/Trivy) | ${{ needs.dependency-audit.result }} |"
+            echo "| Secrets (gitleaks) | ${{ needs.secrets-scan.result }} |"
+            echo "| Images Docker (Trivy/Hadolint) | ${{ needs.docker-audit.result }} |"
+            echo "| IaC (Checkov) | ${{ needs.iac-audit.result }} |"
+            echo "| SBOM | ${{ needs.sbom.result }} |"
+            echo "| Licences | ${{ needs.license-check.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
