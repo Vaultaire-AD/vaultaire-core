@@ -1,7 +1,0 @@
-# Le contexte de build est la racine du dépôt : sans ce fichier, Docker
-# enverrait au démon les binaires de cmd/, l'historique git et les images de
-# web_packet — plusieurs centaines de Mo pour compiler un binaire de 15 Mo.
-*
-!src/ducky-network-sdk/
-!src/vaultaire_proxy/
-src/vaultaire_proxy/duckynetwork/

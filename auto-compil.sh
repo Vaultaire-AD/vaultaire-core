@@ -79,11 +79,14 @@ fi
 # « ✅ Build et déploiement terminés. » alors qu'aucun binaire n'avait été
 # produit — le pire des retours, puisqu'il faut alors découvrir la panne au
 # déploiement.
+#
+# Le quatrième argument, facultatif, porte des variables d'environnement à
+# passer au compilateur (voir le proxy et CGO_ENABLED=0).
 build_go() {
-    local libelle="$1" repertoire="$2" sortie="$3"
+    local libelle="$1" repertoire="$2" sortie="$3" env_build="${4:-}"
     echo "🛠 Build $libelle..."
     mkdir -p "$(dirname "$sortie")"
-    if ! (cd "$repertoire" && go build -buildvcs=false -o "$sortie"); then
+    if ! (cd "$repertoire" && env $env_build go build -buildvcs=false -o "$sortie"); then
         echo "❌ Build $libelle échoué — arrêt."
         exit 1
     fi
@@ -117,7 +120,17 @@ if ! "$ROOT_DIR/src/ducky-network-sdk/install.sh" "$ROOT_DIR/src/vaultaire_proxy
     exit 1
 fi
 
-build_go "du proxy" "$ROOT_DIR/src/vaultaire_proxy" "$PROXY_BIN"
+# CGO_ENABLED=0 : binaire statique.
+#
+# Le proxy n'utilise ni cgo ni résolution NSS, mais `go build` active cgo par
+# défaut dès qu'un gcc traîne, et lie alors le binaire à la glibc de la machine
+# de compilation. Il refuse ensuite de démarrer dans un conteneur dont la glibc
+# est plus ancienne — avec un « no such file or directory » qui désigne le
+# binaire et non la bibliothèque manquante, une des erreurs les plus trompeuses
+# de Linux.
+#
+# Statique, le même binaire tourne partout : debian, alpine, ou à même l'hôte.
+build_go "du proxy" "$ROOT_DIR/src/vaultaire_proxy" "$PROXY_BIN" "CGO_ENABLED=0"
 
 # La configuration d'exemple accompagne le binaire : un proxy déployé sans
 # fichier de configuration ne démarre pas, et le modèle n'est utile que là où on

@@ -1,7 +1,8 @@
 # Déploiement du proxy Vaultaire
 
-Pile autonome, à déployer sur la machine qui portera le proxy — pas
-nécessairement celle du core.
+Pile autonome. **Rien n'est compilé ici** : le binaire vient de
+`cmd/vaultaire_proxy/`, produit par `auto-compil.sh` — même principe que l'image
+du serveur.
 
 ## Mise en service
 
@@ -9,31 +10,41 @@ nécessairement celle du core.
 # 1. Sur le CORE : créer une clé d'enrôlement typée
 vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
 
-# 2. Ici : renseigner la configuration
-cp config.example.yaml config.yaml
-$EDITOR config.yaml     # core_address, enrollment.key, proxy.endpoint
+# 2. Compiler
+./auto-compil.sh
 
-# 3. Construire et démarrer
-docker compose up -d --build
+# 3. Ici : renseigner l'environnement
+cp .env.example .env
+$EDITOR .env          # VAULTAIRE_IP_CORE, VAULTAIRE_ENROLL_KEY, VAULTAIRE_PROXY_ENDPOINT
 
-# 4. Vérifier
-docker compose logs -f vaultaire-proxy
-vlt cluster list        # sur le core : le proxy doit être « online »
+# 4. Démarrer
+docker compose up -d
+
+# 5. Vérifier
+docker compose logs -f vlt-proxy
+vlt cluster list      # sur le core : le proxy doit être « online »
 ```
+
+## Mise à jour
+
+```bash
+./auto-compil.sh && docker compose restart vlt-proxy
+```
+
+L'image ne se reconstruit que si le `Dockerfile` change. Le binaire étant monté,
+un `docker compose build` ne sert à rien après une recompilation.
 
 ## L'image
 
-Multi-étages, ~15 Mo à l'arrivée : un binaire statique sur alpine, sans outil de
-compilation. Elle **compile** le proxy, contrairement à l'image du serveur qui
-monte des binaires depuis `cmd/` — un proxy tourne loin du poste de
-développement, une image qui dépend d'un volume de l'hôte n'y est pas
-déployable.
+`debian:12-slim`, un utilisateur non privilégié, aucun outil de compilation.
 
-Le build rejoue `install.sh` : le binaire est compilé sur la version du
-protocole présente dans `src/ducky-network-sdk` au moment du build, et non sur
-la copie éventuellement périmée du dépôt.
+Debian et non alpine : `auto-compil.sh` compile le proxy en `CGO_ENABLED=0`, donc
+un binaire statique tournerait sur les deux. Mais si quelqu'un le recompile un
+jour sans ce réglage, le binaire sera lié à la glibc et refusera de démarrer sur
+la musl d'alpine — avec un `no such file or directory` qui désigne le binaire et
+non la bibliothèque manquante. Debian évite ce piège.
 
-## Le volume `vaultaire_proxy_keys`
+## Le volume `vlt_proxy_keys`
 
 Il porte l'identité du proxy : clé privée, clé publique du core, identifiant
 attribué.
@@ -45,7 +56,7 @@ message qui ne dit pas que la cause est là.
 Pour un réenrôlement volontaire, préférez l'option explicite :
 
 ```bash
-docker compose run --rm vaultaire-proxy --reset-identity --config /etc/vaultaire_proxy/config.yaml
+docker compose run --rm vlt-proxy --reset-identity
 ```
 
 Elle conserve la clé publique du core, ce que la suppression du volume ne fait
@@ -53,24 +64,25 @@ pas.
 
 ## Réseau
 
-Le `docker-compose.yml` suppose par défaut que le core tourne sur la même
-machine et rejoint son réseau `pre-prod_Ducky-network`.
+Par défaut, le compose rejoint le réseau du core sur la même machine
+(`pre-prod_Ducky-network`).
 
-Sur une machine distincte — le cas normal —, commentez le bloc `external`,
-décommentez `proxy-network`, et donnez à `core_address` l'adresse routable du
-core.
+Sur une machine distincte — le cas normal pour un proxy —, commentez le bloc
+`external`, décommentez `proxy-network`, et donnez à `VAULTAIRE_IP_CORE`
+l'adresse routable du core.
 
 ## Diagnostic
 
 ```bash
-docker compose logs -f vaultaire-proxy
-docker compose exec vaultaire-proxy ls -l /var/lib/vaultaire_proxy/keys
+docker compose logs -f vlt-proxy
+docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 ```
 
 | Message | Cause |
 |---------|-------|
+| `no such file or directory` sur l'entrypoint | `cmd/vaultaire_proxy/` vide : lancez `./auto-compil.sh` |
+| `core_address requis` | `.env` absent ou `VAULTAIRE_IP_CORE` vide |
 | `enrôlement refusé : expired` | clé expirée |
 | `enrôlement refusé : exhausted` | quota épuisé — `--uses 0` pour l'illimité |
 | `identité refusée par le core` | proxy supprimé côté core, ou base réinstallée |
 | `service inconnu du cluster` | ligne purgée ; le proxy rejoue 04_09 seul |
-| aucun log | `logs.SetWriter` n'a pas été appelé — anomalie, ouvrir un ticket |

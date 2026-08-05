@@ -2,22 +2,20 @@ version: '3.8'
 
 # Proxy Vaultaire — pile autonome.
 #
-# Séparée du docker-compose.yml du core, et pas seulement par propreté : un proxy
-# se déploie sur une AUTRE machine. Le fusionner ferait croire à une pile unique
-# et rendrait la séparation moins évidente qu'elle ne doit l'être.
+# Le binaire vient de cmd/vaultaire_proxy/, produit par auto-compil.sh. Rien
+# n'est compilé ici.
 #
-# Mise en service :
+#   ./auto-compil.sh
+#   cp .env.example .env   puis le renseigner
+#   docker compose up -d
 #
-#   1. sur le core :  vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
-#   2. ici :          cp .env.example .env   puis le renseigner
-#   3.                docker compose up -d --build
-#   4. sur le core :  vlt cluster list    -> le proxy doit être « online »
+# Mise à jour :  ./auto-compil.sh && docker compose restart vlt-proxy
 
 networks:
-  # externe: true suppose que le core tourne sur la même machine et que son
-  # réseau existe déjà. Sur une machine distincte — le cas normal —, commentez
-  # ce bloc, décommentez celui du dessous, et donnez à VAULTAIRE_IP_CORE
-  # l'adresse routable du core.
+  # externe: true suppose que le core tourne sur la même machine. Sur une
+  # machine distincte — le cas normal pour un proxy —, commentez ce bloc,
+  # décommentez celui du dessous, et donnez à VAULTAIRE_IP_CORE l'adresse
+  # routable du core.
   Ducky-network:
     external: true
     name: pre-prod_Ducky-network
@@ -27,43 +25,42 @@ networks:
 
 volumes:
   # Ce volume porte l'IDENTITÉ du proxy : clé privée, clé publique du core,
-  # identifiant machine attribué à l'enrôlement.
+  # identifiant attribué à l'enrôlement.
   #
-  # Le supprimer force un réenrôlement complet et consomme une place de la clé
-  # d'enrôlement. Un `docker compose down -v` répété finit par épuiser le quota
-  # et laisse le proxy dehors, avec un message qui ne dit pas que la cause est
-  # ici.
+  # `docker compose down -v` force un réenrôlement et consomme une place de la
+  # clé d'enrôlement. Répété, il épuise le quota et laisse le proxy dehors, avec
+  # un message qui ne dit pas que la cause est là.
   vlt_proxy_keys:
 
 services:
   vlt-proxy:
     build:
-      # Contexte = racine du dépôt : l'image compile le proxy ET réinstalle son
-      # duckynetwork depuis ducky-network-sdk, qui vit en dehors de
-      # src/vaultaire_proxy.
-      context: ../../..
-      dockerfile: deployments/pre-prod/vlt-proxy/Dockerfile
+      context: .
+      dockerfile: Dockerfile
     image: vlt-proxy:latest
     container_name: vlt-proxy
     restart: unless-stopped
 
-    # Tout passe par l'environnement : aucun fichier de configuration n'est
-    # nécessaire, et surtout la CLÉ D'ENRÔLEMENT — le seul secret — ne se
-    # retrouve pas dans un fichier du dépôt. Un config.yaml contenant une clé
-    # valide finit toujours par être commité.
+    # Tout se configure par variables. Surtout la clé d'enrôlement, seul secret
+    # de la configuration : un config.yaml qui la contient finit par être
+    # commité.
     env_file:
       - .env
     environment:
       - TZ=Europe/Paris
 
     volumes:
-      # Identité, en écriture. C'est le seul endroit où le proxy écrit.
+      # Binaire, en lecture seule. Le conteneur ne doit pas pouvoir réécrire une
+      # source de l'hôte : un binaire modifié depuis l'intérieur serait ensuite
+      # committé sans qu'on comprenne d'où il vient.
+      - ../../../cmd/vaultaire_proxy:/opt/vaultaire/bin:ro
+      # Identité, en écriture. Seul endroit où le proxy écrit.
       - vlt_proxy_keys:/var/lib/vaultaire_proxy/keys
       # Configuration par fichier, si vous la préférez aux variables.
       # - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
 
-    # La v1 n'ouvre que des connexions SORTANTES vers le core. Les ports
-    # d'écoute seront à publier quand la répartition de charge arrivera.
+    # La v1 n'ouvre que des connexions SORTANTES. Les ports d'écoute seront à
+    # publier quand la répartition de charge arrivera.
     # ports:
     #   - "389:389"
     #   - "8443:8443"
@@ -71,12 +68,9 @@ services:
     networks:
       - Ducky-network
 
-    # stop_grace_period laisse partir la trame de sortie (04_14).
-    #
-    # Sans elle, Docker envoie SIGKILL au bout de 10 s ; si le proxy n'a pas eu
-    # le temps de se désenregistrer, le cluster l'affiche en ligne pendant les
-    # trois minutes de la fenêtre de battement de cœur — un arrêt planifié
-    # devient indistinguable d'une panne.
+    # stop_grace_period laisse partir la trame de sortie (04_14). Sans elle,
+    # Docker tue au bout de 10 s et le cluster affiche en ligne, pendant trois
+    # minutes, un proxy volontairement éteint.
     stop_signal: SIGTERM
     stop_grace_period: 30s
 

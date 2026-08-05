@@ -1,89 +1,49 @@
 # ====================================================================
-# vaultaire_proxy — image d'exécution minimale
+# vlt-proxy — image d'exécution pre-prod
 # ====================================================================
 #
-# Contrairement à l'image du serveur, celle-ci COMPILE et embarque son binaire.
+# Cette image ne contient AUCUN binaire et ne compile rien. Le binaire vient de
+# cmd/vaultaire_proxy/, monté en volume par docker-compose — même principe que
+# l'image du serveur.
 #
-# La raison est le lieu d'exécution : le serveur tourne sur le poste de
-# développement, où cmd/ est monté et où recompiler est immédiat. Un proxy
-# tourne ailleurs — en périphérie, chez un client, dans un réseau qu'on ne
-# maîtrise pas. Une image qui dépend d'un volume monté depuis l'hôte n'y est pas
-# déployable.
+# Pourquoi : recompiler ici rejouerait un étage Go complet à chaque itération
+# pour produire un binaire qu'auto-compil.sh vient déjà de fabriquer. Une mise à
+# jour se réduit à :
 #
-# Résultat : ~15 Mo, un seul binaire statique, aucun outil de compilation.
-
-# --------------------------------------------------------------------
-# Étage 1 — compilation
-# --------------------------------------------------------------------
-FROM golang:1.23-alpine AS builder
-
-# bash pour install.sh, git pour -buildvcs.
-RUN apk add --no-cache bash git
-
-WORKDIR /build
-
-# Le SDK est copié À CÔTÉ des sources du proxy, et install.sh est rejoué ici.
+#     ./auto-compil.sh && docker compose restart vlt-proxy
 #
-# On ne se contente pas du duckynetwork/ présent dans le dépôt : le binaire
-# livré doit être compilé sur la version du protocole présente dans
-# ducky-network-sdk au moment du build, pas sur une copie que quelqu'un aurait
-# oublié de rafraîchir. C'est exactement ce qui avait laissé l'ancien proxy sur
-# PKCS#1 v1.5 quand le core est passé à OAEP : un binaire parfaitement compilé
-# qui ne parlait plus au serveur.
-COPY src/ducky-network-sdk/ ./ducky-network-sdk/
-COPY src/vaultaire_proxy/   ./vaultaire_proxy/
-
-RUN ./ducky-network-sdk/install.sh /build/vaultaire_proxy
-
-WORKDIR /build/vaultaire_proxy
-
-# CGO_ENABLED=0 produit un binaire sans dépendance à la libc : c'est ce qui
-# permet à l'étage suivant d'être quasi vide. Le proxy n'utilise ni cgo ni
-# résolution NSS.
-RUN CGO_ENABLED=0 GOOS=linux go build \
-        -buildvcs=false \
-        -ldflags="-s -w" \
-        -o /out/vaultaire_proxy .
-
-# --------------------------------------------------------------------
-# Étage 2 — exécution
-# --------------------------------------------------------------------
+# L'image ne se reconstruit que lorsque ce fichier change.
 #
-# alpine plutôt que scratch, sciemment.
-#
-# scratch gagnerait 7 Mo, mais retirerait tout moyen de diagnostiquer un proxy
-# déployé loin : pas de shell, pas de ping, pas de cat sur le fichier de
-# configuration. Sur une machine qu'on ne peut pas atteindre autrement, ces
-# 7 Mo achètent la possibilité d'un `docker exec`.
-FROM alpine:3.20
+# Point de montage attendu :
+#   /opt/vaultaire/bin   <- cmd/vaultaire_proxy   (binaire + config d'exemple)
+
+FROM debian:12-slim
 
 LABEL maintainer="adm-lviguie"
-LABEL description="Vaultaire proxy - client de service du cluster"
+LABEL description="Vaultaire proxy - client de service du cluster (binaire monte en volume)"
 LABEL env="preprod"
 
-# ca-certificates n'est pas requis par le protocole Ducky, qui chiffre lui-même,
-# mais évite une surprise le jour où le proxy appellera un service en HTTPS.
-RUN apk add --no-cache ca-certificates tzdata \
-    && addgroup -S vaultaire \
-    && adduser -S -G vaultaire -h /var/lib/vaultaire_proxy vaultaire \
-    && mkdir -p /etc/vaultaire_proxy /var/lib/vaultaire_proxy/keys \
+# debian-slim et non alpine : auto-compil.sh compile le proxy en CGO_ENABLED=0,
+# donc un binaire statique tournerait sur les deux. Mais si quelqu'un le
+# recompile un jour sans ce réglage, le binaire sera lié à la glibc et refusera
+# de démarrer sur la musl d'alpine, avec un « not found » qui désigne le
+# binaire lui-même et non la bibliothèque manquante. Debian évite ce piège.
+RUN useradd --system --create-home --home-dir /var/lib/vaultaire_proxy \
+            --shell /usr/sbin/nologin vaultaire \
+    && mkdir -p /opt/vaultaire/bin /etc/vaultaire_proxy /var/lib/vaultaire_proxy/keys \
     && chown -R vaultaire:vaultaire /var/lib/vaultaire_proxy \
-    && chmod 700 /var/lib/vaultaire_proxy/keys
-
-COPY --from=builder /out/vaultaire_proxy /usr/local/bin/vaultaire_proxy
-COPY --chown=vaultaire:vaultaire src/vaultaire_proxy/config.example.yaml \
-     /etc/vaultaire_proxy/config.example.yaml
-
-# Le proxy n'a besoin d'aucun privilège : il ouvre une connexion SORTANTE vers
-# le core et n'écrit que dans son répertoire de clés. Tourner en root lui
-# donnerait un pouvoir dont il ne fait rien, sur une machine exposée.
-USER vaultaire
+    && chmod 700 /var/lib/vaultaire_proxy/keys \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata \
+    && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /var/lib/vaultaire_proxy
 
-# 389 et 8443 pour la répartition de charge à venir. La v1 n'écoute rien : elle
-# ne fait que se connecter au core.
+# Le proxy n'a besoin d'aucun privilège : il ouvre une connexion SORTANTE vers le
+# core et n'écrit que dans son répertoire de clés.
+USER vaultaire
+
+# 389 et 8443 pour la répartition de charge à venir. La v1 n'écoute rien.
 EXPOSE 389 8443
 
-ENTRYPOINT ["/usr/local/bin/vaultaire_proxy"]
-CMD ["--config", "/etc/vaultaire_proxy/config.yaml"]
+ENTRYPOINT ["/opt/vaultaire/bin/vaultaire_proxy"]
