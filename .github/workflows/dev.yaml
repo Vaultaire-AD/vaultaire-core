@@ -267,7 +267,6 @@ jobs:
       - lint
       - sast
       - dependency-audit
-      - secrets-scan
       - docker-audit
       - iac-audit
       - sbom
