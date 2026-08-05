@@ -65,21 +65,21 @@ func loadConfig() (Config, error) {
 
 // Lecture clé privée RSA
 func loadPrivateKey(path string) (ssh.Signer, error) {
-    data, err := os.ReadFile(path)
-    if err != nil {
-        return nil, fmt.Errorf("lecture fichier impossible (%s): %v", path, err)
-    }
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("lecture fichier impossible (%s): %v", path, err)
+	}
 
-    // Très important : Nettoie les espaces ou retours à la ligne en début/fin de fichier
-    data = bytes.TrimSpace(data)
+	// Très important : Nettoie les espaces ou retours à la ligne en début/fin de fichier
+	data = bytes.TrimSpace(data)
 
-    signer, err := ssh.ParsePrivateKey(data)
-    if err != nil {
-        // %v affichera la raison réelle (ex: "ssh: no key found", "ssh: uncertified key", etc.)
-        return nil, fmt.Errorf("raison technique: %v", err)
-    }
+	signer, err := ssh.ParsePrivateKey(data)
+	if err != nil {
+		// %v affichera la raison réelle (ex: "ssh: no key found", "ssh: uncertified key", etc.)
+		return nil, fmt.Errorf("raison technique: %v", err)
+	}
 
-    return signer, nil
+	return signer, nil
 }
 
 // Signe un message avec RSA

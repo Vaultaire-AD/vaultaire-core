@@ -135,7 +135,7 @@ var caStorePaths = []struct {
 	suffix  string
 	refresh []string
 }{
-	{"/usr/local/share/ca-certificates", ".crt", []string{"update-ca-certificates"}}, // Debian/Ubuntu
+	{"/usr/local/share/ca-certificates", ".crt", []string{"update-ca-certificates"}},     // Debian/Ubuntu
 	{"/etc/pki/ca-trust/source/anchors", ".pem", []string{"update-ca-trust", "extract"}}, // RHEL/Rocky
 }
 

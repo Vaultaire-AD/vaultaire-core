@@ -40,9 +40,9 @@ func main() {
 
 	// Connexion ducky au Core : handshake 01_01/01_02 puis 04_01 (register) si --add-host
 	client, err := duckynetwork.NewClient(duckynetwork.ClientOpts{
-		CoreAddress:    coreAddr,
-		ComputeurID:    cfg.Identity.ComputeurID,
-		PrivateKeyPEM:  cfg.Identity.PrivateKeyPEM,
+		CoreAddress:     coreAddr,
+		ComputeurID:     cfg.Identity.ComputeurID,
+		PrivateKeyPEM:   cfg.Identity.PrivateKeyPEM,
 		ServerPubKeyPEM: cfg.Identity.ServerPubKey,
 	})
 	if err != nil {

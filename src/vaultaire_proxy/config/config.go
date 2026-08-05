@@ -10,7 +10,7 @@ import (
 type Config struct {
 	CoreAddress string `yaml:"core_address"` // host:port du Core (ducky-network)
 	Identity    struct {
-		ComputeurID   string `yaml:"computeur_id"`   // ID logiciel (pré-enregistré sur le Core)
+		ComputeurID   string `yaml:"computeur_id"`    // ID logiciel (pré-enregistré sur le Core)
 		PrivateKeyPEM string `yaml:"private_key_pem"` // Clé privée PEM (ou chemin vers fichier)
 		ServerPubKey  string `yaml:"server_pub_key"`  // Clé publique du serveur Core PEM (ou chemin)
 	} `yaml:"identity"`

@@ -22,11 +22,11 @@ import (
 const commandEndpoint = "/api/command"
 
 type Config struct {
-	Server            string
-	Username          string
-	PrivateKeyPath    string
+	Server             string
+	Username           string
+	PrivateKeyPath     string
 	InsecureSkipVerify bool
-	Timeout           time.Duration
+	Timeout            time.Duration
 }
 
 type Client struct {

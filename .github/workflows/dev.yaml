@@ -203,7 +203,7 @@ jobs:
         continue-on-error: true
         with:
           directory: deployments/pre-prod/
-          framework: docker_compose,dockerfile,secrets
+          framework: docker_compose.yaml,Dockerfile
           output_format: sarif
           output_file_path: checkov-results.sarif
           soft_fail: true

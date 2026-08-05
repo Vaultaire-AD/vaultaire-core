@@ -115,7 +115,7 @@ func (c *Client) LocalIP() string {
 	return ""
 }
 
-func (c *Client) Hostname() string { return c.hostname }
+func (c *Client) Hostname() string     { return c.hostname }
 func (c *Client) SetHostname(h string) { c.hostname = h }
 
 func (c *Client) writeFrame(payload []byte) error {
