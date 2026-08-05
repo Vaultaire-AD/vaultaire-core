@@ -146,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dockerfile: [deployments/pre-prod/dockerfile, deployments/dev/dockerfile]
+        dockerfile: [deployments/pre-prod/Dockerfile, deployments/dev/dockerfile]
     steps:
       - uses: actions/checkout@v4
 
@@ -202,7 +202,7 @@ jobs:
         uses: bridgecrewio/checkov-action@master
         continue-on-error: true
         with:
-          directory: deployments/preprod/
+          directory: deployments/pre-prod/
           framework: docker_compose,dockerfile,secrets
           output_format: sarif
           output_file_path: checkov-results.sarif
