@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"vaultaire/core/clienttype"
 	"vaultaire/core/database"
 	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
@@ -46,7 +47,28 @@ func generateRandomID(length int) (string, error) {
 	return string(result) + "-" + currentDate, nil
 }
 
-func GenerateClientSoftware(logicielType string, isServeur bool) (string, error) {
+// GenerateClientSoftware crée un AGENT et lui génère sa paire de clés.
+//
+// # Pourquoi il n'y a plus de paramètre de type
+//
+// Ce chemin ne peut produire qu'un client basic. Un client service ne se crée
+// pas sur le core : il s'enrôle lui-même en présentant une clé d'enrôlement, et
+// génère sa paire sur son propre hôte. Passer par ici produirait une clé privée
+// écrite sur le disque du serveur puis transportée — exactement ce que
+// l'enrôlement existe pour éviter.
+//
+// Le type était auparavant une chaîne libre saisie par l'administrateur. Rien ne
+// la validait, et rien n'en dépendait : le formulaire web proposait « client »
+// en simple exemple. La laisser ouverte alors qu'une seule valeur est correcte
+// n'offrait aucun choix, seulement l'occasion d'une faute de frappe — qui produit
+// désormais un client incapable d'émettre la moindre trame.
+//
+// isServeur reste un paramètre : c'est un mode de fonctionnement de l'agent, pas
+// un type. Le binaire est le même et émet les mêmes trames ; il ouvre seulement
+// un tunnel machine en plus.
+func GenerateClientSoftware(isServeur bool) (string, error) {
+	logicielType := clienttype.Client
+
 	// Génération d'un ID unique pour le Computeur
 	computeurID, _ := generateRandomID(12)
 	// Génération de la paire de clés SSH

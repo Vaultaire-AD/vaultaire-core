@@ -774,19 +774,16 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		switch action {
 		case "create_client":
-			logicielType := r.FormValue("logiciel_type")
-			isServeurStr := r.FormValue("is_serveur")
-			if logicielType == "" {
-				data.Message = "Type du client requis."
+			// Le type n'est plus saisi : ce formulaire ne peut créer qu'un
+			// client basic. Un client service s'enrôle lui-même avec sa propre
+			// paire de clés, il ne se crée pas depuis l'administration.
+			isServeur := r.FormValue("is_serveur") == "1"
+			computeurID, err := newclient.GenerateClientSoftware(isServeur)
+			if err != nil {
+				data.Message = "Erreur création : " + err.Error()
+				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client failed: "+err.Error())
 			} else {
-				isServeur := isServeurStr == "1"
-				computeurID, err := newclient.GenerateClientSoftware(logicielType, isServeur)
-				if err != nil {
-					data.Message = "Erreur création : " + err.Error()
-					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client failed: "+err.Error())
-				} else {
-					data.Message = "Client créé avec ID : " + computeurID
-				}
+				data.Message = "Client créé avec ID : " + computeurID
 			}
 		case "delete_client":
 			computeurID := r.FormValue("computeur_id")

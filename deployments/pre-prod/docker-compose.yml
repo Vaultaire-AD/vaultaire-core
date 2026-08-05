@@ -20,6 +20,10 @@ services:
     volumes:
       - vaultaire_db_data:/var/lib/mysql
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      # Compte base dedie a l'interface web, en lecture plus quatre colonnes
+      # MFA. Ne s'execute qu'a l'initialisation d'un volume vide : voir
+      # l'en-tete du script pour une base deja en service.
+      - ./scripts/init-web-user.sh:/docker-entrypoint-initdb.d/init-web-user.sh:ro
     ports:
       - "3306:3306"
     networks:

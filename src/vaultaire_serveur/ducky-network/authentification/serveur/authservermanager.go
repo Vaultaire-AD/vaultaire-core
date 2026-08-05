@@ -1,6 +1,8 @@
 package serveur
 
 import (
+	"vaultaire/core/database"
+	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sessionmgr"
@@ -45,11 +47,32 @@ func Serveur_Auth_Manager(trames_content storage.Trames_struct_client, duckysess
 		// Toutes les trames ultérieures seront comparées à cette valeur (voir
 		// tramesmanager.Split_Action).
 		duckysession.BoundClientSoftwareID = trames_content.ClientSoftwareID
+
+		// Le TYPE de programme est lu ici, une seule fois, et figé comme
+		// l'identifiant. Il décide de ce que la session pourra émettre — voir
+		// core/clienttype et tramesmanager.Split_Action.
+		//
+		// Une lecture qui échoue laisse BoundClientType vide, et un type vide
+		// n'émet rien : la session est ouverte mais stérile. C'est le bon sens
+		// de l'échec — une base injoignable ne doit pas ouvrir le protocole,
+		// elle doit le fermer.
+		if clientType, err := dbclients.Get_Client_Type(database.GetDatabase(), trames_content.ClientSoftwareID); err != nil {
+			logs.Write_LogCodeMeta("WARNING", logs.CodeNone,
+				"type de client illisible pour "+trames_content.ClientSoftwareID+" : "+err.Error(),
+				logs.WithMeta(sessionIntegritykey, trames_content.Username))
+		} else {
+			duckysession.BoundClientType = clientType
+		}
 		// Amorce le suivi de l'ordre des trames pour la suite de la session
 		// (remplace le seed fait par l'ancien sync.AddConnectionToMap).
 		sessionmgr.Sessions.SeedTrame(sessionIntegritykey, "01_01")
 
 		message = Prove_Identity(trames_content.Content, sessionIntegritykey)
+
+	case "03":
+		// Enrôlement d'un client service. Arrive AVANT toute session : le
+		// client n'existe pas encore, donc ni identifiant ni type à figer.
+		message = HandleEnrollment(trames_content, duckysession)
 	}
 	return message
 }

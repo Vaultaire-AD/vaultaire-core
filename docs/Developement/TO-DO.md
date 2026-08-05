@@ -46,49 +46,6 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             particulier (CheckAuthentification.go) avec un defi chiffre par cle. Soit on
             lui donne un vrai sel, soit on corrige la doc.
 
-11.[FAIT-IA] [SECURITY][CRITIQUE] - Remplacer RSA PKCS#1 v1.5 par OAEP sur la poignee de main Ducky
-            LE PROBLEME. rsa.DecryptPKCS1v15 est vulnerable a Bleichenbacher : un oracle
-            de bourrage a texte chiffre choisi. Les trois conditions etaient reunies, ce
-            qui rendait la faille exploitable A DISTANCE SANS AUCUN IDENTIFIANT :
-              - la cle publique du serveur s'obtient par un « askkey » NON authentifie ;
-              - tant que IsSafe est faux, le serveur dechiffre tout ce qu'on lui envoie
-                avec sa cle privee (trames_manager/ReadMessageContent.go) ;
-              - l'echec etait distinguable : log CRITICAL, comportement different en aval.
-
-            [FAIT] Les 6 sites migres vers EncryptOAEP / DecryptOAEP, SHA-256, label nil.
-                   Serveur (2) : key_decode_encode/DecodeWithServeurPrivateKey.go
-                                 key_decode_encode/EncodeWithClientPublicKey.go
-                   Agent (4)   : key_encode_decode/DecodeWithClientPrivateKey.go
-                                 key_encode_decode/EncodeWithServerPublicKey.go
-                                 serveurauth/serveurauth.go x2 (defi + message)
-
-            [FAIT] Parametres centralises dans oaep_params.go de chaque cote. Les deux
-                   modules Go etant separes, la duplication est inevitable : elle est
-                   assumee et documentee, avec la regle « les deux fichiers se modifient
-                   ensemble ou pas du tout ». Une divergence de hachage ou de label donne
-                   un echec INDISTINGUABLE d'une mauvaise cle.
-                   Dans le module client, serveurauth importe les parametres exportes de
-                   key_encode_decode plutot que de recopier sha256.New() une 3e fois.
-
-            [FAIT] Taille verifiee, pas de fragmentation necessaire. RSA-4096 des deux
-                   cotes : la charge utile passe de 501 a 446 octets. La plus grosse trame
-                   pre-IsSafe est le 02_01, ~112 octets d'en-tete + le mot de passe, soit
-                   plus de 330 caracteres de marge. MaxOAEPPayload() expose le calcul.
-
-            [FAIT] Le log d'echec de dechiffrement passe de CRITICAL a WARNING : un paquet
-                   malforme sur un port expose est le bruit de fond normal, et le niveau
-                   de log etait UNE DES FACONS dont l'echec devenait observable.
-
-            [FAIT] Les CLES N'ONT PAS CHANGE. OAEP est un bourrage, pas un format de cle :
-                   memes paires, memes PEM, memes lignes en base. Rien a regenerer.
-
-            [FAIT] Documentation : Tableau_Protocole_Reseau.md, nouvelle section
-                   « Chiffrement du canal ».
-
-            INCOMPATIBLE avec les agents anterieurs : bascule simultanee serveur + parc.
-            Aucun repli sur PKCS1v15 n'a ete mis en place, volontairement — le repli
-            RECREE l'oracle, un attaquant n'ayant qu'a envoyer du bourrage OAEP invalide
-            pour le declencher. Acceptable car le projet est en developpement.
 
 12.[LDAP] - Remplacer les encodeurs BER ecrits a la main par go-asn1-ber
             Chemins : core/ldap/LDAP_BIND-UNBIND/LDAP_bind.go:20 et 29-44

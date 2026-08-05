@@ -3,6 +3,7 @@ package tramesmanager
 import (
 	"fmt"
 	"strings"
+	"vaultaire/core/clienttype"
 	"vaultaire/core/database"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -51,6 +52,34 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			"trame %s refusée : la session %s est liée à la machine %q mais la trame annonce %q",
 			messageOrder, duckysession.SessionID,
 			duckysession.BoundClientSoftwareID, trames_content.ClientSoftwareID))
+		if err := duckysession.Conn.Close(); err != nil {
+			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
+		}
+		return
+	}
+
+	// Second contrôle au même endroit, et pour la même raison : le TYPE de
+	// programme décide de ce qu'il a le droit d'émettre.
+	//
+	// La granularité est la SOUS-TRAME et non la catégorie. L'interface web
+	// utilise 02 pour s'authentifier, mais n'a rien à faire de 02_11, 02_12 et
+	// 02_13, qui sont l'inventaire matériel d'une machine — elle n'a ni
+	// processeur ni mémoire à déclarer. Un contrôle par catégorie lui ouvrirait
+	// les trois.
+	//
+	// FAIL-CLOSED : un type inconnu, ou vide parce que la lecture a échoué à la
+	// poignée de main, n'émet rien. C'est ce qui rend le catalogue sûr par
+	// défaut — une sous-trame ajoutée au protocole reste interdite à tous tant
+	// qu'elle n'a pas été déclarée.
+	//
+	// 01_01 échappe nécessairement au contrôle : c'est la trame qui établit le
+	// type. Les trames d'enrôlement 01_03/01_04 aussi, et pour une raison plus
+	// forte — elles précèdent l'existence même du client. C'est la clé
+	// d'enrôlement qui les autorise.
+	if messageOrder != "01_01" && !clienttype.MayEmit(duckysession.BoundClientType, messageOrder) {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"trame %s refusée : la machine %q est de type %q, qui n'a pas le droit de l'émettre",
+			messageOrder, duckysession.BoundClientSoftwareID, duckysession.BoundClientType))
 		if err := duckysession.Conn.Close(); err != nil {
 			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 		}

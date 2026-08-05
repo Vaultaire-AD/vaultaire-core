@@ -46,4 +46,16 @@ type DuckySession struct {
 	// la configuration SSH et le contenu des fichiers déployés — d'une machine
 	// quelconque du parc. Comparer chaque trame à cette valeur ferme cet écart.
 	BoundClientSoftwareID string
+
+	// BoundClientType est le type de programme de cette machine, lu en base à
+	// la poignée de main et figé pour toute la connexion.
+	//
+	// Il décide de ce que la session a le droit d'émettre (voir
+	// core/clienttype et tramesmanager.Split_Action). Figé pour la même raison
+	// que BoundClientSoftwareID : le relire à chaque trame laisserait une
+	// modification concurrente changer les droits d'une session en cours.
+	//
+	// Vide tant que la poignée de main n'a pas eu lieu, ce qui interdit tout
+	// par construction — un type inconnu n'émet rien.
+	BoundClientType string
 }

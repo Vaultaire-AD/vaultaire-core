@@ -830,3 +830,415 @@ n'aurait nulle part où vivre une fois le compte supprimé.
 2. **`delete -u` déclenche une révocation `hard`.** Corrige un défaut réel : la suppression retirait le compte de l'annuaire et laissait le compte local vivant sur chaque machine, mot de passe compris dans `/etc/shadow`. Le compte survivait à sa propre suppression.
 3. **Confirmation** : aucune pour le mode `soft` (réversible, c'est un bouton d'urgence) ; saisie du nom du compte exigée pour le mode `hard` (irréversible, détruit le répertoire personnel).
 4. **Lecture des groupes** : `GetGroupIDsForUser` retournait tous les groupes des domaines de l'utilisateur au lieu de ceux dont il est membre. C'était bien un défaut — une élévation de privilèges silencieuse — et il est corrigé. Procédure de bascule et requêtes de diagnostic dans `migrations/rbac_groupes_stricts.md`.
+
+---
+
+# Enrôlement d'un client service (01_03 à 01_06)
+
+> **Statut : proposition, en attente de validation.** Contexte dans
+> [`Architecture_Services.md`](./Architecture_Services.md) §3 et §4.
+
+## Pourquoi dans la catégorie 01 et pas ailleurs
+
+L'enrôlement précède l'existence du client : il n'y a ni session, ni identifiant
+machine, ni clé publique en base. C'est exactement la phase que couvre déjà la
+catégorie 01 — « Server auth », la poignée de main avant tout le reste.
+
+Conséquence à connaître : **`01_03` échappe au contrôle par type de client**
+décrit dans `Architecture_Services.md` §4 bis. Elle ne peut pas y être soumise,
+puisque le type n'existe pas encore. C'est la **clé d'enrôlement** qui autorise
+la trame, et c'est **son type à elle** qui décide de ce que le client pourra
+émettre ensuite.
+
+## Ce que la clé porte, et ce que le client ne choisit pas
+
+La clé d'enrôlement est émise par le core avec un **type**, une **expiration** et
+un **quota d'utilisations**. Le client ne déclare donc pas son type : il le
+reçoit.
+
+C'est le point de sécurité central de ce flux. Si le client annonçait son type,
+n'importe quel service enrôlé pourrait se déclarer `vaultaire_web` et obtenir
+`AssertsUser`, c'est-à-dire le droit d'agir au nom de n'importe quel utilisateur.
+Le type vient de la clé, la clé vient d'un administrateur : le service n'a aucune
+prise sur ses propres privilèges.
+
+## Séquence
+
+```
+service                                          core
+  |-- askkey (non authentifié) ----------------->  |
+  |<-- clé publique du serveur -------------------  |
+  |
+  |   génère sa paire RSA-4096 localement          |
+  |
+  |-- 01_03 enroll_request --------------------->  |  valide la clé, crée le client
+  |<-- 01_04 enroll_ok ---------------------------  |  chiffrée avec la clé publique
+  |                                                |  que le service vient d'envoyer
+  |   ... puis 01_01 / 01_02 classiques ...        |
+```
+
+**La preuve de possession est gratuite.** `01_04` est chiffrée avec la clé
+publique soumise en `01_03` : seul le détenteur de la privée correspondante peut
+lire son `computeur_id`. C'est le mécanisme de `01_02`, et l'audit 2.0 avait déjà
+établi qu'il rend un défi explicite superflu.
+
+## Format des trames
+
+### 01_03 — enroll_request (client → serveur)
+
+Chiffrée avec la clé publique du serveur, comme `01_01`.
+
+```
+01_03
+serveur_central
+-
+-
+-
+<clé_enrôlement>
+<clé_publique_pem_base64>
+<libellé>
+```
+
+Les trois champs d'en-tête sont vides : il n'y a ni session, ni utilisateur, ni
+identifiant machine à ce stade. Le `libellé` est une chaîne libre destinée aux
+journaux et à l'affichage (« web-preprod ») ; il n'a aucune valeur de sécurité et
+n'est jamais utilisé pour une décision.
+
+### 01_04 — enroll_ok (serveur → client)
+
+Chiffrée avec la clé publique reçue en `01_03`.
+
+```
+01_04
+<destination>
+-
+<computeur_id_attribué>
+<type_de_client>
+```
+
+Le type est renvoyé pour que le service sache ce qu'il a le droit d'émettre, et
+puisse échouer tôt et clairement s'il attendait autre chose.
+
+### 01_05 — enroll_denied (serveur → client)
+
+En clair : le serveur n'a pas forcément de clé publique exploitable si `01_03`
+était malformée.
+
+| Code | Sens |
+|---|---|
+| `unknown_key` | clé inconnue |
+| `expired_key` | date d'expiration dépassée |
+| `exhausted_key` | quota d'utilisations atteint |
+| `revoked_key` | clé révoquée |
+| `unknown_type` | le type porté par la clé n'est plus au catalogue |
+| `bad_public_key` | clé publique illisible ou trop faible |
+
+**Les cinq premiers codes sont volontairement distincts dans les journaux mais
+indistincts pour le client**, qui reçoit `invalid_key` dans les cinq cas. Une
+réponse détaillée transformerait le point d'enrôlement en oracle : un attaquant
+apprendrait qu'une clé existe mais est expirée, donc qu'elle a existé, donc que le
+format est le bon. Le journal serveur, lui, porte la vraie raison.
+
+### 01_06 — enroll_rate_limited (serveur → client)
+
+L'enrôlement est le seul point du protocole où un inconnu peut solliciter le
+serveur en écriture. Il est donc limité **par adresse source**, indépendamment de
+la validité de la clé — sinon l'énumération de clés ne coûte rien.
+
+**Numérotation : 01_01 à 01_06. Libre à partir de 01_07.**
+
+## Traçabilité
+
+Chaque consommation écrit une ligne dans `service_enrollment_use` :
+identifiant de clé, `computeur_id` créé, adresse source, horodatage.
+
+Sans cette table, on ne peut pas répondre à « quels services sont entrés par cette
+clé ? » le jour où l'on découvre qu'elle a fuité — et c'est précisément le jour où
+la question se pose.
+
+---
+
+# Cluster : enregistrement d'un service (04_09 à 04_14)
+
+> **Statut : proposition, en attente de validation.**
+
+La catégorie 04 porte déjà l'enregistrement d'un **hôte** (`04_01`), le service
+discovery (`04_03`), les métriques proxy (`04_05`) et le battement de cœur
+(`04_07`). La plage réservée va jusqu'à `04_19`.
+
+## Pourquoi ne pas réutiliser 04_01
+
+`register_host` déclare une **machine** : hostname, fqdn, ip, role, domain. Un
+service déclare une **fonction** : son type, sa version, ce qu'il sait faire.
+Ce ne sont pas les mêmes données.
+
+Les séparer a une seconde conséquence, plus importante : la restriction par
+sous-trame reste utile. Un `vaultaire_proxy` peut émettre `04_01` et pas `04_09` ;
+un `vaultaire_web` l'inverse. Un enregistrement unique pour les deux effacerait
+cette distinction.
+
+### 04_09 — register_service (client → serveur)
+
+```
+04_09
+serveur_central
+<session_integrity_key>
+<username_du_programme>
+<client_software_id>
+<version>
+<endpoint>
+<capabilities>
+```
+
+`capabilities` est une liste séparée par des virgules, à visée d'inventaire et
+d'affichage. **Elle n'accorde aucun droit** : ce que le service peut émettre est
+décidé par son type au catalogue, jamais par ce qu'il déclare savoir faire. Un
+champ déclaratif qui accorderait des droits serait une élévation de privilèges
+offerte au client.
+
+### 04_10 — register_service_ok (serveur → client)
+
+### 04_11 — register_service_error (serveur → client)
+
+Codes : `unknown_service`, `version_refused`, `duplicate_endpoint`.
+
+### 04_12 — service_heartbeat (client → serveur)
+
+Même rôle que `04_07` pour les hôtes : maintenir le service en ligne dans
+`cluster_nodes`. Un service qui cesse de battre est marqué hors ligne, et
+l'interface d'administration peut le signaler au lieu de laisser un
+administrateur découvrir la panne par un timeout.
+
+### 04_13 — service_heartbeat_ack (serveur → client)
+
+### 04_14 — service_deregister (client → serveur)
+
+Sortie propre à l'arrêt du service. Sans elle, un arrêt planifié serait
+indistinguable d'une panne pendant toute la fenêtre de battement de cœur.
+
+**Numérotation : 04_09 à 04_14. Libre à partir de 04_15, la plage réservée allant
+jusqu'à 04_19.**
+
+---
+
+# Détail du transport de commandes (catégorie 07)
+
+> **Statut : proposition, en attente de validation. Aucune implémentation avant
+> accord.** Contexte et découpage des programmes dans
+> [`Architecture_Services.md`](./Architecture_Services.md).
+
+## Pourquoi une catégorie séparée
+
+Les catégories 02 à 06 transportent des opérations **fixées à l'avance** :
+authentifier, tirer une politique, acquitter une révocation. Le serveur sait ce
+qui va arriver et n'a qu'à le traiter.
+
+La catégorie 07 transporte une **commande VLT arbitraire**, c'est-à-dire tout ce
+que le routeur `core/command` sait faire, présent et à venir. C'est une
+différence de nature, pas de sujet : ajouter une commande au CLI l'expose
+automatiquement ici, sans toucher au protocole.
+
+C'est aussi ce qui justifie de ne pas la mélanger aux autres. Une trame 07 peut
+avoir des effets de bord irréversibles — `delete -u` déclenche une révocation
+`hard` — là où une trame 05 est une lecture idempotente. Les contrôles ne peuvent
+donc pas être les mêmes.
+
+## Séquence
+
+```
+web                                        serveur central
+ |                                              |
+ |-- 07_01 command_request ------------------->  |  vérifie type client, identité
+ |                                              |  déclarée, fraîcheur, rejeu
+ |                                              |  puis core/command.ExecuteCommand
+ |                                              |
+ |<-- 07_02 command_result --------------------  |  résultat complet, OU manifeste
+ |                                              |     si la sortie dépasse une trame
+ |                                              |
+ |-- 07_04 ask_result_chunk (n) -------------->  |  (seulement si fragmenté)
+ |<-- 07_05 result_chunk (n) ------------------  |
+ |            ... jusqu'au dernier fragment      |
+```
+
+Le client **tire** les fragments, comme pour les GPO. Le serveur ne pousse rien :
+un résultat volumineux dont le destinataire a disparu ne doit pas occuper une
+goroutine à écrire dans le vide.
+
+## Contrainte de taille
+
+Identique à celle des GPO — `uint16` sur le fil, base64 sur AES-GCM, soit environ
+49 Kio utiles. `get -u` sur un annuaire fourni dépasse largement. **Fragments de
+32 Kio**, même marge et même raison qu'en catégorie 05.
+
+Le seuil de fragmentation est donc : au-delà de 32 Kio de résultat, 07_02 porte un
+manifeste au lieu du corps.
+
+## Format des trames
+
+### 07_01 — command_request (client → serveur)
+
+```
+07_01
+serveur_central
+<session_integrity_key>
+<username_du_programme>
+<client_software_id>
+<request_id>
+<timestamp>
+<asserted_user>
+<output_format>
+<commande>
+```
+
+| Champ | Rôle |
+|---|---|
+| `request_id` | entier, **strictement croissant** dans la session |
+| `timestamp` | RFC 3339 UTC, fenêtre d'acceptation de 2 minutes |
+| `asserted_user` | utilisateur au nom duquel la commande s'exécute |
+| `output_format` | `json` ou `text` |
+| `commande` | la ligne VLT telle qu'on la taperait : `get -u alice` |
+
+La commande est sur **une seule ligne** et passe par
+`command.SplitArgsPreserveBlocks`, exactement comme la saisie d'un terminal. Un
+seul analyseur d'arguments pour les deux chemins : deux analyseurs finiraient par
+diverger sur les guillemets, et l'écart serait exploitable.
+
+### 07_02 — command_result (serveur → client)
+
+```
+07_02
+<destination>
+<session_integrity_key>
+<request_id>
+<fragments>
+<taille_totale>
+<empreinte>
+<corps ou vide si fragments > 1>
+```
+
+`fragments = 1` : le corps suit directement. Sinon il est vide et le client
+demande ses fragments en 07_04.
+
+L'empreinte SHA-256 porte sur le corps **complet reconstitué**. Elle n'est pas
+décorative : sans elle, un fragment perdu ou dupliqué produirait un JSON tronqué
+que le web afficherait comme une réponse valide.
+
+### 07_03 — command_error (serveur → client)
+
+```
+07_03
+<destination>
+<session_integrity_key>
+<request_id>
+<code>
+<message>
+```
+
+| Code | Sens |
+|---|---|
+| `forbidden_category` | le type de client n'a pas le droit d'émettre 07 |
+| `assert_not_allowed` | le type de client n'a pas le droit de déclarer une identité |
+| `stale_request` | horodatage hors fenêtre |
+| `replayed_request` | `request_id` déjà vu ou non croissant |
+| `unknown_user` | l'utilisateur déclaré n'existe pas ou est révoqué |
+| `permission_denied` | RBAC : refus, avec le motif dans `message` |
+| `command_failed` | la commande a échoué ; `message` porte son texte |
+
+**`permission_denied` et `command_failed` sont distincts à dessein.** Le premier
+est une décision de sécurité, journalisée en SECURITY ; le second est une erreur
+d'exploitation ordinaire. Les confondre rendrait les journaux inexploitables pour
+détecter des tentatives.
+
+### 07_04 — ask_result_chunk (client → serveur)
+
+```
+07_04
+serveur_central
+<session_integrity_key>
+<username_du_programme>
+<client_software_id>
+<request_id>
+<index_du_fragment>
+```
+
+### 07_05 — result_chunk (serveur → client)
+
+```
+07_05
+<destination>
+<session_integrity_key>
+<request_id>
+<index>
+<total>
+<corps du fragment>
+```
+
+### 07_06 — result_chunk_error (serveur → client)
+
+Codes : `unknown_request` (résultat expiré ou jamais produit),
+`bad_index`.
+
+Un résultat en attente de retrait est **conservé au plus 60 secondes** et lié à
+la session qui l'a demandé. Le garder plus longtemps ferait du serveur un cache
+de sorties d'administration ; le lier à la session empêche une autre connexion de
+venir lire un résultat qui ne lui était pas destiné.
+
+**Numérotation : 07_01 à 07_06. Libre à partir de 07_07.**
+
+## Contrôles, dans l'ordre
+
+1. **Type de client** — `vaultaire_web` peut émettre 07 ; un agent de poste, non.
+   Contrôle posé dans `Split_Action`, avant le routage. Voir
+   `Architecture_Services.md` §4.
+2. **Droit de déclarer une identité** — seul un type portant `AssertsUser` peut
+   renseigner `asserted_user`. Pour les autres, le champ doit être vide et la
+   commande s'exécute sous l'identité du programme lui-même.
+3. **Fraîcheur et rejeu** — horodatage dans la fenêtre, `request_id` strictement
+   croissant pour la session.
+4. **Existence et état du compte déclaré** — un compte révoqué est refusé ici,
+   avant même l'évaluation RBAC, pour que le journal porte la vraie raison.
+5. **RBAC** — évalué sur les groupes de l'**utilisateur déclaré**, jamais sur ceux
+   du programme. C'est ce qui fait qu'un web compromis ne peut rien faire qu'aucun
+   utilisateur ne pourrait faire.
+
+### Pourquoi un anti-rejeu alors que le tunnel est chiffré
+
+Le tunnel protège contre l'écoute et l'altération, pas contre la réémission d'une
+trame valide déjà observée. Les catégories 05 et 06 s'en passent parce qu'elles
+sont idempotentes : rejouer une demande de GPO redonne la même politique.
+
+La catégorie 07 ne l'est pas. Rejouer `delete -u alice` la supprime une seconde
+fois — sans effet — mais rejouer `add -u bob -g admins` après un retrait légitime
+le remet dans le groupe. Le compteur croissant coûte un entier par session et
+ferme la question.
+
+## Ce que ce transport ne résout pas : les GPO
+
+Le catalogue de commandes VLT **ne couvre pas l'administration des GPO**. Le CLI
+sait créer, supprimer, lister une GPO et la lier à un groupe. Il ne sait rien
+faire de ses **modules** ni de ses **restrictions** — 22 fonctions de `dbgpo`
+sont appelées par l'interface web et n'ont aucun équivalent en commande :
+
+```
+modules       AddModule, UpdateModuleParams, DeleteModule, GetModuleByID
+restrictions  AddAllowedValue, AddPathRule, AddEnvDeny, SetFieldRule,
+              SaveDefinition, DeleteDefinition, DeleteRestriction,
+              ResetRestrictionsToDefaults, ListRestrictionsByKind,
+              ListAllowedValuesForField, ListDefinitionsForField, GetFieldRule
+métadonnées   UpdatePolicyMeta
+```
+
+Les pages GPO ne peuvent donc **pas** basculer sur la catégorie 07 en l'état.
+Deux options, à trancher au moment de l'étape 6 :
+
+- **Étendre le CLI** avec `vlt gpo module ...` et `vlt gpo restriction ...`. Le
+  paramétrage d'un module est un dictionnaire de champs variables ; le passer en
+  arguments de ligne de commande est possible mais verbeux, et le CLI y gagne une
+  capacité qui lui manque aujourd'hui de toute façon.
+- **Garder les pages GPO en accès base direct** jusqu'à ce que le besoin CLI se
+  manifeste par ailleurs. Contredit la frontière du §2 et laisse un deuxième
+  chemin d'écriture vers l'annuaire depuis le web.
+
+La première est plus longue, la seconde laisse une exception qui aura tendance à
+s'installer. Aucune n'est à décider maintenant : c'est l'étape 6, elle vient après
+la bascule des vues en lecture.

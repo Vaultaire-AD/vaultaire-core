@@ -229,10 +229,29 @@ create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
 ### 5.5 Client
 
 ```bash
-create -c <type_client> <yes|not>
+create -c <yes|not>
 # Option : intégration automatique
-create -c <type_client> <yes|not> -join <IP> <Username>
+create -c <yes|not> -join <IP> <Username>
 ```
+
+Le paramètre `<yes|not>` indique si l'agent tourne sur un serveur membre. Ce
+n'est pas un type : c'est le même binaire, qui émet les mêmes trames et ouvre
+seulement un tunnel machine en plus.
+
+**Le type de client n'est plus demandé.** Cette commande ne peut créer qu'un
+**agent** — un programme installé sur une machine du parc, dont le core génère la
+paire de clés et produit la configuration.
+
+Un **client service** — interface web, proxy, extension — ne se crée pas ici. Il
+s'enrôle lui-même en présentant une clé d'enrôlement, et génère sa paire sur son
+propre hôte pour que sa clé privée ne voyage jamais :
+
+```bash
+enroll create --type vaultaire_web --uses 1 --expires 30m
+enroll types      # le catalogue des types connus
+```
+
+Voir `enroll -h` et `docs/Developement/Architecture_Services.md`.
 
 ### 5.6 GPO
 

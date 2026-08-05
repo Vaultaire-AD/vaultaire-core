@@ -9,6 +9,7 @@ import (
 	commandcreate "vaultaire/core/command/command_create"
 	commanddelete "vaultaire/core/command/command_delete"
 	commanddns "vaultaire/core/command/command_dns"
+	commandenroll "vaultaire/core/command/command_enroll"
 	commandeyes "vaultaire/core/command/command_eyes"
 	commandget "vaultaire/core/command/command_get"
 	commandkill "vaultaire/core/command/command_kill"
@@ -53,6 +54,7 @@ func ExecuteCommand(input, sender string) string {
 		"cluster": commandcluster.Cluster_Command,
 		"kill":    commandkill.Kill_Command,
 		"mfa":     commandmfa.MFA_Command,
+		"enroll":  commandenroll.Enroll_Command,
 	}
 
 	if cmd == "clear" {
@@ -67,6 +69,7 @@ func ExecuteCommand(input, sender string) string {
   delete [OPTIONS] : supprime une entité (delete -u supprime aussi les comptes locaux).
   kill   [OPTIONS] : désactivation d'urgence d'un compte. Voir kill -h.
   mfa    [OPTIONS] : second facteur et politique de mot de passe. Voir mfa -h.
+  enroll [OPTIONS] : clés d'enrôlement des clients service. Voir enroll -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.

@@ -19,7 +19,8 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 	case "-h", "help", "--help":
 		return (`"La commande create vous permets de crée des nouveau utilisateur ou des nouveaux clients_software de nouvelles permissions et de nouveau groupes")
 		"-u path to yaml user pour crée un nouvelle utilisateur"
-		"-c <type_client> <yes/not(serveur or not)> pour crée un nouveau client software"
+		"-c <yes/not(serveur or not)> pour créer un nouvel agent Vaultaire"
+		"    un client service ne se crée pas ici, il s'enrôle seul : voir « enroll -h »"
 		"-g <nom_du_goupe> <nom_de_la_perm> pour crée un nouveau groupe"
 		"-p <nom_de_la_permissions> <yes/not> pour crée un nouvelle permisions admin ou non"
 		"-gpo <nom> --scope <machine|user> [--desc 'texte'] pour crée une nouvelle GPO (les modules s'ajoutent ensuite depuis /admin/gpo)"`)
@@ -81,20 +82,27 @@ func create_Group(command_list []string) string {
 	}
 }
 
+// create_ClientSoftware crée un agent Vaultaire.
+//
+//	create -c <yes/not> [-join <user> <host>]
+//
+// Le TYPE n'est plus demandé : ce chemin ne peut créer qu'un client basic. Un
+// client service s'enrôle lui-même avec « enroll create --type <type> », et
+// génère sa paire sur son propre hôte.
 func create_ClientSoftware(command_list []string) string {
-	if len(command_list) < 3 {
-		return ("Erreur : create -c \"client_software type\" <yes/not> serveur ou non")
-	} else {
-		isValid := tools.String_tobool_yesnot(command_list[2])
-		computeurID, err := newclient.GenerateClientSoftware(command_list[1], isValid)
-		if err != nil {
-			logs.Write_Log("WARNING", "error during the creation of the client software "+command_list[1]+" : "+err.Error())
-			return err.Error()
-		}
-		logs.Write_Log("INFO", "new client create with succes with this ID : "+computeurID)
-		if len(command_list) >= 6 && command_list[3] == "-join" {
-			return autoaddclientgo.Manage_Auto_ADD_client(command_list[5], command_list[4], computeurID)
-		}
-		return ("new client create with succes with this ID : " + computeurID)
+	if len(command_list) < 2 {
+		return "Erreur : create -c <yes/not> — serveur ou non.\n" +
+			"Un client service ne se crée pas ici : voir « enroll create --type <type> »."
 	}
+	isServeur := tools.String_tobool_yesnot(command_list[1])
+	computeurID, err := newclient.GenerateClientSoftware(isServeur)
+	if err != nil {
+		logs.Write_Log("WARNING", "error during the creation of the client software : "+err.Error())
+		return err.Error()
+	}
+	logs.Write_Log("INFO", "new client create with succes with this ID : "+computeurID)
+	if len(command_list) >= 5 && command_list[2] == "-join" {
+		return autoaddclientgo.Manage_Auto_ADD_client(command_list[4], command_list[3], computeurID)
+	}
+	return "new client create with succes with this ID : " + computeurID
 }

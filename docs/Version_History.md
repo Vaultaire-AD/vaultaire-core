@@ -165,6 +165,38 @@
             - Les résolveurs rendent `found bool` plutôt que de formuler l'absence : chaque appelant conserve **au caractère près** le message que voit l'administrateur. Ils prennent une interface `RowQuerier` que `*sql.DB` et `*sql.Tx` satisfont tous deux, pour qu'une résolution à l'intérieur d'une transaction ne lise jamais en dehors - Lorens Viguie
             - L'assainissement est fait dans le résolveur, au plus près de la base : `Command_GET_UserPermissionID` et `EnsureSuperadminActions` y gagnent une vérification qu'elles n'avaient pas - Lorens Viguie
 
+        - 🧩 **Clients service : catalogue, enrôlement autonome et restriction des trames**
+            - **Deux familles de clients sont désormais distinguées.** Un client BASIC est un agent : il représente une machine, il est créé d'abord sur le core qui génère sa paire de clés, puis installé. Un client SERVICE est une extension qui ajoute une fonction au cluster : il s'enrôle seul et génère sa propre paire - Lorens Viguie
+            - Nouveau paquet `core/clienttype` : le catalogue des types de programmes vit dans le CODE et non en base. Un type détermine quelles trames un programme peut émettre — c'est une frontière de privilège, elle ne doit pas être éditable depuis une interface d'administration - Lorens Viguie
+            - **Le core ne figure pas au catalogue et ne peut pas y figurer** : c'est lui qui juge la légitimité des trames qu'il reçoit en fonction du type de leur émetteur, il ne peut pas se juger lui-même. Il n'est d'ailleurs jamais enregistré comme client - Lorens Viguie
+            - **Un seul type d'agent.** Le drapeau `isServeur` ne crée pas un second type : c'est le même binaire, qui émet les mêmes trames et ouvre seulement un tunnel machine en plus. Ce n'est pas une frontière de privilège - Lorens Viguie
+            - Les listes de trames sont relevées sur ce que les programmes émettent **réellement**, pas sur la table du protocole qui décrit aussi des trames restées à l'état d'intention : l'agent émet `02_12` et jamais `02_13`, le proxy n'émet pas encore `04_05` - Lorens Viguie
+            - **`create -c` ne demande plus de type** : ce chemin ne peut produire qu'un client basic. Le type était une chaîne libre saisie à la main, que rien ne validait et dont rien ne dépendait — le formulaire web proposait « client » en simple exemple. Champ retiré de la commande, du handler web et du gabarit - Lorens Viguie
+            - **Les droits portent sur la SOUS-TRAME, pas sur la catégorie.** L'interface web utilise 02 pour s'authentifier mais n'a rien à faire de `02_11`, `02_12` et `02_13`, qui sont l'inventaire matériel d'une machine — elle n'a ni processeur ni mémoire à déclarer. Un contrôle par catégorie lui ouvrirait les trois - Lorens Viguie
+            - La liste des trames est exhaustive et **fail-closed** : une sous-trame ajoutée au protocole n'est émissible par personne tant qu'elle n'est pas déclarée. Un oubli produit un refus visible, jamais une ouverture silencieuse - Lorens Viguie
+            - Contrôle posé dans `Split_Action`, immédiatement après la vérification d'identité machine qui existait déjà : un point unique couvre toutes les catégories, présentes et futures - Lorens Viguie
+            - `BoundClientType` est figé à la poignée de main comme `BoundClientSoftwareID`, et hérite de sa preuve : la réponse `01_02` est chiffrée avec la clé publique de cet identifiant, donc qui ment sur son identifiant ne déchiffre rien - Lorens Viguie
+            - ⚠️ **Migration requise avant bascule.** `logiciel_type` était un `VARCHAR(255)` libre, sans validation. Toute valeur sans équivalent au catalogue empêchera la machine de se connecter : `SELECT logiciel_type, COUNT(*) FROM id_logiciels GROUP BY logiciel_type` avant la mise en service - Lorens Viguie
+
+        - 🔑 **Enrôlement autonome des clients service (trames 01_03 à 01_06)**
+            - Le service génère sa paire RSA localement et présente une clé d'enrôlement pour faire enregistrer sa clé PUBLIQUE. **Sa clé privée ne quitte jamais son hôte**, contrairement à celle d'un agent que le core génère et livre avec sa configuration - Lorens Viguie
+            - Les clés portent **un type, une expiration et un quota**. `vlt enroll create --type vaultaire_web --uses 1 --expires 30m`. Par défaut : une utilisation, trente minutes - Lorens Viguie
+            - **LE TYPE VIENT DE LA CLÉ, jamais du client.** S'il l'annonçait, il suffirait de s'enrôler pour se déclarer `vaultaire_web` et obtenir avec lui le droit d'agir au nom de n'importe quel utilisateur de l'annuaire - Lorens Viguie
+            - Émettre une clé pour un type portant l'assertion d'identité est réservé au groupe `vaultaire` : ce pouvoir ne se délègue pas par une clé RBAC ordinaire - Lorens Viguie
+            - **Seul le condensat de la clé est stocké**, comme un mot de passe. Le secret est affiché une fois et n'est jamais réécrit : une fuite de la base ne rend aucune clé utilisable - Lorens Viguie
+            - Les cinq motifs de refus (inconnue, expirée, épuisée, révoquée, type retiré) sont **distincts dans les journaux et indistincts pour le client**. Les détailler ferait du point d'enrôlement un oracle confirmant qu'une clé a existé - Lorens Viguie
+            - La réponse `01_04` est chiffrée avec la clé publique qui vient d'être soumise : **la preuve de possession est acquise sans défi explicite**, exactement comme en `01_02` - Lorens Viguie
+            - Le décompte précède la création du client : une panne entre les deux perd un jeton, elle ne crée jamais de client non autorisé. `Release` rattrape l'échec de création - Lorens Viguie
+            - Table `service_enrollment_use` : sans elle, impossible de répondre à « quels services sont entrés par cette clé ? » le jour où l'on découvre qu'elle a fuité - Lorens Viguie
+            - `create -c` refuse désormais un type service : il s'enrôle, il ne se crée pas sur le core - Lorens Viguie
+
+        - 🌐 **Cluster : enregistrement des services (trames 04_09 à 04_14)**
+            - Enregistrement, battement de cœur et sortie propre d'un service dans `cluster_nodes`. Distinct de `04_01`, qui déclare une machine : un service déclare une fonction — type, version, point d'accès - Lorens Viguie
+            - Les séparer garde la restriction par sous-trame utile : un proxy émet `04_01` et pas `04_09`, l'interface web l'inverse - Lorens Viguie
+            - Le type vient de la SESSION, jamais du contenu de la trame. Les capacités déclarées sont de l'INVENTAIRE et n'accordent aucun droit : ce qu'un service peut émettre est décidé par son type au catalogue - Lorens Viguie
+            - Le passage hors ligne est écrit par un balayage serveur plutôt que déduit à la lecture — une vue calculée à la volée ne garderait aucune trace du moment où le service a cessé de répondre - Lorens Viguie
+            - La sortie propre `04_14` évite qu'un arrêt planifié soit indistinguable d'une panne pendant toute la fenêtre de battement - Lorens Viguie
+
         - 📁 **Découpage de `core/database` en sous-paquets, une déclaration par fichier**
             - Le regroupement thématique précédent produisait des fichiers de 500 lignes, aussi peu praticables que les 52 fichiers d'une fonction qu'ils remplaçaient : on troquait « où est cette fonction ? » contre « où est-elle dans ce fichier ? » - Lorens Viguie
             - **266 fichiers, 34 lignes en moyenne.** Le nom de chaque fichier est dérivé mécaniquement du nom de sa déclaration (CamelCase → minuscules soulignées, préfixe `Command_` retiré) : un nom de fichier ne peut donc plus mentir sur son contenu, ce qui était le défaut principal de l'organisation d'origine - Lorens Viguie

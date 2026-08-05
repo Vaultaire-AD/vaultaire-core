@@ -32,12 +32,18 @@
       <h2>Créer un client</h2>
       <form method="post">
         <input type="hidden" name="action" value="create_client">
-        <label>Type (ex: client, serveur)</label>
-        <input name="logiciel_type" placeholder="client">
         <label>Est serveur ?</label>
         <select name="is_serveur"><option value="0">Non</option><option value="1">Oui</option></select>
-        <label>Public key (optionnel)</label>
-        <input name="public_key" placeholder="">
+        <p class="muted small">
+          Un agent, installé sur une machine du parc. Le core génère sa paire de
+          clés et produit sa configuration.
+        </p>
+        <p class="muted small">
+          Un client <strong>service</strong> — interface web, proxy, extension —
+          ne se crée pas ici : il s'enrôle lui-même avec une clé d'enrôlement et
+          génère sa paire sur son propre hôte, pour que sa clé privée ne voyage
+          jamais. Voir <code>vlt enroll create --type &lt;type&gt;</code>.
+        </p>
         <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Créer</button></div>
       </form>
     </section>

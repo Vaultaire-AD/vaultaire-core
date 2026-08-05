@@ -32,6 +32,15 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 		return handleProxyMetrics(db, tramesContent, content, duckysession)
 	case "07":
 		return handleHostHeartbeat(db, tramesContent, content, duckysession)
+
+	// Clients SERVICE. Distincts de 04_01/04_07, qui déclarent une machine :
+	// un service déclare une fonction. Voir service_registry.go.
+	case "09":
+		return handleRegisterService(db, tramesContent, content, duckysession)
+	case "12":
+		return handleServiceHeartbeat(db, tramesContent, duckysession)
+	case "14":
+		return handleDeregisterService(db, tramesContent, duckysession)
 	default:
 		return "", fmt.Errorf("sous-trame 04_%s non gérée", sub)
 	}

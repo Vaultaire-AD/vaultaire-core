@@ -4,12 +4,14 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 	dbschema "vaultaire/core/database/db_schema"
 
 	"vaultaire/cluster"
 	configurationfile "vaultaire/core/configuration_file"
 	db "vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
+	dbenrollment "vaultaire/core/database/db_enrollment"
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/dns"
@@ -21,12 +23,19 @@ import (
 	"vaultaire/core/vaultairegoroutine"
 	webserveur "vaultaire/core/web_serveur"
 	duckynetwork "vaultaire/ducky-network"
+	hosthandler "vaultaire/ducky-network/host_handler"
 )
 
 type ClientInfo struct {
 	IP   string
 	Conn net.Conn
 }
+
+// serviceSweepInterval : période de balayage des services hors ligne.
+//
+// Inférieure au seuil de péremption d'un battement de cœur, sinon un service
+// tombé resterait affiché en ligne pendant près de deux fois ce seuil.
+const serviceSweepInterval = time.Minute
 
 func main() {
 	for _, arg := range os.Args[1:] {
@@ -75,6 +84,30 @@ func main() {
 	if err := dbauthpolicy.CreateSchema(db.GetDatabase()); err != nil {
 		log.Fatalf("Erreur lors de la création du schéma d'authentification : %v", err)
 	}
+
+	// Clés d'enrôlement des clients service.
+	//
+	// Avant tout service acceptant des connexions : un service qui tenterait de
+	// s'enrôler avant que la table existe recevrait un refus serveur, alors que
+	// sa clé est valide.
+	if err := dbenrollment.CreateTables(db.GetDatabase()); err != nil {
+		log.Fatalf("Erreur lors de la création du schéma d'enrôlement : %v", err)
+	}
+
+	// Balayage des services qui ne battent plus.
+	//
+	// Le passage hors ligne est écrit par le serveur plutôt que déduit à la
+	// lecture : une vue calculée à la volée répondrait différemment selon
+	// l'instant de la requête, et rien ne garderait trace du moment où le
+	// service a cessé de répondre.
+	go func() {
+		for {
+			time.Sleep(serviceSweepInterval)
+			if err := hosthandler.MarkStaleServicesOffline(db.GetDatabase()); err != nil {
+				logs.Write_Log("ERROR", "cluster: balayage des services échoué : "+err.Error())
+			}
+		}
+	}()
 
 	// La permission d'amorçage reçoit toutes les actions connues du code, pas
 	// une liste recopiée dans du SQL. Passe à chaque démarrage, en INSERT
