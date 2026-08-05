@@ -146,7 +146,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dockerfile: [deployments/preprod/dockerfile, deployments/dev/dockerfile]
+        dockerfile: [deployments/pre-prod/dockerfile, deployments/dev/dockerfile]
     steps:
       - uses: actions/checkout@v4
 
