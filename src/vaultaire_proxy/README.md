@@ -1,65 +1,81 @@
-# vaultaire_proxy — version 1
+# vaultaire_proxy
 
-Client **service** du cluster Vaultaire. Cette version établit et maintient la
-présence du proxy dans le cluster ; la répartition de charge viendra ensuite.
+Proxy de service Vaultaire. **Version 1** : présence dans le cluster.
 
-## Ce qu'il fait
+## Ce que fait la v1
 
-1. **S'enrôle** au premier démarrage avec la clé de sa configuration. Il génère
-   sa paire RSA-4096 localement : **sa clé privée ne quitte jamais l'hôte**.
-2. **Se connecte** au core et ouvre une session chiffrée.
-3. **S'enregistre** dans le cluster et **bat** toutes les 45 secondes.
-4. **Sort proprement** à l'arrêt, pour qu'un arrêt planifié ne ressemble pas à
-   une panne.
+Enrôlement au premier démarrage, connexion chiffrée au core, enregistrement dans
+le cluster, battement de cœur, sortie propre à l'arrêt, reconnexion et
+réenrôlement automatiques. Le proxy est visible dans `vlt cluster list` et passe
+hors ligne quand il s'arrête.
 
-## Installation
+La répartition de charge LDAP/Ducky viendra ensuite, sur une base dont on sait
+qu'elle tient.
 
-Émettre une clé sur le core :
+## Ce que le proxy n'écrit pas
+
+Aucune trame. Le protocole vient du dossier `duckynetwork/`, copié depuis
+`src/ducky-network-sdk` et partagé avec les autres clients :
 
 ```bash
-vlt enroll create --type vaultaire_proxy --uses 1 --expires 30m
+cd src/ducky-network-sdk && ./install.sh ../vaultaire_proxy
 ```
 
-Copier `config.example.yaml` en `/etc/vaultaire_proxy/config.yaml`, y coller la
-clé, puis démarrer. Le fichier de configuration ne contient **ni identifiant ni
-clé privée** : le même peut être déployé sur plusieurs hôtes, chacun s'enrôlera
-et obtiendra sa propre identité.
+Relancer cette commande met le protocole à jour — le dossier est entièrement
+remplacé. Ne mettez donc jamais de code du proxy dedans.
 
-## Cycle de vie côté core
+## Mise en service
 
-| Situation | Ce que fait le core |
-|---|---|
-| Bat régulièrement | `online` dans le cluster |
-| Cesse de battre quelques minutes | `offline`, disparaît des vues, **identité conservée** |
-| Ne revient pas avant le délai de purge | Ligne cluster **et client supprimés** |
+```bash
+# 1. Sur le core : une clé d'enrôlement typée
+vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
 
-Le délai se règle avec `vlt cluster purge-delay <heures>`, 24 h par défaut, 0
-pour désactiver la purge.
+# 2. Sur l'hôte du proxy
+install -d -m 0700 /var/lib/vaultaire_proxy/keys
+cp config.example.yaml /etc/vaultaire_proxy/config.yaml
+$EDITOR /etc/vaultaire_proxy/config.yaml   # core_address, enrollment.key, proxy.endpoint
 
-Les deux étapes répondent à deux questions différentes. « Répond-il en ce
-moment ? » se pose en minutes et n'a aucune conséquence. « Existe-t-il encore ? »
-se pose en heures et détruit une identité — les confondre ferait d'une coupure
-réseau de dix minutes la perte d'un enrôlement.
+# 3. Démarrage
+vaultaire_proxy --config /etc/vaultaire_proxy/config.yaml
+```
 
-## Auto-réinitialisation
+Vérification côté core :
 
-Si le core refuse l'identité du proxy — client purgé, clé publique remplacée —,
-réessayer avec la même paire ne mènera jamais nulle part. Le proxy efface alors
-son identité et se réenrôle avec la clé de sa configuration.
+```
+vlt cluster list      # le proxy doit être « online »
+vlt enroll list       # le compteur d'utilisations doit avoir bougé
+```
 
-**C'est conditionné à ce seul cas.** Un core injoignable ou une coupure réseau ne
-déclenchent PAS de réenrôlement : ils consommeraient une utilisation de clé à
-chaque incident, et une clé à usage unique serait épuisée par la première panne.
+## Options
 
-Réinitialisation manuelle : `vaultaire_proxy --reset-identity`.
+| Option | Effet |
+|--------|-------|
+| `--config` | chemin du fichier de configuration |
+| `--reset-identity` | efface les clés locales et force un réenrôlement |
 
-## Le protocole n'est pas ici
+`--reset-identity` conserve la clé publique du core : ce n'est pas elle qui est
+en cause, et la redemander rouvrirait la fenêtre du `askkey` en clair.
 
-Aucune trame n'est implémentée dans ce dépôt. Poignée de main, enrôlement,
-chiffrement, reconnexion et auto-réinitialisation vivent dans
-`src/ducky-network-sdk`, commun à tous les clients.
+## `key_dir` doit persister
 
-C'est la propriété qui compte : quand le protocole est durci, le proxy en
-bénéficie sans qu'une ligne n'y soit écrite. La version précédente portait sa
-propre copie du protocole — elle était restée sur PKCS#1 v1.5 après la migration
-du core vers OAEP, et **ne pouvait plus parler au core du tout**.
+| Fichier | Perte = |
+|---------|---------|
+| `private_key.pem` | réenrôlement |
+| `public_key.pem` | réenrôlement |
+| `server_public.pem` | `askkey` en clair au démarrage |
+| `identity.json` | réenrôlement |
+
+Un conteneur sans volume se réenrôle à chaque lancement et épuise le quota de la
+clé d'enrôlement — jusqu'à rester bloqué dehors. Le `docker-compose.yml` de
+`deployments/pre-prod/vlt-proxy/` monte ce volume ; ne le retirez pas.
+
+## Diagnostic
+
+| Symptôme | Cause probable |
+|----------|----------------|
+| « clé d'enrôlement absente » | `enrollment.key` vide et aucune identité en cache |
+| « enrôlement refusé : expired » | clé expirée — `vlt enroll create` |
+| « enrôlement refusé : exhausted » | quota épuisé — `--uses 0` pour l'illimité |
+| « identité refusée par le core » | proxy supprimé côté core, ou base réinstallée ; `allow_re_enroll: true` ou `--reset-identity` |
+| « service inconnu du cluster » | ligne purgée ; le proxy rejoue 04_09 tout seul |
+| en ligne dans le cluster alors qu'il est éteint | arrêt sans SIGTERM : la sortie 04_14 n'est pas partie ; il basculera hors ligne en trois minutes |

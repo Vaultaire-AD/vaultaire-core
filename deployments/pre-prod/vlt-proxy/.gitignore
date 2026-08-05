@@ -1,0 +1,4 @@
+# .env porte la clé d'enrôlement. Une clé valide commitée reste utilisable par
+# quiconque lit l'historique, même après suppression du fichier.
+.env
+config.yaml
