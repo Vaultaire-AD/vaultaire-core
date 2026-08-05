@@ -7,7 +7,6 @@ on:
     branches: [dev]
   workflow_dispatch: {}
   schedule:
-    # Audit complet hebdomadaire (lundi 03h UTC) même sans push
     - cron: "0 3 * * 1"
 
 permissions:
@@ -40,35 +39,69 @@ jobs:
           cache: true
 
       - name: Vérification gofmt
+        id: gofmt
+        continue-on-error: true
         run: |
           UNFORMATTED=$(gofmt -l .)
           if [ -n "$UNFORMATTED" ]; then
-            echo "Fichiers non formatés :"
-            echo "$UNFORMATTED"
+            {
+              echo "❌ Fichiers non formatés :"
+              echo "$UNFORMATTED"
+            } | tee gofmt-report.txt
             exit 1
+          else
+            echo "✅ Tous les fichiers sont correctement formatés." | tee gofmt-report.txt
           fi
 
-      - name: go vet serveur
-        run: go vet ./...
-        working-directory: ./src/vaultaire_serveur
-
-      - name: go vet client
-        run: go vet ./...
-        working-directory: ./src/vaultaire_serveur
-
-      - name: go vet api
-        run: go vet ./...
-        working-directory: ./src/vaultaire_serveur
-
-      - name: go vet vlt cli
-        run: go vet ./...
-        working-directory: ./src/vaultaire_serveur
+      # NOTE: corrigé - chaque module pointe maintenant vers son vrai dossier
+      - name: go vet (tous les modules)
+        id: vet
+        continue-on-error: true
+        run: |
+          set +e
+          STATUS=0
+          {
+            for mod in vaultaire_serveur vaultaire_client vaultaire_api vaultaire_cli; do
+              echo "### go vet - $mod"
+              if [ -d "src/$mod" ]; then
+                (cd "src/$mod" && go vet ./... 2>&1)
+                if [ $? -ne 0 ]; then STATUS=1; echo "❌ échec sur $mod"; else echo "✅ OK sur $mod"; fi
+              else
+                echo "⚠️  dossier src/$mod introuvable, vérifiez le nom réel"
+              fi
+              echo ""
+            done
+          } | tee vet-report.txt
+          exit $STATUS
 
       - name: golangci-lint
+        id: golangci
+        continue-on-error: true
         uses: golangci/golangci-lint-action@v6
         with:
           version: latest
           args: --timeout=5m
+
+      - name: Upload rapports lint
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-lint
+          path: |
+            gofmt-report.txt
+            vet-report.txt
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Faire échouer le job si besoin
+        if: always()
+        run: |
+          if [ "${{ steps.gofmt.outcome }}" = "failure" ] || \
+             [ "${{ steps.vet.outcome }}" = "failure" ] || \
+             [ "${{ steps.golangci.outcome }}" = "failure" ]; then
+            echo "::error::Au moins un contrôle de lint a échoué (voir l'artefact report-lint)"
+            exit 1
+          fi
 
   # --------------------------------------------------------------------
   # 2. Analyse statique de sécurité (SAST)
@@ -85,27 +118,38 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: gosec
-        uses: securego/gosec@master
+        id: gosec
         continue-on-error: true
+        uses: securego/gosec@master
         with:
           args: "-fmt sarif -out gosec-results.sarif ./..."
 
       - name: Upload SARIF gosec
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: gosec-results.sarif
           category: gosec
 
       - name: Semgrep
-        uses: semgrep/semgrep-action@v1
+        id: semgrep
         continue-on-error: true
+        uses: semgrep/semgrep-action@v1
         with:
           config: >-
             p/golang
             p/docker
             p/secrets
             p/owasp-top-ten
+
+      - name: Upload artefacts SAST
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-sast
+          path: gosec-results.sarif
+          retention-days: 30
+          if-no-files-found: ignore
 
   # --------------------------------------------------------------------
   # 3. Audit des dépendances / CVE connues
@@ -122,16 +166,22 @@ jobs:
           go-version: ${{ env.GO_VERSION }}
 
       - name: govulncheck_client
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+        id: govulncheck_client
+        continue-on-error: true
         working-directory: ./src/vaultaire_client
+        run: |
+          set -o pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... 2>&1 | tee ../../govulncheck-client.txt
 
       - name: govulncheck_serveur
-        run: |
-          go install golang.org/x/vuln/cmd/govulncheck@latest
-          govulncheck ./...
+        id: govulncheck_serveur
+        continue-on-error: true
         working-directory: ./src/vaultaire_serveur
+        run: |
+          set -o pipefail
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./... 2>&1 | tee ../../govulncheck-serveur.txt
 
       - name: Trivy - scan du système de fichiers
         uses: aquasecurity/trivy-action@0.35.0
@@ -144,14 +194,35 @@ jobs:
           exit-code: 0
 
       - name: Upload SARIF Trivy (fs)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
 
+      - name: Upload artefacts dépendances
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-dependencies
+          path: |
+            govulncheck-client.txt
+            govulncheck-serveur.txt
+            trivy-fs.sarif
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Faire échouer le job si besoin
+        if: always()
+        run: |
+          if [ "${{ steps.govulncheck_client.outcome }}" = "failure" ] || \
+             [ "${{ steps.govulncheck_serveur.outcome }}" = "failure" ]; then
+            echo "::error::Vulnérabilité(s) détectée(s) - voir report-dependencies"
+            exit 1
+          fi
+
   # --------------------------------------------------------------------
-  # 5. Audit des images Docker (dockerfile + dockerfile_debian)
+  # 5. Audit des images Docker
   # --------------------------------------------------------------------
   docker-audit:
     name: "🐳 Audit images Docker"
@@ -180,7 +251,7 @@ jobs:
           no-fail: true
 
       - name: Upload SARIF Hadolint
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: hadolint-${{ steps.vars.outputs.tag }}.sarif
@@ -196,14 +267,25 @@ jobs:
           exit-code: 0
 
       - name: Upload SARIF Trivy (image)
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         if: always()
         with:
           sarif_file: trivy-image-${{ steps.vars.outputs.tag }}.sarif
           category: trivy-image-${{ steps.vars.outputs.tag }}
 
+      - name: Upload artefacts docker
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-docker-${{ steps.vars.outputs.tag }}
+          path: |
+            hadolint-${{ steps.vars.outputs.tag }}.sarif
+            trivy-image-${{ steps.vars.outputs.tag }}.sarif
+          retention-days: 30
+          if-no-files-found: ignore
+
   # --------------------------------------------------------------------
-  # 6. Audit IaC : docker-compose et configs de déploiement
+  # 6. Audit IaC
   # --------------------------------------------------------------------
   iac-audit:
     name: "⚙️ Audit IaC (docker-compose / configs)"
@@ -212,8 +294,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Checkov - scan deployments/
-        uses: bridgecrewio/checkov-action@master
+        id: checkov
         continue-on-error: true
+        uses: bridgecrewio/checkov-action@master
         with:
           directory: deployments/pre-prod/
           framework: yaml,dockerfile
@@ -228,8 +311,17 @@ jobs:
           sarif_file: checkov-results.sarif
           category: checkov
 
+      - name: Upload artefact Checkov
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: report-iac
+          path: checkov-results.sarif
+          retention-days: 30
+          if-no-files-found: ignore
+
   # --------------------------------------------------------------------
-  # 7. Génération du SBOM
+  # 7. SBOM
   # --------------------------------------------------------------------
   sbom:
     name: "📋 Génération SBOM"
@@ -247,12 +339,12 @@ jobs:
       - name: Upload SBOM en artefact
         uses: actions/upload-artifact@v4
         with:
-          name: sbom-vaultaire
+          name: report-sbom
           path: sbom-vaultaire.spdx.json
           retention-days: 90
 
   # --------------------------------------------------------------------
-  # 8. Vérification des licences des dépendances
+  # 8. Licences
   # --------------------------------------------------------------------
   license-check:
     name: "⚖️ Vérification des licences"
@@ -273,11 +365,12 @@ jobs:
       - name: Upload rapport licences
         uses: actions/upload-artifact@v4
         with:
-          name: licenses-report
+          name: report-licenses
           path: licenses-report.csv
+          retention-days: 30
 
   # --------------------------------------------------------------------
-  # 9. Résumé global de l'audit
+  # 9. Résumé global détaillé
   # --------------------------------------------------------------------
   audit-summary:
     name: "📊 Résumé de l'audit"
@@ -292,10 +385,34 @@ jobs:
       - sbom
       - license-check
     steps:
-      - name: Générer le résumé
+      - name: Télécharger tous les artefacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Installer jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+
+      - name: Construire le rapport détaillé
         run: |
+          count_sarif() {
+            local f="$1"
+            [ -f "$f" ] || { echo "n/a"; return; }
+            jq -r '[.runs[].results[]] | length' "$f" 2>/dev/null || echo "erreur parsing"
+          }
+          breakdown_sarif() {
+            local f="$1"
+            [ -f "$f" ] || { echo "-"; return; }
+            jq -r '[.runs[].results[].level] | group_by(.) | map("\(.[0]): \(length)") | join(", ")' "$f" 2>/dev/null || echo "-"
+          }
+
           {
             echo "## 🔍 Résultat de l'audit Vaultaire (branche dev)"
+            echo ""
+            echo "_Run: [$GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID) · Commit \`${GITHUB_SHA::7}\`_"
+            echo ""
+            echo "### Vue d'ensemble"
             echo ""
             echo "| Contrôle | Statut |"
             echo "|----------|--------|"
@@ -306,4 +423,42 @@ jobs:
             echo "| IaC (Checkov) | ${{ needs.iac-audit.result }} |"
             echo "| SBOM | ${{ needs.sbom.result }} |"
             echo "| Licences | ${{ needs.license-check.result }} |"
+            echo ""
+            echo "### 🛡️ Détail SAST"
+            echo "- **gosec** : $(count_sarif artifacts/gosec-results.sarif) finding(s) — $(breakdown_sarif artifacts/gosec-results.sarif)"
+            echo ""
+            echo "### 📦 Détail dépendances"
+            for f in artifacts/govulncheck-client.txt artifacts/govulncheck-serveur.txt; do
+              name=$(basename "$f" .txt)
+              if [ -f "$f" ]; then
+                if grep -q "No vulnerabilities found" "$f"; then
+                  echo "- **$name** : ✅ aucune vulnérabilité"
+                else
+                  n=$(grep -c "^Vulnerability #" "$f" || echo "?")
+                  echo "- **$name** : ⚠️ $n vulnérabilité(s) — voir artefact \`report-dependencies\`"
+                fi
+              else
+                echo "- **$name** : rapport introuvable"
+              fi
+            done
+            echo "- **Trivy (fs)** : $(count_sarif artifacts/trivy-fs.sarif) finding(s) — $(breakdown_sarif artifacts/trivy-fs.sarif)"
+            echo ""
+            echo "### 🐳 Détail images Docker"
+            for f in artifacts/trivy-image-*.sarif; do
+              [ -f "$f" ] || continue
+              echo "- **$(basename "$f")** : $(count_sarif "$f") finding(s) — $(breakdown_sarif "$f")"
+            done
+            for f in artifacts/hadolint-*.sarif; do
+              [ -f "$f" ] || continue
+              echo "- **$(basename "$f")** : $(count_sarif "$f") finding(s)"
+            done
+            echo ""
+            echo "### ⚙️ Détail IaC (Checkov)"
+            echo "- $(count_sarif artifacts/checkov-results.sarif) finding(s) — $(breakdown_sarif artifacts/checkov-results.sarif)"
+            echo ""
+            echo "### 📋 Autres artefacts générés"
+            echo "- SBOM : \`sbom-vaultaire.spdx.json\` (voir onglet Artifacts)"
+            echo "- Licences : \`licenses-report.csv\` (voir onglet Artifacts)"
+            echo ""
+            echo "➡️ Détail complet et historique des findings : [onglet Security > Code scanning]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/security/code-scanning)"
           } >> "$GITHUB_STEP_SUMMARY"
