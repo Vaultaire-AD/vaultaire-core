@@ -20,7 +20,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  GO_VERSION: "1.20"
+  GO_VERSION: "1.26.5"
 
 jobs:
 
@@ -114,7 +114,7 @@ jobs:
           govulncheck ./...
 
       - name: Trivy - scan du système de fichiers
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           scan-type: fs
           scan-ref: .
@@ -183,7 +183,7 @@ jobs:
           category: hadolint-${{ steps.vars.outputs.tag }}
 
       - name: Trivy - scan de l'image
-        uses: aquasecurity/trivy-action@0.24.0
+        uses: aquasecurity/trivy-action@0.36.0
         with:
           image-ref: vaultaire-audit:${{ steps.vars.outputs.tag }}
           severity: CRITICAL,HIGH
