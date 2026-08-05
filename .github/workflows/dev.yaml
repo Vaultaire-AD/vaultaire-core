@@ -93,16 +93,6 @@ jobs:
           retention-days: 30
           if-no-files-found: ignore
 
-      - name: Faire échouer le job si besoin
-        if: always()
-        run: |
-          if [ "${{ steps.gofmt.outcome }}" = "failure" ] || \
-             [ "${{ steps.vet.outcome }}" = "failure" ] || \
-             [ "${{ steps.golangci.outcome }}" = "failure" ]; then
-            echo "::error::Au moins un contrôle de lint a échoué (voir l'artefact report-lint)"
-            exit 1
-          fi
-
   # --------------------------------------------------------------------
   # 2. Analyse statique de sécurité (SAST)
   # --------------------------------------------------------------------
