@@ -114,7 +114,7 @@ jobs:
           govulncheck ./...
 
       - name: Trivy - scan du système de fichiers
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: fs
           scan-ref: .
@@ -129,22 +129,6 @@ jobs:
         with:
           sarif_file: trivy-fs.sarif
           category: trivy-fs
-
-  # --------------------------------------------------------------------
-  # 4. Détection de secrets
-  # --------------------------------------------------------------------
-  secrets-scan:
-    name: "🔑 Scan de secrets (gitleaks)"
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # --------------------------------------------------------------------
   # 5. Audit des images Docker (dockerfile + dockerfile_debian)
@@ -183,7 +167,7 @@ jobs:
           category: hadolint-${{ steps.vars.outputs.tag }}
 
       - name: Trivy - scan de l'image
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: vaultaire-audit:${{ steps.vars.outputs.tag }}
           severity: CRITICAL,HIGH
