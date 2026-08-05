@@ -1,116 +1,92 @@
-// vaultaire_proxy — Layer 7 Load Balancer pour LDAP et Ducky-Network.
-// S'enregistre comme Host via --add-host et communique avec les Cores via ducky-network.
+// vaultaire_proxy — version 1.
+//
+// # Ce que fait cette version
+//
+// Elle établit et maintient la présence du proxy dans le cluster Vaultaire :
+// enrôlement au premier démarrage, connexion, enregistrement, battement de cœur,
+// sortie propre à l'arrêt. Rien d'autre — la répartition de charge viendra
+// ensuite, sur une base dont on sait qu'elle tient.
+//
+// # Pourquoi tout le protocole vient du SDK
+//
+// Le proxy n'implémente aucune trame lui-même. La poignée de main,
+// l'enrôlement, le chiffrement, la reconnexion et l'auto-réinitialisation vivent
+// dans ducky-network-sdk, commun à tous les clients. Ce fichier ne fait que lire
+// une configuration et décrire ce que le proxy est.
+//
+// C'est la propriété qui compte : le jour où le protocole est durci — comme il
+// l'a été en passant de PKCS#1 v1.5 à OAEP —, le proxy en bénéficie sans qu'une
+// ligne n'y soit écrite. La version précédente, qui portait sa propre copie du
+// protocole, était restée sur PKCS#1 v1.5 et ne pouvait plus parler au core.
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	duckynetwork "vaultaire_duckynetwork"
-	"vaultaire_proxy/balancer"
+
 	"vaultaire_proxy/config"
 )
 
-var (
-	configPath = flag.String("config", "/opt/vaultaire_proxy/config.yaml", "Chemin du fichier de configuration")
-	addHost    = flag.Bool("add-host", false, "Enregistrer ce proxy comme Host auprès du Core (cluster_nodes + groupe)")
-	core       = flag.String("core", "", "Override core address (host:port) pour une connexion ponctuelle")
-)
-
 func main() {
+	configPath := flag.String("config", "/etc/vaultaire_proxy/config.yaml", "chemin du fichier de configuration")
+	resetIdentity := flag.Bool("reset-identity", false,
+		"efface l'identité et force un réenrôlement au démarrage")
 	flag.Parse()
 
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		log.Fatalf("config: %v", err)
+		log.Fatalf("configuration : %v", err)
 	}
 
-	coreAddr := cfg.CoreAddress
-	if *core != "" {
-		coreAddr = *core
-	}
-	if coreAddr == "" {
-		log.Fatal("config: core_address requis (ou --core)")
-	}
-
-	// Connexion ducky au Core : handshake 01_01/01_02 puis 04_01 (register) si --add-host
-	client, err := duckynetwork.NewClient(duckynetwork.ClientOpts{
-		CoreAddress:     coreAddr,
-		ComputeurID:     cfg.Identity.ComputeurID,
-		PrivateKeyPEM:   cfg.Identity.PrivateKeyPEM,
-		ServerPubKeyPEM: cfg.Identity.ServerPubKey,
-	})
-	if err != nil {
-		log.Fatalf("ducky client: %v", err)
-	}
-
-	if err := client.Connect(); err != nil {
-		log.Fatalf("connect: %v", err)
-	}
-	defer client.Close()
-
-	if *addHost {
-		hostname := cfg.Proxy.Hostname
-		if hostname == "" {
-			hostname, _ = os.Hostname()
+	if *resetIdentity {
+		if err := duckynetwork.ResetIdentity(cfg.IdentityPath); err != nil {
+			log.Fatalf("réinitialisation : %v", err)
 		}
-		if hostname == "" {
-			hostname = "vaultaire-proxy"
-		}
-		fqdn := cfg.Proxy.FQDN
-		if fqdn == "" {
-			fqdn = hostname
-		}
-		domain := cfg.Proxy.Domain
-		if domain == "" {
-			domain = "proxy.vaultaire.fr"
-		}
-		role := cfg.Proxy.Role
-		ip := client.LocalIP()
-		if err := client.RegisterHost(hostname, fqdn, ip, role, domain); err != nil {
-			log.Fatalf("register_host: %v", err)
-		}
-		fmt.Println("Host enregistré sur le Core (cluster_nodes).")
+		logLine("INFO", "identité effacée : le proxy se réenrôlera")
 	}
 
-	// Service discovery : récupérer la liste des Cores et maintenir le balancer
-	cores, err := client.ListCores()
-	if err != nil {
-		log.Printf("list_cores: %v", err)
+	// L'arrêt passe par le contexte plutôt que par un os.Exit : c'est ce qui
+	// laisse au SDK le temps d'envoyer sa sortie propre (04_14). Sans elle, un
+	// arrêt planifié serait indistinguable d'une panne pendant toute la fenêtre
+	// de battement de cœur, et le core afficherait le proxy en ligne alors qu'il
+	// vient d'être arrêté volontairement.
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	service := duckynetwork.ServiceConfig{
+		CoreAddress:        cfg.CoreAddress,
+		ServerPublicKeyPEM: cfg.ServerPubKey,
+		EnrollmentKey:      cfg.Enrollment.Key,
+		IdentityPath:       cfg.IdentityPath,
+		Label:              cfg.Enrollment.Label,
+		Info: duckynetwork.ServiceInfo{
+			Version:      cfg.Proxy.Version,
+			Endpoint:     cfg.Proxy.Endpoint,
+			Capabilities: cfg.Proxy.Capabilities,
+		},
+		Logf: logLine,
 	}
-	lb := balancer.New(cores)
-	go runDiscovery(client, lb)
 
-	// TODO: démarrer les listeners LDAP et Ducky qui forwardent vers lb.Select()
-	// Pour l'instant on garde la connexion ouverte et le discovery actif
-	fmt.Println("Proxy prêt. Discovery actif. (Listeners LDAP/Ducky à brancher.)")
+	logLine("INFO", fmt.Sprintf("proxy %s — core %s", cfg.Proxy.Version, cfg.CoreAddress))
 
-	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-	<-sig
-	fmt.Println("Arrêt.")
+	if err := duckynetwork.RunService(ctx, service); err != nil {
+		log.Fatalf("proxy interrompu : %v", err)
+	}
+	logLine("INFO", "arrêt propre")
 }
 
-func runDiscovery(client *duckynetwork.Client, lb *balancer.Balancer) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-	for range ticker.C {
-		cores, err := client.ListCores()
-		if err != nil {
-			log.Printf("discovery list_cores: %v", err)
-		} else {
-			lb.UpdateCores(cores)
-		}
-		// Heartbeat pour rester online dans cluster_nodes
-		if client.Hostname() != "" {
-			if err := client.SendHeartbeat(client.Hostname()); err != nil {
-				log.Printf("heartbeat: %v", err)
-			}
-		}
-	}
+// logLine écrit un événement sur la sortie standard.
+//
+// Le SDK ne journalise rien lui-même : il ne sait pas où le programme hôte veut
+// écrire. C'est le proxy qui décide, et pour l'instant c'est la sortie standard,
+// que systemd ou Docker collectent.
+func logLine(level, message string) {
+	log.Printf("[%s] %s", level, message)
 }

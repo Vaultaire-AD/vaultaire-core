@@ -10,6 +10,7 @@ package webserveur
 // ce qui rend le vol de la base sans intérêt pour un attaquant.
 
 import (
+	"database/sql"
 	"html/template"
 	"net/http"
 	"strconv"
@@ -153,11 +154,13 @@ func createEnrollmentKey(r *http.Request, username string, canCreate, isSuperadm
 	if err != nil {
 		return "", "", "", "La durée doit être un nombre entier de minutes."
 	}
-	if uses < 1 || uses > enrollMaxUses {
-		return "", "", "", "Le quota doit être compris entre 1 et " + strconv.Itoa(enrollMaxUses) + "."
+	// 0 vaut « illimité » sur les deux bornes. Une clé sans limite ne s'éteint
+	// que par révocation : un geste explicite, jamais l'écoulement du temps.
+	if uses < 0 || uses > enrollMaxUses {
+		return "", "", "", "Le quota doit être compris entre 0 (illimité) et " + strconv.Itoa(enrollMaxUses) + "."
 	}
-	if minutes < 1 || minutes > enrollMaxMinutes {
-		return "", "", "", "La durée doit être comprise entre 1 minute et " +
+	if minutes < 0 || minutes > enrollMaxMinutes {
+		return "", "", "", "La durée doit être comprise entre 0 (sans expiration) et " +
 			strconv.Itoa(enrollMaxMinutes/1440) + " jours."
 	}
 
@@ -165,15 +168,21 @@ func createEnrollmentKey(r *http.Request, username string, canCreate, isSuperadm
 	if err != nil {
 		return "", "", "", "Génération impossible : " + err.Error()
 	}
-	expiresAt := time.Now().Add(time.Duration(minutes) * time.Minute)
+	var expiresAt sql.NullTime
+	if minutes > 0 {
+		expiresAt = sql.NullTime{Time: time.Now().Add(time.Duration(minutes) * time.Minute), Valid: true}
+	}
 
 	if _, err := dbenrollment.CreateKey(database.GetDatabase(), newSecret,
 		strings.TrimSpace(r.FormValue("label")), clientType, uses, expiresAt, username); err != nil {
 		return "", "", "", "Émission impossible : " + err.Error()
 	}
 
-	return newSecret, clientType,
-		"Clé émise. Elle ne sera plus jamais affichée : copiez-la maintenant.", ""
+	created := "Clé émise. Elle ne sera plus jamais affichée : copiez-la maintenant."
+	if uses == 0 || !expiresAt.Valid {
+		created += " Cette clé est sans limite : seule une révocation l'arrêtera."
+	}
+	return newSecret, clientType, created, ""
 }
 
 func revokeEnrollmentKey(r *http.Request, username string, canCreate bool) (message, errMsg string) {
@@ -203,12 +212,28 @@ const (
 	enrollMaxMinutes = 7 * 24 * 60
 )
 
+// usesText et expiryText rendent lisible l'absence de limite, plutôt que
+// d'afficher « 3/0 » ou une date à l'an zéro.
+func usesText(k dbenrollment.Record) string {
+	if k.UnlimitedUses() {
+		return strconv.Itoa(k.UsedCount) + "/∞"
+	}
+	return strconv.Itoa(k.UsedCount) + "/" + strconv.Itoa(k.MaxUses)
+}
+
+func expiryText(k dbenrollment.Record) string {
+	if k.NeverExpires() {
+		return "jamais"
+	}
+	return k.ExpiresAt.Time.Format("2006-01-02 15:04")
+}
+
 func decorateKey(k dbenrollment.Record, now time.Time) enrollKeyView {
 	return enrollKeyView{
 		Record:      k,
 		Status:      k.Status(now),
-		Uses:        strconv.Itoa(k.UsedCount) + "/" + strconv.Itoa(k.MaxUses),
-		ExpiresText: k.ExpiresAt.Format("2006-01-02 15:04"),
+		Uses:        usesText(k),
+		ExpiresText: expiryText(k),
 		CreatedText: k.CreatedAt.Format("2006-01-02 15:04"),
 	}
 }

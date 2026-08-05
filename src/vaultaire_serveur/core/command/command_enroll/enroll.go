@@ -21,6 +21,7 @@
 package commandenroll
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
@@ -163,11 +164,14 @@ func createKey(args []string, senderUsername string) string {
 			clientType, strings.Join(clienttype.ServiceNames(), ", "))
 	}
 
-	if uses < 1 || uses > maxUsesAllowed {
-		return fmt.Sprintf("Le quota doit être compris entre 1 et %d.", maxUsesAllowed)
+	// 0 vaut « illimité » sur les deux bornes. Une clé sans limite ne s'éteint
+	// que par révocation : c'est un geste explicite, jamais l'écoulement du
+	// temps, et c'est ce qui la rend acceptable.
+	if uses < 0 || uses > maxUsesAllowed {
+		return fmt.Sprintf("Le quota doit être compris entre 0 (illimité) et %d.", maxUsesAllowed)
 	}
-	if ttl <= 0 || ttl > maxTTL {
-		return fmt.Sprintf("La durée de validité doit être comprise entre 1 seconde et %s.", maxTTL)
+	if ttl < 0 || ttl > maxTTL {
+		return fmt.Sprintf("La durée de validité doit être comprise entre 0 (sans expiration) et %s.", maxTTL)
 	}
 
 	db := database.GetDatabase()
@@ -191,11 +195,27 @@ func createKey(args []string, senderUsername string) string {
 	if err != nil {
 		return "Génération impossible : " + err.Error()
 	}
-	expiresAt := time.Now().Add(ttl)
+	var expiresAt sql.NullTime
+	if ttl > 0 {
+		expiresAt = sql.NullTime{Time: time.Now().Add(ttl), Valid: true}
+	}
 
 	id, err := dbenrollment.CreateKey(db, secret, label, clientType, uses, expiresAt, senderUsername)
 	if err != nil {
 		return "Émission impossible : " + err.Error()
+	}
+
+	quota := fmt.Sprintf("%d utilisation(s)", uses)
+	if uses == 0 {
+		quota = "illimité"
+	}
+	expiry := "sans expiration"
+	if expiresAt.Valid {
+		expiry = expiresAt.Time.Format("2006-01-02 15:04:05")
+	}
+	warn := ""
+	if uses == 0 || !expiresAt.Valid {
+		warn = "\n\n⚠ Cette clé est sans limite : seule une révocation l'arrêtera."
 	}
 
 	return fmt.Sprintf(`Clé d'enrôlement %d émise.
@@ -203,12 +223,12 @@ func createKey(args []string, senderUsername string) string {
   %s
 
   Type    : %s
-  Quota   : %d utilisation(s)
-  Expire  : %s
+  Quota   : %s
+  Expire  : %s%s
 
 Cette clé ne sera plus jamais affichée : seul son condensat est en base.
 Si elle est perdue, révoquez-la et émettez-en une autre.`,
-		id, secret, clientType, uses, expiresAt.Format("2006-01-02 15:04:05"))
+		id, secret, clientType, quota, expiry, warn)
 }
 
 func listKeys() string {
@@ -227,8 +247,7 @@ func listKeys() string {
 	for _, k := range keys {
 		fmt.Fprintf(&b, "%-4d %-20s %-12s %-9s %-19s %s\n",
 			k.ID, k.ClientType, k.Status(now),
-			fmt.Sprintf("%d/%d", k.UsedCount, k.MaxUses),
-			k.ExpiresAt.Format("2006-01-02 15:04"), k.CreatedBy)
+			usesText(k), expiryText(k), k.CreatedBy)
 	}
 	return strings.TrimRight(b.String(), "\n")
 }
@@ -255,9 +274,8 @@ func showKey(args []string) string {
 			continue
 		}
 		found = true
-		fmt.Fprintf(&b, "Clé %d\n  Libellé : %s\n  Type    : %s\n  État    : %s\n  Usages  : %d/%d\n  Expire  : %s\n  Émise   : %s par %s\n",
-			k.ID, orDash(k.Label), k.ClientType, k.Status(now), k.UsedCount, k.MaxUses,
-			k.ExpiresAt.Format("2006-01-02 15:04:05"),
+		fmt.Fprintf(&b, "Clé %d\n  Libellé : %s\n  Type    : %s\n  État    : %s\n  Usages  : %s\n  Expire  : %s\n  Émise   : %s par %s\n",
+			k.ID, orDash(k.Label), k.ClientType, k.Status(now), usesText(k), expiryText(k),
 			k.CreatedAt.Format("2006-01-02 15:04:05"), k.CreatedBy)
 		if k.RevokedAt.Valid {
 			fmt.Fprintf(&b, "  Révoquée: %s par %s\n",
@@ -317,6 +335,22 @@ func listTypes() string {
 		fmt.Fprintf(&b, "  %-20s trames : %s\n\n", "", strings.Join(d.Frames, " "))
 	}
 	return strings.TrimRight(b.String(), "\n")
+}
+
+// usesText et expiryText rendent lisible l'absence de limite, plutôt que
+// d'afficher « 3/0 » ou une date à l'an zéro.
+func usesText(k dbenrollment.Record) string {
+	if k.UnlimitedUses() {
+		return fmt.Sprintf("%d/∞", k.UsedCount)
+	}
+	return fmt.Sprintf("%d/%d", k.UsedCount, k.MaxUses)
+}
+
+func expiryText(k dbenrollment.Record) string {
+	if k.NeverExpires() {
+		return "jamais"
+	}
+	return k.ExpiresAt.Time.Format("2006-01-02 15:04")
 }
 
 func orDash(s string) string {

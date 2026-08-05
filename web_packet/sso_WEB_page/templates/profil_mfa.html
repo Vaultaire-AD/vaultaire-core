@@ -5,113 +5,101 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Second facteur — Vaultaire</title>
   <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/profil_custom.css">
 </head>
 <body>
-<div class="page-wrap">
-  <div class="card">
+  <header class="app-header">
+    <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+    <nav class="app-nav">
+      <a href="/profil" class="active">Profil</a>
+    </nav>
+    <div class="app-toolbar">
+      <span class="muted">{{ .Username }}</span>
+      <a href="/logout" class="btn btn-ghost">Déconnexion</a>
+    </div>
+  </header>
+  <div class="profil-container animate-in">
     <h1>Second facteur d'authentification</h1>
 
     {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
     {{if .Success}}<div class="alert alert-success">{{.Success}}</div>{{end}}
 
     {{if .Enabled}}
-      <p>Le second facteur est <strong>actif</strong> sur votre compte.</p>
-      {{if .Required}}
-        <p class="muted">
-          Votre groupe impose le second facteur : il ne peut pas être désactivé.
-          En cas de perte de votre téléphone, demandez à un administrateur de le
-          réinitialiser.
-        </p>
-      {{else}}
-        <form method="POST" action="/profil/mfa" class="stack">
-          <input type="hidden" name="action" value="disable">
-          <label for="current_password">Mot de passe actuel</label>
-          <input type="password" id="current_password" name="current_password" required
-                 autocomplete="current-password">
-          <p class="muted">
-            Le mot de passe est demandé pour qu'une session laissée ouverte ne
-            suffise pas à retirer la protection.
-          </p>
-          <button type="submit" class="btn btn-danger">Désactiver le second facteur</button>
-        </form>
-      {{end}}
-
-    {{else if .OtpauthURI}}
-      <p>
-        Ajoutez ce compte dans votre application d'authentification, puis saisissez
-        le code affiché pour terminer l'activation.
-      </p>
-
-      {{if .QRCode}}
-      <div class="qr">{{.QRCode}}</div>
-      <p class="muted">
-        Scannez ce code avec votre application d'authentification.
-      </p>
-      {{end}}
-
-      <p class="muted">Si la caméra ne lit pas le code, saisissez cette clé :</p>
-      <p><code class="secret">{{.SecretDisplay}}</code></p>
-
-      <p class="muted">
-        Depuis un téléphone, ce lien ouvre directement l'application :
-      </p>
-      <p><a href="{{.OtpauthURI}}" class="btn btn-ghost">Ajouter à mon application</a></p>
-
-      <form method="POST" action="/profil/mfa" class="stack">
-        <input type="hidden" name="action" value="confirm">
-        <label for="code">Code affiché par l'application</label>
-        <input type="text" id="code" name="code" required autofocus
-               inputmode="numeric" pattern="[0-9 ]*" maxlength="7"
-               autocomplete="one-time-code" placeholder="123456">
-        <button type="submit" class="btn btn-primary">Activer</button>
-      </form>
-
-      <p class="muted">
-        Tant que ce code n'est pas validé, le second facteur reste inactif : fermer
-        cette page ne verrouille pas votre compte.
-      </p>
-
+    <p>Le second facteur est <strong>actif</strong> sur votre compte.</p>
+    {{if .Required}}
+    <p class="muted">
+    Votre groupe impose le second facteur : il ne peut pas être désactivé.
+    En cas de perte de votre téléphone, demandez à un administrateur de le
+    réinitialiser.
+    </p>
     {{else}}
-      {{if .Required}}
-        <div class="alert alert-warning">
-          Votre groupe impose le second facteur. Vous devez l'activer pour accéder
-          à l'interface.
-        </div>
-      {{else}}
-        <p>
-          Le second facteur ajoute un code à usage unique, changeant toutes les
-          trente secondes, en plus de votre mot de passe.
-        </p>
-      {{end}}
-      <form method="POST" action="/profil/mfa">
-        <input type="hidden" name="action" value="start">
-        <button type="submit" class="btn btn-primary">Activer le second facteur</button>
-      </form>
+    <form method="POST" action="/profil/mfa" class="stack">
+    <input type="hidden" name="action" value="disable">
+    <label for="current_password">Mot de passe actuel</label>
+    <input type="password" id="current_password" name="current_password" required
+    autocomplete="current-password">
+    <p class="muted">
+    Le mot de passe est demandé pour qu'une session laissée ouverte ne
+    suffise pas à retirer la protection.
+    </p>
+    <button type="submit" class="btn btn-danger">Désactiver le second facteur</button>
+    </form>
     {{end}}
 
-    <p style="margin-top:1.5rem"><a href="/profil">Retour au profil</a></p>
+    {{else if .OtpauthURI}}
+    <p>
+    Ajoutez ce compte dans votre application d'authentification, puis saisissez
+    le code affiché pour terminer l'activation.
+    </p>
+
+    {{if .QRCode}}
+    <div class="qr">{{.QRCode}}</div>
+    <p class="muted">
+    Scannez ce code avec votre application d'authentification.
+    </p>
+    {{end}}
+
+    <p class="muted">Si la caméra ne lit pas le code, saisissez cette clé :</p>
+    <p><code class="secret">{{.SecretDisplay}}</code></p>
+
+    <p class="muted">
+    Depuis un téléphone, ce lien ouvre directement l'application :
+    </p>
+    <p><a href="{{.OtpauthURI}}" class="btn btn-ghost">Ajouter à mon application</a></p>
+
+    <form method="POST" action="/profil/mfa" class="stack">
+    <input type="hidden" name="action" value="confirm">
+    <label for="code">Code affiché par l'application</label>
+    <input type="text" id="code" name="code" required autofocus
+    inputmode="numeric" pattern="[0-9 ]*" maxlength="7"
+    autocomplete="one-time-code" placeholder="123456">
+    <button type="submit" class="btn btn-primary">Activer</button>
+    </form>
+
+    <p class="muted">
+    Tant que ce code n'est pas validé, le second facteur reste inactif : fermer
+    cette page ne verrouille pas votre compte.
+    </p>
+
+    {{else}}
+    {{if .Required}}
+    <div class="alert alert-warning">
+    Votre groupe impose le second facteur. Vous devez l'activer pour accéder
+    à l'interface.
+    </div>
+    {{else}}
+    <p>
+    Le second facteur ajoute un code à usage unique, changeant toutes les
+    trente secondes, en plus de votre mot de passe.
+    </p>
+    {{end}}
+    <form method="POST" action="/profil/mfa">
+    <input type="hidden" name="action" value="start">
+    <button type="submit" class="btn btn-primary">Activer le second facteur</button>
+    </form>
+    {{end}}
+
+    <p style="margin-top:1.5rem"><a href="/profil" class="btn btn-ghost">Retour au profil</a></p>
   </div>
-</div>
-
-<script src="/static/app.js"></script>
-<!--
-  PAS DE QR CODE, ET PAS DE SCRIPT EXTERNE.
-
-  Dessiner le QR aurait demandé une bibliothèque d'encodage. La charger depuis
-  un CDN était la solution facile, et c'était la mauvaise sur CETTE page :
-
-    - le secret TOTP est affiché ici en clair. Un script tiers exécuté sur la
-      même page peut le lire et l'exfiltrer. Une compromission du CDN donnerait
-      le second facteur de tous les comptes enrôlés depuis ce jour-là ;
-    - un annuaire s'installe couramment sur un réseau fermé, où l'appel sortant
-      échoue simplement — la page serait cassée là où elle sert le plus ;
-    - l'appel révèle l'existence de l'instance à un tiers, à chaque enrôlement.
-
-  La clé et le lien otpauth:// suffisent : sur mobile le lien ouvre
-  l'application, sur poste fixe la saisie manuelle prend dix secondes. Si un QR
-  est jugé nécessaire plus tard, il devra être généré CÔTÉ SERVEUR ou par un
-  script servi depuis /static, jamais par un tiers.
--->
+  <script src="/static/app.js"></script>
 </body>
 </html>

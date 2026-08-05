@@ -5,102 +5,123 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Politique d'authentification — Vaultaire</title>
   <link rel="stylesheet" href="/static/app.css">
-  <link rel="stylesheet" href="/static/admin_custom.css">
 </head>
 <body>
-  <div class="app-shell">
-    {{template "admin_sidebar" .}}
-    <div class="app-main">
-      <header class="app-header">
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
         <div class="app-toolbar">
-          <span class="muted">{{.Username}}</span>
-          <a href="/profil" class="btn btn-ghost">Profil</a>
-          <a href="/logout" class="btn btn-ghost">Déconnexion</a>
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
         </div>
       </header>
       <div class="app-content">
         <div class="app-container animate-in">
-          <h1>Politique d'authentification</h1>
-          <p class="muted">Réglages globaux — <a href="/admin">retour au tableau de bord</a></p>
+<h1>Politique d'authentification</h1>
+      <p class="muted">Réglages globaux — <a href="/admin">retour au tableau de bord</a></p>
 
-          {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
-          {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
+      {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
+      {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
 
-          <section class="section">
-            <h2>Expiration des mots de passe</h2>
+      <section class="section">
+        <h2>Expiration des mots de passe</h2>
 
-            <p class="small muted">
-              État actuel :
-              {{if .Enabled}}
-                <strong>active</strong> — validité {{.MaxAgeDays}} jours,
-                préavis {{.WarnDays}} jours.
-              {{else}}
-                <strong>désactivée</strong> — aucun mot de passe n'expire.
-              {{end}}
-            </p>
+        <p class="small muted">
+          État actuel :
+          {{if .Enabled}}
+            <strong>active</strong> — validité {{.MaxAgeDays}} jours,
+            préavis {{.WarnDays}} jours.
+          {{else}}
+            <strong>désactivée</strong> — aucun mot de passe n'expire.
+          {{end}}
+        </p>
 
-            <form method="post">
-              <input type="hidden" name="action" value="save_password_policy">
+        <form method="post">
+          <input type="hidden" name="action" value="save_password_policy">
 
-              <label for="max_age_days">Durée de validité (jours)</label>
-              <input type="number" id="max_age_days" name="max_age_days"
-                     value="{{.MaxAgeDays}}" min="0" max="{{.MaxAgeLimit}}" required>
-              <p class="small muted">
-                <strong>0 désactive l'expiration.</strong> C'est la valeur par défaut :
-                la fonctionnalité ne s'impose pas aux installations existantes.
-              </p>
+          <label for="max_age_days">Durée de validité (jours)</label>
+          <input type="number" id="max_age_days" name="max_age_days"
+                 value="{{.MaxAgeDays}}" min="0" max="{{.MaxAgeLimit}}" required>
+          <p class="small muted">
+            <strong>0 désactive l'expiration.</strong> C'est la valeur par défaut :
+            la fonctionnalité ne s'impose pas aux installations existantes.
+          </p>
 
-              <label for="warn_days">Préavis (jours)</label>
-              <input type="number" id="warn_days" name="warn_days"
-                     value="{{.WarnDays}}" min="0" max="{{.WarnLimit}}" required>
-              <p class="small muted">
-                Nombre de jours pendant lesquels l'utilisateur est averti sur son
-                profil avant l'expiration. 0 supprime l'avertissement.
-              </p>
+          <label for="warn_days">Préavis (jours)</label>
+          <input type="number" id="warn_days" name="warn_days"
+                 value="{{.WarnDays}}" min="0" max="{{.WarnLimit}}" required>
+          <p class="small muted">
+            Nombre de jours pendant lesquels l'utilisateur est averti sur son
+            profil avant l'expiration. 0 supprime l'avertissement.
+          </p>
 
-              <div style="margin-top:0.75rem">
-                <button type="submit" class="btn btn-primary">Enregistrer</button>
-              </div>
-            </form>
-          </section>
+          <div style="margin-top:0.75rem">
+            <button type="submit" class="btn btn-primary">Enregistrer</button>
+          </div>
+        </form>
+      </section>
 
-          <section class="section">
-            <h2>Ce que l'expiration change</h2>
-            <table class="gpo-table">
-              <thead><tr><th>Chemin</th><th>Mot de passe expiré</th></tr></thead>
-              <tbody>
-                <tr><td>Bind LDAP</td><td>refusé</td></tr>
-                <tr><td>Client Ducky / PAM</td><td>refusé, avec un message explicite</td></tr>
-                <tr><td>Interface web</td><td>connexion acceptée, mais <strong>seule</strong> la page de changement de mot de passe est accessible</td></tr>
-              </tbody>
-            </table>
-            <p class="small muted">
-              L'interface web reste ouverte à dessein : c'est le seul endroit où
-              l'utilisateur peut changer son mot de passe. La fermer aussi
-              transformerait chaque expiration en demande au support.
-            </p>
-            <p class="small muted">
-              Le compte d'amorçage <code>vaultaire</code> n'est pas concerné par
-              l'expiration : c'est le compte de dernier recours. Il doit être
-              traité comme un secret d'infrastructure — changé à l'installation,
-              conservé hors ligne, non utilisé au quotidien.
-            </p>
-          </section>
+      <section class="section">
+        <h2>Ce que l'expiration change</h2>
+        <table class="gpo-table">
+          <thead><tr><th>Chemin</th><th>Mot de passe expiré</th></tr></thead>
+          <tbody>
+            <tr><td>Bind LDAP</td><td>refusé</td></tr>
+            <tr><td>Client Ducky / PAM</td><td>refusé, avec un message explicite</td></tr>
+            <tr><td>Interface web</td><td>connexion acceptée, mais <strong>seule</strong> la page de changement de mot de passe est accessible</td></tr>
+          </tbody>
+        </table>
+        <p class="small muted">
+          L'interface web reste ouverte à dessein : c'est le seul endroit où
+          l'utilisateur peut changer son mot de passe. La fermer aussi
+          transformerait chaque expiration en demande au support.
+        </p>
+        <p class="small muted">
+          Le compte d'amorçage <code>vaultaire</code> n'est pas concerné par
+          l'expiration : c'est le compte de dernier recours. Il doit être
+          traité comme un secret d'infrastructure — changé à l'installation,
+          conservé hors ligne, non utilisé au quotidien.
+        </p>
+      </section>
 
-          <section class="section">
-            <h2>Second facteur</h2>
-            <p class="small muted">
-              L'exigence de second facteur se règle <strong>par groupe</strong>,
-              sur la page de chaque groupe. Un utilisateur y est soumis dès qu'un
-              de ses groupes l'exige.
-            </p>
-            <p class="small muted">
-              La réinitialisation du second facteur d'un compte — téléphone perdu —
-              demande le droit <code>write:mfa</code>, distinct de
-              <code>write:update:user</code>.
-            </p>
-          </section>
+      <section class="section">
+        <h2>Second facteur</h2>
+        <p class="small muted">
+          L'exigence de second facteur se règle <strong>par groupe</strong>,
+          sur la page de chaque groupe. Un utilisateur y est soumis dès qu'un
+          de ses groupes l'exige.
+        </p>
+        <p class="small muted">
+          La réinitialisation du second facteur d'un compte — téléphone perdu —
+          demande le droit <code>write:mfa</code>, distinct de
+          <code>write:update:user</code>.
+        </p>
+      </section>
         </div>
+      </div>
+    </main>
+  </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
       </div>
     </div>
   </div>

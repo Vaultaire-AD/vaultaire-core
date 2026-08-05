@@ -31,7 +31,7 @@ func CreateTables(db *sql.DB) error {
 			client_type VARCHAR(64)  NOT NULL,
 			max_uses    INT          NOT NULL,
 			used_count  INT          NOT NULL DEFAULT 0,
-			expires_at  DATETIME     NOT NULL,
+			expires_at  DATETIME     NULL,
 			created_by  VARCHAR(255) NOT NULL,
 			created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
 			revoked_by  VARCHAR(255) NULL,
@@ -62,11 +62,26 @@ func CreateTables(db *sql.DB) error {
 		);`,
 	}
 
+	// Bases existantes : expires_at était NOT NULL avant que « sans expiration »
+	// devienne possible. MODIFY est idempotent, il peut passer à chaque
+	// démarrage sans script de migration.
+	migrations := []string{
+		`ALTER TABLE service_enrollment_key MODIFY expires_at DATETIME NULL`,
+	}
+
 	for _, stmt := range statements {
 		if _, err := db.Exec(stmt); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				"dbenrollment: création de table échouée : "+err.Error())
 			return fmt.Errorf("création du schéma d'enrôlement : %w", err)
+		}
+	}
+
+	for _, stmt := range migrations {
+		if _, err := db.Exec(stmt); err != nil {
+			// Une base neuve a déjà la bonne définition : l'échec n'est pas
+			// bloquant, il est seulement journalisé.
+			logs.Write_Log("DEBUG", "dbenrollment: migration ignorée : "+err.Error())
 		}
 	}
 	return nil

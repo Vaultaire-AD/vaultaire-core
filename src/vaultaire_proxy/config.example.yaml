@@ -1,18 +1,30 @@
-# vaultaire_proxy - exemple de configuration
-# Copier en config.yaml et renseigner les clés (ou chemins vers fichiers).
+# vaultaire_proxy — exemple de configuration
+#
+# Ce fichier ne contient NI identifiant machine NI clé privée : le proxy les
+# produit lui-même au premier démarrage, en s'enrôlant. Le même fichier peut donc
+# être déployé tel quel sur plusieurs hôtes.
 
-core_address: "core.vaultaire.fr:6666"
+core_address: "127.0.0.1:6666"
 
-identity:
-  computeur_id: ""      # ID du logiciel proxy créé sur le Core (create client / add-host)
-  private_key_pem: ""   # Clé privée PEM du proxy (ou chemin fichier)
-  server_pub_key: ""    # Clé publique du serveur Core PEM (ou chemin fichier)
+enrollment:
+  # Émise sur le core : vlt enroll create --type vaultaire_proxy
+  # Elle n'est utilisée qu'au premier démarrage, ou après une
+  # auto-réinitialisation si le core ne reconnaît plus l'identité du proxy.
+  key: "VLT-ENR-..."
+  label: "proxy-preprod"
+
+# Clé publique du core : PEM en clair, ou chemin absolu vers un fichier.
+server_pub_key: "/etc/vaultaire_proxy/core_public.pem"
+
+# Où le proxy range son identité après enrôlement. Ne pas éditer à la main.
+identity_path: "/var/lib/vaultaire_proxy/identity.json"
 
 proxy:
-  hostname: ""          # Optionnel, défaut: os.Hostname()
-  fqdn: ""
-  domain: "proxy.vaultaire.fr"
-  role: "proxy"
+  version: "1.0.0"
+  endpoint: ""            # vide = adresse locale vue par le core
+  capabilities:
+    - ldap
+    - ducky
 
 ldap_listen: ":3890"
 ducky_listen: ":6667"

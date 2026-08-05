@@ -60,12 +60,16 @@ func Reserve(db *sql.DB, secret string) (Reservation, error) {
 	now := time.Now().UTC()
 
 	res, err := db.Exec(
+		// max_uses = 0 vaut « illimité », expires_at NULL vaut « sans
+		// expiration ». Les deux gardes restent DANS le WHERE : les sortir pour
+		// les évaluer en Go rouvrirait la fenêtre entre lecture et écriture que
+		// cet UPDATE conditionnel existe précisément pour fermer.
 		`UPDATE service_enrollment_key
 		    SET used_count = used_count + 1
 		  WHERE key_hash   = ?
 		    AND revoked_at IS NULL
-		    AND used_count < max_uses
-		    AND expires_at > ?`,
+		    AND (max_uses   = 0 OR used_count < max_uses)
+		    AND (expires_at IS NULL OR expires_at > ?)`,
 		hash, now)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "dbenrollment: décompte échoué : "+err.Error())
@@ -102,7 +106,7 @@ func diagnose(db *sql.DB, hash string, now time.Time) error {
 		revoked   sql.NullTime
 		usedCount int
 		maxUses   int
-		expiresAt time.Time
+		expiresAt sql.NullTime
 	)
 	err := db.QueryRow(
 		`SELECT revoked_at, used_count, max_uses, expires_at
@@ -115,9 +119,9 @@ func diagnose(db *sql.DB, hash string, now time.Time) error {
 		return fmt.Errorf("diagnostic de la clé : %w", err)
 	case revoked.Valid:
 		return ErrRevokedKey
-	case usedCount >= maxUses:
+	case maxUses > 0 && usedCount >= maxUses:
 		return ErrExhaustedKey
-	case !now.Before(expiresAt):
+	case expiresAt.Valid && !now.Before(expiresAt.Time):
 		return ErrExpiredKey
 	default:
 		// Ni révoquée, ni épuisée, ni expirée, mais l'UPDATE n'a rien touché :

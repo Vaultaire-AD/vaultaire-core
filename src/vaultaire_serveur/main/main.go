@@ -106,6 +106,13 @@ func main() {
 			if err := hosthandler.MarkStaleServicesOffline(db.GetDatabase()); err != nil {
 				logs.Write_Log("ERROR", "cluster: balayage des services échoué : "+err.Error())
 			}
+			// Purge des services définitivement partis. Passe dans le même
+			// cycle que le balayage, mais son délai se compte en heures : les
+			// deux répondent à deux questions différentes, « répond-il en ce
+			// moment ? » et « existe-t-il encore ? ».
+			if err := hosthandler.PurgeDepartedServices(db.GetDatabase()); err != nil {
+				logs.Write_Log("ERROR", "cluster: purge des services échouée : "+err.Error())
+			}
 		}
 	}()
 

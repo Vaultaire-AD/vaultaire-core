@@ -1,47 +1,65 @@
-# vaultaire_proxy
+# vaultaire_proxy — version 1
 
-Layer 7 Load Balancer pour les protocoles **LDAP** et **Ducky-Network** dans l’infrastructure VaultAire.
+Client **service** du cluster Vaultaire. Cette version établit et maintient la
+présence du proxy dans le cluster ; la répartition de charge viendra ensuite.
 
-## Prérequis
+## Ce qu'il fait
 
-- Un **Core** VaultAire accessible sur le ducky-network.
-- Une identité **proxy** créée sur le Core (logiciel enregistré avec clé publique), utilisée pour l’auth 01_01/01_02.
+1. **S'enrôle** au premier démarrage avec la clé de sa configuration. Il génère
+   sa paire RSA-4096 localement : **sa clé privée ne quitte jamais l'hôte**.
+2. **Se connecte** au core et ouvre une session chiffrée.
+3. **S'enregistre** dans le cluster et **bat** toutes les 45 secondes.
+4. **Sort proprement** à l'arrêt, pour qu'un arrêt planifié ne ressemble pas à
+   une panne.
 
-## Usage
+## Installation
+
+Émettre une clé sur le core :
 
 ```bash
-# Avec config par défaut (/opt/vaultaire_proxy/config.yaml)
-./vaultaire_proxy --add-host
-
-# Fichier de config et override Core
-./vaultaire_proxy --config=./config.yaml --core=10.0.0.1:6666 --add-host
+vlt enroll create --type vaultaire_proxy --uses 1 --expires 30m
 ```
 
-- **`--add-host`** : enregistre le proxy comme Host sur le Core (table `cluster_nodes` + création du groupe/domaine si besoin). À utiliser au démarrage.
-- **`--core`** : override l’adresse du Core (host:port).
-- **`--config`** : chemin vers le fichier YAML de configuration.
+Copier `config.example.yaml` en `/etc/vaultaire_proxy/config.yaml`, y coller la
+clé, puis démarrer. Le fichier de configuration ne contient **ni identifiant ni
+clé privée** : le même peut être déployé sur plusieurs hôtes, chacun s'enrôlera
+et obtiendra sa propre identité.
 
-## Configuration
+## Cycle de vie côté core
 
-Voir `config.example.yaml`. Champs principaux :
+| Situation | Ce que fait le core |
+|---|---|
+| Bat régulièrement | `online` dans le cluster |
+| Cesse de battre quelques minutes | `offline`, disparaît des vues, **identité conservée** |
+| Ne revient pas avant le délai de purge | Ligne cluster **et client supprimés** |
 
-- **core_address** : host:port du Core (ducky).
-- **identity** : `computeur_id`, `private_key_pem`, `server_pub_key` (ou chemins fichiers).
-- **proxy** : `hostname`, `fqdn`, `domain`, `role` pour l’enregistrement cluster.
+Le délai se règle avec `vlt cluster purge-delay <heures>`, 24 h par défaut, 0
+pour désactiver la purge.
 
-## Protocole (trames 04_xx)
+Les deux étapes répondent à deux questions différentes. « Répond-il en ce
+moment ? » se pose en minutes et n'a aucune conséquence. « Existe-t-il encore ? »
+se pose en heures et détruit une identité — les confondre ferait d'une coupure
+réseau de dix minutes la perte d'un enrôlement.
 
-- **04_01** (register_host) : enregistrement dans `cluster_nodes` + création groupe/domaine.
-- **04_03** / **04_04** : liste des Cores en ligne (service discovery).
-- **04_05** / **04_06** : envoi des métriques vers le Core (table `proxy_metrics`).
-- **04_07** / **04_08** : heartbeat pour rester « online » dans le cluster.
+## Auto-réinitialisation
 
-Toute la communication inter-services passe par le **ducky-network** (handshake 01_01/01_02 puis trames 04_xx).
+Si le core refuse l'identité du proxy — client purgé, clé publique remplacée —,
+réessayer avec la même paire ne mènera jamais nulle part. Le proxy efface alors
+son identité et se réenrôle avec la clé de sa configuration.
 
-## Structure
+**C'est conditionné à ce seul cas.** Un core injoignable ou une coupure réseau ne
+déclenchent PAS de réenrôlement : ils consommeraient une utilisation de clé à
+chaque incident, et une clé à usage unique serait épuisée par la première panne.
 
-- **ducky/** : client ducky (connexion, 01_01/01_02, 04_01/04_03/04_07).
-- **balancer/** : liste des Cores, sélection round-robin (extensible par charge/stress).
-- **config/** : chargement de la config YAML.
+Réinitialisation manuelle : `vaultaire_proxy --reset-identity`.
 
-Les listeners LDAP et Ducky (écoute et renvoi vers un Core choisi par le balancer) sont à brancher dans `main.go`.
+## Le protocole n'est pas ici
+
+Aucune trame n'est implémentée dans ce dépôt. Poignée de main, enrôlement,
+chiffrement, reconnexion et auto-réinitialisation vivent dans
+`src/ducky-network-sdk`, commun à tous les clients.
+
+C'est la propriété qui compte : quand le protocole est durci, le proxy en
+bénéficie sans qu'une ligne n'y soit écrite. La version précédente portait sa
+propre copie du protocole — elle était restée sur PKCS#1 v1.5 après la migration
+du core vers OAEP, et **ne pouvait plus parler au core du tout**.
