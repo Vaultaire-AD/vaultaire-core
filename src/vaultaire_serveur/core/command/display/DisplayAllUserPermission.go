@@ -21,7 +21,7 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 
 	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
 
-	fmt.Fprintf(w, "%-5s %-20s %-30s %-6s %-6s %-8s %-8s\n",
+	fmt.Fprintf(w, "%-5s %-20s %-30s %-6s %-6s %-8s %-8s %-8s\n",
 		header("ID"),
 		header("Nom"),
 		header("Description"),
@@ -33,7 +33,7 @@ func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
 	)
 
 	for _, p := range permissions {
-		fmt.Fprintf(w, "%-5d %-20s %-30s %-6s %-6s %-8s %-8s\n",
+		fmt.Fprintf(w, "%-5d %-20s %-30s %-6s %-6s %-8s %-8s %-8s\n",
 			p.ID,
 			p.Name,
 			p.Description,

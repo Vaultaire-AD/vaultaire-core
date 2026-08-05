@@ -47,7 +47,7 @@ func WaitForSSHFetch(user string, sshUser string) {
 	case <-time.After(10 * time.Second):
 		logs.Write_log("ERROR", "Timeout : Le serveur central n'a pas répondu à la demande 03_06")
 	}
-	msg = fmt.Sprintf("02_05\nserveur_central\n%s\n%s\n%s\n%s",
+	msg = fmt.Sprintf("02_05\nserveur_central\n%s\n%s\n%s",
 		string(ds.SessionKey), user, storage.Computeur_ID)
 	sendmessage.SendMessage(msg, ds)
 	// On ferme via RemoveSession (par SessionID) plutôt qu'un

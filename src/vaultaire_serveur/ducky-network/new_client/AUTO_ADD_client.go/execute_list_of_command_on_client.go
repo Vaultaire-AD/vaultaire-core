@@ -29,19 +29,19 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 		osType = "debian"
 		err := LoadCommandsFromShellScript(storage.Sh_folder_path + osType + ".sh")
 		if err != nil {
-			return fmt.Errorf("failed to load command file" + err.Error())
+			return fmt.Errorf("%s", "failed to load command file" + err.Error())
 		}
 	case strings.Contains(osRelease, "ID=ubuntu"):
 		osType = "ubuntu"
 		err := LoadCommandsFromShellScript(storage.Sh_folder_path + osType + ".sh")
 		if err != nil {
-			return fmt.Errorf("failed to load command file" + err.Error())
+			return fmt.Errorf("%s", "failed to load command file" + err.Error())
 		}
 	case strings.Contains(osRelease, "ID=\"rocky\"") || strings.Contains(osRelease, "ID=rocky"):
 		osType = "rocky"
 		err := LoadCommandsFromShellScript(storage.Sh_folder_path + osType + ".sh")
 		if err != nil {
-			return fmt.Errorf("failed to load command file" + err.Error())
+			return fmt.Errorf("%s", "failed to load command file" + err.Error())
 		}
 	default:
 		return fmt.Errorf("⚠️ OS non reconnu :\n%s", osRelease)

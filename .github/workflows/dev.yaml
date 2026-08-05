@@ -49,16 +49,20 @@ jobs:
           fi
 
       - name: go vet serveur
-        run: go vet ./src/vaultaire_serveur
+        run: go vet ./...
+        working-directory: ./src/vaultaire_serveur
 
       - name: go vet client
-        run: go vet ./src/vaultaire_client
+        run: go vet ./...
+        working-directory: ./src/vaultaire_serveur
 
       - name: go vet api
-        run: go vet ./src/api_client_package
+        run: go vet ./...
+        working-directory: ./src/vaultaire_serveur
 
       - name: go vet vlt cli
-        run: go vet ./src/vaultaire_cli
+        run: go vet ./...
+        working-directory: ./src/vaultaire_serveur
 
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6
@@ -212,7 +216,7 @@ jobs:
         continue-on-error: true
         with:
           directory: deployments/pre-prod/
-          framework: docker-compose.yaml,Dockerfile
+          framework: yaml,dockerfile
           output_format: sarif
           output_file_path: checkov-results.sarif
           soft_fail: true
