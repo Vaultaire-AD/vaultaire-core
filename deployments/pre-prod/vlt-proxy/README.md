@@ -66,27 +66,34 @@ L'image ne se reconstruit que si le `Dockerfile` ou l'`entrypoint.sh` change. Le
 binaire étant monté, un `docker compose build` ne sert à rien après une
 recompilation.
 
-## Le conteneur tourne en utilisateur non privilégié
+## Privilèges
 
-UID **10001**, fixé dans le Dockerfile. Le proxy n'ouvre que des connexions
-sortantes et n'écrit que dans son répertoire de clés : root ne lui apporterait
-qu'un pouvoir dont il ne fait rien.
+Le conteneur **démarre en root** et **finit en UID 10001**.
 
-Deux conséquences :
+L'entrypoint fait une seule chose avec ses privilèges : reprendre la propriété du
+volume d'identité, puis les abandonner avec `setpriv` avant d'exécuter le proxy.
+Le processus qui parle au réseau tourne donc sans privilège — il n'ouvre que des
+connexions sortantes et n'écrit que dans son répertoire de clés.
 
-**Le binaire doit être en 0755.** `auto-compil.sh` le pose désormais lui-même.
-Sur un binaire hérité d'une compilation antérieure, le symptôme est :
+**Pourquoi pas simplement `USER` dans le Dockerfile.** Docker crée un volume
+nommé avec la propriété qu'avait le répertoire dans l'image *au moment de la
+création*, et ne la remet jamais à jour. Un volume plus ancien que l'image
+courante appartient donc à un autre UID, et un conteneur non privilégié ne peut
+rien y faire — sans autre issue que de détruire le volume, donc de réenrôler et
+de consommer un jeton.
+
+Reprendre le volume au démarrage rend le conteneur remplaçable : l'identité du
+proxy survit aux reconstructions d'image.
+
+**Le binaire monté doit rester en 0755.** `auto-compil.sh` le pose, et le mode est
+enregistré dans git. Symptôme sinon :
 
 ```
 exec: "/opt/vaultaire/bin/vaultaire_proxy": permission denied
 ```
 
-Correction sur l'hôte : `chmod 755 cmd/vaultaire_proxy/vaultaire_proxy`.
-L'entrypoint vérifie et le dit avant que le runtime ne s'en mêle.
-
-**L'UID est fixé, pas attribué.** Le volume des clés appartient au compte qui y
-écrit en premier. Un UID variable d'une reconstruction à l'autre rendrait le
-volume inaccessible à son successeur — donc réenrôlement, donc jeton consommé.
+Correction : `chmod 755 cmd/vaultaire_proxy/vaultaire_proxy` sur l'hôte, et
+`git update-index --chmod=+x` pour que ça ne revienne pas au prochain `pull`.
 
 ## Le volume `vlt_proxy_keys`
 
@@ -129,3 +136,4 @@ docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 | `aucune clé d'enrôlement dans la configuration` | `VAULTAIRE_ENROLL_KEY` vide |
 | `enrôlement refusé (invalid_key)` | clé inconnue, expirée, épuisée ou révoquée — le motif exact est dans le journal du **core**, jamais renvoyé au client |
 | `aucune session authentifiée après 30s` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy |
+| `répertoire des clés … non inscriptible` | un `user:` a été ajouté au compose : l'entrypoint ne peut plus reprendre le volume |
