@@ -1,11 +1,28 @@
 package serveur
 
-// Enrôlement d'un client service — trames 01_03 à 01_06.
+// Enrôlement d'un client service — trames 01_05 à 01_09.
 //
 // Un client SERVICE génère sa paire de clés sur son propre hôte et vient faire
 // enregistrer sa clé PUBLIQUE en présentant une clé d'enrôlement. Sa clé privée
-// ne voyage jamais, contrairement à celle d'un agent de poste, que le core génère
-// et livre avec sa configuration.
+// ne voyage jamais, contrairement à celle d'un agent de poste, que le core
+// génère et livre avec sa configuration.
+//
+// # Le flux, et pourquoi il est en deux temps
+//
+//	01_05  →  clé d'enrôlement + clé de session TEMPORAIRE   (RSA, clé du core)
+//	01_06  ←  identifiant attribué + type de client          (AES, clé temporaire)
+//	01_07  →  clé publique du service                        (AES, clé temporaire)
+//	01_08  ←  confirmation                                   (RSA, clé du service)
+//	01_09  ←  refus, EN CLAIR
+//
+// Une clé publique RSA-4096 pèse environ 800 octets en PEM. Une charge RSA-OAEP
+// sur clé 4096 en accepte 446. Elle NE PEUT DONC PAS voyager dans une enveloppe
+// asymétrique — c'est structurel, aucun encodage n'y change rien.
+//
+// D'où la clé temporaire : le client l'envoie chiffrée en RSA, où elle tient
+// sans peine, et elle ouvre un canal symétrique qui n'a plus de limite de taille.
+// C'est le mécanisme de 01_02, avancé d'un cran pour servir avant même que le
+// client existe.
 //
 // # Pourquoi cette trame échappe au contrôle par type de client
 //
@@ -45,35 +62,37 @@ import (
 // OAEP ne suffirait même plus aux trames d'authentification.
 const minimumKeyBits = 2048
 
-// HandleEnrollment traite une trame 01_03 et répond 01_04, 01_05 ou 01_06.
+// tmpKeyBytes est la taille attendue de la clé de session temporaire.
 //
-// Retourne toujours la chaîne vide : la réponse est envoyée ici plutôt que
-// remontée à Split_Action, parce qu'elle doit être chiffrée avec la clé publique
-// du client qui vient d'être créé — un identifiant que la trame entrante ne
-// portait pas.
-func HandleEnrollment(trames storage.Trames_struct_client, duckysession *storage.DuckySession) string {
+// AES-256, comme la clé de session ordinaire. Le client l'envoie en base64,
+// le format de trame étant ligne à ligne.
+const tmpKeyBytes = 32
+
+// HandleEnrollRequest traite 01_05 et répond 01_06.
+//
+// Contenu attendu : clé d'enrôlement, clé temporaire en base64, libellé.
+func HandleEnrollRequest(trames storage.Trames_struct_client, duckysession *storage.DuckySession) string {
 	source := remoteIP(duckysession)
 
 	lines := strings.Split(strings.TrimSpace(trames.Content), "\n")
 	if len(lines) < 2 {
-		logs.Write_Log("WARNING", "enrôlement: trame 01_03 malformée depuis "+source)
+		logs.Write_Log("WARNING", "enrôlement: trame 01_05 malformée depuis "+source)
 		replyDenied(duckysession, "invalid_request")
 		return ""
 	}
 	secret := strings.TrimSpace(lines[0])
-	encodedKey := strings.TrimSpace(lines[1])
 	label := ""
 	if len(lines) >= 3 {
 		label = strings.TrimSpace(lines[2])
 	}
 
-	// La clé publique est validée AVANT de consommer une utilisation : une clé
-	// publique illisible ne doit pas coûter un jeton d'enrôlement à
-	// l'administrateur qui l'a émis.
-	publicKeyPEM, err := decodeSubmittedPublicKey(encodedKey)
-	if err != nil {
-		logs.Write_Log("WARNING", "enrôlement: clé publique refusée depuis "+source+" : "+err.Error())
-		replyDenied(duckysession, "bad_public_key")
+	// La clé temporaire est validée AVANT de consommer une utilisation : une clé
+	// mal formée ne doit pas coûter un jeton à l'administrateur qui l'a émis.
+	tmpKey, err := base64.StdEncoding.DecodeString(strings.TrimSpace(lines[1]))
+	if err != nil || len(tmpKey) != tmpKeyBytes {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"enrôlement: clé temporaire invalide depuis %s (%d octets attendus)", source, tmpKeyBytes))
+		replyDenied(duckysession, "invalid_request")
 		return ""
 	}
 
@@ -86,8 +105,7 @@ func HandleEnrollment(trames storage.Trames_struct_client, duckysession *storage
 		// Distinguer « expirée » de « inconnue » ferait du point d'enrôlement un
 		// oracle : l'attaquant apprendrait qu'une clé a existé, donc que son
 		// format est le bon, donc où concentrer ses essais.
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"enrôlement refusé depuis %s : %v", source, err))
+		logs.Write_Log("SECURITY", fmt.Sprintf("enrôlement refusé depuis %s : %v", source, err))
 		if isKeyError(err) {
 			replyDenied(duckysession, "invalid_key")
 		} else {
@@ -116,10 +134,16 @@ func HandleEnrollment(trames storage.Trames_struct_client, duckysession *storage
 		return ""
 	}
 
+	// Le client est créé SANS clé publique : il ne l'a pas encore envoyée, elle
+	// vient en 01_07. La ligne existe donc un instant avec une clé vide.
+	//
+	// C'est inerte : un client sans clé publique ne peut rien faire, puisque la
+	// poignée de main 01_01 lui répondrait un chiffré que personne ne sait lire.
+	//
 	// isServeur = false : un service n'est pas un serveur membre du domaine. Ce
 	// drapeau commande la distribution des GPO et l'inventaire, dont un service
 	// n'a que faire.
-	if err := dbclients.Create_ClientSoftware(db, computeurID, reservation.ClientType, publicKeyPEM, false); err != nil {
+	if err := dbclients.Create_ClientSoftware(db, computeurID, reservation.ClientType, "", false); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "enrôlement: création du client : "+err.Error())
 		release(db, reservation)
 		replyDenied(duckysession, "server_error")
@@ -134,17 +158,79 @@ func HandleEnrollment(trames storage.Trames_struct_client, duckysession *storage
 		logs.Write_Log("WARNING", "enrôlement: trace de consommation non écrite pour "+computeurID)
 	}
 
+	// Bascule du canal : la clé temporaire devient la clé de session.
+	//
+	// À partir d'ici tout passe en AES-GCM, dans les deux sens, par le chemin
+	// ordinaire. Rien de particulier à prévoir pour lire 01_07, qui portera une
+	// clé publique de 800 octets — impossible à faire tenir en RSA.
+	duckysession.SessionKey = tmpKey
+	duckysession.IsSafe = true
+	duckysession.EnrollmentComputeurID = computeurID
+	duckysession.EnrollmentClientType = reservation.ClientType
+
 	logs.Write_Log("SECURITY", fmt.Sprintf(
-		"enrôlement: service %s créé, type %s, libellé %q, depuis %s",
+		"enrôlement: service %s créé, type %s, libellé %q, depuis %s — en attente de sa clé publique",
 		computeurID, reservation.ClientType, label, source))
 
-	// La réponse est chiffrée avec la clé publique qui vient d'être enregistrée.
-	// Seul le détenteur de la clé privée correspondante peut donc lire son
-	// identifiant : la preuve de possession est acquise sans défi explicite,
-	// exactement comme en 01_02.
-	message := fmt.Sprintf("01_04\nserver_central\n\n%s\n%s", computeurID, reservation.ClientType)
-	if err := sendmessage.SendMessage(message, computeurID, duckysession); err != nil {
-		logs.Write_Log("ERROR", "enrôlement: envoi de 01_04 échoué : "+err.Error())
+	return fmt.Sprintf("01_06\nserver_central\n\n%s\n%s", computeurID, reservation.ClientType)
+}
+
+// HandleEnrollPublicKey traite 01_07 et répond 01_08.
+//
+// Contenu attendu : la clé publique du service, PEM encodé en base64.
+func HandleEnrollPublicKey(trames storage.Trames_struct_client, duckysession *storage.DuckySession) string {
+	source := remoteIP(duckysession)
+
+	// L'identifiant vient de la SESSION, jamais de la trame.
+	//
+	// Le lire dans la trame laisserait quiconque a passé un enrôlement écraser
+	// la clé publique d'un AUTRE client, donc prendre sa place. C'est la seule
+	// chose qui rend cette trame sûre.
+	computeurID := duckysession.EnrollmentComputeurID
+	if computeurID == "" {
+		logs.Write_Log("SECURITY", "enrôlement: 01_07 reçue hors d'un enrôlement en cours, depuis "+source)
+		return ""
+	}
+
+	publicKeyPEM, err := decodeSubmittedPublicKey(strings.TrimSpace(trames.Content))
+	if err != nil {
+		logs.Write_Log("WARNING", "enrôlement: clé publique refusée depuis "+source+" : "+err.Error())
+		replyDenied(duckysession, "bad_public_key")
+		return ""
+	}
+
+	db := database.GetDatabase()
+	if err := dbclients.Update_Client_Software_PublicKey(db, computeurID, publicKeyPEM); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "enrôlement: enregistrement de la clé publique : "+err.Error())
+		replyDenied(duckysession, "server_error")
+		return ""
+	}
+
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"enrôlement: clé publique de %s enregistrée depuis %s — enrôlement terminé", computeurID, source))
+
+	// La confirmation repasse en ASYMÉTRIQUE, chiffrée avec la clé publique qui
+	// vient d'être enregistrée.
+	//
+	// Ce n'est pas décoratif : savoir la lire prouve que le service détient bien
+	// la clé privée correspondante. S'il ne le peut pas, il vient d'enregistrer
+	// une clé qu'il ne possède pas et il le découvre TOUT DE SUITE, au lieu de
+	// s'en apercevoir à la première poignée de main d'une session ultérieure.
+	duckysession.IsSafe = false
+	duckysession.SessionKey = nil
+	if err := sendmessage.SendMessage("01_08\nserver_central\n\nok", computeurID, duckysession); err != nil {
+		logs.Write_Log("ERROR", "enrôlement: envoi de 01_08 échoué : "+err.Error())
+	}
+
+	// La connexion est fermée : elle a servi à l'enrôlement et n'est pas une
+	// session. Le service rouvre une connexion neuve pour 01_01, avec son
+	// identité cette fois. Laisser celle-ci ouverte donnerait un canal chiffré
+	// sans machine liée ni type — précisément l'état que le fail-closed du
+	// Spliter existe pour ne pas laisser traîner.
+	duckysession.EnrollmentComputeurID = ""
+	duckysession.EnrollmentClientType = ""
+	if err := duckysession.Conn.Close(); err != nil {
+		logs.Write_Log("DEBUG", "enrôlement: fermeture de la connexion : "+err.Error())
 	}
 	return ""
 }
@@ -155,8 +241,8 @@ func HandleEnrollment(trames storage.Trames_struct_client, duckysession *storage
 // qu'un PEM en contient plusieurs.
 //
 // La clé est reconstruite avec le sérialiseur du projet plutôt que stockée telle
-// que reçue : c'est ce qui garantit que la forme en base est exactement celle que
-// le chemin de déchiffrement sait relire, quelle que soit la variante de PEM
+// que reçue : c'est ce qui garantit que la forme en base est exactement celle
+// que le chemin de déchiffrement sait relire, quelle que soit la variante de PEM
 // produite par le client.
 func decodeSubmittedPublicKey(encoded string) (string, error) {
 	raw, err := base64.StdEncoding.DecodeString(encoded)
@@ -199,18 +285,29 @@ func isKeyError(err error) bool {
 		errors.Is(err, dbenrollment.ErrRevokedKey)
 }
 
-// replyDenied envoie 01_05 en CLAIR.
+// replyDenied envoie 01_09 en CLAIR, puis ferme.
 //
-// Le serveur n'a pas forcément de clé publique exploitable à ce stade : c'est
-// précisément ce qui peut avoir échoué. Le refus ne contient aucun secret, seulement
-// un code.
+// En clair parce que le serveur n'a rien pour chiffrer : pas de clé publique du
+// client — c'est précisément ce qui peut manquer —, et pas de clé temporaire
+// utilisable si c'est elle qui était malformée. Le refus ne contient aucun
+// secret, seulement un code.
 func replyDenied(duckysession *storage.DuckySession, code string) {
-	message := "01_05\nserver_central\n\n" + code
+	message := "01_09\nserver_central\n\n" + code
 	data := []byte(message)
 	size := sendmessage.CompileMessageSize(data)
 	header := []byte{sendmessage.CompileHeaderSize(size)}
 	if _, err := duckysession.Conn.Write(append(append(header, size...), data...)); err != nil {
 		logs.Write_Log("ERROR", "enrôlement: envoi du refus échoué : "+err.Error())
+	}
+	// L'état d'enrôlement est effacé et la connexion fermée : sans cela, un
+	// client refusé garderait un canal ouvert et pourrait réessayer en boucle
+	// sur la même connexion, ce qui contourne toute limitation par tentative.
+	duckysession.EnrollmentComputeurID = ""
+	duckysession.EnrollmentClientType = ""
+	duckysession.IsSafe = false
+	duckysession.SessionKey = nil
+	if err := duckysession.Conn.Close(); err != nil {
+		logs.Write_Log("DEBUG", "enrôlement: fermeture après refus : "+err.Error())
 	}
 }
 

@@ -17,7 +17,12 @@ func OpenVaultaireDefaultSession() *sessionmgr.Session {
 	if s := stosession.SessionsUser.GetValidVaultaireSession(); s != nil {
 		sess = s
 		tunnelReady = true
-	} else if IsDuckySessionActive() {
+		// Le « ! » n'est pas décoratif : on ne démarre une session QUE s'il n'y
+		// en a aucune. Sans lui, la condition ne pouvait être vraie que si une
+		// session existait déjà — cas déjà traité par la branche du dessus —,
+		// donc aucune session n'était jamais lancée et la fonction expirait au
+		// bout de 100 secondes sans rien dire d'autre que « tunnel pas prêt ».
+	} else if !IsDuckySessionActive() {
 		logs.Write_log("INFO", "Aucune session Vaultaire active, démarrage d'une nouvelle session")
 		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 	}

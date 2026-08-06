@@ -1,13 +1,9 @@
 package module
 
-import (
-	"duckynetworkclient/V1/duckynetwork/storage"
-	"os"
-	"path/filepath"
-)
+import "duckynetworkclient/V1/duckynetwork/serveurauth"
 
-func HaveServeurKey() bool {
-	serveurKeyPath := filepath.Join(storage.KeyPath, "serveurpublickey.pem")
-	_, privateErr := os.Stat(serveurKeyPath)
-	return !os.IsNotExist(privateErr)
-}
+// HaveServeurKey délègue à serveurauth, qui possède le fichier.
+//
+// Conservée pour ne pas casser les appelants existants ; le chemin n'est plus
+// écrit qu'à un seul endroit.
+func HaveServeurKey() bool { return serveurauth.HaveServeurKey() }

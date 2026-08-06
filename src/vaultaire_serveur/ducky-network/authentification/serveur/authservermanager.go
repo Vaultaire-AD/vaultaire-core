@@ -69,10 +69,18 @@ func Serveur_Auth_Manager(trames_content storage.Trames_struct_client, duckysess
 
 		message = Prove_Identity(trames_content.Content, sessionIntegritykey)
 
-	case "03":
-		// Enrôlement d'un client service. Arrive AVANT toute session : le
-		// client n'existe pas encore, donc ni identifiant ni type à figer.
-		message = HandleEnrollment(trames_content, duckysession)
+	case "05":
+		// Enrôlement, premier temps. Arrive AVANT toute session : le client
+		// n'existe pas encore, donc ni identifiant ni type à figer. C'est la clé
+		// d'enrôlement qui autorise la trame, et son type à elle qui décidera de
+		// ce que le service pourra émettre ensuite.
+		message = HandleEnrollRequest(trames_content, duckysession)
+
+	case "07":
+		// Enrôlement, second temps : la clé publique du service, transportée
+		// sous la clé temporaire posée par 01_05. Elle ne pourrait pas passer
+		// autrement — 800 octets de PEM pour 446 utiles en RSA-OAEP.
+		message = HandleEnrollPublicKey(trames_content, duckysession)
 	}
 	return message
 }

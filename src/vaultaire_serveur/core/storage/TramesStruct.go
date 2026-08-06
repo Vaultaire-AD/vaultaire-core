@@ -47,6 +47,27 @@ type DuckySession struct {
 	// quelconque du parc. Comparer chaque trame à cette valeur ferme cet écart.
 	BoundClientSoftwareID string
 
+	// EnrollmentComputeurID et EnrollmentClientType portent l'état d'un
+	// enrôlement en cours, entre 01_05 et 01_07.
+	//
+	// # Pourquoi dans la session et pas dans une table
+	//
+	// L'enrôlement se déroule sur UNE connexion, en deux allers-retours. Le lier
+	// à la session le fait expirer avec elle : une connexion coupée entre 01_05
+	// et 01_07 ne laisse rien derrière. Une table de travail garderait des
+	// enrôlements à moitié faits qu'il faudrait balayer.
+	//
+	// Pendant cet intervalle, SessionKey porte la clé TEMPORAIRE fournie par le
+	// client en 01_05 et IsSafe vaut true : le déchiffrement symétrique ordinaire
+	// lit donc 01_07 sans traitement particulier.
+	//
+	// BoundClientSoftwareID reste VIDE tout du long, et c'est voulu : la machine
+	// n'est liée qu'à la poignée de main 01_01, sur une connexion neuve, une fois
+	// l'enrôlement terminé. Un type vide n'émet rien (fail-closed), ce qui enferme
+	// la connexion d'enrôlement dans les seules trames autorisées.
+	EnrollmentComputeurID string
+	EnrollmentClientType  string
+
 	// BoundClientType est le type de programme de cette machine, lu en base à
 	// la poignée de main et figé pour toute la connexion.
 	//

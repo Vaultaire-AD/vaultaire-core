@@ -31,6 +31,32 @@ func clientMatchesSession(trames_content storage.Trames_struct_client, duckysess
 	return trames_content.ClientSoftwareID == duckysession.BoundClientSoftwareID
 }
 
+
+// preAuthTrame désigne les trames émises AVANT qu'une identité existe.
+//
+// Elles échappent nécessairement aux deux contrôles ci-dessous, mais pas pour
+// la même raison :
+//
+//   - 01_01 établit le type de client. Le contrôler par le type serait
+//     circulaire.
+//   - 01_05 et 01_07 précèdent l'existence même du client. C'est la clé
+//     d'enrôlement qui les autorise, et son type à elle qui décidera de ce que
+//     le service pourra émettre ensuite.
+//
+// Elles échappent aussi au suivi d'ordre : ce suivi est indexé par clé de
+// session, et aucune n'existe encore à ce stade.
+//
+// La liste est CLOSE et nommée ici plutôt que dispersée en comparaisons : toute
+// trame ajoutée au protocole reste soumise au fail-closed tant que personne ne
+// l'a inscrite là, ce qui est le bon sens du défaut.
+func preAuthTrame(messageOrder string) bool {
+	switch messageOrder {
+	case "01_01", "01_05", "01_07":
+		return true
+	}
+	return false
+}
+
 func Split_Action(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) {
 	service := strings.Split(trames_content.Message_Order[0], "_")
 	message := ""
@@ -76,7 +102,7 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 	// type. Les trames d'enrôlement 01_03/01_04 aussi, et pour une raison plus
 	// forte — elles précèdent l'existence même du client. C'est la clé
 	// d'enrôlement qui les autorise.
-	if messageOrder != "01_01" && !clienttype.MayEmit(duckysession.BoundClientType, messageOrder) {
+	if !preAuthTrame(messageOrder) && !clienttype.MayEmit(duckysession.BoundClientType, messageOrder) {
 		logs.Write_Log("SECURITY", fmt.Sprintf(
 			"trame %s refusée : la machine %q est de type %q, qui n'a pas le droit de l'émettre",
 			messageOrder, duckysession.BoundClientSoftwareID, duckysession.BoundClientType))
@@ -88,7 +114,7 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 
 	err := sessionmgr.Sessions.UpdateConnectionTrame(trames_content.SessionIntegritykey, messageOrder)
 
-	if err != nil && messageOrder != "01_01" {
+	if err != nil && !preAuthTrame(messageOrder) {
 		logs.Write_Log("ERROR", "Error during the update of the connection: "+err.Error())
 		err := duckysession.Conn.Close()
 		if err != nil {
