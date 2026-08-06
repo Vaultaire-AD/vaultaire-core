@@ -116,13 +116,25 @@ var catalogue = []Definition{
 		Description: "Répartition de charge et découverte de service. " +
 			"N'authentifie personne et ne reçoit aucune politique.",
 
-		// Relevé sur src/vaultaire_proxy. Il n'émet PAS 04_05 (métriques),
-		// contrairement à ce que la table du protocole laisse entendre : la
-		// trame est spécifiée, elle n'est pas encore envoyée. Elle sera ajoutée
-		// ici le jour où elle le sera là-bas, pas avant.
+		// Relevé sur ce que le proxy ÉMET RÉELLEMENT — c'est-à-dire sur le
+		// paquet ducky-network-sdk-service, dont il tire tout son réseau.
+		//
+		// La séquence de connexion 01 puis 02 est COMMUNE à tous les
+		// programmes, services compris. La version antérieure de cette liste
+		// n'accordait que 01 et 04 : le proxy s'enrôlait, authentifiait le
+		// serveur, puis se faisait fermer la connexion sur son 02_01. Il ne
+		// pouvait donc jamais ouvrir de session.
+		//
+		// 02_12 est indispensable : le core répond 02_11 à tout programme qui
+		// s'authentifie sous le compte de service, et attend l'inventaire en
+		// retour. Le refuser ferme la connexion juste après l'authentification.
+		//
+		// La catégorie 04 n'est PAS encore émise : elle est spécifiée, pas
+		// implémentée. Elle sera ajoutée ici le jour où elle le sera là-bas,
+		// pas avant.
 		Frames: []string{
-			"01_01", "01_03",
-			"04_01", "04_03", "04_07",
+			"01_01", "01_05", "01_07",
+			"02_01", "02_03", "02_05", "02_12",
 		},
 	},
 	{
@@ -131,9 +143,16 @@ var catalogue = []Definition{
 		Family: FamilyService,
 		Description: "Interface d'administration. Authentifie les " +
 			"administrateurs et relaie leurs commandes au core.",
+		// Même socle de connexion que le proxy : 01 puis 02, 02_12 compris.
+		//
+		// L'interface web n'a ni processeur ni mémoire à déclarer, et l'idée
+		// première était de lui refuser l'inventaire. Mais le core répond 02_11
+		// à tout programme qui s'authentifie sous le compte de service, et
+		// ferme la connexion s'il n'obtient pas son 02_12. Lui interdire cette
+		// trame reviendrait à lui interdire de se connecter.
 		Frames: []string{
-			"01_01", "01_03",
-			"02_01", "02_03", "02_05",
+			"01_01", "01_05", "01_07",
+			"02_01", "02_03", "02_05", "02_12",
 			"04_09", "04_12", "04_14",
 			"07_01", "07_04",
 		},
@@ -183,7 +202,7 @@ func Validate(name string) error {
 // FAIL-CLOSED : un type inconnu n'émet rien, et une trame non déclarée n'est
 // émise par personne.
 //
-// Les trames d'enrôlement 01_03 et 01_04 ne passent pas par ici : elles
+// Les trames d'enrôlement 01_05 et 01_07 ne passent pas par ici : elles
 // précèdent l'existence du client, donc de son type. C'est la clé d'enrôlement
 // qui les autorise, et le type qu'elle porte qui décide de la suite. Elles
 // figurent tout de même dans les listes ci-dessus, pour que le catalogue se lise

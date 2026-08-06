@@ -18,13 +18,14 @@ func TestFailClosed(t *testing.T) {
 		{Client, "07_01"}, // un agent ne relaie pas de commandes
 		{Web, "05_01"},    // le web ne demande pas de GPO
 		{Web, "06_02"},    // ni n'acquitte de révocation
-		{Web, "02_12"},    // ni ne déclare d'inventaire matériel
-		{Web, "02_13"},    //
+		{Web, "02_13"},    // 02_13 est l'inventaire d'un AUTRE client, jamais émis
 		{Proxy, "07_01"},  // le proxy ne relaie pas de commandes
-		{Proxy, "02_01"},  // et n'authentifie personne
+		{Proxy, "05_01"},  // et ne reçoit aucune politique
+		{Proxy, "04_01"},  // la catégorie 04 est spécifiée, pas encore émise
 		{Client, "04_01"}, // un agent n'est pas un hôte du cluster
 		{Client, "02_13"}, // l'agent émet 02_12, jamais 02_13
-		{Client, "01_03"}, // un agent ne s'enrôle pas : il est créé sur le core
+		{Client, "01_05"}, // un agent ne s'enrôle pas : il est créé sur le core
+		{Client, "01_07"},
 	}
 	for _, c := range cases {
 		if MayEmit(c.clientType, c.frame) {
@@ -38,12 +39,54 @@ func TestMayEmitAllowed(t *testing.T) {
 	cases := []struct{ clientType, frame string }{
 		{Client, "01_01"}, {Client, "02_01"}, {Client, "05_01"}, {Client, "06_04"},
 		{Client, "02_12"},
-		{Proxy, "04_01"}, {Proxy, "04_07"},
+		{Proxy, "01_01"}, {Proxy, "02_01"},
 		{Web, "07_01"}, {Web, "02_01"}, {Web, "04_09"},
 	}
 	for _, c := range cases {
 		if !MayEmit(c.clientType, c.frame) {
 			t.Errorf("MayEmit(%q, %q) = false, attendu true", c.clientType, c.frame)
+		}
+	}
+}
+
+// TestSocleDeConnexionCommun : 01 puis 02 est commun à TOUS les types.
+//
+// Ce test existe parce que son absence a coûté un déploiement. Le proxy avait
+// été catalogué avec 01 et 04 seulement — il s'enrôlait, authentifiait le
+// serveur, puis se faisait fermer la connexion sur son 02_01, sans jamais
+// pouvoir ouvrir de session.
+//
+// 02_12 en fait partie : le core répond 02_11 à tout programme authentifié sous
+// le compte de service et attend l'inventaire en retour. Le refuser ferme la
+// connexion juste après l'authentification, ce qui est pire qu'un refus franc —
+// la session a l'air d'aboutir.
+//
+// Un type ajouté au catalogue sans ce socle échoue ici, pas en production.
+func TestSocleDeConnexionCommun(t *testing.T) {
+	socle := []string{"01_01", "02_01", "02_03", "02_12"}
+	for _, d := range All() {
+		for _, frame := range socle {
+			if !MayEmit(d.Name, frame) {
+				t.Errorf("%s ne peut pas émettre %s : il ne pourra jamais se connecter",
+					d.Name, frame)
+			}
+		}
+	}
+}
+
+// TestServicesPeuventSEnroler : un service s'enrôle, un agent non.
+//
+// La distinction n'est pas cosmétique. Un agent est créé sur le core, qui génère
+// sa paire ; un service s'enrôle seul et garde sa clé privée. Autoriser un agent
+// à s'enrôler lui donnerait un second chemin de création, hors du contrôle de
+// l'administrateur qui l'a déclaré.
+func TestServicesPeuventSEnroler(t *testing.T) {
+	for _, d := range All() {
+		peut := MayEmit(d.Name, "01_05") && MayEmit(d.Name, "01_07")
+		attendu := d.Family == FamilyService
+		if peut != attendu {
+			t.Errorf("%s (famille %s) : enrôlement=%t, attendu %t",
+				d.Name, d.Family, peut, attendu)
 		}
 	}
 }

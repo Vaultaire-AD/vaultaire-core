@@ -60,7 +60,7 @@ services:
       #
       # Lue au PREMIER démarrage seulement. Une fois l'identité écrite dans le
       # volume, elle ne sert plus.
-      - VAULTAIRE_ENROLL_KEY=CHANGEZ-MOI
+      - VAULTAIRE_ENROLL_KEY=VLT-ENR-4a8954a08cf53bc79b246fa710eadf5f
 
       # Nom lisible côté core, pour les journaux et l'affichage. Aucune valeur
       # de sécurité : il n'entre dans aucune décision.

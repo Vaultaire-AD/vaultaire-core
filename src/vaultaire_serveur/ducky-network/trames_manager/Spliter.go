@@ -103,9 +103,20 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 	// forte — elles précèdent l'existence même du client. C'est la clé
 	// d'enrôlement qui les autorise.
 	if !preAuthTrame(messageOrder) && !clienttype.MayEmit(duckysession.BoundClientType, messageOrder) {
+		// Le message nomme la cause la plus probable.
+		//
+		// Un type absent du catalogue vient presque toujours d'une base
+		// antérieure au catalogue, où logiciel_type était une chaîne libre.
+		// Sans cette indication, le refus se lit comme une décision de
+		// sécurité délibérée, et on cherche du côté des droits plutôt que
+		// d'une migration oubliée.
+		indice := ""
+		if _, connu := clienttype.Lookup(duckysession.BoundClientType); !connu {
+			indice = " — ce type est absent du catalogue : voir docs/migrations/clienttype_catalogue.md"
+		}
 		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"trame %s refusée : la machine %q est de type %q, qui n'a pas le droit de l'émettre",
-			messageOrder, duckysession.BoundClientSoftwareID, duckysession.BoundClientType))
+			"trame %s refusée : la machine %q est de type %q, qui n'a pas le droit de l'émettre%s",
+			messageOrder, duckysession.BoundClientSoftwareID, duckysession.BoundClientType, indice))
 		if err := duckysession.Conn.Close(); err != nil {
 			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 		}
