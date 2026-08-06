@@ -1,7 +1,6 @@
 package serveurauth
 
 import (
-	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -11,6 +10,7 @@ import (
 	"duckynetwork/duckynetwork/logs"
 	"duckynetwork/duckynetwork/sendmessage"
 	"duckynetwork/duckynetwork/storage"
+	"duckynetwork/duckynetwork/tools"
 	tramesmanager "duckynetwork/duckynetwork/trames_manager"
 )
 
@@ -42,18 +42,17 @@ func Enroll(session *storage.DuckySession, store *keymanagement.Store, serverPub
 	if err != nil {
 		return keymanagement.Identity{}, err
 	}
-
+	tmpKey := tools.GenerateKey()
 	// La clé publique voyage en base64 : le format de trame est ligne à ligne,
 	// et un PEM en contient plusieurs.
 	request := sendmessage.BuildClientTrame(
-		"01_03", "serveur_central", "", "", "",
+		"01_05", "serveur_central", tmpKey, "vaultaire", "enrollement",
 		enrollmentKey,
-		base64.StdEncoding.EncodeToString([]byte(publicPEM)),
-		label)
+	)
 
 	session.IsSafe = false
 	if err := sendmessage.SendMessage(request, session, serverPublicKeyPEM); err != nil {
-		return keymanagement.Identity{}, fmt.Errorf("envoi de 01_03 : %w", err)
+		return keymanagement.Identity{}, fmt.Errorf("envoi de 01_05 : %w", err)
 	}
 
 	payload, err := tramesmanager.ReadPayload(session)
@@ -64,8 +63,8 @@ func Enroll(session *storage.DuckySession, store *keymanagement.Store, serverPub
 	// Un refus arrive EN CLAIR : le core n'a pas forcément de clé publique
 	// exploitable à ce stade, c'est précisément ce qui peut avoir échoué. On
 	// tente donc de lire un refus avant de déchiffrer.
-	if trames := tramesmanager.ParseTrames(string(payload)); trames.Code() == "01_05" || trames.Code() == "01_06" {
-		return keymanagement.Identity{}, EnrollError{Code: firstLine(trames.Content)}
+	if trames := tramesmanager.ParseTrames(string(payload)); trames.Code() == "01_06" {
+		
 	}
 
 	// Une acceptation est chiffrée avec la clé publique qu'on vient de

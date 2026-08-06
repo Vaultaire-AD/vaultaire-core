@@ -1,74 +1,75 @@
 dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui l'envoie
 
-| Name_trames                 | Main Number | Second Number | desciption                       | Example                                                                             |
-| --------------------------- | ----------- | ------------- | -------------------------------- | ----------------------------------------------------------------------------------- |
-| Server auth                 | 01          |               |                                  |                                                                                     |
-| serveur                     |             | 01            | client ask server auth           |                                                                                     |
-| client                      |             | 02            | serveur proof of work            |                                                                                     |
-|                             |             |               |                                  |                                                                                     |
-|                             |             |               |                                  |                                                                                     |
-|                             |             |               |                                  |                                                                                     |
-|                             |             |               |                                  |                                                                                     |
-|                             |             |               |                                  |                                                                                     |
-| User auth                   | 02          |               |                                  |                                                                                     |
-| serveur                     |             | 01            | ask auth                         | le client demande une auth pour le user qui tente de se co                          |
-| client                      |             | 02            | proof of work                    | 02_03\nserveur_central\nvisiteur\nIJVSEMNJA\nfeisfjsefijsmefjsmefj                  |
-| serveur                     |             | 03            | check auth                       | verifie les informations envoyépar le user pour valider l'auth                      |
-| client                      |             | 04            | auth_succes                      | quand l'auht a reussit                                                              |
-| serveur                     |             | 05            | close session                    | ferme la session pour que le user se logout                                         |
-|                             |             |               |                                  |                                                                                     |
-| client                      |             | 07            | failed                           | trame que recoit le client si echec de l'auth                                       |
-|                             |             |               |                                  |                                                                                     |
-| client                      |             | 11            | ask_information                  | le serveur va demander des information au pc hostname etc                           |
-| serveur                     |             | 12            | serveur_information              | la trame d'information envoyé par les softwares serveur                             |
-| serveur                     |             | 13            | client_information               | la trame d'information envoyé par les softwares client                              |
-|                             |             |               |                                  |                                                                                     |
-| server                      |             | 17            | ask list proxy/core              | le client Demande la liste des serveurs a joindre pour se connecter au réseau       |
-| client                      |             | 18            | respond list                     | le serveur repond la liste des serveur joignable                                    |
-|                             |             |               |                                  |                                                                                     |
-| SSH                         | 03          |               |                                  |                                                                                     |
-| server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user |
-| client                      |             | 02            | server awnser   succes           | le server renvoie un succes  avec les clé public du user et le boolean admin        |
-| client                      |             | 03            | server anwser failed             | le server renvoie un failed avec la raison de l'echec                               |
-| server                      |             | 04            | client ask for salt              | le client demande le salt d'un user                                                 |
-| client                      |             | 05            | server respond with key          | le serveur repond simplement le salt du user                                        |
-|                             |             |               |                                  |                                                                                     |
-| Cluster / Service discovery | 04          |               | (plage réservée : 04_01 à 04_19) |                                                                                     |
-| client (host/proxy)         |             | 01            | register_host                    | enregistrement d’un hôte (proxy, etc.) : hostname, fqdn, ip, role, domain           |
-| serveur                     |             | 02            | register_host_ok                 | confirmation + session considérée établie pour le host                              |
-| client                      |             | 03            | list_cores                       | demande la liste des Cores en ligne (service discovery)                             |
-| serveur                     |             | 04            | list_cores_response              | liste des Cores (id, hostname, ip, port, stress, capabilities)                      |
-| client                      |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                |
-| serveur                     |             | 06            | proxy_metrics_ack                | accusé de réception                                                                 |
-| client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                           |
-| serveur                     |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                    |
-|                             |             |               |                                  |                                                                                     |
-| GPO                         | 05          |               | (plage utilisée : 05_01 à 05_14) | voir « Détail du transport GPO » en fin de document                                  |
-| serveur                     |             | 01            | ask_gpo_machine                  | le client demande ses GPO machine, en annonçant l'empreinte qu'il applique déjà     |
-| client                      |             | 02            | gpo_machine_manifest             | réponse succès à 05_01 : version, empreinte, découpage                              |
-| client                      |             | 03            | gpo_machine_unchanged            | réponse à 05_01 : l'empreinte du client est à jour, rien à appliquer                |
-| client                      |             | 04            | gpo_machine_error                | réponse erreur à 05_01                                                              |
-| serveur                     |             | 05            | ask_gpo_user                     | le client demande les GPO user après authentification, avec son empreinte courante  |
-|                             |             |               |                                  | attention ne seront appliquées que les GPO user des groupes auxquels appartiennent   |
-|                             |             |               |                                  | a la fois la machine et a la fois l'utilisateur                                     |
-|                             |             |               |                                  | et non l'ensemble des GPO user liées a l'utilisateur                                |
-| client                      |             | 06            | gpo_user_manifest                | réponse succès à 05_05 : version, empreinte, découpage                              |
-| client                      |             | 07            | gpo_user_unchanged               | réponse à 05_05 : l'empreinte du client est à jour, rien à appliquer                |
-| client                      |             | 08            | gpo_user_error                   | réponse erreur à 05_05                                                              |
-| serveur                     |             | 09            | ask_gpo_chunk                    | le client réclame un fragment de la politique annoncée (les deux scopes)            |
-| client                      |             | 10            | gpo_chunk                        | réponse succès à 05_09 : un fragment de politique                                   |
-| client                      |             | 11            | gpo_chunk_error                  | réponse erreur à 05_09 : empreinte périmée, index invalide, transfert inconnu        |
-| serveur                     |             | 12            | gpo_apply_report                 | le client rapporte le résultat de l'application, module par module (les deux scopes) |
-| client                      |             | 13            | gpo_apply_report_ack             | réponse succès à 05_12                                                              |
-| client                      |             | 14            | gpo_apply_report_error           | réponse erreur à 05_12 : rapport malformé ou empreinte inconnue                     |
-|                             |             |               |                                  |                                                                                     |
-| Révocation (kill switch)    | 06          |               | (plage utilisée : 06_01 à 06_06) | voir « Détail de la révocation » en fin de document                                  |
-| client                      |             | 01            | revoke_order                     | le serveur ordonne de verrouiller, déverrouiller ou supprimer un compte local        |
-| serveur                     |             | 02            | revoke_ack                       | réponse succès à 06_01 : ordre appliqué                                             |
-| serveur                     |             | 03            | revoke_error                     | réponse erreur à 06_01                                                              |
-| serveur                     |             | 04            | ask_revocations                  | le client réclame les ordres en attente (démarrage, reconnexion)                    |
-| client                      |             | 05            | revocations_list                 | réponse succès à 06_04 : liste des ordres non acquittés                             |
-| client                      |             | 06            | revocations_error                | réponse erreur à 06_04                                                              |
+| Name_trames                 | Main Number | Second Number | desciption                       | Example                                                                                   |
+| --------------------------- | ----------- | ------------- | -------------------------------- | ----------------------------------------------------------------------------------------- |
+| Server auth                 | 01          |               |                                  |                                                                                           |
+| serveur                     |             | 01            | client ask server auth           |                                                                                           |
+| client                      |             | 02            | serveur proof of work            |                                                                                           |
+|                             |             |               |                                  |                                                                                           |
+| server                      |             | 05            | service ask for enrollement      | le client envoie une trame avec une clé tmp et la clé d'enrollement                       |
+| client                      |             | 06            | server respond                   | le serveur valide les infos et lui renvoie les infos du client qu'il vient de crée        |
+| server                      |             | 07            | client send pubkey               | apres avoir recu les infos et les avoir enregistré le client envoit sa clé via la clé TMP |
+| client                      |             | 08            | server respond ok                | le serveur chiffre ok via la clé public du client pour validé l'enregistrement            |i
+|                             |             |               |                                  |                                                                                           |
+| User auth                   | 02          |               |                                  |                                                                                           |
+| serveur                     |             | 01            | ask auth                         | le client demande une auth pour le user qui tente de se co                                |
+| client                      |             | 02            | proof of work                    | 02_03\nserveur_central\nvisiteur\nIJVSEMNJA\nfeisfjsefijsmefjsmefj                        |
+| serveur                     |             | 03            | check auth                       | verifie les informations envoyépar le user pour valider l'auth                            |
+| client                      |             | 04            | auth_succes                      | quand l'auht a reussit                                                                    |
+| serveur                     |             | 05            | close session                    | ferme la session pour que le user se logout                                               |
+|                             |             |               |                                  |                                                                                           |
+| client                      |             | 07            | failed                           | trame que recoit le client si echec de l'auth                                             |
+|                             |             |               |                                  |                                                                                           |
+| client                      |             | 11            | ask_information                  | le serveur va demander des information au pc hostname etc                                 |
+| serveur                     |             | 12            | serveur_information              | la trame d'information envoyé par les softwares serveur                                   |
+| serveur                     |             | 13            | client_information               | la trame d'information envoyé par les softwares client                                    |
+|                             |             |               |                                  |                                                                                           |
+| server                      |             | 17            | ask list proxy/core              | le client Demande la liste des serveurs a joindre pour se connecter au réseau             |
+| client                      |             | 18            | respond list                     | le serveur repond la liste des serveur joignable                                          |
+|                             |             |               |                                  |                                                                                           |
+| SSH                         | 03          |               |                                  |                                                                                           |
+| server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user       |
+| client                      |             | 02            | server awnser   succes           | le server renvoie un succes  avec les clé public du user et le boolean admin              |
+| client                      |             | 03            | server anwser failed             | le server renvoie un failed avec la raison de l'echec                                     |
+| server                      |             | 04            | client ask for salt              | le client demande le salt d'un user                                                       |
+| client                      |             | 05            | server respond with key          | le serveur repond simplement le salt du user                                              |
+|                             |             |               |                                  |                                                                                           |
+| Cluster / Service discovery | 04          |               | (plage réservée : 04_01 à 04_19) |                                                                                           |
+| client (host/proxy)         |             | 01            | register_host                    | enregistrement d’un hôte (proxy, etc.) : hostname, fqdn, ip, role, domain                 |
+| serveur                     |             | 02            | register_host_ok                 | confirmation + session considérée établie pour le host                                    |
+| client                      |             | 03            | list_cores                       | demande la liste des Cores en ligne (service discovery)                                   |
+| serveur                     |             | 04            | list_cores_response              | liste des Cores (id, hostname, ip, port, stress, capabilities)                            |
+| client                      |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                      |
+| serveur                     |             | 06            | proxy_metrics_ack                | accusé de réception                                                                       |
+| client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
+| serveur                     |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                          |
+|                             |             |               |                                  |                                                                                           |
+| GPO                         | 05          |               | (plage utilisée : 05_01 à 05_14) | voir « Détail du transport GPO » en fin de document                                       |
+| serveur                     |             | 01            | ask_gpo_machine                  | le client demande ses GPO machine, en annonçant l'empreinte qu'il applique déjà           |
+| client                      |             | 02            | gpo_machine_manifest             | réponse succès à 05_01 : version, empreinte, découpage                                    |
+| client                      |             | 03            | gpo_machine_unchanged            | réponse à 05_01 : l'empreinte du client est à jour, rien à appliquer                      |
+| client                      |             | 04            | gpo_machine_error                | réponse erreur à 05_01                                                                    |
+| serveur                     |             | 05            | ask_gpo_user                     | le client demande les GPO user après authentification, avec son empreinte courante        |
+|                             |             |               |                                  | attention ne seront appliquées que les GPO user des groupes auxquels appartiennent        |
+|                             |             |               |                                  | a la fois la machine et a la fois l'utilisateur                                           |
+|                             |             |               |                                  | et non l'ensemble des GPO user liées a l'utilisateur                                      |
+| client                      |             | 06            | gpo_user_manifest                | réponse succès à 05_05 : version, empreinte, découpage                                    |
+| client                      |             | 07            | gpo_user_unchanged               | réponse à 05_05 : l'empreinte du client est à jour, rien à appliquer                      |
+| client                      |             | 08            | gpo_user_error                   | réponse erreur à 05_05                                                                    |
+| serveur                     |             | 09            | ask_gpo_chunk                    | le client réclame un fragment de la politique annoncée (les deux scopes)                  |
+| client                      |             | 10            | gpo_chunk                        | réponse succès à 05_09 : un fragment de politique                                         |
+| client                      |             | 11            | gpo_chunk_error                  | réponse erreur à 05_09 : empreinte périmée, index invalide, transfert inconnu             |
+| serveur                     |             | 12            | gpo_apply_report                 | le client rapporte le résultat de l'application, module par module (les deux scopes)      |
+| client                      |             | 13            | gpo_apply_report_ack             | réponse succès à 05_12                                                                    |
+| client                      |             | 14            | gpo_apply_report_error           | réponse erreur à 05_12 : rapport malformé ou empreinte inconnue                           |
+|                             |             |               |                                  |                                                                                           |
+| Révocation (kill switch)    | 06          |               | (plage utilisée : 06_01 à 06_06) | voir « Détail de la révocation » en fin de document                                       |
+| client                      |             | 01            | revoke_order                     | le serveur ordonne de verrouiller, déverrouiller ou supprimer un compte local             |
+| serveur                     |             | 02            | revoke_ack                       | réponse succès à 06_01 : ordre appliqué                                                   |
+| serveur                     |             | 03            | revoke_error                     | réponse erreur à 06_01                                                                    |
+| serveur                     |             | 04            | ask_revocations                  | le client réclame les ordres en attente (démarrage, reconnexion)                          |
+| client                      |             | 05            | revocations_list                 | réponse succès à 06_04 : liste des ordres non acquittés                                   |
+| client                      |             | 06            | revocations_error                | réponse erreur à 06_04                                                                    |
 
 
 ## Chiffrement du canal
