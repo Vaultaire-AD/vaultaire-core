@@ -25,15 +25,33 @@ func parseBindRequest(p *ber.Packet) (ldapstorage.BindRequest, error) {
 		return ldapstorage.BindRequest{}, fmt.Errorf("BindRequest name not string")
 	}
 
+	// L'ÉTIQUETTE du choix d'authentification, et pas seulement son contenu.
+	//
+	// AuthenticationChoice ::= CHOICE { simple [0] OCTET STRING,
+	//                                   sasl   [3] SaslCredentials }
+	//
+	// La version antérieure lisait Data.String() sans regarder l'étiquette. Un
+	// bind SASL — que le RootDSE invitait alors à tenter — voyait son contenu DER
+	// brut pris pour un mot de passe, et le client recevait « invalid
+	// credentials » : un message qui l'envoie vérifier son mot de passe alors que
+	// c'est la méthode qui n'est pas gérée.
 	authPacket := p.Children[2]
+	simple := authPacket.ClassType == ber.ClassContext && authPacket.Tag == 0
 
-	// ⚠️ Récupérer le mot de passe en brut, car c’est un OctetString [0x80]
-	password := string(authPacket.Data.String())
+	password := ""
+	if simple {
+		password = authPacket.Data.String()
+	}
 
 	return ldapstorage.BindRequest{
 		Version:        version,
 		Name:           name,
 		Authentication: []byte(password),
+		SimpleAuth:     simple,
+		// Anonymat au sens de la RFC 4513 §5.1.1 : DN vide ET mot de passe vide.
+		// Un DN vide avec un mot de passe est un bind « non authentifié », que le
+		// gestionnaire refuse séparément.
+		Anonymous: name == "" && password == "",
 	}, nil
 }
 

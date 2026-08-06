@@ -98,7 +98,9 @@ func (o *Options) prepare() error {
 	storage.KeyPath = o.KeyPath
 	storage.DEBUG = o.Debug
 	storage.SilentConsole = o.SilentConsole
-	storage.IsServeur = o.Persistent
+	// Persistent, et PAS IsServeur : ce dernier décrit la machine et sera
+	// renseigné par client_software.yaml, qui écraserait la valeur posée ici.
+	storage.Persistent = o.Persistent
 	if o.LogPath != "" {
 		storage.LogPath = o.LogPath
 	}

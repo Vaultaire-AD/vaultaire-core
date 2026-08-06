@@ -2,10 +2,12 @@ package duckynetwork
 
 import (
 	"fmt"
+	"runtime/debug"
 	"time"
 	db "vaultaire/core/database"
 	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
+	"vaultaire/core/netguard"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/sessionmgr"
@@ -28,6 +30,28 @@ func handleConnection(duckysession *storage.DuckySession) {
 	//
 	// En defer plutôt qu'après la boucle : une panique dans un handler doit
 	// aussi fermer la connexion, pas la laisser derrière elle.
+	// Filet de dernier recours : une panique ne doit coûter QUE cette connexion.
+	//
+	// Le port Ducky accepte des paquets d'inconnus — « askkey » répond sans
+	// authentification, et tout ce qui suit est déchiffré avant d'être validé.
+	// Sans ce recover, n'importe quel accès hors bornes dans un gestionnaire
+	// arrête le processus entier : LDAP, DNS, interface web et API avec lui.
+	//
+	// Il ne répare rien et ne dispense pas de corriger la cause : il la rend
+	// survivable, et la journalise en CRITICAL avec sa pile.
+	//
+	// Placé AVANT le defer de fermeture pour s'exécuter APRÈS lui : les defer se
+	// déroulent en ordre inverse, et la connexion doit être fermée que la sortie
+	// soit normale ou non.
+	defer func() {
+		if r := recover(); r != nil {
+			logs.Write_LogCodeMeta("CRITICAL", logs.CodeNone, fmt.Sprintf(
+				"ducky: panique traitée sur la session %s : %v\n%s",
+				duckysession.SessionID, r, debug.Stack()),
+				logs.WithMeta(duckysession.SessionID, ""))
+		}
+	}()
+
 	defer closeConnection(duckysession)
 
 	logs.Write_LogCodeMeta("INFO", logs.CodeNone,
@@ -42,6 +66,27 @@ func handleConnection(duckysession *storage.DuckySession) {
 // processIncomingMessage lit et traite un message du client.
 // Retourne false si rien n’a pu être lu (connexion probablement interrompue).
 func processIncomingMessage(duckysession *storage.DuckySession) bool {
+	// Délai de lecture réarmé AVANT chaque lecture.
+	//
+	// Un délai SetReadDeadline est absolu, pas glissant : le poser une seule fois
+	// à l'ouverture couperait la connexion à échéance, même active. C'est l'erreur
+	// classique avec cette API.
+	//
+	// Sans délai, une connexion qui n'envoie rien bloque sa goroutine jusqu'au
+	// balayage périodique, soit jusqu'à deux minutes. Avec, la borne est à la
+	// seconde — et plus courte tant que la session n'est pas authentifiée, un
+	// client réel enchaînant sa poignée de main en une fraction de seconde.
+	// « Authentifiée » ne veut pas dire « chiffrée ».
+	//
+	// IsSafe passe à vrai dès 02_01 pour une session ordinaire — c'est le bon
+	// repère — MAIS AUSSI pendant un enrôlement, où la clé temporaire ouvre un
+	// canal symétrique alors que le client n'a encore aucune identité.
+	//
+	// Sans cette distinction, une seule clé d'enrôlement valide suffirait à tenir
+	// des connexions dix fois plus longtemps que le délai de poignée de main.
+	authentifiée := duckysession.IsSafe && duckysession.EnrollmentComputeurID == ""
+	netguard.ArmReadDeadline(duckysession.Conn, authentifiée)
+
 	headerSize := tm.Read_Header_Size(duckysession.Conn)
 	if headerSize == 0 {
 		return false

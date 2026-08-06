@@ -7,6 +7,7 @@ import (
 	dbdomains "vaultaire/core/database/db_domains"
 	dbldap "vaultaire/core/database/db_ldap"
 	dbusers "vaultaire/core/database/db_users"
+	"vaultaire/core/logs"
 
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
@@ -139,30 +140,35 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 	return entry, true
 }
 
+// memberOfForUser rend les DN des groupes d'un utilisateur.
+//
+// # Ce qui a changé
+//
+// La version antérieure lisait TOUS les groupes de l'annuaire, puis interrogeait
+// chacun d'eux pour savoir s'il contenait l'utilisateur : 1 + N requêtes, soit
+// 501 pour 500 groupes — et cela sur le chemin d'une recherche scope=base, celui
+// qu'emprunte JumpServer après CHAQUE authentification.
+//
+// Une jointure répond à la même question en une requête.
 func memberOfForUser(db *sql.DB, username string) []string {
-	groups, err := dbdomains.GetAllGroupsWithDomains(db)
+	groupes, err := dbldap.GetMemberOfByUsername(db, username)
 	if err != nil {
+		// Journalisé plutôt que silencieux : sans cela, une base en difficulté
+		// rend un utilisateur sans aucun groupe, ce qu'un client lit comme une
+		// perte d'appartenance — et non comme une panne.
+		logs.Write_Log("ERROR", "ldap: lecture des groupes de "+username+" : "+err.Error())
 		return nil
 	}
+
 	var memberOf []string
-	seen := make(map[string]struct{})
-	for _, g := range groups {
-		groupData, err := dbldap.GetGroupWithUsersByName(db, g.GroupName)
-		if err != nil || groupData == nil {
+	vus := make(map[string]struct{}, len(groupes))
+	for _, g := range groupes {
+		dn := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
+		if _, déjà := vus[dn]; déjà {
 			continue
 		}
-		for _, u := range groupData.Users {
-			if !strings.EqualFold(u, username) {
-				continue
-			}
-			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", groupData.GroupName, ldaptools.ToRootDN(groupData.DomainName))
-			if _, exists := seen[groupDN]; exists {
-				break
-			}
-			seen[groupDN] = struct{}{}
-			memberOf = append(memberOf, groupDN)
-			break
-		}
+		vus[dn] = struct{}{}
+		memberOf = append(memberOf, dn)
 	}
 	return memberOf
 }

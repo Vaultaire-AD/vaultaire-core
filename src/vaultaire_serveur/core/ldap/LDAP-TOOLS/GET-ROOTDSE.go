@@ -6,10 +6,33 @@ import (
 	"vaultaire/core/domain"
 )
 
+// DefaultRootDN est la racine annoncée quand l'annuaire n'est pas lisible.
+//
+// Une valeur de repli plutôt qu'une erreur : le RootDSE est la seule chose
+// qu'un client obtient AVANT de s'authentifier, et un client qui n'obtient
+// pas de RootDSE ne sait même pas quoi tenter ensuite.
+const DefaultRootDN = "dc=default,dc=local"
+
 func GetDefaultRootDN() []string {
-	domains, err := domain.GetAllGroupDomains(database.GetDatabase(), true)
+	// La base peut être NIL, et pas seulement injoignable.
+	//
+	// database/sql ne rend pas d'erreur dans ce cas : il DÉRÉFÉRENCE un
+	// pointeur nil et panique. Or ce chemin est atteint par une requête
+	// RootDSE, c'est-à-dire par un inconnu, avant toute authentification.
+	//
+	// En exploitation normale la base est initialisée avant que le port LDAP
+	// n'écoute. Mais « normalement » ne suffit pas pour un chemin exposé et
+	// non authentifié : un ordre de démarrage modifié, une réinitialisation
+	// de connexion, et le serveur entier s'arrête sur une requête de
+	// découverte.
+	db := database.GetDatabase()
+	if db == nil {
+		return []string{DefaultRootDN}
+	}
+
+	domains, err := domain.GetAllGroupDomains(db, true)
 	if err != nil {
-		return []string{"dc=default,dc=local"}
+		return []string{DefaultRootDN}
 	}
 
 	var rootDNs []string

@@ -42,14 +42,30 @@ func EnableServerCommunication(user, pass string) {
 				handleConnection(user, ds)
 				close(done)
 			}()
-			if !storage.IsServeur {
-				sess, err := stosession.SessionsUser.GetBySessionID(ds.SessionID) // On supprime la session machine dès qu'elle est fermée côté serveur
-				if err == false {
+			// Persistent, et non IsServeur.
+			//
+			// IsServeur dit « cette machine est un serveur membre du domaine »
+			// et vient de client_software.yaml, où l'enrôlement écrit false
+			// pour un service. S'en servir pour décider de la reconnexion
+			// faisait tourner tout service en mode une-passe : à la première
+			// coupure, il sortait de la boucle et ne revenait jamais.
+			//
+			// Les deux notions n'ont rien à voir : l'une décrit ce qu'est la
+			// machine, l'autre ce que le programme doit faire quand le lien
+			// tombe.
+			if !storage.Persistent {
+				// GetBySessionID rend (session, TROUVÉE). La version antérieure
+				// nommait ce booléen « err » et testait « == false » : elle
+				// supprimait donc la session quand elle était introuvable — en
+				// passant un nil — et journalisait une erreur quand tout allait
+				// bien. D'où un ERROR à chaque connexion réussie.
+				sess, found := stosession.SessionsUser.GetBySessionID(ds.SessionID)
+				if found {
 					stosession.SessionsUser.FastRemoveSession(sess)
 				} else {
-					logs.Write_log("ERROR", "Impossible de récupérer la session machine pour la supprimer")
+					logs.Write_log("DEBUG", "session machine déjà retirée du registre")
 				}
-				break // Mode Client Simple (One-shot) : on ne relance pas la reconnexion
+				break // Mode une-passe : on ne relance pas la reconnexion.
 			}
 			<-done // Attend la fin de la connexion
 			logs.Write_log("WARNING", "Flux arrêté. Reconnexion dans 30s...")

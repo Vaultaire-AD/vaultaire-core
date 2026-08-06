@@ -5,6 +5,11 @@ Sans elle, des machines qui fonctionnaient cessent de se connecter.
 
 ## Le problème
 
+pour resume :
+```sh
+docker exec -i -e APPLY=1 vaultaire-db sh < deployments/pre-prod/scripts/migrate-clienttype.sh
+```
+
 `id_logiciels.logiciel_type` a longtemps été un `VARCHAR(255)` libre. Rien ne le
 validait, rien n'en dépendait : le formulaire web proposait « client » en simple
 exemple, et le fichier de configuration du dépôt porte `logiciel_type:

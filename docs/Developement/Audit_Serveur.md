@@ -14,16 +14,82 @@ constat de lecture, avec chemin et ligne.
 
 | # | Gravité | Où | Constat | État |
 |---|---------|-----|---------|------|
+| 18 | **Critique** | Ducky | Une trame de moins de 5 lignes arrête le serveur, sans authentification | **Corrigé 06/08/2026** |
 | 12 | **Critique** | Crypto | Hachage des mots de passe en SHA-256 à un tour | Ouvert |
-| ~~13~~ | ~~Critique~~ | Ducky | ~~RSA PKCS#1 v1.5 — oracle Bleichenbacher~~ | **CORRIGÉ** — migration OAEP, voir TO-DO 11 |
-| 14 | **Élevée** | Ducky | Les sessions non authentifiées ne sont jamais balayées | Ouvert |
-| 15 | **Élevée** | Transverse | Aucun `recover()` : une panique dans une goroutine tue tout le serveur | Ouvert |
-| 16 | **Moyenne** | LDAP | Encodeurs BER manuels : forme longue absente, `messageID` tronqué | Ouvert — **TO-DO 12** |
-| 17 | **Moyenne** | DNS | Résolution strictement séquentielle, pas d'EDNS0, pas de limitation de débit | Ouvert |
-| 11 | **Critique** | Ducky | Le chemin `04_01` contourne l'authentification et désarme le contrôle d'ordre des trames | **Ouvert — reporté** |
-| 7 | **Faible** | database | Même requête recopiée dans 10 fonctions, alors que le helper existe | Ouvert |
-| 8 | **Faible** | database | Doublons fonctionnels et nommage incohérent | Ouvert |
-| 10 | **Note** | web | `web_admin_pages.go` fait 1314 lignes et mélange sept domaines | Ouvert |
+| 14 | **Élevée** | Ducky | Sessions non authentifiées jamais balayées | **Corrigé** |
+| 15 | **Élevée** | Transverse | Aucun `recover()` : une panique tue tout le serveur | **Partiel** — LDAP et Ducky couverts |
+| 16 | **Moyenne** | LDAP | Encodeurs BER manuels | **Corrigé** |
+| 17 | **Moyenne** | DNS | Résolution séquentielle, pas d'EDNS0, pas de limitation | Ouvert |
+| 11 | **Critique** | Ducky | `04_01` contourne l'authentification | **Fermé** par le catalogue |
+| 10 | **Note** | web | `web_admin_pages.go` fait 1314 lignes | Ouvert |
+
+### Vérification du 06/08/2026
+
+**18 — nouveau, critique.** `parseTrames` refuse une trame de moins de cinq
+lignes et rend une structure vide ; `Split_Action` indexait aussitôt
+`Message_Order[0]` sur une tranche nil. Le chemin était atteignable **sans
+authentification** : « askkey » rend la clé publique du core à qui la demande,
+il suffisait ensuite de chiffrer avec elle une trame trop courte. Même classe de
+défaut que celui trouvé côté LDAP — une donnée refusée par une couche, puis
+utilisée telle quelle par la suivante. Reproduit par test, puis corrigé.
+
+**11 — fermé sans intervention directe.** `04_01` ne figure dans les `Frames`
+d'aucun type du catalogue. Le contrôle fail-closed de `Split_Action` la refuse
+donc pour tout le monde, y compris avant la poignée de main. La correction
+proposée à l'époque n'est plus nécessaire ; si la catégorie 04 est un jour
+implémentée, elle devra l'être **avec** son entrée au catalogue.
+
+**15 — partiel.** LDAP et Ducky ont chacun leur `recover()` par connexion.
+**DNS, API, interface web et socket local n'en ont toujours pas.**
+
+**14 — corrigé.** Quatre pièces, dont deux étaient déjà là :
+
+| Pièce | État |
+|---|---|
+| `defer closeConnection` à la sortie de boucle | déjà en place |
+| balayage des sessions `SessionPending` | déjà en place — `StaleSessions`, 60 s |
+| **délai de lecture** | ajouté — `core/netguard/deadline.go` |
+| **plafond de connexions** | ajouté — `core/netguard/limiter.go` |
+
+Le balayage fermait déjà les connexions muettes, mais il tourne toutes les deux
+minutes : entre deux passages la fenêtre restait ouverte. Le délai de lecture
+borne à la seconde, sans dépendre d'un ticker.
+
+**Deux délais**, parce qu'une session légitime peut rester silencieuse entre deux
+battements de cœur : 60 s avant authentification, 10 min après. L'enrôlement
+garde le délai court — `IsSafe` y passe à vrai alors que le client n'a encore
+aucune identité, et sans cette distinction une seule clé d'enrôlement valide
+tiendrait des connexions dix fois plus longtemps.
+
+Le délai de 60 s a été dimensionné en mesurant ce qu'il doit couvrir : le client
+génère sa paire RSA-4096 ENTRE deux trames d'enrôlement, donc pendant que le
+serveur attend. Douze tirages : 536 ms en moyenne, 1,56 s au pire — soit une
+marge d'environ quarante fois. **Ne pas descendre sous 30 s sans refaire cette
+mesure sur le matériel visé.**
+
+**Deux plafonds**, par adresse et au total. Un plafond global seul protège le
+serveur mais laisse une source affamer tout le parc en prenant les places ; le
+plafond par adresse garde la panne du côté de celui qui la provoque.
+
+| Écoute | Total | Par adresse |
+|---|---|---|
+| Ducky | 2000 | 20 |
+| LDAP + LDAPS (partagé) | 500 | 20 |
+
+Le limiteur LDAP est **partagé** entre les deux écoutes : elles servent le même
+annuaire et consomment les mêmes descripteurs, deux plafonds séparés
+laisseraient les additionner pour en obtenir le double.
+
+**À surveiller à la mise en service** : une machine NAT derrière laquelle vivent
+plus de vingt postes se ferait refuser. Le refus est journalisé avec l'adresse et
+le motif, précisément pour que ce cas se voie.
+
+**16 — corrigé.** Plus aucun encodage BER manuel dans le paquet LDAP ;
+`LDAP_RESPONSE` encode via `ber.Encode`. Voir `Audit_LDAP.md`.
+
+**12 et 17 — inchangés.** `ComparePasswords` fait toujours un SHA-256 à un tour,
+et le serveur DNS traite toujours une requête à la fois, sans EDNS0 ni
+limitation de débit.
 
 > La numérotation vient des audits successifs ; les points corrigés ont été
 > retirés. Le **11** est repris de l'audit des quatre points d'entrée

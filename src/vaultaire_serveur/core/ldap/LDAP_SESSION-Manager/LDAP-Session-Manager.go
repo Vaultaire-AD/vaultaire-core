@@ -27,7 +27,17 @@ func SetAnonymousBindInfo(conn net.Conn) {
 	if sess, ok := sessionStore[conn]; ok {
 		sess.IsBound = true
 		sess.IsAnonymous = true
-		sess.Username = "anonymous" // Ou vide, selon votre préférence
+		// Nom VIDE, et surtout pas « anonymous ».
+		//
+		// Les contrôles en aval interrogent le RBAC avec cette chaîne. Un compte
+		// réellement nommé « anonymous » verrait donc ses permissions accordées aux
+		// sessions non authentifiées.
+		//
+		// Aujourd'hui le dispatcheur interdit à un anonyme toute recherche autre
+		// que RootDSE avant d'y arriver : la protection tient à un contrôle
+		// distant, pas à la valeur. Une chaîne vide ne peut désigner aucun compte,
+		// donc ne peut pas entrer en collision — la protection devient locale.
+		sess.Username = ""
 	}
 }
 
@@ -64,6 +74,39 @@ func SetBindInfo(conn net.Conn, username string, userDN string) {
 	}
 }
 
+// ResetBindInfo ramène la session à l'état non authentifié, SANS la supprimer.
+//
+// # Pourquoi ce n'est pas DeleteLDAPSession
+//
+// Supprimer l'entrée alors que la connexion vit encore laissait les
+// gestionnaires suivants lire une session absente. Le chemin de recherche
+// RootDSE ne vérifiait pas ce cas et déréférençait un pointeur nil : le serveur
+// entier s'arrêtait, sur trois paquets envoyés par un inconnu.
+//
+// Une session existe tant que la connexion existe. Ce qui change à un refus,
+// c'est l'IDENTITÉ portée par la session, pas son existence.
+//
+// C'est aussi ce qu'impose la RFC 4511 §4.2.1 : un bind en échec laisse la
+// connexion dans l'état anonyme. Avant, un client authentifié comme alice qui
+// ratait un bind sur bob restait alice.
+func ResetBindInfo(conn net.Conn) {
+	sessionStoreMu.Lock()
+	defer sessionStoreMu.Unlock()
+
+	if sess, ok := sessionStore[conn]; ok {
+		sess.IsBound = false
+		sess.IsAnonymous = false
+		sess.Username = ""
+		sess.UserDN = ""
+		return
+	}
+	// La session a disparu — connexion en cours de fermeture. On la recrée pour
+	// que les gestionnaires suivants trouvent toujours une valeur non nulle.
+	sessionStore[conn] = &LDAPSession{Conn: conn}
+}
+
+// ClearSession supprime la session. À n'appeler QUE lorsque la connexion se
+// ferme — voir ResetBindInfo pour un refus en cours de connexion.
 func ClearSession(c net.Conn) {
 	DeleteLDAPSession(c)
 }

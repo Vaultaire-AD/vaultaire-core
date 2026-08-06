@@ -19,9 +19,21 @@ type LDAPControl struct {
 }
 
 type BindRequest struct {
-	Version        int
-	Name           string
-	Anonymous      bool   // pour simplifier, on considère que si Name est vide, c'est une authentification anonyme
+	Version int
+	Name    string
+	// Anonymous : DN vide ET mot de passe vide, seule forme d'anonymat que la
+	// RFC 4513 §5.1.1 reconnaît. Renseigné par le parseur, qui est le seul à voir
+	// la trame — la version antérieure ne l'écrivait jamais et le champ valait
+	// donc toujours false.
+	Anonymous bool
+
+	// SimpleAuth dit si le client a employé le mécanisme [0] simple.
+	//
+	// AuthenticationChoice vaut [0] simple ou [3] sasl. Le parseur lisait le
+	// contenu sans regarder l'étiquette : un bind SASL voyait son DER interprété
+	// comme un mot de passe. Le serveur ne gère que le bind simple, et doit le
+	// dire au lieu de laisser croire à un mauvais mot de passe.
+	SimpleAuth     bool
 	Authentication []byte // pour simplifier ici, peut être struct plus complexe
 }
 

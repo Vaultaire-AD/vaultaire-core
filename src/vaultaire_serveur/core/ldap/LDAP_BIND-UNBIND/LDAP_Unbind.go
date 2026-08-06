@@ -18,44 +18,35 @@ import (
 // 	return nil
 // }
 
-func buildLDAPUnbindResponse(messageID int) []byte {
-	// Par exemple, un LDAPMessage vide de type 'Success' (similaire à BindResponse)
-	// Mais c'est non standard pour Unbind
-
-	// MessageID
-	msgID := []byte{
-		0x02, 0x01, byte(messageID),
-	}
-
-	// ResultCode Success (0), matchedDN vide, diagMsg vide
-	result := []byte{
-		0x0A, 0x01, 0x00,
-	}
-	matched := []byte{0x04, 0x00}
-	diag := []byte{0x04, 0x00}
-
-	// Utilisation tag [APPLICATION 1] (BindResponse) pour la démo
-	bindPayload := append(result, matched...)
-	bindPayload = append(bindPayload, diag...)
-	bind := []byte{0x61, byte(len(bindPayload))}
-	bind = append(bind, bindPayload...)
-
-	payload := append(msgID, bind...)
-	full := []byte{0x30, byte(len(payload))}
-	full = append(full, payload...)
-
-	return full
-}
-
+// HandleUnbindRequest traite un UnbindRequest.
+//
+// # Il ne répond RIEN, et c'est la règle
+//
+// RFC 4511 §4.3 : « The Unbind operation ... has no response. » C'est la seule
+// opération du protocole dans ce cas — partout ailleurs, se taire est un défaut.
+//
+// La version antérieure envoyait une BindResponse, construite à la main et
+// étiquetée [APPLICATION 1], avec un commentaire qui reconnaissait déjà que
+// c'était « non standard ». Le client, qui n'attend rien, recevait un message
+// non sollicité sur une connexion qu'il considérait comme close : selon
+// l'implémentation, cela produit une erreur de protocole ou une trame orpheline
+// dans ses journaux.
+//
+// L'encodage manuel portait par ailleurs le même défaut que les autres :
+// byte(messageID) tronquait au-delà de 255.
+//
+// # La connexion est fermée ici
+//
+// La RFC demande aux deux parties de fermer après un unbind. Se contenter
+// d'oublier la session laissait la boucle de lecture attendre un EOF que le
+// client n'envoie pas toujours — une connexion, et sa goroutine, immobilisées
+// jusqu'à expiration TCP.
 func HandleUnbindRequest(messageID int, conn net.Conn) {
-	fmt.Println("Handling Unbind Request")
-	// Normalement pas de réponse à un Unbind
-	// Mais si tu veux envoyer une réponse, décommenter la ligne suivante :
-	_, err := conn.Write(buildLDAPUnbindResponse(messageID))
-	if err != nil {
-		logs.Write_Log("ERROR", "Error sending Unbind response: "+err.Error())
-		return
-	}
-	// Puis fermer la connexion (fin de session)
+	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: unbind messageID=%d depuis %s",
+		messageID, conn.RemoteAddr()))
+
 	ldapsessionmanager.ClearSession(conn)
+	if err := conn.Close(); err != nil {
+		logs.Write_Log("DEBUG", "ldap: fermeture après unbind : "+err.Error())
+	}
 }

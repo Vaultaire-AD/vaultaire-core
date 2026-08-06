@@ -17,10 +17,9 @@ func SendLDAPSearchResultDone(conn net.Conn, messageID int) error {
 	finalPacket.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, uint64(messageID), "Message ID"))
 	finalPacket.AppendChild(resultDone)
 
-	n, err := conn.Write(finalPacket.Bytes())
+	_, err := conn.Write(finalPacket.Bytes())
 	if err != nil {
 		return fmt.Errorf("failed to send SearchResultDone: %v", err)
 	}
-	fmt.Printf("Sent %d bytes for SearchResultDone\n", n)
 	return nil
 }

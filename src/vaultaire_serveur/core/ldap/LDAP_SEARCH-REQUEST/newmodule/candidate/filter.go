@@ -8,31 +8,8 @@ import (
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/filter"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
-
-func DebugLDAPFilter(f *ldapstorage.LDAPFilter, indent string) {
-	if f == nil {
-		fmt.Println(indent + "<nil filter>")
-		return
-	}
-
-	fmt.Println(indent + "LDAPFilter {")
-	fmt.Println(indent+"  Type      :", f.Type)
-	fmt.Println(indent+"  Attribute :", f.Attribute)
-	fmt.Println(indent+"  Value     :", f.Value)
-
-	if len(f.SubFilters) > 0 {
-		fmt.Println(indent + "  SubFilters:")
-		for i, sub := range f.SubFilters {
-			fmt.Printf(indent+"    [%d]\n", i)
-			DebugLDAPFilter(sub, indent+"      ")
-		}
-	} else {
-		fmt.Println(indent + "  SubFilters: <none>")
-	}
-
-	fmt.Println(indent + "}")
-}
 
 // Filtre applique un filtre LDAP logique (LDAPFilter) à une liste d’entrées
 func Filtre(entries []ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN string, scope int) []ldapinterface.LDAPEntry {
@@ -47,15 +24,23 @@ func Filtre(entries []ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN
 		len(entries),
 		f.Type,
 	))
-	// DebugLDAPFilter(f, "  ")
 	var result []ldapinterface.LDAPEntry
 	if len(entries) == 0 {
 		logs.Write_Log("DEBUG", "Aucune entrée candidate: résultat de filtre vide")
 		return result
 	}
 
-	fmt.Printf("--- Analyse du filtre pour l'entrée %s ---\n", entries[0].DN())
-	fmt.Print(DumpFilter(f, 0)) // f est ton *LDAPFilter
+	// Le filtre contient les NOMS D'UTILISATEUR recherchés.
+	//
+	// Il partait sur la sortie standard à CHAQUE recherche, sans horodatage,
+	// sans niveau et sans rotation — donc hors du système de journalisation et
+	// de ses protections, mais bien dans les journaux Docker.
+	//
+	// Passé en DEBUG : muet en exploitation, et soumis au même traitement que
+	// le reste quand on l'active.
+	if storage.Debug {
+		logs.Write_Log("DEBUG", "ldap: filtre appliqué à "+entries[0].DN()+" :\n"+DumpFilter(f, 0))
+	}
 
 	for _, e := range entries {
 		logs.Write_Log("DEBUG", fmt.Sprintf("Vérification de %s : classes=%v", e.DN(), e.GetAttribute("objectClass")))

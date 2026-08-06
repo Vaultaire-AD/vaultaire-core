@@ -31,7 +31,6 @@ func clientMatchesSession(trames_content storage.Trames_struct_client, duckysess
 	return trames_content.ClientSoftwareID == duckysession.BoundClientSoftwareID
 }
 
-
 // preAuthTrame désigne les trames émises AVANT qu'une identité existe.
 //
 // Elles échappent nécessairement aux deux contrôles ci-dessous, mais pas pour
@@ -58,6 +57,27 @@ func preAuthTrame(messageOrder string) bool {
 }
 
 func Split_Action(trames_content storage.Trames_struct_client, duckysession *storage.DuckySession) {
+	// Message_Order peut être VIDE, et ce n'est pas théorique.
+	//
+	// parseTrames refuse une trame de moins de cinq lignes et rend une
+	// structure vide — donc une tranche nil. Son refus est correct ; ce qui
+	// manquait, c'est que l'appelant n'en tenait pas compte et indexait
+	// aussitôt l'élément 0.
+	//
+	// Le chemin était atteignable SANS AUTHENTIFICATION : « askkey » rend la
+	// clé publique du core à qui la demande, il suffisait ensuite de chiffrer
+	// avec elle une trame trop courte. La goroutine Ducky n'ayant pas de
+	// recover(), la panique arrêtait le processus entier.
+	if len(trames_content.Message_Order) == 0 {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"trame malformée reçue sur la session %s : aucun code d'opération",
+			duckysession.SessionID))
+		if err := duckysession.Conn.Close(); err != nil {
+			logs.Write_Log("DEBUG", "fermeture après trame malformée : "+err.Error())
+		}
+		return
+	}
+
 	service := strings.Split(trames_content.Message_Order[0], "_")
 	message := ""
 	//println(trames_content.Message_Order[0]+"_"+trames_content.Message_Order[1])

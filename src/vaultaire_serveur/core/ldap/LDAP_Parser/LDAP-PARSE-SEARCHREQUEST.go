@@ -235,7 +235,7 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 
 	var fullValue strings.Builder
 	// p.Children[1] est la séquence des morceaux
-	for i, part := range p.Children[1].Children {
+	for _, part := range p.Children[1].Children {
 		// TEST 1: ByteValue
 		val := string(part.ByteValue)
 
@@ -249,12 +249,10 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 			val = string(part.Data.Bytes())
 		}
 
-		fmt.Printf("[DEBUG-PARSER] Morceau %d: Tag=%d, ValeurExtraite='%s'\n", i, part.Tag, val)
 		fullValue.WriteString(val)
 	}
 
 	filter.Value = fullValue.String()
-	fmt.Printf("[DEBUG-PARSER] Résultat Final: %s=%s\n", filter.Attribute, filter.Value)
 
 	return filter, nil
 }

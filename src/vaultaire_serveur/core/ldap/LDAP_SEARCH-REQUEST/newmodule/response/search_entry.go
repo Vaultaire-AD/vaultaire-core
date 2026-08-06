@@ -42,8 +42,6 @@ func SendLDAPSearchResultEntry(conn net.Conn, messageID int, entry ldap_types.Se
 	entryPacket.AppendChild(attrs)
 	packet.AppendChild(entryPacket)
 
-	// fmt.Println(formatHex(packet.Bytes())) // debug : trame complète avant envoi
-
 	_, err := conn.Write(packet.Bytes())
 	if err != nil {
 		return fmt.Errorf("failed to send SearchResultEntry: %v", err)
@@ -52,25 +50,6 @@ func SendLDAPSearchResultEntry(conn net.Conn, messageID int, entry ldap_types.Se
 	return nil
 }
 
-func formatHex(data []byte) string {
-	var s string
-	for i := 0; i < len(data); i += 16 {
-		end := i + 16
-		if end > len(data) {
-			end = len(data)
-		}
-		line := data[i:end]
-		hexPart := ""
-		asciiPart := ""
-		for _, b := range line {
-			hexPart += fmt.Sprintf("%02X ", b)
-			if b >= 32 && b <= 126 {
-				asciiPart += string(b)
-			} else {
-				asciiPart += "."
-			}
-		}
-		s += fmt.Sprintf("%08X  %-48s  %s\n", i, hexPart, asciiPart)
-	}
-	return s
-}
+// formatHex a été retiré : il n'était appelé que par une ligne de mise au point
+// commentée, et gardait un affichage hexadécimal complet des trames — donc des
+// données d'annuaire — à portée de main sur la sortie standard.
