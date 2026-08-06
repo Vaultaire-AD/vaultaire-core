@@ -90,6 +90,17 @@ build_go() {
         echo "❌ Build $libelle échoué — arrêt."
         exit 1
     fi
+    # 0755 et non le mode par défaut.
+    #
+    # Sous WSL sur un montage /mnt/c, l'umask hérité produit des binaires en
+    # 0700 appartenant au compte qui compile. Montés dans un conteneur qui
+    # tourne en utilisateur NON privilégié — c'est le cas du proxy —, ils ne
+    # sont ni lisibles ni exécutables, et Docker répond :
+    #
+    #     exec: "/opt/vaultaire/bin/vaultaire_proxy": permission denied
+    #
+    # Un message du runtime, qui ne dit ni pourquoi ni sur quelle machine agir.
+    chmod 755 "$sortie"
 }
 
 # -------------------------

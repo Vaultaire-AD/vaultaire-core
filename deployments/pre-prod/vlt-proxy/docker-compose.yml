@@ -1,21 +1,24 @@
-version: '3.8'
-
 # Proxy Vaultaire — pile autonome.
+#
+# Pas d'attribut « version » : obsolète depuis Compose v2, il est ignoré et
+# provoque un avertissement à chaque lancement.
 #
 # Le binaire vient de cmd/vaultaire_proxy/, produit par auto-compil.sh. Rien
 # n'est compilé ici.
 #
-#   ./auto-compil.sh
-#   cp .env.example .env   puis le renseigner
-#   docker compose up -d
+#   1. sur le core :  vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
+#   2. sur l'hôte  :  ./auto-compil.sh
+#   3. ici         :  cp config.example.yaml config.yaml  puis le renseigner
+#   4.                docker compose up -d
+#   5. sur le core :  vlt client list   -> le proxy doit apparaître
 #
 # Mise à jour :  ./auto-compil.sh && docker compose restart vlt-proxy
 
 networks:
-  # externe: true suppose que le core tourne sur la même machine. Sur une
-  # machine distincte — le cas normal pour un proxy —, commentez ce bloc,
-  # décommentez celui du dessous, et donnez à VAULTAIRE_IP_CORE l'adresse
-  # routable du core.
+  # externe: true suppose que le core tourne sur la même machine et que son
+  # réseau existe déjà. Sur une machine distincte — le cas normal pour un
+  # proxy —, commentez ce bloc, décommentez celui du dessous, et mettez
+  # l'adresse routable du core dans config.yaml.
   Ducky-network:
     external: true
     name: pre-prod_Ducky-network
@@ -24,12 +27,12 @@ networks:
   #   driver: bridge
 
 volumes:
-  # Ce volume porte l'IDENTITÉ du proxy : clé privée, clé publique du core,
-  # identifiant attribué à l'enrôlement.
+  # Ce volume porte l'IDENTITÉ du proxy : client_software.yaml, sa clé privée,
+  # sa clé publique et celle du core.
   #
-  # `docker compose down -v` force un réenrôlement et consomme une place de la
-  # clé d'enrôlement. Répété, il épuise le quota et laisse le proxy dehors, avec
-  # un message qui ne dit pas que la cause est là.
+  # `docker compose down -v` force un réenrôlement complet et consomme une
+  # utilisation de la clé d'enrôlement. Répété, il épuise le quota et laisse le
+  # proxy dehors, avec un message qui ne dit pas que la cause est là.
   vlt_proxy_keys:
 
 services:
@@ -41,11 +44,6 @@ services:
     container_name: vlt-proxy
     restart: unless-stopped
 
-    # Tout se configure par variables. Surtout la clé d'enrôlement, seul secret
-    # de la configuration : un config.yaml qui la contient finit par être
-    # commité.
-    env_file:
-      - .env
     environment:
       - TZ=Europe/Paris
 
@@ -53,14 +51,18 @@ services:
       # Binaire, en lecture seule. Le conteneur ne doit pas pouvoir réécrire une
       # source de l'hôte : un binaire modifié depuis l'intérieur serait ensuite
       # committé sans qu'on comprenne d'où il vient.
+      #
+      # Il doit être exécutable par l'UID 10001 du conteneur — auto-compil.sh le
+      # produit en 0755. L'entrypoint le vérifie et le dit clairement sinon.
       - ../../../cmd/vaultaire_proxy:/opt/vaultaire/bin:ro
+      # Configuration : serveurs et clé d'enrôlement. En lecture seule, le proxy
+      # n'a aucune raison de la réécrire.
+      - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
       # Identité, en écriture. Seul endroit où le proxy écrit.
       - vlt_proxy_keys:/var/lib/vaultaire_proxy/keys
-      # Configuration par fichier, si vous la préférez aux variables.
-      # - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
 
-    # La v1 n'ouvre que des connexions SORTANTES. Les ports d'écoute seront à
-    # publier quand la répartition de charge arrivera.
+    # Cette version n'ouvre que des connexions SORTANTES vers le core. Les ports
+    # d'écoute seront à publier quand la répartition de charge arrivera.
     # ports:
     #   - "389:389"
     #   - "8443:8443"
@@ -68,11 +70,8 @@ services:
     networks:
       - Ducky-network
 
-    # stop_grace_period laisse partir la trame de sortie (04_14). Sans elle,
-    # Docker tue au bout de 10 s et le cluster affiche en ligne, pendant trois
-    # minutes, un proxy volontairement éteint.
     stop_signal: SIGTERM
-    stop_grace_period: 30s
+    stop_grace_period: 15s
 
     logging:
       driver: json-file
