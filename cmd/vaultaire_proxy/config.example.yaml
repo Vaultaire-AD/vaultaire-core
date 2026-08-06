@@ -1,62 +1,26 @@
 # Configuration du proxy Vaultaire.
 #
 # Ce fichier est DÉPLOYABLE TEL QUEL sur plusieurs hôtes : il ne contient aucune
-# identité. Chaque proxy s'enrôle au premier démarrage et obtient la sienne dans
-# key_dir.
+# identité. Chaque proxy s'enrôle au premier démarrage et écrit la sienne dans
+# <keys>/client_software.yaml.
 
-# Adresse du core, hôte:port.
-core_address: "core.vaultaire.lan:8443"
+# Cores à joindre, essayés dans l'ordre. Le premier qui répond gagne.
+servers:
+  - ip: "10.0.0.1"
+    port: 6666
 
 enrollment:
   # Clé d'enrôlement de type vaultaire_proxy, créée sur le core :
   #   vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
   #
   # Elle porte le TYPE du client : c'est elle qui décide de ce que le core
-  # laissera ce proxy émettre. Le proxy ne peut pas déclarer son type lui-même.
+  # laissera ce proxy émettre. Le proxy ne peut pas déclarer son type lui-même —
+  # sinon il suffirait de s'enrôler pour se donner les privilèges qu'on veut.
   #
-  # Elle n'est lue qu'au premier démarrage, ou après --reset-identity.
+  # Lue au PREMIER démarrage seulement. Une fois l'identité écrite, elle ne sert
+  # plus et peut être retirée du fichier.
   key: "CHANGEZ-MOI"
 
-  # Nom lisible affiché côté core. Purement descriptif.
-  label: "proxy-paris-01"
-
-# Clé publique du core — FACULTATIVE mais recommandée.
-#
-# Sans elle, le proxy la demande au démarrage par un « askkey » EN CLAIR : c'est
-# le seul moment du protocole où un intermédiaire actif pourrait substituer la
-# sienne. La renseigner ferme cette fenêtre.
-#
-# Accepte un chemin absolu ou le PEM en clair.
-server_pub_key: "/etc/vaultaire_proxy/core_public.pem"
-
-# Où le proxy range sa paire de clés, la clé du core et son identité.
-#
-# DOIT survivre aux redémarrages. Un conteneur sans volume persistant se
-# réenrôle à chaque lancement et épuise le quota de la clé d'enrôlement.
-key_dir: "/var/lib/vaultaire_proxy/keys"
-
-# Réenrôlement automatique si le core refuse l'identité du proxy.
-#
-#   true  — un proxy dont le core a été réinstallé reprend sa place seul.
-#   false — le proxy s'arrête, et l'incident se voit.
-#
-# À true, une RÉVOCATION délibérée est contournée tant que la clé d'enrôlement
-# reste valide : pensez à la révoquer aussi.
-allow_re_enroll: true
-
-proxy:
-  version: "1.0.0"
-
-  # Adresse à laquelle CE proxy est joignable, telle qu'affichée dans le
-  # cluster. Requise : sans elle, la ligne du cluster serait décorative.
-  endpoint: "10.0.0.12:389"
-
-  # Inventaire, pas des droits : ce que le proxy peut émettre reste décidé par
-  # son type au catalogue du core.
-  capabilities:
-    - ldap-proxy
-
-# Écoutes du proxy lui-même. Non utilisées en version 1 : la répartition de
-# charge vient ensuite.
-ldap_listen: "0.0.0.0:389"
-ducky_listen: "0.0.0.0:8443"
+  # Nom lisible côté core, pour les journaux et l'affichage. Aucune valeur de
+  # sécurité : il n'entre dans aucune décision.
+  label: "proxy-preprod-01"

@@ -107,18 +107,7 @@ build_go "du ctl"    "$ROOT_DIR/src/vaultaire_ctl"    "$CTL_BIN"
 # -------------------------
 # Build proxy
 # -------------------------
-# Le dossier duckynetwork/ du proxy est réinstallé AVANT la compilation.
-#
-# Sans cela, une correction apportée au protocole dans ducky-network-sdk ne
-# partirait jamais dans le binaire du proxy : elle resterait dans le dossier
-# source, et le proxy compilerait sans erreur sur son ancienne copie. C'est
-# exactement ce qui l'avait laissé sur PKCS#1 v1.5 alors que le core était passé
-# à OAEP — un client parfaitement compilé qui ne parlait plus au serveur.
-echo "🛠 Mise à jour du duckynetwork du proxy..."
-if ! "$ROOT_DIR/src/ducky-network-sdk/install.sh" "$ROOT_DIR/src/vaultaire_proxy"; then
-    echo "❌ Installation du duckynetwork échouée — arrêt."
-    exit 1
-fi
+
 
 # CGO_ENABLED=0 : binaire statique.
 #
