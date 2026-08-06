@@ -25,6 +25,12 @@ type Options struct {
 	//	enrollment:
 	//	  key: "..."
 	//	  label: "proxy-preprod-01"
+	//
+	// FACULTATIF : son absence n'est pas une erreur si l'environnement porte le
+	// nécessaire (VAULTAIRE_IP_CORE et VAULTAIRE_ENROLL_KEY). C'est le mode de
+	// déploiement en conteneur, où deux variables suffisent.
+	//
+	// L'environnement l'emporte sur le fichier quand les deux sont présents.
 	ConfigPath string
 
 	// KeyPath : répertoire des clés et de l'identité. Contient, après
@@ -101,7 +107,10 @@ func (o *Options) prepare() error {
 		return err
 	}
 	if len(config.GetServers()) == 0 {
-		return fmt.Errorf("configuration %s : aucun serveur déclaré", o.ConfigPath)
+		return fmt.Errorf(
+			"aucun serveur déclaré : renseignez la variable %s (« ip:port »), "+
+				"ou la section servers de %s",
+			config.EnvCore, o.ConfigPath)
 	}
 	return nil
 }

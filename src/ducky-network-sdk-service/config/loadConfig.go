@@ -45,16 +45,32 @@ type Config struct {
 
 var configPath string
 
-// LoadConfig lit le fichier YAML et met à jour la configuration globale.
+// LoadConfig lit le fichier YAML, y superpose l'environnement, et met à jour la
+// configuration globale.
+//
+// # Le fichier est FACULTATIF
+//
+// Son absence n'est pas une erreur si l'environnement porte le nécessaire :
+// c'est le mode de déploiement en conteneur, où deux variables suffisent et où
+// monter un fichier pour les tenir n'aurait rien à contenir de plus.
+//
+// Les autres erreurs de lecture — droits, fichier illisible — restent fatales :
+// elles signalent un problème de déploiement, pas une intention.
 func LoadConfig(filePath string) error {
+	var config Config
+
 	data, err := os.ReadFile(filePath)
-	if err != nil {
+	switch {
+	case err == nil:
+		if err := yaml.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("configuration %s illisible : %w", filePath, err)
+		}
+	case !os.IsNotExist(err):
 		return fmt.Errorf("lecture de %s : %w", filePath, err)
 	}
 
-	var config Config
-	if err := yaml.Unmarshal(data, &config); err != nil {
-		return fmt.Errorf("configuration %s illisible : %w", filePath, err)
+	if err := applyEnv(&config); err != nil {
+		return err
 	}
 
 	// configPath n'est retenu QU'APRÈS une lecture réussie.

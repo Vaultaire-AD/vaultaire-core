@@ -46,7 +46,27 @@ TCP : sinon vous auriez une session qui a l'air ouverte mais que le core refuser
 
 ## Configuration
 
-Un seul fichier YAML, même format que `vaultaire_client` :
+Deux valeurs suffisent : l'adresse du core et la clé d'enrôlement. Elles se
+donnent **par variables d'environnement** ou **par fichier YAML**, au choix.
+
+### Par variables — le mode conteneur
+
+```
+VAULTAIRE_IP_CORE=10.0.0.1:6666        port 6666 par défaut, « 10.0.0.1 » suffit
+VAULTAIRE_ENROLL_KEY=<clé>             créée sur le core
+VAULTAIRE_ENROLL_LABEL=proxy-01        facultatif, pour les journaux
+```
+
+Plusieurs cores : séparés par des virgules, essayés dans l'ordre.
+
+Aucun fichier n'est alors nécessaire — `ConfigPath` peut pointer vers un chemin
+inexistant sans que ce soit une erreur.
+
+**La clé d'enrôlement est le seul secret de la configuration.** La passer par
+l'environnement permet de la tenir hors du dépôt et hors de l'image : un fichier
+qui la contient finit toujours par être commité.
+
+### Par fichier — même format que `vaultaire_client`
 
 ```yaml
 servers:
@@ -61,6 +81,17 @@ enrollment:
 ```
 
 Les serveurs sont essayés dans l'ordre, le premier qui répond gagne.
+
+### Quand les deux sont présents
+
+**Les variables l'emportent**, et remplacent la liste de serveurs au lieu de s'y
+ajouter. En conteneur, le fichier est figé dans une image ou un volume alors que
+l'environnement est ce qu'on ajuste au déploiement ; l'inverse obligerait à
+reconstruire pour changer d'adresse de core.
+
+Compléter plutôt que remplacer donnerait une liste dont l'ordre dépendrait de
+deux sources, et un serveur retiré de l'environnement resterait joignable par le
+fichier — donc une configuration dont on ne peut plus rien retirer.
 
 La section `enrollment` n'est lue **qu'au premier démarrage**. Une fois l'identité
 écrite, la clé ne sert plus et peut être retirée du fichier — la laisser garde un
@@ -175,7 +206,8 @@ rendrait l'authentification muette sans autre symptôme.
 | Symptôme | Cause |
 |----------|-------|
 | `ConfigPath est requis` | option manquante |
-| `configuration … : aucun serveur déclaré` | YAML vide ou mal indenté |
+| `aucun serveur déclaré` | ni `VAULTAIRE_IP_CORE` ni section `servers` |
+| `VAULTAIRE_IP_CORE : port invalide` | port hors 1-65535, ou non numérique |
 | `aucune identité utilisable … et enrôlement non autorisé` | `Enroll: false` sans `client_software.yaml` |
 | `aucune clé d'enrôlement dans la configuration` | section `enrollment` absente |
 | `enrôlement refusé (invalid_key)` | clé inconnue, expirée, épuisée ou révoquée — le motif exact est dans le journal du **core** |

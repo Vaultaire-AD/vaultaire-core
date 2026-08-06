@@ -26,9 +26,10 @@ vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
 # 2. Sur l'hôte : compiler
 ./auto-compil.sh
 
-# 3. Ici : la configuration
-cp config.example.yaml config.yaml
-$EDITOR config.yaml        # servers, enrollment.key
+# 3. Ici : deux valeurs dans docker-compose.yml
+#      VAULTAIRE_IP_CORE=vaultaire-ad:6666
+#      VAULTAIRE_ENROLL_KEY=<la clé de l'étape 1>
+$EDITOR docker-compose.yml
 
 # 4. Démarrer
 docker compose up -d
@@ -38,6 +39,22 @@ docker compose logs -f vlt-proxy
 vlt client list            # le proxy doit apparaître
 vlt enroll list            # le compteur d'utilisations doit avoir bougé
 ```
+
+## Configuration
+
+Deux valeurs suffisent, et elles se donnent en variables dans le
+`docker-compose.yml` :
+
+| Variable | Rôle |
+|----------|------|
+| `VAULTAIRE_IP_CORE` | `ip:port` du core. Port **6666 par défaut**, donc `vaultaire-ad` suffit. Plusieurs cores séparés par des virgules, essayés dans l'ordre. |
+| `VAULTAIRE_ENROLL_KEY` | la clé créée sur le core. Lue au **premier démarrage seulement**. |
+| `VAULTAIRE_ENROLL_LABEL` | nom lisible côté core. Facultatif, aucune valeur de sécurité. |
+
+Un `config.yaml` reste possible pour une configuration plus fournie — voir
+`config.example.yaml` — mais **il n'est pas nécessaire**. Quand les deux sont
+présents, les variables l'emportent : en conteneur, le fichier est figé dans un
+volume alors que l'environnement est ce qu'on ajuste au déploiement.
 
 ## Mise à jour
 
@@ -106,8 +123,9 @@ docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 |---------|-------|
 | `binaire absent de /opt/vaultaire/bin/…` | `./auto-compil.sh` n'a pas tourné |
 | `binaire non exécutable` | `chmod 755 cmd/vaultaire_proxy/vaultaire_proxy` |
-| `configuration absente` | `config.yaml` pas créé depuis l'exemple |
-| `aucun serveur configuré` | section `servers` vide ou mal indentée |
-| `aucune clé d'enrôlement dans la configuration` | `enrollment.key` vide |
+| `aucune configuration` | ni `VAULTAIRE_IP_CORE` ni `config.yaml` |
+| `aucun serveur déclaré` | `VAULTAIRE_IP_CORE` vide ou mal formé |
+| `VAULTAIRE_IP_CORE : port invalide dans …` | port hors 1-65535, ou non numérique |
+| `aucune clé d'enrôlement dans la configuration` | `VAULTAIRE_ENROLL_KEY` vide |
 | `enrôlement refusé (invalid_key)` | clé inconnue, expirée, épuisée ou révoquée — le motif exact est dans le journal du **core**, jamais renvoyé au client |
 | `aucune session authentifiée après 30s` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy |

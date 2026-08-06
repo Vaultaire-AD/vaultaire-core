@@ -1,14 +1,11 @@
 # Proxy Vaultaire — pile autonome.
 #
-# Pas d'attribut « version » : obsolète depuis Compose v2, il est ignoré et
-# provoque un avertissement à chaque lancement.
-#
-# Le binaire vient de cmd/vaultaire_proxy/, produit par auto-compil.sh. Rien
-# n'est compilé ici.
+# Le proxy n'a besoin que de DEUX choses : l'adresse du core, et une clé
+# d'enrôlement. Les deux se donnent ici, en variables. Aucun fichier à créer.
 #
 #   1. sur le core :  vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
 #   2. sur l'hôte  :  ./auto-compil.sh
-#   3. ici         :  cp config.example.yaml config.yaml  puis le renseigner
+#   3. ici         :  renseigner VAULTAIRE_IP_CORE et VAULTAIRE_ENROLL_KEY ci-dessous
 #   4.                docker compose up -d
 #   5. sur le core :  vlt client list   -> le proxy doit apparaître
 #
@@ -18,7 +15,7 @@ networks:
   # externe: true suppose que le core tourne sur la même machine et que son
   # réseau existe déjà. Sur une machine distincte — le cas normal pour un
   # proxy —, commentez ce bloc, décommentez celui du dessous, et mettez
-  # l'adresse routable du core dans config.yaml.
+  # l'adresse routable du core dans VAULTAIRE_IP_CORE.
   Ducky-network:
     external: true
     name: pre-prod_Ducky-network
@@ -33,6 +30,7 @@ volumes:
   # `docker compose down -v` force un réenrôlement complet et consomme une
   # utilisation de la clé d'enrôlement. Répété, il épuise le quota et laisse le
   # proxy dehors, avec un message qui ne dit pas que la cause est là.
+  # Préférez `down` seul.
   vlt_proxy_keys:
 
 services:
@@ -47,19 +45,40 @@ services:
     environment:
       - TZ=Europe/Paris
 
+      # Adresse du core. Le port vaut 6666 par défaut, on peut donc écrire
+      # simplement « vaultaire-ad ». Plusieurs cores : séparés par des virgules,
+      # essayés dans l'ordre.
+      - VAULTAIRE_IP_CORE=vaultaire-ad:6666
+
+      # Clé d'enrôlement, créée sur le core :
+      #   vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
+      #
+      # Elle porte le TYPE du client : c'est elle qui décide de ce que le core
+      # laissera ce proxy émettre. Le proxy ne peut pas déclarer son type
+      # lui-même — sinon il suffirait de s'enrôler pour se donner les
+      # privilèges qu'on veut.
+      #
+      # Lue au PREMIER démarrage seulement. Une fois l'identité écrite dans le
+      # volume, elle ne sert plus.
+      - VAULTAIRE_ENROLL_KEY=CHANGEZ-MOI
+
+      # Nom lisible côté core, pour les journaux et l'affichage. Aucune valeur
+      # de sécurité : il n'entre dans aucune décision.
+      - VAULTAIRE_ENROLL_LABEL=proxy-preprod-01
+
     volumes:
       # Binaire, en lecture seule. Le conteneur ne doit pas pouvoir réécrire une
       # source de l'hôte : un binaire modifié depuis l'intérieur serait ensuite
       # committé sans qu'on comprenne d'où il vient.
       #
-      # Il doit être exécutable par l'UID 10001 du conteneur — auto-compil.sh le
-      # produit en 0755. L'entrypoint le vérifie et le dit clairement sinon.
+      # Il doit être exécutable par l'UID 10001 — auto-compil.sh le produit en
+      # 0755 et le mode est enregistré dans git. L'entrypoint le vérifie.
       - ../../../cmd/vaultaire_proxy:/opt/vaultaire/bin:ro
-      # Configuration : serveurs et clé d'enrôlement. En lecture seule, le proxy
-      # n'a aucune raison de la réécrire.
-      - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
       # Identité, en écriture. Seul endroit où le proxy écrit.
       - vlt_proxy_keys:/var/lib/vaultaire_proxy/keys
+      # Configuration par fichier, si vous préférez aux variables. Les variables
+      # l'emportent quand les deux sont présentes.
+      # - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
 
     # Cette version n'ouvre que des connexions SORTANTES vers le core. Les ports
     # d'écoute seront à publier quand la répartition de charge arrivera.

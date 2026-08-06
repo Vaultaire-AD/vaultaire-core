@@ -39,7 +39,8 @@ RUN groupadd --system --gid 10001 vaultaire \
     && useradd --system --uid 10001 --gid 10001 \
                --home-dir /var/lib/vaultaire_proxy --shell /usr/sbin/nologin vaultaire \
     && mkdir -p /opt/vaultaire/bin /etc/vaultaire_proxy /var/lib/vaultaire_proxy/keys \
-    && chown -R vaultaire:vaultaire /var/lib/vaultaire_proxy \
+    && mkdir -p /var/log/vaultaire \
+    && chown -R vaultaire:vaultaire /var/lib/vaultaire_proxy /var/log/vaultaire \
     && chmod 700 /var/lib/vaultaire_proxy/keys \
     && apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates tzdata \
@@ -49,6 +50,14 @@ COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 755 /usr/local/bin/entrypoint.sh
 
 WORKDIR /var/lib/vaultaire_proxy
+
+# /var/log/vaultaire appartient au compte du conteneur.
+#
+# Le paquet Ducky y écrit son journal en plus de la sortie standard. Sans ce
+# répertoire — ou sans les droits dessus — chaque ligne journalisée produit deux
+# messages d'erreur non horodatés sur stderr, et le vrai contenu se perd dedans.
+# Docker collecte stdout de toute façon : le fichier est redondant, mais le
+# laisser échouer coûte la lisibilité de tout le reste.
 
 # Le proxy n'a besoin d'aucun privilège : il ouvre une connexion SORTANTE vers le
 # core et n'écrit que dans son répertoire de clés. Tourner en root lui donnerait
