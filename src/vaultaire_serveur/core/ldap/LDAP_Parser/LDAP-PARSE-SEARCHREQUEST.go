@@ -233,26 +233,38 @@ func decodeSubstringFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error) {
 		Attribute: attr,
 	}
 
-	var fullValue strings.Builder
-	// p.Children[1] est la séquence des morceaux
+	// Les morceaux portent leur position dans leur BALISE de contexte :
+	//   [0] initial   [1] any   [2] final
+	//
+	// La version précédente les concaténait en une seule chaîne, en jetant les
+	// balises. « jo*n*doe » devenait « jondoe », que l'évaluateur comparait
+	// ensuite par ÉGALITÉ : la recherche ne rendait rien, et pouvait même
+	// répondre pour une entrée nommée littéralement « jondoe ».
 	for _, part := range p.Children[1].Children {
-		// TEST 1: ByteValue
 		val := string(part.ByteValue)
-
-		// TEST 2: Si vide, on regarde Value
 		if val == "" && part.Value != nil {
 			val = fmt.Sprintf("%s", part.Value)
 		}
-
-		// TEST 3: Si toujours vide, on prend les Data brutes du paquet BER
 		if val == "" && part.Data != nil {
 			val = string(part.Data.Bytes())
 		}
+		if val == "" {
+			continue
+		}
 
-		fullValue.WriteString(val)
+		switch part.Tag {
+		case 0:
+			filter.SubInitial = val
+		case 2:
+			filter.SubFinal = val
+		default: // 1, et tout ce qui n'est ni initial ni final
+			filter.SubAny = append(filter.SubAny, val)
+		}
 	}
 
-	filter.Value = fullValue.String()
+	// Value reste renseignée pour la journalisation et pour les appelants qui
+	// n'ont besoin que d'un aperçu lisible. Elle n'entre PLUS dans la décision.
+	filter.Value = filter.SubInitial + strings.Join(filter.SubAny, "*") + filter.SubFinal
 
 	return filter, nil
 }

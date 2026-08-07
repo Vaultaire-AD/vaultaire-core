@@ -36,14 +36,27 @@ func ExtractUsernameAndDomain(ldapName string) (username, domain, ou string) {
 		part = strings.TrimSpace(part)
 		partLower := strings.ToLower(part)
 
-		if strings.HasPrefix(partLower, "uid=") {
-			cn = strings.TrimPrefix(part, "uid=")
-		} else if strings.HasPrefix(partLower, "cn=") {
-			cn = strings.TrimPrefix(part, "cn=")
-		} else if strings.HasPrefix(partLower, "ou=") {
-			ou = strings.TrimPrefix(part, "ou=")
-		} else if strings.HasPrefix(partLower, "dc=") {
-			dcParts = append(dcParts, strings.TrimPrefix(part, "dc="))
+		// Le test porte sur la version minuscule, mais la découpe DOIT porter
+		// sur la version d'origine — sinon la VALEUR perdrait sa casse.
+		//
+		// La version précédente testait `partLower` puis tranchait `part` avec
+		// `TrimPrefix(part, "uid=")` : sur « UID=jdupont », le préfixe minuscule
+		// ne s'y trouve pas, rien n'est retiré, et l'utilisateur devenait
+		// littéralement « UID=jdupont ». Le domaine, lui, devenait
+		// « DC=example.DC=com ».
+		//
+		// RFC 4514 §3 : le NOM du type d'attribut n'est pas sensible à la casse.
+		// Un client qui écrit UID= est aussi conforme qu'un qui écrit uid=, et
+		// les outils Microsoft écrivent volontiers en majuscules.
+		switch {
+		case strings.HasPrefix(partLower, "uid="):
+			cn = part[len("uid="):]
+		case strings.HasPrefix(partLower, "cn="):
+			cn = part[len("cn="):]
+		case strings.HasPrefix(partLower, "ou="):
+			ou = part[len("ou="):]
+		case strings.HasPrefix(partLower, "dc="):
+			dcParts = append(dcParts, part[len("dc="):])
 		}
 	}
 

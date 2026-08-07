@@ -44,6 +44,15 @@ type ModuleOutcome struct {
 	StateKey   string
 	Result     Result
 	Detail     string
+
+	// Files sont les fichiers que ce module vient de déposer, avec leur
+	// hachage. Renseigné seulement pour un module réellement appliqué : un
+	// module « unchanged » n'a rien écrit, et ses fichiers sont déjà connus
+	// de l'état précédent.
+	//
+	// N'est PAS transmis au serveur : le rapport 05_12 porte le résultat,
+	// pas l'inventaire. Les chemins restent locaux à la machine.
+	Files map[string]FileState
 }
 
 // Report est le résultat complet d'une application.
@@ -188,6 +197,12 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 		return outcome
 	}
 
+	// Relevé AVANT l'appel : ce qui s'ajoutera à l'inventaire pendant
+	// l'exécution appartient à ce module. C'est ce qui permet d'attribuer un
+	// fichier dérivé au module qui l'a déposé — donc de savoir quoi
+	// réappliquer — sans rien demander aux 34 appliqueurs.
+	avant := manifestSnapshot()
+
 	detail, err := applier(ctx, m)
 	if err != nil {
 		outcome.Result = ResultFailed
@@ -196,6 +211,7 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	}
 	outcome.Result = ResultApplied
 	outcome.Detail = sanitizeDetail(detail)
+	outcome.Files = manifestSince(avant, m.StateKey)
 	return outcome
 }
 
@@ -207,9 +223,13 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 // deviendrait permanente.
 func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *ScopeState {
 	modules := map[string]string{}
+	files := map[string]FileState{}
 	if previous != nil {
 		for key, fp := range previous.Modules {
 			modules[key] = fp
+		}
+		for path, state := range previous.Files {
+			files[path] = state
 		}
 	}
 
@@ -227,11 +247,30 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 		}
 	}
 
+	// Les fichiers d'un module disparu quittent aussi l'inventaire.
+	//
+	// Les y laisser ferait signaler une dérive éternelle sur un fichier que
+	// plus aucune politique ne réclame : le scan verrait un écart, la
+	// correction chercherait un module qui n'existe plus, et le cycle
+	// recommencerait indéfiniment.
+	for path, state := range files {
+		if _, still := byKey[state.StateKey]; !still {
+			delete(files, path)
+		}
+	}
+
 	for _, outcome := range report.Modules {
 		switch outcome.Result {
 		case ResultApplied, ResultUnchanged:
 			if m, ok := byKey[outcome.StateKey]; ok {
 				modules[outcome.StateKey] = m.Fingerprint
+			}
+			// Les fichiers relevés remplacent les précédents pour ce module :
+			// une nouvelle application peut avoir changé leur contenu, et
+			// garder l'ancien hachage ferait signaler une dérive dès le
+			// prochain scan.
+			for path, state := range outcome.Files {
+				files[path] = state
 			}
 		default:
 			delete(modules, outcome.StateKey)
@@ -242,6 +281,7 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 		Version: policy.Version,
 		Status:  string(report.Status),
 		Modules: modules,
+		Files:   files,
 	}
 	// L'empreinte de politique n'est enregistrée que si TOUT est en place.
 	// Sinon le prochain cycle croirait la machine à jour et n'y reviendrait pas.
@@ -258,8 +298,38 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 func sanitizeDetail(detail string) string {
 	clean := strings.NewReplacer("\n", " ", "\r", " ", "|", "/").Replace(strings.TrimSpace(detail))
 	clean = strings.Join(strings.Fields(clean), " ")
-	if len(clean) > 240 {
-		return clean[:240] + "…"
+	return tronquerRunes(clean, 240)
+}
+
+// tronquerRunes coupe sur une frontière de caractère, jamais au milieu.
+//
+// clean[:240] découpe des OCTETS. Un accent ou un caractère non latin à cheval
+// sur la limite produit une séquence UTF-8 invalide, que MariaDB en utf8mb4
+// refuse : l'INSERT entier échoue et le rapport est perdu — pour un message de
+// diagnostic tronqué, c'est-à-dire pour rien. Les messages d'erreur système
+// sont justement l'endroit où les caractères accentués abondent.
+func tronquerRunes(s string, max int) string {
+	if len(s) <= max {
+		return s
 	}
-	return clean
+	coupe := 0
+	for i := range s {
+		if i > max {
+			break
+		}
+		coupe = i
+	}
+	return s[:coupe] + "…"
+}
+
+// sanitizePath assainit un chemin destiné à une trame.
+//
+// Distinct de sanitizeDetail : celui-ci remplace « | » par « / », ce qui
+// conviendrait à un message mais transformerait un chemin en un AUTRE chemin,
+// plausible et faux. « | » est légal dans un nom de fichier sous Linux ;
+// l'encoder en %7C garde la ligne analysable sans mentir sur ce qui a été
+// constaté.
+func sanitizePath(path string) string {
+	clean := strings.NewReplacer("\n", " ", "\r", " ", "|", "%7C").Replace(strings.TrimSpace(path))
+	return tronquerRunes(clean, 1000)
 }

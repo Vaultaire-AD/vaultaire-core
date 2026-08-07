@@ -45,7 +45,7 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
 | serveur                     |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                          |
 |                             |             |               |                                  |                                                                                           |
-| GPO                         | 05          |               | (plage utilisée : 05_01 à 05_14) | voir « Détail du transport GPO » en fin de document                                       |
+| GPO                         | 05          |               | (plage utilisée : 05_01 à 05_17) | voir « Détail du transport GPO » en fin de document                                       |
 | serveur                     |             | 01            | ask_gpo_machine                  | le client demande ses GPO machine, en annonçant l'empreinte qu'il applique déjà           |
 | client                      |             | 02            | gpo_machine_manifest             | réponse succès à 05_01 : version, empreinte, découpage                                    |
 | client                      |             | 03            | gpo_machine_unchanged            | réponse à 05_01 : l'empreinte du client est à jour, rien à appliquer                      |
@@ -63,6 +63,9 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 12            | gpo_apply_report                 | le client rapporte le résultat de l'application, module par module (les deux scopes)      |
 | client                      |             | 13            | gpo_apply_report_ack             | réponse succès à 05_12                                                                    |
 | client                      |             | 14            | gpo_apply_report_error           | réponse erreur à 05_12 : rapport malformé ou empreinte inconnue                           |
+| serveur                     |             | 15            | gpo_drift_report                 | le client rapporte le résultat d'un scan de conformité : fichiers vérifiés, écarts        |
+| client                      |             | 16            | gpo_drift_report_ack             | réponse succès à 05_15                                                                    |
+| client                      |             | 17            | gpo_drift_report_error           | réponse erreur à 05_15 : rapport malformé ou enregistrement impossible                    |
 |                             |             |               |                                  |                                                                                           |
 | Révocation (kill switch)    | 06          |               | (plage utilisée : 06_01 à 06_06) | voir « Détail de la révocation » en fin de document                                       |
 | client                      |             | 01            | revoke_order                     | le serveur ordonne de verrouiller, déverrouiller ou supprimer un compte local             |
@@ -219,14 +222,18 @@ par diverger.
 05_12  rapport d'application           (partagé entre les deux scopes)
   05_13  réponse : accusé
   05_14  réponse : erreur
+
+05_15  rapport de conformité          (partagé entre les deux scopes)
+  05_16  réponse : accusé
+  05_17  réponse : erreur
 ```
 
-Les blocs 05_09 et 05_12 sont **partagés** entre les deux scopes : la logique de
+Les blocs 05_09, 05_12 et 05_15 sont **partagés** entre les deux scopes : la logique de
 transfert de fragment et de rapport est rigoureusement identique, la dédoubler
 donnerait deux fois le même code à maintenir et à tester. Pour ces trames
 uniquement, le scope voyage donc dans le contenu (première ligne).
 
-Slots libres pour la suite : **05_15 et au-delà**.
+Slots libres pour la suite : **05_18 et au-delà**.
 
 ## Principe
 
@@ -480,6 +487,66 @@ la configuration réelle.
 Le rapport n'est pas rejoué en cas d'erreur : il est journalisé côté client et
 l'application reste valide. Un rapport perdu est un défaut d'observabilité, pas un
 défaut de configuration.
+
+### 05_15 — gpo_drift_report (client → serveur)
+
+```
+<scope>
+<username_cible>   vide pour le scope machine
+<nb_fichiers_vérifiés>
+<nb_écarts>
+<identité_module>|<type_écart>|<chemin>|<détail>     une ligne par écart
+```
+
+`<type_écart>` : `modified`, `missing`, `unreadable` ou `permissions`.
+
+**Pourquoi une trame distincte de 05_12.** 05_12 rapporte une *application* : ce
+que l'agent vient de faire. 05_15 rapporte une *vérification* : ce qu'il
+constate sans rien changer. Une machine peut avoir appliqué parfaitement il y a
+trois semaines et avoir été modifiée à la main depuis — sans 05_15, elle reste
+verte au tableau de bord. Confondre les deux rendrait impossible de distinguer
+« appliqué avec succès » de « toujours conforme aujourd'hui ».
+
+**Le nombre de fichiers vérifiés est envoyé même quand il n'y a aucun écart.**
+Zéro écart sur zéro fichier vérifié ne veut pas dire « conforme », il veut dire
+« rien n'était inventorié ». Sans ce compte, une machine dont l'inventaire est
+vide s'afficherait comme parfaitement conforme.
+
+**Le contenu des fichiers ne voyage jamais**, ni l'ancien ni le nouveau. Un
+fichier géré par une GPO peut porter des clés ou des jetons ; un rapport de
+conformité n'est pas un canal d'exfiltration. Seuls le chemin, le type d'écart
+et un détail court sont transmis.
+
+**Séparateur `|`.** Chemin et détail sont assainis côté agent avant l'envoi. Le
+serveur découpe en quatre champs au maximum : le détail est le dernier et peut
+donc contenir des séparateurs résiduels sans rendre la ligne ambiguë.
+
+### 05_16 — gpo_drift_report_ack (serveur → client)
+
+```
+<scope>
+<username_cible>
+<nb_écarts_enregistrés>
+```
+
+### 05_17 — gpo_drift_report_error (serveur → client)
+
+```
+<scope>
+<username_cible>
+<code>             malformed_report | storage | internal
+<message lisible>
+```
+
+À la différence de 05_12, un échec d'enregistrement **est** signalé ici (`storage`).
+L'application, elle, est faite : la rejouer n'apporterait rien. Un scan, au
+contraire, est bon marché et sera refait au cycle suivant — dire à l'agent que
+le constat n'a pas été conservé lui évite de croire le serveur informé.
+
+**La correction est locale et n'attend pas l'accusé.** L'agent efface les
+empreintes des modules concernés dès le scan terminé, et les réapplique au cycle
+suivant, que le rapport soit parti ou non. Une panne du serveur ne doit pas
+laisser une machine en dérive.
 
 ## Charge utile de la politique
 

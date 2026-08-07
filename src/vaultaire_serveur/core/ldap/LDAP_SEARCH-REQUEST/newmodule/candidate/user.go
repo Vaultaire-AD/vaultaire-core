@@ -53,17 +53,25 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 	includeOperational := contains(requested, "+")
 
 	for k, v := range all {
-		// Si opérationnel et non demandé → skip
-		if isOperational(k) && !includeOperational {
-			// Ne pas skip si on a une vraie valeur
-			if len(v) > 0 {
-				result[k] = v
-			}
+		// Un attribut OPÉRATIONNEL ne sort que s'il a été demandé : soit
+		// nommément, soit par « + ». RFC 4511 §4.5.1 — « * » désigne les
+		// attributs UTILISATEUR, pas les attributs opérationnels.
+		//
+		// Ce bloc faisait l'inverse : il entrait dans la branche « non demandé »
+		// puis ajoutait quand même l'attribut dès qu'il portait une valeur. Comme
+		// entryuuid, nsuniqueid, objectguid, guid et ipauniqueid en portent
+		// toujours une, ils partaient à CHAQUE recherche, quoi que le client ait
+		// demandé — y compris sur « 1.1 », qui veut dire « aucun attribut ».
+		//
+		// Deux conséquences : des identifiants internes diffusés sans qu'on les
+		// demande, et les clients qui utilisent « 1.1 » pour un simple test
+		// d'existence recevaient cinq attributs à analyser.
+		if isOperational(k) && !includeOperational && !contains(requested, k) {
 			continue
 		}
 
-		// Si demandé ou tout (*) → ajouter
-		if includeAll || contains(requested, k) {
+		// « * », un nom explicite, ou « + » pour un opérationnel.
+		if includeAll || contains(requested, k) || (includeOperational && isOperational(k)) {
 			if typesOnly {
 				result[k] = []string{}
 			} else {

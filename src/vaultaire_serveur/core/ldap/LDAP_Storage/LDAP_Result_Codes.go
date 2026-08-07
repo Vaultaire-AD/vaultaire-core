@@ -84,6 +84,18 @@ func ResponseTagFor(requestTag int) (int, bool) {
 	case AppExtendedRequest:
 		return AppExtendedResponse, true
 	case AppAbandonRequest:
+		// RFC 4511 §4.11 : l'AbandonRequest n'a pas de réponse.
+		return 0, false
+	case AppUnbindRequest:
+		// RFC 4511 §4.3 : l'UnbindRequest n'en a pas non plus. Le client ferme
+		// derrière, et lui envoyer un paquet qu'il n'attend pas fait signaler à
+		// certaines implémentations une erreur de protocole sur une déconnexion
+		// pourtant normale.
+		//
+		// Le chemin nominal de l'unbind ne passe pas ici — il est traité par son
+		// propre gestionnaire, qui ferme sans répondre. Ce cas existe pour que la
+		// règle tienne aussi si le routage change : sans lui, l'unbind tombait
+		// dans le `default` ci-dessous et recevait une réponse étendue.
 		return 0, false
 	default:
 		// Étiquette inconnue : on répond tout de même, avec le type le plus

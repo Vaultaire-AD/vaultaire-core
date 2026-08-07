@@ -37,6 +37,16 @@ type ScopeState struct {
 	AppliedAt   string            `json:"applied_at"`
 	Status      string            `json:"status,omitempty"`
 	Modules     map[string]string `json:"modules"`
+
+	// Files associe chaque fichier déposé à son hachage attendu et au module
+	// qui l'a écrit. C'est ce qui permet au scan de conformité de détecter
+	// qu'un fichier a été modifié à la main, et de savoir quel module
+	// réappliquer.
+	//
+	// CHAMP AJOUTÉ, avec omitempty : un état écrit par une version antérieure
+	// n'a pas cette clé, se relit sans erreur, et le premier cycle la
+	// renseigne. Aucune migration, aucune réapplication forcée.
+	Files map[string]FileState `json:"files,omitempty"`
 }
 
 // ModuleFingerprint retourne l'empreinte appliquée d'un module, si connue.
@@ -46,6 +56,32 @@ func (s *ScopeState) ModuleFingerprint(stateKey string) (string, bool) {
 	}
 	fp, ok := s.Modules[stateKey]
 	return fp, ok
+}
+
+// FilesForModule rend les fichiers déposés par un module.
+func (s *ScopeState) FilesForModule(stateKey string) map[string]FileState {
+	if s == nil || s.Files == nil {
+		return nil
+	}
+	out := map[string]FileState{}
+	for path, state := range s.Files {
+		if state.StateKey == stateKey {
+			out[path] = state
+		}
+	}
+	return out
+}
+
+// ForgetModule retire l'empreinte d'un module de l'état.
+//
+// Le module sera donc réapplique au prochain cycle : c'est exactement ce que
+// fait la correction d'une dérive. Ses fichiers restent inventoriés, puisque
+// c'est la réapplication qui les remettra à jour.
+func (s *ScopeState) ForgetModule(stateKey string) {
+	if s == nil || s.Modules == nil {
+		return
+	}
+	delete(s.Modules, stateKey)
 }
 
 // State est le contenu complet du fichier d'état.

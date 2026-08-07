@@ -73,6 +73,46 @@ if [ -n "$GOMOD_FAUTIFS" ]; then
     exit 1
 fi
 
+# -------------------------
+# Contrôle des directives replace
+# -------------------------
+# Un `replace` qui pointe hors du dépôt fait compiler autre chose que le code
+# du dépôt — et casse la compilation de quiconque n'a pas ce répertoire.
+#
+# Le cas vécu : un bouchon de vérification hors ligne laissé dans un go.mod.
+#
+#     replace gopkg.in/yaml.v2 => /tmp/stubs/yaml2
+#
+# Message obtenu, deux semaines plus tard, sur une autre machine :
+#
+#     gopkg.in/yaml.v2@v2.4.0: replacement directory /tmp/stubs/yaml2 does not exist
+#
+# Il désigne le répertoire manquant, jamais le fait qu'il n'aurait rien à faire
+# là. Pire si le répertoire EXISTE : la compilation réussit, en liant un
+# bouchon.
+#
+# Les replace RELATIFS sont légitimes et attendus — c'est ainsi que le proxy
+# consomme le SDK (`=> ../ducky-network-sdk-service`). Seuls les chemins
+# absolus sont refusés.
+REPLACE_FAUTIFS=""
+for gomod in "$ROOT_DIR"/src/*/go.mod; do
+    [ -f "$gomod" ] || continue
+    # tr -d '\r' : les go.mod du dépôt sont en CRLF, et un motif ancré sur « $ »
+    # ne matcherait jamais — le contrôle passerait tout sans rien dire.
+    fautifs="$(tr -d '\r' < "$gomod" | grep -E '^[[:space:]]*(replace[[:space:]]+)?[^[:space:]]+[[:space:]]+=>[[:space:]]+/' || true)"
+    if [ -n "$fautifs" ]; then
+        REPLACE_FAUTIFS="$REPLACE_FAUTIFS   $gomod
+$(printf '%s' "$fautifs" | sed 's/^/       /')
+"
+    fi
+done
+if [ -n "$REPLACE_FAUTIFS" ]; then
+    echo "❌ Directive replace vers un chemin ABSOLU — le code compilé ne serait pas celui du dépôt :"
+    printf '%s' "$REPLACE_FAUTIFS"
+    echo "   Retirez-la, ou rendez-la relative au dépôt."
+    exit 1
+fi
+
 # build_go compile une cible et ARRÊTE le script si elle échoue.
 #
 # Sans cela, un `go build` en échec laissait le script continuer et afficher

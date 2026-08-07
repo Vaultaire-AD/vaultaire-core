@@ -138,11 +138,21 @@ func testTOTP() []Result {
 
 	// L'URL de provisionnement doit porter l'émetteur aux deux endroits attendus
 	// par les applications, et ne pas contenir de remplissage base32.
+	//
+	// Les DEUX formes du séparateur sont acceptées. La spécification otpauth
+	// donne le libellé sous la forme « Émetteur:Compte » avec un deux-points
+	// littéral (`ACME%20Co:john@example.com` dans ses propres exemples), et
+	// `url.PathEscape` ne l'échappe pas — c'est légal dans un segment de chemin.
+	// Les applications d'authentification acceptent l'une comme l'autre.
+	//
+	// Ce test exigeait auparavant `%3A` et ÉCHOUAIT donc en permanence, sur du
+	// code correct. Un test rouge en permanence est pire qu'absent : il apprend à
+	// lire « 160/161 » sans regarder lequel manque.
 	uri := totp.ProvisioningURI("Vaultaire", "alice@vaultaire.fr", rfcSecret)
 	uriOK := strings.HasPrefix(uri, "otpauth://totp/") &&
 		strings.Contains(uri, "issuer=Vaultaire") &&
 		strings.Contains(uri, "secret="+rfcSecret) &&
-		strings.Contains(uri, "Vaultaire%3Aalice") &&
+		(strings.Contains(uri, "Vaultaire:alice") || strings.Contains(uri, "Vaultaire%3Aalice")) &&
 		!strings.Contains(uri, "%3D")
 	out = append(out, Result{"TOTP: l'URL otpauth est bien formée", uriOK, uri})
 

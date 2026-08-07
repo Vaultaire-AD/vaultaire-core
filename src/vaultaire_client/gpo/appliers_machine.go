@@ -395,6 +395,15 @@ func writeSystemFile(path, content string, mode os.FileMode) error {
 		os.Remove(tmpName)
 		return fmt.Errorf("remplacement de %s impossible : %v", path, err)
 	}
+
+	// L'inventaire est mis à jour APRÈS le renommage, donc seulement si
+	// l'écriture a réellement abouti. Le faire avant enregistrerait comme
+	// déposé un fichier que le disque n'a pas reçu, et le scan de conformité
+	// signalerait une dérive permanente sur un fichier qui n'existe pas.
+	//
+	// C'est le SEUL endroit du paquet qui écrit un fichier système : tout
+	// appliqueur passe par ici, y compris ceux qui seront écrits plus tard.
+	recordWrite(path, content, mode)
 	return nil
 }
 

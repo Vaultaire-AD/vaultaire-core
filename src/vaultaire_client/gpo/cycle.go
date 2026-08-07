@@ -173,6 +173,18 @@ func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) {
 				"(nouvelle tentative dans %s)", wait, MachineRefreshInterval))
 		return
 	}
+
+	// Scan de conformité AVANT le cycle.
+	//
+	// L'ordre n'est pas indifférent. Le scan efface l'empreinte des modules
+	// dérivés ; le cycle qui suit les voit donc absents de l'état et les
+	// réapplique dans la foulée. Scanner APRÈS aurait fait attendre la
+	// correction jusqu'au tour suivant, soit un intervalle complet.
+	//
+	// Le scan ne touche qu'à l'état local et ne relance aucun service : c'est
+	// le cycle qui fait le travail, à un moment prévisible.
+	scanMachineDrift(sessionKey)
+
 	RunMachineCycle(sessionKey)
 }
 
@@ -199,4 +211,32 @@ func waitForSessionKey(provider func() string, timeout time.Duration) string {
 		}
 	}
 	return ""
+}
+
+// scanMachineDrift vérifie la conformité et remonte les écarts.
+//
+// Le rapport part vers le core AVANT la correction : si la machine s'arrête
+// entre les deux, l'écart reste visible côté serveur. L'inverse effacerait la
+// trace d'un problème qu'on n'a pas encore résolu.
+func scanMachineDrift(sessionKey string) {
+	report := ScanScope(ScopeMachine, "")
+	if report.Checked == 0 {
+		// Aucun inventaire : rien n'a encore été appliqué, ou l'état vient d'une
+		// version antérieure. Se taire plutôt que d'envoyer un rapport vide qui
+		// ferait croire à une vérification réelle.
+		return
+	}
+
+	if report.Conforming() {
+		logs.Write_log("DEBUG", fmt.Sprintf(
+			"GPO: conformite verifiee, %d fichier(s) intact(s)", report.Checked))
+	}
+
+	if err := SendDriftReport(sessionKey, report); err != nil {
+		// Un rapport perdu n'empêche pas la correction : elle est locale. On
+		// journalise et on continue.
+		logs.Write_log("WARNING", "GPO: rapport de conformite non transmis : "+err.Error())
+	}
+
+	EnforceDrift(ScopeMachine, "", report)
 }

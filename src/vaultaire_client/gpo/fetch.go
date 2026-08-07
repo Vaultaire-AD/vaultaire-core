@@ -18,6 +18,7 @@ import (
 //	05_05 demande user     → 05_06 manifeste / 05_07 rien à faire / 05_08 erreur
 //	05_09 demande fragment → 05_10 fragment  / 05_11 erreur
 //	05_12 rapport          → 05_13 accusé    / 05_14 erreur
+//	05_15 conformité       → 05_16 accusé    / 05_17 erreur
 //
 // Les réponses arrivent de façon asynchrone dans le lecteur de trames. Ce
 // fichier tient donc les transferts en cours et réveille l'appelant quand la
@@ -491,6 +492,46 @@ func SendApplyReport(sessionKey string, report Report) {
 		// on le journalise sans remettre en cause l'application déjà faite.
 		logs.Write_log("WARNING", "GPO: rapport d'application non transmis : "+err.Error())
 	}
+}
+
+// SendDriftReport émet la trame 05_15.
+//
+// # Pourquoi une trame distincte de 05_12
+//
+// 05_12 rapporte une APPLICATION : ce que l'agent vient de faire, module par
+// module. 05_15 rapporte une VÉRIFICATION : ce que l'agent a constaté sans rien
+// changer. Les deux se ressemblent mais ne disent pas la même chose, et les
+// confondre rendrait impossible de distinguer « appliqué avec succès » de
+// « toujours conforme trois semaines plus tard » — qui est justement la
+// question que la détection de dérive existe pour répondre.
+//
+// # Ce qui voyage, et ce qui ne voyage pas
+//
+// Le chemin du fichier part, parce que sans lui l'administrateur ne sait pas où
+// regarder. Le CONTENU ne part jamais, ni l'ancien ni le nouveau : un fichier
+// géré par une GPO peut porter des clés, des jetons ou une configuration
+// sensible, et un rapport de conformité n'est pas un canal d'exfiltration.
+func SendDriftReport(sessionKey string, report DriftReport) error {
+	lines := []string{
+		report.Scope,
+		report.Username,
+		strconv.Itoa(report.Checked),
+		strconv.Itoa(len(report.Items)),
+	}
+	for _, item := range report.Items {
+		lines = append(lines, strings.Join([]string{
+			item.StateKey,
+			string(item.Kind),
+			sanitizePath(item.Path),
+			sanitizeDetail(item.Detail),
+		}, "|"))
+	}
+
+	logs.Write_log("DEBUG", fmt.Sprintf(
+		"GPO: 05_15 conformite envoyee (%s%s, %d verifie(s), %d ecart(s))",
+		report.Scope, userLabel(report.Username), report.Checked, len(report.Items)))
+
+	return send(buildClientTrame("05_15", sessionKey, lines...))
 }
 
 // ---------------------------------------------------------------------------

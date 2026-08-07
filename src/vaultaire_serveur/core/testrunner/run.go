@@ -42,6 +42,12 @@ func Run() int {
 	// --- Unit: garde-fous GPO (catalogue, scopes, chemins, restrictions, résolution) ---
 	results = append(results, testGPO()...)
 
+	// --- Unit: detection de derive et reporting de conformite GPO (05_15 a 05_17) ---
+	results = append(results, testGPODrift()...)
+
+	// --- Unit: conformite au protocole LDAP (RFC 4511/4512/4514) ---
+	results = append(results, testLDAP()...)
+
 	// --- Unit: TOTP contre les vecteurs de la RFC 6238 ---
 	results = append(results, testTOTP()...)
 

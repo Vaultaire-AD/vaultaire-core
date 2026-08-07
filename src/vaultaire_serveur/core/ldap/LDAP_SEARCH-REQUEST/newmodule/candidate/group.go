@@ -42,16 +42,16 @@ func (g GroupEntry) GetAttributes(requested []string, typesOnly bool) map[string
 	includeOperational := contains(requested, "+")
 
 	for k, v := range all {
-		// Pas de champs opérationnels pour l'instant, mais placeholder si besoin
-		if isOperational(k) && !includeOperational {
-			// Ne pas skip si on a une vraie valeur
-			if len(v) > 0 {
-				result[k] = v
-			}
+		// Aucun attribut opérationnel sur un groupe aujourd'hui : la branche est
+		// donc inerte. Elle est alignée sur celle des utilisateurs quand même,
+		// parce que la version inversée qui s'y trouvait aurait diffusé le premier
+		// attribut opérationnel ajouté ici — silencieusement, et sur toutes les
+		// recherches.
+		if isOperational(k) && !includeOperational && !contains(requested, k) {
 			continue
 		}
 
-		if includeAll || contains(requested, k) {
+		if includeAll || contains(requested, k) || (includeOperational && isOperational(k)) {
 			if typesOnly {
 				result[k] = []string{}
 			} else {

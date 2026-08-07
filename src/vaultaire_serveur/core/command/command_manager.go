@@ -12,6 +12,7 @@ import (
 	commandenroll "vaultaire/core/command/command_enroll"
 	commandeyes "vaultaire/core/command/command_eyes"
 	commandget "vaultaire/core/command/command_get"
+	commandgpo "vaultaire/core/command/command_gpo"
 	commandkill "vaultaire/core/command/command_kill"
 	commandmfa "vaultaire/core/command/command_mfa"
 	commandremove "vaultaire/core/command/command_remove"
@@ -55,6 +56,7 @@ func ExecuteCommand(input, sender string) string {
 		"kill":    commandkill.Kill_Command,
 		"mfa":     commandmfa.MFA_Command,
 		"enroll":  commandenroll.Enroll_Command,
+		"gpo":     commandgpo.GPO_Command,
 	}
 
 	if cmd == "clear" {
@@ -70,6 +72,7 @@ func ExecuteCommand(input, sender string) string {
   kill   [OPTIONS] : désactivation d'urgence d'un compte. Voir kill -h.
   mfa    [OPTIONS] : second facteur et politique de mot de passe. Voir mfa -h.
   enroll [OPTIONS] : clés d'enrôlement des clients service. Voir enroll -h.
+  gpo    [OPTIONS] : état d'application et de conformité des GPO. Voir gpo -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.

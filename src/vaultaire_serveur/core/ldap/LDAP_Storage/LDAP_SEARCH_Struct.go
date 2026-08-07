@@ -49,4 +49,17 @@ type LDAPFilter struct {
 	Attribute  string
 	Value      string
 	SubFilters []*LDAPFilter
+
+	// Morceaux d'un filtre de sous-chaîne — RFC 4511 §4.5.1.
+	//
+	// Un SubstringFilter n'est PAS une chaîne : c'est un initial facultatif, une
+	// suite de « any » dans l'ordre, et un final facultatif. « jo*n*doe » donne
+	// SubInitial=jo, SubAny=[n], SubFinal=doe.
+	//
+	// Les concaténer en « jondoe » perd l'information de position et transforme
+	// la recherche en égalité stricte : le filtre ne trouve alors plus rien, sauf
+	// à tomber sur une entrée nommée littéralement « jondoe ».
+	SubInitial string
+	SubAny     []string
+	SubFinal   string
 }

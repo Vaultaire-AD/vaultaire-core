@@ -8,36 +8,12 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             ssh_known_hosts (~/.ssh/known_hosts), implemente en scope machine seul.
 .3[DUCKY] [SERVICE] il faut crée le systeme qui permet au client service de push leur clé public au server tous en garantissant la confidentialité du token
       
-4.[GPO] - Détection de dérive (drift detection)
+4.[PATCH] [GPO] - Détection de dérive (drift detection) -> voir DO/2.1/2.1.md
             Rien dans le catalogue ne vérifie qu'un module resté "appliqué avec succès" (version à jour dans applied_policies.json) correspond encore à l'état réel du système — un admin qui modifie manuellement sshd_config.d/99-vaultaire-gpo.conf en SSH direct fausserait l'état sans que rien ne le détecte. Il faut un scan périodique de conformité, pas seulement une application ponctuelle.
-7.[GPO] - Reporting de conformité centralisé
+7.[PATCH] [GPO] - Reporting de conformité centralisé -> voir DO/2.1/2.1.md
             Vue d'ensemble côté serveur : quelle version de policy chaque machine a effectivement appliquée avec succès, quelles machines sont en échec/en retard — sans ça, tu n'as aucune visibilité sur l'état réel du parc.
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
-12.[LDAP] - Remplacer les encodeurs BER ecrits a la main par go-asn1-ber
-            Chemins : core/ldap/LDAP_BIND-UNBIND/LDAP_bind.go:20 et 29-44
-                      core/ldap/LDAP_BIND-UNBIND/LDAP_Unbind.go:27,40,44
-                      core/ldap/LDAP_EXTENDED-REQUEST/LDAP_ExtendedRequest.go:13-42
-
-            DEUX BUGS DISTINCTS, tous deux dus a un octet de longueur unique.
-
-            1. La forme longue n'est pas geree. « full := []byte{0x30, byte(len(payload))} »
-               n'est valide que pour une longueur <= 127. A partir de 128, BER exige la
-               forme longue (0x81 nn, 0x82 nnnn...). byte(200) emet 0xC8, qu'un client lit
-               comme « forme longue, 72 octets de longueur suivent » : le flux se
-               desynchronise et tout le reste de la connexion est illisible.
-
-            2. L'identifiant de message est tronque. « 0x02, 0x01, byte(messageID) » : le
-               message 256 devient 0. Un client qui garde sa connexion ouverte — SSSD,
-               JumpServer, un pool applicatif — depasse 255 operations en quelques minutes
-               et recoit ensuite des reponses qu'il ne peut plus correler. Symptome typique
-               « marche en test, casse en production apres quelques minutes ».
-
-            CORRECTIF. github.com/go-asn1-ber/asn1-ber est DEJA une dependance du projet et
-            deja utilise correctement pour les reponses SEARCH (core/ldap/LDAP_common.go).
-            Ces trois encodeurs manuels n'ont aucune raison d'exister : les reecrire sur
-            ber.Encode / ber.NewInteger / ber.NewString, comme LDAP_common.go.
-
-            Aucun changement de protocole : c'est le meme LDAP, correctement encode. Pas de
-            validation prealable necessaire, contrairement au point 11.
+12.[DEPLACE] [LDAP] Remplacer les encodeurs BER ecrits a la main par go-asn1-ber
+            -> voir DO/2.1/2.1.md

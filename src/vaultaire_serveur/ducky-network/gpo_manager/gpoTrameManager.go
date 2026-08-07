@@ -19,6 +19,7 @@ import (
 //	05_05 demande user     → 05_06 manifeste / 05_07 rien à faire / 05_08 erreur
 //	05_09 demande fragment → 05_10 fragment  / 05_11 erreur           (2 scopes)
 //	05_12 rapport          → 05_13 accusé    / 05_14 erreur           (2 scopes)
+//	05_15 conformité       → 05_16 accusé    / 05_17 erreur           (2 scopes)
 //
 // Chaque demande est suivie de ses réponses : le numéro de trame porte le scope
 // pour tout ce qui est spécifique à un scope, le scope ne voyage dans le contenu
@@ -39,6 +40,7 @@ const (
 	errUnknownFingerprint      = "unknown_fingerprint"
 	errInternal                = "internal"
 	errMalformedRequest        = "malformed_request"
+	errStorage                 = "storage"
 )
 
 // fingerprintNone est la valeur envoyée par un client qui n'a encore rien appliqué.
@@ -65,8 +67,10 @@ func GPO_Trame_Manager(trames storage.Trames_struct_client, duckysession *storag
 		return handleAskChunk(trames)
 	case "12":
 		return handleApplyReport(trames)
+	case "15":
+		return handleDriftReport(trames)
 	default:
-		// 05_02, 03, 04, 06, 07, 08, 10, 11, 13 et 14 sont des trames
+		// 05_02, 03, 04, 06, 07, 08, 10, 11, 13, 14, 16 et 17 sont des trames
 		// serveur → client : les recevoir signale un client mal implémenté.
 		logs.Write_LogCode("WARNING", logs.CodeGPOTransport, fmt.Sprintf(
 			"gpo: sous-ordre 05_%s inattendu en réception serveur (client %s)", sub, trames.ClientSoftwareID))
@@ -124,6 +128,11 @@ func replyScopeError(sessionKey string, scope gpo.Scope, username, code, message
 // replyChunkError construit 05_11.
 func replyChunkError(sessionKey string, scope gpo.Scope, username, code, message string) string {
 	return reply("05_11", sessionKey, string(scope), username, code, message)
+}
+
+// replyDriftError construit 05_17.
+func replyDriftError(sessionKey string, scope gpo.Scope, username, code, message string) string {
+	return reply("05_17", sessionKey, string(scope), username, code, message)
 }
 
 // replyReportError construit 05_14.

@@ -47,7 +47,10 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN s
 		// fmt.Printf("[DEBUG] NOT filter sur DN=%s => %v\n", entry.DN(), res)
 		return res
 
-	case ldapstorage.FilterEquality, ldapstorage.FilterSubstring:
+	case ldapstorage.FilterSubstring:
+		return evalSubstring(entry, f)
+
+	case ldapstorage.FilterEquality:
 		res := evalEquality(entry, f.Attribute, f.Value)
 		// fmt.Printf("[DEBUG] Equality filter DN=%s attr=%s val=%s => %v (entry values=%v)\n",
 		// 	entry.DN(), f.Attribute, f.Value, res, entry.GetAttribute(f.Attribute))

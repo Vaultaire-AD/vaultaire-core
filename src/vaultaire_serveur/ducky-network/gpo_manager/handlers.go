@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	dbgpo "vaultaire/core/database/db_gpo"
 	dbusers "vaultaire/core/database/db_users"
 
 	"vaultaire/core/database"
@@ -276,8 +277,172 @@ func handleApplyReport(trames storage.Trames_struct_client) string {
 	}
 
 	logApplyReport(clientID, report)
+	persistApplyReport(clientID, report)
 
 	return reply("05_13", trames.SessionIntegritykey, string(scope), targetUser, fingerprint)
+}
+
+// persistApplyReport écrit le rapport en base.
+//
+// # Pourquoi l'échec d'écriture n'est pas renvoyé à l'agent
+//
+// L'agent a déjà appliqué la politique : sa part du travail est faite et rien
+// de ce qu'il pourrait refaire n'améliorerait la situation. Lui répondre 05_14
+// le ferait retenter une application inutile à chaque cycle, transformant une
+// panne de base en charge sur tout le parc. On accuse réception et on
+// journalise en ERROR — la perte est côté serveur, elle se traite côté serveur.
+func persistApplyReport(clientID string, report gpo.ApplyReport) {
+	db := database.GetDatabase()
+	if db == nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: rapport non persisté, base indisponible (client "+clientID+")")
+		return
+	}
+
+	modules := make([]dbgpo.ModuleReport, 0, len(report.Modules))
+	for _, m := range report.Modules {
+		modules = append(modules, dbgpo.ModuleReport{
+			ModuleType: m.ModuleType,
+			StateKey:   m.StateKey,
+			Result:     string(m.Result),
+			Detail:     m.Detail,
+		})
+	}
+
+	if err := dbgpo.SaveApplyReport(db, clientID, string(report.Scope), report.Username,
+		report.Fingerprint, string(report.Status), 0, modules); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: rapport non persisté : "+err.Error())
+	}
+}
+
+// handleDriftReport traite 05_15 et répond 05_16 ou 05_17.
+//
+// # Ce qu'un rapport de conformité ajoute
+//
+// Le rapport d'application dit ce qui s'est passé lors de la dernière
+// application. Celui-ci dit ce qui est vrai maintenant. Une machine peut avoir
+// appliqué parfaitement il y a trois semaines et avoir été modifiée à la main
+// depuis : sans 05_15, elle reste verte au tableau de bord.
+//
+// # Ce qui est validé, et pourquoi
+//
+// Le contenu vient d'un agent, c'est-à-dire d'une machine que l'administrateur
+// ne contrôle plus complètement — c'est justement la prémisse de la détection de
+// dérive. Le scope, le type d'écart et le nombre de fichiers vérifiés sont donc
+// vérifiés avant écriture ; les chemins sont stockés tels quels mais jamais
+// interprétés côté serveur, seulement affichés.
+func handleDriftReport(trames storage.Trames_struct_client) string {
+	lines := contentLines(trames.Content)
+	scope := gpo.Scope(strings.TrimSpace(lineAt(lines, 0)))
+	targetUser := strings.TrimSpace(lineAt(lines, 1))
+	clientID := trames.ClientSoftwareID
+
+	checked, errChecked := strconv.Atoi(strings.TrimSpace(lineAt(lines, 2)))
+	if !gpo.IsValidPolicyScope(scope) || errChecked != nil || checked < 0 {
+		logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: rapport de conformité malformé du client %s (scope=%q vérifiés=%q)",
+			clientID, scope, lineAt(lines, 2)))
+		return replyDriftError(trames.SessionIntegritykey, scope, targetUser,
+			errMalformedReport, "scope ou compteur invalide")
+	}
+
+	entries := parseDriftLines(lines, clientID)
+
+	logDriftReport(clientID, scope, targetUser, checked, entries)
+
+	db := database.GetDatabase()
+	if db == nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: conformité non persistée, base indisponible (client "+clientID+")")
+		return replyDriftError(trames.SessionIntegritykey, scope, targetUser,
+			errStorage, "base indisponible")
+	}
+	if err := dbgpo.SaveDriftReport(db, clientID, string(scope), targetUser, checked, entries); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: conformité non persistée : "+err.Error())
+		return replyDriftError(trames.SessionIntegritykey, scope, targetUser,
+			errStorage, "enregistrement impossible")
+	}
+
+	return reply("05_16", trames.SessionIntegritykey, string(scope), targetUser, strconv.Itoa(len(entries)))
+}
+
+// parseDriftLines extrait les écarts d'un rapport 05_15.
+//
+// Extraite du handler pour être testable sans base : c'est la partie qui lit
+// une entrée non fiable, donc celle qui mérite des tests.
+//
+// Une ligne invalide est IGNORÉE, pas fatale au rapport. Un agent d'une version
+// plus récente peut connaître un type d'écart que ce serveur ignore ; rejeter
+// le rapport entier ferait perdre les quarante écarts valides pour un seul
+// inconnu.
+func parseDriftLines(lines []string, clientID string) []dbgpo.DriftEntry {
+	var entries []dbgpo.DriftEntry
+	for i := 4; i < len(lines); i++ {
+		raw := strings.TrimSpace(lines[i])
+		if raw == "" {
+			continue
+		}
+		// SplitN à 4 : le détail est le dernier champ et peut contenir des
+		// séparateurs sans que la ligne devienne ambiguë.
+		parts := strings.SplitN(raw, "|", 4)
+		if len(parts) < 3 {
+			logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+				"gpo: ligne de conformité ignorée (attendu clé|type|chemin|détail) : %q", raw))
+			continue
+		}
+		if !gpo.IsValidDriftKind(parts[1]) {
+			logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+				"gpo: type d'écart inconnu %q dans le rapport de %s", parts[1], clientID))
+			continue
+		}
+		detail := ""
+		if len(parts) == 4 {
+			detail = parts[3]
+		}
+		entries = append(entries, dbgpo.DriftEntry{
+			StateKey: parts[0],
+			Kind:     parts[1],
+			Path:     parts[2],
+			Detail:   detail,
+		})
+	}
+	return entries
+}
+
+// logDriftReport journalise au niveau que mérite le constat.
+//
+// Un écart n'est PAS une erreur du système : c'est un fait de terrain, souvent
+// une intervention manuelle légitime. WARNING et non ERROR — mais WARNING et non
+// INFO, parce qu'une machine qui dérive régulièrement mérite qu'on aille voir
+// pourquoi plutôt que de la laisser se faire recorriger indéfiniment.
+func logDriftReport(clientID string, scope gpo.Scope, username string, checked int, entries []dbgpo.DriftEntry) {
+	target := clientID + userSuffix(username)
+	if len(entries) == 0 {
+		logs.Write_LogCode("DEBUG", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: conformité %s de %s — %d fichier(s) vérifié(s), conforme", scope, target, checked))
+		return
+	}
+
+	// Trois exemples et pas la liste entière : un parc en dérive massive rendrait
+	// le journal illisible au moment précis où il faut le lire. Le détail complet
+	// est en base, qui est faite pour ça.
+	var exemples []string
+	for i, e := range entries {
+		if i == 3 {
+			break
+		}
+		exemples = append(exemples, fmt.Sprintf("%s (%s)", e.Path, e.Kind))
+	}
+	suite := ""
+	if len(entries) > len(exemples) {
+		suite = fmt.Sprintf(" et %d autre(s)", len(entries)-len(exemples))
+	}
+
+	logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+		"gpo: dérive %s sur %s — %d écart(s) sur %d fichier(s) : %s%s",
+		scope, target, len(entries), checked, strings.Join(exemples, ", "), suite))
 }
 
 // logApplyReport journalise un rapport d'application au bon niveau.
