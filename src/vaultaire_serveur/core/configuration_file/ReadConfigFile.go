@@ -101,6 +101,10 @@ func LoadConfig(filePath string) error {
 	if config.Ldap.Ldaps_Port != nil {
 		storage.Ldaps_Port = *config.Ldap.Ldaps_Port
 	}
+	// Les SAN sont recopiés même vides : une liste vidée dans le fichier doit
+	// pouvoir revenir à la seule détection automatique.
+	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
+	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
 	if config.Website.Website_Enable != nil {
 		storage.Website_Enable = *config.Website.Website_Enable
 	}

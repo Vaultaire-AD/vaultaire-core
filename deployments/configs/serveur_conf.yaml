@@ -14,6 +14,27 @@ ldap:
   ldap_port: 389
   ldaps_port: 636
 
+  # Noms et adresses que le certificat LDAPS doit couvrir.
+  #
+  # Le nom de la machine et ses adresses sont détectés automatiquement. Ne
+  # déclarez ici que ce qui ne peut PAS l'être : nom de service DNS, nom de
+  # conteneur, alias derrière un répartiteur.
+  #
+  # Les clients Java — Keycloak, connecteurs JNDI — ignorent le CommonName
+  # depuis JDK 9 et exigent un SAN correspondant au nom de l'URL. Un nom absent
+  # d'ici échoue avec « SSLHandshakeFailed », sans autre indice.
+  #
+  # Mettez le nom court ET le nom qualifié : un SAN ne se compare pas par
+  # suffixe. « vaultaire-ad » ne couvre pas « vaultaire-ad.interne.lan ».
+  #
+  # Après modification : vlt certificate regenerate ldaps, puis redémarrage.
+  # Voir docs/exploitation/ldaps_keycloak.md
+  ldaps_tls_dns_names: []
+  #  - vaultaire-ad
+  #  - vaultaire-ad.interne.lan
+  ldaps_tls_ip_addresses: []
+  #  - 10.0.0.10
+
 dns:
   dns_enable: true
 

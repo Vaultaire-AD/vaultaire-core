@@ -27,6 +27,26 @@ func HandleLDAPSserveur() {
 		}
 	}
 
+	// Contrôle de ce qui est RÉELLEMENT servi.
+	//
+	// Le certificat vient de la base : corriger le générateur ne remplace pas
+	// celui d'un parc déjà déployé. Et l'échec de poignée de main est muet côté
+	// serveur — le client affiche « SSLHandshakeFailed », le journal ne montre
+	// qu'une connexion ouverte puis fermée. Rien ne relie les deux.
+	//
+	// On ne remplace RIEN automatiquement : changer un certificat sans qu'on le
+	// demande casserait tous les clients qui l'ont importé dans leur magasin de
+	// confiance. On dit ce qui ne va pas, et comment le corriger.
+	attendus := ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+	logs.Write_Log("INFO", "ldaps: "+ldaptools.CertSummary(certPEM))
+	for _, issue := range ldaptools.AuditServedCertificate(certPEM, attendus) {
+		niveau := "WARNING"
+		if issue.Grave {
+			niveau = "ERROR"
+		}
+		logs.Write_LogCode(niveau, logs.CodeLDAPTLS, "ldaps: "+issue.Message)
+	}
+
 	cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeLDAPTLS, "ldaps: TLS key pair load failed: "+err.Error())

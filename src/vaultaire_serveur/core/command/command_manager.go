@@ -5,6 +5,7 @@ import (
 	"net"
 	"strings"
 	commandadd "vaultaire/core/command/command_add"
+	commandcertificate "vaultaire/core/command/command_certificate"
 	commandcluster "vaultaire/core/command/command_cluster"
 	commandcreate "vaultaire/core/command/command_create"
 	commanddelete "vaultaire/core/command/command_delete"
@@ -43,20 +44,21 @@ func ExecuteCommand(input, sender string) string {
 
 	// Routage RBAC : chaque commande détermine elle-même la clé d'action (catégorie:action:objet)
 	commandTable := map[string]func([]string, []int, string) string{
-		"add":     commandadd.Add_Command,
-		"remove":  commandremove.Remove_Command,
-		"update":  commandupdate.Update_Command,
-		"delete":  commanddelete.Delete_Command,
-		"dns":     commanddns.DNS_Command,
-		"status":  commandstatus.Status_Command,
-		"create":  commandcreate.Create_Command,
-		"get":     commandget.Get_Command,
-		"eyes":    commandeyes.Eyes_Command,
-		"cluster": commandcluster.Cluster_Command,
-		"kill":    commandkill.Kill_Command,
-		"mfa":     commandmfa.MFA_Command,
-		"enroll":  commandenroll.Enroll_Command,
-		"gpo":     commandgpo.GPO_Command,
+		"add":         commandadd.Add_Command,
+		"remove":      commandremove.Remove_Command,
+		"update":      commandupdate.Update_Command,
+		"delete":      commanddelete.Delete_Command,
+		"dns":         commanddns.DNS_Command,
+		"status":      commandstatus.Status_Command,
+		"create":      commandcreate.Create_Command,
+		"get":         commandget.Get_Command,
+		"eyes":        commandeyes.Eyes_Command,
+		"cluster":     commandcluster.Cluster_Command,
+		"kill":        commandkill.Kill_Command,
+		"mfa":         commandmfa.MFA_Command,
+		"enroll":      commandenroll.Enroll_Command,
+		"gpo":         commandgpo.GPO_Command,
+		"certificate": commandcertificate.Certificate_Command,
 	}
 
 	if cmd == "clear" {
@@ -73,6 +75,7 @@ func ExecuteCommand(input, sender string) string {
   mfa    [OPTIONS] : second facteur et politique de mot de passe. Voir mfa -h.
   enroll [OPTIONS] : clés d'enrôlement des clients service. Voir enroll -h.
   gpo    [OPTIONS] : état d'application et de conformité des GPO. Voir gpo -h.
+  certificate      : certificats TLS du serveur (LDAPS). Voir certificate -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.

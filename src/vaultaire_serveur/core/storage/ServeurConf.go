@@ -20,6 +20,14 @@ type Config struct {
 		Ldaps_Enable *bool `yaml:"ldaps_enable"`
 		Ldap_Port    *int  `yaml:"ldap_port"`
 		Ldaps_Port   *int  `yaml:"ldaps_port"`
+		// Noms et adresses que le certificat LDAPS doit couvrir.
+		//
+		// Les clients Java — Keycloak en tête — ignorent le CommonName depuis
+		// JDK 9 et exigent un SAN correspondant. La détection automatique ne
+		// peut pas deviner un nom de service DNS ni un alias derrière un
+		// répartiteur : ces deux listes servent à les déclarer.
+		Ldaps_TLS_DNSNames []string `yaml:"ldaps_tls_dns_names"`
+		Ldaps_TLS_IPs      []string `yaml:"ldaps_tls_ip_addresses"`
 	} `yaml:"ldap"`
 	Dns struct {
 		Dns_Enable *bool `yaml:"dns_enable"`
@@ -75,6 +83,12 @@ var Ldap_Enable bool = true
 var Ldaps_Enable bool = true
 var Ldap_Port int = 389
 var Ldaps_Port int = 636
+
+// Ldaps_TLS_DNSNames et Ldaps_TLS_IPs complètent les noms détectés sur l'hôte.
+// Vides par défaut : la détection suffit tant que les clients joignent le
+// serveur par son vrai nom de machine.
+var Ldaps_TLS_DNSNames []string
+var Ldaps_TLS_IPs []string
 
 var Website_Enable bool = true
 var Website_Port int = 443
