@@ -17,3 +17,11 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
 
 12.[DEPLACE] [LDAP] Remplacer les encodeurs BER ecrits a la main par go-asn1-ber
             -> voir DO/2.1/2.1.md
+
+21.[EN COURS] [PAM/NSS/AGENT/SDK] Audit complet -> voir Audit_Client_SDK_PAM.md
+            Points 1, 2 et 3 CORRIGES (socket PAM, UID partage, useradd).
+            Deploiement sequence obligatoire : docs/migrations/pam_socket_et_uid.md
+            20 points releves, 2 critiques : socket d'authentification en /tmp mode 0666
+            (elevation locale vers root), et UID 5001 partage par TOUS les utilisateurs
+            du domaine (aucune separation entre comptes sur une machine geree).
+            Les points 1, 2 et 3 sont lies : corriger l'un sans les autres degrade.

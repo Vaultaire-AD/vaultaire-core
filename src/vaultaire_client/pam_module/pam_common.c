@@ -77,7 +77,27 @@ static int run_useradd(const char *username) {
     pid_t pid = fork();
     if (pid < 0) return 0;
     if (pid == 0) {
-        execl("/usr/sbin/useradd", "useradd", "-m", "--shell","-c","vaultaire_user_account", "/bin/bash", username, (char *)NULL);
+        /* Ordre des arguments : chaque option porte sa valeur JUSTE APRES elle.
+         *
+         * La version precedente ecrivait :
+         *
+         *     "-m", "--shell", "-c", "vaultaire_user_account", "/bin/bash", username
+         *
+         * --shell consommait "-c" comme valeur, et il restait TROIS operandes la
+         * ou useradd en attend une seule. Verifie sur le binaire reel :
+         *
+         *     useradd: invalid shell '-c'   (code de sortie 3)
+         *
+         * run_useradd retournait donc 0 a CHAQUE appel, et aucun compte local
+         * n'a jamais ete cree par ce chemin. Le defaut restait invisible parce
+         * que getpwnam() passe par NSS, et que le module libnss_vaultaire
+         * repondait pour tout nom contenant un "@" : la condition
+         * if (!getpwnam(username)) etait fausse, et run_useradd jamais appele. */
+        execl("/usr/sbin/useradd", "useradd",
+              "-m",
+              "--shell", "/bin/bash",
+              "-c", "vaultaire_user_account",
+              username, (char *)NULL);
         _exit(127);
     }
     int status;
@@ -234,7 +254,66 @@ int setup_user_ssh_keys(const char *username, char **keys, size_t key_count) {
 
 
 /* --- Socket --- */
+
+/* Verifie que le socket est bien celui de l'agent, et pas un imposteur.
+ *
+ * Le repertoire en 0700 root:root est la protection principale : un non-root ne
+ * peut rien creer dedans. Ce controle est la seconde barriere, pour le jour ou
+ * la premiere cede — repertoire recree a la main, image deployee avec le mauvais
+ * mode, montage inattendu.
+ *
+ * Trois exigences :
+ *   - le socket appartient a root ;
+ *   - il n'est accessible en ecriture ni au groupe ni aux autres ;
+ *   - c'est bien un socket, pas un fichier ordinaire ou un lien.
+ *
+ * lstat et non stat : stat SUIT les liens symboliques. Un lien pointant vers un
+ * socket legitime passerait le controle tout en laissant son proprietaire
+ * choisir la cible — donc rediriger les mots de passe ailleurs.
+ *
+ * Retourne 1 si le socket est digne de confiance, 0 sinon. */
+/* Le proprietaire attendu est root, et ce n'est pas negociable en production.
+ *
+ * La constante est surchargeable a la COMPILATION uniquement, pour que la
+ * suite de tests puisse verifier la logique sans etre root — ce qu'aucune
+ * machine de developpement n'est. Aucune variable d'environnement, aucun
+ * fichier de configuration : rien qui puisse etre change sur une machine
+ * deployee. */
+#ifndef VAULTAIRE_SOCKET_OWNER
+#define VAULTAIRE_SOCKET_OWNER 0
+#endif
+
+int socket_is_trustworthy(const char *path) {
+    struct stat st;
+    if (lstat(path, &st) != 0) {
+        vaultaire_log_err("socket %s introuvable: %s", path, strerror(errno));
+        return 0;
+    }
+    if (!S_ISSOCK(st.st_mode)) {
+        vaultaire_log_err("SECURITE: %s n'est pas un socket — connexion refusee", path);
+        return 0;
+    }
+    if (st.st_uid != (uid_t)VAULTAIRE_SOCKET_OWNER) {
+        vaultaire_log_err("SECURITE: socket %s appartient a l'uid %u, attendu %u "
+                          "— tentative d'usurpation de l'agent, connexion refusee",
+                          path, (unsigned)st.st_uid, (unsigned)VAULTAIRE_SOCKET_OWNER);
+        return 0;
+    }
+    if (st.st_mode & (S_IWGRP | S_IWOTH)) {
+        vaultaire_log_err("SECURITE: socket %s accessible en ecriture au-dela de root "
+                          "(mode %o) — connexion refusee", path, (unsigned)(st.st_mode & 07777));
+        return 0;
+    }
+    return 1;
+}
+
 static int connect_socket(void) {
+    /* Verification AVANT d'ouvrir quoi que ce soit : le seul moment ou l'on
+     * peut encore renoncer sans avoir rien divulgue. */
+    if (!socket_is_trustworthy(VAULTAIRE_SOCKET_PATH)) {
+        return -1;
+    }
+
     int sock = socket(AF_UNIX, SOCK_STREAM, 0);
     if (sock < 0) {
         vaultaire_log_err("socket(): %s", strerror(errno));
@@ -243,7 +322,17 @@ static int connect_socket(void) {
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
+
+    /* Controle de longueur explicite : sun_path fait 108 octets, et strncpy
+     * tronque SANS le dire. Un chemin tronque designerait un autre fichier —
+     * silencieusement. */
+    if (strlen(VAULTAIRE_SOCKET_PATH) >= sizeof(addr.sun_path)) {
+        vaultaire_log_err("chemin de socket trop long: %s", VAULTAIRE_SOCKET_PATH);
+        close(sock);
+        return -1;
+    }
     strncpy(addr.sun_path, VAULTAIRE_SOCKET_PATH, sizeof(addr.sun_path) - 1);
+
     if (connect(sock, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         vaultaire_log_err("connect() to %s: %s", VAULTAIRE_SOCKET_PATH, strerror(errno));
         close(sock);

@@ -13,7 +13,19 @@
 
 /* --- Constants (single source of truth) --- */
 
-#define VAULTAIRE_SOCKET_PATH    "/tmp/vaultaire_client.sock"
+/* Canal vers l'agent.
+ *
+ * Etait /tmp/vaultaire_client.sock, en mode 0666. Le mot de passe en clair de
+ * CHAQUE connexion y transite.
+ *
+ * /tmp est accessible en ecriture a tous : quand l'agent ne tournait pas — au
+ * demarrage de la machine, apres un arret — n'importe quel compte local pouvait
+ * creer le socket a cette place, recevoir les mots de passe, et repondre
+ * {"status":"success","is_admin":true}. Ce module en tire directement un ajout
+ * au groupe sudo : elevation locale vers root.
+ *
+ * /run/vaultaire est en 0700 root:root, le socket en 0600. */
+#define VAULTAIRE_SOCKET_PATH    "/run/vaultaire/pam.sock"
 #define VAULTAIRE_MAX_BUF        4096
 #define VAULTAIRE_CMD_SIZE       512
 
@@ -28,6 +40,12 @@ int is_vaultaire_user(const char *username);
 int vaultaire_socket_send_recv(const char *request, char *resp, size_t resp_size);
 /* Fire-and-forget (e.g. close session); returns 0 on success, -1 on error. */
 int vaultaire_socket_send(const char *request);
+
+/* --- Controle du socket avant connexion --- */
+/* Verifie que le socket appartient bien a l'agent : proprietaire attendu, mode
+ * non permissif, et vrai socket plutot qu'un lien symbolique. Expose pour etre
+ * testable. Retourne 1 si digne de confiance, 0 sinon. */
+int socket_is_trustworthy(const char *path);
 
 /* --- Username validation (injection-safe) --- */
 bool vaultaire_is_valid_username(const char *username);

@@ -32,8 +32,24 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 
 	// 2. CRÉATION : Si l'user n'existe pas, on l'injecte
 	if !exists {
-		// Trouver le prochain UID libre (ex: 5000, 5001, ...)
-		uid = getNextAvailableUID(startUID)
+		// L'UID vient de la CARTE, pas d'un scan de /etc/passwd.
+		//
+		// Deux raisons de passer par elle :
+		//
+		//   - le module NSS lit cette carte pour répondre à getpwnam AVANT la
+		//     première connexion. Attribuer ici un UID qu'elle ignore ferait
+		//     diverger les deux sources, et l'utilisateur changerait d'identité
+		//     selon qui le résout ;
+		//
+		//   - EnsureUIDMapping est idempotente et sérialisée. getNextAvailableUID
+		//     relisait /etc/passwd sans verrou : deux provisionnements simultanés
+		//     y trouvaient le même trou et attribuaient le même UID — le défaut
+		//     même que cette correction supprime.
+		entry, errMap := EnsureUIDMapping(username)
+		if errMap != nil {
+			return fmt.Errorf("attribution d'UID impossible pour %s : %v", username, errMap)
+		}
+		uid = entry.UID
 		logs.Write_log("INFO", fmt.Sprintf("Création brute de %s avec UID %d", username, uid))
 
 		homeDir := "/home/" + username
@@ -120,23 +136,15 @@ func chownRecursive(path string, uid, gid int) error {
 	})
 }
 
-// Trouve le prochain UID disponible en scannant /etc/passwd
-func getNextAvailableUID(start int) int {
-	max := start
-	f, _ := os.Open("/etc/passwd")
-	defer f.Close()
-	s := bufio.NewScanner(f)
-	for s.Scan() {
-		p := strings.Split(s.Text(), ":")
-		if len(p) > 2 {
-			id, _ := strconv.Atoi(p[2])
-			if id >= max && id < 6000 { // On reste dans la plage 5000-6000
-				max = id + 1
-			}
-		}
-	}
-	return max
-}
+// getNextAvailableUID a été RETIRÉE.
+//
+// Elle scannait /etc/passwd sans verrou pour trouver un trou. Deux
+// provisionnements simultanés y trouvaient le même, et attribuaient le même
+// UID à deux utilisateurs différents — exactement le défaut que la carte
+// corrige, réintroduit par une autre porte.
+//
+// L'attribution passe désormais par EnsureUIDMapping (uidmap.go), qui est
+// sérialisée et tient compte à la fois de la carte et de /etc/passwd.
 
 // Ajoute une ligne à la fin d'un fichier (ex: /etc/passwd)
 func appendToFile(path, line string) error {
