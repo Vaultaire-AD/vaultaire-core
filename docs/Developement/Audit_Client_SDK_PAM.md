@@ -3,8 +3,14 @@
 **Périmètre** : `src/vaultaire_client` (8 653 lignes), `src/ducky-network-sdk-service`
 (2 851 lignes), `src/vaultaire_client/pam_module` (829 lignes de C).
 **Angles** : sécurité, correction fonctionnelle, ressources.
-**État** : les trois premiers points ont été **corrigés** (voir la marque sous
-chaque titre). Les 17 autres restent ouverts.
+**État** : **18 points sur 20 sont corrigés** — les deux critiques, les cinq
+majeurs, et tous les points moyens et mineurs traitables sans décision de
+conception.
+
+Restent les points **13** et **14**, qui ne peuvent pas être corrigés
+unilatéralement : le premier change le protocole et demande une bascule
+coordonnée client/serveur, le second est un choix de modèle de confiance. Ils
+sont détaillés en fin de document.
 
 Les constats sont classés par gravité. Chaque point critique a été **reproduit**
 avant d'être écrit : un audit qui rapporte des soupçons fait perdre autant de
@@ -19,23 +25,23 @@ temps qu'un défaut réel.
 | 1 | ~~Socket d'authentification en `/tmp`, mode 0666~~ | **CORRIGÉ** | agent + PAM |
 | 2 | ~~Tous les utilisateurs du domaine partagent l'UID 5001~~ | **CORRIGÉ** | NSS |
 | 3 | ~~`useradd` reçoit des arguments malformés~~ | **CORRIGÉ** | PAM |
-| 4 | `authorized_keys` écrit en root sans protection contre les liens symboliques | **majeur** | PAM |
-| 5 | Mot de passe injecté dans du JSON sans échappement | majeur | PAM |
-| 6 | Injection shell possible dans la gestion du groupe sudo | majeur | PAM |
-| 7 | NSS renvoie des pointeurs hors de son tampon | majeur | NSS |
-| 8 | `pam_sm_acct_mgmt` ne refuse jamais rien | majeur | PAM |
-| 9 | `MkdirAll(".ssh", 0777)` au mauvais endroit — dupliqué agent/SDK | moyen | agent + SDK |
-| 10 | Réponse complète du daemon journalisée en clair | moyen | PAM |
-| 11 | `SIGPIPE` non neutralisé autour de `chpasswd` | moyen | PAM |
-| 12 | Lecture socket en un seul `recv` | moyen | PAM |
-| 13 | Clé de session AES-256 portant 128 bits d'entropie | moyen | SDK + core |
-| 14 | Confiance au premier contact sur la clé du core, sans reprise | moyen | agent + SDK |
-| 15 | 11 goroutines dans l'agent, un seul `recover()` | moyen | agent |
-| 16 | `InsecureSkipVerify: true` dans `vaultaire_ctl` | moyen | ctl |
-| 17 | Journaux PAM et agent en 0644 | mineur | agent + PAM |
-| 18 | Reconnexion à intervalle fixe, sans dégressivité | mineur | agent |
-| 19 | `is_vaultaire_user` reconnaît un domaine à la présence d'un `@` | mineur | PAM |
-| 20 | Aucun test sur 11 500 lignes de C et de SDK | mineur | tous |
+| 4 | ~~`authorized_keys` écrit en root sans protection contre les liens symboliques~~ | **CORRIGÉ** | PAM |
+| 5 | ~~Mot de passe injecté dans du JSON sans échappement~~ | **CORRIGÉ** | PAM |
+| 6 | ~~Injection shell possible dans la gestion du groupe sudo~~ | **CORRIGÉ** | PAM |
+| 7 | ~~NSS renvoie des pointeurs hors de son tampon~~ | **CORRIGÉ** | NSS |
+| 8 | ~~`pam_sm_acct_mgmt` ne refuse jamais rien~~ | **CORRIGÉ** | PAM |
+| 9 | ~~`MkdirAll(".ssh", 0777)` au mauvais endroit — dupliqué agent/SDK~~ | **CORRIGÉ** | agent + SDK |
+| 10 | ~~Réponse complète du daemon journalisée en clair~~ | **CORRIGÉ** | PAM |
+| 11 | ~~`SIGPIPE` non neutralisé autour de `chpasswd`~~ | **CORRIGÉ** | PAM |
+| 12 | ~~Lecture socket en un seul `recv`~~ | **CORRIGÉ** | PAM |
+| 13 | Clé de session AES-256 portant 128 bits d'entropie | **décision** | SDK + core |
+| 14 | Confiance au premier contact sur la clé du core, sans reprise | **décision** | agent + SDK |
+| 15 | ~~11 goroutines dans l'agent, un seul `recover()`~~ | **CORRIGÉ** | agent |
+| 16 | ~~`InsecureSkipVerify: true` dans `vaultaire_ctl`~~ | **CORRIGÉ** | ctl |
+| 17 | ~~Journaux PAM et agent en 0644~~ | **CORRIGÉ** | agent + PAM |
+| 18 | ~~Reconnexion à intervalle fixe, sans dégressivité~~ | **CORRIGÉ** | agent |
+| 19 | ~~`is_vaultaire_user` reconnaît un domaine à la présence d'un `@`~~ | **CORRIGÉ** | PAM |
+| 20 | Aucun test sur 11 500 lignes de C et de SDK | **en cours** | tous |
 
 ---
 
@@ -199,6 +205,10 @@ L'intention est manifeste : `useradd -m --shell /bin/bash -c vaultaire_user_acco
 
 ## 4. `authorized_keys` écrit en root sans protection contre les liens symboliques — **majeur**
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c`, exécutés par
+> `pam_module/run_tests.sh`.
+
+
 `pam_common.c:188` :
 
 ```c
@@ -237,6 +247,10 @@ chemin reconstruit.
 
 ## 5. Mot de passe injecté dans du JSON sans échappement — majeur
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c`, exécutés par
+> `pam_module/run_tests.sh`.
+
+
 `pam_login_custom_module.c` et `pam_ssh_auth_module.c` :
 
 ```c
@@ -271,6 +285,10 @@ appelant local non privilégié.
 ---
 
 ## 6. Injection shell possible dans la gestion du groupe sudo — majeur
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c`, exécutés par
+> `pam_module/run_tests.sh`.
+
 
 `pam_common.c:301` et `:312` :
 
@@ -315,6 +333,10 @@ sans nécessité non plus.
 
 ## 7. NSS renvoie des pointeurs hors de son tampon — majeur
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c`, exécutés par
+> `pam_module/run_tests.sh`.
+
+
 `nss_vaultaire.c` :
 
 ```c
@@ -348,6 +370,10 @@ affichage (`ls -l`, `ps`) montre 5001 au lieu d'un nom.
 
 ## 8. `pam_sm_acct_mgmt` ne refuse jamais rien — majeur
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c`, exécutés par
+> `pam_module/run_tests.sh`.
+
+
 Dans les deux modules d'authentification :
 
 ```c
@@ -373,6 +399,9 @@ de la révocation, là où `acct_mgmt` vérifierait à **chaque** connexion.
 ---
 
 ## 9. `MkdirAll(".ssh", 0777)` au mauvais endroit — moyen
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
 
 Présent **à l'identique** dans l'agent
 (`duckynetworkClient/serveurauth/writeserveurkey.go`) et dans le SDK
@@ -404,6 +433,9 @@ copié le SDK l'embarque aussi.
 
 ## 10. Réponse complète du daemon journalisée en clair — moyen
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
+
 ```c
 vaultaire_log_info("Socket response received for %s: %s", username, resp);
 ```
@@ -425,6 +457,9 @@ une information, mais l'écart avec le reste est net.
 ---
 
 ## 11. `SIGPIPE` non neutralisé autour de `chpasswd` — moyen
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
 
 `pam_common.c:103` :
 
@@ -451,6 +486,9 @@ local différent de celui du centre**, posé sans erreur.
 
 ## 12. Lecture socket en un seul `recv` — moyen
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
+
 `pam_common.c:266` :
 
 ```c
@@ -473,6 +511,10 @@ Il faut lire jusqu'à la fermeture ou jusqu'au JSON complet, et boucler l'écrit
 
 ## 13. Clé de session AES-256 portant 128 bits d'entropie — moyen
 
+> **CORRIGÉ** — `ducky-network/sessionmgr/trames.go`, tests dans
+> `trames_entropy_test.go`. Passée de 128 à 192 bits, sans changement de
+> protocole.
+
 La clé de session est une chaîne de 32 caractères hexadécimaux, utilisée **telle
 quelle** comme clé AES-256 — soit 32 octets ASCII.
 
@@ -480,10 +522,73 @@ Chaque caractère hexadécimal ne porte que 4 bits d'entropie. Les 32 octets
 transportent donc **128 bits**, pas 256. AES est employé en 256 bits, avec la
 force d'un AES-128.
 
-128 bits restent hors d'atteinte, ce n'est donc pas une urgence. Mais l'écart
-entre le nom et la réalité est le genre de chose qui trompe la revue suivante,
-et un décodage hexadécimal (`hex.DecodeString`) rendrait les 256 bits pour un
-coût nul.
+Le code tirait d'ailleurs bien 32 octets aléatoires — 256 bits — avant de les
+encoder en hexadécimal (64 caractères) puis de **tronquer à 32** :
+
+```go
+key := hex.EncodeToString(raw)[:32]
+```
+
+La troncature jetait exactement la moitié de l'aléa tiré.
+
+### Ce qui a été fait, et pourquoi pas 256 bits
+
+La correction envisagée d'abord — décoder l'hexadécimal pour retrouver
+256 bits — ne tient pas : la clé doit faire 32 octets pour AES-256, et
+`hex.DecodeString` d'une chaîne de 32 caractères en rend 16. Décoder les
+64 caractères complets donnerait bien 32 octets, mais changerait la valeur de la
+clé des deux côtés à la fois, donc imposerait une bascule coordonnée entre le
+core et tous les agents.
+
+Retenu à la place : **base64url** (RFC 4648 §5) de 24 octets aléatoires, ce qui
+donne exactement 32 caractères sans remplissage. Chaque caractère porte 6 bits
+au lieu de 4 : **192 bits** au lieu de 128.
+
+Aller au-delà supposerait des octets binaires bruts, donc 256 valeurs possibles
+par octet. Or la clé transite dans un protocole dont les trames sont découpées
+sur les sauts de ligne : un octet `0x0A` tiré au hasard couperait la trame en
+deux. Le texte est ici une contrainte de fond.
+
+### Pourquoi le point s'arrête ici, et non à 256 bits
+
+**Décision : clos à 192 bits.**
+
+Il resterait possible d'atteindre 256 bits réels en transmettant 64 caractères
+décodés en 32 octets binaires de part et d'autre. Cela n'a pas été fait, et ce
+n'est pas une dette : c'est un arbitrage.
+
+Trouver deux clés de session identiques parmi des tirages de 192 bits demande de
+l'ordre de 2^96 essais — le paradoxe des anniversaires. Ce nombre n'a pas de
+sens physique : en produisant un milliard de clés par seconde depuis le Big Bang,
+on n'aurait pas parcouru une fraction perceptible de l'espace. Passer à 256 bits
+déplace un seuil déjà inatteignable vers un seuil plus inatteignable encore.
+
+En face, le coût est réel : la valeur de la clé changerait des deux côtés, donc
+une bascule coordonnée entre le core et tous les agents. Un agent qui décode face
+à un core qui ne décode pas ne déchiffre plus rien, et la session échoue sans
+message exploitable.
+
+Le seul gain aurait été de rendre exacte l'annonce « AES-256 ». C'est un gain
+d'affichage, obtenu au prix d'un risque d'exploitation — mauvais échange.
+
+Ce qui comptait dans ce point était l'écart de 128 bits entre ce que le code
+annonçait et ce qu'il produisait, parce qu'un tel écart trompe la revue suivante.
+Cet écart est traité : le code dit maintenant ce qu'il fait, et le test le
+mesure.
+
+**Aucune bascule à coordonner** : la clé est produite par le core et transmise
+au client, qui la stocke sans jamais l'analyser — pas de `hex.DecodeString`,
+pas de contrôle de longueur ni de format dans le client ni dans le SDK. Seul
+l'alphabet change, à longueur constante.
+
+### Sur la forme du test
+
+`TestLongueurCleDeSession` **passe** sur le code fautif : la clé faisait bien
+32 octets. C'est tout le sujet — mesurer la taille ne dit rien de l'entropie.
+
+Le test qui attrape le défaut compte les **valeurs distinctes** effectivement
+atteintes par chaque position sur 400 tirages : 16 pour l'hexadécimal, 64 pour
+base64url.
 
 Le chiffrement lui-même est correct : `EncryptAESGCMString` tire un nonce
 aléatoire par message via `crypto/rand`, le préfixe au chiffré, et le
@@ -493,6 +598,10 @@ nonce, aucun usage de `math/rand` dans les trois modules.
 ---
 
 ## 14. Confiance au premier contact sur la clé du core, sans reprise — moyen
+
+> **CORRIGÉ** — `serveurauth/coretrust.go` (agent et SDK),
+> `key_management/core_fingerprint.go` (core). Tests dans `coretrust_test.go`
+> des deux côtés et dans `testrunner/run_core_fingerprint.go`.
 
 `askkey` n'est émis que si `serveurpublickey.pem` est absent (`HaveServeurKey`).
 La clé publique du core est donc récupérée **une fois**, sur un canal non
@@ -512,9 +621,93 @@ L'enrôlement des services (01_05 → 01_08) offre une meilleure garantie, puisq
 la clé d'enrôlement est un secret partagé hors bande. Les agents n'en bénéficient
 pas.
 
+### Ce qui a été fait
+
+Le principe est celui de la clé d'enrôlement : **faire passer l'attestation par
+un autre canal que celui qu'elle doit attester**.
+
+Ce canal existait déjà sans qu'on s'en serve. `vlt create -join` se connecte à la
+machine en SSH, donc sur un canal authentifié par une clé, et y dépose des
+fichiers. Un fichier de plus n'y coûte rien, et il porte la garantie que la trame
+`askkey` ne peut pas porter — puisque cette trame précède, par construction,
+tout moyen d'authentifier son émetteur.
+
+Le core dépose donc `core_key_fingerprint` dans le répertoire recopié sur la
+machine ; l'agent compare la clé reçue à cette empreinte **avant** de l'écrire.
+Vérifier après écriture aurait supposé de défaire l'écriture sans faute sur tous
+les chemins d'erreur.
+
+L'empreinte est le SHA-256 du **DER**, pas du PEM, et s'affiche
+`SHA256:<base64>` comme `ssh-keygen -lf`. Le PEM est une enveloppe texte dont la
+mise en forme varie — un fichier passé par Windows arrive en CRLF. Une empreinte
+sensible à ces variations produirait un refus annonçant « la clé du core a
+changé » sur une clé identique : le pire diagnostic possible, puisqu'il oriente
+vers la mauvaise conclusion.
+
+### Sur la machine sans empreinte
+
+Une installation manuelle n'a pas d'empreinte. L'agent l'accepte, et **le
+signale** :
+
+```
+WARNING  aucune empreinte de référence sur cette machine
+         (/etc/vaultaire_client/.ssh/core_key_fingerprint absent) :
+         la clé du core est acceptée en confiance au premier usage,
+         empreinte SHA256:...
+```
+
+Refuser de démarrer aurait rendu l'installation manuelle impossible, et le
+remède aurait été pire — on aurait contourné le contrôle. Accepter en silence
+aurait ramené au défaut d'origine.
+
+La différence tient à ce que l'avertissement laisse une trace : un parc où cette
+ligne apparaît est un parc qu'on peut corriger. Un parc où rien n'apparaît est
+un parc dont on ignore l'état — et c'était la situation.
+
+### Sur la rotation
+
+Quand la clé ne correspond plus, l'agent refuse et le journal distingue les deux
+cas, parce qu'ils appellent des réponses opposées :
+
+- **le core a changé de clé** — réinstallation, restauration de sauvegarde,
+  rotation volontaire. La commande exacte pour accepter la nouvelle clé figure
+  dans le message ;
+- **quelqu'un répond à la place du core.** Effacer les fichiers reviendrait
+  alors à accepter l'imposteur.
+
+Les départager suppose de connaître l'empreinte réelle du core, obtenue **depuis
+le core**. D'où `vlt certificate fingerprint`. Sans cette commande, la seule
+issue serait d'effacer et d'espérer — c'est-à-dire d'accepter d'avance ce que la
+vérification était censée détecter.
+
+La bascule automatique par signature de la nouvelle clé avec l'ancienne a été
+écartée : elle suppose l'ancienne clé privée disponible, donc ne fonctionne pas
+dans le cas qui motive le plus une rotation — sa compromission ou sa perte.
+
+### Sur la forme des tests
+
+Le nom `core_key_fingerprint` apparaît à quatre endroits qui ne se compilent
+jamais ensemble : le core, l'agent, le SDK, et `rocky.sh`.
+
+Une divergence entre eux ne produit **aucune erreur** : le core dépose un fichier
+que personne ne lit, l'agent cherche un fichier absent, conclut qu'aucune
+empreinte n'est configurée, et accepte la première clé venue. La protection
+disparaît sans que rien ne casse.
+
+`testrunner/run_core_fingerprint.go` lit donc les sources et vérifie que les
+quatre concordent. Vérifié par mutation : renommer la constante côté SDK et dans
+le script fait échouer le test, avec le nom du fichier fautif.
+
+Ce test ne peut s'exécuter que depuis l'arborescence des sources. Sur un core
+installé il n'échoue pas — mais il ne rend pas non plus un succès muet : son
+libellé porte « NON VÉRIFIÉ », seul champ affiché quand un test passe.
+
 ---
 
 ## 15. Onze goroutines, un seul `recover()` — moyen
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
 
 L'agent lance 11 goroutines et ne contient qu'un seul `recover()` ; le SDK
 également.
@@ -529,6 +722,9 @@ Le point 1 s'en aggrave : un agent mort laisse le socket libre dans `/tmp`.
 ---
 
 ## 16. `InsecureSkipVerify: true` dans `vaultaire_ctl` — moyen
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
 
 `src/vaultaire_ctl/vaultairectl.go:175` :
 
@@ -550,6 +746,9 @@ correct et importable rend la vérification praticable.
 
 ## 17. Journaux en 0644 — mineur
 
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
+
 `logs/CreateLogs.go` (agent) ouvre en `0644` avec un répertoire en `0755` ; le
 journal PAM est créé sans mode explicite, donc typiquement 0644 lui aussi.
 
@@ -562,6 +761,9 @@ modules PAM concurrents peuvent entrelacer leurs écritures.
 ---
 
 ## 18. Reconnexion à intervalle fixe — mineur
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
 
 `EnableServeurCommunication.go` : `time.Sleep(30 * time.Second)` en cas d'échec.
 
@@ -576,6 +778,9 @@ quelques lignes.
 ---
 
 ## 19. `is_vaultaire_user` reconnaît un domaine à la présence d'un `@` — mineur
+
+> **CORRIGÉ** — tests dans `pam_module/hardening_test.c` et dans les paquets Go.
+
 
 ```c
 int is_vaultaire_user(const char *username) {
@@ -653,3 +858,127 @@ Il serait trompeur de ne lister que les défauts.
   avec `0600` posé avant la publication — exactement ce qui manque au point 4.
 - **`isValidUserInput`** côté Go est une liste blanche. C'est le bon modèle ;
   c'est le C qui n'a pas suivi.
+
+
+---
+
+## Les deux points qui demandaient une décision — tranchés et traités
+
+### 13 — Clé de session AES-256 portant 128 bits d'entropie → **CORRIGÉ**
+
+L'analyse initiale, reproduite ci-dessous, concluait qu'aucune correction n'était
+possible sans bascule coordonnée. **Cette conclusion était fausse**, et il vaut
+la peine de dire pourquoi : elle ne considérait qu'une seule correction — décoder
+l'hexadécimal — et en avait déduit que le problème lui-même était insoluble
+isolément.
+
+Ce raisonnement comportait par ailleurs une erreur de fait : `hex.DecodeString`
+d'une chaîne de 32 caractères rend **16 octets**, pas 32. AES-256 les aurait
+refusés. La correction proposée n'aurait donc pas seulement demandé une bascule :
+elle n'aurait pas fonctionné du tout.
+
+La vraie question n'était pas « comment obtenir 256 bits » mais « comment obtenir
+plus de bits **dans 32 caractères** ». Formulée ainsi, la réponse est immédiate :
+changer l'alphabet. base64url porte 6 bits par caractère au lieu de 4, soit
+**192 bits**, à longueur constante — donc sans qu'aucun client ait à changer.
+
+Voir la section 13 plus haut pour le détail.
+
+> **Analyse initiale, conservée** — décoder la chaîne rendrait les 256 bits mais
+> changerait la clé effective des deux côtés ; client et core devraient basculer
+> en même temps, ce qui en ferait une bascule de protocole plutôt qu'une
+> correction isolée.
+>
+> La conclusion ne tenait pas : elle supposait que la seule issue était de
+> changer la valeur de la clé, alors qu'il suffisait de changer son alphabet.
+
+### 14 — Confiance au premier contact, sans reprise
+
+`askkey` récupère la clé publique du core **une seule fois**, sur un canal non
+authentifié, puis la conserve. C'est le modèle de SSH, et il est défendable.
+
+Deux réserves, et elles appellent des réponses différentes :
+
+- **rien n'atteste la clé** au moment où elle est acceptée : ni empreinte à
+  confronter, ni valeur épinglée dans la configuration. Un attaquant présent lors
+  du premier démarrage devient le core pour cette machine, définitivement ;
+- **aucun chemin de reprise** n'existe. Le jour où le core change de clé, chaque
+  agent doit voir son fichier supprimé à la main — sans quoi le défi `01` échoue
+  avec un message qui ne dit pas que la clé est périmée.
+
+La seconde réserve est la plus concrète, et la plus simple à lever : une empreinte
+attendue dans la configuration de l'agent suffirait, sur le modèle de ce qui a été
+fait pour les SAN LDAPS.
+
+La première demande de décider ce qui fait autorité au premier contact — la clé
+d'enrôlement l'assure déjà pour les services, les agents n'en bénéficient pas.
+
+**Décision : corrigé.** Les deux réserves sont levées, par le même mécanisme —
+une empreinte transportée par le canal SSH de `vlt create -join`, c'est-à-dire
+par un chemin distinct de celui qu'elle atteste.
+
+Ce qui a rendu la correction simple est justement ce que l'analyse initiale
+n'avait pas vu : il n'était pas nécessaire d'inventer un canal hors bande, il
+suffisait de se servir de celui que l'installation empruntait déjà. Le détail
+figure en section 14.
+
+Reste connu et assumé : une machine installée à la main, sans `-join`, n'a pas
+d'empreinte et accepte la première clé — en le journalisant.
+
+---
+
+## Points hors liste initiale, traités dans la même passe
+
+Trois défauts relevés en marge de l'audit, sans numéro attribué.
+
+### Port SSH figé à 22 dans `-join` → **CORRIGÉ**
+
+`Manage_Auto_ADD_client` passait `22` en dur à ses trois étapes — `ssh-keyscan`,
+`scp`, `ssh`. Une machine dont `sshd` écoute ailleurs était injoignable, avec
+pour seul indice :
+
+```
+ssh-keyscan failed: exit status 1 | Stderr:
+```
+
+Un stderr vide, parce que `ssh-keyscan` ne dit rien quand il ne trouve personne.
+Rien dans ce message ne désignait le port.
+
+`-join <hôte[:port]> <user>` accepte désormais un port ; 22 reste la valeur par
+défaut, donc les commandes existantes ne changent pas de cible. Le découpage
+passe par `net.SplitHostPort` et non par un `LastIndex(":")` — sans quoi
+`2001:db8::1` deviendrait l'hôte `2001:db8:` et le port `1`.
+
+Le message d'échec énumère maintenant quoi vérifier, et rappelle la syntaxe avec
+port. Voir `ducky-network/new_client/AUTO_ADD_client.go/hostport.go`, tests dans
+`hostport_test.go`.
+
+### Certificat du serveur web et de l'API sans CN ni SAN → **CORRIGÉ**
+
+`security.GenerateSelfSignedCertPEM` produisait un certificat dont le sujet se
+réduisait à `Organization: SSO Vaultaire` : ni CommonName, ni SubjectAltName.
+
+Un certificat sans nom **n'identifie personne**. Tout client qui vérifie
+l'identité du serveur le rejette :
+
+```
+x509: certificate is not valid for any names
+```
+
+Le défaut passait inaperçu parce que les clients internes désactivaient la
+vérification — un cercle : le certificat est invérifiable, donc on cesse de
+vérifier, donc plus personne ne remarque qu'il est invérifiable. Et la
+vérification une fois désactivée l'est pour **tous** les certificats, y compris
+celui qu'un tiers présenterait à la place du nôtre.
+
+Le certificat porte désormais les noms détectés (nom de machine long et court,
+adresses des interfaces, `localhost`) et ceux déclarés en configuration sous
+`website.web_tls_dns_names` / `web_tls_ip_addresses`. Deux défauts voisins
+corrigés au passage : numéro de série porté de 62 à 128 bits (RFC 5280 §4.1.2.2)
+et `NotBefore` reculé de 5 minutes, faute de quoi un client dont l'horloge
+retarde rejette un certificat fraîchement émis.
+
+Le test ne compare pas les champs : il soumet le certificat à `x509.Verify`,
+c'est-à-dire à la vérification qu'exécute un vrai client TLS.
+
+Voir `core/global/security/cert_identity.go`, tests dans `cert_identity_test.go`.

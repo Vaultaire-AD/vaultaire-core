@@ -48,6 +48,9 @@ func Run() int {
 	// --- Unit: conformite au protocole LDAP (RFC 4511/4512/4514) ---
 	results = append(results, testLDAP()...)
 
+	// --- Unit: attestation de la cle publique du core (point 14 de l'audit) ---
+	results = append(results, testCoreFingerprint()...)
+
 	// --- Unit: TOTP contre les vecteurs de la RFC 6238 ---
 	results = append(results, testTOTP()...)
 

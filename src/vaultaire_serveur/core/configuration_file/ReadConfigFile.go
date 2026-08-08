@@ -111,6 +111,9 @@ func LoadConfig(filePath string) error {
 	if config.Website.Website_Port != nil {
 		storage.Website_Port = *config.Website.Website_Port
 	}
+	// Mêmes règles que pour les SAN LDAPS : recopiés même vides.
+	storage.Web_TLS_DNSNames = config.Website.Web_TLS_DNSNames
+	storage.Web_TLS_IPs = config.Website.Web_TLS_IPs
 	if config.Api.API_Enable != nil {
 		storage.API_Enable = *config.Api.API_Enable
 	}

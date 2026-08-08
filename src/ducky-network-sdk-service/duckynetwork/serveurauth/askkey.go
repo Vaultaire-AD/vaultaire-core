@@ -44,9 +44,26 @@ func AskServerKey(duckysession *storage.DuckySession) bool {
 			}
 			lines := strings.Split(string(messageBuf), "\n")
 			if lines[0] == "getkey" {
-				err := WriteToFile(strings.Join(lines[1:], "\n"))
+				clePEM := strings.Join(lines[1:], "\n")
+
+				// Le point d'acceptation. Voir coretrust.go : la clé écrite ici
+				// ne sera plus jamais redemandée, HaveServeurKey se contentant
+				// de constater la présence du fichier.
+				avertissement, err := VerifierCleCore(clePEM)
 				if err != nil {
+					logs.Write_log("CRITICAL", "clé du core refusée : "+err.Error())
+					return false
+				}
+				if avertissement != "" {
+					logs.Write_log("WARNING", avertissement)
+				} else {
+					empreinte, _ := EmpreinteClePublique(clePEM)
+					logs.Write_log("INFO", "clé du core vérifiée contre l'empreinte de référence : "+empreinte)
+				}
+
+				if err := WriteToFile(clePEM); err != nil {
 					logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de l'écriture du fichier : %v", err))
+					return false
 				}
 				return true
 			}

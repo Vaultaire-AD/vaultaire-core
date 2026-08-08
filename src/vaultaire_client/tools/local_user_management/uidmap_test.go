@@ -246,3 +246,73 @@ func TestRetraitDeCarte(t *testing.T) {
 		t.Errorf("le retrait d'un absent a échoué : %v", err)
 	}
 }
+
+// TestAdopteLUIDDuCompteLocal : la carte doit se conformer à /etc/passwd.
+//
+// # Le défaut constaté en production
+//
+// Un compte provisionné AVANT l'existence de la carte se voyait attribuer un
+// second numéro : /etc/passwd disait 5000, la carte 5001.
+//
+//	point 6 (service) : admin@vaultaire.fr:5001:5001
+//	point 7 (getent)  : admin@vaultaire.fr:x:5000:5000
+//
+// La divergence est silencieuse — « files » venant en premier dans
+// nsswitch.conf, c'est l'UID de /etc/passwd qui fait autorité et tout
+// fonctionne. Mais la carte ment sur la seule chose qu'elle est censée savoir.
+// Le jour où le compte local est purgé puis recréé, ou l'ordre de nsswitch.conf
+// modifié, l'utilisateur change d'identité et perd ses fichiers.
+//
+// Ce test utilise le VRAI /etc/passwd de la machine : on cherche un compte qui
+// s'y trouve déjà, et on vérifie que la carte adopte son UID plutôt que d'en
+// inventer un.
+func TestAdopteLUIDDuCompteLocal(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("VAULTAIRE_UID_MAP_DIR", dir)
+
+	// Un /etc/passwd fabriqué : le test ne dépend plus de la machine qui
+	// l'exécute, et mesure donc quelque chose partout.
+	passwd := filepath.Join(dir, "passwd")
+	contenu := strings.Join([]string{
+		"root:x:0:0:root:/root:/bin/bash",
+		"daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin",
+		"admin@vaultaire.fr:x:5000:5000:admin:/home/admin@vaultaire.fr:/bin/bash",
+	}, "\n") + "\n"
+	if err := os.WriteFile(passwd, []byte(contenu), 0o644); err != nil {
+		t.Fatalf("écriture : %v", err)
+	}
+	t.Setenv("VAULTAIRE_PASSWD_FILE", passwd)
+
+	e, err := EnsureUIDMapping("admin@vaultaire.fr")
+	if err != nil {
+		t.Fatalf("attribution : %v", err)
+	}
+	if e.UID != 5000 {
+		t.Fatalf("la carte attribue %d alors que /etc/passwd dit 5000 : "+
+			"les deux sources divergent, et le jour où le compte local est recréé "+
+			"ou l'ordre de nsswitch.conf modifié, l'utilisateur change d'identité "+
+			"et perd ses fichiers", e.UID)
+	}
+
+	// Et un utilisateur SANS compte local reçoit bien un numéro neuf, qui
+	// n'entre pas en collision avec celui déjà pris.
+	autre, err := EnsureUIDMapping("nouveau@vaultaire.fr")
+	if err != nil {
+		t.Fatalf("attribution : %v", err)
+	}
+	if autre.UID == 5000 {
+		t.Error("collision avec l'UID d'un compte local existant")
+	}
+}
+
+// TestNAdoptePasUnUIDHorsPlage : un compte système ne doit pas entrer.
+//
+// root porte l'UID 0. L'adopter mettrait « 0 » dans la carte — que le module NSS
+// refuserait, mais qui n'a rien à y faire.
+func TestNAdoptePasUnUIDHorsPlage(t *testing.T) {
+	cartePourTest(t)
+
+	if _, _, trouve := uidDuCompteLocal("root"); trouve {
+		t.Error("root a été retenu comme candidat à l'adoption")
+	}
+}

@@ -136,7 +136,7 @@ func serveUIDSocket(chemin string) {
 			logs.Write_log("ERROR", fmt.Sprintf("socket UID : accept : %v", err))
 			continue
 		}
-		go handleUIDRequest(conn)
+		logs.Go("allocation UID", func() { handleUIDRequest(conn) })
 	}
 }
 
@@ -234,5 +234,5 @@ func nomDomaineAcceptable(nom string) bool {
 //
 // Séparé de UnixSocketServer, qui bloque : les deux écoutes doivent coexister.
 func StartUIDAllocationServer() {
-	go UIDAllocationServer()
+	logs.Go("service UID", UIDAllocationServer)
 }

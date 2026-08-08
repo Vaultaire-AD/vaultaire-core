@@ -91,6 +91,18 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 	}
 	os.Chown(authFile, uid, uid)
 
+	// Contexte SELinux, APRÈS l'écriture et le chown.
+	//
+	// Les fichiers créés ci-dessus héritent du contexte de /home, soit
+	// home_root_t, au lieu de user_home_dir_t puis ssh_home_t. sshd refuse alors
+	// de lire authorized_keys, et la connexion échoue par clé publique alors que
+	// tout le reste a fonctionné.
+	//
+	// Relevé sur une machine réelle :
+	//   denied { open } path="/home/<user>/.ssh/authorized_keys"
+	//   tcontext=system_u:object_r:home_root_t
+	RestaurerContexteSELinux(filepath.Join("/home", username))
+
 	// 4. SUDO : Gestion du groupe wheel/sudo
 	if isAdmin {
 		logs.Write_log("INFO", "Ajout de "+username+" au groupe wheel")

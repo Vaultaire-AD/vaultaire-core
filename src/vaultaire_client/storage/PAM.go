@@ -19,8 +19,8 @@ package storage
 //
 // # Ce qui protège maintenant
 //
-//   /run/vaultaire/        0700, root:root  — un non-root ne peut rien y créer
-//   /run/vaultaire/pam.sock 0600, root:root — seul root s'y connecte
+//	/run/vaultaire/        0700, root:root  — un non-root ne peut rien y créer
+//	/run/vaultaire/pam.sock 0600, root:root — seul root s'y connecte
 //
 // /run est un tmpfs monté par systemd, vidé au redémarrage : aucun socket
 // périmé ne survit à un arrêt brutal. Le répertoire en 0700 est la protection

@@ -36,7 +36,23 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 		// Gestion clé serveur
 		if !HaveServeurKey() {
 			logs.Write_log("INFO", "Clé serveur manquante, demande en cours...")
-			_ = serveur.AskServerKey(ds)
+
+			// Le résultat était jeté (`_ = ...`). Poursuivre après un échec
+			// n'avait alors guère de conséquence — la suite échouait de
+			// toute façon, faute de clé.
+			//
+			// Ce n'est plus vrai : AskServerKey rend maintenant false quand la
+			// clé reçue ne correspond pas à l'empreinte attestée. Ignorer ce
+			// refus reviendrait à le rendre décoratif — on aurait détecté la
+			// substitution, journalisé, puis continué.
+			if !serveur.AskServerKey(ds) {
+				logs.Write_log("CRITICAL",
+					"clé du core non obtenue ou refusée sur "+serverAddr+
+						" : connexion abandonnée. Le détail figure dans la ligne précédente.")
+				conn.Close()
+				lastErr = fmt.Errorf("clé du core refusée sur %s", serverAddr)
+				continue
+			}
 		}
 		// Authentification serveur
 		ds.SessionKey = serveur.AskServerAuthentification(ds)

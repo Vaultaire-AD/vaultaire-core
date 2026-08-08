@@ -1,5 +1,14 @@
 package logs
 
+// Mode des journaux : 0640, répertoire 0750.
+//
+// Ces fichiers portent les noms des comptes, leurs horaires de connexion et
+// leur statut administrateur. En 0644 — le mode d'origine — tout utilisateur
+// local en obtenait la cartographie du parc.
+//
+// 0640 laisse la lecture au groupe, ce qui permet de confier la consultation
+// des journaux à une équipe sans lui donner root.
+
 import (
 	"fmt"
 	"os"
@@ -13,13 +22,13 @@ func WriteLog(filename string, content string) {
 	filepath := dirPath + filename
 
 	// Créer le répertoire s'il n'existe pas
-	err := os.MkdirAll(dirPath, 0755)
+	err := os.MkdirAll(dirPath, 0o750)
 	if err != nil {
 		fmt.Printf("erreur lors de la création du répertoire: %v", err)
 	}
 
 	// Ouvre le fichier en mode append, le crée s'il n'existe pas
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
 	if err != nil {
 		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}
@@ -63,13 +72,13 @@ func Write_log(level string, content string) {
 	filepath := dirPath + "vaultaire_client.log"
 
 	// Créer le répertoire s'il n'existe pas
-	err := os.MkdirAll(dirPath, 0755)
+	err := os.MkdirAll(dirPath, 0o750)
 	if err != nil {
 		fmt.Printf("erreur lors de la création du répertoire: %v", err)
 	}
 
 	// Ouvre le fichier en mode append, le crée s'il n'existe pas
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o640)
 	if err != nil {
 		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
 	}

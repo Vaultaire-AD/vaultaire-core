@@ -48,6 +48,22 @@ database:
 website:
   website_enable: true
   website_port: 4443
+  # Noms et adresses que le certificat du portail web et de l'API REST doit
+  # couvrir, en plus du nom de la machine et de ses adresses, détectés seuls.
+  #
+  # Un certificat qui ne porte pas le nom saisi dans le navigateur est rejeté
+  # (ERR_CERT_COMMON_NAME_INVALID), et le CommonName n'y change rien : il est
+  # ignoré depuis Chrome 58 et le JDK 9. Seuls ces SAN comptent.
+  #
+  # Distincts de ceux du LDAPS : ces services ne sont pas joints par les mêmes
+  # noms — le portail par une URL en signet, l'annuaire par un alias de service.
+  #
+  # Après modification, régénérer le certificat et redémarrer.
+  web_tls_dns_names: []
+  #  - sso.interne.lan
+  #  - vaultaire.exemple.fr
+  web_tls_ip_addresses: []
+  #  - 10.0.0.10
 
 automatisation:
   sh_folder_path: "/opt/vaultaire/automatisation/"

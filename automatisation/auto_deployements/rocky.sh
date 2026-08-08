@@ -45,6 +45,16 @@ chmod 700 /var/log/vaultaire
 [[ -f /opt/vaultaire/vaultaire_client/libnss_vaultaire.so.2 ]] && mv -f /opt/vaultaire/vaultaire_client/libnss_vaultaire.so.2 /lib64/
 compgen -G "/opt/vaultaire/*.pem" > /dev/null && mv -f /opt/vaultaire/*.pem /etc/vaultaire_client/.ssh/
 
+# Empreinte de la clé publique du core.
+#
+# Elle arrive par ce canal — SCP au-dessus de SSH — et non par le réseau
+# Ducky : c'est tout l'intérêt. L'agent compare la clé qu'il recevra plus tard
+# par la trame « askkey » à cette empreinte, et refuse si elles diffèrent.
+#
+# Sans ce fichier, l'agent accepte la première clé venue, en le signalant dans
+# son journal. Le déploiement reste donc possible sans, mais moins sûr.
+[[ -f /opt/vaultaire/core_key_fingerprint ]] && mv -f /opt/vaultaire/core_key_fingerprint /etc/vaultaire_client/.ssh/
+
 # Application stricte des permissions
 chmod 755 /lib64/libnss_vaultaire.so.2
 chmod 750 /usr/bin/vaultaire_client

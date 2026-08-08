@@ -19,6 +19,7 @@ import (
 
 func StartDailyUserCleanup() {
 	go func() {
+		defer logs.Recover("tache de fond")
 		for {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day(), 6, 0, 0, 0, now.Location())
@@ -59,7 +60,9 @@ func main() {
 		}
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		logs.Go("communication serveur", func() {
+			serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		})
 		serveurcommunication.WaitForSSHFetch("vaultaire", sshUser)
 		// 🔥 AJOUTE CECI :
 		logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
@@ -72,7 +75,9 @@ func main() {
 			if tools.IsDuckySessionActive() {
 
 			} else {
-				go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+				logs.Go("communication serveur", func() {
+					serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+				})
 			}
 		}
 

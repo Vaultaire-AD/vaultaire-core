@@ -145,6 +145,7 @@ func runCycle(sessionKey, scope, username string, timeout time.Duration) Report 
 // avec une clé périmée après la première rupture.
 func StartMachineRefresh(sessionKeyProvider func() string) {
 	go func() {
+		defer logs.Recover("cycle GPO")
 		// Premier cycle immédiat : la machine doit être conforme dès le
 		// démarrage du service, pas au bout d'un intervalle.
 		//

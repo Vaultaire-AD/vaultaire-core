@@ -1,0 +1,27 @@
+# Etiquetage des fichiers Vaultaire.
+#
+# Ce fichier associe des CHEMINS aux types declares dans vaultaire.te. Sans lui,
+# les types existent mais rien ne les porte : la politique serait inerte.
+#
+# L'ordre n'a pas d'importance, SELinux applique la regle la plus specifique.
+#
+# ATTENTION aux expressions : ce sont des expressions regulieres, pas des motifs
+# de shell. « (/.*)? » signifie « ce repertoire et tout ce qu'il contient ».
+
+/etc/vaultaire(/.*)?			gen_context(system_u:object_r:vaultaire_conf_t,s0)
+
+# /run/vaultaire et tout son contenu, sockets compris.
+#
+# /run est un tmpfs : les etiquettes n'y survivent pas au redemarrage, elles
+# sont reappliquees a la creation des fichiers d'apres ces regles. C'est
+# pourquoi restorecon sur /run ne sert qu'a corriger la session en cours.
+/run/vaultaire(/.*)?			gen_context(system_u:object_r:vaultaire_var_run_t,s0)
+/var/run/vaultaire(/.*)?		gen_context(system_u:object_r:vaultaire_var_run_t,s0)
+
+/var/log/vaultaire(/.*)?		gen_context(system_u:object_r:vaultaire_log_t,s0)
+
+# Le binaire de l'agent garde le type bin_t par defaut, ce qui lui donne le
+# domaine unconfined_service_t sous systemd. Le jour ou on lui ecrira un domaine
+# dedie, c'est ici qu'il faudra ajouter :
+#
+#     /usr/bin/vaultaire_client	--	gen_context(system_u:object_r:vaultaire_exec_t,s0)

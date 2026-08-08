@@ -49,7 +49,7 @@ func Certificate_Command(commandList []string, senderGroupIDs []int, senderUsern
 	switch sub {
 	case "regenerate":
 		actionKey = "write:create:client"
-	case "list", "show":
+	case "list", "show", "fingerprint":
 		actionKey = "read:get:client"
 	default:
 		return "Requête invalide. Essayez 'certificate -h'."
@@ -70,9 +70,47 @@ func Certificate_Command(commandList []string, senderGroupIDs []int, senderUsern
 		return listCertificates()
 	case "show":
 		return showCertificate(commandList[1:])
+	case "fingerprint":
+		return afficherEmpreinteCore()
 	default:
 		return regenerate(commandList[1:], senderUsername)
 	}
+}
+
+// afficherEmpreinteCore répond à `vlt certificate fingerprint`.
+//
+// # À quoi cela sert
+//
+// Quand un agent refuse de démarrer parce que la clé du core ne correspond plus
+// à l'empreinte qu'il connaît, deux explications se présentent : le core a
+// changé de clé, ou quelqu'un répond à sa place. Ces deux cas appellent des
+// réponses opposées — accepter la nouvelle clé, ou surtout pas.
+//
+// Les distinguer suppose de connaître l'empreinte réelle du core, obtenue
+// depuis le core lui-même. C'est ce que rend cette commande.
+//
+// Sans elle, l'administrateur n'a d'autre issue que d'effacer le fichier et
+// d'espérer — c'est-à-dire d'accepter d'avance ce que la vérification était
+// censée détecter.
+func afficherEmpreinteCore() string {
+	empreinte, err := duckykey.EmpreinteDuCore()
+	if err != nil {
+		return "Empreinte indisponible : " + err.Error()
+	}
+
+	var b strings.Builder
+	b.WriteString("Empreinte de la clé publique du core\n\n")
+	b.WriteString("  " + empreinte + "\n\n")
+	b.WriteString("C'est la valeur que les agents attendent dans\n")
+	b.WriteString("  /etc/vaultaire_client/.ssh/" + duckykey.CoreFingerprintFileName + "\n\n")
+	b.WriteString("Elle y est déposée par « vlt create -join », sur le canal SSH.\n\n")
+	b.WriteString("Si un agent refuse de démarrer en signalant une empreinte différente :\n")
+	b.WriteString("  - l'empreinte qu'il a reçue correspond à celle ci-dessus → le core a\n")
+	b.WriteString("    changé de clé ; effacez le fichier ci-dessus sur cet agent ainsi que\n")
+	b.WriteString("    serveurpublickey.pem, puis redémarrez-le ;\n")
+	b.WriteString("  - elle ne correspond pas → quelque chose répond à la place du core.\n")
+	b.WriteString("    N'effacez rien : cela reviendrait à accepter l'imposteur.\n")
+	return b.String()
 }
 
 func listCertificates() string {
@@ -212,6 +250,7 @@ func helpText() string {
 
   list                    certificats en base et ce qu'ils couvrent
   show [ldaps]            détail, défauts constatés, et PEM à distribuer
+  fingerprint             empreinte de la clé du core, attendue par les agents
   regenerate ldaps        régénère le certificat LDAPS
       --dns nom1,nom2     noms DNS supplémentaires à couvrir
       --ip  10.0.0.1      adresses supplémentaires à couvrir

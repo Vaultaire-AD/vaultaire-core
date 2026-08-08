@@ -25,3 +25,10 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             (elevation locale vers root), et UID 5001 partage par TOUS les utilisateurs
             du domaine (aucune separation entre comptes sur une machine geree).
             Les points 1, 2 et 3 sont lies : corriger l'un sans les autres degrade.
+
+22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
+            Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
+            et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »
+            sans aucun journal Vaultaire, alors que getent lance a la main REUSSIT.
+            deployments/selinux/ : collect.sh, vaultaire.te, vaultaire.fc, install.sh
+            Reste a faire : un domaine dedie pour l'agent (aujourd'hui unconfined_service_t).

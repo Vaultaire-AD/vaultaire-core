@@ -15,7 +15,7 @@ func NewManager(timeout time.Duration) *Manager {
 		sessions: make(map[string]*Session),
 		timeout:  timeout,
 	}
-	go m.cleanupLoop()
+	logs.Go("purge des sessions", m.cleanupLoop)
 	return m
 }
 

@@ -57,6 +57,20 @@ VAULTAIRE_TEST_ATTEND_AUTRE_UID=1 "$TMP/socktest_autre"
 
 # ---------------------------------------------------------------------------
 echo
+echo "=== Durcissement : points majeurs de l'audit ==="
+# ---------------------------------------------------------------------------
+#
+#   4  authorized_keys ecrit en root sans protection contre les liens
+#   5  mot de passe injecte dans du JSON sans echappement
+#   6  injection shell dans la gestion du groupe sudo
+#   8  phase account qui ne refusait jamais rien
+
+cc -Wall -Wextra -Werror -I"$ICI" -o "$TMP/hardening" \
+   "$ICI/hardening_test.c" "$ICI/pam_common.c" -lcrypt
+"$TMP/hardening"
+
+# ---------------------------------------------------------------------------
+echo
 echo "=== Arguments de useradd ==="
 # ---------------------------------------------------------------------------
 #

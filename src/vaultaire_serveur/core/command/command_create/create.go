@@ -84,7 +84,11 @@ func create_Group(command_list []string) string {
 
 // create_ClientSoftware crée un agent Vaultaire.
 //
-//	create -c <yes/not> [-join <user> <host>]
+//	create -c <yes/not> [-join <host[:port]> <user>]
+//
+// Le port est facultatif et vaut 22 par défaut. « -join 192.168.30.8:2222 root »
+// vise une machine dont sshd écoute ailleurs ; une adresse IPv6 suivie d'un
+// port s'écrit entre crochets, « -join [2001:db8::1]:2222 root ».
 //
 // Le TYPE n'est plus demandé : ce chemin ne peut créer qu'un client basic. Un
 // client service s'enrôle lui-même avec « enroll create --type <type> », et

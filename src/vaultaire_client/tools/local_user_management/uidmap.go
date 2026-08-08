@@ -142,6 +142,29 @@ func EnsureUIDMapping(username string) (UIDEntry, error) {
 		return e, nil
 	}
 
+	// Le compte existe-t-il DÉJÀ localement ?
+	//
+	// Si oui, on adopte son UID au lieu d'en inventer un nouveau. Sans ce
+	// contrôle, un compte provisionné avant l'existence de la carte se voyait
+	// attribuer un second numéro : /etc/passwd disait 5000, la carte 5001.
+	//
+	// La divergence est silencieuse — « files » venant en premier dans
+	// nsswitch.conf, c'est l'UID de /etc/passwd qui fait autorité et tout
+	// fonctionne. Mais la carte ment, et elle ment sur la seule chose qu'elle
+	// est censée savoir. Le jour où le compte local est purgé puis recréé, ou
+	// bien l'ordre de nsswitch.conf modifié, l'utilisateur change d'identité et
+	// perd ses fichiers.
+	if uid, gid, trouve := uidDuCompteLocal(username); trouve {
+		entry := UIDEntry{Username: username, UID: uid, GID: gid}
+		entries[username] = entry
+		if err := writeUIDMap(entries); err != nil {
+			return UIDEntry{}, err
+		}
+		logs.Write_log("INFO", fmt.Sprintf(
+			"uid.map : %s adopte l'UID %d de son compte local existant", username, uid))
+		return entry, nil
+	}
+
 	uid, err := prochainUIDLibre(entries)
 	if err != nil {
 		return UIDEntry{}, err
@@ -202,13 +225,47 @@ func prochainUIDLibre(entries map[string]UIDEntry) (int, error) {
 	return 0, fmt.Errorf("plage d'UID %d-%d épuisée", UIDMin, UIDMax)
 }
 
+// uidDuCompteLocal cherche un compte de ce nom dans /etc/passwd.
+//
+// C'est /etc/passwd qui fait autorité : « files » vient en premier dans
+// nsswitch.conf, et l'UID qui y figure est celui que le noyau applique
+// réellement aux fichiers. La carte doit s'y conformer, jamais l'inverse.
+func uidDuCompteLocal(username string) (int, int, bool) {
+	f, err := os.Open(passwdPath())
+	if err != nil {
+		return 0, 0, false
+	}
+	defer func() { _ = f.Close() }()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		parts := strings.Split(scanner.Text(), ":")
+		if len(parts) < 4 || parts[0] != username {
+			continue
+		}
+		uid, errU := strconv.Atoi(parts[2])
+		gid, errG := strconv.Atoi(parts[3])
+		if errU != nil || errG != nil {
+			return 0, 0, false
+		}
+		// Hors plage : on n'adopte pas. Un compte du domaine qui porterait
+		// l'UID 0 ou celui d'un service système ne doit pas voir cette valeur
+		// entrer dans la carte, que le module NSS refuserait de toute façon.
+		if !uidDansLaPlage(uid) || !uidDansLaPlage(gid) {
+			return 0, 0, false
+		}
+		return uid, gid, true
+	}
+	return 0, 0, false
+}
+
 // uidsDeEtcPasswd relève les UID déjà attribués localement.
 //
 // Un échec de lecture rend une liste vide plutôt qu'une erreur : mieux vaut
 // risquer une collision — rattrapée par useradd, qui refusera — que de bloquer
 // toute connexion parce que /etc/passwd est momentanément illisible.
 func uidsDeEtcPasswd() []int {
-	f, err := os.Open("/etc/passwd")
+	f, err := os.Open(passwdPath())
 	if err != nil {
 		return nil
 	}
@@ -309,3 +366,15 @@ func mapDir() string {
 }
 
 func mapPath() string { return filepath.Join(mapDir(), "uid.map") }
+
+// passwdPath : même mécanisme que pour la carte.
+//
+// Sans lui, le test qui vérifie l'adoption de l'UID d'un compte local dépendrait
+// du /etc/passwd de la machine qui exécute les tests — il passerait ici, serait
+// sauté là, et ne mesurerait rien de fiable nulle part.
+func passwdPath() string {
+	if p := os.Getenv("VAULTAIRE_PASSWD_FILE"); p != "" {
+		return p
+	}
+	return "/etc/passwd"
+}

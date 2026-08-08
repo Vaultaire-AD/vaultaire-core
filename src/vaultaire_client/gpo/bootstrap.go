@@ -63,6 +63,7 @@ func bootstrapRevocation() {
 	})
 
 	go func() {
+		defer logs.Recover("bootstrap GPO")
 		// WaitForVaultaireSession bloque jusqu'à ce que le tunnel soit monté et
 		// authentifié : c'est exactement le moment où le serveur acceptera une
 		// demande 06_04.

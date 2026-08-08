@@ -20,7 +20,9 @@ func OpenVaultaireDefaultSession() *sessionmgr.Session {
 		tunnelReady = true
 	} else if !tools.IsDuckySessionActive() {
 		logs.Write_log("INFO", "Aucune session Vaultaire active, démarrage d'une nouvelle session")
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		logs.Go("communication serveur", func() {
+			serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		})
 	}
 
 	if !tunnelReady {

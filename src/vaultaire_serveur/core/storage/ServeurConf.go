@@ -42,6 +42,15 @@ type Config struct {
 	Website struct {
 		Website_Enable *bool `yaml:"website_enable"`
 		Website_Port   *int  `yaml:"website_port"`
+		// Noms et adresses que le certificat du serveur web et de l'API REST
+		// doit couvrir.
+		//
+		// Séparés de ceux du LDAPS : ces services ne sont pas atteints par les
+		// mêmes noms. Le LDAPS est joint par un annuaire, souvent par un alias
+		// de service ; le portail web est joint par un navigateur, à l'URL que
+		// les utilisateurs ont en signet.
+		Web_TLS_DNSNames []string `yaml:"web_tls_dns_names"`
+		Web_TLS_IPs      []string `yaml:"web_tls_ip_addresses"`
 	} `yaml:"website"`
 	Automatisation struct {
 		Sh_folder_path *string `yaml:"sh_folder_path"`
@@ -92,6 +101,12 @@ var Ldaps_TLS_IPs []string
 
 var Website_Enable bool = true
 var Website_Port int = 443
+
+// Web_TLS_DNSNames et Web_TLS_IPs complètent les noms détectés pour le
+// certificat du portail web et de l'API REST. Vides par défaut : la détection
+// couvre le cas courant.
+var Web_TLS_DNSNames []string
+var Web_TLS_IPs []string
 
 var Dns_Enable bool = true
 var Sh_folder_path string = "/opt/vaultaire/automatisation/"

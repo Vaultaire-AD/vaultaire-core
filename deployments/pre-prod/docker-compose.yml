@@ -97,6 +97,8 @@ services:
       - KEYCLOAK_ADMIN_PASSWORD=&adZaeD429bqf@B%QHYg
       - KC_HTTP_RELATIVE_PATH=/auth
       - TZ=Europe/Paris
+    volumes:
+      - ./vaultaire-ldaps.pem:/opt/keycloak/conf/truststores/vaultaire.pem:ro
     ports:
       - "8080:8080"
     depends_on:

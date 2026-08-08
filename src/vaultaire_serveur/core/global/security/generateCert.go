@@ -5,13 +5,10 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/pem"
 	"fmt"
 	"log"
-	"math/big"
 	"os"
-	"time"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -36,14 +33,23 @@ func createSelfSignedCert(certFile, keyFile string) error {
 		return err
 	}
 
-	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	identite := construireIdentite()
+	serialNumber, err := numeroDeSerie()
+	if err != nil {
+		return err
+	}
+	notBefore, notAfter := periodeValidite()
+
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"SSO Vaultaire"},
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+		Subject:      identite.sujet(),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
+
+		// Sans ces deux listes, le certificat n'identifie aucune machine et
+		// aucun client qui vérifie ne l'accepte. Voir cert_identity.go.
+		DNSNames:    identite.DNSNames,
+		IPAddresses: identite.IPs,
 
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
@@ -79,22 +85,34 @@ func createSelfSignedCert(certFile, keyFile string) error {
 	return nil
 }
 
-// GenerateSelfSignedCertPEM génère un certificat X.509 auto-signé et sa clé privée, retournés en PEM (sans fichier).
-// Utilisé pour sauvegarder en BDD puis servir TLS depuis la BDD.
+// GenerateSelfSignedCertPEM génère un certificat X.509 auto-signé et sa clé
+// privée, retournés en PEM (sans fichier). Utilisé pour sauvegarder en BDD puis
+// servir TLS depuis la BDD — serveur web et API REST.
+//
+// Le certificat porte désormais un CommonName et des SubjectAltName ; sans eux
+// il n'identifiait aucune machine et tout client vérifiant l'identité du
+// serveur le rejetait. Le détail est dans cert_identity.go.
 func GenerateSelfSignedCertPEM() (certPEM string, keyPEM string, err error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", "", err
 	}
 
-	serialNumber, _ := rand.Int(rand.Reader, big.NewInt(1<<62))
+	identite := construireIdentite()
+	serialNumber, err := numeroDeSerie()
+	if err != nil {
+		return "", "", err
+	}
+	notBefore, notAfter := periodeValidite()
+
 	template := x509.Certificate{
 		SerialNumber: serialNumber,
-		Subject: pkix.Name{
-			Organization: []string{"SSO Vaultaire"},
-		},
-		NotBefore: time.Now(),
-		NotAfter:  time.Now().Add(365 * 24 * time.Hour),
+		Subject:      identite.sujet(),
+		NotBefore:    notBefore,
+		NotAfter:     notAfter,
+
+		DNSNames:    identite.DNSNames,
+		IPAddresses: identite.IPs,
 
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},

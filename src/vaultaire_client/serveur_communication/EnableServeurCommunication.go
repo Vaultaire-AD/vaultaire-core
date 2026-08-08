@@ -16,14 +16,24 @@ func EnableServerCommunication(user, pass string) {
 	logs.Print_Log("Launching Vaultaire_Client_Network: " + user)
 
 	if user == "vaultaire" {
+		// Dégressivité : le délai double à chaque échec, avec une dispersion
+		// aléatoire. Voir backoff.go — l'intervalle fixe de 30 s ramenait tout
+		// le parc sur le core au même instant, indéfiniment.
+		attente := NewBackoff()
+
 		for {
 			var err error
 			ds, err := module.EstablishDuckySession(user, pass)
 			if err != nil {
-				logs.Write_log("ERROR", fmt.Sprintf("Connexion échouée: %v", err))
-				time.Sleep(30 * time.Second)
+				d := attente.Prochain()
+				logs.Write_log("ERROR", fmt.Sprintf("Connexion échouée: %v — nouvelle tentative dans %s", err, d))
+				time.Sleep(d)
 				continue
 			}
+
+			// La connexion a abouti : on repart du délai court, sinon une
+			// coupure brève après une longue absence coûterait cinq minutes.
+			attente.Reset()
 
 			// La session machine "vaultaire" utilise toujours la clé réservée
 			// MotherSessionID, quel que soit l'ID généré par défaut à la
@@ -40,6 +50,7 @@ func EnableServerCommunication(user, pass string) {
 
 			done := make(chan struct{})
 			go func() {
+				defer logs.Recover("lecture de la connexion")
 				handleConnection(user, ds)
 				close(done)
 			}()
@@ -53,8 +64,9 @@ func EnableServerCommunication(user, pass string) {
 				break // Mode Client Simple (One-shot) : on ne relance pas la reconnexion
 			}
 			<-done // Attend la fin de la connexion
-			logs.Write_log("WARNING", "Flux arrêté. Reconnexion dans 30s...")
-			time.Sleep(30 * time.Second)
+			d := attente.Prochain()
+			logs.Write_log("WARNING", fmt.Sprintf("Flux arrêté. Reconnexion dans %s...", d))
+			time.Sleep(d)
 		}
 	} else {
 		// Mode Client Simple (One-shot)

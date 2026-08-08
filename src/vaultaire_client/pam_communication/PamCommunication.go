@@ -153,6 +153,6 @@ func serveSocket(chemin string) {
 			logs.Write_log("ERROR", fmt.Sprintf("Error accepting connection: %v", err))
 			continue
 		}
-		go handleUnixSocketConnection(conn)
+		logs.Go("session PAM", func() { handleUnixSocketConnection(conn) })
 	}
 }
