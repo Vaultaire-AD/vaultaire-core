@@ -82,6 +82,16 @@ func main() {
 		// donc l'appel n'a pas à être ordonné avec l'ouverture du tunnel.
 		gpo.Bootstrap()
 
+		// Le service d'allocation d'identifiants AVANT le canal PAM.
+		//
+		// UnixSocketServer bloque : tout ce qui doit vivre à côté se lance avant.
+		//
+		// Ce service répond au module NSS pour un utilisateur du domaine encore
+		// inconnu. Sans lui, sshd refuse le compte avant même d'exécuter
+		// AuthorizedKeysCommand, et aucune première connexion n'est possible —
+		// sans la moindre trace, puisque rien de Vaultaire n'est exécuté.
+		pamcommunication.StartUIDAllocationServer()
+
 		pamcommunication.UnixSocketServer()
 	}
 

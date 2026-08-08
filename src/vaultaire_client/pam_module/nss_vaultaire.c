@@ -67,8 +67,31 @@
 #include <stdio.h>
 #include <errno.h>
 #include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/un.h>
+#include <unistd.h>
+#include <poll.h>
 
 #define VAULTAIRE_UID_MAP "/etc/vaultaire/uid.map"
+
+/* Socket d'allocation, tenu par l'agent.
+ *
+ * Interroge SEULEMENT quand la carte ne connait pas le nom, c'est-a-dire a la
+ * toute premiere resolution d'un utilisateur. Ensuite la carte suffit, et ce
+ * chemin n'est plus emprunte.
+ *
+ * Ce socket ne porte aucun secret : un nom entre, un numero sort. Il est donc
+ * ouvert a tous, contrairement au canal PAM qui transporte les mots de passe et
+ * reste reserve a root. */
+#define VAULTAIRE_UID_SOCKET "/run/vaultaire/public/uid.sock"
+
+/* Delai TRES court, et c'est essentiel.
+ *
+ * Ce code est charge dans TOUS les processus de la machine. Un agent arrete,
+ * fige ou lent ne doit pas ralentir « ls », « ps » ou le demarrage du systeme :
+ * on renonce vite et on repond NOTFOUND, ce qui laisse simplement les autres
+ * modules NSS repondre. */
+#define VAULTAIRE_UID_TIMEOUT_MS 300
 
 /* Bornes de la plage geree. Elles servent de garde-fou a la LECTURE : une carte
  * corrompue ou trafiquee ne doit pas pouvoir attribuer l'UID 0.
@@ -202,6 +225,114 @@ static int map_lookup(const char *want_name, uid_t want_uid,
     return found;
 }
 
+/* Demande un identifiant a l'agent pour un nom absent de la carte.
+ *
+ * # Pourquoi ce chemin existe
+ *
+ * sshd appelle getpwnam AVANT toute authentification et refuse un compte
+ * inconnu sans meme executer AuthorizedKeysCommand. Sans reponse ici, aucune
+ * PREMIERE connexion n'est possible : la carte ne se remplit qu'au
+ * provisionnement, lequel suit l'authentification. La chaine se refermait sur
+ * elle-meme.
+ *
+ * # Ce que cette fonction ne fait pas
+ *
+ * Elle n'authentifie rien et n'accorde rien. Obtenir un numero ne donne ni
+ * compte local, ni mot de passe, ni cle : la decision d'acces reste entierement
+ * du ressort du core.
+ *
+ * Retourne 1 si l'agent a repondu, 0 sinon. */
+static int ask_agent(const char *name, uid_t *uid_out, gid_t *gid_out) {
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0) {
+        return 0;
+    }
+
+    struct sockaddr_un addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    if (strlen(VAULTAIRE_UID_SOCKET) >= sizeof(addr.sun_path)) {
+        close(fd);
+        return 0;
+    }
+    strncpy(addr.sun_path, VAULTAIRE_UID_SOCKET, sizeof(addr.sun_path) - 1);
+
+    /* Aucune journalisation, aucun message : un module NSS qui ecrirait sur la
+     * sortie d'erreur polluerait la sortie de tout programme de la machine. */
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return 0;
+    }
+
+    char requete[160];
+    int n = snprintf(requete, sizeof(requete), "%s\n", name);
+    if (n < 0 || (size_t)n >= sizeof(requete)) {
+        close(fd);
+        return 0;
+    }
+    if (write(fd, requete, (size_t)n) != n) {
+        close(fd);
+        return 0;
+    }
+
+    /* poll avant read : sans lui, un agent qui accepte la connexion sans jamais
+     * repondre bloquerait indefiniment le processus appelant — qui peut etre
+     * n'importe quoi sur la machine, y compris un service critique. */
+    struct pollfd pfd = { .fd = fd, .events = POLLIN };
+    if (poll(&pfd, 1, VAULTAIRE_UID_TIMEOUT_MS) <= 0) {
+        close(fd);
+        return 0;
+    }
+
+    char reponse[256];
+    ssize_t lus = read(fd, reponse, sizeof(reponse) - 1);
+    close(fd);
+    if (lus <= 0) {
+        return 0;
+    }
+    reponse[lus] = '\0';
+
+    /* Format attendu : nom:uid:gid — une ligne vide signifie « inconnu ». */
+    char *fin_ligne = strchr(reponse, '\n');
+    if (fin_ligne) {
+        *fin_ligne = '\0';
+    }
+
+    char *sep1 = strchr(reponse, ':');
+    if (!sep1) return 0;
+    *sep1 = '\0';
+    char *sep2 = strchr(sep1 + 1, ':');
+    if (!sep2) return 0;
+    *sep2 = '\0';
+
+    /* Le nom rendu doit etre CELUI qu'on a demande.
+     *
+     * L'agent est de confiance, mais le socket est ouvert a tous : si quelqu'un
+     * parvenait a s'y substituer, il ne doit pas pouvoir faire resoudre « alice »
+     * vers l'identite de « bob ». */
+    if (strcmp(reponse, name) != 0) {
+        return 0;
+    }
+
+    char *reste = NULL;
+    errno = 0;
+    unsigned long uid = strtoul(sep1 + 1, &reste, 10);
+    if (errno != 0 || reste == sep1 + 1 || *reste != '\0') return 0;
+
+    errno = 0;
+    unsigned long gid = strtoul(sep2 + 1, &reste, 10);
+    if (errno != 0 || reste == sep2 + 1 || *reste != '\0') return 0;
+
+    /* Meme garde-fou que pour la carte : hors plage, la reponse n'existe pas.
+     * C'est ce qui empeche une reponse trafiquee d'attribuer l'UID 0. */
+    if (uid < VAULTAIRE_UID_MIN || uid > VAULTAIRE_UID_MAX) return 0;
+    if (gid < VAULTAIRE_UID_MIN || gid > VAULTAIRE_UID_MAX) return 0;
+
+    *uid_out = (uid_t)uid;
+    *gid_out = (gid_t)gid;
+    return 1;
+}
+
 /* Remplit struct passwd a partir d'un nom, d'un UID et d'un GID deja valides. */
 static enum nss_status fill_passwd(const char *name, uid_t uid, gid_t gid,
                                    struct passwd *result,
@@ -256,12 +387,18 @@ enum nss_status _nss_vaultaire_getpwnam_r(const char *name, struct passwd *resul
     uid_t uid;
     gid_t gid;
     if (!map_lookup(name, 0, NULL, 0, &uid, &gid)) {
-        /* Absent de la carte : on ne repond pas.
+        /* Absent de la carte : on demande a l'agent.
          *
-         * C'est le changement de fond. L'ancienne version fabriquait une
-         * identite pour n'importe quel nom comportant un "@" ; celle-ci ne
-         * connait que ce que l'agent a effectivement attribue. */
-        return NSS_STATUS_NOTFOUND;
+         * C'est le chemin de la PREMIERE resolution d'un utilisateur. Il ne
+         * sert qu'une fois par compte : ensuite la carte repond.
+         *
+         * Si l'agent ne repond pas — arrete, fige, pas encore demarre — on rend
+         * NOTFOUND. L'utilisateur ne pourra pas se connecter, ce qui est le bon
+         * comportement : sans agent, il n'y aurait de toute facon personne pour
+         * l'authentifier. */
+        if (!ask_agent(name, &uid, &gid)) {
+            return NSS_STATUS_NOTFOUND;
+        }
     }
 
     return fill_passwd(name, uid, gid, result, buffer, buflen, errnop);
