@@ -87,8 +87,12 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "Template manquant", 500)
 			return
 		}
-		err = tmpl.Execute(w, data)
-		if err != nil {
+		// Rendu en mémoire : un échec ici laisse la réponse intacte, donc
+		// http.Error atteint réellement l'utilisateur au lieu de s'ajouter à une
+		// page à moitié écrite. Cette page est la destination de toutes les
+		// redirections de refus d'accès — tronquée, elle fait croire que c'est
+		// la page d'origine qui est cassée.
+		if err := rendreGabarit(w, tmpl, data); err != nil {
 			logs.Write_Log("ERROR", "Erreur exécution template profil : "+err.Error())
 			http.Error(w, "Erreur exécution template", 500)
 		}

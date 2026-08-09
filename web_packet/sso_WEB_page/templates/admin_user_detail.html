@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Détail utilisateur — {{ .User.Username }}</title>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
 </head>
 <body>
   <div class="app-layout">
@@ -68,18 +69,26 @@
       <div style="display:flex;flex-wrap:wrap;gap:1rem;margin-top:0.75rem">
         <form method="post" action="/admin/users?user={{ .User.Username }}" style="flex:1;min-width:200px">
           <input type="hidden" name="action" value="add_group">
+          <input type="hidden" name="bulk_field" value="group">
           <input type="hidden" name="target_user" value="{{ .User.Username }}">
-          <label>Ajouter au groupe</label>
-          <select name="group">
+          <label>Ajouter à des groupes</label>
+          <select name="group" multiple data-vlt-picker
+                  data-placeholder="Choisir un ou plusieurs groupes"
+                  data-search-placeholder="Rechercher un groupe…"
+                  data-empty="Aucun groupe ne correspond">
             {{ range .AllGroups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
           </select>
           <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Ajouter</button>
         </form>
         <form method="post" action="/admin/users?user={{ .User.Username }}" style="flex:1;min-width:200px">
           <input type="hidden" name="action" value="remove_group">
+          <input type="hidden" name="bulk_field" value="group">
           <input type="hidden" name="target_user" value="{{ .User.Username }}">
-          <label>Retirer du groupe</label>
-          <select name="group">
+          <label>Retirer de groupes</label>
+          <select name="group" multiple data-vlt-picker
+                  data-placeholder="Choisir un ou plusieurs groupes du compte"
+                  data-search-placeholder="Rechercher un groupe…"
+                  data-empty="Aucun groupe ne correspond">
             {{ range .User.Groups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
           </select>
           <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
@@ -241,6 +250,7 @@
     </main>
   </div>
   <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
   <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>

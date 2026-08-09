@@ -36,6 +36,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>GPO {{ .Policy.Name }} — Vaultaire</title>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
   <style>
     .gpo-field { margin-bottom: 0.85rem; }
     .gpo-field textarea { width: 100%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
@@ -263,9 +264,13 @@
       {{ if .AllGroups }}
       <form method="post" style="margin-top:0.9rem">
         <input type="hidden" name="action" value="link_group">
+        <input type="hidden" name="bulk_field" value="group">
         <input type="hidden" name="active_tab" value="groups">
-        <label>Lier à un groupe</label>
-        <select name="group" required>
+        <label>Lier à des groupes</label>
+        <select name="group" required multiple data-vlt-picker
+                data-placeholder="Choisir un ou plusieurs groupes"
+                data-search-placeholder="Rechercher un groupe…"
+                data-empty="Aucun groupe ne correspond">
           {{ range .AllGroups }}<option value="{{ . }}">{{ . }}</option>{{ end }}
         </select>
         <div class="gpo-actions"><button type="submit" class="btn btn-secondary">Lier</button></div>
@@ -321,6 +326,7 @@
     </div>
   </div>
   <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
   <script src="/static/admin_sidebar.js"></script>
   <script src="/static/gpo_admin.js"></script>
   <script>

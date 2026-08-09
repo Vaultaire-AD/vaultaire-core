@@ -45,6 +45,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | [`Developement/GPO.md`](./Developement/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions |
 | [`Developement/DataBase_Struct.md`](./Developement/DataBase_Struct.md) | Schéma de la base de données |
 | [`Developement/MFA_et_Expiration.md`](./Developement/MFA_et_Expiration.md) | Authentification multifacteur et expiration des mots de passe |
+| [`Developement/WebUI_Picker.md`](./Developement/WebUI_Picker.md) | Sélecteur d'entités du portail web : recherche, filtres, sélection multiple |
 | [`../CONTRIBUTING.MD`](../CONTRIBUTING.MD) | Comment contribuer (à la racine du dépôt) |
 
 ### Suivi des travaux

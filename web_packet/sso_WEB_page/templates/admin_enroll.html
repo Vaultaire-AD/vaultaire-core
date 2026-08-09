@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Enrôlement — Vaultaire</title>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
 </head>
 <body>
   <div class="app-layout">
@@ -59,9 +60,15 @@
         <input type="hidden" name="action" value="create_key">
 
         <label for="client_type">Type de service</label>
-        <select id="client_type" name="client_type">
+        {{/* Le libellé humain passe en data-hint plutôt que dans le texte de
+             l'option : la recherche porte alors sur le nom technique, qui est
+             ce qu'on tape, et le libellé reste affiché en gris à droite. */}}
+        <select id="client_type" name="client_type" data-vlt-picker
+                data-placeholder="Choisir un type de service"
+                data-search-placeholder="Rechercher un type…"
+                data-empty="Aucun type ne correspond">
           {{ range .Types }}{{ if eq .Family "service" }}
-          <option value="{{ .Name }}">{{ .Name }} — {{ .Label }}</option>
+          <option value="{{ .Name }}" data-hint="{{ .Label }}">{{ .Name }}</option>
           {{ end }}{{ end }}
         </select>
 
@@ -208,6 +215,7 @@
     </div>
   </div>
   <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
   <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>

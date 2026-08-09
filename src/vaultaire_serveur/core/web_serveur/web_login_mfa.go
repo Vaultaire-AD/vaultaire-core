@@ -217,8 +217,9 @@ func renderMFAPage(w http.ResponseWriter, errMsg string) {
 	// Le nom d'utilisateur n'est volontairement PAS transmis à la page. Il
 	// n'aide en rien à saisir six chiffres, et l'afficher exposerait un compte
 	// valide sur un écran atteint avec un mot de passe éventuellement volé.
-	if err := tmpl.Execute(w, map[string]string{"Error": errMsg}); err != nil {
+	if err := rendreGabarit(w, tmpl, map[string]string{"Error": errMsg}); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "login: rendu MFA échoué : "+err.Error())
+		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
 	}
 }
 

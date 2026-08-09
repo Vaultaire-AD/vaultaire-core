@@ -3,6 +3,7 @@ package action
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -188,6 +189,22 @@ func ajouterEnregistrementDNS(_ Appelant, p Params) (Resultat, error) {
 	}
 
 	fqdn := nomPleinementQualifie(nom, zone)
+
+	// Validation du TYPE et des DONNÉES.
+	//
+	// Elle vivait dans command_dns/validateDNSRecordInput.go, et le portage
+	// des actions DNS l'a laissée derrière. Le fichier est resté sans appelant, ce qu'un balayage
+	// des fonctions orphelines a fini par montrer.
+	//
+	// Entre-temps, `dns record add www A pas-une-ip` était accepté : la donnée
+	// partait en base et l'enregistrement ne résolvait rien. Pire, un type
+	// inconnu — « dns record add www AAAA :: » — s'écrivait aussi, pour n'être
+	// jamais servi. Aucun message, aucune trace : l'enregistrement existait
+	// dans la table et manquait dans les réponses.
+	if err := donneeDNSAcceptable(typeEnr, fqdn, donnee); err != nil {
+		return Resultat{}, err
+	}
+
 	if err := dnsdatabase.AddDNSRecordSmart(
 		dnsdatabase.GetDatabase(), fqdn, typeEnr, ttl, donnee, priorite); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de l'ajout de %s %s : %w", typeEnr, fqdn, err)
@@ -223,6 +240,85 @@ func supprimerEnregistrementDNS(_ Appelant, p Params) (Resultat, error) {
 // « @ » désigne la zone elle-même — c'est la convention des fichiers de zone
 // (RFC 1035 §5.1). Sans ce cas particulier, l'enregistrement s'appellerait
 // « @.exemple.fr », un nom que personne ne résoudra jamais.
+// TypesDNSAcceptes énumère ce que le serveur sait servir.
+//
+// Exportée pour que l'interface web bâtisse sa liste déroulante sur la même
+// source. Une liste recopiée dans le gabarit aurait divergé au premier ajout, et
+// le formulaire aurait alors proposé un type que l'action refuse — ou pire,
+// omis un type qu'elle accepte.
+var TypesDNSAcceptes = []string{"A", "CNAME", "MX", "NS", "TXT"}
+
+// fqdnPlausible reconnaît un nom pleinement qualifié.
+//
+// Volontairement permissive sur les caractères — les tirets bas existent dans
+// les noms de service — et stricte sur la forme : au moins un point, et une
+// extension alphabétique. Un « srv » nu passerait sinon pour une cible CNAME
+// valide, et l'enregistrement pointerait vers un nom que personne ne résout.
+func fqdnPlausible(nom string) bool {
+	nom = strings.TrimSuffix(strings.TrimSpace(nom), ".")
+	ok, _ := regexp.MatchString(`^([a-zA-Z0-9_-]+\.)+[a-zA-Z]{2,}$`, nom)
+	return ok
+}
+
+// donneeDNSAcceptable vérifie que la donnée correspond au type déclaré.
+//
+// # Pourquoi refuser plutôt qu'écrire et voir
+//
+// Un enregistrement mal formé ne provoque aucune erreur : il s'écrit, puis le
+// serveur ne le sert pas. Le symptôme est « ce nom ne résout pas », observé des
+// jours plus tard, sur une machine — et la table, elle, contient bien la ligne.
+// C'est le pire des cas : la donnée est là, le comportement ne l'est pas, et
+// rien ne relie les deux.
+func donneeDNSAcceptable(typeEnr, fqdn, donnee string) error {
+	connu := false
+	for _, t := range TypesDNSAcceptes {
+		if t == typeEnr {
+			connu = true
+			break
+		}
+	}
+	if !connu {
+		return fmt.Errorf("type d'enregistrement %q non pris en charge (acceptés : %s)",
+			typeEnr, strings.Join(TypesDNSAcceptes, ", "))
+	}
+
+	switch typeEnr {
+	case "A":
+		ip := net.ParseIP(strings.TrimSpace(donnee))
+		if ip == nil {
+			return fmt.Errorf("adresse %q invalide pour un enregistrement A", donnee)
+		}
+		// To4 et non ParseIP seul : « ::1 » est une IP valide mais pas une
+		// IPv4, et un A qui porte une IPv6 ne résout rien.
+		if ip.To4() == nil {
+			return fmt.Errorf(
+				"adresse %q est une IPv6 : un enregistrement A porte une IPv4", donnee)
+		}
+
+	case "CNAME", "MX", "NS":
+		if !fqdnPlausible(donnee) {
+			return fmt.Errorf("cible %q invalide pour un %s : un nom pleinement "+
+				"qualifié est attendu", donnee, typeEnr)
+		}
+		// Un CNAME qui pointe sur lui-même crée une boucle que le résolveur
+		// suit jusqu'à épuisement. Le refus coûte une comparaison ; le
+		// diagnostic, sans lui, coûte une après-midi.
+		if typeEnr == "CNAME" && strings.EqualFold(
+			strings.TrimSuffix(donnee, "."), strings.TrimSuffix(fqdn, ".")) {
+			return fmt.Errorf("CNAME circulaire : %s pointerait sur lui-même", fqdn)
+		}
+
+	case "TXT":
+		// Aucune contrainte de forme : un TXT porte du texte libre — SPF,
+		// DKIM, vérification de propriété. Le contraindre reviendrait à
+		// interdire des usages légitimes qu'on n'a pas prévus.
+		if strings.TrimSpace(donnee) == "" {
+			return fmt.Errorf("un enregistrement TXT ne peut pas être vide")
+		}
+	}
+	return nil
+}
+
 func nomPleinementQualifie(nom, zone string) string {
 	if nom == "@" {
 		return zone

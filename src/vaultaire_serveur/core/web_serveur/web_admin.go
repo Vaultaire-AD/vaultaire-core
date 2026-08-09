@@ -1,6 +1,7 @@
 package webserveur
 
 import (
+	"bytes"
 	"html/template"
 	"net/http"
 	"strings"
@@ -14,13 +15,79 @@ import (
 
 const adminTplDir = "web_packet/sso_WEB_page/templates"
 
+// rendreDansTampon exécute un gabarit EN MÉMOIRE avant d'écrire quoi que ce
+// soit dans la réponse.
+//
+// # Le défaut que cela corrige
+//
+// `tmpl.Execute(w, data)` écrit au fil de l'exécution. Si le gabarit échoue au
+// milieu — le cas le plus courant étant un champ que la structure de données ne
+// porte pas ou plus —, tout ce qui précède la ligne fautive est DÉJÀ parti dans
+// la réponse, et tout ce qui suit ne partira jamais.
+//
+// Le résultat, côté navigateur, est une page tronquée qui ne ressemble pas du
+// tout à une erreur :
+//
+//   - le contenu s'arrête net, sans message : la page « n'affiche plus rien » ;
+//   - `<script src="/static/app.js">` étant en bas du document, il n'est jamais
+//     envoyé — donc le thème choisi ne s'applique plus, la barre latérale ne
+//     fonctionne plus, et rien n'indique pourquoi ;
+//   - le `http.Error` de secours arrive après l'en-tête déjà écrit et ne fait
+//     qu'ajouter « superfluous response.WriteHeader » aux journaux, sans
+//     atteindre l'utilisateur.
+//
+// Trois symptômes sans rapport apparent pour une seule cause, et aucun qui
+// désigne le gabarit. C'est ce qui rend ce mode de panne coûteux à diagnostiquer.
+//
+// En rendant dans un tampon, l'échec se produit AVANT le premier octet : la
+// réponse est alors intacte, `http.Error` fonctionne, et le message d'erreur
+// nomme le gabarit et le champ fautif.
+//
+// Le coût est une page en mémoire le temps du rendu — quelques dizaines de
+// kilo-octets pour les plus grosses d'entre elles.
+func rendreDansTampon(w http.ResponseWriter, tmpl *template.Template, nom string, data interface{}) error {
+	var tampon bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&tampon, nom, data); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, err := tampon.WriteTo(w)
+	return err
+}
+
+// rendreGabarit est la même protection pour les gabarits d'un seul fichier —
+// connexion, profil, second facteur, enrôlement —, qui appellent `Execute` et
+// non `ExecuteTemplate`.
+//
+// Ces pages-là sont les plus sensibles au problème : la page de profil est la
+// destination de TOUTES les redirections de refus d'accès. Si elle se tronque,
+// l'utilisateur renvoyé vers elle voit une page vide et conclut que c'est la
+// page d'origine qui est cassée.
+func rendreGabarit(w http.ResponseWriter, tmpl *template.Template, data interface{}) error {
+	var tampon bytes.Buffer
+	if err := tmpl.Execute(&tampon, data); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, err := tampon.WriteTo(w)
+	return err
+}
+
 // executeAdminPage parse le partial sidebar + la page et exécute la page (sidebar commun à toutes les pages admin).
 func executeAdminPage(w http.ResponseWriter, pageName string, data interface{}) error {
 	tmpl, err := template.ParseFiles(adminTplDir+"/admin_sidebar.html", adminTplDir+"/"+pageName)
 	if err != nil {
+		// Journalisé ici : les appelants rendent tous « Template manquant », un
+		// message qui vaut pour l'analyse syntaxique mais induit en erreur quand
+		// c'est l'exécution qui a échoué — le fichier est bien là.
+		logs.Write_Log("ERROR", "web: analyse du gabarit "+pageName+" impossible : "+err.Error())
 		return err
 	}
-	return tmpl.ExecuteTemplate(w, pageName, data)
+	if err := rendreDansTampon(w, tmpl, pageName, data); err != nil {
+		logs.Write_Log("ERROR", "web: exécution du gabarit "+pageName+" échouée : "+err.Error())
+		return err
+	}
+	return nil
 }
 
 // requireWebAdmin checks session and web_admin permission; if not allowed, redirects to / or /profil and returns false.

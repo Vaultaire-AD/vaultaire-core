@@ -3,16 +3,13 @@
 Référence des actions métier de Vaultaire, du droit que chacune exige, et du
 périmètre sur lequel ce droit est vérifié.
 
-Ce document a deux usages, et il faut les distinguer.
+**La migration est terminée.** Toute action d'administration passe par le
+registre `core/action`, qui porte sa clé RBAC, sa portée et son contrôle — une
+seule fois, pour la ligne de commande comme pour l'interface web.
 
-**Pendant la migration** — la colonne « État » suit ce qui passe par le registre
-d'actions et ce qui appelle encore la base directement. Une ligne non migrée
-n'est pas cassée : elle fonctionne, mais son contrôle de droits vit encore dans
-le handler, avec le risque de diverger de l'autre façade.
-
-**Après la migration** — le tableau répond à la question « de quel droit ai-je
-besoin pour faire ceci ? », et sa réciproque « qu'est-ce que ce droit permet ? ».
-C'est la référence à consulter avant de déléguer.
+Ce tableau répond donc à deux questions : « de quel droit ai-je besoin pour
+faire ceci ? » et sa réciproque « qu'est-ce que ce droit permet ? ». C'est la
+référence à consulter avant de déléguer.
 
 > **Ce document doit être mis à jour à chaque action ajoutée, renommée, ou dont
 > la clé ou la portée change.** Une ligne périmée est pire qu'une ligne absente :
@@ -24,9 +21,27 @@ C'est la référence à consulter avant de déléguer.
 
 ### La clé RBAC
 
-Un droit s'écrit `catégorie:action:objet` — par exemple `write:create:user`. Une
-poignée d'actions ne rentrent pas dans ce moule et portent une clé spéciale :
-`write:dns`, `write:mfa`, `read:log`, `write:killswitch`.
+Un droit s'écrit `catégorie:action:objet` — par exemple `write:create:user`.
+
+Les objets de l'annuaire sont `user`, `group`, `client`, `permission`, `gpo`.
+Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
+
+| Clé | Ce qu'elle gouverne |
+|---|---|
+| `read:log` | consultation des journaux |
+| `write:dns` / `read:dns` | modification / consultation du DNS |
+| `write:mfa` | second facteur d'un tiers |
+| `write:killswitch` | révocation d'urgence d'un compte |
+| `read:cluster` / `write:cluster` | état du cluster / réglages |
+| `read:certificate` / `write:certificate` | certificats TLS du serveur |
+| `read:enrollment` | consultation des clés d'enrôlement |
+| `write:server` | réglages d'exploitation (debug, purge des sessions) |
+
+**Pourquoi des clés spéciales et non des objets RBAC.** Un journal, un nœud de
+cluster, un certificat n'appartiennent à aucun domaine : la délégation par
+domaine n'a rien à quoi s'appliquer. Les déclarer objets engendrerait six clés
+chacun — `read:get:cluster`, `write:add:cluster`… — dont une ou deux auraient un
+sens. **Une clé qui n'accorde rien est indiscernable d'un oubli.**
 
 Certaines actions n'ont **aucune clé RBAC**. Ce n'est pas un oubli : elles sont
 réservées aux membres du groupe protégé (`vaultaire`). Voir plus bas.
@@ -47,9 +62,13 @@ qui rend la délégation possible. Détenir `write:create:user` sur le domaine
 | **Machine** | les domaines de la machine visée |
 | **Permission** | les domaines de la permission visée |
 
-Le contrôle exige le droit sur **tous** les domaines listés, pas sur un seul.
-Un délégué de `paris` seul ne peut pas agir sur une entité présente dans `paris`
-et `lyon`.
+Pour une **écriture**, le droit est exigé sur **tous** les domaines listés. Un
+délégué de `paris` seul ne peut pas modifier une entité présente dans `paris` et
+`lyon`.
+
+Pour une **lecture**, un seul suffit — la même entité lui est visible. Voir
+« Voir et agir ne s'exigent pas pareil » plus bas : c'est la nuance qui rend la
+délégation utilisable.
 
 **Pourquoi certaines actions sont globales.** Une création n'a pas de cible dont
 déduire un domaine — le compte n'existe pas encore. Un certificat, une zone DNS,
@@ -78,8 +97,12 @@ Quand les deux sont exigés, **les deux** le sont — jamais l'un ou l'autre.
 Légende de l'état :
 
 - **Registre** — passe par `core/action`, contrôle unique et partagé
-- **Handler** — contrôle encore dans le handler, à migrer
 - **—** — la façade n'expose pas cette action
+
+**Toutes les lignes sont au registre.** Plus aucun contrôle d'accès ne vit dans
+un handler côté ligne de commande ; côté web, seules les restrictions du
+catalogue GPO et le profil personnel restent à part, chacune pour une raison
+écrite plus bas.
 
 | Action | Droit exigé | Portée | Groupe protégé | CLI | Web |
 |---|---|---|---|---|---|
@@ -249,7 +272,40 @@ d'un oubli.
 > ```
 >
 > Le groupe protégé les reçoit automatiquement : `EnsureSuperadminActions`
-> passe à chaque démarrage sur `permission.AllActionKeys()`.
+> passe à chaque démarrage sur `permission.AllActionKeys()`, qui les contient
+> — vérifié.
+
+---
+
+### Une validation perdue en route, retrouvée par le balayage
+
+`validateDNSRecordInput` vivait dans `command_dns`. Le portage des actions DNS
+l'a laissée derrière : le fichier est resté, **sans plus aucun appelant**, et
+c'est un balayage des fonctions orphelines qui l'a montré — plusieurs lots plus
+tard.
+
+Entre-temps, `dns record add www A pas-une-ip` était **accepté**. La donnée
+partait en base et l'enregistrement ne résolvait rien. Un type inconnu —
+`AAAA` — s'écrivait aussi, pour n'être jamais servi.
+
+C'est le pire genre de défaut : la ligne **existe** dans la table, le
+comportement n'y est pas, et rien ne relie les deux. Le symptôme observé — « ce
+nom ne résout pas » — arrive des jours plus tard, sur une machine, et n'oriente
+vers rien.
+
+La validation est maintenant dans l'action, donc sur le chemin des deux
+façades, avec deux vérifications de plus que l'originale :
+
+- un `A` qui porte une **IPv6** est refusé (`net.ParseIP` seul l'acceptait) ;
+- un **CNAME circulaire** est refusé — il faisait boucler le résolveur.
+
+`TypesDNSAcceptes` est exporté pour que le formulaire web bâtisse sa liste
+déroulante sur la même source. Une liste recopiée dans le gabarit aurait
+divergé au premier ajout.
+
+Six tests la couvrent, dont un qui vérifie que l'action **appelle** la
+validation — les cinq autres passeraient sur un code où elle ne le ferait pas,
+ce qui est exactement ce qui venait d'arriver.
 
 ---
 
@@ -329,7 +385,10 @@ catalogue, et il est nommé pour qu'on le retrouve.
 - `web_profil*.go` — l'utilisateur agit sur son propre compte. Hors périmètre
   par décision : cela ne vise pas un tiers et ne relève d'aucune délégation.
 - `web_admin_gpo_restrictions.go` — le catalogue des valeurs autorisées, de
-  portée serveur. Dernière exemption de `fichiersExemptes`.
+  portée serveur. Seule exemption **d'administration** de `fichiersExemptes` ; les
+  quatre autres (`web_profil.go`, `web_profil_mfa.go`, `web_login.go`,
+  `web_login_mfa.go`) portent sur le compte de l'appelant ou sur
+  l'authentification, antérieure à toute autorisation.
 
 `verifierDroit` a disparu de `command_create`. Son commentaire annonçait :
 « sa disparition signalera que le portage est complet ». Son dernier appelant
@@ -520,42 +579,19 @@ prochaine exécution.
 
 ---
 
-### Ce qui n'est PAS encore au registre
+### Ce qui n'est PAS au registre
 
-Ces lignes manquaient au tableau. Elles existent et sont contrôlées — mais
-**dans les handlers**, donc deux fois, une par façade. C'est exactement ce que
-la refonte supprime ailleurs.
+Une seule surface d'administration, et une raison écrite.
 
 #### Restrictions du catalogue GPO
 
-`web_admin_gpo_restrictions.go` reste seul hors du registre. Ces réglages ne
-visent pas une GPO mais **le catalogue lui-même** — quelles valeurs un champ
-accepte, sur tout le serveur. Leur portée n'est donc pas celle d'une GPO, et
-les traduire dans la foulée aurait mêlé deux modèles dans le même lot.
+`web_admin_gpo_restrictions.go` reste hors du registre. Ces réglages ne visent
+pas une GPO mais **le catalogue lui-même** — quelles valeurs un champ accepte,
+sur tout le serveur. Leur portée n'est donc pas celle d'une GPO, et les
+traduire dans la foulée aurait mêlé deux modèles dans le même lot.
 
-C'est la dernière exemption de `fichiersExemptes`.
-
-<!-- Le tableau ci-dessous est CONSERVÉ pour mémoire : il décrit l'état AVANT
-     ce lot. Les actions GPO propres sont désormais au registre. -->
-
-#### GPO — les actions propres (état d'avant, pour mémoire)
-
-Seules les **liaisons** GPO↔groupe figuraient au tableau. Les actions sur la
-GPO elle-même n'y étaient pas du tout :
-
-| Opération | Droit exigé | Portée | CLI | Web |
-|---|---|---|---|---|
-| Créer une GPO | `write:create:gpo` | Globale | Handler — `create -gpo` | Handler — `create_gpo` |
-| Modifier une GPO | `write:update:gpo` | Domaines des groupes liés | — | Handler — `update_gpo` |
-| Supprimer une GPO | `write:delete:gpo` | Domaines des groupes liés | Handler — `delete -gpo` | Handler — `delete_gpo` |
-| Ajouter un module | `write:update:gpo` | Domaines des groupes liés | — | Handler — `add_module` |
-| Modifier un module | `write:update:gpo` | Domaines des groupes liés | — | Handler — `update_module` |
-| Supprimer un module | `write:update:gpo` | Domaines des groupes liés | — | Handler — `delete_module` |
-| Restrictions de valeurs | `write:update:gpo` | Globale | — | Handler — `web_admin_gpo_restrictions.go` |
-| Lire l'état de conformité | `read:get:gpo` | Globale | Handler — `gpo status`, `gpo drift` | — |
-
-**Décision prise :** ces actions rejoignent le registre, dans un lot isolé et
-en dernier, pour être éprouvées ou rejetées seules.
+C'est la seule exemption d'administration de `fichiersExemptes` ; les quatre
+autres portent sur le compte de l'appelant ou sur l'authentification.
 
 #### Lectures restantes
 

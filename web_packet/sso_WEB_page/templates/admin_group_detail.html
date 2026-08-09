@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Détail groupe — {{ .Group }}</title>
   <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
 </head>
 <body>
   <div class="app-layout">
@@ -56,16 +57,24 @@
       <ul style="list-style:none;padding:0">{{ range .Users }}<li><a href="/admin/users?user={{ . }}">{{ . }}</a></li>{{ end }}</ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_user">
+        <input type="hidden" name="bulk_field" value="username">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Ajouter un utilisateur</label>
-        <select name="username">{{ range .AllUsers }}<option value="{{ .Username }}">{{ .Username }}</option>{{ end }}</select>
+        <label>Ajouter des utilisateurs</label>
+        <select name="username" multiple data-vlt-picker
+                data-placeholder="Choisir un ou plusieurs utilisateurs"
+                data-search-placeholder="Rechercher un utilisateur…"
+                data-empty="Aucun utilisateur ne correspond">{{ range .AllUsers }}<option value="{{ .Username }}">{{ .Username }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
       </form>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
         <input type="hidden" name="action" value="remove_user">
+        <input type="hidden" name="bulk_field" value="username">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Retirer un utilisateur</label>
-        <select name="username">{{ range .Users }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <label>Retirer des utilisateurs</label>
+        <select name="username" multiple data-vlt-picker
+                data-placeholder="Choisir un ou plusieurs membres"
+                data-search-placeholder="Rechercher un membre…"
+                data-empty="Aucun membre ne correspond">{{ range .Users }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
       </form>
     </section>
@@ -77,16 +86,24 @@
       </ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_client">
+        <input type="hidden" name="bulk_field" value="computeur_id">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Ajouter un client</label>
-        <select name="computeur_id">{{ range .AllClients }}<option value="{{ .ComputeurID }}">{{ .ComputeurID }}</option>{{ end }}</select>
+        <label>Ajouter des clients</label>
+        <select name="computeur_id" multiple data-vlt-picker
+                data-placeholder="Choisir un ou plusieurs clients"
+                data-search-placeholder="Rechercher une machine…"
+                data-empty="Aucun client ne correspond">{{ range .AllClients }}<option value="{{ .ComputeurID }}">{{ .ComputeurID }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
       </form>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
         <input type="hidden" name="action" value="remove_client">
+        <input type="hidden" name="bulk_field" value="computeur_id">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Retirer un client</label>
-        <select name="computeur_id">{{ range .Clients }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <label>Retirer des clients</label>
+        <select name="computeur_id" multiple data-vlt-picker
+                data-placeholder="Choisir un ou plusieurs clients du groupe"
+                data-search-placeholder="Rechercher une machine…"
+                data-empty="Aucun client ne correspond">{{ range .Clients }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
       </form>
     </section>
@@ -99,16 +116,24 @@
       </ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_permission">
+        <input type="hidden" name="bulk_field" value="permission">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Ajouter une permission</label>
-        <select name="permission">{{ range .AllPerms }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}</select>
+        <label>Ajouter des permissions</label>
+        <select name="permission" multiple data-vlt-picker
+                data-placeholder="Choisir une ou plusieurs permissions"
+                data-search-placeholder="Rechercher une permission…"
+                data-empty="Aucune permission ne correspond">{{ range .AllPerms }}<option value="{{ .Name }}">{{ .Name }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
       </form>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
         <input type="hidden" name="action" value="remove_permission">
+        <input type="hidden" name="bulk_field" value="permission">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Retirer une permission</label>
-        <select name="permission">{{ range .Perms }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <label>Retirer des permissions</label>
+        <select name="permission" multiple data-vlt-picker
+                data-placeholder="Choisir une ou plusieurs permissions du groupe"
+                data-search-placeholder="Rechercher une permission…"
+                data-empty="Aucune permission ne correspond">{{ range .Perms }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
       </form>
     </section>
@@ -125,10 +150,17 @@
       {{ if .AllClientPerms }}
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_client_permission">
+        <input type="hidden" name="bulk_field" value="client_permission">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Ajouter une permission client</label>
-        <select name="client_permission">
-          {{ range .AllClientPerms }}<option value="{{ .Name }}">{{ .Name }}{{ if .IsAdmin }} (admin){{ end }}</option>{{ end }}
+        <label>Ajouter des permissions client</label>
+        <select name="client_permission" multiple data-vlt-picker
+                data-placeholder="Choisir une ou plusieurs permissions client"
+                data-search-placeholder="Rechercher une permission client…"
+                data-empty="Aucune permission client ne correspond">
+          {{/* data-tags alimente les filtres du sélecteur : deux étiquettes
+               suffisent à isoler d'un clic les permissions qui donnent
+               l'administration de la machine. */}}
+          {{ range .AllClientPerms }}<option value="{{ .Name }}" data-tags="{{ if .IsAdmin }}admin{{ else }}standard{{ end }}">{{ .Name }}{{ if .IsAdmin }} (admin){{ end }}</option>{{ end }}
         </select>
         <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
       </form>
@@ -136,9 +168,13 @@
       {{ if .ClientPerms }}
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
         <input type="hidden" name="action" value="remove_client_permission">
+        <input type="hidden" name="bulk_field" value="client_permission">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Retirer une permission client</label>
-        <select name="client_permission">{{ range .ClientPerms }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <label>Retirer des permissions client</label>
+        <select name="client_permission" multiple data-vlt-picker
+                data-placeholder="Choisir une ou plusieurs permissions client du groupe"
+                data-search-placeholder="Rechercher une permission client…"
+                data-empty="Aucune permission client ne correspond">{{ range .ClientPerms }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
       </form>
       {{ end }}
@@ -156,9 +192,13 @@
       {{ if .AllGPOs }}
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_gpo">
+        <input type="hidden" name="bulk_field" value="gpo">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Lier une GPO</label>
-        <select name="gpo">{{ range .AllGPOs }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <label>Lier des GPO</label>
+        <select name="gpo" multiple data-vlt-picker
+                data-placeholder="Choisir une ou plusieurs GPO"
+                data-search-placeholder="Rechercher une GPO…"
+                data-empty="Aucune GPO ne correspond">{{ range .AllGPOs }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Lier</button>
       </form>
       {{ else }}
@@ -169,9 +209,13 @@
       {{ if .GPOs }}
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
         <input type="hidden" name="action" value="remove_gpo">
+        <input type="hidden" name="bulk_field" value="gpo">
         <input type="hidden" name="target_group" value="{{ .Group }}">
-        <label>Délier une GPO</label>
-        <select name="gpo">{{ range .GPOs }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+        <label>Délier des GPO</label>
+        <select name="gpo" multiple data-vlt-picker
+                data-placeholder="Choisir une ou plusieurs GPO liées"
+                data-search-placeholder="Rechercher une GPO…"
+                data-empty="Aucune GPO ne correspond">{{ range .GPOs }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Délier</button>
       </form>
       {{ end }}
@@ -191,6 +235,7 @@
     </main>
   </div>
   <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
   <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>

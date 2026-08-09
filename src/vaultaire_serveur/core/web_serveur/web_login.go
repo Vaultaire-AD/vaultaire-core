@@ -12,7 +12,7 @@ import (
 )
 
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
-	err := templates.Execute(w, nil)
+	err := rendreGabarit(w, templates, nil)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "Erreur lors de l'exécution du template de la page de connexion : "+err.Error())
 		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)

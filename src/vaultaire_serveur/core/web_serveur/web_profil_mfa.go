@@ -232,8 +232,9 @@ func renderMFAEnroll(w http.ResponseWriter, data MFAEnrollData) {
 		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
 		return
 	}
-	if err := tmpl.Execute(w, data); err != nil {
+	if err := rendreGabarit(w, tmpl, data); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "profil: rendu MFA échoué : "+err.Error())
+		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
 	}
 }
 

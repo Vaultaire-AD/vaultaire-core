@@ -211,6 +211,10 @@ func parametresParDefaut(p action.Params, defauts action.Params) action.Params {
 
 // ExecuterActionFormulaireAvec applique une action en complétant les paramètres
 // avec le contexte de la page.
+//
+// Si le formulaire déclare un champ multi-valué — voir ChampCibles dans
+// web_action_groupe.go —, l'action est exécutée une fois par cible, avec un
+// contrôle de droits par cible. Sinon le chemin est celui d'origine.
 func ExecuterActionFormulaireAvec(r *http.Request, username string, groupIDs []int,
 	defauts action.Params) (res action.Resultat, traite bool, err error) {
 
@@ -226,9 +230,15 @@ func ExecuterActionFormulaireAvec(r *http.Request, username string, groupIDs []i
 		return action.Resultat{}, true, fmt.Errorf("%w : %q", ErrActionInconnue, nomFormulaire)
 	}
 
+	appelant := action.Appelant{Username: username, GroupIDs: groupIDs}
+
+	if champ := ciblesDeclarees(r); champ != "" {
+		res, err = executerParCible(r, nomAction, appelant, defauts, champ)
+		return res, true, err
+	}
+
 	p := parametresParDefaut(parametresDepuisRequete(r), defauts)
-	res, err = action.Executer(nomAction,
-		action.Appelant{Username: username, GroupIDs: groupIDs}, p)
+	res, err = action.Executer(nomAction, appelant, p)
 	return res, true, err
 }
 
@@ -323,6 +333,15 @@ func ExecuterActionFormulaire(r *http.Request, username string, groupIDs []int) 
 	}
 
 	appelant := action.Appelant{Username: username, GroupIDs: groupIDs}
+
+	// Même traitement groupé que dans la variante « Avec », sans paramètres
+	// par défaut. Les deux portes doivent se comporter pareil : n'en équiper
+	// qu'une ferait dépendre le sort d'un formulaire de la page qui l'affiche.
+	if champ := ciblesDeclarees(r); champ != "" {
+		res, err = executerParCible(r, nomAction, appelant, nil, champ)
+		return res, true, err
+	}
+
 	res, err = action.Executer(nomAction, appelant, parametresDepuisRequete(r))
 	return res, true, err
 }
