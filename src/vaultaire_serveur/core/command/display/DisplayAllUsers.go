@@ -2,61 +2,33 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-	"vaultaire/core/logs"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
+// DisplayAllUsers liste les comptes de l'annuaire.
+//
+// L'ancienne version combinait tabwriter et `%-15s`, deux mécanismes
+// d'alignement incompatibles, et comptait les codes couleur dans la largeur des
+// en-têtes. Voir table.go.
+//
+// Elle omettait aussi l'adresse électronique, pourtant présente dans les données
+// et souvent le seul moyen de distinguer deux comptes homonymes de domaines
+// différents.
 func DisplayAllUsers(users []storage.GetUsers) string {
-	// Créer un StringBuilder pour accumuler le contenu
-	var sb strings.Builder
+	if len(users) == 0 {
+		return "Aucun utilisateur."
+	}
 
-	// Configurer les couleurs
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-
-	// Ajouter le titre
-	sb.WriteString(title("👥 Liste de tous les Utilisateurs") + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Créer un tableau formaté avec tabwriter
-	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
-
-	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-15s %-25s %-15s %-20s\n",
-		header("ID Utilisateur"),
-		header("Username"),
-		header("Date de Naissance"),
-		header("Créé à"),
-	)
-
-	// Ajouter chaque utilisateur
-	for _, user := range users {
-		// Format de la date de naissance (si elle existe)
-		dateNaissance := user.DateNaissance
-
-		// Ajouter les détails de l'utilisateur
-		fmt.Fprintf(w, "%-15d %-25s %-15s %-20s\n",
-			user.ID,
-			user.Username,
-			dateNaissance,
-			user.CreatedAt,
+	t := NouvelleTable("ID", "Identifiant", "Adresse", "Naissance", "Créé le")
+	for _, u := range users {
+		t.Ajouter(
+			fmt.Sprintf("%d", u.ID),
+			Valeur(u.Username),
+			Valeur(u.Email),
+			Valeur(u.DateNaissance),
+			Valeur(u.CreatedAt),
 		)
 	}
-
-	// Vider le tampon pour s'assurer que tout est écrit dans sb
-	err := w.Flush()
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de l'écriture des utilisateurs : "+err.Error())
-		return "Erreur lors de l'affichage des utilisateurs."
-	}
-
-	// Ajouter une ligne de séparation
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Retourner le contenu accumulé sous forme de chaîne
-	return sb.String()
+	return fmt.Sprintf("%d utilisateur(s)\n\n%s", len(users), t.String())
 }

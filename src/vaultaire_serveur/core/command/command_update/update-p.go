@@ -121,5 +121,11 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 	if err != nil {
 		return ">> -" + err.Error()
 	}
-	return display.DisplayUserPermission(*perm)
+	// Les actions ne sont pas relues ici : cette commande vient d'en modifier
+	// UNE, et la fiche sert à confirmer le changement. Passer nil affiche les
+	// colonnes historiques et signale que les droits RBAC n'ont pas été lus —
+	// plutôt que de laisser croire que la permission n'accorde rien.
+	//
+	// Pour la fiche complète : get -p -u <nom>.
+	return display.DisplayUserPermission(*perm, nil)
 }

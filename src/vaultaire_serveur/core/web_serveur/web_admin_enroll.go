@@ -10,11 +10,9 @@ package webserveur
 // ce qui rend le vol de la base sans intérêt pour un attaquant.
 
 import (
-	"database/sql"
 	"html/template"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"vaultaire/core/clienttype"
@@ -82,12 +80,29 @@ func AdminEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if r.Method == http.MethodPost {
-		switch r.FormValue("action") {
-		case "create_key":
-			data.Secret, data.SecretType, data.Message, data.Error =
-				createEnrollmentKey(r, username, canCreate, data.IsSuperadmin)
-		case "revoke_key":
-			data.Message, data.Error = revokeEnrollmentKey(r, username, canCreate)
+		// Toutes les actions passent par le registre. Les contrôles de droits —
+		// write:create:client, et l'appartenance au groupe protégé pour les
+		// types qui portent l'assertion d'identité — sont portés par la
+		// définition de l'action, plus par ce fichier.
+		//
+		// Les deux fonctions createEnrollmentKey et revokeEnrollmentKey qui
+		// vivaient ici ont disparu avec leurs contrôles : les garder aurait
+		// laissé deux endroits où le droit se décide, donc deux endroits à
+		// tenir d'accord.
+		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
+			if err != nil {
+				data.Error = MessageDActionPourAffichage(res, err)
+			} else {
+				data.Message = res.Message
+				// Le secret ne voyage jamais dans le message — il finirait dans
+				// les journaux, où le message d'exécution est recopié. Il est
+				// dans les données, et n'est lu qu'ici, pour un affichage
+				// unique.
+				if d, ok := res.Donnees.(map[string]string); ok {
+					data.Secret, data.SecretType = d["secret"], d["client_type"]
+				}
+			}
 		}
 	}
 
@@ -120,97 +135,26 @@ func AdminEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	renderAdminTemplate(w, "admin_enroll.html", data)
 }
 
-// createEnrollmentKey émet une clé et la retourne pour un affichage unique.
-func createEnrollmentKey(r *http.Request, username string, canCreate, isSuperadmin bool) (secret, secretType, message, errMsg string) {
-	if !canCreate {
-		logs.Write_Log("SECURITY", "webadmin: "+username+" tente d'émettre une clé d'enrôlement sans write:create:client")
-		return "", "", "", "Permission refusée : write:create:client requis sur tous les domaines."
-	}
-
-	clientType := strings.TrimSpace(r.FormValue("client_type"))
-	if err := clienttype.Validate(clientType); err != nil {
-		return "", "", "", err.Error()
-	}
-	if !clienttype.IsService(clientType) {
-		return "", "", "", clientType + " est un agent : il se crée depuis la page Clients, il ne s'enrôle pas."
-	}
-
-	// Une clé visant un type qui porte l'assertion d'identité donne le pouvoir
-	// d'agir au nom de n'importe quel utilisateur. Ce n'est pas un droit qui se
-	// délègue par une clé RBAC ordinaire.
-	if clienttype.MayAssertUser(clientType) && !isSuperadmin {
-		logs.Write_Log("SECURITY", "webadmin: "+username+" tente d'émettre une clé "+clientType+
-			" (assertion d'identité) sans appartenir au groupe "+isprotected.ProtectedGroupName)
-		return "", "", "", "Permission refusée : une clé " + clientType +
-			" permet d'agir au nom de n'importe quel utilisateur. Réservée au groupe " +
-			isprotected.ProtectedGroupName + "."
-	}
-
-	uses, err := strconv.Atoi(strings.TrimSpace(r.FormValue("uses")))
-	if err != nil {
-		return "", "", "", "Le quota doit être un nombre entier."
-	}
-	minutes, err := strconv.Atoi(strings.TrimSpace(r.FormValue("expires_minutes")))
-	if err != nil {
-		return "", "", "", "La durée doit être un nombre entier de minutes."
-	}
-	// 0 vaut « illimité » sur les deux bornes. Une clé sans limite ne s'éteint
-	// que par révocation : un geste explicite, jamais l'écoulement du temps.
-	if uses < 0 || uses > enrollMaxUses {
-		return "", "", "", "Le quota doit être compris entre 0 (illimité) et " + strconv.Itoa(enrollMaxUses) + "."
-	}
-	if minutes < 0 || minutes > enrollMaxMinutes {
-		return "", "", "", "La durée doit être comprise entre 0 (sans expiration) et " +
-			strconv.Itoa(enrollMaxMinutes/1440) + " jours."
-	}
-
-	newSecret, err := dbenrollment.GenerateSecret()
-	if err != nil {
-		return "", "", "", "Génération impossible : " + err.Error()
-	}
-	var expiresAt sql.NullTime
-	if minutes > 0 {
-		expiresAt = sql.NullTime{Time: time.Now().Add(time.Duration(minutes) * time.Minute), Valid: true}
-	}
-
-	if _, err := dbenrollment.CreateKey(database.GetDatabase(), newSecret,
-		strings.TrimSpace(r.FormValue("label")), clientType, uses, expiresAt, username); err != nil {
-		return "", "", "", "Émission impossible : " + err.Error()
-	}
-
-	created := "Clé émise. Elle ne sera plus jamais affichée : copiez-la maintenant."
-	if uses == 0 || !expiresAt.Valid {
-		created += " Cette clé est sans limite : seule une révocation l'arrêtera."
-	}
-	return newSecret, clientType, created, ""
-}
-
-func revokeEnrollmentKey(r *http.Request, username string, canCreate bool) (message, errMsg string) {
-	if !canCreate {
-		logs.Write_Log("SECURITY", "webadmin: "+username+" tente de révoquer une clé d'enrôlement sans write:create:client")
-		return "", "Permission refusée : write:create:client requis sur tous les domaines."
-	}
-	id, err := strconv.Atoi(strings.TrimSpace(r.FormValue("key_id")))
-	if err != nil {
-		return "", "Identifiant de clé invalide."
-	}
-	if err := dbenrollment.RevokeKey(database.GetDatabase(), id, username); err != nil {
-		return "", "Révocation impossible : " + err.Error()
-	}
-	return "Clé révoquée. Les services déjà enrôlés avec elle ne sont pas affectés : " +
-		"ils ont leur propre paire de clés.", ""
-}
-
-// Bornes de saisie, alignées sur celles du CLI.
+// Les fonctions createEnrollmentKey et revokeEnrollmentKey ont été retirées.
 //
-// Recopiées et non partagées : le CLI les exprime en durée, la page en minutes,
-// et les faire transiter par une constante commune obligerait à convertir dans
-// les deux sens pour un gain nul. Elles sont de toute façon revalidées par la
-// couche base, qui est la seule à faire foi.
-const (
-	enrollMaxUses    = 50
-	enrollMaxMinutes = 7 * 24 * 60
-)
+// Elles portaient leurs propres contrôles de droits — write:create:client, et
+// l'appartenance au groupe protégé pour les types capables d'agir au nom d'un
+// utilisateur — ainsi que la validation des bornes de saisie.
+//
+// Tout cela vit désormais dans la définition des actions enroll.create_key et
+// enroll.revoke_key (core/action/actions_enroll.go). Les garder ici aurait
+// laissé DEUX endroits où le droit se décide : la ligne de commande aurait pu
+// diverger de l'interface web sans que rien ne le signale — c'est exactement ce
+// qui s'était produit pour la création d'utilisateur.
+//
+// Les bornes de saisie ont suivi le même chemin.
+//
+// Elles vivaient ici ET dans le CLI, recopiées « parce que le CLI les exprime
+// en durée et la page en minutes ». C'était une justification de la
+// duplication, pas une raison de la garder : les deux se sont ensuite
+// contredites sur le message affiché, sinon sur la valeur.
+//
+// Elles sont maintenant dans l'action, une fois.
 
 // usesText et expiryText rendent lisible l'absence de limite, plutôt que
 // d'afficher « 3/0 » ou une date à l'an zéro.

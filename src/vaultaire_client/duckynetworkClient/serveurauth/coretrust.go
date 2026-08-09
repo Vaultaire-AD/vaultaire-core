@@ -186,6 +186,112 @@ func VerifierCleCore(pemRecu string) (avertissement string, err error) {
 	return "", nil
 }
 
+// CleLocaleConforme vérifie la clé du core DÉJÀ présente sur le disque.
+//
+// # Pourquoi cette fonction manquait, et ce que son absence a coûté
+//
+// La première version ne vérifiait qu'au moment de `askkey`, c'est-à-dire
+// uniquement quand la clé était absente. Une clé déjà en place n'était jamais
+// confrontée à l'empreinte.
+//
+// Le raisonnement paraissait solide : une clé écrite avait forcément été
+// vérifiée à l'écriture. Il est faux, parce qu'il ne tient que pour les clés
+// écrites APRÈS la mise en place du contrôle. Toutes celles déjà sur le parc y
+// échappaient — et ce sont précisément celles dont on ne sait rien.
+//
+// Le cas s'est produit : une machine portait un `serveurpublickey.pem` obtenu
+// d'un core dont la clé avait changé depuis. L'agent chiffrait donc sa poignée
+// de main avec une clé que le core ne pouvait plus déchiffrer. Le core recevait
+// une trame illisible et n'y répondait pas ; l'agent attendait, puis signalait :
+//
+//	Erreur lors de la lecture du header : EOF
+//	Authentification serveur échouée sur 192.168.30.3:6666
+//
+// Rien dans ce message ne désignait la clé. L'empreinte était pourtant sur la
+// machine, à côté du fichier fautif, et les comparer aurait donné la réponse
+// immédiatement.
+//
+// # Pourquoi écarter la clé plutôt que refuser de démarrer
+//
+// L'empreinte change la nature du problème. Sans elle, redemander la clé serait
+// dangereux : on accepterait ce qui répond. Avec elle, la clé redemandée sera
+// confrontée à l'empreinte — donc un imposteur sera refusé.
+//
+// Écarter la clé non conforme est alors la bonne réponse : elle rétablit le
+// service quand le core a légitimement changé de clé, et ne rétablit rien quand
+// c'est un tiers qui répond. La sécurité vient de la vérification à la
+// réception, pas du refus de reprendre.
+//
+// Sans empreinte, en revanche, on ne touche à rien : écarter une clé qu'on ne
+// peut pas remplacer par mieux ne ferait qu'ouvrir la porte au premier venu.
+//
+// Rend :
+//
+//	true, motif   la clé est à écarter et à redemander
+//	false, ""     rien à faire — conforme, absente, ou non vérifiable
+func CleLocaleConforme() (aEcarter bool, motif string) {
+	cheminCle := filepath.Join(store.KeyPath, "serveurpublickey.pem")
+
+	contenu, err := os.ReadFile(cheminCle)
+	if os.IsNotExist(err) {
+		return false, "" // Absente : le chemin normal d'une première connexion.
+	}
+	if err != nil {
+		return false, ""
+	}
+
+	attendue, err := EmpreinteAttendue()
+	if err != nil || attendue == "" {
+		// Pas d'empreinte, ou illisible : rien à quoi comparer. On ne touche
+		// pas à une clé en place sur la foi de rien.
+		return false, ""
+	}
+
+	presente, err := EmpreinteClePublique(string(contenu))
+	if err != nil {
+		// Le fichier existe mais n'est pas une clé lisible — tronqué, corrompu.
+		// Il ne servira à rien ; autant le redemander.
+		return true, fmt.Sprintf(
+			"la clé du core présente sur cette machine est illisible (%s : %v) — "+
+				"elle va être redemandée au core, et vérifiée contre l'empreinte %s",
+			cheminCle, err, attendue)
+	}
+
+	if subtle.ConstantTimeCompare([]byte(attendue), []byte(presente)) == 1 {
+		return false, "" // Conforme.
+	}
+
+	return true, fmt.Sprintf(
+		"la clé du core présente sur cette machine ne correspond PAS à l'empreinte attestée.\n"+
+			"  fichier            : %s\n"+
+			"  empreinte du fichier : %s\n"+
+			"  empreinte attendue   : %s\n"+
+			"\n"+
+			"  Cette clé ne peut pas servir : le core ne saura pas déchiffrer ce qu'elle\n"+
+			"  chiffre, et la connexion échouerait sur un « EOF » qui ne dirait pas pourquoi.\n"+
+			"\n"+
+			"  Elle est donc écartée et redemandée au core. La clé reçue sera comparée à\n"+
+			"  l'empreinte ci-dessus : si le core a légitimement changé de clé, le service\n"+
+			"  repart ; si quelque chose répond à sa place, la nouvelle clé sera refusée.\n"+
+			"\n"+
+			"  Si le refus persiste, comparez l'empreinte attendue à celle du core avec\n"+
+			"  « vlt certificate fingerprint ». Si elles diffèrent, c'est l'empreinte de\n"+
+			"  cette machine qui est périmée — réinstallez l'agent avec « vlt create -join ».",
+		cheminCle, presente, attendue)
+}
+
+// EcarterCleLocale supprime la clé du core non conforme.
+//
+// Séparée de la vérification : constater et agir sont deux choses, et l'appelant
+// doit pouvoir journaliser le motif avant que le fichier ne disparaisse.
+func EcarterCleLocale() error {
+	chemin := filepath.Join(store.KeyPath, "serveurpublickey.pem")
+	if err := os.Remove(chemin); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("suppression de %s : %w", chemin, err)
+	}
+	return nil
+}
+
 // EcrireEmpreinte dépose l'empreinte sur la machine.
 //
 // Utilisé par l'installation. 0644 : l'empreinte n'est pas un secret, et sa

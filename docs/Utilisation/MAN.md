@@ -634,83 +634,91 @@ Utile pour définir les base DN des clients LDAP.
 
 ## 14. Commandes DNS
 
-Les commandes DNS s’appellent via le préfixe **`dns`** (en CLI : `dns <sous-commande> ...`). Elles nécessitent la permission **`write:dns`** sur les domaines concernés et que le module DNS soit activé (`dns_enable: true`).
+Les commandes DNS s’appellent via le préfixe **`dns`**. Elles nécessitent la permission **`write:dns`** et que le module DNS soit activé (`dns_enable: true`).
+
+> **La syntaxe a changé.** Elle suit désormais la forme `dns <objet> <verbe>`, comme `enroll create` et `certificate list`.
+>
+> L’ancienne se contredisait : on créait une zone avec `create_zone` mais on la supprimait avec `delete zone`. Rien ne le laissait deviner.
+>
+> **Les anciennes formes restent comprises** et répondent avec un avertissement. Aucun script ne casse.
 
 ### 14.1 Aide
 
 ```bash
 dns -h
-# ou
-dns help
 ```
 
-### 14.2 Créer une zone
+### 14.2 Zones
 
 ```bash
-dns create_zone <nom_de_zone>
+dns zone create <nom.zone>     # crée une zone
+dns zone list                  # liste les zones
+dns zone show <nom.zone>       # affiche les enregistrements
+dns zone delete <nom.zone>     # supprime la zone ET son contenu
 ```
 
-Exemple : `dns create_zone example.com`
-
-### 14.3 Lister les zones / contenu d’une zone
+Exemple :
 
 ```bash
-dns get_zone
-dns get_zone <nom_de_zone>
+dns zone create example.com
+dns zone show example.com
 ```
 
-- Sans argument : liste toutes les zones.
-- Avec argument : liste les enregistrements de la zone.
+⚠️ `zone delete` emporte tous les enregistrements de la zone. Les noms qu’elle résolvait cessent de l’être, et il n’y a pas de retour en arrière : la zone se recrée, son contenu non.
 
-### 14.4 Ajouter un enregistrement
+### 14.3 Enregistrements
 
 ```bash
-dns add_record <fqdn> <type> <data> <ttl> [priority]
+dns record add <fqdn> <type> <données> [ttl] [priorité]
+dns record delete <fqdn> <type>
 ```
 
-- **fqdn** : nom complet (ex. `www.example.com` ou `@.example.com` pour l’apex).
-- **type** : A, CNAME, MX, NS, TXT (voir règles ci-dessous).
-- **data** : valeur (IP pour A, FQDN pour CNAME/MX/NS, texte pour TXT).
-- **ttl** : entier (ex. 300).
-- **priority** : optionnel, pour MX (ex. 10).
+- **fqdn** : nom complet (ex. `www.example.com`, ou `@.example.com` pour l’apex).
+- **type** : A, CNAME, MX, NS, TXT.
+- **données** : IP pour A, FQDN pour CNAME/MX/NS, texte pour TXT.
+- **ttl** : **facultatif**, 300 secondes par défaut.
+- **priorité** : facultative, pour MX et SRV uniquement.
+
+Le TTL était auparavant obligatoire, ce qui obligeait à saisir `300` sur chaque enregistrement ordinaire. Une valeur tapée à la hâte vaut moins qu’un défaut choisi.
+
+L’enregistrement est placé dans la **zone la plus spécifique** qui contient le FQDN — inutile de nommer la zone.
 
 Exemples :
 
 ```bash
-dns add_record www.example.com A 192.168.1.1 300
-dns add_record mail.example.com CNAME srv.example.com 300
-dns add_record @.example.com MX 10 mail.example.com 300
-dns add_record @.example.com NS ns1.example.com 300
-dns add_record @.example.com TXT "v=spf1 ..." 300
+dns record add www.example.com A 192.168.1.1
+dns record add mail.example.com CNAME srv.example.com 600
+dns record add @.example.com MX mail.example.com 300 10
+dns record delete www.example.com A
 ```
 
-Règles (résumé) : A → IP ; CNAME → FQDN ; MX/NS → nom souvent en `@.<zone>` et cible FQDN ; TXT → texte.
-
-### 14.5 Enregistrements PTR (inverse)
-
-Lister les PTR :
+### 14.4 Résolution inverse (PTR)
 
 ```bash
-dns get_ptr
+dns ptr list                   # liste les enregistrements inverses
+dns ptr delete <ip>            # supprime celui d’une adresse
 ```
 
-Les PTR sont gérés via la base (table `ptr_records`). La création peut se faire via des mécanismes internes (ex. enregistrement A avec création PTR automatique selon le code).
+Les PTR sont créés automatiquement à l’ajout d’un enregistrement A, selon la configuration.
 
-### 14.6 Suppression
+### 14.5 Correspondance avec l’ancienne syntaxe
 
-```bash
-dns delete zone <nom.zone>
-dns delete record <fqdn> <type>
-dns delete ptr <ip>
-```
+| Ancienne forme | Nouvelle forme |
+|---|---|
+| `dns create_zone <zone>` | `dns zone create <zone>` |
+| `dns get_zone` | `dns zone list` |
+| `dns get_zone <zone>` | `dns zone show <zone>` |
+| `dns add_record <fqdn> <type> <data> <ttl>` | `dns record add <fqdn> <type> <data> [ttl]` |
+| `dns delete zone <zone>` | `dns zone delete <zone>` |
+| `dns delete record <fqdn> <type>` | `dns record delete <fqdn> <type>` |
+| `dns get_ptr` | `dns ptr list` |
+| `dns delete ptr <ip>` | `dns ptr delete <ip>` |
 
-Exemples :
+### 14.6 Droits
 
-```bash
-dns delete zone example.com
-dns delete record www.example.com A
-dns delete ptr 192.168.1.1
-```
+Toutes les opérations d’écriture passent par le registre d’actions (`dns.create_zone`, `dns.delete_zone`, `dns.add_record`, `dns.delete_record`, `dns.delete_ptr`) et exigent `write:dns` sur `*`.
+
+Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé, faute d’une clé de lecture distincte. Voir `docs/Developement/Actions_et_Permissions.md`.
 
 ### 14.7 Types d’enregistrements supportés
 

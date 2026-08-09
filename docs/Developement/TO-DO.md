@@ -15,16 +15,7 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
-12.[DEPLACE] [LDAP] Remplacer les encodeurs BER ecrits a la main par go-asn1-ber
-            -> voir DO/2.1/2.1.md
-
-21.[EN COURS] [PAM/NSS/AGENT/SDK] Audit complet -> voir Audit_Client_SDK_PAM.md
-            Points 1, 2 et 3 CORRIGES (socket PAM, UID partage, useradd).
-            Deploiement sequence obligatoire : docs/migrations/pam_socket_et_uid.md
-            20 points releves, 2 critiques : socket d'authentification en /tmp mode 0666
-            (elevation locale vers root), et UID 5001 partage par TOUS les utilisateurs
-            du domaine (aucune separation entre comptes sur une machine geree).
-            Les points 1, 2 et 3 sont lies : corriger l'un sans les autres degrade.
+9.[SSH] - il y a un bug sur la gestion des clé ssh authorizek sur les compte de domain il faut mettre en place une logique comme pour le mot de passe les clé sont overwrite a chaque nouvelle connection avec les nouvelles pour eviter que des vielle clé ne reste 
 
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
@@ -32,3 +23,4 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             sans aucun journal Vaultaire, alors que getent lance a la main REUSSIT.
             deployments/selinux/ : collect.sh, vaultaire.te, vaultaire.fc, install.sh
             Reste a faire : un domaine dedie pour l'agent (aujourd'hui unconfined_service_t).
+

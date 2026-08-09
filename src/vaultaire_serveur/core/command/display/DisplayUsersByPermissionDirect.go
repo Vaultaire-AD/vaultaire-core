@@ -2,46 +2,33 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-
-	"github.com/fatih/color"
+	"sort"
 )
 
-// FormatUsersByPermissionDirect renvoie les utilisateurs avec leurs permissions sous forme de string
+// DisplayUsersByPermissionDirect liste les comptes qui détiennent chaque
+// permission.
+//
+// Les permissions sont triées, et les comptes de chacune aussi. L'ancienne
+// version parcourait la map telle quelle : l'ordre des lignes changeait à
+// chaque appel, ce qui rendait impossible de comparer deux sorties — et c'est
+// précisément ce qu'on fait quand on vérifie qu'une délégation a bien été
+// retirée.
 func DisplayUsersByPermissionDirect(permissionsUsers map[string][]string) string {
-	// Configurer les couleurs
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-
-	// Buffer pour stocker la sortie formatée
-	var sb strings.Builder
-
-	// Ajouter le titre
-	sb.WriteString(title("🔑 Users with Permission") + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Utiliser un `tabwriter` pour aligner proprement les colonnes
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
-
-	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-25s %-20s\n", header("Permission Name"), header("Users"))
-
-	// Ajouter chaque permission et ses utilisateurs associés
-	for permission, users := range permissionsUsers {
-		// Afficher chaque permission et la liste des utilisateurs
-		fmt.Fprintf(w, "%-25s %-20s\n", permission, fmt.Sprintf("%v", users))
+	if len(permissionsUsers) == 0 {
+		return "Aucune permission attribuée."
 	}
 
-	// Écrire le tableau formaté dans `sb`
-	err := w.Flush()
-	if err != nil {
-		return "Error flushing writer: " + err.Error()
+	noms := make([]string, 0, len(permissionsUsers))
+	for nom := range permissionsUsers {
+		noms = append(noms, nom)
 	}
-	sb.WriteString(b.String())
+	sort.Strings(noms)
 
-	sb.WriteString("--------------------------------------------------\n")
-
-	return sb.String()
+	t := NouvelleTable("Permission", "Comptes", "Détenteurs")
+	for _, nom := range noms {
+		comptes := append([]string(nil), permissionsUsers[nom]...)
+		sort.Strings(comptes)
+		t.Ajouter(nom, fmt.Sprintf("%d", len(comptes)), Liste(comptes))
+	}
+	return fmt.Sprintf("%d permission(s) attribuée(s)\n\n%s", len(noms), t.String())
 }

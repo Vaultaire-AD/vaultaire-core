@@ -2,55 +2,31 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
-// DisplayGroupDetails renvoie les détails des groupes sous forme de chaîne formatée
+// DisplayGroupDetails liste les groupes et leurs effectifs.
+//
+// Les quatre compteurs disent d'un coup d'œil ce que porte chaque groupe : un
+// groupe à zéro permission n'accorde rien à ses membres, un groupe à zéro
+// membre n'accorde rien à personne. Les deux cas se repèrent ici sans ouvrir
+// chaque fiche.
 func DisplayGroupDetails(groupDetails []storage.GroupDetails) string {
-	// Configurer les couleurs
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
+	if len(groupDetails) == 0 {
+		return "Aucun groupe."
+	}
 
-	var sb strings.Builder
-
-	sb.WriteString(title("📊 Group Details") + "\n")
-	sb.WriteString("-------------------------------------------------------------------------------\n")
-
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
-
-	// En-têtes
-	fmt.Fprintf(w, "%-20s %-20s %-15s %-20s %-10s %-10s\n",
-		header("Group Name"),
-		header("Domain"),
-		header("Logiciel Perm."),
-		header("User Perm."),
-		header("Users"),
-		header("Clients"),
-	)
-
-	// Données
-	for _, group := range groupDetails {
-		fmt.Fprintf(w, "%-20s %-20s %-15d %-20d %-10d %-10d\n",
-			group.GroupName,
-			group.DomainName,
-			group.LogicielPermissionCount,
-			group.UserPermissionCount,
-			group.UserCount,
-			group.ClientCount,
+	t := NouvelleTable("Groupe", "Domaine", "Membres", "Machines", "Perms. utilisateur", "Perms. client")
+	for _, g := range groupDetails {
+		t.Ajouter(
+			Valeur(g.GroupName),
+			Valeur(g.DomainName),
+			fmt.Sprintf("%d", g.UserCount),
+			fmt.Sprintf("%d", g.ClientCount),
+			fmt.Sprintf("%d", g.UserPermissionCount),
+			fmt.Sprintf("%d", g.LogicielPermissionCount),
 		)
 	}
-
-	err := w.Flush()
-	if err != nil {
-		return "Error flushing writer: " + err.Error()
-	}
-	sb.WriteString(b.String())
-	sb.WriteString("-------------------------------------------------------------------------------\n")
-
-	return sb.String()
+	return fmt.Sprintf("%d groupe(s)\n\n%s", len(groupDetails), t.String())
 }

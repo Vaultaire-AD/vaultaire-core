@@ -2,64 +2,30 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
-// FormatUsersByGroup renvoie les informations des utilisateurs dans un groupe donné sous forme de chaîne
+// DisplayUsersByGroup liste les membres d'un groupe.
 func DisplayUsersByGroup(groupName string, users []storage.DisplayUsersByGroup) string {
-	// Configurer les couleurs
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-	connected := color.New(color.FgGreen).SprintFunc()
-	disconnected := color.New(color.FgRed).SprintFunc()
-
-	// Utilisation d'un StringBuilder pour accumuler la sortie
-	var sb strings.Builder
-
-	// Ajouter le titre
-	sb.WriteString(title("👥 Users in Group: "+groupName) + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Créer un tableau formaté avec tabwriter
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
-
-	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-20s %-15s %-10s\n",
-		header("Username"),
-		header("Date of Birth"),
-		header("Status"),
-	)
-
-	// Ajouter chaque utilisateur avec leur statut
-	for _, user := range users {
-		status := disconnected("❌ Offline")
-		if user.Connected {
-			status = connected("✅ Online")
-		}
-
-		// Ajouter les données formatées
-		fmt.Fprintf(w, "%-20s %-15s %-10s\n",
-			user.Username,
-			user.DateOfBirth,
-			status,
-		)
+	if len(users) == 0 {
+		return fmt.Sprintf("Le groupe %s n'a aucun membre.", groupName)
 	}
 
-	// Vider le tampon et ajouter au StringBuilder
-	err := w.Flush()
-	if err != nil {
-		return "Error flushing writer: " + err.Error()
+	t := NouvelleTable("Identifiant", "Naissance", "Session")
+	for _, u := range users {
+		t.Ajouter(Valeur(u.Username), Valeur(u.DateOfBirth), sessionOuverte(u.Connected))
 	}
-	sb.WriteString(b.String())
+	return fmt.Sprintf("Groupe %s — %d membre(s)\n\n%s", groupName, len(users), t.String())
+}
 
-	// Ajouter la ligne de séparation
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Retourner la chaîne accumulée
-	return sb.String()
+// sessionOuverte rend l'état de connexion.
+//
+// « ouverte / fermée » plutôt que « oui / non » : la colonne s'appelle
+// « Session », et « oui » y répondrait à une question que personne n'a posée.
+func sessionOuverte(connecte bool) string {
+	if connecte {
+		return "ouverte"
+	}
+	return "fermée"
 }

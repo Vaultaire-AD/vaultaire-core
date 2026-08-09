@@ -3,6 +3,7 @@ package commandadd
 import (
 	"fmt"
 
+	"vaultaire/core/command/groupview"
 	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/logs"
@@ -45,5 +46,5 @@ func add_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, actio
 	}
 
 	logs.Write_Log("INFO", fmt.Sprintf("GPO %s liée au groupe %s avec succès", gpoName, groupName))
-	return post_displayGroupInfo(groupName)
+	return groupview.Fiche(groupName)
 }

@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	"vaultaire/core/command/display"
 	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/logs"
@@ -89,8 +90,13 @@ func statusOverview(driftOnly bool) string {
 			"est actif depuis plus d'un cycle, vérifiez le journal côté serveur."
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "%-24s %-8s %-14s %-11s %-9s %-11s %s\n",
+	// Les largeurs ne sont plus imposées ni les valeurs tronquées.
+	//
+	// `%-24s` sur un identifiant de machine supposait qu'aucun ne dépassait
+	// vingt-quatre caractères ; au-delà, tronquer coupait LA FIN — c'est-à-dire
+	// précisément la partie qui distingue deux machines d'un même parc. Le
+	// tableau calcule maintenant chaque colonne sur son contenu réel.
+	tb := display.NouvelleTable(
 		"MACHINE", "SCOPE", "UTILISATEUR", "APPLICATION", "MODULES", "CONFORMITÉ", "VU")
 
 	affichées := 0
@@ -99,15 +105,18 @@ func statusOverview(driftOnly bool) string {
 			continue
 		}
 		affichées++
-		fmt.Fprintf(&b, "%-24s %-8s %-14s %-11s %-9s %-11s %s\n",
-			tronquer(r.ComputeurID, 24),
+		tb.Ajouter(
+			r.ComputeurID,
 			r.Scope,
-			orDash(tronquer(r.TargetUser, 14)),
+			orDash(r.TargetUser),
 			orDash(r.Status),
 			fmt.Sprintf("%d/%d", r.ModulesTotal-r.ModulesFailed, r.ModulesTotal),
 			conformitéTexte(r),
 			âge(r.ReportedAt))
 	}
+
+	var b strings.Builder
+	b.WriteString(tb.String())
 
 	if affichées == 0 {
 		return "Aucun écart de conformité sur les " + fmt.Sprint(len(rows)) + " scope(s) suivi(s)."
@@ -165,9 +174,11 @@ func statusForClient(computeurID string) string {
 	}
 	if len(échecs) > 0 {
 		b.WriteString("\n  Modules en échec\n")
+		te := display.NouvelleTable("SCOPE", "CLÉ", "DÉTAIL")
 		for _, m := range échecs {
-			fmt.Fprintf(&b, "    %-10s %-28s %s\n", m.Scope, tronquer(m.StateKey, 28), unLigne(m.Detail))
+			te.Ajouter(m.Scope, m.StateKey, unLigne(m.Detail))
 		}
+		b.WriteString(indenter(te.String(), "    "))
 	}
 
 	écarts, err := dbgpo.GetDriftForClient(db, computeurID)
@@ -176,9 +187,14 @@ func statusForClient(computeurID string) string {
 	}
 	if len(écarts) > 0 {
 		b.WriteString("\n  Écarts constatés\n")
+		td := display.NouvelleTable("NATURE", "CHEMIN", "DÉTAIL")
 		for _, d := range écarts {
-			fmt.Fprintf(&b, "    %-12s %-44s %s\n", d.Kind, tronquer(d.Path, 44), unLigne(d.Detail))
+			// Le chemin n'est plus tronqué : c'est la fin d'un chemin qui dit
+			// de quel fichier il s'agit, et `tronquer` coupait en octets, ce
+			// qui pouvait de surcroît scinder un caractère accentué en deux.
+			td.Ajouter(d.Kind, d.Path, unLigne(d.Detail))
 		}
+		b.WriteString(indenter(td.String(), "    "))
 	}
 
 	return b.String()
@@ -237,14 +253,18 @@ func courte(fingerprint string) string {
 	return fingerprint[:16] + "…"
 }
 
-func tronquer(s string, n int) string {
-	if len(s) <= n {
-		return s
+// indenter décale un bloc déjà rendu, ligne à ligne.
+//
+// Le module d'affichage produit un tableau aligné sur sa propre marge ; ces
+// tableaux-ci sont imbriqués sous un intertitre. Préfixer chaque ligne
+// conserve l'alignement interne du tableau tout en le rattachant visuellement
+// à sa section.
+func indenter(bloc, marge string) string {
+	var sb strings.Builder
+	for _, l := range strings.Split(strings.TrimRight(bloc, "\n"), "\n") {
+		sb.WriteString(marge + l + "\n")
 	}
-	if n <= 1 {
-		return s[:n]
-	}
-	return s[:n-1] + "…"
+	return sb.String()
 }
 
 // unLigne aplatit un détail multi-ligne.

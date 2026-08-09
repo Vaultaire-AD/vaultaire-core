@@ -2,11 +2,11 @@ package webserveur
 
 import (
 	"net/http"
-	"strconv"
 
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
 
@@ -58,31 +58,40 @@ func AdminAuthPolicyHandler(w http.ResponseWriter, r *http.Request) {
 		MaxAgeLimit: authPolicyMaxAgeLimit, WarnLimit: authPolicyWarnLimit,
 	}
 
-	if r.Method == http.MethodPost && r.FormValue("action") == "save_password_policy" {
-		maxAge, errAge := strconv.Atoi(r.FormValue("max_age_days"))
-		warn, errWarn := strconv.Atoi(r.FormValue("warn_days"))
+	if r.Method == http.MethodPost {
+		// Les groupes de l'appelant sont résolus même si l'action de cette page
+		// n'exige aucune clé RBAC : les passer à vide ferait dépendre le
+		// contrôle du fait qu'aucune clé ne soit déclarée, et le jour où l'une
+		// serait ajoutée à cette action, elle serait vérifiée contre une liste
+		// vide — donc toujours refusée, sans que la cause soit lisible.
+		groupIDs, err := permission.GetGroupIDsForUser(username)
+		if err != nil {
+			logs.Write_Log("WARNING", "webadmin: groupes de "+username+" illisibles : "+err.Error())
+		}
 
-		switch {
-		case errAge != nil || errWarn != nil:
-			data.Error = "Les deux durées doivent être des nombres entiers de jours."
-		default:
-			policy := dbauthpolicy.PasswordPolicySettings{MaxAgeDays: maxAge, WarnDays: warn}
-			if err := dbauthpolicy.SetPasswordPolicy(db, policy, username); err != nil {
-				data.Error = err.Error()
-			} else if policy.Enabled() {
-				// Le message dit ce qui va se passer aux comptes anciens. Activer
-				// une politique à 90 jours sur un annuaire qui n'en avait aucune
-				// expire d'un coup tout ce qui n'a pas été changé depuis trois
-				// mois : c'est le comportement correct, mais il ne doit pas être
-				// une surprise.
-				data.Message = "Politique enregistrée. Les comptes dont le mot de passe " +
-					"date de plus de " + strconv.Itoa(policy.MaxAgeDays) + " jours sont expirés dès maintenant."
+		// L'action passe par le registre : la validation des durées, la borne
+		// haute et le message vivent dans authpolicy.set_password_policy.
+		//
+		// requireSuperadminPage ci-dessus reste en place et fait double emploi
+		// avec ExigeSuperadmin de l'action. C'est délibéré : le premier protège
+		// l'AFFICHAGE de la page, le second l'EXÉCUTION. Retirer l'un des deux
+		// laisserait soit la page lisible par tous, soit l'action atteignable
+		// par une requête forgée qui n'emprunterait pas ce handler.
+		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
+			if err != nil {
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
-				data.Message = "Expiration désactivée."
+				data.Message = res.Message
 			}
-			logs.Write_Log("INFO", "webadmin: politique de mot de passe enregistrée par "+username)
 		}
 	}
+
+	// L'ancien corps analysait les durées, appelait SetPasswordPolicy et
+	// composait les messages. Il ne vérifiait pas que le préavis soit plus court
+	// que la validité : 90 jours d'avertissement pour 30 jours de validité était
+	// accepté, et l'avertissement s'affichait alors en permanence. Le contrôle
+	// est ajouté dans l'action.
 
 	// Relu après l'action : le formulaire doit montrer ce qui est réellement en
 	// base, pas ce qui vient d'être posté. Une valeur ramenée dans ses bornes par

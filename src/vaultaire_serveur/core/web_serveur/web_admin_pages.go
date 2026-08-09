@@ -1,23 +1,19 @@
 package webserveur
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 	dbclients "vaultaire/core/database/db_clients"
 	dbdomains "vaultaire/core/database/db_domains"
 	dbgroups "vaultaire/core/database/db_groups"
 	dbusers "vaultaire/core/database/db_users"
-	isprotected "vaultaire/core/database/is_protected"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
+	act "vaultaire/core/action"
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbcertificates "vaultaire/core/database/db_certificates"
@@ -28,16 +24,11 @@ import (
 	"vaultaire/core/permission"
 	"vaultaire/core/revocation"
 	"vaultaire/core/storage"
-	"vaultaire/core/tools"
-	newclient "vaultaire/ducky-network/new_client"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
-func generateSalt(length int) ([]byte, error) {
-	salt := make([]byte, length)
-	_, err := rand.Read(salt)
-	return salt, err
-}
+// generateSalt a été retirée : le sel et le haché du mot de passe sont produits
+// par l'action user.create, une seule fois pour les deux façades.
 
 func getUniqueDomains(db *sql.DB) []string {
 	groups, err := dbdomains.GetAllGroupsWithDomains(db)
@@ -118,22 +109,6 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			if target == "" {
 				target = detailUser
 			}
-			actionKey := ""
-			switch action {
-			case "update_user", "change_password":
-				actionKey = "write:update:user"
-			case "add_group":
-				actionKey = "write:add:user"
-			case "remove_group":
-				actionKey = "write:delete:user"
-			case "reset_mfa":
-				// Droit dédié, pas write:update:user. Débloquer un téléphone perdu
-				// est une tâche de support ; elle ne doit pas emporter le pouvoir
-				// de modifier l'annuaire, ni l'inverse — retirer discrètement le
-				// second facteur d'un administrateur serait le meilleur préalable
-				// à une reprise de compte.
-				actionKey = permission.ActionManageMFA
-			}
 			// Kill switch : les contrôles RBAC sont faits par Trigger, qui
 			// exige write:killswitch sur tous les domaines de la cible (et
 			// write:delete:user en plus pour le mode hard). On ne les redouble
@@ -167,109 +142,45 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			// Le droit est exigé sur les domaines de l'utilisateur visé, et sur
-			// tous. Un utilisateur membre de groupes dans plusieurs domaines
-			// n'est administrable que par quelqu'un qui les couvre tous : sinon
-			// un délégué d'un seul domaine pourrait changer le mot de passe
-			// d'un compte qui détient des droits ailleurs.
-			if actionKey != "" {
-				domains := entityDomainsOrGlobal(permission.GetDomainListFromUsername(target))
-				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, actionKey, domains); !allowed {
-					logs.Write_Log("SECURITY", fmt.Sprintf(
-						"webadmin: %s tente %s sur l'utilisateur %s — %s", username, action, target, reason))
-					detailData.Message = "Permission refusée : " + reason
-					action = ""
+			// Les six autres actions de cette page passent par le registre.
+			//
+			// La table « action → clé RBAC » et le `if actionKey != ""` qui la
+			// suivait ont disparu : ce motif sautait la vérification pour toute
+			// action absente de la table.
+			//
+			// Deux ajouts sont venus du portage : la suppression refuse
+			// désormais de viser votre propre compte, et le mot de passe vide
+			// est refusé plutôt qu'accepté silencieusement.
+			//
+			// La cible vient de l'URL quand le formulaire ne la répète pas.
+			res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
+				act.Params{"username": detailUser})
+
+			if traite {
+				if errAction != nil {
+					detailData.Message = MessageDActionPourAffichage(res, errAction)
+				} else {
+					detailData.Message = res.Message
+
+					// La suppression renvoie vers la liste : la fiche d'un
+					// compte supprimé serait vide.
+					if action == "delete_user" {
+						http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
+						return
+					}
+
+					// Un renommage change l'adresse de la page. La relecture
+					// se fait sur le nouveau nom, sans quoi la fiche
+					// afficherait un compte introuvable juste après une
+					// modification réussie.
+					if nouveau := r.FormValue("new_username"); nouveau != "" && nouveau != detailUser {
+						detailUser = nouveau
+					}
+					if maj, err := dbusers.Command_GET_UserInfo(db, detailUser); err == nil {
+						detailData.User = maj
+					}
 				}
 			}
-			switch action {
-			case "update_user":
-				uid, _ := dbusers.Get_User_ID_By_Username(db, target)
-				newUsername := r.FormValue("username")
-				firstname := r.FormValue("firstname")
-				lastname := r.FormValue("lastname")
-				if err := dbusers.Update_User_Info(db, uid, newUsername, firstname, lastname, "", ""); err != nil {
-					detailData.Message = "Erreur : " + err.Error()
-				} else {
-					detailData.Message = "Profil mis à jour."
-					if newUsername != detailUser {
-						detailUser = newUsername
-						userInfo, _ = dbusers.Command_GET_UserInfo(db, newUsername)
-						detailData.User = userInfo
-					}
-				}
-			case "change_password":
-				uid, _ := dbusers.Get_User_ID_By_Username(db, target)
-				password := r.FormValue("password")
-				if password == "" {
-					detailData.Message = "Mot de passe requis."
-				} else {
-					cur, _ := dbusers.Command_GET_UserInfo(db, target)
-					if cur == nil {
-						detailData.Message = "Utilisateur introuvable."
-					} else if err := dbusers.Update_User_Info(db, uid, cur.Username, cur.Firstname, cur.Lastname, password, ""); err != nil {
-						detailData.Message = "Erreur : " + err.Error()
-					} else {
-						detailData.Message = "Mot de passe changé."
-					}
-				}
-			case "reset_mfa":
-				// Le secret est effacé, pas seulement désactivé : un secret
-				// conservé resterait une clé valide si le drapeau venait à être
-				// remis par un autre chemin. L'utilisateur ré-enrôle depuis son
-				// profil, ce qui est aussi ce qui garantit que c'est bien lui qui
-				// détient le nouveau téléphone.
-				if err := dbauthpolicy.ResetMFA(db, target, username); err != nil {
-					detailData.Message = "Erreur : " + err.Error()
-				} else {
-					detailData.Message = "Second facteur réinitialisé. L'utilisateur devra le réenrôler à sa prochaine connexion."
-				}
-			case "add_group":
-				groupName := r.FormValue("group")
-				if groupName != "" {
-					if err := dbgroups.Command_ADD_UserToGroup(db, target, groupName); err != nil {
-						detailData.Message = err.Error()
-					} else {
-						detailData.Message = "Ajouté au groupe."
-						userInfo, _ = dbusers.Command_GET_UserInfo(db, target)
-						detailData.User = userInfo
-					}
-				}
-			case "remove_group":
-				groupName := r.FormValue("group")
-				if groupName != "" {
-					if err := dbgroups.Command_Remove_UserFromGroup(db, target, groupName); err != nil {
-						detailData.Message = err.Error()
-					} else {
-						detailData.Message = "Retiré du groupe."
-						userInfo, _ = dbusers.Command_GET_UserInfo(db, target)
-						detailData.User = userInfo
-					}
-				}
-			case "delete_user":
-				// Même chemin que `vlt delete -u` : une révocation hard.
-				//
-				// L'appel direct à Command_DELETE_UserWithUsername ne retirait
-				// le compte que de l'annuaire. Le compte local restait vivant
-				// sur chaque machine, avec son mot de passe dans /etc/shadow —
-				// le compte survivait à sa propre suppression. Passer par
-				// Trigger apporte le nettoyage du parc, le rejeu aux machines
-				// hors ligne et la trace d'audit.
-				//
-				// Contrôles RBAC assurés par Trigger : write:killswitch ET
-				// write:delete:user, sur tous les domaines de la cible.
-				if out, err := revocationmanager.Trigger(username, groupIDs, target,
-					revocation.ModeHard, revocation.ReasonOffboarding); err != nil {
-					detailData.Error = err.Error()
-				} else {
-					logs.Write_Log("INFO", fmt.Sprintf(
-						"webadmin: %s supprimé par %s (ordre %d, %d machine(s) visée(s), %d jointe(s))",
-						target, username, out.OrderID, out.TargetCount, out.PushedNow))
-					http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
-					return
-				}
-			}
-			userPerms, _ = dbpermission.Command_GET_UserPermissionNamesByUsername(db, detailUser)
-			detailData.UserPerms = userPerms
 		}
 
 		// État de révocation relu APRÈS les actions : un verrouillage qui vient
@@ -292,7 +203,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// --- List view ---
+	// --- Vue liste ---
 	data := struct {
 		Username  string
 		Users     []storage.GetUsers
@@ -300,66 +211,21 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		DnsEnable bool
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
+
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
-		if action == "create_user" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:user") {
-			return
-		}
-		if action == "delete_user" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:user") {
-			return
-		}
-		switch action {
-		case "create_user":
-			u := r.FormValue("username")
-			domain := r.FormValue("domain")
-			password := r.FormValue("password")
-			birthdate := r.FormValue("birthdate")
-			firstname := r.FormValue("firstname")
-			lastname := r.FormValue("lastname")
-			if u == "" || domain == "" || password == "" {
-				data.Message = "Username, domain et mot de passe requis."
-			} else if strings.ToLower(u) == "vaultaire" {
-				data.Message = "Ce nom d'utilisateur est réservé."
+		// Les actions user.create et user.delete portent leur clé RBAC et leur
+		// portée. user.delete passe par la révocation : le compte est retiré du
+		// parc, pas seulement de l'annuaire.
+		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
+			if err != nil {
+				data.Message = MessageDActionPourAffichage(res, err)
 			} else {
-				if _, err := tools.StringToDate(birthdate); err != nil {
-					data.Message = "Date de naissance invalide (format DD/MM/YYYY)."
-				} else {
-					salt, err := generateSalt(16)
-					if err != nil {
-						data.Message = "Erreur génération salt."
-					} else {
-						saltHex := hex.EncodeToString(salt)
-						salted := append(salt, []byte(password)...)
-						hash := sha256.Sum256(salted)
-						hashHex := hex.EncodeToString(hash[:])
-						email := u + "@" + domain
-						if firstname == "" {
-							firstname = u
-						}
-						if lastname == "" {
-							lastname = u
-						}
-						err = dbusers.Create_New_User(db, u, firstname, lastname, email, hashHex, saltHex, birthdate, time.Now().Format("2006-01-02 15:04:05"))
-						if err != nil {
-							data.Message = "Erreur création : " + err.Error()
-							logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create user failed: "+err.Error())
-						} else {
-							data.Message = "Utilisateur créé."
-						}
-					}
-				}
-			}
-		case "delete_user":
-			u := r.FormValue("username")
-			if u != "" {
-				if err := dbusers.Command_DELETE_UserWithUsername(db, u); err != nil {
-					data.Message = "Erreur suppression : " + err.Error()
-				} else {
-					data.Message = "Utilisateur supprimé."
-				}
+				data.Message = res.Message
 			}
 		}
 	}
+
 	users, err := dbusers.Command_GET_AllUsers(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list users failed: "+err.Error())
@@ -434,156 +300,39 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			if targetGroup == "" {
 				targetGroup = detailGroup
 			}
-			actionKey := ""
-			switch action {
-			case "add_user":
-				actionKey = "write:add:user"
-			case "remove_user":
-				actionKey = "write:delete:user"
-			case "add_client":
-				actionKey = "write:add:client"
-			case "remove_client":
-				actionKey = "write:delete:client"
-			case "add_permission":
-				actionKey = "write:add:permission"
-			case "remove_permission":
-				actionKey = "write:delete:group"
-			case "add_client_permission":
-				actionKey = "write:add:permission"
-			case "remove_client_permission":
-				actionKey = "write:delete:permission"
-			case "set_mfa_required":
-				// write:mfa et non write:update:group : imposer ou lever le second
-				// facteur d'un groupe entier pèse plus lourd que d'y ajouter un
-				// membre, et c'est la même famille de décision que la
-				// réinitialisation d'un compte.
-				actionKey = permission.ActionManageMFA
-			case "add_gpo":
-				actionKey = "write:add:gpo"
-			case "remove_gpo":
-				actionKey = "write:delete:gpo"
-			case "delete_group":
-				actionKey = "write:delete:group"
-			}
-			// Le droit est exigé sur les domaines du groupe visé. Un groupe
-			// porte les permissions et les GPO de ses membres : y ajouter un
-			// utilisateur, une machine ou une permission revient à distribuer
-			// des droits dans ce ou ces domaines.
-			if actionKey != "" {
-				domains := entityDomainsOrGlobal(permission.GetDomainsFromGroupName(targetGroup))
-				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, actionKey, domains); !allowed {
-					logs.Write_Log("SECURITY", fmt.Sprintf(
-						"webadmin: %s tente %s sur le groupe %s — %s", username, action, targetGroup, reason))
-					detailData.Message = "Permission refusée : " + reason
-					action = ""
-				}
-			}
-			switch action {
-			case "set_mfa_required":
-				required := r.FormValue("mfa_required") == "on"
-				if err := dbauthpolicy.SetGroupMFARequired(db, targetGroup, required, username); err != nil {
-					detailData.Message = "Erreur : " + err.Error()
-				} else if required {
-					// Les membres déjà connectés ne sont pas déconnectés : ils
-					// enrôleront à leur prochaine connexion. Couper les sessions
-					// en cours transformerait un réglage de sécurité en incident
-					// d'exploitation, et n'apporterait rien — leur mot de passe a
-					// bien été vérifié, c'est le facteur suivant qu'on ajoute.
-					detailData.Message = "Second facteur imposé. Les membres l'enrôleront à leur prochaine connexion."
+			// Les treize actions de cette page passent par le registre.
+			//
+			// La table « action → clé RBAC » qui vivait ici a disparu, et avec
+			// elle le `if actionKey != ""` qui la suivait : ce motif sautait la
+			// vérification des droits pour toute action absente de la table,
+			// sans erreur ni journal.
+			//
+			// Deux corrections de droits sont venues du portage :
+			//
+			//   - « remove_permission » exigeait write:delete:group, ce qui
+			//     paraît être une faute de recopie — retirer une permission
+			//     n'est pas supprimer le groupe. C'est write:delete:permission ;
+			//   - les rattachements exigent maintenant le droit sur les domaines
+			//     du groupe ET de l'entité rattachée. La ligne de commande ne
+			//     contrôlait que l'un des deux, et pas toujours le même.
+			//
+			// Le groupe vient de l'URL quand le formulaire ne le répète pas.
+			res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
+				act.Params{"group": targetGroup})
+
+			if traite {
+				if errAction != nil {
+					detailData.Message = MessageDActionPourAffichage(res, errAction)
 				} else {
-					detailData.Message = "Second facteur redevenu facultatif pour ce groupe."
-				}
-			case "add_user":
-				u := r.FormValue("username")
-				if u != "" && dbgroups.Command_ADD_UserToGroup(db, u, targetGroup) == nil {
-					detailData.Message = "Utilisateur ajouté."
-					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
-					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
-				} else if u != "" {
-					detailData.Message = "Erreur ajout (déjà membre ?)."
-				}
-			case "remove_user":
-				u := r.FormValue("username")
-				if u != "" && dbgroups.Command_Remove_UserFromGroup(db, u, targetGroup) == nil {
-					detailData.Message = "Utilisateur retiré."
-					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
-					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
-				}
-			case "add_client":
-				cid := r.FormValue("computeur_id")
-				if cid != "" && dbclients.Command_ADD_SoftwareToGroup(db, cid, targetGroup) == nil {
-					detailData.Message = "Client ajouté."
-					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
-					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
-				}
-			case "remove_client":
-				cid := r.FormValue("computeur_id")
-				if cid != "" && dbclients.Command_Remove_SoftwareFromGroup(db, cid, targetGroup) == nil {
-					detailData.Message = "Client retiré."
-					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
-					detailData.Users, detailData.Clients, detailData.Perms = info.Users, info.Clients, info.Permissions
-				}
-			case "add_permission":
-				p := r.FormValue("permission")
-				if p != "" && dbpermission.Command_ADD_UserPermissionToGroup(db, p, targetGroup) == nil {
-					detailData.Message = "Permission ajoutée."
-					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
-					detailData.Perms = info.Permissions
-				} else if p != "" {
-					detailData.Message = "Erreur (déjà attribuée ?)."
-				}
-			case "remove_permission":
-				p := r.FormValue("permission")
-				if p != "" && dbpermission.Command_Remove_UserPermissionFromGroup(db, targetGroup, p) == nil {
-					detailData.Message = "Permission retirée."
-					info, _ = dbgroups.Command_GET_GroupInfo(db, targetGroup)
-					detailData.Perms = info.Permissions
-				}
+					detailData.Message = res.Message
 
-			case "add_client_permission":
-				p := r.FormValue("client_permission")
-				if p != "" {
-					if err := dbpermission.Command_ADD_PermissionToSoftwareGroup(db, p, targetGroup); err != nil {
-						detailData.Error = "Permission client : " + err.Error()
-					} else {
-						detailData.Message = "Permission client ajoutée."
+					// La suppression renvoie vers la liste : la page de détail
+					// afficherait un groupe qui n'existe plus.
+					if action == "delete_group" {
+						http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
+						return
 					}
 				}
-			case "remove_client_permission":
-				p := r.FormValue("client_permission")
-				if p != "" {
-					if err := dbpermission.Command_Remove_ClientPermissionFromGroup(db, targetGroup, p); err != nil {
-						detailData.Error = "Permission client : " + err.Error()
-					} else {
-						detailData.Message = "Permission client retirée."
-					}
-				}
-
-			case "add_gpo":
-				g := r.FormValue("gpo")
-				if g != "" {
-					if err := dbgpo.LinkPolicyToGroup(db, g, targetGroup); err != nil {
-						detailData.Error = "GPO : " + err.Error()
-					} else {
-						detailData.Message = "GPO liée au groupe."
-					}
-				}
-			case "remove_gpo":
-				g := r.FormValue("gpo")
-				if g != "" {
-					if err := dbgpo.UnlinkPolicyFromGroup(db, g, targetGroup); err != nil {
-						detailData.Error = "GPO : " + err.Error()
-					} else {
-						detailData.Message = "GPO retirée du groupe."
-					}
-				}
-
-			case "delete_group":
-				if dbgroups.Command_DELETE_GroupWithGroupName(db, targetGroup) == nil {
-					http.Redirect(w, r, "/admin/groups", http.StatusSeeOther)
-					return
-				}
-				detailData.Message = "Erreur suppression."
 			}
 
 			// Relecture après toute action : plusieurs sections dépendent du même
@@ -635,36 +384,18 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "groups"}
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
-		if action == "create_group" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:group") {
-			return
-		}
-		if action == "delete_group" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:group") {
-			return
-		}
-		switch action {
-		case "create_group":
-			groupName := r.FormValue("group_name")
-			domain := r.FormValue("domain")
-			if groupName == "" || domain == "" {
-				data.Message = "Nom du groupe et domaine requis."
+		// Le formulaire de cette page nomme le groupe « group_name » ; l'action
+		// attend « group ». L'alias est posé ici plutôt que dans la table
+		// globale : « group_name » ne désigne un groupe QUE sur cette page, et
+		// un alias global le ferait aussi valoir ailleurs, où le champ pourrait
+		// avoir un autre sens.
+		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs,
+			act.Params{"group": r.FormValue("group_name")})
+		if traite {
+			if err != nil {
+				data.Message = MessageDActionPourAffichage(res, err)
 			} else {
-				_, err := dbgroups.CreateGroup(db, groupName, domain)
-				if err != nil {
-					data.Message = "Erreur création : " + err.Error()
-					logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create group failed: "+err.Error())
-				} else {
-					data.Message = "Groupe créé."
-				}
-			}
-		case "delete_group":
-			groupName := r.FormValue("group_name")
-			if groupName != "" {
-				if err := dbgroups.Command_DELETE_GroupWithGroupName(db, groupName); err != nil {
-					data.Message = "Erreur suppression : " + err.Error()
-				} else {
-					data.Message = "Groupe supprimé."
-				}
+				data.Message = res.Message
 			}
 		}
 	}
@@ -710,47 +441,34 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			Section   string
 		}{Client: client, Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 		if r.Method == http.MethodPost {
-			action := r.FormValue("action")
-			targetClient := r.FormValue("target_client")
-			if targetClient == "" {
-				targetClient = detailClient
-			}
-			actionKey := ""
-			switch action {
-			case "update_client":
-				actionKey = "write:update:client"
-			case "delete_client":
-				actionKey = "write:delete:client"
-			}
-			// Le droit est exigé sur les domaines de la machine visée.
-			if actionKey != "" {
-				domains := entityDomainsOrGlobal(permission.GetDomainsFromClientByComputerID(targetClient))
-				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, actionKey, domains); !allowed {
-					logs.Write_Log("SECURITY", fmt.Sprintf(
-						"webadmin: %s tente %s sur le client %s — %s", username, action, targetClient, reason))
-					detailData.Message = "Permission refusée : " + reason
-					action = ""
-				}
-			}
-			switch action {
-			case "update_client":
-				hostname := r.FormValue("hostname")
-				osVal := r.FormValue("os")
-				ram := r.FormValue("ram")
-				proc := r.FormValue("proc")
-				if err := dbclients.UpdateHostname(db, targetClient, hostname, osVal, ram, proc); err != nil {
-					detailData.Message = err.Error()
+			// Le contrôle des droits et l'effet vivent dans les actions
+			// client.update et client.delete. La table « action → clé RBAC »
+			// qui vivait ici a disparu avec le `if actionKey != ""` qui la
+			// suivait — ce motif sautait la vérification pour toute action
+			// absente de la table.
+			//
+			// La cible vient de l'URL quand le formulaire ne la répète pas.
+			res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs,
+				act.Params{"computeur_id": detailClient})
+
+			if traite {
+				if err != nil {
+					detailData.Message = MessageDActionPourAffichage(res, err)
 				} else {
-					detailData.Message = "Client mis à jour."
-					client, _ = dbclients.Command_GET_ClientByComputeurID(db, targetClient)
-					detailData.Client = client
+					detailData.Message = res.Message
+
+					// La suppression renvoie vers la liste : la page de détail
+					// afficherait une machine qui n'existe plus.
+					if r.FormValue("action") == "delete_client" {
+						http.Redirect(w, r, "/admin/clients", http.StatusSeeOther)
+						return
+					}
+					// Relecture après mise à jour : la page doit montrer ce qui
+					// est en base, pas ce qui vient d'être posté.
+					if maj, ok := res.Donnees.(*storage.Software); ok && maj != nil {
+						detailData.Client = maj
+					}
 				}
-			case "delete_client":
-				if dbclients.Command_DELETE_ClientWithComputeurID(db, targetClient) == nil {
-					http.Redirect(w, r, "/admin/clients", http.StatusSeeOther)
-					return
-				}
-				detailData.Message = "Erreur suppression."
 			}
 		}
 		_ = executeAdminPage(w, "admin_client_detail.html", detailData)
@@ -765,34 +483,17 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
-		if action == "create_client" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:client") {
-			return
-		}
-		if action == "delete_client" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:client") {
-			return
-		}
-		switch action {
-		case "create_client":
-			// Le type n'est plus saisi : ce formulaire ne peut créer qu'un
-			// client basic. Un client service s'enrôle lui-même avec sa propre
-			// paire de clés, il ne se crée pas depuis l'administration.
-			isServeur := r.FormValue("is_serveur") == "1"
-			computeurID, err := newclient.GenerateClientSoftware(isServeur)
+		// Les actions client.create et client.delete portent leur clé RBAC.
+		//
+		// Le type n'est pas saisi : ce formulaire ne crée qu'un client basic.
+		// Un client service s'enrôle lui-même avec sa propre paire de clés — sa
+		// clé privée ne doit jamais quitter l'hôte qui l'utilisera.
+		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
 			if err != nil {
-				data.Message = "Erreur création : " + err.Error()
-				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client failed: "+err.Error())
+				data.Message = MessageDActionPourAffichage(res, err)
 			} else {
-				data.Message = "Client créé avec ID : " + computeurID
-			}
-		case "delete_client":
-			computeurID := r.FormValue("computeur_id")
-			if computeurID != "" {
-				if err := dbclients.Command_DELETE_ClientWithComputeurID(db, computeurID); err != nil {
-					data.Message = "Erreur suppression : " + err.Error()
-				} else {
-					data.Message = "Client supprimé."
-				}
+				data.Message = res.Message
 			}
 		}
 	}
@@ -860,32 +561,48 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
 			detailData.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), permissionTabs)
-			// Les domaines d'une permission sont ceux des groupes qui la
-			// portent : la modifier change les droits dans tous ces domaines à
-			// la fois, donc on les exige tous.
-			permActionKey := ""
-			switch action {
-			case "delete_permission":
-				permActionKey = "write:delete:permission"
-			case "update_permission_action":
-				permActionKey = "write:update:permission"
+			// La suppression passe par le registre. La modification des
+			// actions RBAC — « update_permission_action » ci-dessous — n'y
+			// passe PAS : elle manipule la grammaire interne des permissions
+			// (nil / all / ajout ou retrait d'un domaine avec propagation),
+			// qui mérite ses propres actions plutôt qu'une traduction hâtive.
+			// C'est le pendant de « update -pu » côté ligne de commande.
+			//
+			// Son contrôle de droits reste donc ici, sur les domaines de la
+			// permission — ceux des groupes qui la portent, puisque la modifier
+			// change les droits dans tous ces domaines à la fois.
+			if action == "delete_permission" {
+				// La confirmation par ressaisie du nom est conservée : supprimer
+				// une permission retire des droits à tous les groupes qui la
+				// portent, d'un coup et sans retour.
+				if r.FormValue("target_perm") != detailPerm {
+					detailData.Error = "Suppression : saisissez exactement le nom de la permission pour confirmer."
+				} else {
+					res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
+						act.Params{"permission_name": detailPerm})
+					if traite {
+						if errAction != nil {
+							detailData.Error = MessageDActionPourAffichage(res, errAction)
+						} else {
+							http.Redirect(w, r, "/admin/permissions", http.StatusSeeOther)
+							return
+						}
+					}
+				}
+				action = ""
 			}
-			if permActionKey != "" {
+
+			if action == "update_permission_action" {
 				domains := entityDomainsOrGlobal(permission.GetDomainslistFromUserpermission(detailPerm))
-				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, permActionKey, domains); !allowed {
+				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, "write:update:permission", domains); !allowed {
 					logs.Write_Log("SECURITY", fmt.Sprintf(
 						"webadmin: %s tente %s sur la permission %s — %s", username, action, detailPerm, reason))
 					detailData.Error = "Permission refusée : " + reason
 					action = ""
 				}
 			}
+
 			switch action {
-			case "delete_permission":
-				if r.FormValue("target_perm") == detailPerm && dbpermission.Command_DELETE_UserPermissionByName(db, detailPerm) == nil {
-					http.Redirect(w, r, "/admin/permissions", http.StatusSeeOther)
-					return
-				}
-				detailData.Message = "Erreur suppression."
 			case "update_permission_action":
 				field := strings.TrimSpace(r.FormValue("field"))
 				op := r.FormValue("op")
@@ -1045,114 +762,31 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		ActiveTab   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "permissions"}
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
 		data.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), permissionListTabs)
-		if action == "create_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:permission") {
-			return
-		}
-		if action == "delete_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
-			return
-		}
-		if action == "create_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:create:permission") {
-			return
-		}
-		if action == "delete_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:delete:permission") {
-			return
-		}
-		if action == "update_client_permission" && !checkWebAdminRBAC(w, r, groupIDs, "write:update:permission") {
-			return
-		}
-		switch action {
-		case "update_client_permission":
-			name := r.FormValue("permission_name")
-			isAdmin := r.FormValue("is_admin") == "on"
-			if name == "" {
-				break
-			}
-			if err := dbpermission.Command_UPDATE_ClientPermission(db, name, isAdmin); err != nil {
-				data.Error = err.Error()
-				break
-			}
-			data.Message = "Permission client mise à jour."
-			// Accorder ou retirer l'administration à des machines est un
-			// changement de privilège : il est tracé au même titre que la
-			// création d'une permission admin.
-			logs.Write_Log("SECURITY", fmt.Sprintf(
-				"webadmin: permission client %q passee a admin=%t par %s", name, isAdmin, username))
-
-		case "create_client_permission":
-			name := strings.TrimSpace(r.FormValue("name"))
-			isAdmin := r.FormValue("is_admin") == "on"
-			if name == "" {
-				data.Error = "Nom de la permission client requis."
-				break
-			}
-			if _, err := dbpermission.CreateClientPermission(db, name, isAdmin); err != nil {
-				data.Error = "Erreur création : " + err.Error()
-				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create client permission failed: "+err.Error())
+		// Les cinq actions de cette page passent par le registre.
+		//
+		// Elles portent leur clé RBAC et journalisent en SECURITY les deux
+		// réglages qui accordent un privilège : « web_admin » sur une
+		// permission utilisateur ouvre l'administration, « is_admin » sur une
+		// permission client donne les droits d'administration aux machines du
+		// groupe qui la porte.
+		//
+		// Les messages nomment désormais cette conséquence — c'est le moment où
+		// l'on peut encore revenir en arrière sans avoir rien cassé.
+		//
+		// Deux « break » silencieux ont disparu : update_client_permission et
+		// delete_client_permission ne faisaient rien, sans un mot, quand le nom
+		// était vide.
+		res, traite, errAction := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
+			if errAction != nil {
+				data.Error = MessageDActionPourAffichage(res, errAction)
 			} else {
-				data.Message = "Permission client créée."
-				if isAdmin {
-					// Une permission client admin donne les droits d'administration
-					// aux machines du groupe qui la porte : la création mérite une
-					// trace au même titre qu'un changement de privilège.
-					logs.Write_Log("SECURITY", fmt.Sprintf(
-						"webadmin: permission client ADMIN %q creee par %s", name, username))
-				}
-			}
-
-		case "delete_client_permission":
-			name := r.FormValue("permission_name")
-			if name == "" {
-				break
-			}
-			if err := dbpermission.Command_DELETE_ClientPermissionByName(db, name); err != nil {
-				data.Error = "Erreur suppression : " + err.Error()
-			} else {
-				data.Message = "Permission client supprimée."
-			}
-
-		case "create_permission":
-			name := r.FormValue("name")
-			description := r.FormValue("description")
-			webAdmin := r.FormValue("web_admin") == "on"
-			if name == "" {
-				data.Error = "Nom de la permission requis."
-				break
-			}
-
-			// Une permission utilisateur naissait avec toutes ses actions à
-			// « nil » : il fallait la créer, ouvrir son détail, puis régler
-			// web_admin pour qu'elle serve à quelque chose. Le raccourci évite
-			// cet aller-retour pour le cas le plus courant.
-			var err error
-			if webAdmin {
-				_, err = dbpermission.CreateUserPermission(db, name, description, "nil", "all", "nil", "nil", "nil")
-			} else {
-				_, err = dbpermission.CreateUserPermissionDefault(db, name, description)
-			}
-			if err != nil {
-				data.Error = "Erreur création : " + err.Error()
-				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create permission failed: "+err.Error())
-				break
-			}
-
-			data.Message = "Permission créée. Ouvrez son détail pour régler les actions RBAC."
-			if webAdmin {
-				logs.Write_Log("SECURITY", fmt.Sprintf(
-					"webadmin: permission utilisateur %q creee avec web_admin par %s", name, username))
-			}
-		case "delete_permission":
-			permName := r.FormValue("permission_name")
-			if permName != "" {
-				if err := dbpermission.Command_DELETE_UserPermissionByName(db, permName); err != nil {
-					data.Message = "Erreur suppression : " + err.Error()
-				} else {
-					data.Message = "Permission supprimée."
-				}
+				data.Message = res.Message
 			}
 		}
 	}
+
 	perms, err := dbpermission.Command_GET_AllUserPermissions(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list permissions failed: "+err.Error())
@@ -1189,7 +823,11 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 // AdminCertificatesHandler lists certificates or shows certificate detail when ?cert= is set.
 // Access: web_admin only (no specific RBAC key for certificates; same as before).
 func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
-	username, ok := requireWebAdmin(w, r)
+	// requireWebAdminWithGroupIDs et non requireWebAdmin : les actions sur les
+	// certificats exigent l'appartenance au groupe protégé, laquelle se lit
+	// dans les groupes de l'appelant. Sans eux, le registre n'a rien à
+	// examiner.
+	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
 		return
 	}
@@ -1216,18 +854,18 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 			Section     string
 		}{Certificate: cert, Username: username, DnsEnable: storage.Dns_Enable, Section: "certificates"}
 		if r.Method == http.MethodPost {
-			action := r.FormValue("action")
-			switch action {
-			case "delete_certificate":
-				if !canDeleteCertificate(username) {
-					detailData.Message = "Réservé aux membres du groupe " + isprotected.ProtectedGroupName + "."
-					break
-				}
-				if err := dbcertificates.DeleteCertificate(certID); err != nil {
-					detailData.Message = "Erreur suppression : " + err.Error()
+			// L'action certificate.delete exige l'appartenance au groupe
+			// protégé — un certificat ne porte aucun domaine, donc aucune clé
+			// RBAC ne le couvre. Elle journalise aussi la suppression.
+			//
+			// L'identifiant vient de l'URL : le formulaire de détail ne le
+			// répète pas.
+			res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs,
+				act.Params{"certificate_id": strconv.Itoa(certID)})
+			if traite {
+				if err != nil {
+					detailData.Message = MessageDActionPourAffichage(res, err)
 				} else {
-					logs.Write_Log("SECURITY", fmt.Sprintf(
-						"webadmin: certificat %d supprimé par %s", certID, username))
 					http.Redirect(w, r, "/admin/certificates", http.StatusSeeOther)
 					return
 				}
@@ -1246,27 +884,14 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "certificates"}
 
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
-		switch action {
-		case "delete_certificate":
-			if !canDeleteCertificate(username) {
-				data.Message = "Réservé aux membres du groupe " + isprotected.ProtectedGroupName + "."
-				break
-			}
-			certIDStr := r.FormValue("certificate_id")
-			if certIDStr != "" {
-				certID, err := strconv.Atoi(certIDStr)
-				if err != nil {
-					data.Message = "ID certificat invalide"
-				} else {
-					if err := dbcertificates.DeleteCertificate(certID); err != nil {
-						data.Message = "Erreur suppression : " + err.Error()
-					} else {
-						logs.Write_Log("SECURITY", fmt.Sprintf(
-							"webadmin: certificat %d supprimé par %s", certID, username))
-						data.Message = "Certificat supprimé."
-					}
-				}
+		// L'analyse de l'identifiant, le contrôle d'appartenance et la trace
+		// vivent dans l'action certificate.delete.
+		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
+			if err != nil {
+				data.Message = MessageDActionPourAffichage(res, err)
+			} else {
+				data.Message = res.Message
 			}
 		}
 	}

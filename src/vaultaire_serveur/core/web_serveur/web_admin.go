@@ -5,9 +5,7 @@ import (
 	"net/http"
 	"strings"
 	"vaultaire/core/command"
-	"vaultaire/core/database"
 	dbcertificates "vaultaire/core/database/db_certificates"
-	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -100,25 +98,13 @@ func checkWebAdminRBACOnDomains(groupIDs []int, actionKey string, domains []stri
 	return permission.CheckPermissionsAllDomains(groupIDs, actionKey, domains)
 }
 
-// canDeleteCertificate réserve la suppression d'un certificat aux membres du
-// groupe superadmin.
+// canDeleteCertificate a été retirée.
 //
-// Les certificats ne sont pas des entités d'annuaire : ils ne portent pas de
-// domaine, donc aucune clé RBAC ne les couvre et aucune délégation ne peut s'y
-// appliquer proprement. Or supprimer le certificat TLS de l'API ou de LDAPS
-// interrompt le service pour tout le monde, sans rapport avec un périmètre
-// délégué. L'appartenance au groupe vaultaire est le bon niveau : c'est déjà
-// celui des restrictions GPO, pour la même raison — un réglage qui engage tout
-// le parc n'appartient à aucun domaine en particulier.
-func canDeleteCertificate(username string) bool {
-	if !isprotected.IsSuperadmin(database.GetDatabase(), username) {
-		logs.Write_Log("SECURITY",
-			"webadmin: "+username+" a tenté de supprimer un certificat sans être membre du groupe "+
-				isprotected.ProtectedGroupName)
-		return false
-	}
-	return true
-}
+// Elle vérifiait l'appartenance au groupe protégé avant une suppression de
+// certificat. Ce contrôle vit désormais dans l'action certificate.delete, qui
+// le déclare par ExigeSuperadmin — donc au même endroit que l'effet, et donc
+// partagé avec la ligne de commande le jour où elle exposera cette opération.
+//
 
 // entityDomainsOrGlobal réduit une erreur de résolution de domaines à un refus.
 //

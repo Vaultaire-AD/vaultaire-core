@@ -2,49 +2,51 @@ package display
 
 import (
 	"fmt"
-	"strings"
 
 	dbgpo "vaultaire/core/database/db_gpo"
-
-	"github.com/fatih/color"
 )
 
-// DisplayAllGPOs affiche la liste des GPO : scope, version, activation, nombre
-// de modules et groupes liés. Le détail des paramètres n'est pas montré ici,
-// c'est le rôle de DisplayGPOByName.
+// DisplayAllGPOs liste les GPO : portée, version, activation, modules et
+// groupes liés.
+//
+// L'ancienne version rendait un bloc de six lignes par GPO, séparé par des
+// tirets. Sur un parc qui en compte trente, cela fait deux cents lignes qu'on
+// ne peut ni comparer ni parcourir des yeux — alors que la question posée est
+// presque toujours « laquelle est active, et sur quels groupes ».
+//
+// Une table répond à cette question en une écran. Le détail des paramètres
+// reste le rôle de DisplayGPOByName.
 func DisplayAllGPOs(policies []dbgpo.PolicySummary) string {
 	if len(policies) == 0 {
-		return color.RedString("❌ Aucune GPO trouvée.")
+		return "Aucune GPO."
 	}
 
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-	dim := color.New(color.FgHiBlack).SprintFunc()
-
-	var sb strings.Builder
-	sb.WriteString(title("🔒 Liste des GPO") + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
+	t := NouvelleTable("ID", "Nom", "Portée", "Version", "État", "Modules", "Groupes")
+	actives := 0
 	for _, p := range policies {
-		state := color.GreenString("activée")
-		if !p.Enabled {
-			state = color.RedString("désactivée")
+		if p.Enabled {
+			actives++
 		}
-		groups := "aucun groupe"
-		if len(p.Groups) > 0 {
-			groups = strings.Join(p.Groups, ", ")
-		}
-
-		sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Nom"), p.Name))
-		sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Scope"), p.Scope))
-		sb.WriteString(fmt.Sprintf("%-16s: v%d (%s)\n", header("Version"), p.Version, state))
-		sb.WriteString(fmt.Sprintf("%-16s: %d\n", header("Modules"), p.ModuleCount))
-		sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Groupes"), groups))
-		if p.Description != "" {
-			sb.WriteString(fmt.Sprintf("%-16s: %s\n", header("Description"), p.Description))
-		}
-		sb.WriteString(dim("  id "+fmt.Sprint(p.ID)) + "\n")
-		sb.WriteString("--------------------------------------------------\n")
+		t.Ajouter(
+			fmt.Sprintf("%d", p.ID),
+			Valeur(p.Name),
+			Valeur(string(p.Scope)),
+			fmt.Sprintf("v%d", p.Version),
+			etatGPO(p.Enabled),
+			fmt.Sprintf("%d", p.ModuleCount),
+			Liste(p.Groups),
+		)
 	}
-	return sb.String()
+
+	// Le compte des GPO ACTIVES en tête : une GPO désactivée ne s'applique
+	// nulle part, et confondre les deux fait chercher longtemps pourquoi une
+	// règle « existe » sans effet.
+	return fmt.Sprintf("%d GPO, dont %d active(s)\n\n%s", len(policies), actives, t.String())
+}
+
+func etatGPO(active bool) string {
+	if active {
+		return "active"
+	}
+	return "désactivée"
 }

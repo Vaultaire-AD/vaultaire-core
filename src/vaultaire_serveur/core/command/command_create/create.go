@@ -2,111 +2,187 @@ package commandcreate
 
 import (
 	"fmt"
-	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbgroups "vaultaire/core/database/db_groups"
+
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
-	"vaultaire/core/tools"
-	newclient "vaultaire/ducky-network/new_client"
 	autoaddclientgo "vaultaire/ducky-network/new_client/AUTO_ADD_client.go"
 )
 
-// Create_Command : clé RBAC selon sous-commande (write:create:user, write:create:group, write:create:client, etc.)
+// Commande « create ».
+//
+// # Ce que cette commande ne fait plus
+//
+// Elle ne vérifie plus les droits et n'écrit plus en base. Son rôle se réduit à
+// ce qu'elle est seule à savoir faire : comprendre la syntaxe
+// « create -u alice paris.fr motdepasse 01/01/1990 » et la traduire en
+// paramètres nommés.
+//
+// Le contrôle et l'effet vivent dans core/action, partagés avec l'interface
+// web. C'est ce qui empêche les deux de diverger — ce qu'elles avaient fait sur
+// la création d'utilisateur, où cette commande acceptait une date de naissance
+// invalide que le web refusait.
+//
+// # Ce qui change pour l'utilisateur
+//
+// Trois refus nouveaux, tous des corrections :
+//
+//   - une date de naissance mal formée est refusée, au lieu d'être écrite telle
+//     quelle en base ;
+//   - un mot de passe vide est refusé, au lieu de créer un compte dont le haché
+//     est celui de la chaîne vide ;
+//   - « create -g monGroupe » sans domaine rend une erreur au lieu de faire
+//     paniquer le serveur sur un dépassement d'indice.
+
+// ActionsUtilisees liste les actions du registre que cette commande appelle.
+//
+// Vérifiée au démarrage : une action absente échouerait sinon au moment où
+// quelqu'un tape la commande.
+var ActionsUtilisees = []string{
+	"user.create",
+	"group.create",
+	"client.create",
+	"permission.create",
+}
+
+// Create_Command traite « create … ».
+//
+// La signature est inchangée : les droits sont toujours reçus, mais transmis au
+// registre au lieu d'être vérifiés ici.
 func Create_Command(command_list []string, sender_groupsIDs []int, sender_Username string) string {
-	var actionKey string
+	if len(command_list) == 0 {
+		return aide()
+	}
+
 	switch command_list[0] {
 	case "-h", "help", "--help":
-		return (`"La commande create vous permets de crée des nouveau utilisateur ou des nouveaux clients_software de nouvelles permissions et de nouveau groupes")
-		"-u path to yaml user pour crée un nouvelle utilisateur"
-		"-c <yes/not(serveur or not)> pour créer un nouvel agent Vaultaire"
-		"    un client service ne se crée pas ici, il s'enrôle seul : voir « enroll -h »"
-		"-g <nom_du_goupe> <nom_de_la_perm> pour crée un nouveau groupe"
-		"-p <nom_de_la_permissions> <yes/not> pour crée un nouvelle permisions admin ou non"
-		"-gpo <nom> --scope <machine|user> [--desc 'texte'] pour crée une nouvelle GPO (les modules s'ajoutent ensuite depuis /admin/gpo)"`)
+		return aide()
+
 	case "-u":
-		actionKey = "write:create:user"
-	case "-c":
-		actionKey = "write:create:client"
+		// create -u <identifiant> <domaine> <motdepasse> <naissance> [prénom] [nom]
+		//
+		// Les noms correspondent à ceux qu'attend l'action, qui sont aussi ceux
+		// des champs du formulaire web. C'est ce qui fait que les deux façades
+		// aboutissent au même appel.
+		p := commandaction.ParamsDepuisPositionnels(command_list[1:],
+			"username", "domain", "password", "birthdate", "firstname", "lastname")
+		return commandaction.ExecuterAction("user.create", p, sender_groupsIDs, sender_Username)
+
 	case "-g":
-		actionKey = "write:create:group"
+		// create -g <nom> <domaine>
+		//
+		// L'ancienne version lisait command_list[2] après avoir vérifié
+		// seulement `len < 2` : « create -g monGroupe » sortait du tableau et
+		// faisait paniquer la goroutine, donc s'arrêter le processus.
+		p := commandaction.ParamsDepuisPositionnels(command_list[1:], "group", "domain")
+		return commandaction.ExecuterAction("group.create", p, sender_groupsIDs, sender_Username)
+
+	case "-c":
+		return create_ClientSoftware(command_list, sender_groupsIDs, sender_Username)
+
 	case "-p":
-		actionKey = "write:create:permission"
+		// create -p <nom> <yes/not>
+		//
+		// Le second argument vaut « permission d'administration web ». Il est
+		// transmis tel quel : l'action accepte oui/non/yes/no/1/0, ce qui
+		// couvre la forme historique de cette commande comme celle de la case à
+		// cocher du formulaire.
+		p := commandaction.ParamsDepuisPositionnels(command_list[1:], "name", "web_admin")
+		return commandaction.ExecuterAction("permission.create", p, sender_groupsIDs, sender_Username)
+
 	case "-gpo":
-		actionKey = "write:create:gpo"
-	default:
-		return ("Invalid Request Try get -h for more information")
-	}
-	if actionKey != "" {
-		ok, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, actionKey, []string{"*"})
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, actionKey, response))
-			return fmt.Sprintf("Permission refusée : %s", response)
+		// Les GPO sont hors du périmètre de la refonte : leur logique reste
+		// dans create_GPO, avec son propre contrôle de droits — qui doit donc
+		// rester ici, puisqu'aucune action ne le porte.
+		if refus := verifierDroit(sender_groupsIDs, sender_Username, "write:create:gpo"); refus != "" {
+			return refus
 		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (create)", sender_Username, actionKey))
-	}
-	switch command_list[0] {
-	case "-u":
-		return create_User(command_list)
-	case "-c":
-		return create_ClientSoftware(command_list)
-	case "-g":
-		return create_Group(command_list)
-	case "-p":
-		return create_Permission(command_list)
-	case "-gpo":
 		return create_GPO(command_list)
+
 	default:
-		return ("Invalid Request Try get -h for more information")
+		return "Requête invalide. Essayez « create -h »."
 	}
 }
 
-// create_User handles the creation of a user from a YAML file.
-func create_Group(command_list []string) string {
-	// ajouter des user dans la db via yml
+// create_ClientSoftware crée un agent, puis l'installe si « -join » est fourni.
+//
+// Deux temps distincts, et c'est pourquoi cette commande ne se réduit pas à un
+// appel d'action : la création passe par le registre, l'installation à distance
+// est une opération réseau qui n'a pas sa place dans une action métier.
+//
+//	create -c <yes/not> [-join <hôte[:port]> <user>]
+//
+// Le port est facultatif et vaut 22. « -join 192.168.30.8:2222 root » vise une
+// machine dont sshd écoute ailleurs ; une adresse IPv6 suivie d'un port s'écrit
+// entre crochets.
+//
+// Le TYPE n'est pas demandé : ce chemin ne crée qu'un client basic. Un client
+// service s'enrôle lui-même avec sa propre paire de clés — sa clé privée ne doit
+// jamais quitter l'hôte qui l'utilisera.
+func create_ClientSoftware(command_list []string, groupIDs []int, sender string) string {
 	if len(command_list) < 2 {
-		return ("Erreur : -g <nom_du_goupe> <domain>")
-	} else {
-		_, err := dbgroups.CreateGroup(database.GetDatabase(), command_list[1], command_list[2])
-		if err != nil {
-			logs.Write_Log("WARNING", "error during the creation of the group "+command_list[1]+" : "+err.Error())
-			return (">> -" + err.Error())
-		}
-		logs.Write_Log("INFO", "new Group create with succes with Name : "+command_list[1])
-		groupDetails, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), command_list[1])
-		if err != nil {
-			return (">> -" + err.Error())
-		}
-		logs.Write_Log("INFO", "Group details : "+groupDetails.Name)
-		return display.DisplayGroupInfo(groupDetails)
+		return "Requête invalide : create -c <yes/not> [-join <hôte[:port]> <user>]"
 	}
-}
 
-// create_ClientSoftware crée un agent Vaultaire.
-//
-//	create -c <yes/not> [-join <host[:port]> <user>]
-//
-// Le port est facultatif et vaut 22 par défaut. « -join 192.168.30.8:2222 root »
-// vise une machine dont sshd écoute ailleurs ; une adresse IPv6 suivie d'un
-// port s'écrit entre crochets, « -join [2001:db8::1]:2222 root ».
-//
-// Le TYPE n'est plus demandé : ce chemin ne peut créer qu'un client basic. Un
-// client service s'enrôle lui-même avec « enroll create --type <type> », et
-// génère sa paire sur son propre hôte.
-func create_ClientSoftware(command_list []string) string {
-	if len(command_list) < 2 {
-		return "Erreur : create -c <yes/not> — serveur ou non.\n" +
-			"Un client service ne se crée pas ici : voir « enroll create --type <type> »."
-	}
-	isServeur := tools.String_tobool_yesnot(command_list[1])
-	computeurID, err := newclient.GenerateClientSoftware(isServeur)
+	p := commandaction.ParamsDepuisPositionnels(command_list[1:], "is_serveur")
+	res, err := action.Executer("client.create",
+		action.Appelant{Username: sender, GroupIDs: groupIDs}, p)
 	if err != nil {
-		logs.Write_Log("WARNING", "error during the creation of the client software : "+err.Error())
-		return err.Error()
+		return commandaction.MessageDErreur(err)
 	}
-	logs.Write_Log("INFO", "new client create with succes with this ID : "+computeurID)
-	if len(command_list) >= 5 && command_list[2] == "-join" {
+
+	// L'identifiant est lu dans les données et non extrait du message : le
+	// message est destiné à un humain et peut être reformulé, les données non.
+	computeurID := ""
+	if d, ok := res.Donnees.(map[string]string); ok {
+		computeurID = d["computeur_id"]
+	}
+	if computeurID == "" {
+		// La machine est créée ; seul son identifiant est illisible. Le dire
+		// plutôt que de laisser croire à un échec, qui ferait recommencer et
+		// créerait une seconde identité inutile.
+		return res.Message + " (identifiant illisible dans le résultat)"
+	}
+
+	if len(command_list) >= 4 && command_list[2] == "-join" {
 		return autoaddclientgo.Manage_Auto_ADD_client(command_list[4], command_list[3], computeurID)
 	}
-	return "new client create with succes with this ID : " + computeurID
+	return res.Message
+}
+
+func aide() string {
+	return `create — crée des utilisateurs, groupes, machines, permissions et GPO.
+
+  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
+  create -g <nom> <domaine>
+  create -c <yes/not> [-join <hôte[:port]> <user>]
+  create -p <nom> <yes/not>
+  create -gpo <nom> --scope <machine|user> [--desc "texte"]
+
+Notes :
+  -u  la date de naissance est vérifiée ; prénom et nom sont déduits d'un
+      identifiant de la forme « prénom.nom » s'ils ne sont pas fournis.
+  -c  crée un agent. Un client service ne se crée pas ici, il s'enrôle seul :
+      voir « enroll -h ». Avec -join, l'agent est installé à distance par SSH.
+  -p  le second argument accorde ou non l'accès à l'administration web.`
+}
+
+// verifierDroit contrôle une permission pour les chemins NON portés par une
+// action — aujourd'hui les seuls GPO.
+//
+// Isolée dans une fonction plutôt que recopiée : elle marque ce qui reste à
+// porter, et sa disparition signalera que le portage est complet. Recopier le
+// contrôle en ligne l'aurait rendu invisible.
+func verifierDroit(groupIDs []int, sender, cle string) string {
+	// CheckPermissionsAllDomains et non Multiple : c'est ce qu'emploie le
+	// registre, et faire autrement rendrait ce chemin plus permissif que les
+	// autres — l'écart exact qui existait avant la refonte.
+	ok, motif := permission.CheckPermissionsAllDomains(groupIDs, cle, []string{"*"})
+	if !ok {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"commande refusée à %s : droit %s exigé — %s", sender, cle, motif))
+		return "Permission refusée : " + motif
+	}
+	return ""
 }

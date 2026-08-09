@@ -2,63 +2,28 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
-// FormatUsersByStatus renvoie les infos des utilisateurs connectés sous forme de string
+// DisplayUsersByStatus liste les sessions utilisateur ouvertes.
+//
+// L'expiration du jeton est affichée : c'est ce qui décide du moment où la
+// session tombera, et donc la seule colonne qui permette de distinguer une
+// session active d'une session qui va expirer dans la minute.
 func DisplayUsersByStatus(users []storage.UserConnected) string {
-	// Configurer les couleurs
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-	active := color.New(color.FgGreen).SprintFunc()
+	if len(users) == 0 {
+		return "Aucune session utilisateur ouverte."
+	}
 
-	// Buffer pour stocker la sortie formatée
-	var sb strings.Builder
-
-	// Ajouter le titre
-	sb.WriteString(title("📋 Connected Users") + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Utiliser un `tabwriter` pour aligner proprement les colonnes
-	var b strings.Builder
-	w := tabwriter.NewWriter(&b, 0, 8, 1, ' ', 0)
-
-	// Ajouter les en-têtes
-	fmt.Fprintf(w, "%-4s %-15s %-20s %-20s %-10s\n",
-		header("ID"),
-		header("Username"),
-		header("Created At"),
-		header("Token Expiry"),
-		header("Status"),
-	)
-
-	// Ajouter chaque utilisateur
-	for _, user := range users {
-		// Définir le statut
-		status := active("✅ Active")
-
-		// Ajouter les données formatées
-		fmt.Fprintf(w, "%-4d %-15s %-20s %-20s %-10s\n",
-			user.ID,
-			user.Username,
-			user.CreatedAt,
-			user.TokenExpiry,
-			status,
+	t := NouvelleTable("ID", "Identifiant", "Ouverte le", "Jeton valide jusqu'à")
+	for _, u := range users {
+		t.Ajouter(
+			fmt.Sprintf("%d", u.ID),
+			Valeur(u.Username),
+			Valeur(u.CreatedAt),
+			Valeur(u.TokenExpiry),
 		)
 	}
-
-	// Écrire le tableau formaté dans `sb`
-	err := w.Flush()
-	if err != nil {
-		return "Error flushing writer: " + err.Error()
-	}
-	sb.WriteString(b.String())
-
-	sb.WriteString("--------------------------------------------------\n")
-
-	return sb.String()
+	return fmt.Sprintf("%d session(s) utilisateur ouverte(s)\n\n%s", len(users), t.String())
 }

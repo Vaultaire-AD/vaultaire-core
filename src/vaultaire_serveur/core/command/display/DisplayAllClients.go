@@ -2,79 +2,51 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-	"vaultaire/core/logs"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
+// DisplayAllClients liste les machines du parc.
+//
+// Le rôle — serveur ou poste — est rendu en toutes lettres plutôt qu'en
+// « true/false » : la colonne se lit d'un coup d'œil, et « false » ne dit pas
+// de quoi il est la négation.
 func DisplayAllClients(clients []storage.GetClientsByPermission) string {
-	// Créer un StringBuilder pour accumuler le contenu
-	var sb strings.Builder
-
-	// Configurer les couleurs
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-
-	// Ajouter le titre
-	sb.WriteString(title("💻 Liste de tous les Clients (Logiciels)") + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Créer un tableau formaté avec tabwriter
-	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
-
-	// Ajouter les en-têtes
-	_, err := fmt.Fprintf(w, "%-15s %-25s %-15s %-15s %-10s %-10s %-15s %-10s\n",
-		header("ID Logiciel"),
-		header("Logiciel Type"),
-		header("Computeur ID"),
-		header("Hostname"),
-		header("Serveur"),
-		header("Processeur"),
-		header("RAM"),
-		header("OS"),
-	)
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de l'écriture des en-têtes: "+err.Error())
-		return "Erreur lors de l'affichage des clients."
+	if len(clients) == 0 {
+		return "Aucune machine."
 	}
 
-	// Ajouter chaque client (logiciel)
-	for _, client := range clients {
-		serveurStatus := "Non"
-		if client.Serveur {
-			serveurStatus = "Oui"
-		}
-
-		// Ajouter les détails du client (logiciel)
-		_, err = fmt.Fprintf(w, "%-15d %-25s %-15s %-15s %-10s %-10d %-15s %-10s\n",
-			client.ID,
-			client.LogicielType,
-			client.ComputeurID,
-			client.Hostname,
-			serveurStatus,
-			client.Processeur,
-			client.RAM,
-			client.OS,
+	t := NouvelleTable("ID", "Identifiant machine", "Nom d'hôte", "Type", "Rôle", "OS", "RAM", "CPU")
+	for _, c := range clients {
+		t.Ajouter(
+			fmt.Sprintf("%d", c.ID),
+			Valeur(c.ComputeurID),
+			Valeur(c.Hostname),
+			Valeur(c.LogicielType),
+			roleMachine(c.Serveur),
+			Valeur(c.OS),
+			Valeur(c.RAM),
+			nombreOuTiret(c.Processeur),
 		)
 	}
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de l'écriture des détails des clients: "+err.Error())
-		return "Erreur lors de l'affichage des clients."
+	return fmt.Sprintf("%d machine(s)\n\n%s", len(clients), t.String())
+}
+
+// roleMachine traduit le drapeau « serveur ».
+func roleMachine(serveur bool) string {
+	if serveur {
+		return "serveur"
 	}
+	return "poste"
+}
 
-	// Vider le tampon pour s'assurer que tout est écrit dans sb
-	err = w.Flush()
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de l'écriture du tableau: "+err.Error())
-		return "Erreur lors de l'affichage des clients."
+// nombreOuTiret distingue « zéro » de « non renseigné ».
+//
+// Un inventaire jamais remonté vaut 0 en base. Afficher « 0 » laisserait croire
+// à une machine sans processeur ; le tiret dit que la valeur manque.
+func nombreOuTiret(n int) string {
+	if n <= 0 {
+		return "—"
 	}
-
-	// Ajouter une ligne de séparation
-	sb.WriteString("--------------------------------------------------\n")
-
-	// Retourner le contenu accumulé sous forme de chaîne
-	return sb.String()
+	return fmt.Sprintf("%d", n)
 }

@@ -247,6 +247,179 @@ func TestEcrireEmpreinteRefuseUneFormeInvalide(t *testing.T) {
 	}
 }
 
+// --- La clé DÉJÀ présente sur le disque -------------------------------------
+//
+// Ces tests reproduisent une panne observée sur une machine réelle : un
+// `serveurpublickey.pem` obtenu d'un core dont la clé avait changé depuis.
+//
+// L'agent chiffrait sa poignée de main avec une clé que le core ne pouvait plus
+// déchiffrer. Le core n'y répondait pas ; l'agent attendait puis signalait
+// « Erreur lors de la lecture du header : EOF » — un message qui ne désigne
+// rien, alors que l'empreinte était sur la machine, à côté du fichier fautif.
+//
+// La première version du contrôle ne vérifiait qu'à la RÉCEPTION de la clé,
+// donc jamais celles déjà en place. Or ce sont exactement celles dont on ne
+// sait rien.
+
+func poserCleLocale(t *testing.T, dir, pemContent string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, "serveurpublickey.pem"), []byte(pemContent), 0o644); err != nil {
+		t.Fatalf("écriture de la clé locale : %v", err)
+	}
+}
+
+// TestCleLocalePerimeeEstDetectee est le test de la panne observée.
+func TestCleLocalePerimeeEstDetectee(t *testing.T) {
+	dir := repertoireDeTest(t)
+
+	cleDuCoreActuel := clePubliquePEM(t)
+	cleAncienne := clePubliquePEM(t)
+
+	empreinte, err := EmpreinteClePublique(cleDuCoreActuel)
+	if err != nil {
+		t.Fatalf("empreinte : %v", err)
+	}
+	if err := EcrireEmpreinte(empreinte); err != nil {
+		t.Fatalf("écriture de l'empreinte : %v", err)
+	}
+	poserCleLocale(t, dir, cleAncienne)
+
+	aEcarter, motif := CleLocaleConforme()
+	if !aEcarter {
+		t.Fatal("une clé locale ne correspondant pas à l'empreinte n'est pas détectée : " +
+			"l'agent partirait avec, et échouerait sur un EOF sans cause identifiable")
+	}
+	// Le motif doit contenir les deux empreintes et la marche à suivre.
+	for _, attendu := range []string{empreinte, "vlt certificate fingerprint"} {
+		if !strings.Contains(motif, attendu) {
+			t.Errorf("le motif ne contient pas %q", attendu)
+		}
+	}
+}
+
+// TestCleLocaleConformeEstConservee : ne pas jeter une clé valide.
+//
+// Sans ce test, un code qui écarterait TOUTES les clés passerait le précédent
+// tout en provoquant un askkey à chaque connexion.
+func TestCleLocaleConformeEstConservee(t *testing.T) {
+	dir := repertoireDeTest(t)
+
+	cle := clePubliquePEM(t)
+	empreinte, err := EmpreinteClePublique(cle)
+	if err != nil {
+		t.Fatalf("empreinte : %v", err)
+	}
+	if err := EcrireEmpreinte(empreinte); err != nil {
+		t.Fatalf("écriture : %v", err)
+	}
+	poserCleLocale(t, dir, cle)
+
+	if aEcarter, motif := CleLocaleConforme(); aEcarter {
+		t.Fatalf("une clé conforme est écartée : %s", motif)
+	}
+}
+
+// TestCleLocaleSansEmpreinteEstConservee.
+//
+// Sans empreinte, il n'y a rien à quoi comparer. Écarter une clé qu'on ne peut
+// pas remplacer par mieux ne ferait qu'ouvrir la porte au premier venu.
+func TestCleLocaleSansEmpreinteEstConservee(t *testing.T) {
+	dir := repertoireDeTest(t)
+	poserCleLocale(t, dir, clePubliquePEM(t))
+
+	if aEcarter, motif := CleLocaleConforme(); aEcarter {
+		t.Fatalf("clé écartée alors qu'aucune empreinte ne permet d'en juger : %s", motif)
+	}
+}
+
+// TestAbsenceDeCleLocaleNestPasUneAnomalie : le chemin d'une première connexion.
+func TestAbsenceDeCleLocaleNestPasUneAnomalie(t *testing.T) {
+	repertoireDeTest(t)
+	empreinte, err := EmpreinteClePublique(clePubliquePEM(t))
+	if err != nil {
+		t.Fatalf("empreinte : %v", err)
+	}
+	if err := EcrireEmpreinte(empreinte); err != nil {
+		t.Fatalf("écriture : %v", err)
+	}
+
+	if aEcarter, motif := CleLocaleConforme(); aEcarter {
+		t.Fatalf("clé absente signalée comme à écarter : %s", motif)
+	}
+}
+
+// TestCleLocaleIllisibleEstEcartee : un fichier tronqué ne servira à rien.
+func TestCleLocaleIllisibleEstEcartee(t *testing.T) {
+	dir := repertoireDeTest(t)
+	empreinte, err := EmpreinteClePublique(clePubliquePEM(t))
+	if err != nil {
+		t.Fatalf("empreinte : %v", err)
+	}
+	if err := EcrireEmpreinte(empreinte); err != nil {
+		t.Fatalf("écriture : %v", err)
+	}
+	poserCleLocale(t, dir, "-----BEGIN RSA PUBLIC KEY-----\ntronqu")
+
+	if aEcarter, _ := CleLocaleConforme(); !aEcarter {
+		t.Fatal("une clé illisible est conservée : l'agent repartirait avec un fichier inutilisable")
+	}
+}
+
+// TestEcarterCleLocale : la suppression, et son idempotence.
+func TestEcarterCleLocale(t *testing.T) {
+	dir := repertoireDeTest(t)
+	poserCleLocale(t, dir, clePubliquePEM(t))
+
+	if err := EcarterCleLocale(); err != nil {
+		t.Fatalf("suppression : %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "serveurpublickey.pem")); !os.IsNotExist(err) {
+		t.Fatal("la clé est encore là après EcarterCleLocale")
+	}
+	// Deuxième appel : ne doit pas échouer sur un fichier déjà absent.
+	if err := EcarterCleLocale(); err != nil {
+		t.Fatalf("second appel en erreur alors que le fichier est déjà absent : %v", err)
+	}
+}
+
+// TestRepriseApresCleEcartee vérifie l'enchaînement complet.
+//
+// C'est le scénario de bout en bout : clé périmée détectée, écartée, puis la
+// clé légitime du core est acceptée parce qu'elle correspond à l'empreinte.
+func TestRepriseApresCleEcartee(t *testing.T) {
+	dir := repertoireDeTest(t)
+
+	cleActuelle := clePubliquePEM(t)
+	empreinte, err := EmpreinteClePublique(cleActuelle)
+	if err != nil {
+		t.Fatalf("empreinte : %v", err)
+	}
+	if err := EcrireEmpreinte(empreinte); err != nil {
+		t.Fatalf("écriture : %v", err)
+	}
+	poserCleLocale(t, dir, clePubliquePEM(t)) // une autre clé : périmée
+
+	aEcarter, _ := CleLocaleConforme()
+	if !aEcarter {
+		t.Fatal("clé périmée non détectée")
+	}
+	if err := EcarterCleLocale(); err != nil {
+		t.Fatalf("suppression : %v", err)
+	}
+
+	// L'agent redemande. La clé légitime doit passer.
+	if _, err := VerifierCleCore(cleActuelle); err != nil {
+		t.Fatalf("la clé légitime du core est refusée après reprise : %v", err)
+	}
+
+	// Et un imposteur doit toujours être refusé — c'est ce qui rend la reprise
+	// automatique acceptable.
+	if _, err := VerifierCleCore(clePubliquePEM(t)); err == nil {
+		t.Fatal("une clé étrangère est acceptée après reprise : " +
+			"écarter la clé locale reviendrait alors à ouvrir la porte")
+	}
+}
+
 // TestAllerRetour : ce que le core écrit, l'agent le lit et l'accepte.
 //
 // Les deux moitiés vivent dans des modules Go différents et ne se compilent

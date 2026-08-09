@@ -85,7 +85,7 @@ func handleGetPermissionByName(target, name string, senderGroupsIDs []int, actio
 		if err != nil {
 			return commandpermission.LogAndReturn(fmt.Sprintf("Erreur récupération permission utilisateur %s : ", name), err)
 		}
-		return display.DisplayUserPermission(*perm)
+		return display.DisplayUserPermission(*perm, lireActionsRBAC(int64(perm.ID)))
 
 	case "-c":
 		perm, err := dbpermission.Command_GET_ClientPermissionByName(database.GetDatabase(), name)

@@ -34,6 +34,25 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 			IsSafe:    false,
 		}
 		// Gestion clé serveur
+		//
+		// Avant tout : la clé DÉJÀ sur le disque est-elle celle qu'atteste
+		// l'empreinte ? Une clé périmée chiffre une poignée de main que le core
+		// ne sait pas déchiffrer ; il n'y répond pas, et l'agent conclut à un
+		// « EOF » qui ne désigne rien.
+		//
+		// Ce contrôle manquait : la première version ne vérifiait qu'à la
+		// réception, donc jamais les clés déjà en place — c'est-à-dire
+		// exactement celles dont on ne sait rien.
+		if aEcarter, motif := serveur.CleLocaleConforme(); aEcarter {
+			logs.Write_log("WARNING", motif)
+			if err := serveur.EcarterCleLocale(); err != nil {
+				logs.Write_log("ERROR", "clé du core non conforme et non supprimable : "+err.Error())
+				conn.Close()
+				lastErr = fmt.Errorf("clé du core non conforme sur %s", serverAddr)
+				continue
+			}
+		}
+
 		if !HaveServeurKey() {
 			logs.Write_log("INFO", "Clé serveur manquante, demande en cours...")
 

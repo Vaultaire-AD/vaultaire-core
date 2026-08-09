@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strings"
 
+	"vaultaire/core/command/display"
 	dbcertificates "vaultaire/core/database/db_certificates"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/logs"
@@ -122,16 +123,19 @@ func listCertificates() string {
 		return "Aucun certificat en base."
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "%-24s %-12s %s\n", "NOM", "TYPE", "COUVERTURE")
+	// Largeurs calculées sur le contenu : `%-24s` sur un nom de certificat
+	// supposait qu'aucun ne dépassait vingt-quatre caractères, et le premier
+	// qui dépassait décalait sa ligne seulement — ce qui se remarque moins
+	// qu'un décalage franc, donc induit davantage en erreur.
+	tb := display.NouvelleTable("NOM", "TYPE", "COUVERTURE")
 	for _, c := range certs {
 		couverture := "-"
 		if c.CertificateData != nil && *c.CertificateData != "" {
 			couverture = ldaptools.CertSummary(*c.CertificateData)
 		}
-		fmt.Fprintf(&b, "%-24s %-12s %s\n", c.Name, c.CertificateType, couverture)
+		tb.Ajouter(c.Name, c.CertificateType, couverture)
 	}
-	return b.String()
+	return tb.String()
 }
 
 func showCertificate(args []string) string {

@@ -2,23 +2,21 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
+// DisplayClientPermission rend la fiche d'une permission client.
 func DisplayClientPermission(permission storage.ClientPermission) string {
-	var sb strings.Builder
+	f := NouvelleFiche("Permission client — " + permission.Name)
+	f.Ajouter("Identifiant", fmt.Sprintf("%d", permission.ID))
+	f.Ajouter("Administration", OuiNon(permission.IsAdmin))
 
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	label := color.New(color.FgYellow, color.Bold).SprintFunc()
-
-	sb.WriteString(title("🔑 Permission Client : "+permission.Name) + "\n")
-	sb.WriteString("-----------------------------------------\n")
-	sb.WriteString(fmt.Sprintf("%s: %d\n", label("ID"), permission.ID))
-	sb.WriteString(fmt.Sprintf("%s: %t\n", label("Admin"), permission.IsAdmin))
-	sb.WriteString("-----------------------------------------\n")
-
-	return sb.String()
+	if permission.IsAdmin {
+		// La conséquence est dite, pas seulement le drapeau. « oui » ne
+		// renseigne pas sur ce que ce oui emporte.
+		f.AjouterSection("Ce que cette permission accorde")
+		f.Ajouter("effet", "les machines du groupe qui la porte disposent des droits d'administration")
+	}
+	return f.String()
 }

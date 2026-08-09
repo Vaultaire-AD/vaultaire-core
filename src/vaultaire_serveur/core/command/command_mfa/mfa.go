@@ -25,11 +25,12 @@ import (
 	"strconv"
 	"strings"
 
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // MFA_Command traite `vlt mfa ...`.
@@ -42,7 +43,7 @@ func MFA_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 	case "-h", "help", "--help":
 		return helpText()
 	case "policy":
-		return handlePolicy(commandList[1:], senderUsername)
+		return handlePolicy(commandList[1:], senderGroupIDs, senderUsername)
 	case "-u":
 		return handleUser(commandList[1:], senderGroupIDs, senderUsername)
 	case "-g":
@@ -81,17 +82,19 @@ func handleUser(args []string, senderGroupIDs []int, senderUsername string) stri
 			target, activeLabel(state.MFAEnabled && state.MFASecret != ""), yesNo(required))
 	}
 
-	if msg := requireMFARightOnUser(senderGroupIDs, senderUsername, target); msg != "" {
-		return msg
-	}
-	if err := dbauthpolicy.ResetMFA(db, target, senderUsername); err != nil {
-		return fmt.Sprintf("Réinitialisation impossible : %v", err)
-	}
-	logs.Write_Log("SECURITY", fmt.Sprintf("%s a réinitialisé le second facteur de %s", senderUsername, target))
+	// Le contrôle du droit (write:mfa sur les domaines des groupes de la cible)
+	// et la réinitialisation vivent dans l'action user.reset_mfa, partagée avec
+	// l'interface web.
+	res := commandaction.ExecuterAction("user.reset_mfa",
+		action.Params{"username": target}, senderGroupIDs, senderUsername)
+
+	// La précision « son groupe l'impose » est ajoutée ici parce qu'elle dépend
+	// d'un état déjà lu plus haut pour l'affichage. L'action ne la porte pas :
+	// elle n'a pas à relire la base pour un détail de formulation.
 	if required {
-		return fmt.Sprintf("Second facteur de %s réinitialisé. Son groupe l'impose : il devra le réenrôler à sa prochaine connexion.", target)
+		res += " Son groupe l'impose."
 	}
-	return fmt.Sprintf("Second facteur de %s réinitialisé. Le compte se connectera avec son seul mot de passe jusqu'à un nouvel enrôlement.", target)
+	return res
 }
 
 // handleGroup pose ou retire l'exigence de second facteur sur un groupe.
@@ -115,33 +118,18 @@ func handleGroup(args []string, senderGroupIDs []int, senderUsername string) str
 		return "Précisez --require ou --optional. L'omission ne peut pas être interprétée : elle vaudrait retrait silencieux d'une protection."
 	}
 
-	// Le droit est exigé sur TOUS les domaines du groupe. Imposer ou lever le
-	// second facteur d'un groupe entier pèse plus lourd que d'y ajouter un
-	// membre : c'est la même famille de décision que la réinitialisation, d'où
-	// write:mfa et non write:update:group.
-	domains, err := permission.GetDomainsFromGroupName(target)
-	if err != nil {
-		return fmt.Sprintf("Domaines du groupe %s illisibles : %v", target, err)
-	}
-	ok, reason := permission.CheckPermissionsAllDomains(senderGroupIDs, permission.ActionManageMFA, domains)
-	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"%s tente de modifier l'exigence de second facteur du groupe %s (domaines : %v) — %s",
-			senderUsername, target, domains, reason))
-		return "Permission refusée : " + reason
-	}
-
-	if err := dbauthpolicy.SetGroupMFARequired(database.GetDatabase(), target, required, senderUsername); err != nil {
-		return fmt.Sprintf("Modification impossible : %v", err)
-	}
+	// Le contrôle (write:mfa sur les domaines du groupe) et l'écriture vivent
+	// dans l'action group.set_mfa_required.
+	valeur := "non"
 	if required {
-		return fmt.Sprintf("Second facteur imposé au groupe %s. Les membres déjà connectés ne sont pas déconnectés : ils enrôleront à leur prochaine connexion.", target)
+		valeur = "oui"
 	}
-	return fmt.Sprintf("Second facteur redevenu facultatif pour le groupe %s.", target)
+	return commandaction.ExecuterAction("group.set_mfa_required",
+		action.Params{"group": target, "mfa_required": valeur}, senderGroupIDs, senderUsername)
 }
 
 // handlePolicy lit ou écrit la politique globale d'expiration des mots de passe.
-func handlePolicy(args []string, senderUsername string) string {
+func handlePolicy(args []string, senderGroupIDs []int, senderUsername string) string {
 	db := database.GetDatabase()
 
 	if len(args) == 0 {
@@ -190,41 +178,13 @@ func handlePolicy(args []string, senderUsername string) string {
 	// Les bornes et la cohérence préavis/expiration sont vérifiées par
 	// SetPasswordPolicy, côté base. Les revalider ici ferait deux règles à
 	// maintenir, dont une seule couvrirait l'interface web.
-	if err := dbauthpolicy.SetPasswordPolicy(db, next, senderUsername); err != nil {
-		return fmt.Sprintf("Enregistrement impossible : %v", err)
-	}
-	if next.MaxAgeDays <= 0 {
-		return "Expiration des mots de passe désactivée."
-	}
-	return fmt.Sprintf("Politique enregistrée : expiration à %d jours, préavis %d jours.", next.MaxAgeDays, next.WarnDays)
-}
-
-// requireMFARightOnUser vérifie write:mfa sur tous les domaines du compte visé.
-//
-// Sur TOUS et non sur au moins un : un compte présent dans plusieurs domaines
-// n'est administrable que par qui les administre tous. Sans cela, un délégué
-// d'un seul domaine pourrait retirer le second facteur d'un compte qui a des
-// droits ailleurs.
-func requireMFARightOnUser(senderGroupIDs []int, senderUsername, target string) string {
-	targetGroupIDs, err := permission.GetGroupIDsFromUsername(target)
-	if err != nil {
-		return fmt.Sprintf("Groupes de %s illisibles : %v", target, err)
-	}
-	if len(targetGroupIDs) == 0 {
-		return fmt.Sprintf("Utilisateur %s introuvable ou sans groupe.", target)
-	}
-	domains, err := permission.GetDomainListsFromGroupIDs(targetGroupIDs)
-	if err != nil {
-		return fmt.Sprintf("Domaines de %s illisibles : %v", target, err)
-	}
-	ok, reason := permission.CheckPermissionsAllDomains(senderGroupIDs, permission.ActionManageMFA, domains)
-	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"%s tente de réinitialiser le second facteur de %s (domaines : %v) — %s",
-			senderUsername, target, domains, reason))
-		return "Permission refusée : " + reason
-	}
-	return ""
+	// Le contrôle (appartenance au groupe protégé) et la validation vivent dans
+	// l'action authpolicy.set_password_policy.
+	return commandaction.ExecuterAction("authpolicy.set_password_policy",
+		action.Params{
+			"max_age_days": strconv.Itoa(next.MaxAgeDays),
+			"warn_days":    strconv.Itoa(next.WarnDays),
+		}, senderGroupIDs, senderUsername)
 }
 
 func activeLabel(on bool) string {

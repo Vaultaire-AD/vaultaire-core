@@ -2,55 +2,32 @@ package display
 
 import (
 	"fmt"
-	"strings"
-	"text/tabwriter"
-	"vaultaire/core/logs"
-	"vaultaire/core/storage"
 
-	"github.com/fatih/color"
+	"vaultaire/core/storage"
 )
 
+// DisplayAllUserPermissions liste les permissions utilisateur.
+//
+// La colonne « admin web » est mise en avant : c'est le seul réglage de cette
+// liste qui donne un pouvoir, et le repérer d'un coup d'œil est précisément ce
+// qu'on cherche en ouvrant cette page.
+//
+// Le détail des droits RBAC n'y figure pas — une trentaine de clés par ligne
+// serait illisible. « get -p -u <nom> » les affiche.
 func DisplayAllUserPermissions(permissions []storage.UserPermission) string {
-	var sb strings.Builder
+	if len(permissions) == 0 {
+		return "Aucune permission utilisateur."
+	}
 
-	title := color.New(color.FgHiBlue, color.Bold).SprintFunc()
-	header := color.New(color.FgYellow, color.Bold).SprintFunc()
-
-	sb.WriteString(title("🔑 Liste de toutes les Permissions Utilisateur") + "\n")
-	sb.WriteString("--------------------------------------------------\n")
-
-	w := tabwriter.NewWriter(&sb, 0, 8, 1, ' ', 0)
-
-	fmt.Fprintf(w, "%-5s %-20s %-30s %-6s %-6s %-8s %-8s %-8s\n",
-		header("ID"),
-		header("Nom"),
-		header("Description"),
-		header("None"),
-		header("Auth"),
-		header("Compare"),
-		header("Search"),
-		header("WebAdmin"),
-	)
-
+	t := NouvelleTable("ID", "Nom", "Admin web", "Description")
 	for _, p := range permissions {
-		fmt.Fprintf(w, "%-5d %-20s %-30s %-6s %-6s %-8s %-8s %-8s\n",
-			p.ID,
-			p.Name,
-			p.Description,
-			p.None,
-			p.Auth,
-			p.Compare,
-			p.Search,
-			p.Web_admin,
+		t.Ajouter(
+			fmt.Sprintf("%d", p.ID),
+			Valeur(p.Name),
+			lisibleValeurAction(p.Web_admin),
+			Valeur(p.Description),
 		)
 	}
-
-	err := w.Flush()
-	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de l'écriture du tableau: "+err.Error())
-		return "Erreur lors de l'affichage des permissions."
-	}
-	sb.WriteString("--------------------------------------------------\n")
-
-	return sb.String()
+	return fmt.Sprintf("%d permission(s) utilisateur\n\nDétail d'une permission : get -p -u <nom>\n\n%s",
+		len(permissions), t.String())
 }

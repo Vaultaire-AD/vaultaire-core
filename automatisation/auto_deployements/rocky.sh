@@ -55,6 +55,29 @@ compgen -G "/opt/vaultaire/*.pem" > /dev/null && mv -f /opt/vaultaire/*.pem /etc
 # son journal. Le déploiement reste donc possible sans, mais moins sûr.
 [[ -f /opt/vaultaire/core_key_fingerprint ]] && mv -f /opt/vaultaire/core_key_fingerprint /etc/vaultaire_client/.ssh/
 
+# Clé du core héritée d'une installation précédente.
+#
+# Ce script n'efface pas /etc/vaultaire_client/.ssh : une réinstallation sur une
+# machine déjà enrôlée y retrouve donc le serveurpublickey.pem d'avant. Si le
+# core a été réinstallé entre-temps — base recréée, donc nouvelle paire de clés —
+# ce fichier est périmé.
+#
+# Une clé périmée ne produit pas d'erreur claire : l'agent chiffre sa poignée de
+# main avec, le core ne sait pas la déchiffrer, ne répond pas, et l'agent finit
+# par signaler « Erreur lors de la lecture du header : EOF ». Rien n'y désigne la
+# clé, et le diagnostic peut prendre des heures.
+#
+# On la supprime donc quand une empreinte vient d'être déposée. L'agent la
+# redemandera au core au premier contact, et la comparera à cette empreinte :
+# la reprise est sûre, puisqu'une clé qui ne correspond pas sera refusée.
+#
+# Sans empreinte déposée, on ne touche à rien : on n'aurait alors rien pour
+# valider la clé de remplacement.
+if [[ -f /etc/vaultaire_client/.ssh/core_key_fingerprint ]]; then
+    rm -f /etc/vaultaire_client/.ssh/serveurpublickey.pem
+    log_info "Clé du core éventuellement héritée supprimée : elle sera redemandée puis vérifiée contre l'empreinte."
+fi
+
 # Application stricte des permissions
 chmod 755 /lib64/libnss_vaultaire.so.2
 chmod 750 /usr/bin/vaultaire_client

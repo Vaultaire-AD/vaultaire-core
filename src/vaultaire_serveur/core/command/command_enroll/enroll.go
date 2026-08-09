@@ -21,16 +21,17 @@
 package commandenroll
 
 import (
-	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
+	"vaultaire/core/action"
 	"vaultaire/core/clienttype"
+	commandaction "vaultaire/core/command/commandaction"
+	"vaultaire/core/command/display"
 	"vaultaire/core/database"
 	dbenrollment "vaultaire/core/database/db_enrollment"
-	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -41,8 +42,12 @@ import (
 // installer un service, tout de suite, une fois — pas à rester dans un script de
 // déploiement pendant six mois.
 const (
-	defaultUses    = 1
-	defaultTTL     = 30 * time.Minute
+	defaultUses = 1
+	defaultTTL  = 30 * time.Minute
+	// Bornes affichées dans l'aide. Les bornes qui FONT FOI sont celles de
+	// l'action enroll.create_key : celles-ci ne sont qu'un rappel à
+	// l'utilisateur, et les garder ici sans le dire laisserait croire qu'elles
+	// contrôlent quelque chose.
 	maxTTL         = 7 * 24 * time.Hour
 	maxUsesAllowed = 50
 )
@@ -69,23 +74,43 @@ func Enroll_Command(commandList []string, senderGroupIDs []int, senderUsername s
 	}
 	sub := strings.ToLower(commandList[0])
 
-	var actionKey string
+	// Seules les LECTURES sont contrôlées ici.
+	//
+	// « create » et « revoke » passent par le registre, qui porte leur clé et
+	// leur portée : les contrôler ici en plus ferait deux endroits où le droit
+	// se décide, donc deux endroits à tenir d'accord.
+	//
+	// Le motif d'origine était fail-open — le switch n'avait pas de `default`,
+	// et une sous-commande absente de la table laissait actionKey vide, donc
+	// sautait la vérification. « types » en profitait délibérément, mais rien
+	// ne le disait : toute sous-commande ajoutée ensuite en aurait profité
+	// aussi, sans que personne le remarque.
+	//
+	// La liste est donc explicite, et « types » y figure avec sa raison.
 	switch sub {
-	case "create", "revoke":
-		actionKey = "write:create:client"
 	case "list", "show":
-		actionKey = "read:get:client"
-	}
-	if actionKey != "" {
-		ok, reason := permission.CheckPermissionsMultipleDomains(senderGroupIDs, actionKey, []string{"*"})
+		ok, reason := permission.CheckPermissionsAllDomains(senderGroupIDs, "read:get:client", []string{"*"})
 		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf(
-				"Permission refused: user=%s action=%s (enroll %s) reason=%s",
-				senderUsername, actionKey, sub, reason))
+			logs.Write_Log("SECURITY", fmt.Sprintf(
+				"enroll %s refusé à %s : droit read:get:client exigé — %s", sub, senderUsername, reason))
 			return "Permission refusée : " + reason
 		}
-		logs.Write_Log("INFO", fmt.Sprintf(
-			"Permission used: user=%s action=%s (enroll %s)", senderUsername, actionKey, sub))
+
+	case "types":
+		// Aucun contrôle, et c'est voulu : le catalogue des types est une
+		// constante du logiciel, pas une donnée d'annuaire. Le lire n'apprend
+		// rien sur le parc.
+
+	case "create", "revoke":
+		// Contrôlées par le registre. Voir core/action/actions_enroll.go.
+
+	case "-h", "help", "--help":
+		// L'aide est publique.
+
+	default:
+		// Fail-closed : une sous-commande inconnue est refusée, pas exécutée
+		// sans contrôle.
+		return "Requête invalide. Essayez 'enroll -h'."
 	}
 
 	switch sub {
@@ -96,55 +121,64 @@ func Enroll_Command(commandList []string, senderGroupIDs []int, senderUsername s
 		// d'annuaire : le lire n'apprend rien sur le parc.
 		return listTypes()
 	case "create":
-		return createKey(commandList[1:], senderUsername)
+		return creerCle(commandList[1:], senderGroupIDs, senderUsername)
 	case "list":
 		return listKeys()
 	case "show":
 		return showKey(commandList[1:])
 	case "revoke":
-		return revokeKey(commandList[1:], senderUsername)
+		return revoquerCle(commandList[1:], senderGroupIDs, senderUsername)
 	default:
 		return "Requête invalide. Essayez 'enroll -h'."
 	}
 }
 
-// createKey émet une clé et l'affiche UNE SEULE FOIS.
-func createKey(args []string, senderUsername string) string {
-	var (
-		clientType string
-		label      string
-		uses       = defaultUses
-		ttl        = defaultTTL
-	)
+// creerCle émet une clé d'enrôlement via l'action enroll.create_key.
+//
+// # Ce qui a disparu d'ici
+//
+// La validation du type, celle des bornes, le contrôle du droit RBAC et
+// l'exigence d'appartenance au groupe protégé pour les types qui portent
+// l'assertion d'identité. Tout cela vivait ici ET dans web_admin_enroll.go, en
+// double, avec des messages qui avaient déjà divergé.
+//
+// Cette fonction ne fait plus qu'une chose : traduire « --type X --uses 3
+// --expires 24h » en paramètres nommés. La durée est convertie en minutes,
+// parce que c'est ce que l'action attend — et que l'interface web l'exprimait
+// déjà ainsi.
+func creerCle(args []string, groupIDs []int, senderUsername string) string {
+	var clientType, label string
+	uses := 1
+	ttl := 24 * time.Hour
 
 	for i := 0; i < len(args); i++ {
-		switch strings.ToLower(args[i]) {
+		switch args[i] {
 		case "--type", "--uses", "--expires", "--label":
 			if i+1 >= len(args) {
-				return "Option " + args[i] + " : valeur manquante."
+				return fmt.Sprintf("L'option %s attend une valeur.", args[i])
 			}
-			value := strings.TrimSpace(args[i+1])
-			switch strings.ToLower(args[i]) {
+			valeur := args[i+1]
+			i++
+			switch args[i-1] {
 			case "--type":
-				clientType = value
+				clientType = strings.TrimSpace(valeur)
 			case "--label":
-				label = value
+				label = strings.TrimSpace(valeur)
 			case "--uses":
-				n, err := strconv.Atoi(value)
+				n, err := strconv.Atoi(strings.TrimSpace(valeur))
 				if err != nil {
-					return fmt.Sprintf("Option --uses : « %s » n'est pas un nombre.", value)
+					return fmt.Sprintf("Quota invalide : « %s » n'est pas un nombre.", valeur)
 				}
 				uses = n
 			case "--expires":
-				d, err := time.ParseDuration(value)
+				d, err := time.ParseDuration(strings.TrimSpace(valeur))
 				if err != nil {
-					return fmt.Sprintf("Option --expires : « %s » n'est pas une durée (exemples : 30m, 2h, 24h).", value)
+					return fmt.Sprintf("Durée invalide : « %s ». Exemples : 30m, 24h, 168h.", valeur)
 				}
 				ttl = d
 			}
-			i++
 		default:
-			return "Option inconnue : " + args[i] + ". Essayez 'enroll -h'."
+			return fmt.Sprintf("Option inconnue : %s. Voir « enroll -h ».", args[i])
 		}
 	}
 
@@ -153,82 +187,38 @@ func createKey(args []string, senderUsername string) string {
 			strings.Join(clienttype.ServiceNames(), ", ")
 	}
 
-	// Le type doit exister ET être un service. Un agent se crée sur le core
-	// avec sa paire de clés : lui ouvrir l'enrôlement contournerait ce chemin.
-	if err := clienttype.Validate(clientType); err != nil {
-		return err.Error()
-	}
-	if !clienttype.IsService(clientType) {
-		return fmt.Sprintf(
-			"%s est un agent, pas un service : il se crée sur le core avec « create -c ».\nTypes enrôlables : %s",
-			clientType, strings.Join(clienttype.ServiceNames(), ", "))
+	// Une durée négative n'a pas de sens et ParseDuration l'accepte pourtant :
+	// « -24h » est une durée valide. Sans ce contrôle, elle produirait une clé
+	// déjà expirée à sa création — donc inutilisable, sans que rien ne le dise.
+	if ttl < 0 {
+		return "La durée de validité ne peut pas être négative."
 	}
 
-	// 0 vaut « illimité » sur les deux bornes. Une clé sans limite ne s'éteint
-	// que par révocation : c'est un geste explicite, jamais l'écoulement du
-	// temps, et c'est ce qui la rend acceptable.
-	if uses < 0 || uses > maxUsesAllowed {
-		return fmt.Sprintf("Le quota doit être compris entre 0 (illimité) et %d.", maxUsesAllowed)
-	}
-	if ttl < 0 || ttl > maxTTL {
-		return fmt.Sprintf("La durée de validité doit être comprise entre 0 (sans expiration) et %s.", maxTTL)
+	p := action.Params{
+		"client_type":     clientType,
+		"label":           label,
+		"uses":            strconv.Itoa(uses),
+		"expires_minutes": strconv.Itoa(int(ttl.Minutes())),
 	}
 
-	db := database.GetDatabase()
-
-	// Une clé visant un type qui porte AssertsUser donne le pouvoir d'agir au
-	// nom de n'importe quel utilisateur. Ce n'est pas un droit qui se délègue
-	// par une clé RBAC ordinaire : il est réservé au groupe d'amorçage, comme
-	// les restrictions GPO et les certificats, et pour la même raison — ce que
-	// la décision engage ne tient dans aucun domaine.
-	if clienttype.MayAssertUser(clientType) && !isprotected.IsSuperadmin(db, senderUsername) {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"enrôlement: %s tente d'émettre une clé %s (assertion d'identité) sans appartenir au groupe %s",
-			senderUsername, clientType, isprotected.ProtectedGroupName))
-		return fmt.Sprintf(
-			"Permission refusée : une clé %s permet d'agir au nom de n'importe quel utilisateur.\n"+
-				"Son émission est réservée aux membres du groupe %s.",
-			clientType, isprotected.ProtectedGroupName)
-	}
-
-	secret, err := dbenrollment.GenerateSecret()
+	res, err := action.Executer("enroll.create_key",
+		action.Appelant{Username: senderUsername, GroupIDs: groupIDs}, p)
 	if err != nil {
-		return "Génération impossible : " + err.Error()
-	}
-	var expiresAt sql.NullTime
-	if ttl > 0 {
-		expiresAt = sql.NullTime{Time: time.Now().Add(ttl), Valid: true}
+		return commandaction.MessageDErreur(err)
 	}
 
-	id, err := dbenrollment.CreateKey(db, secret, label, clientType, uses, expiresAt, senderUsername)
-	if err != nil {
-		return "Émission impossible : " + err.Error()
+	// Le secret est lu dans les données et non dans le message : le message
+	// part dans les journaux, et une clé d'enrôlement en clair dans un journal
+	// est une clé publiée.
+	secret := ""
+	if d, ok := res.Donnees.(map[string]string); ok {
+		secret = d["secret"]
+	}
+	if secret == "" {
+		return res.Message + "\n(le secret n'a pas pu être lu : la clé existe mais est inutilisable, révoquez-la)"
 	}
 
-	quota := fmt.Sprintf("%d utilisation(s)", uses)
-	if uses == 0 {
-		quota = "illimité"
-	}
-	expiry := "sans expiration"
-	if expiresAt.Valid {
-		expiry = expiresAt.Time.Format("2006-01-02 15:04:05")
-	}
-	warn := ""
-	if uses == 0 || !expiresAt.Valid {
-		warn = "\n\n⚠ Cette clé est sans limite : seule une révocation l'arrêtera."
-	}
-
-	return fmt.Sprintf(`Clé d'enrôlement %d émise.
-
-  %s
-
-  Type    : %s
-  Quota   : %s
-  Expire  : %s%s
-
-Cette clé ne sera plus jamais affichée : seul son condensat est en base.
-Si elle est perdue, révoquez-la et émettez-en une autre.`,
-		id, secret, clientType, quota, expiry, warn)
+	return fmt.Sprintf("%s\n\n  %s\n", res.Message, secret)
 }
 
 func listKeys() string {
@@ -240,16 +230,23 @@ func listKeys() string {
 		return "Aucune clé d'enrôlement."
 	}
 
+	// « ÉTAT » et « ÉMISE PAR » portent des accents : `%-12s` compte les
+	// OCTETS, et « É » en occupe deux pour un seul caractère à l'écran. Chaque
+	// accent décalait donc la colonne suivante d'un cran. Le module d'affichage
+	// mesure en runes.
 	now := time.Now()
-	var b strings.Builder
-	fmt.Fprintf(&b, "%-4s %-20s %-12s %-9s %-19s %s\n",
-		"ID", "TYPE", "ÉTAT", "USAGES", "EXPIRE", "ÉMISE PAR")
+	tb := display.NouvelleTable("ID", "TYPE", "ÉTAT", "USAGES", "EXPIRE", "ÉMISE PAR")
 	for _, k := range keys {
-		fmt.Fprintf(&b, "%-4d %-20s %-12s %-9s %-19s %s\n",
-			k.ID, k.ClientType, k.Status(now),
-			usesText(k), expiryText(k), k.CreatedBy)
+		tb.Ajouter(
+			strconv.Itoa(k.ID),
+			k.ClientType,
+			k.Status(now),
+			usesText(k),
+			expiryText(k),
+			display.Valeur(k.CreatedBy),
+		)
 	}
-	return strings.TrimRight(b.String(), "\n")
+	return strings.TrimRight(tb.String(), "\n")
 }
 
 func showKey(args []string) string {
@@ -303,20 +300,16 @@ func showKey(args []string) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
-func revokeKey(args []string, senderUsername string) string {
+// revoquerCle passe par l'action enroll.revoke_key.
+//
+// Le contrôle du droit et la validation de l'identifiant vivent dans l'action,
+// partagés avec l'interface web.
+func revoquerCle(args []string, groupIDs []int, senderUsername string) string {
 	if len(args) == 0 {
 		return "Identifiant requis. Usage : enroll revoke <id>"
 	}
-	id, err := strconv.Atoi(strings.TrimSpace(args[0]))
-	if err != nil {
-		return fmt.Sprintf("« %s » n'est pas un identifiant.", args[0])
-	}
-	if err := dbenrollment.RevokeKey(database.GetDatabase(), id, senderUsername); err != nil {
-		return "Révocation impossible : " + err.Error()
-	}
-	return fmt.Sprintf(
-		"Clé %d révoquée. Les services déjà enrôlés avec elle ne sont pas affectés :\n"+
-			"ils ont leur propre paire de clés. Pour retirer l'un d'eux, supprimez le client.", id)
+	p := action.Params{"key_id": args[0]}
+	return commandaction.ExecuterAction("enroll.revoke_key", p, groupIDs, senderUsername)
 }
 
 func listTypes() string {
