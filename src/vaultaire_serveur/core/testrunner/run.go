@@ -57,6 +57,14 @@ func Run() int {
 	// --- Unit: états de la politique d'expiration des mots de passe ---
 	results = append(results, testPasswordPolicy()...)
 
+	// --- Unit: contrôle d'accès du registre d'actions ---
+	//
+	// Sans base : les vérificateurs de droits et la résolution des domaines
+	// sont remplacés par des doublures. Ces tests tournent donc toujours, y
+	// compris quand la base ne répond pas — c'est-à-dire aussi les jours où
+	// l'on a le plus besoin de savoir si le contrôle tient.
+	results = append(results, testRBAC()...)
+
 	// --- Intégration optionnelle: DB (si config chargée et connexion OK) ---
 	if db := database.GetDatabase(); db != nil {
 		results = append(results, testDatabase(db)...)

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"vaultaire/core/action"
 	commandadd "vaultaire/core/command/command_add"
 	commandcertificate "vaultaire/core/command/command_certificate"
 	commandcluster "vaultaire/core/command/command_cluster"
@@ -19,8 +20,7 @@ import (
 	commandremove "vaultaire/core/command/command_remove"
 	commandstatus "vaultaire/core/command/command_status"
 	commandupdate "vaultaire/core/command/command_update"
-	"vaultaire/core/database"
-	dbsessions "vaultaire/core/database/db_sessions"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 )
@@ -95,22 +95,27 @@ func ExecuteCommand(input, sender string) string {
 	return entry(argv, groupIDs, sender)
 }
 
+// handleClear purge les sessions expirées.
+//
+// # Le droit a changé
+//
+// La commande exigeait `write:update:user` — le droit de MODIFIER DES COMPTES —
+// pour vider une table de sessions. La clé accordait beaucoup plus que ce que
+// la commande fait, et son nom ne laissait pas deviner qu'elle ouvrait ce
+// réglage.
+//
+// Elle exige maintenant `write:server`, partagée avec le mode debug.
 func handleClear(sender string) string {
 	groupIDs, err := permission.GetGroupIDsForUser(sender)
 	if err != nil {
 		return "Erreur de permission : " + err.Error()
 	}
-	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, "write:update:user", []string{"*"})
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=write:update:user reason=%s", sender, msg))
-		return "Permission refusée : " + msg
+	res, err := action.Executer("server.clear_sessions",
+		action.Appelant{Username: sender, GroupIDs: groupIDs}, action.Params{})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
 	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=write:update:user (clear)", sender))
-	if err := dbsessions.CleanUpExpiredSessions(database.DB); err != nil {
-		logs.Write_Log("ERROR", "Erreur nettoyage sessions : "+err.Error())
-		return "Erreur lors du nettoyage des sessions expirées."
-	}
-	return "Sessions expirées nettoyées."
+	return res.Message
 }
 
 // Version optimisée : aucune copie de slice inutile

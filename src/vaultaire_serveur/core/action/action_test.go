@@ -27,6 +27,10 @@ type droitsFixes struct {
 	// « autorisé » de « jamais vérifié ». Les deux produisent une exécution ;
 	// seul l'enregistrement les sépare.
 	appels []appelDroit
+
+	// Trace séparée des appels « un domaine suffit », pour vérifier qu'une
+	// action interroge bien la sémantique qu'elle déclare.
+	appelsUnDomaine []appelDroit
 }
 
 type appelDroit struct {
@@ -37,6 +41,69 @@ type appelDroit struct {
 func (d *droitsFixes) Autorise(_ []int, cle string, domaines []string) (bool, string) {
 	d.appels = append(d.appels, appelDroit{cle: cle, domaines: domaines})
 	return d.autorise, d.motif
+}
+
+// AutoriseSurUnDomaine : même réponse fixe, mais tracée à part.
+//
+// La distinction compte pour les tests : une action de lecture doit passer par
+// CETTE méthode, une écriture par l'autre. Répondre pareil sans les séparer
+// laisserait passer une action qui interroge la mauvaise — et le contrôle
+// serait alors plus laxiste, ou plus strict, que déclaré.
+func (d *droitsFixes) AutoriseSurUnDomaine(_ []int, cle string, domaines []string) (bool, string) {
+	d.appelsUnDomaine = append(d.appelsUnDomaine, appelDroit{cle: cle, domaines: domaines})
+	return d.autorise, d.motif
+}
+
+// TestUnDomaineSuffitChoisitLaBonneVerification.
+//
+// Le champ UnDomaineSuffit ne sert à rien s'il n'oriente pas réellement le
+// contrôle. Un exécuteur qui appellerait toujours Autorise durcirait les
+// lectures ; un qui appellerait toujours AutoriseSurUnDomaine relâcherait les
+// écritures. Aucune des deux erreurs ne se voit à la lecture du code appelant
+// — d'où ce test, qui observe QUELLE méthode a été interrogée.
+func TestUnDomaineSuffitChoisitLaBonneVerification(t *testing.T) {
+	rien := func(Appelant, Params) (Resultat, error) { return Resultat{}, nil }
+
+	cas := []struct {
+		nom             string
+		unDomaineSuffit bool
+	}{
+		{"ecriture.test", false},
+		{"lecture.test", true},
+	}
+
+	for _, c := range cas {
+		r := NouveauRegistre()
+		if err := r.Enregistrer(Definition{
+			Nom:             c.nom,
+			CleRBAC:         "read:get:user",
+			Portee:          PorteeGlobale,
+			UnDomaineSuffit: c.unDomaineSuffit,
+			Resume:          "essai",
+			Executer:        rien,
+		}); err != nil {
+			t.Fatalf("%s : %v", c.nom, err)
+		}
+
+		d := &droitsFixes{autorise: true}
+		ex := &Executeur{Registre: r, Droits: d}
+		if _, err := ex.Controler(c.nom, Appelant{Username: "x"}, Params{}); err != nil {
+			t.Fatalf("%s : %v", c.nom, err)
+		}
+
+		strictes, souples := len(d.appels), len(d.appelsUnDomaine)
+		if c.unDomaineSuffit {
+			if souples != 1 || strictes != 0 {
+				t.Errorf("%s : lecture contrôlée par la voie stricte (%d strict, %d souple)",
+					c.nom, strictes, souples)
+			}
+		} else {
+			if strictes != 1 || souples != 0 {
+				t.Errorf("%s : écriture contrôlée par la voie souple (%d strict, %d souple)",
+					c.nom, strictes, souples)
+			}
+		}
+	}
 }
 
 type journalMemoire struct {

@@ -222,50 +222,24 @@ func buildPermissionMatrix(db *sql.DB, perm *storage.UserPermission) permissionM
 	return view
 }
 
-// permissionFieldExists dit si une clé d'action est administrable depuis la
-// page.
+// Deux gardes ont quitté ce fichier.
 //
-// Sert de garde à l'écriture : sans elle, le champ `field` d'un formulaire
-// forgé permettrait de créer en base une action inventée, qui ne serait jamais
-// évaluée par le moteur RBAC mais s'accumulerait silencieusement.
-func permissionFieldExists(field string) bool {
-	if permission.IsRBACActionKey(field) {
-		return true
-	}
-	for _, key := range permission.LegacyActionKeys() {
-		if key == field {
-			return true
-		}
-	}
-	for _, key := range permission.SpecialActionKeys() {
-		if key == field {
-			return true
-		}
-	}
-	return false
-}
+// `permissionFieldExists` — la clé est-elle réellement administrable — et
+// `domainGranted` — le domaine à retirer est-il présent — vivaient ici et
+// nulle part ailleurs : la ligne de commande n'avait ni l'une ni l'autre.
+// C'est ce qui lui permettait d'écrire des clés inventées et d'annoncer le
+// retrait de domaines absents.
+//
+// Elles sont maintenant dans l'action permission.update_action, donc sur le
+// chemin des DEUX façades. Les garder ici en double aurait recréé le défaut
+// qu'on venait de corriger : deux copies qui divergent.
+//
+// Voir action.ActionPermissionAdministrable, exportée pour que cette page
+// puisse continuer à construire sa matrice sur la même liste que celle qui
+// contrôle l'écriture.
 
 // editorCell retourne la case à ouvrir dans l'éditeur, et si elle existe.
 func (v permissionMatrixView) editorCell(field string) (permissionCell, bool) {
 	cell, ok := v.CellByID[strings.TrimSpace(field)]
 	return cell, ok
-}
-
-// domainGranted dit si un domaine est accordé sur une action, dans le mode de
-// propagation indiqué.
-//
-// Un même domaine peut figurer dans les deux listes ; retirer « avec
-// propagation » ne doit pas retirer l'entrée « sans propagation », d'où la
-// vérification du mode et pas seulement du nom.
-func domainGranted(pa storage.PermissionAction, domain, propagation string) bool {
-	list := pa.WithoutPropagation
-	if propagation == "1" {
-		list = pa.WithPropagation
-	}
-	for _, d := range list {
-		if d == domain {
-			return true
-		}
-	}
-	return false
 }

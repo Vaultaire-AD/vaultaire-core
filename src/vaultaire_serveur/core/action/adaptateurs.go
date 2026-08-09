@@ -34,6 +34,16 @@ func (DroitsVaultaire) Autorise(groupIDs []int, cle string, domaines []string) (
 	return permission.CheckPermissionsAllDomains(groupIDs, cle, domaines)
 }
 
+// AutoriseSurUnDomaine se satisfait d'un seul domaine correspondant.
+//
+// Réservé aux actions qui déclarent UnDomaineSuffit — donc aux lectures. Voir
+// ce champ pour la raison : voir une entité et agir dessus ne sont pas la même
+// décision, et l'interface web comme la ligne de commande faisaient déjà cette
+// distinction avant le registre.
+func (DroitsVaultaire) AutoriseSurUnDomaine(groupIDs []int, cle string, domaines []string) (bool, string) {
+	return permission.CheckPermissionsMultipleDomains(groupIDs, cle, domaines)
+}
+
 // SuperadminVaultaire branche le registre sur le groupe protégé.
 type SuperadminVaultaire struct{}
 
@@ -227,6 +237,7 @@ var (
 		Droits:     DroitsVaultaire{},
 		Superadmin: SuperadminVaultaire{},
 		Journal:    JournalVaultaire{},
+		Perimetres: PerimetreVaultaire{},
 	}
 )
 
@@ -244,6 +255,15 @@ func EnregistrerTout() {
 	EnregistrerActionsGroupe(Catalogue)
 	EnregistrerActionsClient(Catalogue)
 	EnregistrerActionsPermission(Catalogue)
+	EnregistrerActionsGrammairePermission(Catalogue)
+	EnregistrerActionsLecture(Catalogue)
+	EnregistrerActionsLectureSuite(Catalogue)
+	EnregistrerActionsGPO(Catalogue)
+	EnregistrerActionsLectureEtat(Catalogue)
+	EnregistrerActionsServeur(Catalogue)
+	EnregistrerActionsConformiteGPO(Catalogue)
+	EnregistrerActionsArborescence(Catalogue)
+	EnregistrerActionsReglages(Catalogue)
 	EnregistrerActionsCertificat(Catalogue)
 	EnregistrerActionsEnrolement(Catalogue)
 	EnregistrerActionsDNS(Catalogue)

@@ -1,51 +1,53 @@
 package commandget
 
 import (
-	"fmt"
-	commandpermission "vaultaire/core/command/command_permission"
+	"vaultaire/core/action"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbclients "vaultaire/core/database/db_clients"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 )
 
-func get_Client_Command_Parser(commandList []string, senderGroupsIDs []int, action, senderUsername string) string {
-	db := database.GetDatabase()
+// get_Client_Command_Parser traite « get -c … ».
+//
+// # Un refus qui n'avait pas lieu d'être
+//
+// `get -c` exigeait le droit sur « * », c'est-à-dire le droit GLOBAL. Un
+// délégué de paris — qui a pourtant le droit sur son domaine — se voyait
+// refuser la liste ENTIÈREMENT, tandis que l'interface web la lui montrait
+// filtrée. La façade employée décidait donc non seulement de ce qu'il voyait,
+// mais de s'il voyait quelque chose.
+//
+// L'action exige maintenant le droit sur un domaine et filtre la liste au
+// périmètre : le délégué obtient sa part au lieu d'un refus.
+func get_Client_Command_Parser(commandList []string, senderGroupsIDs []int, _ string, senderUsername string) string {
+	appelant := action.Appelant{Username: senderUsername, GroupIDs: senderGroupsIDs}
 
 	switch len(commandList) {
-
-	// Cas 1 : afficher tous les clients
 	case 1:
-		if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, []string{"*"}) {
-			return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-		}
-		allClients, err := dbclients.Command_GET_AllClients(db)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur lors de la récupération de tous les clients : "+err.Error())
-			return ">> -" + err.Error()
-		}
-		return display.DisplayAllClients(allClients)
+		// get -c
+		return lire("client.list", appelant, action.Params{}, afficherListeMachines)
 
-	// Cas 2 : afficher un client spécifique par ComputeurID
 	case 2:
-		clientID := commandList[1]
-		permissionsList, err := permission.GetDomainsFromClientByComputerID(clientID)
-		if err != nil {
-			return fmt.Sprintf(">> -Erreur récupération domaines pour le client %s : %s", clientID, err.Error())
-		}
-		if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, permissionsList) {
-			return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-		}
-		client, err := dbclients.Command_GET_ClientByComputeurID(database.DB, clientID)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur lors de la récupération du client "+clientID+" : "+err.Error())
-			return ">> -" + err.Error()
-		}
-		return display.DisplaySoftware(client)
+		// get -c <computeur_id>
+		return lire("client.get", appelant,
+			action.Params{"computeur_id": commandList[1]}, afficherFicheMachine)
 
-	// Cas par défaut : commande invalide
 	default:
-		return "Invalid Request. Try get -h for more information"
+		return "Requête invalide. Essayez « get -h »."
 	}
+}
+
+func afficherListeMachines(res action.Resultat) string {
+	clients, ok := res.Donnees.([]storage.GetClientsByPermission)
+	if !ok {
+		return res.Message
+	}
+	return display.DisplayAllClients(clients)
+}
+
+func afficherFicheMachine(res action.Resultat) string {
+	client, ok := res.Donnees.(*storage.Software)
+	if !ok || client == nil {
+		return res.Message
+	}
+	return display.DisplaySoftware(client)
 }

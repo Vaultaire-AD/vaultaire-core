@@ -1,131 +1,75 @@
 package commandupdate
 
 import (
-	"fmt"
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbpermission "vaultaire/core/database/db_permission"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 )
 
-// update_UserPermission_Command_Parser interprète et exécute une commande de mise à jour de permission utilisateur
-func update_UserPermission_Command_Parser(command_list []string, sender_groupsIDs []int, Useraction, sender_Username string) string {
-	// Vérification du nombre minimal d’arguments
+// update_UserPermission_Command_Parser règle une action RBAC d'une permission.
+//
+//	update -pu <permission> <clé d'action> nil|all|-a|-r [propagation] [domaine]
+//
+// # Ce qui a disparu d'ici
+//
+// Le contrôle du droit, la validation de la clé, celle de l'opération, la
+// lecture et l'écriture en base. Tout cela vivait ici ET dans
+// web_admin_pages.go, en double — et les deux copies avaient divergé sur trois
+// points, chacun dans le sens du moins strict de ce côté-ci. Voir
+// core/action/actions_permission_grammaire.go, qui les nomme.
+//
+// Le plus lourd des trois, pour mémoire : cette commande acceptait
+// « update -pu <perm> web_admin -a 0 paris ». Or web_admin ne s'évalue que sur
+// « * » : lui donner une liste de domaines la REFUSE au lieu de la restreindre.
+// La commande retirait donc l'accès à l'interface d'administration à tous les
+// groupes portant cette permission — y compris à celui qui la tapait, qui
+// n'avait alors plus l'interface pour revenir en arrière. L'interface web
+// l'interdisait déjà ; la ligne de commande la contournait.
+//
+// Cette fonction ne fait plus que traduire une syntaxe en paramètres nommés.
+func update_UserPermission_Command_Parser(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
 	if len(command_list) < 4 {
-		return "Invalid Request. Try update -h for more information"
+		return "Requête invalide : update -pu <permission> <clé d'action> nil|all|-a|-r [propagation] [domaine]"
 	}
 
-	permissionName := command_list[1]
-	action := command_list[2]
-	arg := command_list[3]
-	childOrAll := "0"
-	var domain string
-
-	if _, ok := permission.IsValidAction(action); !ok {
-		return "Invalid action key. Use format category:action:object (e.g. read:get:user, write:create:group)"
+	p := action.Params{
+		"permission_name": command_list[1],
+		"field":           command_list[2],
+		"op":              command_list[3],
 	}
 
-	// Si l’action attend un domaine
-	if arg == "-a" || arg == "-r" {
-		if len(command_list) != 6 {
-			return "Invalid Request. Try update -h for more information"
-		}
-		childOrAll = command_list[4]
-		domain = command_list[5]
-	}
-
-	db := database.GetDatabase()
-
-	// 🔹 Étape 0 : Vérification des permissions du sender sur cette permission
-	domains, err := permission.GetDomainslistFromUserpermission(permissionName)
-	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines de la permission %s : %v", permissionName, err))
-		return fmt.Sprintf("Erreur récupération domaines de la permission %s : %v", permissionName, err)
-	}
-
-	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, Useraction, domains)
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s permission=%s reason=%s", sender_Username, Useraction, permissionName, reason))
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de modifier la permission %s (domaines : %v) — %s", sender_Username, permissionName, domains, reason))
-		return fmt.Sprintf("Permission refusée : %s", reason)
-	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s permission=%s", sender_Username, Useraction, permissionName))
-
-	// 🔹 Étape 1 : Récupération de l’ID de la permission
-	permissionID, err := dbpermission.Command_GET_UserPermissionID(db, permissionName)
-	if err != nil {
-		return fmt.Sprintf(">> erreur récupération ID de la permission : %v", err)
-	}
-
-	logs.Write_Log("DEBUG", fmt.Sprintf(
-		"Update -pu: name=%s action=%s arg=%s child_or_all=%s domain=%s",
-		permissionName, action, arg, childOrAll, domain,
-	))
-
-	// 🔹 Étape 2 : Récupération du contenu actuel
-	currentContent, err := dbpermission.Command_GET_UserPermissionAction(db, permissionID, action)
-	if err != nil {
-		logs.Write_Log("ERROR", "Update -pu Get user permission action content : "+err.Error())
-	}
-	parsedContent := permission.ParsePermissionAction(currentContent)
-	logs.Write_Log("DEBUG", permission.FormatPermissionAction(parsedContent))
-
-	// 🔹 Étape 3 : Gestion des types d’arguments
-	switch arg {
-	case "nil", "all":
-		parsedContent.Type = arg
-		if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, arg); err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("Update -pu Set user permission action '%s' : %v", arg, err))
-		}
-
-	case "-a":
-		// Ajouter domaine
-		permission.UpdatePermissionAction(&parsedContent, domain, childOrAll, true)
-		newValue := permission.ConvertPermissionActionToString(parsedContent)
-		if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
-			logs.Write_Log("ERROR", fmt.Sprintf("Impossible d'ajouter le domaine %s : %v", domain, err))
-		} else {
-			logs.Write_Log("DEBUG", fmt.Sprintf("Domaine ajouté %s (option %s)", domain, childOrAll))
-		}
-
-	case "-r":
-		// Retirer domaine
-		permission.UpdatePermissionAction(&parsedContent, domain, childOrAll, false)
-
-		// Si plus aucun domaine, passer en nil
-		if len(parsedContent.WithPropagation) == 0 && len(parsedContent.WithoutPropagation) == 0 {
-			parsedContent.Type = "nil"
-			newValue := "nil"
-			if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
-				logs.Write_Log("ERROR", fmt.Sprintf("Impossible de passer l'action à nil : %v", err))
-			} else {
-				logs.Write_Log("DEBUG", fmt.Sprintf("Aucun domaine restant, action %s passe en nil", action))
-			}
-		} else {
-			// Sinon, sauvegarder la nouvelle valeur
-			newValue := permission.ConvertPermissionActionToString(parsedContent)
-			if err := dbpermission.Command_SET_UserPermissionAction(db, permissionID, action, newValue); err != nil {
-				logs.Write_Log("ERROR", fmt.Sprintf("Impossible de retirer le domaine %s : %v", domain, err))
-			} else {
-				logs.Write_Log("DEBUG", fmt.Sprintf("Domaine retiré %s (option %s)", domain, childOrAll))
-			}
-		}
-
-	default:
-		return fmt.Sprintf("Invalid argument '%s'. Try update -h for more information", arg)
-	}
-
-	// 🔹 Étape 4 : Récupération finale de la permission mise à jour
-	perm, err := dbpermission.Command_GET_UserPermissionByName(db, permissionName)
-	if err != nil {
-		return ">> -" + err.Error()
-	}
-	// Les actions ne sont pas relues ici : cette commande vient d'en modifier
-	// UNE, et la fiche sert à confirmer le changement. Passer nil affiche les
-	// colonnes historiques et signale que les droits RBAC n'ont pas été lus —
-	// plutôt que de laisser croire que la permission n'accorde rien.
+	// « -a » et « -r » attendent deux arguments de plus.
 	//
-	// Pour la fiche complète : get -p -u <nom>.
-	return display.DisplayUserPermission(*perm, nil)
+	// L'ordre est celui de la commande historique — propagation puis domaine —
+	// et non l'inverse : le changer casserait silencieusement les scripts
+	// existants, en prenant « 0 » pour un nom de domaine.
+	if op := command_list[3]; op == "-a" || op == "-r" {
+		if len(command_list) != 6 {
+			return "Requête invalide : update -pu <permission> <clé> " + op + " <propagation 0|1> <domaine>"
+		}
+		p["propagation"] = command_list[4]
+		p["domain"] = command_list[5]
+	}
+
+	res, err := action.Executer("permission.update_action",
+		action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs}, p)
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+
+	// La fiche vient des données de l'action, pas d'une seconde lecture.
+	//
+	// C'est ce qui empêche les deux façades de diverger : relire chacune de son
+	// côté, c'était deux requêtes, deux instants, et deux affichages possibles
+	// pour une même écriture.
+	if perm, ok := res.Donnees.(*storage.UserPermission); ok && perm != nil {
+		// Les actions RBAC ne sont pas relues : cette commande vient d'en
+		// modifier UNE, et la fiche sert à confirmer le changement. Passer nil
+		// affiche les colonnes historiques et signale que les droits RBAC n'ont
+		// pas été lus — plutôt que de laisser croire que la permission
+		// n'accorde rien. Pour la fiche complète : get -p -u <nom>.
+		return res.Message + "\n\n" + display.DisplayUserPermission(*perm, nil)
+	}
+	return res.Message
 }

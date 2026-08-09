@@ -1,88 +1,95 @@
 # 📚 Documentation Vaultaire
 
-Bienvenue dans la documentation officielle du projet **Vaultaire**.  
-Ce dossier contient toutes les informations nécessaires pour comprendre, installer, configurer, utiliser et contribuer au projet.
+Index de la documentation technique du projet **Vaultaire**.
+Pour la structure du dépôt et la compilation, voir le [README racine](../README.md).
 
 ---
 
-## 📂 Arborescence de la documentation
+## 🛠 Installation
 
-```perl
-docs/
-│
-├── 📖 Introduction/
-│   ├── Overview.md              # Présentation générale du projet
-│   ├── Features.md               # Liste des fonctionnalités actuelles et prévues
-│   └── Roadmap.md                # Déplacé depuis roadmap.md
-│
-├── 🛠 Installation/
-│   ├── Requirements.md           # Prérequis système, versions, dépendances
-│   ├── Setup.md                  # Installation de base (déplacé depuis Setup.md)
-│   ├── Docker_Kubernetes.md      # Installation avec Docker/K8s
-│   └── Upgrade_Guide.md          # Mise à jour vers une nouvelle version
-│
-├── 📚 Utilisation/
-│   ├── MAN.md                    # Guide d’utilisation (manuel détaillé)
-│   ├── WIKI_Manual.md             # Manuel pour wiki (commandes + DNS + config LDAP)
-│   ├── vaultaireLDAP.md          # Documentation LDAP
-│   ├── Group-Permission.md       # Gestion des groupes et permissions
-│   └── Troubleshooting.md        # Résolution des problèmes courants
-│
-├── REPO_REVIEW.md                # Revue technique du dépôt
-├── NEXT_DEV_AXES.md              # Prochains axes de développement
-├── DUCKY_NETWORK_SSH_CHECKLIST.md # Checklist SSH via Ducky Network + PAM (sans modif code)
-├── V1_A_FAIRE.md                  # Reste à faire pour une V1 propre
-│
-├── 🔒 Sécurité/
-│   ├── SECURITY.md               # Déplacé
-│   └── Security_Best_Practices.md # Bonnes pratiques pour le déploiement
-│
-├── 🧪 Développement/
-│   ├── CONTRIBUTING.md           # Comment contribuer
-|   ├── Tableau_Protocole_Reseau.md
-│   ├── Code_Style_Guidelines.md  # Règles de code Go/C/PAM
-│   ├── write-test.md             # Déplacé ici
-│   └── bug.md                    # Déplacé ici, renommé en Bug_Reports.md
-│
-└── README.md                     # Présentation synthétique
-
-```
+| Fichier | Contenu |
+| --- | --- |
+| [`Installation/Requirements.md`](./Installation/Requirements.md) | Prérequis système, versions, dépendances |
+| [`Installation/Setup.md`](./Installation/Setup.md) | Installation complète : base de données, service systemd, configuration YAML, poste client |
+| [`Installation/Docker_Kubernetes.md`](./Installation/Docker_Kubernetes.md) | Déploiement conteneurisé |
 
 ---
 
-## 📖 Contenu
+## 📚 Utilisation
 
-### 1. Introduction
-Présentation du projet Vaultaire, ses objectifs, ses technologies et son état actuel.
+| Fichier | Contenu |
+| --- | --- |
+| [`Utilisation/MAN.md`](./Utilisation/MAN.md) | Manuel des commandes `vlt` : create, get, add, remove, delete, update, status, clear, eyes, DNS |
+| [`Utilisation/vaultairectl.md`](./Utilisation/vaultairectl.md) | `vaultaire_ctl` — administration distante via l'API REST signée |
+| [`Utilisation/Group-Permission.md`](./Utilisation/Group-Permission.md) | Gestion des groupes et des permissions au quotidien |
+| [`Utilisation/vaultaireLDAP.md`](./Utilisation/vaultaireLDAP.md) | Module LDAP : arborescence, filtres, intégrations |
 
-### 2. Installation
-Voir [Setup.md](./Setup.md) pour les instructions détaillées d’installation et de configuration.
+---
 
-### 3. Utilisation
-- Gestion des utilisateurs et groupes : [Group-Permission.md](./Group-Permission.md)  
-- Manuel utilisateur : [MAN.md](./MAN.md)  
-- Module LDAP : [vaultaireLDAP.md](./vaultaireLDAP.md)
+## 🔒 Sécurité
 
-### 4. Sécurité
-Guide des bonnes pratiques et politique de sécurité : [SECURITY.md](./SECURITY.md)
+| Fichier | Contenu |
+| --- | --- |
+| [`Securite/SECURITY.md`](./Securite/SECURITY.md) | Politique de sécurité et signalement des vulnérabilités |
+| [`Developement/Audit_Permissions.md`](./Developement/Audit_Permissions.md) | Audit du système de permissions sur les quatre points d'entrée (Ducky, LDAP, CLI, web) |
 
-### 5. Développement
-- Écriture de tests : [write-test.md](./write-test.md)  
-- Signalement de bugs : [bug.md](./bug.md)  
-- Roadmap : [roadmap.md](./roadmap.md)
+---
 
-### 6. Historique
-- Historique des versions : [Version_History.md](./Version_History.md)  
-- Protocoles réseau : [Tableau_Protocole_Réseau.md](./Tableau_Protocole_Réseau.md)
+## 🧪 Développement
+
+| Fichier | Contenu |
+| --- | --- |
+| [`Developement/Tableau_Protocole_Réseau.md`](./Developement/Tableau_Protocole_Réseau.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
+| [`Developement/Permissions.md`](./Developement/Permissions.md) | Modèle de permissions : domaines, portées, héritage |
+| [`Developement/Actions_et_Permissions.md`](./Developement/Actions_et_Permissions.md) | Catalogue des actions et des droits requis |
+| [`Developement/GPO.md`](./Developement/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions |
+| [`Developement/DataBase_Struct.md`](./Developement/DataBase_Struct.md) | Schéma de la base de données |
+| [`Developement/MFA_et_Expiration.md`](./Developement/MFA_et_Expiration.md) | Authentification multifacteur et expiration des mots de passe |
+| [`../CONTRIBUTING.MD`](../CONTRIBUTING.MD) | Comment contribuer (à la racine du dépôt) |
+
+### Suivi des travaux
+
+| Fichier | Contenu |
+| --- | --- |
+| [`Developement/TO-DO.md`](./Developement/TO-DO.md) | Tâches ouvertes |
+| [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`) |
+
+> Une tâche validée est déplacée **à la main** de `TO-DO.md` vers
+> `DO/<version>/`, puis reportée dans [`Version_History.md`](./Version_History.md).
+
+---
+
+## 🚨 Exploitation
+
+| Fichier | Contenu |
+| --- | --- |
+| [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
+| [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |
+
+---
+
+## 🔀 Migrations
+
+| Fichier | Contenu |
+| --- | --- |
+| [`migrations/clienttype_catalogue.md`](./migrations/clienttype_catalogue.md) | Bascule vers le catalogue des types de client |
+
+---
+
+## 🕰️ Historique
+
+[`Version_History.md`](./Version_History.md) — versions, correctifs et changements
+de protocole, de l'Alpha 1.0 à l'Alpha 2.0.0 « PIG ».
+
+---
+
+## 🗄️ Archives
+
+[`legacy/`](./legacy/) — documentation antérieure, conservée pour référence
+(`Documentation_Technique_vaultaire.odt`, schéma d'infrastructure).
 
 ---
 
 ## 📬 Contact
 
-Pour toute question ou contribution : **contact@vaultaire.fr**
-
----
-
-## 💡 Astuce
-
-Si vous cherchez la documentation technique détaillée des API, reportez-vous au dossier `/api-docs` (si disponible) ou aux commentaires dans le code source.
+**contact@vaultaire.fr**

@@ -106,17 +106,14 @@ func checkWebAdminRBACOnDomains(groupIDs []int, actionKey string, domains []stri
 // partagé avec la ligne de commande le jour où elle exposera cette opération.
 //
 
-// entityDomainsOrGlobal réduit une erreur de résolution de domaines à un refus.
+// entityDomainsOrGlobal a quitté ce fichier.
 //
-// Ne pas savoir à quels domaines appartient une entité n'autorise rien : la
-// liste vide fait exiger le droit global par CheckPermissionsAllDomains. Une
-// panne de lecture ne doit pas élargir les droits.
-func entityDomainsOrGlobal(domains []string, err error) []string {
-	if err != nil || len(domains) == 0 {
-		return nil
-	}
-	return domains
-}
+// Elle réduisait une erreur de résolution de domaines à un refus : ne pas
+// savoir à quels domaines appartient une entité n'autorise rien. Son dernier
+// appelant était le contrôle de update_permission_action, désormais dans le
+// registre — qui applique la même règle par domainesOuGlobal, avec une nuance
+// de plus : il exige le droit GLOBAL au lieu de laisser une liste vide, ce qui
+// ne dépend plus de la façon dont le vérificateur traite le vide.
 
 // AdminIndexHandler serves the admin dashboard and executes CLI-style commands via POST.
 func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {

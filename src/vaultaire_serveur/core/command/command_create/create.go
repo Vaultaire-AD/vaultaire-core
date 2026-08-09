@@ -1,12 +1,8 @@
 package commandcreate
 
 import (
-	"fmt"
-
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 	autoaddclientgo "vaultaire/ducky-network/new_client/AUTO_ADD_client.go"
 )
 
@@ -92,13 +88,10 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		return commandaction.ExecuterAction("permission.create", p, sender_groupsIDs, sender_Username)
 
 	case "-gpo":
-		// Les GPO sont hors du périmètre de la refonte : leur logique reste
-		// dans create_GPO, avec son propre contrôle de droits — qui doit donc
-		// rester ici, puisqu'aucune action ne le porte.
-		if refus := verifierDroit(sender_groupsIDs, sender_Username, "write:create:gpo"); refus != "" {
-			return refus
-		}
-		return create_GPO(command_list)
+		// Le contrôle de droits qui vivait ici a disparu : l'action gpo.create
+		// le porte. Le garder en plus aurait fait deux endroits où le droit se
+		// décide pour un seul geste — donc deux endroits à tenir d'accord.
+		return create_GPO(command_list, sender_groupsIDs, sender_Username)
 
 	default:
 		return "Requête invalide. Essayez « create -h »."
@@ -168,21 +161,11 @@ Notes :
   -p  le second argument accorde ou non l'accès à l'administration web.`
 }
 
-// verifierDroit contrôle une permission pour les chemins NON portés par une
-// action — aujourd'hui les seuls GPO.
+// verifierDroit a disparu, et c'était sa raison d'être.
 //
-// Isolée dans une fonction plutôt que recopiée : elle marque ce qui reste à
-// porter, et sa disparition signalera que le portage est complet. Recopier le
-// contrôle en ligne l'aurait rendu invisible.
-func verifierDroit(groupIDs []int, sender, cle string) string {
-	// CheckPermissionsAllDomains et non Multiple : c'est ce qu'emploie le
-	// registre, et faire autrement rendrait ce chemin plus permissif que les
-	// autres — l'écart exact qui existait avant la refonte.
-	ok, motif := permission.CheckPermissionsAllDomains(groupIDs, cle, []string{"*"})
-	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"commande refusée à %s : droit %s exigé — %s", sender, cle, motif))
-		return "Permission refusée : " + motif
-	}
-	return ""
-}
+// Elle contrôlait les droits des chemins NON portés par une action, et son
+// commentaire annonçait : « sa disparition signalera que le portage est
+// complet ». Son dernier appelant était « create -gpo », désormais porté par
+// l'action gpo.create.
+//
+// Plus aucune création ne décide des droits hors du registre.

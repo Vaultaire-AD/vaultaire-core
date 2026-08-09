@@ -90,8 +90,28 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			CanResetMFA bool
 		}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users",
 			KillReasons: revocation.AllReasons()}
-		userInfo, err := dbusers.Command_GET_UserInfo(db, detailUser)
+		// La fiche passe par l'action user.get.
+		//
+		// La lecture directe qui vivait ici n'était protégée que par
+		// checkWebAdminRBAC, qui vérifie le droit N'IMPORTE OÙ. Un délégué de
+		// paris ouvrant ?user=<compte-de-lyon> obtenait donc la fiche : son
+		// droit sur paris suffisait, et la cible n'entrait jamais dans la
+		// décision. L'action exige le droit sur les domaines DE LA CIBLE.
+		res, err := ExecuterLecture("user.get", username, groupIDs,
+			act.Params{"username": detailUser})
 		if err != nil {
+			// Introuvable et refusé rendent le même code.
+			//
+			// Répondre 403 sur un compte hors périmètre confirmerait son
+			// existence à quelqu'un qui n'a pas le droit de la connaître —
+			// c'est une fuite par le code de retour. Le refus est journalisé
+			// par le registre, où il est utile ; la page, elle, ne distingue
+			// pas.
+			http.Error(w, "Utilisateur introuvable", http.StatusNotFound)
+			return
+		}
+		userInfo, _ := res.Donnees.(*storage.GetUserInfoSingle)
+		if userInfo == nil {
 			http.Error(w, "Utilisateur introuvable", http.StatusNotFound)
 			return
 		}
@@ -226,18 +246,20 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	users, err := dbusers.Command_GET_AllUsers(db)
+	// La liste vient de l'action, filtrage compris.
+	//
+	// Le filtrage par domaine vivait ici seul : la ligne de commande, elle, ne
+	// filtrait rien — `get -u` rendait l'annuaire entier dès qu'on avait
+	// `read:get:user` quelque part. Le contrôle des écritures était pourtant
+	// identique des deux côtés ; seule la visibilité divergeait, et par la
+	// porte de derrière.
+	resUsers, err := ExecuterLecture("user.list", username, groupIDs, act.Params{})
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list users failed: "+err.Error())
 		http.Error(w, "Erreur liste utilisateurs", http.StatusInternalServerError)
 		return
 	}
-	// La liste est réduite au périmètre de l'appelant : ouvrir la page ne donne
-	// pas le droit de voir tout l'annuaire.
-	scope := newDomainScope(groupIDs, "read:get:user")
-	filtered := filterUsers(scope, users)
-	logScopeFiltering(username, "utilisateurs", len(users), len(filtered))
-	data.Users = filtered
+	data.Users, _ = resUsers.Donnees.([]storage.GetUsers)
 	if err := executeAdminPage(w, "admin_users.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 		return
@@ -258,8 +280,15 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	detailGroup := r.URL.Query().Get("group")
 
 	if detailGroup != "" {
-		info, err := dbgroups.Command_GET_GroupInfo(db, detailGroup)
-		if err != nil {
+		// Même raisonnement que pour la fiche utilisateur : l'action exige le
+		// droit sur les domaines DU GROUPE visé, là où checkWebAdminRBAC se
+		// contentait du droit n'importe où.
+		resGroupe, err := ExecuterLecture("group.get", username, groupIDs,
+			act.Params{"group": detailGroup})
+		info, _ := resGroupe.Donnees.(*storage.GroupInfo)
+		if err != nil || info == nil {
+			// Introuvable et refusé rendent le même code : distinguer les deux
+			// confirmerait l'existence d'un groupe hors périmètre.
 			http.Error(w, "Groupe introuvable", http.StatusNotFound)
 			return
 		}
@@ -399,16 +428,14 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	groups, err := dbgroups.Command_GET_GroupDetails(db)
+	// Liste et filtrage viennent de l'action — voir AdminUsersHandler.
+	resGroupes, err := ExecuterLecture("group.list", username, groupIDs, act.Params{})
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list groups failed: "+err.Error())
 		http.Error(w, "Erreur liste groupes", http.StatusInternalServerError)
 		return
 	}
-	scope := newDomainScope(groupIDs, "read:get:group")
-	filteredGroups := filterGroups(scope, groups)
-	logScopeFiltering(username, "groupes", len(groups), len(filteredGroups))
-	data.Groups = filteredGroups
+	data.Groups, _ = resGroupes.Donnees.([]storage.GroupDetails)
 	if err := executeAdminPage(w, "admin_groups.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
@@ -497,16 +524,14 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	clients, err := dbclients.Command_GET_AllClients(db)
+	// Liste et filtrage viennent de l'action — voir AdminUsersHandler.
+	resClients, err := ExecuterLecture("client.list", username, groupIDs, act.Params{})
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list clients failed: "+err.Error())
 		http.Error(w, "Erreur liste clients", http.StatusInternalServerError)
 		return
 	}
-	scope := newDomainScope(groupIDs, "read:get:client")
-	filteredClients := filterClients(scope, clients)
-	logScopeFiltering(username, "clients", len(clients), len(filteredClients))
-	data.Clients = filteredClients
+	data.Clients, _ = resClients.Donnees.([]storage.GetClientsByPermission)
 	if err := executeAdminPage(w, "admin_clients.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
@@ -561,16 +586,17 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			action := r.FormValue("action")
 			detailData.ActiveTab = sanitizeTabFrom(r.FormValue("active_tab"), permissionTabs)
-			// La suppression passe par le registre. La modification des
-			// actions RBAC — « update_permission_action » ci-dessous — n'y
-			// passe PAS : elle manipule la grammaire interne des permissions
-			// (nil / all / ajout ou retrait d'un domaine avec propagation),
-			// qui mérite ses propres actions plutôt qu'une traduction hâtive.
-			// C'est le pendant de « update -pu » côté ligne de commande.
+			// Les deux écritures de cette page passent par le registre.
 			//
-			// Son contrôle de droits reste donc ici, sur les domaines de la
-			// permission — ceux des groupes qui la portent, puisque la modifier
-			// change les droits dans tous ces domaines à la fois.
+			// « update_permission_action » y est venue en dernier : elle
+			// manipule la grammaire interne des permissions — nil, all, ajout
+			// ou retrait d'un domaine avec propagation — et sa traduction
+			// méritait d'être faite lentement plutôt que dans la foulée des
+			// autres.
+			//
+			// Elle a révélé trois écarts avec « update -pu », son pendant en
+			// ligne de commande, tous dans le sens du moins strict de ce
+			// côté-là. Voir core/action/actions_permission_grammaire.go.
 			if action == "delete_permission" {
 				// La confirmation par ressaisie du nom est conservée : supprimer
 				// une permission retire des droits à tous les groupes qui la
@@ -593,126 +619,32 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if action == "update_permission_action" {
-				domains := entityDomainsOrGlobal(permission.GetDomainslistFromUserpermission(detailPerm))
-				if allowed, reason := checkWebAdminRBACOnDomains(groupIDs, "write:update:permission", domains); !allowed {
-					logs.Write_Log("SECURITY", fmt.Sprintf(
-						"webadmin: %s tente %s sur la permission %s — %s", username, action, detailPerm, reason))
-					detailData.Error = "Permission refusée : " + reason
-					action = ""
-				}
-			}
-
-			switch action {
-			case "update_permission_action":
-				field := strings.TrimSpace(r.FormValue("field"))
-				op := r.FormValue("op")
-				domain := strings.TrimSpace(r.FormValue("domain"))
-				if domain == "" {
-					domain = strings.TrimSpace(r.FormValue("domain_remove"))
-				}
-				propagation := r.FormValue("propagation")
-				if propagation == "" {
-					propagation = "0"
-				}
-
-				// Le champ vient d'un formulaire : il est vérifié contre la
-				// liste des actions réellement administrables. Sans ce contrôle,
-				// une clé inventée s'insérerait dans user_permission_action et
-				// y resterait — jamais évaluée par le moteur RBAC, donc sans
-				// effet, mais indétectable dans l'interface.
-				if !permissionFieldExists(field) {
-					logs.Write_Log("SECURITY", "webadmin: "+username+" tente d'écrire l'action inconnue '"+field+"' sur la permission "+detailPerm)
-					detailData.Error = "Action inconnue."
-					break
-				}
-
-				// Une action évaluée uniquement sur « * » n'accepte que nil ou
-				// all. Lui donner des domaines la refuse au lieu de la
-				// restreindre — et pour web_admin, cela retire l'accès à
-				// l'interface d'administration, y compris à l'auteur du
-				// changement. Le refus est ici et pas seulement dans le
-				// formulaire : l'interface ne doit jamais être la seule barrière.
-				if permission.IsGlobalOnlyAction(field) && (op == "add" || op == "remove") {
-					detailData.Error = "L'action " + field + " s'évalue sur tous les domaines : elle accepte seulement nil ou all."
-					break
-				}
-
-				permID, errID := dbpermission.Command_GET_UserPermissionID(db, detailPerm)
-				if errID != nil {
-					detailData.Error = "Permission introuvable."
-					break
-				}
-				current, errGet := dbpermission.Command_GET_UserPermissionAction(db, permID, field)
-				if errGet != nil {
-					detailData.Error = "Erreur lecture action: " + errGet.Error()
-					break
-				}
-				parsed := permission.ParsePermissionAction(current)
-				switch op {
-				case "nil":
-					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, "nil"); err != nil {
-						detailData.Error = "Erreur: " + err.Error()
+				res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
+					act.Params{"permission_name": detailPerm})
+				if traite {
+					if errAction != nil {
+						detailData.Error = MessageDActionPourAffichage(res, errAction)
 					} else {
-						detailData.Message = "Action " + field + " mise à nil."
+						detailData.Message = res.Message
 					}
-				case "all":
-					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, "all"); err != nil {
-						detailData.Error = "Erreur: " + err.Error()
-					} else {
-						detailData.Message = "Action " + field + " mise à all."
-					}
-				case "add":
-					if domain == "" {
-						detailData.Error = "Domaine requis."
-						break
-					}
-					permission.UpdatePermissionAction(&parsed, domain, propagation, true)
-					newVal := permission.ConvertPermissionActionToString(parsed)
-					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
-						detailData.Error = "Erreur: " + err.Error()
-					} else {
-						detailData.Message = "Domaine " + domain + " ajouté à " + field + "."
-					}
-				case "remove":
-					if domain == "" {
-						detailData.Error = "Domaine requis."
-						break
-					}
-					// Le retrait doit désigner un domaine réellement présent.
-					// UpdatePermissionAction est silencieux sur un domaine
-					// absent : sans ce contrôle, une faute de frappe affichait
-					// « domaine retiré » sans que rien n'ait changé.
-					if !domainGranted(parsed, domain, propagation) {
-						detailData.Error = "Le domaine " + domain + " n'est pas accordé sur " + field + "."
-						break
-					}
-					permission.UpdatePermissionAction(&parsed, domain, propagation, false)
-					newVal := "nil"
-					if len(parsed.WithPropagation) > 0 || len(parsed.WithoutPropagation) > 0 {
-						newVal = permission.ConvertPermissionActionToString(parsed)
-					}
-					if err := dbpermission.Command_SET_UserPermissionAction(db, permID, field, newVal); err != nil {
-						detailData.Error = "Erreur: " + err.Error()
-					} else {
-						detailData.Message = "Domaine " + domain + " retiré de " + field + "."
-					}
-				default:
-					detailData.Error = "Opération invalide."
 				}
 
 				// L'éditeur reste ouvert sur l'action qu'on vient de modifier :
 				// on enchaîne souvent plusieurs domaines sur la même action.
-				detailData.Editor.Field = field
+				detailData.Editor.Field = strings.TrimSpace(r.FormValue("field"))
 
-				// Relecture après écriture. Un échec conserve l'objet précédent
-				// plutôt que de le remplacer par nil : la page affichera des
-				// valeurs d'avant l'écriture, ce qui est déroutant, mais une
+				// La permission relue vient des données de l'action, et non
+				// d'une seconde lecture faite ici.
+				//
+				// Relire de son côté, c'était deux requêtes et deux instants
+				// pour une même écriture — donc deux affichages possibles selon
+				// la façade. Un échec de relecture conserve l'objet précédent
+				// plutôt que de le remplacer par nil : la page montrera des
+				// valeurs d'avant l'écriture, ce qui déroute, mais une
 				// déréférence de nil planterait la requête entière.
-				if reloaded, reloadErr := dbpermission.Command_GET_UserPermissionByName(db, detailPerm); reloadErr == nil && reloaded != nil {
-					perm = reloaded
+				if relue, ok := res.Donnees.(*storage.UserPermission); ok && relue != nil {
+					perm = relue
 					detailData.Perm = perm
-				} else {
-					detailData.Error = appendError(detailData.Error, "Relecture de la permission impossible, l'affichage peut être en retard.")
 				}
 			}
 		}
@@ -787,16 +719,14 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	perms, err := dbpermission.Command_GET_AllUserPermissions(db)
+	// Liste et filtrage viennent de l'action — voir AdminUsersHandler.
+	resPerms, err := ExecuterLecture("permission.list", username, groupIDs, act.Params{})
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list permissions failed: "+err.Error())
 		http.Error(w, "Erreur liste permissions", http.StatusInternalServerError)
 		return
 	}
-	scope := newDomainScope(groupIDs, "read:get:permission")
-	filteredPerms := filterUserPermissions(scope, perms)
-	logScopeFiltering(username, "permissions", len(perms), len(filteredPerms))
-	data.Perms = filteredPerms
+	data.Perms, _ = resPerms.Donnees.([]storage.UserPermission)
 
 	// L'échec de lecture des permissions client n'empêche pas d'afficher les
 	// permissions utilisateur : la page reste utile, et le bandeau d'erreur

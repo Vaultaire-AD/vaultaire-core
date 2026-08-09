@@ -8,6 +8,8 @@ import (
 	dbschema "vaultaire/core/database/db_schema"
 
 	"vaultaire/cluster"
+	"vaultaire/core/action"
+	commandcertificate "vaultaire/core/command/command_certificate"
 	configurationfile "vaultaire/core/configuration_file"
 	db "vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
@@ -43,6 +45,26 @@ func main() {
 			os.Exit(testrunner.RunFromMain())
 		}
 	}
+
+	// Garnissage du catalogue d'actions, AVANT tout service.
+	//
+	// Sans cet appel, le catalogue reste vide et chaque action — ligne de
+	// commande comme interface web — échoue sur « action inconnue ». Le
+	// serveur démarre pourtant sans un mot : rien, dans un catalogue vide, ne
+	// distingue « pas encore garni » de « rien à garnir ».
+	//
+	// L'appel est explicite et non un init() : l'ordre d'initialisation entre
+	// paquets dépendrait sinon de l'ordre des imports, et un import retiré
+	// ferait disparaître des actions sans la moindre erreur de compilation.
+	// Voir action.EnregistrerTout.
+	action.EnregistrerTout()
+
+	// Raccordement de la régénération de certificat.
+	//
+	// L'action certificate.regenerate porte la clé et la portée ; l'exécution
+	// vit dans commandcertificate, qui importe déjà le registre. L'inversion
+	// évite le cycle — même motif que permission.SetRevokedChecker.
+	commandcertificate.BrancherRegeneration()
 
 	err := configurationfile.LoadConfig("/opt/vaultaire/serveur_conf.yaml")
 	if err != nil {

@@ -1,99 +1,106 @@
 package commandget
 
 import (
-	"fmt"
+	"vaultaire/core/action"
 	commandpermission "vaultaire/core/command/command_permission"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbpermission "vaultaire/core/database/db_permission"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 )
 
-// GetPermissionCommandParser traite les commandes "get permission"
-func getPermissionCommandParser(commandList []string, senderGroupsIDs []int, action, senderUsername string) string {
+// getPermissionCommandParser traite « get -p … ».
+//
+//	get -p -u              liste les permissions utilisateur
+//	get -p -c              liste les permissions client
+//	get -p -u <nom>        fiche d'une permission utilisateur, actions RBAC comprises
+//	get -p -c <nom>        fiche d'une permission client
+//
+// Comme pour les machines, les LISTES exigeaient le droit global : un délégué
+// se voyait refuser la page entière alors que l'interface web la lui montrait
+// filtrée. Elles se contentent maintenant du droit sur un domaine, et le
+// registre réduit la liste au périmètre.
+func getPermissionCommandParser(commandList []string, senderGroupsIDs []int, _ string, senderUsername string) string {
+	appelant := action.Appelant{Username: senderUsername, GroupIDs: senderGroupsIDs}
+
+	if len(commandList) < 2 {
+		return commandpermission.InvalidPermissionRequest()
+	}
+
 	switch len(commandList) {
 	case 2:
-		return handleGetAllPermissions(commandList[1], senderGroupsIDs, action, senderUsername)
+		switch commandList[1] {
+		case "-u":
+			return lire("permission.list", appelant, action.Params{}, afficherListePermissionsUtilisateur)
+		case "-c":
+			return lire("client_permission.list", appelant, action.Params{}, afficherListePermissionsClient)
+		}
 
 	case 3:
-		return handleGetPermissionByName(commandList[1], commandList[2], senderGroupsIDs, action, senderUsername)
-
-	default:
-		return commandpermission.InvalidPermissionRequest()
-	}
-}
-
-// --- Sous-fonctions privées --- //
-
-// handleGetAllPermissions récupère toutes les permissions (-u ou -c)
-func handleGetAllPermissions(target string, senderGroupsIDs []int, action, senderUsername string) string {
-	// Vérifie les permissions (globale sur tous les domaines)
-	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, []string{"*"}) {
-		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-	}
-
-	switch target {
-	case "-u":
-		perms, err := dbpermission.Command_GET_AllUserPermissions(database.GetDatabase())
-		if err != nil {
-			return commandpermission.LogAndReturn("Erreur récupération permissions utilisateurs : ", err)
+		p := action.Params{"permission_name": commandList[2]}
+		switch commandList[1] {
+		case "-u":
+			return lire("permission.get", appelant, p, afficherFichePermissionUtilisateur)
+		case "-c":
+			return lire("client_permission.get", appelant, p, afficherFichePermissionClient)
 		}
-		return display.DisplayAllUserPermissions(perms)
-
-	case "-c":
-		perms, err := dbpermission.Command_GET_AllClientPermissions(database.GetDatabase())
-		if err != nil {
-			return commandpermission.LogAndReturn("Erreur récupération permissions clients : ", err)
-		}
-		return display.DisplayAllClientPermissions(perms)
-
-	default:
-		return commandpermission.InvalidPermissionRequest()
-	}
-}
-
-// handleGetPermissionByName récupère une permission spécifique (-u ou -c)
-func handleGetPermissionByName(target, name string, senderGroupsIDs []int, action, senderUsername string) string {
-	var (
-		domainList []string
-		err        error
-	)
-
-	// Détermination des domaines en fonction du type de permission
-	switch target {
-	case "-u":
-		domainList, err = permission.GetDomainslistFromUserpermission(name)
-	case "-c":
-		domainList, err = permission.GetDomainslistFromClientpermission(name)
-	default:
-		return commandpermission.InvalidPermissionRequest()
-	}
-
-	if err != nil {
-		return fmt.Sprintf(">> -Erreur récupération domaines de la permission %s : %s", name, err.Error())
-	}
-
-	// Vérification d’accès
-	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domainList) {
-		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-	}
-
-	// Récupération et affichage des permissions
-	switch target {
-	case "-u":
-		perm, err := dbpermission.Command_GET_UserPermissionByName(database.GetDatabase(), name)
-		if err != nil {
-			return commandpermission.LogAndReturn(fmt.Sprintf("Erreur récupération permission utilisateur %s : ", name), err)
-		}
-		return display.DisplayUserPermission(*perm, lireActionsRBAC(int64(perm.ID)))
-
-	case "-c":
-		perm, err := dbpermission.Command_GET_ClientPermissionByName(database.GetDatabase(), name)
-		if err != nil {
-			return commandpermission.LogAndReturn(fmt.Sprintf("Erreur récupération permission client %s : ", name), err)
-		}
-		return display.DisplayClientPermission(*perm)
 	}
 
 	return commandpermission.InvalidPermissionRequest()
+}
+
+func afficherListePermissionsUtilisateur(res action.Resultat) string {
+	perms, ok := res.Donnees.([]storage.UserPermission)
+	if !ok {
+		return res.Message
+	}
+	return display.DisplayAllUserPermissions(perms)
+}
+
+func afficherListePermissionsClient(res action.Resultat) string {
+	perms, ok := res.Donnees.([]storage.ClientPermission)
+	if !ok {
+		return res.Message
+	}
+	return display.DisplayAllClientPermissions(perms)
+}
+
+func afficherFichePermissionUtilisateur(res action.Resultat) string {
+	d, ok := res.Donnees.(action.PermissionAvecActions)
+	if !ok {
+		return res.Message
+	}
+	return display.DisplayUserPermission(d.Permission, actionsRBACPourAffichage(d.Actions))
+}
+
+func afficherFichePermissionClient(res action.Resultat) string {
+	perm, ok := res.Donnees.(*storage.ClientPermission)
+	if !ok || perm == nil {
+		return res.Message
+	}
+	return display.DisplayClientPermission(*perm)
+}
+
+// actionsRBACPourAffichage convertit le type du registre vers celui de
+// l'affichage.
+//
+// # Pourquoi deux types pour la même chose
+//
+// Le paquet display ne connaît pas le registre, et ne doit pas le connaître :
+// c'est un module de rendu, employé aussi par des commandes qui n'ont rien à
+// voir avec les actions. Lui faire importer `action` inverserait la dépendance
+// — le rendu tirerait le métier — et rendrait display intestable seul.
+//
+// La conversion coûte une boucle sur une trentaine d'entrées, une fois par
+// consultation. C'est le prix d'une frontière qui tient.
+//
+// nil est propagé tel quel : l'affichage distingue « non lu » de « n'accorde
+// rien », et une liste vide dirait le second.
+func actionsRBACPourAffichage(src []action.ActionRBAC) []display.ActionRBAC {
+	if src == nil {
+		return nil
+	}
+	out := make([]display.ActionRBAC, 0, len(src))
+	for _, a := range src {
+		out = append(out, display.ActionRBAC{Cle: a.Cle, Valeur: a.Valeur})
+	}
+	return out
 }

@@ -6,10 +6,10 @@ import (
 
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
-	"vaultaire/core/command/display"
+	displaydns "vaultaire/core/command/display/display_dns"
 	dnsdatabase "vaultaire/core/dns/DNS_Database"
+	dnsstorage "vaultaire/core/dns/DNS_Storage"
 	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // Commande « dns » — zones, enregistrements et résolution inverse.
@@ -107,20 +107,13 @@ func commandeZone(args []string, groupIDs []int, sender string) string {
 			action.Params{"zone": args[1]}, groupIDs, sender)
 
 	case "list":
-		// Lecture : contrôlée ici, le registre ne porte que les écritures.
-		if refus := verifierLectureDNS(groupIDs, sender); refus != "" {
-			return refus
-		}
-		return listerZones()
+		return listerZones(action.Appelant{Username: sender, GroupIDs: groupIDs})
 
 	case "show":
 		if len(args) < 2 {
 			return "Requête invalide : dns zone show <nom.zone>"
 		}
-		if refus := verifierLectureDNS(groupIDs, sender); refus != "" {
-			return refus
-		}
-		return afficherZone(args[1])
+		return afficherZone(args[1], action.Appelant{Username: sender, GroupIDs: groupIDs})
 
 	default:
 		return "Requête invalide : dns zone create|list|show|delete"
@@ -187,7 +180,10 @@ func commandePTR(args []string, groupIDs []int, sender string) string {
 
 	switch strings.ToLower(args[0]) {
 	case "list":
-		if refus := verifierLectureDNS(groupIDs, sender); refus != "" {
+		// Le PTR inverse passe encore par sa propre lecture : elle interroge une
+		// table à part (ptr_records) et n'a pas d'action. Le contrôle emploie
+		// néanmoins la même clé, par le même chemin de décision.
+		if refus := controlerLectureDNS(groupIDs, sender); refus != "" {
 			return refus
 		}
 		return listerPTR()
@@ -247,67 +243,48 @@ func avertissementForme(ancien string, traduit []string) string {
 
 // --- lectures ---------------------------------------------------------------
 
-// verifierLectureDNS contrôle le droit de consulter la configuration DNS.
+// controlerLectureDNS contrôle sans exécuter, pour le seul cas restant.
 //
-// Même clé que l'écriture, faute d'une clé de lecture distincte. Le commentaire
-// le dit plutôt que de laisser croire à une omission : créer read:dns
-// demanderait de l'ajouter aux actions spéciales et de la distribuer aux
-// permissions existantes, ce qui n'est pas le sujet de ce changement.
-func verifierLectureDNS(groupIDs []int, sender string) string {
-	ok, motif := permission.CheckPermissionsAllDomains(groupIDs, "write:dns", []string{"*"})
-	if !ok {
-		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"consultation DNS refusée à %s : droit write:dns exigé — %s", sender, motif))
-		return "Permission refusée : " + motif
+// Controler plutôt qu'une vérification recopiée : même clé, même portée, même
+// journal que les actions. Rien n'est exécuté — voir Executeur.Controler.
+func controlerLectureDNS(groupIDs []int, sender string) string {
+	_, err := action.Defaut.Controler("dns.list_zones",
+		action.Appelant{Username: sender, GroupIDs: groupIDs}, action.Params{})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
 	}
 	return ""
 }
 
-func listerZones() string {
-	zones, err := dnsdatabase.GetAllDNSZones(dnsdatabase.GetDatabase())
-	if err != nil {
-		return "Erreur : lecture des zones impossible : " + err.Error()
-	}
-	if len(zones) == 0 {
-		return "Aucune zone DNS. Créez-en une avec « dns zone create <nom.zone> »."
-	}
+// verifierLectureDNS a disparu.
+//
+// Elle contrôlait les lectures avec `write:dns` — le droit de MODIFIER le DNS —
+// faute d'une clé de lecture. Son commentaire l'assumait : « créer read:dns
+// demanderait de l'ajouter aux actions spéciales et de la distribuer aux
+// permissions existantes, ce qui n'est pas le sujet de ce changement ».
+//
+// C'est fait. Les lectures passent par dns.list_zones et dns.list_records, qui
+// exigent `read:dns`. Voir permission.ActionReadDNS.
 
-	t := display.NouvelleTable("Zone", "Table")
-	for _, z := range zones {
-		t.Ajouter(display.Valeur(z.ZoneName), display.Valeur(z.TableName))
+func listerZones(a action.Appelant) string {
+	res, err := action.Executer("dns.list_zones", a, action.Params{})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
 	}
-	return fmt.Sprintf("%d zone(s)\n\n%s", len(zones), t.String())
+	zones, _ := res.Donnees.([]dnsstorage.Zone)
+	return displaydns.DisplayAllZones(zones)
 }
 
-func afficherZone(zone string) string {
-	zone = strings.ToLower(strings.TrimSpace(zone))
-	records, err := dnsdatabase.GetZoneRecords(dnsdatabase.GetDatabase(), zone)
+func afficherZone(zone string, a action.Appelant) string {
+	res, err := action.Executer("dns.list_records", a, action.Params{"zone": zone})
 	if err != nil {
-		return fmt.Sprintf("Erreur : lecture de la zone %q impossible : %v", zone, err)
+		return commandaction.MessageDErreur(err)
 	}
-	if len(records) == 0 {
-		return fmt.Sprintf("Zone %s : aucun enregistrement.", zone)
+	d, ok := res.Donnees.(action.EnregistrementsDeZone)
+	if !ok {
+		return res.Message
 	}
-
-	t := display.NouvelleTable("Nom", "Type", "TTL", "Priorité", "Données")
-	for _, r := range records {
-		// Priority est un NullInt64 : une priorité absente n'est PAS zéro.
-		// Les confondre afficherait « 0 » pour tous les enregistrements qui
-		// n'en portent pas, c'est-à-dire tous sauf les MX et SRV — et zéro est
-		// une priorité MX valide, la plus haute.
-		priorite := "—"
-		if r.Priority.Valid {
-			priorite = fmt.Sprintf("%d", r.Priority.Int64)
-		}
-		t.Ajouter(
-			display.Valeur(r.Name),
-			display.Valeur(r.Type),
-			fmt.Sprintf("%d", r.TTL),
-			priorite,
-			display.Valeur(r.Data),
-		)
-	}
-	return fmt.Sprintf("Zone %s — %d enregistrement(s)\n\n%s", zone, len(records), t.String())
+	return displaydns.DisplayZoneRecords(d.Enregistrements, d.Zone)
 }
 
 func listerPTR() string {

@@ -28,20 +28,19 @@ import (
 	"strings"
 	"time"
 
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // GPO_Command traite `vlt gpo ...`.
 //
 // # Contrôle d'accès
 //
-// Lecture seule, donc `read:get:gpo`. Le droit est exigé sur « * » : l'état de
-// conformité couvre tout le parc, et un rapport filtré par domaine donnerait une
-// vue partielle présentée comme complète — pire qu'un refus.
+// Lecture seule, donc `read:get:gpo`, porté par les actions gpo.list_compliance
+// et gpo.get_compliance. La vue d'ensemble est RÉDUITE aux machines du
+// périmètre de l'appelant, et le nombre d'entrées masquées est annoncé.
 func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername string) string {
 	if len(commandList) == 0 {
 		return helpText()
@@ -52,39 +51,65 @@ func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 		return helpText()
 	}
 
-	const actionKey = "read:get:gpo"
-	ok, reason := permission.CheckPermissionsMultipleDomains(senderGroupIDs, actionKey, []string{"*"})
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf(
-			"Permission refused: user=%s action=%s (gpo %s) reason=%s",
-			senderUsername, actionKey, sub, reason))
-		return "Permission refusée : " + reason
-	}
-	logs.Write_Log("INFO", fmt.Sprintf(
-		"Permission used: user=%s action=%s (gpo %s)", senderUsername, actionKey, sub))
+	// Le contrôle sur « * » a disparu.
+	//
+	// Il exigeait le droit GLOBAL, avec ce motif : « un rapport filtré par
+	// domaine donnerait une vue partielle présentée comme complète — pire
+	// qu'un refus ». Le raisonnement tenait tant qu'aucun filtre ne pouvait le
+	// dire ; le registre annonce désormais le nombre d'entrées masquées.
+	//
+	// Une vue partielle qui S'ANNONCE partielle vaut mieux qu'un refus : le
+	// délégué voyait auparavant zéro machine, la sienne comprise.
+	appelant := action.Appelant{Username: senderUsername, GroupIDs: senderGroupIDs}
 
 	switch sub {
 	case "status":
 		if len(commandList) > 1 {
-			return statusForClient(strings.TrimSpace(commandList[1]))
+			return conformiteMachine(appelant, strings.TrimSpace(commandList[1]))
 		}
-		return statusOverview(false)
+		return conformiteParc(appelant, false)
 	case "drift":
-		return statusOverview(true)
+		return conformiteParc(appelant, true)
 	default:
-		return "Requête invalide. Essayez 'gpo -h'."
+		return "Requête invalide. Essayez « gpo -h »."
 	}
 }
 
-// statusOverview affiche une ligne par scope suivi.
+// conformiteParc rend la vue d'ensemble, filtrée au périmètre.
 //
 // driftOnly restreint aux machines en écart : sur un parc conforme, la commande
 // répond alors « rien à signaler », ce qui est l'information utile.
-func statusOverview(driftOnly bool) string {
-	rows, err := dbgpo.ListCompliance(database.GetDatabase())
+func conformiteParc(appelant action.Appelant, driftOnly bool) string {
+	res, err := action.Executer("gpo.list_compliance", appelant, action.Params{})
 	if err != nil {
-		return "Lecture impossible : " + err.Error()
+		return commandaction.MessageDErreur(err)
 	}
+	rows, _ := res.Donnees.([]dbgpo.ComplianceRow)
+	return res.Message + "\n\n" + rendreConformite(rows, driftOnly)
+}
+
+// conformiteMachine rend le détail d'une machine.
+func conformiteMachine(appelant action.Appelant, computeurID string) string {
+	if computeurID == "" {
+		return "Identifiant de machine manquant."
+	}
+	res, err := action.Executer("gpo.get_compliance", appelant,
+		action.Params{"computeur_id": computeurID})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	d, ok := res.Donnees.(action.ConformiteMachine)
+	if !ok {
+		return res.Message
+	}
+	return rendreConformiteMachine(d)
+}
+
+// rendreConformite met en forme la vue d'ensemble.
+//
+// Ne lit plus la base et ne contrôle plus rien : l'action a fait les deux, et
+// les lignes reçues sont DÉJÀ réduites au périmètre de l'appelant.
+func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly bool) string {
 	if len(rows) == 0 {
 		return "Aucun rapport reçu. Les agents rapportent après application ; si le parc\n" +
 			"est actif depuis plus d'un cycle, vérifiez le journal côté serveur."
@@ -129,26 +154,22 @@ func statusOverview(driftOnly bool) string {
 	return b.String()
 }
 
-// statusForClient détaille une machine : modules en échec, puis écarts.
-func statusForClient(computeurID string) string {
-	if computeurID == "" {
-		return "Identifiant de machine manquant."
-	}
-	db := database.GetDatabase()
-
-	rows, err := dbgpo.GetComplianceForClient(db, computeurID)
-	if err != nil {
-		return "Lecture impossible : " + err.Error()
-	}
-	if len(rows) == 0 {
-		return "Aucun rapport pour " + computeurID + ".\n" +
+// rendreConformiteMachine met en forme le détail d'une machine.
+//
+// Les trois lectures — état par portée, modules en échec, écarts — sont faites
+// par l'action, qui signale séparément celles qui ont échoué. Refuser toute la
+// fiche parce que le détail des modules manque priverait de la réponse
+// principale : « cette machine est-elle conforme ».
+func rendreConformiteMachine(d action.ConformiteMachine) string {
+	if len(d.Etats) == 0 {
+		return "Aucun rapport pour " + d.ComputeurID + ".\n" +
 			"Soit la machine n'a jamais appliqué de politique, soit son identifiant diffère."
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Machine %s\n\n", computeurID)
+	fmt.Fprintf(&b, "Machine %s\n\n", d.ComputeurID)
 
-	for _, r := range rows {
+	for _, r := range d.Etats {
 		fmt.Fprintf(&b, "  %s%s\n", r.Scope, userSuffix(r.TargetUser))
 		fmt.Fprintf(&b, "    application : %s (%d module(s), %d échec(s), %d ignoré(s)) — %s\n",
 			orDash(r.Status), r.ModulesTotal, r.ModulesFailed, r.ModulesSkipped, âge(r.ReportedAt))
@@ -162,37 +183,26 @@ func statusForClient(computeurID string) string {
 		}
 	}
 
-	modules, err := dbgpo.GetModuleReports(db, computeurID)
-	if err != nil {
-		return b.String() + "\nDétail des modules illisible : " + err.Error()
-	}
-	var échecs []dbgpo.ModuleReportRow
-	for _, m := range modules {
-		if m.Result == "failed" {
-			échecs = append(échecs, m)
-		}
-	}
-	if len(échecs) > 0 {
+	if d.ModulesIllisibles != "" {
+		b.WriteString("\n  Détail des modules illisible : " + d.ModulesIllisibles + "\n")
+	} else if len(d.Echecs) > 0 {
 		b.WriteString("\n  Modules en échec\n")
 		te := display.NouvelleTable("SCOPE", "CLÉ", "DÉTAIL")
-		for _, m := range échecs {
+		for _, m := range d.Echecs {
 			te.Ajouter(m.Scope, m.StateKey, unLigne(m.Detail))
 		}
 		b.WriteString(indenter(te.String(), "    "))
 	}
 
-	écarts, err := dbgpo.GetDriftForClient(db, computeurID)
-	if err != nil {
-		return b.String() + "\nÉcarts illisibles : " + err.Error()
-	}
-	if len(écarts) > 0 {
+	if d.EcartsIllisibles != "" {
+		b.WriteString("\n  Écarts illisibles : " + d.EcartsIllisibles + "\n")
+	} else if len(d.Ecarts) > 0 {
 		b.WriteString("\n  Écarts constatés\n")
 		td := display.NouvelleTable("NATURE", "CHEMIN", "DÉTAIL")
-		for _, d := range écarts {
-			// Le chemin n'est plus tronqué : c'est la fin d'un chemin qui dit
-			// de quel fichier il s'agit, et `tronquer` coupait en octets, ce
-			// qui pouvait de surcroît scinder un caractère accentué en deux.
-			td.Ajouter(d.Kind, d.Path, unLigne(d.Detail))
+		for _, e := range d.Ecarts {
+			// Le chemin n'est pas tronqué : c'est la fin d'un chemin qui dit de
+			// quel fichier il s'agit.
+			td.Ajouter(e.Kind, e.Path, unLigne(e.Detail))
 		}
 		b.WriteString(indenter(td.String(), "    "))
 	}

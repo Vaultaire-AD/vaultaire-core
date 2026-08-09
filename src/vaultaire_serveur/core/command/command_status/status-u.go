@@ -1,86 +1,65 @@
 package commandstatus
 
 import (
-	"fmt"
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbsessions "vaultaire/core/database/db_sessions"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 )
 
-func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
-	db := database.GetDatabase()
+// status_User_Command_Parser traite « status -u … ».
+//
+//	status -u                liste les utilisateurs connectés
+//	status -u <compte>       état de connexion d'un compte
+//	status -u -g <groupe>    utilisateurs connectés d'un groupe
+//
+// # Ce qui a disparu d'ici
+//
+// Trois blocs de contrôle recopiés, un par cas, chacun avec sa résolution de
+// domaines et sa trace de journal. Ils vivent dans les actions session.*.
+//
+// # Le défaut corrigé
+//
+// `status -u` sans argument exigeait le droit sur « * », donc global. Un
+// délégué de paris se voyait refuser la liste entière au lieu d'obtenir sa
+// part — le même défaut que `get -c` et `get -p`, et la même correction :
+// portée souple plus filtre de périmètre.
+func status_User_Command_Parser(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
+	appelant := action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs}
 
-	// Cas : status -u <username>
-	if len(command_list) == 2 {
-		targetUser := command_list[1]
+	switch {
+	case len(command_list) == 1:
+		return lireEtat("session.list_users", appelant, action.Params{})
 
-		// Récupérer les domaines de l'utilisateur cible
-		userDomains, err := permission.GetDomainListFromUsername(targetUser)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération domaines utilisateur "+targetUser+" : "+err.Error())
-			return "Erreur lors de la récupération du domaine utilisateur"
-		}
+	case len(command_list) == 2:
+		return lireEtat("session.get_user", appelant,
+			action.Params{"username": command_list[1]})
 
-		// Vérifier la permission sur ces domaines
-		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, userDomains)
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s target=%s reason=%s", sender_Username, action, targetUser, resp))
-			return fmt.Sprintf("Permission refusée : %s", resp)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status user)", sender_Username, action))
-
-		// Si permission OK → récupérer les infos
-		users_Login, err := dbsessions.Command_STATUS_GetConnectedUser(db, targetUser)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération utilisateur "+targetUser+" : "+err.Error())
-			return "Erreur lors de la récupération de l'utilisateur"
-		}
-
-		return display.DisplayUsersByStatus(users_Login)
+	case len(command_list) == 3 && command_list[1] == "-g":
+		return lireEtat("session.list_users_by_group", appelant,
+			action.Params{"group": command_list[2]})
 	}
 
-	// Cas : status -u -g <group_name>
-	if len(command_list) == 3 && command_list[1] == "-g" {
-		groupName := command_list[2]
+	return "Requête invalide. Essayez « status -h »."
+}
 
-		// Récupérer le domaine du groupe
-		groupDomain, err := permission.GetDomainsFromGroupName(groupName)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération domaine groupe "+groupName+" : "+err.Error())
-			return "Erreur lors de la récupération du domaine du groupe"
-		}
-
-		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, groupDomain)
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s group=%s reason=%s", sender_Username, action, groupName, resp))
-			return fmt.Sprintf("Permission refusée : %s", resp)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status user by group)", sender_Username, action))
-
-		users_Login, err := dbsessions.Command_STATUS_GetUsersByGroup(db, groupName)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération utilisateurs du groupe "+groupName+" : "+err.Error())
-			return "Erreur lors de la récupération des utilisateurs du groupe"
-		}
-
-		return display.DisplayUsersByStatus(users_Login)
+// lireEtat exécute une action de session et affiche ses données.
+//
+// Les six actions de session rendent l'un des deux types d'affichage, décidé
+// par le type des données et non par l'action appelée : une action qui
+// changerait de forme de retour se verrait donc immédiatement, au lieu de
+// tomber dans un affichage muet.
+func lireEtat(nom string, a action.Appelant, p action.Params) string {
+	res, err := action.Executer(nom, a, p)
+	if err != nil {
+		return commandaction.MessageDErreur(err)
 	}
-
-	// Cas : status -u (aucun argument)
-	if command_list[0] == "-u" && len(command_list) == 1 {
-		// Vérification sur tous les domaines (*)
-		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, resp))
-			return fmt.Sprintf("Permission refusée : %s", resp)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status all users)", sender_Username, action))
-
-		Users_Login, _ := dbsessions.Command_STATUS_GetConnectedUsers(db)
-		return display.DisplayUsersByStatus(Users_Login)
+	switch d := res.Donnees.(type) {
+	case []storage.UserConnected:
+		return display.DisplayUsersByStatus(d)
+	case []storage.ClientConnected:
+		return display.DisplayClientsByStatus(d)
+	default:
+		return res.Message
 	}
-
-	return "\nArgument manquant. Utilisez 'status -h' pour plus d'informations ou consultez le wiki."
 }

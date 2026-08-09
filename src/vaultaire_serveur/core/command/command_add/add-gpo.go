@@ -1,13 +1,9 @@
 package commandadd
 
 import (
-	"fmt"
-
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/groupview"
-	"vaultaire/core/database"
-	dbgpo "vaultaire/core/database/db_gpo"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // add_GPO_Command_Parser lie une GPO à un groupe.
@@ -17,34 +13,29 @@ import (
 // Une GPO ne se rattache qu'à des groupes, jamais à un utilisateur ni à une
 // machine directement : le groupe porte déjà le domaine, les membres et les
 // permissions, ce qui garde un seul point de vérité pour la portée.
-func add_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+//
+// # Le contrôle a changé de main, et de portée
+//
+// Il vivait ici, sur les domaines du GROUPE seuls. Il est maintenant dans
+// l'action group.add_gpo, sur l'UNION des domaines du groupe et de la GPO.
+//
+// La raison est dans PorteeGPOEtGroupe : n'exiger que le groupe laissait un
+// délégué de paris lier une GPO de lyon à l'un de ses groupes. La GPO couvrait
+// alors paris ET lyon, et l'administrateur de lyon ne pouvait plus modifier sa
+// propre GPO sans le droit sur paris. Pas une élévation de privilège — un
+// verrouillage.
+func add_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
 	if len(command_list) != 4 || command_list[0] != "-gpo" || command_list[2] != "-g" {
-		return "Invalid Request. Usage: add -gpo <gpo_name> -g <group_name>"
+		return "Requête invalide : add -gpo <nom_gpo> -g <nom_groupe>"
 	}
 
-	gpoName := command_list[1]
 	groupName := command_list[3]
-
-	// Domaines du groupe cible : c'est là que la GPO va prendre effet.
-	domains, err := permission.GetDomainsFromGroupName(groupName)
+	res, err := action.Executer("group.add_gpo",
+		action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs},
+		action.Params{"gpo": command_list[1], "group": groupName})
 	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err))
-		return fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err)
+		return commandaction.MessageDErreur(err)
 	}
 
-	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s gpo=%s group=%s reason=%s", sender_Username, action, gpoName, groupName, reason))
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de lier la GPO %s au groupe %s (domaines : %v) — %s", sender_Username, gpoName, groupName, domains, reason))
-		return fmt.Sprintf("Permission refusée : %s", reason)
-	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (add gpo)", sender_Username, action))
-
-	if err := dbgpo.LinkPolicyToGroup(database.GetDatabase(), gpoName, groupName); err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur liaison GPO %s au groupe %s : %v", gpoName, groupName, err))
-		return ">> -" + err.Error()
-	}
-
-	logs.Write_Log("INFO", fmt.Sprintf("GPO %s liée au groupe %s avec succès", gpoName, groupName))
-	return groupview.Fiche(groupName)
+	return res.Message + "\n\n" + groupview.Fiche(groupName)
 }

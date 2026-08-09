@@ -19,11 +19,13 @@ import (
 	"fmt"
 	"strings"
 
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
 	dbcertificates "vaultaire/core/database/db_certificates"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 	duckykey "vaultaire/ducky-network/key_management"
 )
 
@@ -46,35 +48,70 @@ func Certificate_Command(commandList []string, senderGroupIDs []int, senderUsern
 		return helpText()
 	}
 
-	var actionKey string
-	switch sub {
-	case "regenerate":
-		actionKey = "write:create:client"
-	case "list", "show", "fingerprint":
-		actionKey = "read:get:client"
-	default:
-		return "Requête invalide. Essayez 'certificate -h'."
-	}
-
-	ok, reason := permission.CheckPermissionsMultipleDomains(senderGroupIDs, actionKey, []string{"*"})
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf(
-			"Permission refused: user=%s action=%s (certificate %s) reason=%s",
-			senderUsername, actionKey, sub, reason))
-		return "Permission refusée : " + reason
-	}
-	logs.Write_Log("INFO", fmt.Sprintf(
-		"Permission used: user=%s action=%s (certificate %s)", senderUsername, actionKey, sub))
+	appelant := action.Appelant{Username: senderUsername, GroupIDs: senderGroupIDs}
 
 	switch sub {
 	case "list":
-		return listCertificates()
-	case "show":
-		return showCertificate(commandList[1:])
-	case "fingerprint":
-		return afficherEmpreinteCore()
+		res, err := action.Executer("certificate.list", appelant, action.Params{})
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		certs, _ := res.Donnees.([]storage.Certificate)
+		return display.DisplayCertificates(certs)
+
+	case "show", "fingerprint":
+		// L'empreinte du core et la fiche d'un certificat sont deux lectures
+		// du même objet : même droit, read:certificate.
+		if sub == "fingerprint" {
+			if refus := verifierLectureCertificat(appelant); refus != "" {
+				return refus
+			}
+			return afficherEmpreinteCore()
+		}
+		return showCertificate(commandList[1:], appelant)
+
+	case "regenerate":
+		// Régénérer exige write:certificate et non plus write:create:client.
+		//
+		// Le changement d'empreinte casse tous les clients qui l'ont importée
+		// dans leur magasin de confiance : ce n'est pas la même décision que
+		// créer une machine, et le droit ne doit plus être le même.
+		res, err := action.Executer("certificate.regenerate", appelant,
+			action.Params{"args": strings.Join(commandList[1:], " ")})
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		return res.Message
+
 	default:
-		return regenerate(commandList[1:], senderUsername)
+		return "Requête invalide. Essayez « certificate -h »."
+	}
+}
+
+// verifierLectureCertificat contrôle `fingerprint` sans rien exécuter.
+//
+// L'empreinte du core se calcule à partir de la clé en mémoire : ce n'est pas
+// une lecture de la table des certificats, donc pas une action. Mais c'est une
+// lecture de la même nature, et elle doit exiger le même droit.
+//
+// Controler plutôt qu'une vérification recopiée : c'est le MÊME chemin de
+// décision que les actions, avec la même clé, la même portée et le même
+// journal. Rien n'est exécuté — voir Executeur.Controler.
+func verifierLectureCertificat(a action.Appelant) string {
+	if _, err := action.Defaut.Controler("certificate.list", a, action.Params{}); err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return ""
+}
+
+// BrancherRegeneration raccorde la régénération au registre.
+//
+// Appelée au démarrage. L'inversion évite un cycle : l'action ne peut pas
+// importer ce paquet, qui l'importe déjà.
+func BrancherRegeneration() {
+	action.RegenererCertificat = func(a action.Appelant, p action.Params) (string, error) {
+		args := strings.Fields(p.Get("args"))
+		return regenerate(args, a.Username), nil
 	}
 }
 
@@ -114,31 +151,13 @@ func afficherEmpreinteCore() string {
 	return b.String()
 }
 
-func listCertificates() string {
-	certs, err := dbcertificates.GetAllCertificates()
-	if err != nil {
-		return "Lecture impossible : " + err.Error()
-	}
-	if len(certs) == 0 {
-		return "Aucun certificat en base."
-	}
+// listCertificates a été retirée : l'action certificate.list lit la table et
+// display.DisplayCertificates la met en forme, pour les deux façades.
 
-	// Largeurs calculées sur le contenu : `%-24s` sur un nom de certificat
-	// supposait qu'aucun ne dépassait vingt-quatre caractères, et le premier
-	// qui dépassait décalait sa ligne seulement — ce qui se remarque moins
-	// qu'un décalage franc, donc induit davantage en erreur.
-	tb := display.NouvelleTable("NOM", "TYPE", "COUVERTURE")
-	for _, c := range certs {
-		couverture := "-"
-		if c.CertificateData != nil && *c.CertificateData != "" {
-			couverture = ldaptools.CertSummary(*c.CertificateData)
-		}
-		tb.Ajouter(c.Name, c.CertificateType, couverture)
+func showCertificate(args []string, appelant action.Appelant) string {
+	if refus := verifierLectureCertificat(appelant); refus != "" {
+		return refus
 	}
-	return tb.String()
-}
-
-func showCertificate(args []string) string {
 	nom := duckykey.LDAPSServerCertName
 	if len(args) > 0 && strings.TrimSpace(args[0]) != "" {
 		nom = nomCanonique(args[0])

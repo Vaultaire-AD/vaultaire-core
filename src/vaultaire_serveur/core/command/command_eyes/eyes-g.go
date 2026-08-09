@@ -1,89 +1,74 @@
 package commandeyes
 
 import (
-	"fmt"
 	"strings"
+
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbdomains "vaultaire/core/database/db_domains"
-	"vaultaire/core/domain"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 )
 
-// parseDomain découpe un nom de domaine en racine et chemin hiérarchique
-// func parseDomain(domain string) (domainRoot string, subTree []string) {
-// 	parts := strings.Split(domain, ".")
-// 	if len(parts) < 2 {
-// 		return domain, []string{}
-// 	}
+// eyes_by_domain affiche l'arborescence des domaines et de leurs groupes.
+//
+//	eyes -g              arborescence complète, réduite au périmètre
+//	eyes -g <domaine>    groupes situés sous un domaine
+//
+// # Ce qui a changé
+//
+// La commande exigeait la clé passée par son appelant — « write:eyes », un
+// droit d'ÉCRITURE pour une commande qui ne fait que lire. Elle exige
+// désormais `read:get:group`, comme `get -g` : c'est la même donnée sous une
+// autre présentation, et voir des groupes en arbre n'apprend rien de plus que
+// les voir en tableau.
+//
+// L'arborescence est aussi RÉDUITE au périmètre de l'appelant. Un délégué de
+// paris voyait auparavant la structure de toute l'organisation — quels
+// domaines existent, comment ils s'emboîtent — ce que la liste des groupes ne
+// lui montrait pas. Les deux vues disent maintenant la même chose.
+func eyes_by_domain(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
+	appelant := action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs}
 
-// 	domainRoot = parts[len(parts)-2] + "." + parts[len(parts)-1]
-// 	subTree = parts[:len(parts)-2]
-
-// 	// Inverser pour avoir l’ordre logique
-// 	for i, j := 0, len(subTree)-1; i < j; i, j = i+1, j-1 {
-// 		subTree[i], subTree[j] = subTree[j], subTree[i]
-// 	}
-
-// 	return domainRoot, subTree
-// }
-
-// eyes_by_domain affiche les informations des groupes et de leurs domaines
-// pour la commande "eyes -d".
-// Elle construit un arbre de domaines et affiche les informations de manière structurée.
-// Elle retourne une chaîne de caractères contenant les informations formatées.
-// Si une erreur survient lors de la récupération des groupes, elle retourne un message d'erreur.
-func eyes_by_domain(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
-	db := database.GetDatabase()
-
-	var targetDomains []string
+	// eyes -g <domaine>
 	if len(command_list) == 2 {
-		targetDomains = []string{command_list[1]}
-	} else {
-		targetDomains = []string{"*"}
-	}
-
-	// Vérification centralisée des permissions
-	ok, response := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, targetDomains)
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, response))
-		return "Permission refusée : " + response
-	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (eyes tree)", sender_Username, action))
-
-	// Si un domaine spécifique est fourni
-	if len(command_list) == 2 {
-		groups, err := domain.GetGroupsUnderDomain(command_list[1], db, true)
+		res, err := action.Executer("domain.list_groups", appelant,
+			action.Params{"domain": command_list[1]})
 		if err != nil {
-			logs.Write_Log("ERROR", "Erreur lors de la récupération des groupes : "+err.Error())
-			return "Erreur interne lors de la récupération des groupes."
+			return commandaction.MessageDErreur(err)
 		}
-
-		if len(groups) == 0 {
-			return "Domaine non trouvé ou aucun groupe associé."
+		groupes, ok := res.Donnees.([]string)
+		if !ok || len(groupes) == 0 {
+			return res.Message
 		}
-
 		var sb strings.Builder
-		sb.WriteString("\nGroups under domain " + command_list[1] + ":\n")
-		for _, group := range groups {
-			sb.WriteString(group + "\n")
+		sb.WriteString("Groupes sous " + command_list[1] + " :\n")
+		for _, g := range groupes {
+			sb.WriteString("  - " + g + "\n")
 		}
 		return sb.String()
 	}
 
-	// Sinon récupérer tous les groupes pour tous les domaines
-	allGroups, err := dbdomains.GetAllGroupsWithDomains(db)
+	// eyes -g
+	res, err := action.Executer("domain.list_tree", appelant, action.Params{})
 	if err != nil {
-		logs.Write_Log("ERROR", "Erreur lors de la récupération de tous les groupes : "+err.Error())
-		return "Erreur lors de la récupération des groupes : " + err.Error()
+		return commandaction.MessageDErreur(err)
 	}
 
-	tree := domain.BuildDomainTree(allGroups)
-	output := display.PrintDomainTreeRoot(tree)
-
-	if output == "" {
-		return "Aucune donnée disponible."
+	groupes, ok := res.Donnees.([]storage.GroupDomain)
+	if !ok || len(groupes) == 0 {
+		return res.Message
 	}
-	return output
+
+	// L'arbre est bâti APRÈS filtrage, à partir de ce que l'appelant a le
+	// droit de voir. Le bâtir avant afficherait des branches masquées ensuite,
+	// ou pire, des domaines vides dont l'existence même est une information.
+	arbre := display.PrintDomainTreeRoot(action.ArbreDepuis(groupes))
+	if arbre == "" {
+		return res.Message
+	}
+
+	// Le message porte le décompte des entrées masquées ; il précède l'arbre
+	// plutôt que de le suivre, pour qu'une vue partielle s'annonce avant d'être
+	// lue.
+	return res.Message + "\n\n" + arbre
 }

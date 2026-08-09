@@ -1,79 +1,33 @@
 package commandstatus
 
 import (
-	"fmt"
-	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbsessions "vaultaire/core/database/db_sessions"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/action"
 )
 
-func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
-	db := database.GetDatabase()
+// status_Client_Command_Parser traite « status -c … ».
+//
+//	status -c                machines connectées
+//	status -c <type>         machines connectées d'un type de logiciel
+//	status -c -g <groupe>    machines connectées d'un groupe
+//
+// Comme pour « status -u », les trois blocs de contrôle recopiés ont laissé
+// place aux actions session.* — et le cas sans argument, qui exigeait le droit
+// global, se contente maintenant du droit sur un domaine avec filtrage.
+func status_Client_Command_Parser(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
+	appelant := action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs}
 
-	// Cas : status -c (tous les clients)
-	if command_list[0] == "-c" && len(command_list) == 1 {
-		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, resp))
-			return fmt.Sprintf("Permission refusée : %s", resp)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status all clients)", sender_Username, action))
+	switch {
+	case len(command_list) == 1:
+		return lireEtat("session.list_clients", appelant, action.Params{})
 
-		client_Login, err := dbsessions.Command_STATUS_GetClientsConnected(db)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération clients : "+err.Error())
-			return ">> -" + err.Error()
-		}
-		return display.DisplayClientsByStatus(client_Login)
+	case len(command_list) == 3 && command_list[1] == "-g":
+		return lireEtat("session.list_clients_by_group", appelant,
+			action.Params{"group": command_list[2]})
+
+	case len(command_list) == 2:
+		return lireEtat("session.list_clients_by_type", appelant,
+			action.Params{"client_type": command_list[1]})
 	}
 
-	// Cas : status -c -g <group_name>
-	if len(command_list) == 3 && command_list[1] == "-g" {
-		groupName := command_list[2]
-
-		// 🔹 Récupération du domaine du groupe
-		groupDomain, err := permission.GetDomainsFromGroupName(groupName)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération domaine du groupe "+groupName+" : "+err.Error())
-			return "Erreur lors de la récupération du domaine du groupe"
-		}
-
-		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, groupDomain)
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s group=%s reason=%s", sender_Username, action, groupName, resp))
-			return fmt.Sprintf("Permission refusée : %s", resp)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status clients by group)", sender_Username, action))
-
-		client_Login, err := dbsessions.Command_STATUS_GetClientsConnectedByGroup(db, groupName)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération clients du groupe "+groupName+" : "+err.Error())
-			return ">> -" + err.Error()
-		}
-		return display.DisplayClientsByStatus(client_Login)
-	}
-
-	// Cas : status -c <type_client>
-	if len(command_list) == 2 {
-		clientType := command_list[1]
-
-		// 🔹 Vérification sur tous les domaines (les types n’ont pas de domaine explicite)
-		ok, resp := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
-		if !ok {
-			logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, resp))
-			return fmt.Sprintf("Permission refusée : %s", resp)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (status clients by type)", sender_Username, action))
-
-		Client_Login, err := dbsessions.Command_STATUS_GetClientsConnectedByLogicielType(db, clientType)
-		if err != nil {
-			logs.Write_Log("WARNING", "Erreur récupération clients du type "+clientType+" : "+err.Error())
-			return ">> -" + err.Error()
-		}
-		return display.DisplayClientsByStatus(Client_Login)
-	}
-
-	return "\nArgument manquant. Utilisez 'status -h' pour plus d'informations ou consultez le wiki."
+	return "Requête invalide. Essayez « status -h »."
 }

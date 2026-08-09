@@ -42,9 +42,84 @@ const cheminGabarits = "../../../../cmd/web_packet/sso_WEB_page/templates"
 //
 // Ce qui est traqué est l'écriture, parce que c'est elle qui porte une décision
 // et donc un contrôle de droits.
+//
+// # Cette liste avait un angle mort, et il était au pire endroit
+//
+// La version d'origine reconnaissait `Command_ADD_`, `Command_DELETE_`,
+// `Command_Remove_` et `Command_UPDATE_` — mais pas `Command_SET_`. Or
+// `Command_SET_UserPermissionAction` est la fonction qui écrit les droits
+// RBAC : la seule que ce test devait absolument voir.
+//
+// Le paquet web en contenait quatre appels, dans le bloc
+// « update_permission_action ». Le test passait, le document affirmait « zéro
+// écriture directe », et les quatre étaient là.
+//
+// Ni `Add`, ni `Save`, ni `Reset`, ni `Mark`, ni `Drop` n'y figuraient non
+// plus : dix-sept fonctions d'écriture au total échappaient au filet.
+//
+// La liste est donc dérivée des noms RÉELLEMENT présents dans les paquets de
+// persistance, et TestLaRegexVoitLesEcrituresConnues l'éprouve sur des exemples
+// tirés de chacune de ces familles. Un garde dont la couverture n'est pas
+// elle-même testée donne la tranquillité sans la garantie — c'est précisément
+// ce qui s'est produit.
 var ecrituresEnBase = regexp.MustCompile(
-	`\bdb[a-z]+\.(Create|Command_ADD_|Command_DELETE_|Command_Remove_|Command_UPDATE_|` +
-		`Update|Set[A-Z]|Link|Unlink|Delete|Revoke)[A-Za-z_]*\s*\(`)
+	`\bdb[a-z]+\.(Command_(ADD|SET|CREATE|DELETE|UPDATE|Remove)_|` +
+		`Create|Update|Delete|Remove|Revoke|Purge|Drop|Clear|` +
+		`Set[A-Z]|Add[A-Z]|Insert|Save|Reset|Mark|Link|Unlink|Enable|Disable)[A-Za-z_]*\s*\(`)
+
+// echantillonsDEcriture : un nom par famille reconnue.
+//
+// Tirés des fonctions réellement exportées par les paquets de persistance. Ils
+// servent à éprouver le filet lui-même — voir
+// TestLaRegexVoitLesEcrituresConnues.
+var echantillonsDEcriture = []string{
+	"dbpermission.Command_SET_UserPermissionAction(db, 1, \"x\", \"all\")",
+	"dbgroups.Command_ADD_UserToGroup(db, 1, 2)",
+	"dbusers.Command_DELETE_User(db, 1)",
+	"dbclients.Command_UPDATE_Client(db, 1)",
+	"dbgpo.AddModule(db, m)",
+	"dbgpo.SaveDriftReport(db, r)",
+	"dbauthpolicy.ResetMFA(db, \"alice\")",
+	"dbrevocation.MarkTarget(db, \"alice\")",
+	"dbgpo.DropLegacyTables(db)",
+	"dbusers.AddUserKey(db, 1, \"cle\")",
+	"dbcertificates.CreateCertificate(c)",
+	"dbenrollment.RevokeKey(db, 1)",
+	"dbgpo.LinkPolicyToGroup(db, \"g\", \"p\")",
+	"dbgpo.UnlinkPolicyFromGroup(db, \"g\", \"p\")",
+	"dbsettings.SetDebug(db, true)",
+}
+
+// echantillonsDeLecture : ce que le filet ne doit PAS attraper.
+//
+// Une regex qui prendrait aussi les lectures rendrait le test ininterprétable :
+// il échouerait partout, on ajouterait des exemptions pour le faire taire, et
+// il ne protégerait plus de rien.
+var echantillonsDeLecture = []string{
+	"dbusers.Command_GET_User(db, 1)",
+	"dbgroups.GetGroupInfo(db, \"g\")",
+	"dbgpo.ListCompliance(db)",
+	"dbpermission.Command_GET_UserPermissionAction(db, 1, \"x\")",
+	"dbcertificates.GetAllCertificates()",
+}
+
+// TestLaRegexVoitLesEcrituresConnues éprouve le filet, pas le code.
+//
+// Sans lui, l'angle mort décrit plus haut se reproduira : une famille de noms
+// oubliée dans la liste ne se signale par aucune erreur, et le test qui
+// s'appuie dessus continue de passer au vert.
+func TestLaRegexVoitLesEcrituresConnues(t *testing.T) {
+	for _, appel := range echantillonsDEcriture {
+		if !ecrituresEnBase.MatchString(appel) {
+			t.Errorf("écriture non détectée : %s", appel)
+		}
+	}
+	for _, appel := range echantillonsDeLecture {
+		if ecrituresEnBase.MatchString(appel) {
+			t.Errorf("lecture prise pour une écriture : %s", appel)
+		}
+	}
+}
 
 // fichiersExemptes sont les fichiers où l'écriture directe reste tolérée, avec
 // la raison.
@@ -53,11 +128,15 @@ var ecrituresEnBase = regexp.MustCompile(
 // serait indiscernable d'un oubli — et c'est exactement ainsi que les
 // exceptions se multiplient.
 var fichiersExemptes = map[string]string{
-	// Les GPO ont été explicitement exclus du périmètre de la refonte : leur
-	// logique est spécifique et ne se plie pas au modèle « une action, des
-	// paramètres nommés ».
-	"web_admin_gpo.go":              "GPO hors périmètre, exclu par décision",
-	"web_admin_gpo_restrictions.go": "GPO hors périmètre, exclu par décision",
+	// web_admin_gpo.go a QUITTÉ cette liste : ses sept écritures passent
+	// désormais par le registre. L'exemption est retirée plutôt que conservée
+	// « au cas où » — une exemption inutile finit par couvrir une régression.
+	//
+	// Les RESTRICTIONS de valeurs GPO restent à porter : elles ne visent pas
+	// une GPO mais le catalogue lui-même — quelles valeurs un champ accepte sur
+	// tout le serveur. Leur portée n'est donc pas celle d'une GPO, et les
+	// traduire dans la foulée aurait mêlé deux modèles dans le même lot.
+	"web_admin_gpo_restrictions.go": "restrictions du catalogue, portée serveur — lot suivant",
 
 	// Les sessions et le second facteur de l'utilisateur COURANT ne sont pas
 	// des actions d'administration : elles ne visent pas un tiers, ne relèvent

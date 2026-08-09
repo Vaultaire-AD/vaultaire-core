@@ -16,7 +16,106 @@ var (
 	// l'interface web, le CLI) : la liste vit désormais ici seule, sinon en
 	// ajouter une la rendrait invisible dans l'interface sans que rien ne le
 	// signale.
-	specialActions = []string{"write:dns", "write:eyes", ActionKillSwitch, ActionReadLog, ActionManageMFA}
+	specialActions = []string{
+		"write:dns", "write:eyes",
+		ActionKillSwitch, ActionReadLog, ActionManageMFA,
+		ActionReadCluster, ActionWriteCluster,
+		ActionReadCertificate, ActionWriteCertificate,
+		ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
+	}
+)
+
+// ActionReadDNS est le droit de CONSULTER la configuration DNS.
+//
+// # Pourquoi une clé de lecture séparée de write:dns
+//
+// Les lectures — lister les zones, afficher les enregistrements — étaient
+// gardées par `write:dns`, c'est-à-dire par le droit de MODIFIER le DNS. Voir
+// quels noms le serveur résout n'a rien à voir avec le pouvoir de les changer :
+// on veut pouvoir confier la première à un support de niveau 1 sans lui donner
+// la seconde.
+//
+// Le défaut était le même que `write:eyes` gardant une commande de lecture : le
+// nom disait le contraire de ce que la clé protégeait.
+const ActionReadDNS = "read:dns"
+
+// ActionReadEnrollment est le droit de consulter les clés d'enrôlement.
+//
+// # Ce qu'elle remplace
+//
+// `enroll list` et `enroll show` empruntaient `read:get:client` sur « * » —
+// donc le droit de lire toutes les machines de tous les domaines pour voir la
+// liste des clés en attente. Une clé d'enrôlement n'appartient pourtant à aucun
+// domaine ; c'est le même cas que le cluster et les certificats.
+//
+// # Ce qu'elle ne remplace pas
+//
+// L'ÉMISSION et la RÉVOCATION d'une clé restent sur `write:create:client`, et
+// délibérément : émettre une clé d'enrôlement, c'est accorder le droit
+// d'ajouter un programme au cluster — donc de créer un client. La clé qui
+// gouverne cet effet est bien celle-là.
+//
+// Seule la consultation méritait d'être séparée.
+const ActionReadEnrollment = "read:enrollment"
+
+// ActionWriteServer est le droit de modifier un RÉGLAGE du serveur.
+//
+// # Ce qu'elle remplace
+//
+// `update -debug` et `clear` (purge des sessions expirées) empruntaient
+// `write:update:user`. Régler le mode debug ou vider une table de sessions n'a
+// rien d'une modification de compte : la clé accordait beaucoup plus que ce que
+// la commande fait, et son nom ne laissait pas deviner qu'elle ouvrait ces
+// deux-là.
+//
+// Une seule clé pour les deux : ce sont des réglages d'exploitation, sans
+// distinction utile entre eux. Le jour où l'un pèsera plus lourd que l'autre,
+// il méritera la sienne.
+const ActionWriteServer = "write:server"
+
+// ActionReadCluster et ActionWriteCluster : consultation et réglage du cluster.
+//
+// # Pourquoi des actions spéciales et non un objet RBAC
+//
+// Un nœud de cluster n'est pas une entité de l'annuaire : il n'appartient à
+// aucun domaine, et la délégation par domaine n'a donc rien à quoi s'appliquer.
+// Le déclarer dans RBACObjects engendrerait six clés — read:get:cluster,
+// write:add:cluster… — dont deux seulement auraient un sens. Une clé qui
+// n'accorde rien est indiscernable d'un oubli.
+//
+// C'est le motif déjà employé pour read:log, write:dns, write:mfa et
+// write:killswitch, et pour la même raison à chaque fois.
+//
+// # Ce qu'elles remplacent
+//
+// La commande cluster empruntait read:get:client et write:update:client sur
+// « * ». Deux conséquences : voir l'état du cluster exigeait le droit de lire
+// TOUTES les machines de TOUS les domaines, et régler le délai de purge
+// emportait celui de les modifier. Deux responsabilités très différentes
+// portées par la même clé.
+const (
+	ActionReadCluster  = "read:cluster"
+	ActionWriteCluster = "write:cluster"
+)
+
+// ActionReadCertificate et ActionWriteCertificate : certificats TLS du serveur.
+//
+// Même raisonnement : un certificat n'appartient à aucun domaine — c'est
+// d'ailleurs pourquoi sa suppression exige l'appartenance au groupe protégé
+// plutôt qu'une clé RBAC.
+//
+// # Ce qu'elles remplacent, et pourquoi c'était trop large
+//
+// `certificate list` et `show` empruntaient read:get:client ; `regenerate`
+// empruntait write:create:client. Or régénérer le certificat LDAPS change
+// l'empreinte que TOUT le parc a importée dans son magasin de confiance : les
+// clients cessent de se connecter jusqu'à réimport. Confier cela à quiconque
+// peut créer une machine était disproportionné dans un sens, et exiger de
+// pouvoir créer des machines pour simplement LIRE le certificat public l'était
+// dans l'autre.
+const (
+	ActionReadCertificate  = "read:certificate"
+	ActionWriteCertificate = "write:certificate"
 )
 
 // ActionManageMFA est le droit de réinitialiser le second facteur d'un tiers.
@@ -81,7 +180,16 @@ const ActionKillSwitch = "write:killswitch"
 // web_profil.go, write:dns dans command_dns/command_dns_manager.go. Si un de ces
 // appels venait à transmettre un domaine réel, il faudrait retirer l'entrée
 // correspondante ici.
-var globalOnlyActions = []string{"web_admin", "write:dns", ActionReadLog}
+//
+// Le cluster et les certificats y figurent pour la même raison que les
+// journaux : ni un nœud ni un certificat ne porte de domaine, donc leur donner
+// une liste de domaines les refuserait au lieu de les restreindre.
+var globalOnlyActions = []string{
+	"web_admin", "write:dns", ActionReadLog,
+	ActionReadCluster, ActionWriteCluster,
+	ActionReadCertificate, ActionWriteCertificate,
+	ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
+}
 
 // IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte
 // donc que nil ou all.

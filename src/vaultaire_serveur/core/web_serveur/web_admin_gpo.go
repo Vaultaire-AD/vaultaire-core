@@ -4,16 +4,15 @@ import (
 	"database/sql"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	dbgroups "vaultaire/core/database/db_groups"
 	isprotected "vaultaire/core/database/is_protected"
 
+	act "vaultaire/core/action"
 	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
 
@@ -234,63 +233,19 @@ func buildCatalogForScope(scope gpo.Scope) []gpoCatalogCategory {
 	return out
 }
 
-// collectModuleParams extrait les paramètres d'un module depuis le formulaire.
+// collectModuleParams et checkGPORBAC ont quitté ce fichier.
 //
-// Seuls les champs déclarés au schéma sont lus : un champ injecté dans la requête
-// HTTP n'est pas ignoré silencieusement, il n'est simplement jamais consulté.
-// Les cases à cocher absentes de la requête valent "false" (une case décochée
-// n'est pas transmise par le navigateur).
-func collectModuleParams(r *http.Request, moduleType string) map[string]string {
-	schema, ok := gpo.SchemaFor(moduleType)
-	if !ok {
-		return nil
-	}
-	params := make(map[string]string, len(schema.Fields))
-	for _, f := range schema.Fields {
-		raw := r.FormValue("p_" + f.Name)
-		if f.Type == gpo.FieldBool {
-			if raw == "on" || raw == "true" || raw == "1" {
-				params[f.Name] = "true"
-			} else {
-				params[f.Name] = "false"
-			}
-			continue
-		}
-		params[f.Name] = raw
-	}
-	return params
-}
-
-// checkGPORBAC vérifie une action RBAC sur les domaines couverts par une GPO.
+// La première extrayait les paramètres d'un module d'après le catalogue ; la
+// seconde décidait des droits sur les domaines couverts par une GPO. Toutes
+// deux vivaient ICI et nulle part ailleurs : la ligne de commande créait et
+// supprimait des GPO sans le raisonnement de la seconde, et n'avait jamais eu
+// besoin de la première.
 //
-// Contrairement à un contrôle sur "*", cela permet de déléguer la gestion des
-// GPO d'un domaine sans donner la main sur tout l'annuaire. Une GPO sans groupe
-// ne couvre aucun domaine : on exige alors le droit global, sinon une GPO en
-// attente de rattachement serait modifiable par n'importe quel délégué.
-func checkGPORBAC(groupIDs []int, actionKey, gpoName string) (bool, string) {
-	domains := []string{"*"}
-	if gpoName != "" {
-		if d, err := permission.GetDomainslistFromGPO(gpoName); err == nil && len(d) > 0 {
-			domains = d
-		}
-	}
-
-	// Une GPO peut couvrir plusieurs domaines, et elle s'applique à tous à la
-	// fois. La modifier exige donc le droit sur chacun.
-	//
-	// Sans cela, la portée était extensible : je lie la GPO à un groupe de mon
-	// domaine, ce qui me donne le droit d'écriture ; je la lie ensuite à un
-	// groupe d'un domaine que je ne contrôle pas, et je continue de passer les
-	// contrôles grâce au premier. La GPO — donc des règles sudo et des fichiers
-	// déposés — s'applique alors à un parc qui ne m'appartient pas.
-	//
-	// La lecture reste tolérante : voir la liste des GPO d'un domaine qu'on
-	// administre partiellement n'accorde aucun pouvoir.
-	if strings.HasPrefix(actionKey, "write:") {
-		return permission.CheckPermissionsAllDomains(groupIDs, actionKey, domains)
-	}
-	return permission.CheckPermissionsMultipleDomains(groupIDs, actionKey, domains)
-}
+// Elles sont maintenant dans core/action — action.ParametresDeModule et la
+// portée porteeGPO — donc sur le chemin des deux façades. Le raisonnement de
+// checkGPORBAC est conservé mot pour mot dans l'en-tête de actions_gpo.go :
+// une GPO couvre les domaines des groupes auxquels elle est liée et s'applique
+// à tous à la fois, donc la modifier exige le droit sur chacun.
 
 // AdminGPOHandler liste les GPO ou affiche le détail quand ?gpo= est présent.
 // Accès : web_admin + read:get:gpo pour consulter ; write:create|update|add|delete:gpo
@@ -331,50 +286,31 @@ func adminGPOList(w http.ResponseWriter, r *http.Request, db *sql.DB, username s
 	}
 
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
-		switch action {
-		case "create_gpo":
-			if allowed, reason := checkGPORBAC(groupIDs, "write:create:gpo", ""); !allowed {
-				data.Error = "Permission refusée : " + reason
-				break
-			}
-			name := strings.TrimSpace(r.FormValue("gpo_name"))
-			scope := gpo.Scope(r.FormValue("scope"))
-			description := r.FormValue("description")
-			if !gpo.IsValidPolicyScope(scope) {
-				data.Error = "Scope invalide : une GPO est soit machine, soit user."
-				break
-			}
-			if _, err := dbgpo.CreatePolicy(db, name, scope, description); err != nil {
-				data.Error = "Erreur création : " + err.Error()
-				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: create gpo failed: "+err.Error())
+		// Création et suppression passent par le registre.
+		//
+		// Le contrôle de droits, la validation de la portée et la vérification
+		// après suppression vivent dans les actions gpo.create et gpo.delete —
+		// donc partagés avec la ligne de commande, qui n'avait ni la seconde
+		// ni la troisième.
+		res, traite, errAction := ExecuterActionFormulaire(r, username, groupIDs)
+		if traite {
+			if errAction != nil {
+				data.Error = MessageDActionPourAffichage(res, errAction)
 			} else {
-				data.Message = "GPO créée. Ajoutez-y des modules depuis son détail."
-				logs.Write_Log("INFO", "webadmin: GPO "+name+" créée par "+username)
-			}
-
-		case "delete_gpo":
-			name := strings.TrimSpace(r.FormValue("gpo_name"))
-			if allowed, reason := checkGPORBAC(groupIDs, "write:delete:gpo", name); !allowed {
-				data.Error = "Permission refusée : " + reason
-				break
-			}
-			if err := dbgpo.DeletePolicyByName(db, name); err != nil {
-				data.Error = "Erreur suppression : " + err.Error()
-			} else {
-				data.Message = "GPO supprimée."
-				logs.Write_Log("INFO", "webadmin: GPO "+name+" supprimée par "+username)
+				data.Message = res.Message
 			}
 		}
 	}
 
-	policies, err := dbgpo.GetAllPolicies(db)
+	// La liste passe par gpo.list : elle est réduite au périmètre de
+	// l'appelant, comme les autres listes de l'interface.
+	resListe, err := ExecuterLecture("gpo.list", username, groupIDs, act.Params{})
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list gpo failed: "+err.Error())
 		http.Error(w, "Erreur liste GPO", http.StatusInternalServerError)
 		return
 	}
-	data.Policies = policies
+	data.Policies, _ = resListe.Donnees.([]dbgpo.PolicySummary)
 
 	if err := executeAdminPage(w, "admin_gpo.html", data); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin: template admin_gpo.html: "+err.Error())
@@ -421,134 +357,53 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 	}
 
 	if r.Method == http.MethodPost {
-		action := r.FormValue("action")
-
 		// L'onglet d'origine est transporté par le formulaire pour être rouvert
 		// après l'action. Sans lui, chaque ajout de module ramènerait sur le
 		// premier onglet et il faudrait re-naviguer à chaque fois.
 		data.ActiveTab = sanitizeTab(r.FormValue("active_tab"))
 
-		// Toutes les actions de cette page portent sur une GPO existante :
-		// une seule vérification de permission, sur la clé propre à l'action.
-		actionKey := ""
-		switch action {
-		case "update_gpo", "add_module", "update_module", "delete_module":
-			actionKey = "write:update:gpo"
-		case "link_group":
-			actionKey = "write:add:gpo"
-		case "unlink_group", "delete_gpo":
-			actionKey = "write:delete:gpo"
-		}
-		if actionKey != "" {
-			if allowed, reason := checkGPORBAC(groupIDs, actionKey, gpoName); !allowed {
-				logs.Write_Log("SECURITY", "webadmin: "+username+" tente "+action+" sur la GPO "+gpoName+" — "+reason)
-				data.Error = "Permission refusée : " + reason
-				action = ""
-			}
-		}
+		// Les sept actions de cette page passent par le registre.
+		//
+		// La table « action → clé RBAC » et le `if actionKey != ""` qui la
+		// suivait ont disparu : ce motif sautait la vérification pour toute
+		// action absente de la table, et c'est exactement le fail-open corrigé
+		// partout ailleurs.
+		//
+		// Ce qui a suivi le déménagement, et qui n'existait QUE côté web :
+		// la validation des paramètres de module contre le catalogue, et le
+		// contrôle que le module visé appartient bien à la GPO affichée — sans
+		// quoi un identifiant forgé modifie le module d'une autre GPO, dont on
+		// n'a pas les droits.
+		//
+		// Ce qui a changé de portée : lier ou délier un groupe exige désormais
+		// le droit sur l'union des domaines du groupe ET de la GPO. Voir
+		// action.PorteeGPOEtGroupe.
+		//
+		// Le nom de la GPO vient de l'URL : les formulaires ne le répètent pas.
+		res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
+			act.Params{"gpo": gpoName})
 
-		switch action {
-		case "update_gpo":
-			description := r.FormValue("description")
-			enabled := r.FormValue("enabled") == "on"
-			if err := dbgpo.UpdatePolicyMeta(db, policy.ID, description, enabled); err != nil {
-				data.Error = "Erreur : " + err.Error()
+		if traite {
+			if errAction != nil {
+				data.Error = MessageDActionPourAffichage(res, errAction)
 			} else {
-				data.Message = "GPO mise à jour."
-			}
+				data.Message = res.Message
 
-		case "add_module":
-			moduleType := r.FormValue("module_type")
-			params := collectModuleParams(r, moduleType)
-			if params == nil {
-				data.Error = "Type de module inconnu."
-				break
-			}
-			if _, err := dbgpo.AddModule(db, policy.ID, moduleType, params); err != nil {
-				data.Error = "Module refusé : " + err.Error()
-			} else {
-				data.Message = "Module ajouté."
-			}
-
-		case "update_module":
-			moduleID, convErr := strconv.Atoi(r.FormValue("module_id"))
-			if convErr != nil {
-				data.Error = "Identifiant de module invalide."
-				break
-			}
-			existing, owner, getErr := dbgpo.GetModuleByID(db, moduleID)
-			if getErr != nil {
-				data.Error = getErr.Error()
-				break
-			}
-			// Le module doit appartenir à la GPO affichée : sans ce contrôle,
-			// un identifiant forgé permettrait de modifier le module d'une autre
-			// GPO, dont l'utilisateur n'a pas forcément les droits sur le domaine.
-			if owner != policy.ID {
-				logs.Write_Log("SECURITY", "webadmin: "+username+" tente de modifier le module "+strconv.Itoa(moduleID)+" hors de la GPO "+gpoName)
-				data.Error = "Ce module n'appartient pas à cette GPO."
-				break
-			}
-			params := collectModuleParams(r, existing.Type)
-			if err := dbgpo.UpdateModuleParams(db, moduleID, params); err != nil {
-				data.Error = "Module refusé : " + err.Error()
-			} else {
-				data.Message = "Module mis à jour."
-			}
-
-		case "delete_module":
-			moduleID, convErr := strconv.Atoi(r.FormValue("module_id"))
-			if convErr != nil {
-				data.Error = "Identifiant de module invalide."
-				break
-			}
-			_, owner, getErr := dbgpo.GetModuleByID(db, moduleID)
-			if getErr != nil {
-				data.Error = getErr.Error()
-				break
-			}
-			if owner != policy.ID {
-				logs.Write_Log("SECURITY", "webadmin: "+username+" tente de supprimer le module "+strconv.Itoa(moduleID)+" hors de la GPO "+gpoName)
-				data.Error = "Ce module n'appartient pas à cette GPO."
-				break
-			}
-			if err := dbgpo.DeleteModule(db, moduleID); err != nil {
-				data.Error = "Erreur : " + err.Error()
-			} else {
-				data.Message = "Module retiré."
-			}
-
-		case "link_group":
-			groupName := strings.TrimSpace(r.FormValue("group"))
-			if groupName == "" {
-				data.Error = "Groupe requis."
-				break
-			}
-			if err := dbgpo.LinkPolicyToGroup(db, gpoName, groupName); err != nil {
-				data.Error = err.Error()
-			} else {
-				data.Message = "GPO liée au groupe " + groupName + "."
-			}
-
-		case "unlink_group":
-			groupName := strings.TrimSpace(r.FormValue("group"))
-			if err := dbgpo.UnlinkPolicyFromGroup(db, gpoName, groupName); err != nil {
-				data.Error = err.Error()
-			} else {
-				data.Message = "GPO retirée du groupe " + groupName + "."
-			}
-
-		case "delete_gpo":
-			if err := dbgpo.DeletePolicyByName(db, gpoName); err != nil {
-				data.Error = "Erreur suppression : " + err.Error()
-			} else {
-				http.Redirect(w, r, "/admin/gpo", http.StatusSeeOther)
-				return
+				// La suppression renvoie vers la liste : la fiche d'une GPO
+				// supprimée serait vide.
+				if r.FormValue("action") == "delete_gpo" {
+					http.Redirect(w, r, "/admin/gpo", http.StatusSeeOther)
+					return
+				}
 			}
 		}
 
 		// Rechargement après action : l'affichage doit refléter l'état réel en
 		// base, pas l'état supposé après l'écriture.
+		//
+		// Relu ici plutôt que pris dans res.Donnees : la plupart de ces actions
+		// portent sur les MODULES et rendent un compte rendu, pas la politique
+		// entière. Une relecture unique couvre les sept cas.
 		if reloaded, reloadErr := dbgpo.GetPolicyByName(db, gpoName); reloadErr == nil {
 			policy = reloaded
 		}

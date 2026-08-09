@@ -96,9 +96,26 @@ var actionsFormulaire = map[string]string{
 	// permissions
 	"create_permission":        "permission.create",
 	"delete_permission":        "permission.delete",
+	"update_permission_action": "permission.update_action",
 	"create_client_permission": "client_permission.create",
 	"update_client_permission": "client_permission.update",
 	"delete_client_permission": "client_permission.delete",
+
+	// GPO
+	//
+	// « link_group » et « unlink_group » désignent les mêmes actions que
+	// « add_gpo » et « remove_gpo » : la liaison GPO↔groupe, vue depuis la
+	// fiche de la GPO au lieu de celle du groupe. Comme pour add_group /
+	// add_user, omettre ces entrées aurait fait refuser depuis une page ce qui
+	// marchait depuis l'autre.
+	"create_gpo":    "gpo.create",
+	"update_gpo":    "gpo.update",
+	"delete_gpo":    "gpo.delete",
+	"add_module":    "gpo.add_module",
+	"update_module": "gpo.update_module",
+	"delete_module": "gpo.delete_module",
+	"link_group":    "group.add_gpo",
+	"unlink_group":  "group.remove_gpo",
 
 	// certificats
 	"delete_certificate": "certificate.delete",
@@ -135,6 +152,20 @@ var aliasParametres = map[string]string{
 	"target_client": "computeur_id",
 	"permission":    "permission",
 	"gpo":           "gpo",
+
+	// Grammaire des permissions : le formulaire propose DEUX champs de domaine
+	// selon l'onglet — « domain » pour l'ajout, « domain_remove » pour le
+	// retrait. Le second n'est lu que si le premier est vide, ce que garantit
+	// la règle générale des alias : le nom canonique l'emporte toujours.
+	//
+	// Sans cet alias, un retrait de domaine partait avec un domaine vide, et
+	// l'action le refusait — alors que l'utilisateur avait bien désigné un
+	// domaine dans le formulaire qu'il voyait.
+	"domain_remove": "domain",
+
+	// La page GPO nomme son champ « gpo_name » à la création — le nom n'existe
+	// pas encore dans l'URL — et « group » pour la liaison.
+	"gpo_name": "gpo",
 }
 
 // Un renommage de gabarit accompagne cette table.
@@ -203,6 +234,28 @@ func ExecuterActionFormulaireAvec(r *http.Request, username string, groupIDs []i
 
 // ErrActionInconnue signale un « action » qui ne correspond à rien.
 var ErrActionInconnue = errors.New("action de formulaire inconnue")
+
+// ExecuterLecture applique une action de lecture et rend ses données.
+//
+// # Pourquoi les lectures ne passent pas par ExecuterActionFormulaire
+//
+// Une lecture n'est pas déclenchée par un champ « action » de formulaire :
+// elle vient de l'URL — `?user=alice` — sur un GET. Le nom de l'action est
+// donc écrit par le handler, pas lu dans la requête, et il n'y a rien à
+// router.
+//
+// # Ce que ce raccordement corrige
+//
+// Les pages de détail lisaient la base directement, sous la seule protection
+// de checkWebAdminRBAC, qui vérifie le droit N'IMPORTE OÙ
+// (permission.HasActionAnywhere). Un délégué de paris ouvrant
+// /admin/users?user=un-compte-de-lyon obtenait donc la fiche : son droit sur
+// paris suffisait, et la cible n'entrait jamais dans la décision.
+//
+// L'action, elle, résout les domaines de la CIBLE et exige le droit dessus.
+func ExecuterLecture(nom, username string, groupIDs []int, p action.Params) (action.Resultat, error) {
+	return action.Executer(nom, action.Appelant{Username: username, GroupIDs: groupIDs}, p)
+}
 
 // parametresDepuisRequete recopie tous les champs du formulaire.
 //

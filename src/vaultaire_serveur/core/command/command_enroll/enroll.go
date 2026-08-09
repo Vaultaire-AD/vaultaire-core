@@ -32,8 +32,6 @@ import (
 	"vaultaire/core/command/display"
 	"vaultaire/core/database"
 	dbenrollment "vaultaire/core/database/db_enrollment"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // Valeurs par défaut : une seule utilisation, valable trente minutes.
@@ -89,11 +87,20 @@ func Enroll_Command(commandList []string, senderGroupIDs []int, senderUsername s
 	// La liste est donc explicite, et « types » y figure avec sa raison.
 	switch sub {
 	case "list", "show":
-		ok, reason := permission.CheckPermissionsAllDomains(senderGroupIDs, "read:get:client", []string{"*"})
-		if !ok {
-			logs.Write_Log("SECURITY", fmt.Sprintf(
-				"enroll %s refusé à %s : droit read:get:client exigé — %s", sub, senderUsername, reason))
-			return "Permission refusée : " + reason
+		// read:enrollment et non plus read:get:client.
+		//
+		// Voir la liste des clés en attente exigeait le droit de lire TOUTES
+		// les machines de TOUS les domaines. Une clé d'enrôlement n'appartient
+		// pourtant à aucun domaine — même cas que le cluster et les
+		// certificats.
+		//
+		// L'émission et la révocation restent sur write:create:client, et
+		// délibérément : émettre une clé, c'est accorder le droit d'ajouter un
+		// programme au cluster.
+		if _, err := action.Defaut.Controler("enroll.list_keys",
+			action.Appelant{Username: senderUsername, GroupIDs: senderGroupIDs},
+			action.Params{}); err != nil {
+			return commandaction.MessageDErreur(err)
 		}
 
 	case "types":

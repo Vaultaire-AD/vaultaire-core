@@ -158,16 +158,18 @@ func EnregistrerActionsGroupe(r *Registre) {
 	// --- GPO ---------------------------------------------------------------
 
 	r.MustEnregistrer(Definition{
-		Nom:      "group.add_gpo",
-		CleRBAC:  "write:add:gpo",
-		Portee:   PorteeGroupe,
+		Nom:     "group.add_gpo",
+		CleRBAC: "write:add:gpo",
+		// Union des domaines du groupe ET de la GPO — voir PorteeGPOEtGroupe.
+		// N'exiger que ceux du groupe laissait verrouiller la GPO d'autrui.
+		Portee:   PorteeGPOEtGroupe,
 		Resume:   "lie une GPO à un groupe",
 		Executer: rattacher("GPO", "gpo", lierGPOAuGroupe),
 	})
 	r.MustEnregistrer(Definition{
 		Nom:      "group.remove_gpo",
 		CleRBAC:  "write:delete:gpo",
-		Portee:   PorteeGroupe,
+		Portee:   PorteeGPOEtGroupe,
 		Resume:   "délie une GPO d'un groupe",
 		Executer: detacher("GPO", "gpo", delierGPODuGroupe),
 	})

@@ -1,34 +1,33 @@
 package commandupdate
 
 import (
-	"fmt"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
-	"vaultaire/core/storage"
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 )
 
-func update_Debug_Command_Parser(commandList []string, sender_groupsIDs []int, action, sender_Username string) string {
+// update_Debug_Command_Parser règle le mode debug du serveur.
+//
+//	update -debug true|false
+//
+// # Le droit a changé
+//
+// La commande exigeait `write:update:user` — le droit de MODIFIER DES COMPTES.
+// Régler le mode debug n'a rien d'une modification de compte : la clé accordait
+// beaucoup plus que ce que la commande fait, et son nom ne laissait pas deviner
+// qu'elle ouvrait ce réglage.
+//
+// Elle exige maintenant `write:server`, partagée avec la purge des sessions.
+// Cette clé n'est accordée à personne tant qu'on ne l'accorde pas.
+func update_Debug_Command_Parser(commandList []string, sender_groupsIDs []int, _ string, sender_Username string) string {
 	if len(commandList) != 2 {
-		return "Invalid Request. Try `update -h` for more information."
+		return "Requête invalide : update -debug true|false"
 	}
 
-	// 🔹 Vérification des permissions du sender
-	ok, reason := permission.CheckPermissionsMultipleDomains(sender_groupsIDs, action, []string{"*"})
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s reason=%s", sender_Username, action, reason))
-		return fmt.Sprintf("Permission refusée : %s", reason)
+	res, err := action.Executer("server.set_debug",
+		action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs},
+		action.Params{"debug": commandList[1]})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
 	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (update debug)", sender_Username, action))
-
-	arg := commandList[1]
-	switch arg {
-	case "true", "True", "1":
-		storage.Debug = true
-	case "false", "False", "0":
-		storage.Debug = false
-	default:
-		return "Invalid value. Use `true` or `false`."
-	}
-
-	return fmt.Sprintf("Debug mode is now: %v", storage.Debug)
+	return res.Message
 }

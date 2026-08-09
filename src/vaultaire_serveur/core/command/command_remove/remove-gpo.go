@@ -1,47 +1,32 @@
 package commandremove
 
 import (
-	"fmt"
-
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/groupview"
-	"vaultaire/core/database"
-	dbgpo "vaultaire/core/database/db_gpo"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // remove_GPO_Command_Parser retire la liaison entre une GPO et un groupe.
+//
 // La GPO elle-même n'est pas supprimée : elle reste disponible pour d'autres
 // groupes (voir delete -gpo pour la supprimer définitivement).
 //
 // Usage : remove -gpo <nom_gpo> -g <nom_groupe>
-func remove_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, action, sender_Username string) string {
+//
+// Le contrôle est passé à l'action group.remove_gpo, sur l'union des domaines
+// du groupe et de la GPO — voir add-gpo.go pour le raisonnement.
+func remove_GPO_Command_Parser(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
 	if len(command_list) != 4 || command_list[0] != "-gpo" || command_list[2] != "-g" {
-		return "Invalid Request. Try remove -gpo gpo_name -g group_name or get -h for more information"
+		return "Requête invalide : remove -gpo <nom_gpo> -g <nom_groupe>"
 	}
 
-	gpoName := command_list[1]
 	groupName := command_list[3]
-
-	domains, err := permission.GetDomainsFromGroupName(groupName)
+	res, err := action.Executer("group.remove_gpo",
+		action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs},
+		action.Params{"gpo": command_list[1], "group": groupName})
 	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err))
-		return fmt.Sprintf("Erreur récupération domaines du groupe %s : %v", groupName, err)
+		return commandaction.MessageDErreur(err)
 	}
 
-	ok, reason := permission.CheckPermissionsAllDomains(sender_groupsIDs, action, domains)
-	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refused: user=%s action=%s gpo=%s group=%s reason=%s", sender_Username, action, gpoName, groupName, reason))
-		logs.Write_Log("SECURITY", fmt.Sprintf("%s tente de retirer la GPO %s du groupe %s (domaines : %v) — %s", sender_Username, gpoName, groupName, domains, reason))
-		return fmt.Sprintf("Permission refusée : %s", reason)
-	}
-	logs.Write_Log("INFO", fmt.Sprintf("Permission used: user=%s action=%s (remove gpo)", sender_Username, action))
-
-	if err := dbgpo.UnlinkPolicyFromGroup(database.GetDatabase(), gpoName, groupName); err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur retrait de la GPO %s du groupe %s : %v", gpoName, groupName, err))
-		return ">> -" + err.Error()
-	}
-
-	logs.Write_Log("INFO", fmt.Sprintf("GPO %s retirée du groupe %s avec succès", gpoName, groupName))
-	return groupview.Fiche(groupName)
+	return res.Message + "\n\n" + groupview.Fiche(groupName)
 }

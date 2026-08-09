@@ -1,104 +1,75 @@
 package commandget
 
 import (
-	"fmt"
-	commandpermission "vaultaire/core/command/command_permission"
+	"vaultaire/core/action"
 	"vaultaire/core/command/display"
-	"vaultaire/core/database"
-	dbclients "vaultaire/core/database/db_clients"
-	dbgroups "vaultaire/core/database/db_groups"
-	"vaultaire/core/logs"
-	"vaultaire/core/permission"
+	"vaultaire/core/storage"
 )
 
-// getGroupCommandParser traite les commandes "get group"
-func getGroupCommandParser(commandList []string, senderGroupsIDs []int, action, senderUsername string) string {
-	if len(commandList) == 1 && commandList[0] == "-g" {
-		return handleGetAllGroups(senderGroupsIDs, action, senderUsername)
+// getGroupCommandParser traite « get -g … ».
+//
+// # Une incohérence corrigée au passage
+//
+// `get -g -u <groupe>` et `get -u -g <groupe>` listent la MÊME chose : les
+// utilisateurs d'un groupe. Les deux chemins exigeaient pourtant des droits
+// différents — `read:get:group` par ici, aucun contrôle du tout par là.
+//
+// Les deux appellent maintenant group.list_users, qui exige `read:get:user` :
+// ce qui est révélé est une liste de COMPTES, et c'est le droit de lire des
+// comptes qui doit la garder. Exiger `read:get:group` aurait laissé un délégué
+// n'ayant que le droit sur les groupes énumérer des utilisateurs qu'il n'a pas
+// le droit de lire un par un.
+func getGroupCommandParser(commandList []string, senderGroupsIDs []int, _ string, senderUsername string) string {
+	appelant := action.Appelant{Username: senderUsername, GroupIDs: senderGroupsIDs}
+
+	if len(commandList) == 1 {
+		// get -g
+		return lire("group.list", appelant, action.Params{}, afficherListeGroupes)
 	}
 
-	if len(commandList) == 2 && commandList[0] == "-g" {
-		groupName := commandList[1]
-		return handleGetGroupByName(groupName, senderGroupsIDs, action, senderUsername)
+	if len(commandList) == 2 {
+		// get -g <groupe>
+		return lire("group.get", appelant,
+			action.Params{"group": commandList[1]}, afficherFicheGroupe)
 	}
 
 	if len(commandList) == 3 {
-		targetType, groupName := commandList[1], commandList[2]
-		switch targetType {
+		p := action.Params{"group": commandList[2]}
+		switch commandList[1] {
 		case "-u":
-			return handleGetUsersByGroup(groupName, senderGroupsIDs, action, senderUsername)
+			return lire("group.list_users", appelant, p, afficherUtilisateursDuGroupe)
 		case "-c":
-			return handleGetClientsByGroup(groupName, senderGroupsIDs, action, senderUsername)
-		default:
-			return invalidGroupRequest()
+			return lire("group.list_clients", appelant, p, afficherMachinesDuGroupe)
 		}
 	}
 
 	return invalidGroupRequest()
 }
 
-// --- Fonctions privées --- //
-
-func handleGetAllGroups(senderGroupsIDs []int, action, senderUsername string) string {
-	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, []string{"*"}) {
-		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
+func afficherListeGroupes(res action.Resultat) string {
+	groupes, ok := res.Donnees.([]storage.GroupDetails)
+	if !ok {
+		return res.Message
 	}
-	groups, err := dbgroups.Command_GET_GroupDetails(database.GetDatabase())
-	if err != nil {
-		logs.Write_Log("WARNING", "Erreur lors de la récupération de tous les groupes : "+err.Error())
-		return ">> -" + err.Error()
-	}
-	return display.DisplayGroupDetails(groups)
+	return display.DisplayGroupDetails(groupes)
 }
 
-func handleGetGroupByName(groupName string, senderGroupsIDs []int, action, senderUsername string) string {
-	domains, err := permission.GetDomainsFromGroupName(groupName)
-	if err != nil {
-		return fmt.Sprintf(">> -Erreur lors de la récupération des domaines du groupe %s : %s", groupName, err.Error())
+func afficherFicheGroupe(res action.Resultat) string {
+	info, ok := res.Donnees.(*storage.GroupInfo)
+	if !ok || info == nil {
+		return res.Message
 	}
-	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domains) {
-		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-	}
-	group, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), groupName)
-	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la récupération du groupe %s : %s", groupName, err.Error()))
-		return ">> -" + err.Error()
-	}
-	return display.DisplayGroupInfo(group)
+	return display.DisplayGroupInfo(info)
 }
 
-func handleGetUsersByGroup(groupName string, senderGroupsIDs []int, action, senderUsername string) string {
-	domains, err := permission.GetDomainsFromGroupName(groupName)
-	if err != nil {
-		return fmt.Sprintf(">> -Erreur lors de la récupération des domaines du groupe %s : %s", groupName, err.Error())
+func afficherMachinesDuGroupe(res action.Resultat) string {
+	d, ok := res.Donnees.(action.MachinesDeGroupe)
+	if !ok {
+		return res.Message
 	}
-	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domains) {
-		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-	}
-	users, err := dbgroups.Command_GET_UsersByGroup(database.GetDatabase(), groupName)
-	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la récupération des utilisateurs du groupe %s : %s", groupName, err.Error()))
-		return ">> -" + err.Error()
-	}
-	return display.DisplayUsersByGroup(groupName, users)
-}
-
-func handleGetClientsByGroup(groupName string, senderGroupsIDs []int, action, senderUsername string) string {
-	domains, err := permission.GetDomainsFromGroupName(groupName)
-	if err != nil {
-		return fmt.Sprintf(">> -Erreur lors de la récupération des domaines du groupe %s : %s", groupName, err.Error())
-	}
-	if !commandpermission.CheckAccess(senderGroupsIDs, action, senderUsername, domains) {
-		return fmt.Sprintf("Permission refusée pour %s sur %s", senderUsername, action)
-	}
-	clients, err := dbclients.Command_GET_ClientsByGroup(database.GetDatabase(), groupName)
-	if err != nil {
-		logs.Write_Log("WARNING", fmt.Sprintf("Erreur lors de la récupération des clients du groupe %s : %s", groupName, err.Error()))
-		return ">> -" + err.Error()
-	}
-	return display.DisplayClientsByGroup(clients, groupName)
+	return display.DisplayClientsByGroup(d.Machines, d.Groupe)
 }
 
 func invalidGroupRequest() string {
-	return "Invalid Request. Try `get -h` for more information."
+	return "Requête invalide. Essayez « get -h »."
 }
