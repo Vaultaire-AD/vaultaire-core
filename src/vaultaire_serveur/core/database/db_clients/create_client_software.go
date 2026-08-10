@@ -18,7 +18,7 @@ func Create_ClientSoftware(db *sql.DB, computeurID, logicielType, publicKey stri
 	queryCheck := `SELECT EXISTS(SELECT 1 FROM id_logiciels WHERE computeur_id = ?)`
 	err := db.QueryRow(queryCheck, computeurID).Scan(&exists)
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la vérification de l'existence du computeurID : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la vérification de l'existence du computeurID : "+err.Error())
 		return fmt.Errorf("erreur lors de la vérification de l'existence du computeurID : %v", err)
 	}
 
@@ -34,7 +34,7 @@ func Create_ClientSoftware(db *sql.DB, computeurID, logicielType, publicKey stri
 	_, err = db.Exec(queryInsert, publicKey, logicielType, computeurID, "default", isServeur, 0, "0Go", "Linux")
 
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de l'insertion dans la table id_logiciels : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'insertion dans la table id_logiciels : "+err.Error())
 		return fmt.Errorf("erreur lors de l'insertion dans la table id_logiciels : %v", err)
 	}
 	logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Nouvelle entrée insérée avec succès dans la base de données.")

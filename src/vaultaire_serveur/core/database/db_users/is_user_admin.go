@@ -16,7 +16,7 @@ func IsUserAdmin(db *sql.DB, username, computeur_id string) (bool, error) {
 	// Récupérer l'ID utilisateur
 	userID, found, err := database.LookupUserID(db, username)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de l'ID utilisateur: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de l'ID utilisateur: "+err.Error())
 		return false, err
 	}
 	if !found {
@@ -27,7 +27,7 @@ func IsUserAdmin(db *sql.DB, username, computeur_id string) (bool, error) {
 	// Récupérer l'ID du logiciel associé au client
 	logicielID, found, err := database.LookupClientID(db, computeur_id)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de l'ID logiciel: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de l'ID logiciel: "+err.Error())
 		return false, err
 	}
 	if !found {
@@ -52,7 +52,7 @@ LIMIT 1
 		logs.Write_LogCode("DEBUG", logs.CodeNone, "database: Utilisateur "+username+" est admin via un groupe commun avec le client.")
 		return true, nil
 	} else if err != sql.ErrNoRows {
-		logs.WriteLog("db", "Erreur lors de la vérification des permissions de groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la vérification des permissions de groupe: "+err.Error())
 		return false, err
 	}
 

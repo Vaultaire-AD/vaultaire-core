@@ -22,7 +22,7 @@ func Command_GET_AllUsers(db *sql.DB) ([]storage.GetUsers, error) {
 	// Exécution de la requête SQL
 	rows, err := db.Query(query)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -39,7 +39,7 @@ func Command_GET_AllUsers(db *sql.DB) ([]storage.GetUsers, error) {
 		var user storage.GetUsers
 		// Scan des résultats de la requête dans la structure
 		if err := rows.Scan(&user.ID, &user.Username, &user.DateNaissance, &user.CreatedAt); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 		// Ajout de l'utilisateur à la slice
@@ -48,7 +48,7 @@ func Command_GET_AllUsers(db *sql.DB) ([]storage.GetUsers, error) {
 
 	// Vérifier s'il y a une erreur d'itération des résultats
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

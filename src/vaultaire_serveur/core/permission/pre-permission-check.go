@@ -59,8 +59,12 @@ func GetGroupIDsForUser(username string) ([]int, error) {
 		logs.Write_Log("ERROR", fmt.Sprintf("Erreur récupération groupes pour %s : %v", username, err))
 		return nil, fmt.Errorf("erreur récupération groupes")
 	}
-	logs.Write_LogCode("DEBUG", logs.CodeNone,
-		fmt.Sprintf("Groupes de %s (appartenance directe) : %v", username, groupsID))
+	// La liste des groupes n'est plus journalisée à chaque appel.
+	//
+	// Elle l'était à chaque contrôle de droit, donc plusieurs fois par page, et
+	// elle ne disait rien de plus que la ligne de verdict : celle-ci nomme le
+	// groupe qui a tranché, ce qui est l'information utile. Connaître les
+	// groupes d'un compte se demande par « vlt get -u <compte> ».
 	return groupsID, nil
 }
 

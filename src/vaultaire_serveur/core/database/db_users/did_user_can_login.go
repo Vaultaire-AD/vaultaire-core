@@ -16,7 +16,7 @@ func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
 	// Récupère l'ID de l'utilisateur basé sur le username
 	userID, found, err := database.LookupUserID(db, username)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de l'ID utilisateur: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de l'ID utilisateur: "+err.Error())
 		return false, err
 	}
 	if !found {
@@ -34,7 +34,7 @@ func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
 	if err == nil && canLogin {
 		return true, nil
 	} else if err != sql.ErrNoRows {
-		logs.WriteLog("db", "Erreur lors de la vérification du groupe partagé: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la vérification du groupe partagé: "+err.Error())
 		return false, err
 	}
 

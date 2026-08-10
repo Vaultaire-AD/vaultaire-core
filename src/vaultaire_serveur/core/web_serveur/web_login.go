@@ -1,8 +1,10 @@
 package webserveur
 
 import (
+	"fmt"
 	"net/http"
 	"time"
+	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
 	gc "vaultaire/core/global/security"
@@ -28,6 +30,28 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	username := r.FormValue("username")
 	password := r.FormValue("password")
+	source := ratelimit.SourceHTTP(r)
+
+	// LIMITATION DES TENTATIVES — avant tout le reste.
+	//
+	// Placée ici, et non après la recherche du compte, pour deux raisons : un
+	// balayage de noms d'utilisateur interrogerait sinon la base à chaque essai,
+	// et le temps de réponse distinguerait le compte existant de l'inconnu.
+	//
+	// La redirection est la MÊME que celle des autres échecs. Répondre « trop de
+	// tentatives » dirait à l'attaquant qu'il a touché un compte réel et qu'il
+	// lui suffit d'espacer ses essais ; le journal serveur, lui, porte la vraie
+	// raison.
+	//
+	// Les compteurs sont partagés avec le bind LDAP et le canal Ducky : sans
+	// cela, qui est freiné sur une porte recommence sur la suivante.
+	if autorisé, reste := ratelimit.Autorise(username, source); !autorisé {
+		logs.Write_LogCode("SECURITY", logs.CodeAuthLoginDenied, fmt.Sprintf(
+			"connexion web: trop de tentatives depuis %s pour %s, encore %s",
+			source, username, reste.Round(time.Second)))
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
 
 	// KILL SWITCH — avant toute lecture du mot de passe, et avec la même
 	// redirection muette que les autres échecs : la page de connexion ne doit
@@ -35,6 +59,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 	if permission.IsRevoked(username) {
 		logs.Write_LogCode("SECURITY", logs.CodeAuthLoginDenied,
 			"Tentative de connexion web sur le compte révoqué "+username)
+		ratelimit.Echec(username, source)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -45,6 +70,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		// Tentative de connexion avec un username inconnu : pas une erreur système,
 		// mais un événement de sécurité qu'on veut voir sans activer le mode debug.
 		logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied, "Tentative de connexion avec un utilisateur invalide : "+username)
+		ratelimit.Echec(username, source)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
@@ -60,9 +86,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 
 	if !gc.ComparePasswords(password, salt, Hpassword) {
 		logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied, "Mauvais mot de passe pour "+username)
+		ratelimit.Echec(username, source)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
+
+	// Compteurs remis à zéro dès que le mot de passe est prouvé, et non après le
+	// second facteur : la limitation protège le MOT DE PASSE. Attendre le code
+	// ferait accumuler des échecs à qui se trompe de code alors qu'il a déjà
+	// démontré son identité, et l'enfermerait dehors avec le bon secret en main.
+	ratelimit.Reussite(username, source)
 
 	// ✅ Mot de passe correct — le reste du parcours est dans web_login_mfa.go.
 	//

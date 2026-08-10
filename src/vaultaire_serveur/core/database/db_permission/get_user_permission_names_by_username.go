@@ -21,7 +21,7 @@ func Command_GET_UserPermissionNamesByUsername(db *sql.DB, username string) ([]s
 	`
 	rows, err := db.Query(query, username)
 	if err != nil {
-		logs.WriteLog("db", "UserPermissionNamesByUsername: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"UserPermissionNamesByUsername: "+err.Error())
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()

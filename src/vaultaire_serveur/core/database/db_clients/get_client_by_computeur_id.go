@@ -64,7 +64,7 @@ GROUP BY
 		if err == sql.ErrNoRows {
 			return nil, fmt.Errorf("❌ Aucun client trouvé avec le Computeur ID: %s", computeurID)
 		}
-		logs.WriteLog("db", "Erreur lors de la récupération du client : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération du client : "+err.Error())
 		return nil, fmt.Errorf("❌ Erreur lors de la récupération du client : %v", err)
 	}
 

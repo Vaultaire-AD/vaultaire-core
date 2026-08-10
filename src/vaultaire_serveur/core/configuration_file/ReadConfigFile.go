@@ -2,6 +2,7 @@ package configuration_file
 
 import (
 	"os"
+	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 
@@ -114,6 +115,12 @@ func LoadConfig(filePath string) error {
 	// Mêmes règles que pour les SAN LDAPS : recopiés même vides.
 	storage.Web_TLS_DNSNames = config.Website.Web_TLS_DNSNames
 	storage.Web_TLS_IPs = config.Website.Web_TLS_IPs
+	// Recopié même vide, et pour une raison de sécurité : vider la liste dans le
+	// fichier doit ramener à « on ne croit personne ». Ne recopier que les
+	// valeurs non vides laisserait un relais de confiance en place après qu'on
+	// l'a retiré de la configuration.
+	storage.Web_Trusted_Proxies = config.Website.Web_Trusted_Proxies
+	ratelimit.ProxiesDeConfiance = config.Website.Web_Trusted_Proxies
 	if config.Api.API_Enable != nil {
 		storage.API_Enable = *config.Api.API_Enable
 	}

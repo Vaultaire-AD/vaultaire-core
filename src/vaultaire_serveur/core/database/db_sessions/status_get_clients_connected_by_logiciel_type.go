@@ -32,7 +32,7 @@ func Command_STATUS_GetClientsConnectedByLogicielType(db *sql.DB, logicielType s
 
 	rows, err := db.Query(query, logicielType)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -46,14 +46,14 @@ func Command_STATUS_GetClientsConnectedByLogicielType(db *sql.DB, logicielType s
 	for rows.Next() {
 		var client storage.ClientConnected
 		if err := rows.Scan(&client.Username, &client.LogicielType, &client.ComputeurID, &client.Hostname, &client.Serveur, &client.Processeur, &client.RAM, &client.OS); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 		clients = append(clients, client)
 	}
 
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

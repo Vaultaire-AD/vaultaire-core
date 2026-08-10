@@ -12,16 +12,24 @@ import (
 // Logging uses RFC 5424 severity levels and writes to stdout (Twelve-Factor App).
 // Logs are also kept in memory for the web UI (size-limited). See rfc5424.go.
 
-// WriteLog writes to a dedicated log file or emits via RFC 5424.
-// If filename is "db" or "auth", the message is sent to stdout only (no file) to avoid duplicates.
-// Otherwise writes to dirPath+filename (legacy file logging).
+// WriteLog écrit dans un fichier dédié.
+//
+// # Le niveau DATABASE a disparu
+//
+// « db » et « auth » étaient détournés vers un niveau nommé DATABASE, qui ne
+// correspond à aucune sévérité RFC 5424 et que `Write_LogCode` ne filtrait pas :
+// ces lignes étaient donc émises quel que soit le réglage, et impossibles à
+// écarter.
+//
+// Les 145 appels concernés étaient TOUS sur un chemin d'erreur — vérifié par
+// deux signaux indépendants, la présence d'un bloc `if err != nil` et le texte
+// du message. Ils sont devenus des ERROR, ce qu'ils étaient déjà en fait, et
+// ils se filtrent maintenant comme tout le reste.
+//
+// Cette fonction ne sert plus qu'à la journalisation FICHIER, pour les quelques
+// familles qui en ont une : « date », « SQL_Injection ».
 func WriteLog(filename string, content string) {
 	content = strings.TrimSpace(content)
-	switch filename {
-	case "db", "auth":
-		Write_LogCode("DATABASE", CodeDBGeneric, "database: "+content)
-		return
-	}
 
 	dirPath := storage.LogPath
 	filepath := dirPath + filename

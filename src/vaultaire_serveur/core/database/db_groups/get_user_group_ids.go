@@ -23,7 +23,7 @@ func Command_GET_UserGroupIDs(db *sql.DB, username string) ([]int, error) {
 
 	rows, err := db.Query(query, username)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -36,14 +36,14 @@ func Command_GET_UserGroupIDs(db *sql.DB, username string) ([]int, error) {
 	for rows.Next() {
 		var id int
 		if err := rows.Scan(&id); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 		groupIDs = append(groupIDs, id)
 	}
 
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

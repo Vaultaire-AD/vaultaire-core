@@ -78,8 +78,13 @@ func CheckPermissionsAllDomains(groupIDs []int, action string, domainsToCheck []
 		}
 	}
 
+	// Même forme que CheckPermissionsMultipleDomains : une ligne, le verdict.
+	// Ici le motif est implicite — « sur tous » veut dire qu'aucun domaine n'a
+	// manqué —, et nommer la règle de chacun allongerait sans rien apprendre :
+	// devant un contrôle strict, ce qui intéresse est le refus, et il est déjà
+	// détaillé juste au-dessus.
 	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf(
-		"Action '%s' autorisée sur tous les domaines %v", normalizedAction, domainsToCheck))
+		"droit %s sur %v : accordé sur tous", normalizedAction, domainsToCheck))
 	return true, fmt.Sprintf("autorisée sur %s", strings.Join(domainsToCheck, ", "))
 }
 

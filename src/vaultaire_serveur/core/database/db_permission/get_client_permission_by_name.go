@@ -17,7 +17,7 @@ func Command_GET_ClientPermissionByName(db *sql.DB, name string) (*storage.Clien
 	var permission storage.ClientPermission
 	err := db.QueryRow(query, name).Scan(&permission.ID, &permission.Name, &permission.IsAdmin)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de la permission client par nom : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de la permission client par nom : "+err.Error())
 		return nil, err
 	}
 

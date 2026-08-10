@@ -485,6 +485,19 @@ type VerificateurSuperadmin interface {
 type Journal interface {
 	Refus(msg string)
 	Execution(msg string)
+
+	// Echec trace une écriture TENTÉE qui n'a pas abouti.
+	//
+	// Distincte d'Execution, et pas seulement par le texte : une modification
+	// qui échoue n'est pas une information de fonctionnement, c'est un
+	// avertissement. Les deux passaient par Execution, donc au même niveau,
+	// et un échec d'écriture se lisait comme une réussite dans un journal
+	// filtré sur INFO.
+	//
+	// Distincte de Refus aussi : un refus est une décision de droits, un échec
+	// est un échec métier — nom déjà pris, entité introuvable. On ne cherche
+	// pas les deux au même moment.
+	Echec(msg string)
 }
 
 // ResolveurPortee détermine les domaines exigés par une action.
@@ -683,12 +696,73 @@ func (e *Executeur) Executer(nom string, a Appelant, p Params) (Resultat, error)
 		res = appliquerFiltre(d, res, e.perimetreDe(d, a), a.Username)
 	}
 
-	if e.Journal != nil {
+	if e.Journal != nil && estEcriture(d) {
 		if err != nil {
-			e.Journal.Execution(fmt.Sprintf("action %s par %s : échec — %v", nom, a.Username, err))
+			e.Journal.Echec(fmt.Sprintf("%s a tenté %s sur %s : %v",
+				a.Username, nom, cibleDe(p), err))
 		} else {
-			e.Journal.Execution(fmt.Sprintf("action %s par %s : %s", nom, a.Username, res.Message))
+			e.Journal.Execution(fmt.Sprintf("%s a fait %s sur %s",
+				a.Username, nom, cibleDe(p)))
 		}
 	}
 	return res, err
+}
+
+// estEcriture dit si l'action MODIFIE quelque chose.
+//
+// # Pourquoi les lectures ne sont plus journalisées
+//
+// Toute action passait par ici, lectures comprises. Or chaque page du portail
+// déclenche au moins une lecture : consulter la liste des utilisateurs écrivait
+// une ligne INFO, ouvrir une fiche une autre, et le journal se remplissait de
+// consultations au milieu desquelles les modifications se perdaient.
+//
+// Un journal d'audit répond à « qui a changé quoi ». Qui a REGARDÉ quoi est une
+// autre question, qui appelle un autre volume et une autre rétention — et que
+// personne n'a demandée.
+//
+// # Comment la distinction est faite
+//
+// Par la clé RBAC, et non par le nom de l'action. Le nom est une convention que
+// rien ne contraint ; la clé, elle, est obligatoire et vérifiée à
+// l'enregistrement. Toutes les clés d'écriture commencent par « write: », y
+// compris les clés spéciales — write:dns, write:killswitch, write:mfa.
+//
+// Une action sans clé mais réservée au groupe protégé compte aussi pour une
+// écriture : c'est le cas de la suppression d'un certificat, qui interrompt un
+// service. Ne pas la tracer serait perdre précisément ce qu'on veut retrouver.
+func estEcriture(d Definition) bool {
+	if strings.HasPrefix(d.CleRBAC, "write:") {
+		return true
+	}
+	return d.CleRBAC == "" && d.ExigeSuperadmin
+}
+
+// cibleDe nomme l'objet sur lequel l'action a porté.
+//
+// # Pourquoi une liste ordonnée plutôt qu'un champ déclaré
+//
+// Chaque action nomme sa cible à sa façon — « username », « group »,
+// « computeur_id ». Ajouter un champ « NomDuParametreCible » à Definition
+// obligerait à le renseigner sur les quatre-vingts actions du catalogue, et un
+// oubli ne se verrait pas : la ligne d'audit dirait simplement « sur  », sans
+// que rien ne signale l'absence.
+//
+// La liste ci-dessous est ordonnée du plus spécifique au plus général, et le
+// premier paramètre présent gagne. Une action de rattachement porte deux cibles
+// — l'utilisateur ET le groupe —, et c'est l'utilisateur qui est nommé : c'est
+// lui qui change de situation.
+//
+// Aucune cible reconnue rend « le serveur », qui est exact pour les actions qui
+// ne visent aucune entité : régler le mode debug, purger les sessions.
+func cibleDe(p Params) string {
+	for _, nom := range []string{
+		"username", "group", "computeur_id", "permission", "client_permission",
+		"gpo", "zone", "record", "domain", "key_id", "module_id", "certificate",
+	} {
+		if v := p.Get(nom); v != "" {
+			return nom + " " + v
+		}
+	}
+	return "le serveur"
 }

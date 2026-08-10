@@ -31,13 +31,13 @@ func UpdateHostname(db *sql.DB, computeurID, hostname, os, ram, proc string) err
 
 	result, err := db.Exec(query, hostname, proccesseur, ram, os, computeurID)
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la mise à jour UpdateHostname : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la mise à jour UpdateHostname : "+err.Error())
 	}
 
 	// Vérifier combien de lignes ont été affectées
 	rowsAffected, err := result.RowsAffected()
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la récupération du nombre de lignes affectées UpdateHostname :"+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la récupération du nombre de lignes affectées UpdateHostname :"+err.Error())
 	}
 	if rowsAffected == 0 {
 		// logs.WriteLog("db", "aucune ligne mise à jour, vérifiez computeur_id UpdateHostname")

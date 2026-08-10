@@ -20,7 +20,7 @@ func Command_GET_AllClientPermissions(db *sql.DB) ([]storage.ClientPermission, e
 
 	rows, err := db.Query(query)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération des permissions clients : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération des permissions clients : "+err.Error())
 		return nil, err
 	}
 	defer func() {
@@ -32,7 +32,7 @@ func Command_GET_AllClientPermissions(db *sql.DB) ([]storage.ClientPermission, e
 	for rows.Next() {
 		var permission storage.ClientPermission
 		if err := rows.Scan(&permission.ID, &permission.Name, &permission.IsAdmin); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des permissions clients : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des permissions clients : "+err.Error())
 			return nil, err
 		}
 		permissions = append(permissions, permission)

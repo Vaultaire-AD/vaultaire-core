@@ -109,10 +109,12 @@ func TestUnDomaineSuffitChoisitLaBonneVerification(t *testing.T) {
 type journalMemoire struct {
 	refus      []string
 	executions []string
+	echecs     []string
 }
 
 func (j *journalMemoire) Refus(m string)     { j.refus = append(j.refus, m) }
 func (j *journalMemoire) Execution(m string) { j.executions = append(j.executions, m) }
+func (j *journalMemoire) Echec(m string)     { j.echecs = append(j.echecs, m) }
 
 func actionValide(nom string, execute *bool) Definition {
 	return Definition{

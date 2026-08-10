@@ -26,7 +26,7 @@ func Command_GET_UserPermissionByName(db *sql.DB, name string) (*storage.UserPer
 		&permission.Web_admin,
 	)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de la permission utilisateur par nom : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de la permission utilisateur par nom : "+err.Error())
 		return nil, err
 	}
 

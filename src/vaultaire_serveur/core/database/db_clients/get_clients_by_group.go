@@ -35,7 +35,7 @@ func Command_GET_ClientsByGroup(db *sql.DB, groupName string) ([]storage.GetClie
 
 	rows, err := db.Query(query, groupName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -49,7 +49,7 @@ func Command_GET_ClientsByGroup(db *sql.DB, groupName string) ([]storage.GetClie
 	for rows.Next() {
 		var client storage.GetClientsByGroup
 		if err := rows.Scan(&client.ID, &client.LogicielType, &client.ComputeurID, &client.Hostname, &client.Serveur, &client.Processeur, &client.RAM, &client.OS); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 		clients = append(clients, client)
@@ -57,7 +57,7 @@ func Command_GET_ClientsByGroup(db *sql.DB, groupName string) ([]storage.GetClie
 
 	// Vérifier s'il y a une erreur d'itération des résultats
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 	"vaultaire/core/auth/passwordpolicy"
+	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbusers "vaultaire/core/database/db_users"
@@ -70,21 +71,25 @@ func respondUnwillingToPerform(messageID int, conn net.Conn, diagnostic string) 
 // jusqu'ici l'une ou l'autre de ces trois choses, et un refus qui ne compte pas
 // ne freine personne.
 func refuser(conn net.Conn, messageID int, source, compte string) {
-	EnregistrerÉchec(source, compte)
+	ratelimit.Echec(compte, source)
 	ldapsessionmanager.ResetBindInfo(conn)
 	respondInvalidCredentials(messageID, conn)
 }
 
 func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn) {
 	user, domain, ou := ldaptools.ExtractUsernameAndDomain(op.Name)
-	source := sourceAddr(conn)
+	source := ratelimit.SourceConn(conn)
 
 	// Limitation AVANT toute lecture de l'annuaire.
 	//
 	// La placer plus loin laisserait un balayage interroger la base à chaque
 	// tentative : le coût pour le serveur resterait le même, seule la réponse
 	// changerait.
-	if autorisé, reste := BindAutorisé(source, user); !autorisé {
+	//
+	// Les compteurs sont ceux de core/auth/ratelimit, PARTAGÉS avec le portail
+	// web et le canal Ducky. Le compte de cette limitation vivait auparavant ici
+	// seul : un attaquant freiné sur le bind repartait de zéro sur le portail.
+	if autorisé, reste := ratelimit.Autorise(user, source); !autorisé {
 		logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
 			"ldap bind: trop de tentatives depuis %s pour %s, encore %s",
 			source, user, reste.Round(time.Second)))
@@ -282,7 +287,7 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
-	EnregistrerSuccès(source, user)
+	ratelimit.Reussite(user, source)
 	ldapsessionmanager.SetBindInfo(conn, user, op.Name)
 	logs.Write_LogCodeMeta("INFO", logs.CodeNone, fmt.Sprintf("ldap bind: success user=%s domain=%s from %s", user, domain, conn.RemoteAddr().String()), logs.UserMeta(userID))
 
@@ -297,20 +302,4 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 func isTLS(conn net.Conn) bool {
 	_, ok := conn.(*tls.Conn)
 	return ok
-}
-
-// sourceAddr rend l'adresse du client, sans le port.
-//
-// Sans ce découpage, chaque connexion aurait une clé différente — le port source
-// change à chaque fois — et la limitation par adresse ne compterait jamais
-// au-delà de un.
-func sourceAddr(conn net.Conn) string {
-	if conn == nil || conn.RemoteAddr() == nil {
-		return ""
-	}
-	host, _, err := net.SplitHostPort(conn.RemoteAddr().String())
-	if err != nil {
-		return conn.RemoteAddr().String()
-	}
-	return host
 }

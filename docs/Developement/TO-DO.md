@@ -1,7 +1,20 @@
-Une fois une action faite est validé definitevement c'est a un humain de déplacer la taches dans le dossier DO et ranger le changement dans la bonne version et d'ajouter les changemnt dans Version_History.md
+CONVENTION — une tâche traitée QUITTE ce fichier. On ne la marque pas, on la supprime.
 
+Un fichier de reste-à-faire ne doit contenir que ce qui reste à faire. Des entrées
+« [FAIT] » qui s'accumulent le transforment en second historique, moins complet que le
+vrai, et on finit par ne plus savoir ce qui est ouvert d'un coup d'œil.
 
-1.[FAIT-H] [DOC]mettre a jour la Documentation pour séparé entierement les GPO voir trames struct (si il a des changement a faire dans le protcole dabord mettre ajour la documentation et demander ensuite validation)
+Les trois gestes, dans le même passage que le code :
+
+  1. l'entrée est SUPPRIMÉE d'ici et écrite dans DO/<version en cours>/<version>.md, avec
+     le détail de ce qui a été fait, ce qui a été mesuré, et ce qui n'a pas été traité ;
+  2. si une partie n'a pas été traitée, elle revient ici sous un numéro NEUF et sa propre
+     description — jamais en gardant l'ancien numéro, qui se lirait comme une tâche
+     entière non commencée ;
+  3. les changements sont consignés dans docs/Version/<majeure>/<mineure>.md, en haut.
+
+Le fichier DO est l'archive, l'historique de version est le compte rendu, celui-ci est
+la liste de courses.
 
 2.[DEPLACE] [GPO] Ajout de nouveaux Module -> voir DO/2.0/2.1.md
             Reste ouvert : mount_hardening (ecarte volontairement) et le volet user de
@@ -24,37 +37,23 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             deployments/selinux/ : collect.sh, vaultaire.te, vaultaire.fc, install.sh
             Reste a faire : un domaine dedie pour l'agent (aujourd'hui unconfined_service_t).
 
-23.[SECU] [AUTH] - Aucune limitation de debit sur l'authentification
-            Ni le portail web, ni LDAP, ni l'API n'imposent de delai ou de blocage apres
-            des echecs repetes. Le bruteforce en ligne n'a rien en face : un mot de passe
-            faible tombe en quelques heures, et rien dans les journaux ne distingue une
-            campagne d'essais d'un utilisateur maladroit.
-            A prevoir : compteur par compte ET par adresse source (un seul des deux se
-            contourne), delai croissant plutot que blocage sec — un blocage sec permet a
-            un tiers de verrouiller un compte a volonte.
+29.[SECU] [AUTH] - Les mots de passe sont haches en SHA-256 SIMPLE
+            core/global/security/password.go : un seul tour de sha256.Sum256 sur sel+mot de
+            passe. Ni bcrypt, ni scrypt, ni argon2.
 
-24.[TEST] [CI] - La CI ne lance aucun `go test`, et quatre modules n'ont aucun test
-            Le workflow dev.yaml enchaine gofmt, go vet, golangci-lint, gosec, semgrep,
-            govulncheck, trivy et hadolint — mais pas un seul test. Les 287 fonctions de
-            test du depot ne sont donc jamais executees automatiquement : une regression
-            passe la CI au vert.
-            Sans aucun test : api_client_package, vaultaire_cli, vaultaire_ctl,
-            vaultaire_proxy. Les deux premiers portent la signature des requetes API.
-            A faire : job `go test ./...` par module, avec -race sur le serveur.
+            Une limitation de debit (point 23) ne protege que l'attaque EN LIGNE. Sur une
+            base volee, un GPU essaie des milliards de candidats par seconde : un mot de
+            passe faible tombe en secondes, et aucune limite cote serveur n'y change quoi
+            que ce soit. C'est le risque DOMINANT des deux.
 
-25.[BUILD] - auto-compil.sh porte un chemin absolu en dur
-            ROOT_DIR="/mnt/c/Users/loren/Documents/git/vaultaire-core". Personne d'autre
-            ne peut compiler sans editer le script, et une CI ne le peut pas du tout.
-            A faire : deduire la racine du script lui-meme
-            (ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"), en laissant une variable
-            d'environnement la surcharger.
+            La comparaison finale « newHashHex == hashHex » n'est pas non plus a temps
+            constant — marginal sur un hachage compare a travers le reseau, mais gratuit a
+            corriger avec subtle.ConstantTimeCompare.
 
-26.[FAIT-IA] [DUCKY] - Le protocole existe en double et les deux copies ont diverge
-            src/vaultaire_client/duckynetworkClient/ et
-            src/ducky-network-sdk-service/duckynetwork/ portent les memes sept
-            repertoires — ducky_tool, key_encode_decode, keymanagement, sendmessage,
-            serveurauth, trames_manager, userauth — et leur contenu differe.
-            Un correctif de protocole doit donc etre ecrit deux fois, et le sera un jour
-            une seule. A faire : un module partage dont les deux dependent.
+            A faire : argon2id (ou bcrypt), avec reencodage TRANSPARENT a la prochaine
+            connexion reussie — la seule migration possible, puisqu'on ne peut pas
+            recalculer une empreinte forte a partir d'une faible. Prevoir une colonne qui
+            porte l'algorithme, sans quoi on ne saura pas distinguer les deux formats.
 
-
+            Touche les quatre chemins d'authentification : web, LDAP, Ducky, et la creation
+            comme le changement de mot de passe.

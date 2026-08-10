@@ -89,10 +89,19 @@ func (s superadminFictif) EstSuperadmin(u string) bool { return s.membres[u] }
 type journalFictif struct {
 	refus      []string
 	executions []string
+	echecs     []string
 }
 
 func (j *journalFictif) Refus(m string)     { j.refus = append(j.refus, m) }
 func (j *journalFictif) Execution(m string) { j.executions = append(j.executions, m) }
+
+// Echec est SÉPARÉ d'Execution, et la doublure doit le rester.
+//
+// Les deux passaient par Execution, donc au même niveau : une écriture qui
+// échoue se lisait comme une écriture réussie dans un journal filtré sur INFO.
+// Si la doublure les remettait dans la même tranche, un test ne pourrait plus
+// distinguer les deux cas et la régression repasserait sans bruit.
+func (j *journalFictif) Echec(m string) { j.echecs = append(j.echecs, m) }
 
 // porteeFixe substitue la résolution des domaines.
 //

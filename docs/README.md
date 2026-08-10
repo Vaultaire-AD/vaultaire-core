@@ -31,7 +31,6 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | Fichier | Contenu |
 | --- | --- |
 | [`Securite/SECURITY.md`](./Securite/SECURITY.md) | Politique de sécurité et signalement des vulnérabilités |
-| [`Developement/Audit_Permissions.md`](./Developement/Audit_Permissions.md) | Audit du système de permissions sur les quatre points d'entrée (Ducky, LDAP, CLI, web) |
 
 ---
 
@@ -45,7 +44,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | [`Developement/GPO.md`](./Developement/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions |
 | [`Developement/DataBase_Struct.md`](./Developement/DataBase_Struct.md) | Schéma de la base de données |
 | [`Developement/MFA_et_Expiration.md`](./Developement/MFA_et_Expiration.md) | Authentification multifacteur et expiration des mots de passe |
-| [`Developement/WebUI_Picker.md`](./Developement/WebUI_Picker.md) | Sélecteur d'entités du portail web : recherche, filtres, sélection multiple |
+| [`Developement/Journalisation.md`](./Developement/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi |
 | [`../CONTRIBUTING.MD`](../CONTRIBUTING.MD) | Comment contribuer (à la racine du dépôt) |
 
 ### Suivi des travaux

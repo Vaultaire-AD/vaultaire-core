@@ -18,12 +18,12 @@ func Command_GET_Domains_ByClientPermission(db *sql.DB, permissionName string) (
 
 	rows, err := db.Query(query, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération des domaines pour la permission client '"+permissionName+"' : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération des domaines pour la permission client '"+permissionName+"' : "+err.Error())
 		return nil, err
 	}
 	defer func() {
 		if err := rows.Close(); err != nil {
-			logs.WriteLog("db", "Erreur lors de la fermeture du rows: "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la fermeture du rows: "+err.Error())
 		}
 	}()
 
@@ -31,7 +31,7 @@ func Command_GET_Domains_ByClientPermission(db *sql.DB, permissionName string) (
 	for rows.Next() {
 		var domain string
 		if err := rows.Scan(&domain); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des domaines pour la permission client '"+permissionName+"' : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des domaines pour la permission client '"+permissionName+"' : "+err.Error())
 			return nil, err
 		}
 		domains = append(domains, domain)

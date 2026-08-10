@@ -16,10 +16,45 @@
 # qui n'avait pas compilé.
 set -euo pipefail
 
-# Variables
+# -------------------------
+# Racine du dépôt
+# -------------------------
+# Priorité : VAULTAIRE_ROOT, puis l'emplacement du script lui-même.
+#
+# C'était un chemin absolu écrit en dur :
+#
+#     ROOT_DIR="/mnt/c/Users/loren/Documents/git/vaultaire-core"
+#
+# Personne d'autre ne pouvait compiler sans éditer le script, et une CI ne le
+# pouvait pas du tout. Pire, le chemin restait valide sur la machine d'origine :
+# un second clone y compilait silencieusement le PREMIER, et l'on cherchait
+# ailleurs pourquoi les modifications n'avaient aucun effet.
+#
+# BASH_SOURCE et non $0 : $0 vaut « bash » quand le script est passé à
+# l'interpréteur (« bash auto-compil.sh ») et la racine serait alors le
+# répertoire courant, quel qu'il soit.
+#
+# `pwd -P` résout les liens symboliques : sans lui, un dépôt atteint par un lien
+# donnerait une racine qui ne correspond à aucun des chemins que Go manipule.
+if [ -n "${VAULTAIRE_ROOT:-}" ]; then
+    ROOT_DIR="$VAULTAIRE_ROOT"
+else
+    ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+fi
 
-ROOT_DIR="/mnt/c/Users/loren/Documents/git/vaultaire-core"
-#ROOT_DIR="/workspaces/vaultaire-core"
+# Contrôle que la racine EST bien le dépôt.
+#
+# Sans lui, une valeur erronée de VAULTAIRE_ROOT produirait une boucle de
+# compilation qui ne trouve aucun module — donc aucune sortie et aucune erreur,
+# `for gomod in .../src/*/go.mod` ne bouclant simplement pas. Le script
+# afficherait « Build et déploiement terminés » sans avoir rien construit.
+if [ ! -d "$ROOT_DIR/src/vaultaire_serveur" ]; then
+    echo "❌ $ROOT_DIR ne ressemble pas au dépôt : src/vaultaire_serveur est introuvable."
+    echo "   Lancez le script depuis le dépôt, ou renseignez VAULTAIRE_ROOT."
+    exit 1
+fi
+echo "📁 Racine : $ROOT_DIR"
+
 BUILD_DIR="$ROOT_DIR/cmd"
 SERVER_BIN="$BUILD_DIR/vaultaire_server/vaultaire_serveur"
 CLI_BIN="$BUILD_DIR/vaultaire_server/vaultaire_cli"
@@ -215,11 +250,10 @@ gcc -fPIC -shared -o libnss_vaultaire.so.2 nss_vaultaire.c
 
 cp ./pam*.so "$BUILD_DIR/vaultaire_client/"
 cp ./libnss_vaultaire.so.2 "$BUILD_DIR/vaultaire_client/"
-# -------------------------
-# Copier les binaires dans release Vaultaire_AD-ppd
-# -------------------------
-RELEASE_DIR="$ROOT_DIR/Vaultaire_AD-ppd"
+# RELEASE_DIR a été retiré : la variable était assignée et jamais lue, sous un
+# titre « Copier les binaires dans release » qui ne copiait rien. Le transfert
+# vers l'hôte de préproduction se fait par deployments/pre-prod/deploy.sh, en
+# rsync.
 
-
-echo "✅ Build et déploiement terminés."
+echo "✅ Build terminé — binaires dans $BUILD_DIR"
 

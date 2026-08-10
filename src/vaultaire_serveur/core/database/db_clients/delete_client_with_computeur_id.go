@@ -17,7 +17,7 @@ func Command_DELETE_ClientWithComputeurID(db *sql.DB, computeurID string) error 
 	query := `DELETE FROM id_logiciels WHERE computeur_id = ?`
 	_, err := db.Exec(query, computeurID)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la suppression du client : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la suppression du client : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression du client %s : %v", computeurID, err)
 	}
 

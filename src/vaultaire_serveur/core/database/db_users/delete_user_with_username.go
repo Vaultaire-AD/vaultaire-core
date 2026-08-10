@@ -21,7 +21,7 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
 	// Vérifier si l'utilisateur existe
 	userID, found, err := database.LookupUserID(db, username)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de l'utilisateur : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de l'utilisateur : "+err.Error())
 		return fmt.Errorf("erreur lors de la récupération de l'utilisateur : %v", err)
 	}
 	if !found {
@@ -33,7 +33,7 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
 	queryDelete := `DELETE FROM users WHERE id_user = ?`
 	_, err = db.Exec(queryDelete, userID)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la suppression de l'utilisateur : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la suppression de l'utilisateur : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression de l'utilisateur : %v", err)
 	}
 

@@ -32,7 +32,7 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 
 	rows, err := db.Query(query, username)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -62,7 +62,7 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 			&connected,
 		)
 		if err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 
@@ -81,7 +81,7 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 	userInfo.Connected = isConnected
 
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

@@ -21,7 +21,7 @@ func Command_DELETE_UserPermissionByName(db *sql.DB, permissionName string) erro
 	query := `DELETE FROM user_permission WHERE name = ?`
 	_, err := db.Exec(query, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la suppression de la permission utilisateur : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la suppression de la permission utilisateur : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression de la permission utilisateur %s : %v", permissionName, err)
 	}
 	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Permission utilisateur %s supprimée avec succès", permissionName))

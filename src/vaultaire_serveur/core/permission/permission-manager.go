@@ -15,9 +15,18 @@ import (
 // - bool : true si au moins un domaine est autorisé
 // - string : résumé textuel
 //
-// Niveaux de log : DEBUG pour le déroulé normal (silencieux par défaut, activable via storage.Debug
-// dans l'admin), WARNING pour un refus ou une action invalide (visible par défaut, utile pour l'audit
-// sécurité), ERROR uniquement pour un vrai problème système (DB indisponible, etc.).
+// # Ce que cette fonction journalise, et à quel niveau
+//
+//	DEBUG    UNE ligne par domaine accordé, portant le motif décisif —
+//	         « all », domaine exact, ou propagation, et depuis quel groupe.
+//	         Silencieux par défaut, activable par le réglage debug.
+//	WARNING  chaque refus, avec les groupes examinés. Visible par défaut :
+//	         c'est ce qu'on cherche dans un journal d'exploitation.
+//	ERROR    uniquement un vrai problème système, base indisponible en tête.
+//
+// Le déroulé pas à pas — une ligne par groupe visité, plus une pour le contenu
+// brut de sa permission — a été retiré : il produisait une quinzaine de lignes
+// par page d'administration sans jamais dire quelle règle avait tranché.
 func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToCheck []string) (bool, string) {
 	anyAllowed := false
 	var sb strings.Builder
@@ -46,8 +55,8 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 			parsedPermission := ParsePermissionContent(content)
 			if parsedPermission.All {
-				logs.Write_LogCode("DEBUG", logs.CodeNone,
-					fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d (super admin)", action, groupID))
+				logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf(
+					"droit %s (aucun domaine) : accordé (all via le groupe %d)", action, groupID))
 				return true, fmt.Sprintf("Permission super admin via groupe %d", groupID)
 			}
 		}
@@ -58,9 +67,9 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 	for _, domain := range domainsToCheck {
 		allowed := false
+		motif := ""
+
 		for _, groupID := range groupIDs {
-			logs.Write_LogCode("DEBUG", logs.CodeNone,
-				fmt.Sprintf("Vérification de la permission pour le groupe ID %d, action '%s' sur le domaine '%s'", groupID, action, domain))
 			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
@@ -68,8 +77,6 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 				continue
 			}
 
-			logs.Write_LogCode("DEBUG", logs.CodeNone,
-				fmt.Sprintf("Permission brute pour le groupe %d, action '%s': %s", groupID, action, content))
 			parsedPermission = ParsePermissionContent(content)
 
 			if parsedPermission.Deny {
@@ -77,8 +84,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 			}
 
 			if parsedPermission.All {
-				logs.Write_LogCode("DEBUG", logs.CodeNone,
-					fmt.Sprintf("Action '%s' autorisée partout (*) via groupe %d", action, groupID))
+				motif = fmt.Sprintf("all via le groupe %d", groupID)
 				sb.WriteString(fmt.Sprintf("%s : autorisée partout (*) via groupe %d", domain, groupID))
 				allowed = true
 				break
@@ -86,8 +92,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 			for _, d := range parsedPermission.NoPropagation {
 				if domain == d {
-					logs.Write_LogCode("DEBUG", logs.CodeNone,
-						fmt.Sprintf("Action '%s' autorisée uniquement sur %s (sans propagation) via groupe %d", action, domain, groupID))
+					motif = fmt.Sprintf("domaine exact via le groupe %d", groupID)
 					sb.WriteString(fmt.Sprintf("%s : autorisée (sans propagation) via groupe %d", domain, groupID))
 					allowed = true
 					break
@@ -99,8 +104,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 			for _, d := range parsedPermission.WithPropagation {
 				if domain == d || strings.HasSuffix(domain, "."+d) {
-					logs.Write_LogCode("DEBUG", logs.CodeNone,
-						fmt.Sprintf("Action '%s' autorisée sur %s (avec propagation depuis %s) via groupe %d", action, domain, d, groupID))
+					motif = fmt.Sprintf("propagation depuis %s via le groupe %d", d, groupID)
 					sb.WriteString(fmt.Sprintf("%s : autorisée (avec propagation depuis %s) via groupe %d", domain, d, groupID))
 					allowed = true
 					break
@@ -118,6 +122,24 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 			))
 			sb.WriteString(fmt.Sprintf("%s : refusée", domain))
 		} else {
+			// UNE ligne, et elle porte le MOTIF DÉCISIF.
+			//
+			// La version antérieure écrivait deux lignes par groupe et par
+			// domaine — « Vérification de la permission pour le groupe ID 4 »
+			// puis « Permission brute pour le groupe 4 » — plus une troisième
+			// à l'acceptation. Pour un compte de trois groupes, l'ouverture
+			// d'une seule page d'administration produisait une quinzaine de
+			// lignes, dont aucune ne disait ce qu'on cherche.
+			//
+			// Ce qu'on cherche en déboguant un droit, c'est QUELLE RÈGLE a
+			// tranché : « all », un domaine exact, ou une propagation, et
+			// depuis quel groupe. C'est exactement ce que porte cette ligne.
+			//
+			// Le déroulé pas à pas n'apportait rien de plus : les groupes
+			// examinés avant celui qui accorde n'ont, par construction, rien
+			// accordé.
+			logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf(
+				"droit %s sur %s : accordé (%s)", action, domain, motif))
 			anyAllowed = true
 		}
 	}

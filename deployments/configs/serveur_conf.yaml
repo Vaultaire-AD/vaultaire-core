@@ -65,6 +65,26 @@ website:
   web_tls_ip_addresses: []
   #  - 10.0.0.10
 
+  # Relais autorisés à déclarer l'adresse réelle du client, en adresses simples
+  # ou en préfixes CIDR.
+  #
+  # VIDE = l'en-tête X-Forwarded-For est IGNORÉ, et c'est l'adresse du pair TCP
+  # qui identifie la source pour la limitation des tentatives d'authentification.
+  # C'est le bon réglage quand le portail est joint directement.
+  #
+  # Le croire sans l'avoir demandé serait pire que de ne rien limiter : cet
+  # en-tête est écrit par le client, donc une valeur différente à chaque
+  # tentative lui donnerait un compteur neuf à chaque coup — et lui permettrait
+  # d'y mettre l'adresse d'un collègue pour la faire pénaliser à sa place.
+  #
+  # À renseigner SI le portail est publié derrière un reverse proxy ou un
+  # répartiteur de charge : sans cela toutes les requêtes portent l'adresse du
+  # relais, la limitation par source devient globale, et le premier balayage venu
+  # freine tout le monde.
+  web_trusted_proxies: []
+  #  - 10.0.0.5
+  #  - 192.168.10.0/24
+
 automatisation:
   sh_folder_path: "/opt/vaultaire/automatisation/"
 

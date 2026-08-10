@@ -116,12 +116,18 @@ le dépôt monté sous `/mnt/c/...`.
 ### Compiler
 
 ```bash
-# Adapter ROOT_DIR en tête du script à votre chemin local
 ./auto-compil.sh
 ```
 
-Le script vérifie les directives `go` des sept `go.mod`, compile les binaires
-dans `cmd/`, construit les modules PAM/NSS et recopie `web_packet/`.
+La racine du dépôt est **déduite de l'emplacement du script** : il fonctionne
+depuis n'importe quel répertoire et sur n'importe quelle machine. `VAULTAIRE_ROOT`
+permet de la désigner autrement, et le script refuse une racine qui ne contient
+pas `src/vaultaire_serveur` — sans ce contrôle, une valeur erronée ferait boucler
+sur zéro module et annoncer une compilation réussie sans avoir rien construit.
+
+Le script vérifie les directives `go` des sept `go.mod`, refuse les `replace`
+vers un chemin absolu, compile les binaires dans `cmd/` et construit les modules
+PAM/NSS.
 
 ### Lancer la pile préprod (serveur + MariaDB + Keycloak)
 

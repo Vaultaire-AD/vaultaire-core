@@ -78,6 +78,13 @@ func (JournalVaultaire) Execution(msg string) {
 	logs.Write_Log("INFO", msg)
 }
 
+// Echec en WARNING : une écriture qui n'aboutit pas mérite d'être vue sans
+// activer le niveau informatif, et de ne pas se confondre avec les écritures
+// réussies quand on filtre.
+func (JournalVaultaire) Echec(msg string) {
+	logs.Write_Log("WARNING", msg)
+}
+
 // PorteeUtilisateur exige le droit sur les domaines du compte visé.
 //
 // Le paramètre lu est « username ». Une action qui nommerait sa cible autrement

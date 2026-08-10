@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"strconv"
 	"strings"
+	"time"
 	"vaultaire/core/auth/passwordpolicy"
+	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
 	dbsessions "vaultaire/core/database/db_sessions"
 	dbusers "vaultaire/core/database/db_users"
@@ -43,6 +45,35 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 			trames_content.ClientSoftwareID+" try to login by auth server Has User = vaultaire", meta)
 		return ("02_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + alphaCheck + "\n" + string(token))
 	}
+	// LIMITATION DES TENTATIVES — avant tout le reste.
+	//
+	// La SOURCE est le ClientSoftwareID, PAS une adresse IP. Sur ce canal
+	// l'adresse est celle du poste — partagée par tous ses utilisateurs — ou
+	// celle du proxy, auquel cas tout le parc n'aurait qu'une seule source et le
+	// premier balayage venu freinerait tout le monde. L'identifiant de logiciel
+	// client désigne le poste lui-même, quel que soit le chemin réseau.
+	//
+	// Et il n'est pas falsifiable ici : Split_Action refuse toute trame dont le
+	// ClientSoftwareID diffère de celui figé à la poignée de main 01_01
+	// (clientMatchesSession). Le champ lu est donc déjà le BoundClientSoftwareID
+	// de la session. Sans ce contrôle en amont, un attaquant en changerait à
+	// chaque essai et repartirait d'un compteur neuf à chaque coup.
+	//
+	// REFUS IMMÉDIAT, sans attente. Cette trame arrive sur la session MACHINE,
+	// partagée, et Split_Action la traite dans la boucle de lecture : y dormir
+	// bloquerait le canal entier — GPO, révocation et les autres utilisateurs du
+	// poste compris.
+	//
+	// Le message est le même que celui d'un mot de passe faux : le distinguer
+	// dirait à l'attaquant qu'il a touché un compte réel.
+	source := trames_content.ClientSoftwareID
+	if autorisé, reste := ratelimit.Autorise(trames_content.Username, source); !autorisé {
+		logs.Write_LogCodeMeta("SECURITY", logs.CodeAuthLoginDenied,
+			trames_content.Username+" : trop de tentatives depuis "+source+
+				", encore "+reste.Round(time.Second).String(), meta)
+		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+	}
+
 	// KILL SWITCH — refus avant toute évaluation du mot de passe.
 	//
 	// Le message renvoyé est le même que pour un mot de passe faux : un compte
@@ -52,23 +83,32 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 	if permission.IsRevoked(trames_content.Username) {
 		logs.Write_LogCodeMeta("SECURITY", logs.CodeNone,
 			trames_content.Username+" : tentative d'authentification sur un compte révoqué", meta)
+		ratelimit.Echec(trames_content.Username, source)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
 
 	user_ID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), trames_content.Username)
 	if err != nil {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but user does not exist", meta)
+		ratelimit.Echec(trames_content.Username, source)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
 	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(database.GetDatabase(), user_ID)
 	if err != nil {
+		// Panne de lecture, pas un mauvais mot de passe : ne pas compter d'échec.
+		// Le faire ferait dégénérer une indisponibilité de la base en freinage
+		// général de tous les comptes qui tentent de se connecter.
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but error for get password", meta)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
 	if !gc.ComparePasswords(trames_content.Content, salt, Hpassword) {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but password is not correct", meta)
+		ratelimit.Echec(trames_content.Username, source)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
+
+	// Mot de passe prouvé : les compteurs repartent de zéro.
+	ratelimit.Reussite(trames_content.Username, source)
 
 	// ⏳ EXPIRATION DU MOT DE PASSE — après vérification réussie du mot de passe.
 	//
@@ -192,7 +232,12 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		}
 
 	} else {
+		// Challenge faux : la seconde étape de l'authentification échoue. Comptée
+		// comme le premier échec venu — sans cela, un attaquant qui obtient une
+		// 02_02 pourrait pilonner la vérification du challenge sans jamais
+		// repasser par le mot de passe, donc sans jamais être freiné.
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, username+" Does not have the permission for login to "+trames_content.ClientSoftwareID, meta)
+		ratelimit.Echec(username, trames_content.ClientSoftwareID)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nYou are not authentificate")
 
 	}

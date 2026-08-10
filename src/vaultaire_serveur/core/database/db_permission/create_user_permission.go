@@ -14,13 +14,13 @@ func CreateUserPermission(db *sql.DB, name, description string, none, web_admin,
 		name, description, none, web_admin, auth, compare, search,
 	)
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de l'insertion de la permission utilisateur CreateUserPermission : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'insertion de la permission utilisateur CreateUserPermission : "+err.Error())
 		return 0, fmt.Errorf("erreur lors de l'insertion de la permission utilisateur : %v", err)
 	}
 
 	permissionID, err := result.LastInsertId()
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la récupération de l'ID de la permission utilisateur CreateUserPermission : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la récupération de l'ID de la permission utilisateur CreateUserPermission : "+err.Error())
 		return 0, fmt.Errorf("erreur lors de la récupération de l'ID de la permission utilisateur : %v", err)
 	}
 

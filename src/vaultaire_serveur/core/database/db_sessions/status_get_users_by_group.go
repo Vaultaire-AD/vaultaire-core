@@ -34,7 +34,7 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 			logs.Write_LogCode("WARNING", logs.CodeDBGeneric, "database: Le groupe "+groupName+" n'existe pas.")
 			return nil, fmt.Errorf("le groupe '%s' n'existe pas", groupName)
 		}
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -48,14 +48,14 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 	for rows.Next() {
 		var user storage.UserConnected
 		if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.TokenExpiry); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 		users = append(users, user)
 	}
 
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

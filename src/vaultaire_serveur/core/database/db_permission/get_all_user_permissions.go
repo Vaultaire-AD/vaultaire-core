@@ -16,7 +16,7 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 
 	rows, err := db.Query(query)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération des permissions utilisateurs : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération des permissions utilisateurs : "+err.Error())
 		return nil, err
 	}
 	defer func() {
@@ -37,7 +37,7 @@ func Command_GET_AllUserPermissions(db *sql.DB) ([]storage.UserPermission, error
 			&perm.Search,
 			&perm.Web_admin,
 		); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats des permissions utilisateurs : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats des permissions utilisateurs : "+err.Error())
 			return nil, err
 		}
 		permissions = append(permissions, perm)

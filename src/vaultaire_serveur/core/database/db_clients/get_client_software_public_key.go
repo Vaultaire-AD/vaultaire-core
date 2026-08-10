@@ -18,10 +18,10 @@ func Get_Client_Software_PublicKey(db *sql.DB, clientSoftwareID string) (string,
 	err := db.QueryRow(query, clientSoftwareID).Scan(&publicKey)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			logs.WriteLog("db", "clé publique non trouvée pour clientSoftware ID"+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"clé publique non trouvée pour clientSoftware ID"+err.Error())
 			return "", fmt.Errorf("clé publique non trouvée pour clientSoftware ID %s", clientSoftwareID)
 		}
-		logs.WriteLog("db", "erreur lors de la récupération de la clé publique du clientSoftware : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la récupération de la clé publique du clientSoftware : "+err.Error())
 		return "", fmt.Errorf("erreur lors de la récupération de la clé publique du clientSoftware : %v", err)
 	}
 

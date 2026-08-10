@@ -251,7 +251,7 @@ func Create_DataBase(db *sql.DB) {
 	for _, query := range createTablesSQL {
 		_, err := db.Exec(query)
 		if err != nil {
-			logs.WriteLog("db", "Erreur lors de la création de la table : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la création de la table : "+err.Error())
 			log.Fatalf("Erreur lors de la création de la table : %v", err)
 		}
 	}

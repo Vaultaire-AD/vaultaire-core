@@ -48,7 +48,7 @@ func Command_Remove_UserPermissionFromGroup(db *sql.DB, groupName, permissionNam
 	// Vérifier si le groupe existe
 	groupID, found, err := database.LookupGroupID(db, groupName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération du groupe : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération du groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de la récupération du groupe : %v", err)
 	}
 	if !found {
@@ -58,7 +58,7 @@ func Command_Remove_UserPermissionFromGroup(db *sql.DB, groupName, permissionNam
 	// Vérifier si la permission existe (user_permission, pas client_permission)
 	permissionID, found, err := database.LookupUserPermissionID(db, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération de la permission : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération de la permission : "+err.Error())
 		return fmt.Errorf("erreur lors de la récupération de la permission : %v", err)
 	}
 	if !found {
@@ -70,7 +70,7 @@ func Command_Remove_UserPermissionFromGroup(db *sql.DB, groupName, permissionNam
 	queryCheck := `SELECT COUNT(*) FROM group_user_permission WHERE d_id_group = ? AND d_id_user_permission = ?`
 	err = db.QueryRow(queryCheck, groupID, permissionID).Scan(&count)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la vérification de la permission du groupe : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la vérification de la permission du groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de la vérification de la permission du groupe : %v", err)
 	}
 
@@ -82,7 +82,7 @@ func Command_Remove_UserPermissionFromGroup(db *sql.DB, groupName, permissionNam
 	queryRemove := `DELETE FROM group_user_permission WHERE d_id_group = ? AND d_id_user_permission = ?`
 	_, err = db.Exec(queryRemove, groupID, permissionID)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la suppression de la permission : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la suppression de la permission : "+err.Error())
 		return fmt.Errorf("erreur lors de la suppression de la permission : %v", err)
 	}
 

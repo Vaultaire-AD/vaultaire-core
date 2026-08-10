@@ -18,7 +18,7 @@ func Command_GET_Groups_ByUserPermission(db *sql.DB, permissionName string) ([]s
 
 	rows, err := db.Query(query, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur récupération groupes pour permission user '"+permissionName+"' : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur récupération groupes pour permission user '"+permissionName+"' : "+err.Error())
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
@@ -27,7 +27,7 @@ func Command_GET_Groups_ByUserPermission(db *sql.DB, permissionName string) ([]s
 	for rows.Next() {
 		var g string
 		if err := rows.Scan(&g); err != nil {
-			logs.WriteLog("db", "Erreur scan groupes pour permission user '"+permissionName+"' : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur scan groupes pour permission user '"+permissionName+"' : "+err.Error())
 			return nil, err
 		}
 		groups = append(groups, g)

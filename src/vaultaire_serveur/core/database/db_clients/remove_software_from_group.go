@@ -16,7 +16,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	// Vérifier si le logiciel existe
 	logicielID, found, err := database.LookupClientID(db, computeur_id)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération du logiciel : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la récupération du logiciel : %v", err))
 		return fmt.Errorf("erreur lors de la récupération du logiciel : %v", err)
 	}
 	if !found {
@@ -27,7 +27,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	// Vérifier si le groupe existe
 	groupID, found, err := database.LookupGroupID(db, groupName)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération du groupe : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la récupération du groupe : %v", err))
 		return fmt.Errorf("erreur lors de la récupération du groupe : %v", err)
 	}
 	if !found {
@@ -38,7 +38,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	// Vérifier si le logiciel est dans ce groupe
 	member, err := clientGroupLinkExists(db, logicielID, groupID)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la vérification du logiciel dans le groupe : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la vérification du logiciel dans le groupe : %v", err))
 		return fmt.Errorf("erreur lors de la vérification du logiciel dans le groupe : %v", err)
 	}
 
@@ -51,7 +51,7 @@ func Command_Remove_SoftwareFromGroup(db *sql.DB, computeur_id, groupName string
 	queryRemove := `DELETE FROM logiciel_group WHERE d_id_logiciel = ? AND d_id_group = ?`
 	_, err = db.Exec(queryRemove, logicielID, groupID)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la suppression du logiciel du groupe : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la suppression du logiciel du groupe : %v", err))
 		return fmt.Errorf("erreur lors de la suppression du logiciel du groupe : %v", err)
 	}
 

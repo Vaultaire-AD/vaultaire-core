@@ -31,7 +31,7 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 		if err == sql.ErrNoRows {
 			return fmt.Errorf("utilisateur %d introuvable", userID)
 		}
-		logs.WriteLog("db", "Erreur lecture username courant: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lecture username courant: "+err.Error())
 		return fmt.Errorf("erreur lecture de l'utilisateur %d: %v", userID, err)
 	}
 	if err := guardprotected.GuardProtectedUserRename(currentUsername, username); err != nil {
@@ -40,20 +40,20 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 
 	tx, err := db.Begin()
 	if err != nil {
-		logs.WriteLog("db", "Erreur début transaction update: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur début transaction update: "+err.Error())
 		return fmt.Errorf("erreur début transaction: %v", err)
 	}
 	defer func() {
 		if rerr := tx.Rollback(); rerr != nil && rerr != sql.ErrTxDone {
 			// Log rollback failure (don't usually return it, because the main err is more important)
-			logs.WriteLog("db", "Erreur rollback transaction update: "+rerr.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur rollback transaction update: "+rerr.Error())
 		}
 	}()
 
 	// Récupérer domaine principal depuis les groupes de l'utilisateur
 	mainDomain, err := dbdomains.GetUserMainDomain(db, userID)
 	if err != nil {
-		logs.WriteLog("db", "Erreur récupération domaine principal: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur récupération domaine principal: "+err.Error())
 		return fmt.Errorf("erreur récupération domaine principal: %v", err)
 	}
 
@@ -67,7 +67,7 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 	if password != "" {
 		salt, err := GenerateSalt(16)
 		if err != nil {
-			logs.WriteLog("auth", "Erreur génération salt: "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur génération salt: "+err.Error())
 			return fmt.Errorf("erreur génération salt: %v", err)
 		}
 		saltHex = hex.EncodeToString(salt)
@@ -101,12 +101,12 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 	}
 
 	if err != nil {
-		logs.WriteLog("db", "Erreur update user: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur update user: "+err.Error())
 		return fmt.Errorf("erreur update: %v", err)
 	}
 
 	if err = tx.Commit(); err != nil {
-		logs.WriteLog("db", "Erreur commit update: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur commit update: "+err.Error())
 		return fmt.Errorf("erreur commit: %v", err)
 	}
 

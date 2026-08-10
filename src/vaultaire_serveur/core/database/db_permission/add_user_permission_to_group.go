@@ -17,7 +17,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 	// Vérifier si la permission existe (user_permission)
 	permissionID, found, err := database.LookupUserPermissionID(db, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de la récupération de la permission: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de la récupération de la permission: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de la récupération de la permission: %v", err)
 	}
 	if !found {
@@ -28,7 +28,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 	// Vérifier si le groupe existe
 	groupID, found, err := database.LookupGroupID(db, groupName)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de la récupération du groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de la récupération du groupe: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de la récupération du groupe: %v", err)
 	}
 	if !found {
@@ -41,7 +41,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 	// Vérifier si la permission est déjà attribuée
 	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM group_user_permission WHERE d_id_group = ? AND d_id_user_permission = ?)", groupID, permissionID).Scan(&exists)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de la vérification de la permission du groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de la vérification de la permission du groupe: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de la vérification de la permission du groupe: %v", err)
 	}
 	if exists {
@@ -52,7 +52,7 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 	// Ajouter la permission au groupe
 	_, err = db.Exec("INSERT INTO group_user_permission (d_id_group, d_id_user_permission) VALUES (?, ?)", groupID, permissionID)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de l'ajout de la permission au groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de l'ajout de la permission au groupe: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de l'ajout de la permission au groupe: %v", err)
 	}
 

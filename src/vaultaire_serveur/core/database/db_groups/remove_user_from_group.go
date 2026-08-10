@@ -22,7 +22,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	// Vérifier si l'utilisateur existe
 	userID, found, err := database.LookupUserID(db, username)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération de l'utilisateur : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la récupération de l'utilisateur : %v", err))
 		return fmt.Errorf("erreur lors de la récupération de l'utilisateur : %v", err)
 	}
 	if !found {
@@ -33,7 +33,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	// Vérifier si le groupe existe
 	groupID, found, err := database.LookupGroupID(db, groupName)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la récupération du groupe : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la récupération du groupe : %v", err))
 		return fmt.Errorf("erreur lors de la récupération du groupe : %v", err)
 	}
 	if !found {
@@ -44,7 +44,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	// Vérifier si l'utilisateur est dans ce groupe
 	member, err := userGroupLinkExists(db, userID, groupID)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la vérification de l'utilisateur dans le groupe : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la vérification de l'utilisateur dans le groupe : %v", err))
 		return fmt.Errorf("erreur lors de la vérification de l'utilisateur dans le groupe : %v", err)
 	}
 
@@ -57,7 +57,7 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 	queryRemove := `DELETE FROM users_group WHERE d_id_user = ? AND d_id_group = ?`
 	_, err = db.Exec(queryRemove, userID, groupID)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("Erreur lors de la suppression de l'utilisateur du groupe : %v", err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la suppression de l'utilisateur du groupe : %v", err))
 		return fmt.Errorf("erreur lors de la suppression de l'utilisateur du groupe : %v", err)
 	}
 

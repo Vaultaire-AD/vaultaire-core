@@ -24,7 +24,7 @@ func Command_SET_UserPermissionAction(db *sql.DB, id int64, action string, newVa
 		query := fmt.Sprintf("UPDATE user_permission SET %s = ? WHERE id_user_permission = ?", action)
 		_, err := db.Exec(query, newValue, id)
 		if err != nil {
-			logs.WriteLog("db", fmt.Sprintf("SET legacy action '%s' permission %d: %v", action, id, err))
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("SET legacy action '%s' permission %d: %v", action, id, err))
 			return err
 		}
 		return nil
@@ -36,7 +36,7 @@ func Command_SET_UserPermissionAction(db *sql.DB, id int64, action string, newVa
 		id, action, newValue,
 	)
 	if err != nil {
-		logs.WriteLog("db", fmt.Sprintf("SET action_key '%s' permission %d: %v", action, id, err))
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("SET action_key '%s' permission %d: %v", action, id, err))
 		return err
 	}
 	return nil

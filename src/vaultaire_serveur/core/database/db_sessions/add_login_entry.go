@@ -34,7 +34,7 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 
 	tx, err := db.Begin()
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la création de la transaction :"+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la création de la transaction :"+err.Error())
 	}
 
 	var exists bool
@@ -42,9 +42,9 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 	if err != nil {
 		err = tx.Rollback()
 		if err != nil {
-			logs.WriteLog("db", "erreur lors de l'annulation de la transaction : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'annulation de la transaction : "+err.Error())
 		}
-		logs.WriteLog("db", "erreur lors de la vérification de l'existence de l'entrée did_login : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la vérification de l'existence de l'entrée did_login : "+err.Error())
 	}
 
 	if exists {
@@ -56,9 +56,9 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 		if err != nil {
 			err = tx.Rollback()
 			if err != nil {
-				logs.WriteLog("db", "erreur lors de l'annulation de la transaction : "+err.Error())
+				logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'annulation de la transaction : "+err.Error())
 			}
-			logs.WriteLog("db", "erreur lors de la mise à jour de l'entrée de connexion : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la mise à jour de l'entrée de connexion : "+err.Error())
 		}
 	} else {
 		_, err = tx.Exec(`
@@ -68,19 +68,19 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 		if err != nil {
 			err = tx.Rollback()
 			if err != nil {
-				logs.WriteLog("db", "erreur lors de l'annulation de la transaction : "+err.Error())
+				logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'annulation de la transaction : "+err.Error())
 			}
-			logs.WriteLog("db", "erreur lors de l'insertion de l'entrée de connexion : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'insertion de l'entrée de connexion : "+err.Error())
 		}
 	}
 	err = tx.Commit()
 	if err != nil {
-		logs.WriteLog("db", "erreur lors de la validation de la transaction : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la validation de la transaction : "+err.Error())
 	}
 
 	tx, err = db.Begin()
 	if err != nil {
-		logs.WriteLog("db", "failed to begin transaction:: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to begin transaction:: "+err.Error())
 	}
 	// defer tx.Rollback()
 
@@ -92,7 +92,7 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 
 	err = tx.QueryRow(checkQuery, userID, logiciel_id).Scan(&exists)
 	if err != nil {
-		logs.WriteLog("db", "failed to check existing entry: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to check existing entry: "+err.Error())
 	}
 
 	if exists {
@@ -104,7 +104,7 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 		`
 		_, err = tx.Exec(updateQuery, formattedTime, userID, logiciel_id)
 		if err != nil {
-			logs.WriteLog("db", "failed to update entry:: "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to update entry:: "+err.Error())
 		}
 	} else {
 		// Insérer une nouvelle ligne
@@ -114,13 +114,13 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 		`
 		_, err = tx.Exec(insertQuery, userID, logiciel_id, formattedTime)
 		if err != nil {
-			logs.WriteLog("db", "failed to insert new user: "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to insert new user: "+err.Error())
 		}
 	}
 
 	// Valider la transaction
 	err = tx.Commit()
 	if err != nil {
-		logs.WriteLog("db", "failed to commit transaction: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to commit transaction: "+err.Error())
 	}
 }

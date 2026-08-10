@@ -42,7 +42,7 @@ func Command_UPDATE_ClientPermission(db *sql.DB, permissionName string, isAdmin 
 		`UPDATE client_permission SET is_admin = ? WHERE name_permission = ?`,
 		isAdmin, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la mise à jour de la permission client : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la mise à jour de la permission client : "+err.Error())
 		return fmt.Errorf("erreur lors de la mise à jour de la permission client %s : %v", permissionName, err)
 	}
 

@@ -15,7 +15,7 @@ func Command_ADD_SoftwareToGroup(db *sql.DB, computeur_id, groupName string) err
 	// Vérifier si le logiciel existe
 	logicielID, found, err := database.LookupClientID(db, computeur_id)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération du logiciel : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération du logiciel : "+err.Error())
 		return fmt.Errorf("erreur lors de la récupération du logiciel : %v", err)
 	}
 	if !found {
@@ -25,7 +25,7 @@ func Command_ADD_SoftwareToGroup(db *sql.DB, computeur_id, groupName string) err
 	// Vérifier si le groupe existe
 	groupID, found, err := database.LookupGroupID(db, groupName)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la récupération du groupe : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la récupération du groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de la récupération du groupe : %v", err)
 	}
 	if !found {
@@ -35,7 +35,7 @@ func Command_ADD_SoftwareToGroup(db *sql.DB, computeur_id, groupName string) err
 	// Vérifier si le logiciel est déjà dans ce groupe
 	already, err := clientGroupLinkExists(db, logicielID, groupID)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de la vérification du logiciel dans le groupe : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de la vérification du logiciel dans le groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de la vérification du logiciel dans le groupe : %v", err)
 	}
 
@@ -47,7 +47,7 @@ func Command_ADD_SoftwareToGroup(db *sql.DB, computeur_id, groupName string) err
 	queryAdd := `INSERT INTO logiciel_group (d_id_logiciel, d_id_group) VALUES (?, ?)`
 	_, err = db.Exec(queryAdd, logicielID, groupID)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'ajout du logiciel au groupe : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'ajout du logiciel au groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de l'ajout du logiciel au groupe : %v", err)
 	}
 

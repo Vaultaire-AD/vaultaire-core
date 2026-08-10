@@ -34,7 +34,7 @@ func Command_GET_GroupDetails(db *sql.DB) ([]storage.GroupDetails, error) {
 
 	rows, err := db.Query(query)
 	if err != nil {
-		logs.WriteLog("db", "Erreur lors de l'exécution de la requête : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'exécution de la requête : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'exécution de la requête : %v", err)
 	}
 	defer func() {
@@ -51,7 +51,7 @@ func Command_GET_GroupDetails(db *sql.DB) ([]storage.GroupDetails, error) {
 		var logicielPermissionCount, userPermissionCount, userCount, clientCount int
 
 		if err := rows.Scan(&groupName, &domainName, &logicielPermissionCount, &userPermissionCount, &userCount, &clientCount); err != nil {
-			logs.WriteLog("db", "Erreur lors du scan des résultats : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
 
@@ -66,7 +66,7 @@ func Command_GET_GroupDetails(db *sql.DB) ([]storage.GroupDetails, error) {
 	}
 
 	if err = rows.Err(); err != nil {
-		logs.WriteLog("db", "Erreur lors de l'itération des résultats : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'itération des résultats : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de l'itération des résultats : %v", err)
 	}
 

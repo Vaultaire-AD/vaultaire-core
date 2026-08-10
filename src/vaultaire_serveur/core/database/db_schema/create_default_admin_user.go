@@ -41,7 +41,7 @@ func CreateDefaultAdminUser(db *sql.DB) {
 	logs.Write_Log("INFO", "bootstrap: creating new administrator")
 	salt, err := dbusers.GenerateSalt(16)
 	if err != nil {
-		logs.WriteLog("db", "génération salt admin: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"génération salt admin: "+err.Error())
 		log.Fatalf("[BOOTSTRAP] Erreur génération salt: %v", err)
 	}
 	saltHex := hex.EncodeToString(salt)

@@ -51,6 +51,19 @@ type Config struct {
 		// les utilisateurs ont en signet.
 		Web_TLS_DNSNames []string `yaml:"web_tls_dns_names"`
 		Web_TLS_IPs      []string `yaml:"web_tls_ip_addresses"`
+		// Relais autorisés à déclarer l'adresse réelle du client, en adresses
+		// simples ou en préfixes CIDR.
+		//
+		// VIDE PAR DÉFAUT : sans entrée, l'en-tête X-Forwarded-For est ignoré et
+		// c'est l'adresse du pair TCP qui compte. Croire cet en-tête parce qu'il
+		// est présent serait pire que de ne rien limiter — il est écrit par le
+		// client, donc une valeur différente à chaque tentative donne un compteur
+		// de force brute neuf à chaque coup.
+		//
+		// À renseigner quand le portail est publié derrière un reverse proxy :
+		// sans cela toutes les requêtes portent l'adresse du relais, et le premier
+		// balayage venu freine tout le monde.
+		Web_Trusted_Proxies []string `yaml:"web_trusted_proxies"`
 	} `yaml:"website"`
 	Automatisation struct {
 		Sh_folder_path *string `yaml:"sh_folder_path"`
@@ -107,6 +120,12 @@ var Website_Port int = 443
 // couvre le cas courant.
 var Web_TLS_DNSNames []string
 var Web_TLS_IPs []string
+
+// Web_Trusted_Proxies liste les relais autorisés à déclarer l'adresse réelle du
+// client dans X-Forwarded-For. Vide par défaut : sans entrée, l'en-tête est
+// ignoré et c'est l'adresse du pair TCP qui compte. Recopié dans
+// ratelimit.ProxiesDeConfiance au démarrage.
+var Web_Trusted_Proxies []string
 
 var Dns_Enable bool = true
 var Sh_folder_path string = "/opt/vaultaire/automatisation/"

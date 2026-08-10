@@ -17,7 +17,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 	// Vérifier si la permission existe (client_permission)
 	permissionID, found, err := database.LookupClientPermissionID(db, permissionName)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de la récupération de la permission: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de la récupération de la permission: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de la récupération de la permission: %v", err)
 	}
 	if !found {
@@ -28,7 +28,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 	// Vérifier si le groupe existe
 	groupID, found, err := database.LookupGroupID(db, groupName)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de la récupération du groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de la récupération du groupe: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de la récupération du groupe: %v", err)
 	}
 	if !found {
@@ -43,7 +43,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 		groupID, permissionID,
 	).Scan(&exists)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de la vérification de la permission pour le logiciel dans le groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de la vérification de la permission pour le logiciel dans le groupe: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de la vérification de la permission pour le logiciel dans le groupe: %v", err)
 	}
 	if exists {
@@ -57,7 +57,7 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 		groupID, permissionID,
 	)
 	if err != nil {
-		logs.WriteLog("db", "❌ Erreur lors de l'ajout de la permission au logiciel dans le groupe: "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"❌ Erreur lors de l'ajout de la permission au logiciel dans le groupe: "+err.Error())
 		return fmt.Errorf("❌ Erreur lors de l'ajout de la permission au logiciel dans le groupe: %v", err)
 	}
 
