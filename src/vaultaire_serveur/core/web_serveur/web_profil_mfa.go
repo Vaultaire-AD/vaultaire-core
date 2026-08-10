@@ -226,7 +226,7 @@ func confirmOwnPassword(db *sql.DB, username, password string) bool {
 
 // renderMFAEnroll affiche la page d'enrôlement.
 func renderMFAEnroll(w http.ResponseWriter, data MFAEnrollData) {
-	tmpl, err := template.ParseFiles(adminTplDir + "/profil_mfa.html")
+	tmpl, err := template.ParseFiles(CheminGabarit("profil_mfa.html"))
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "profil: template MFA illisible : "+err.Error())
 		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)

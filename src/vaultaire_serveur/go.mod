@@ -1,6 +1,7 @@
 module vaultaire
 
-go 1.25.0
+go 1.26.1
+toolchain go1.26.5
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect

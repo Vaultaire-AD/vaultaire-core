@@ -82,7 +82,7 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 	data.PasswordWarning, data.MFAEnabled, data.MFARequired = profilAuthState(db, username)
 
 	if r.Method == "GET" {
-		tmpl, err := template.ParseFiles("web_packet/sso_WEB_page/templates/profil.html")
+		tmpl, err := template.ParseFiles(CheminGabarit("profil.html"))
 		if err != nil {
 			http.Error(w, "Template manquant", 500)
 			return

@@ -93,12 +93,22 @@ func createSelfSignedCert(certFile, keyFile string) error {
 // il n'identifiait aucune machine et tout client vérifiant l'identité du
 // serveur le rejetait. Le détail est dans cert_identity.go.
 func GenerateSelfSignedCertPEM() (certPEM string, keyPEM string, err error) {
+	return GenerateSelfSignedCertPEMAvec(nil, nil)
+}
+
+// GenerateSelfSignedCertPEMAvec produit le même certificat en couvrant, en
+// plus, les noms et adresses fournis.
+//
+// Sert à `vlt certificate regenerate web|api --dns … --ip …`. Les valeurs
+// s'ajoutent à la configuration et à la détection automatique ; elles ne les
+// remplacent pas — voir construireIdentiteAvec.
+func GenerateSelfSignedCertPEMAvec(dnsSupplementaires, ipsSupplementaires []string) (certPEM string, keyPEM string, err error) {
 	priv, err := rsa.GenerateKey(rand.Reader, 2048)
 	if err != nil {
 		return "", "", err
 	}
 
-	identite := construireIdentite()
+	identite := construireIdentiteAvec(dnsSupplementaires, ipsSupplementaires)
 	serialNumber, err := numeroDeSerie()
 	if err != nil {
 		return "", "", err

@@ -4,9 +4,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"vaultaire_client/pamstate"
 
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/storage"
 )
 
 // Traitement des trames 06 côté agent.
@@ -54,7 +55,7 @@ func AskPendingFrame(sessionKey string) string {
 		"06_04",
 		"serveur_central",
 		sessionKey,
-		storage.Username,
+		pamstate.Username,
 		storage.Computeur_ID,
 	}, "\n")
 }
@@ -156,7 +157,7 @@ func applyAndReply(sessionKey string, orderID int, mode, username, reason string
 func ackFrame(sessionKey string, orderID int, result string) string {
 	return strings.Join([]string{
 		"06_02", "serveur_central", sessionKey,
-		storage.Username, storage.Computeur_ID,
+		pamstate.Username, storage.Computeur_ID,
 		strconv.Itoa(orderID), result,
 	}, "\n")
 }
@@ -171,7 +172,7 @@ func errorFrame(sessionKey string, orderID int, code, message string) string {
 	}
 	return strings.Join([]string{
 		"06_03", "serveur_central", sessionKey,
-		storage.Username, storage.Computeur_ID,
+		pamstate.Username, storage.Computeur_ID,
 		strconv.Itoa(orderID), code, message,
 	}, "\n")
 }

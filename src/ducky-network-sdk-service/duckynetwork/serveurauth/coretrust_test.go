@@ -38,6 +38,18 @@ func clePubliquePEM(t *testing.T) string {
 func repertoireDeTest(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
+
+	// La variable d'environnement l'emporte sur storage.KeyPath : la poser est
+	// donc la SEULE façon d'isoler vraiment le test. Ne réassigner que la
+	// variable de paquet laisserait un VAULTAIRE_KEY_PATH présent dans
+	// l'environnement de la machine détourner les lectures — le test écrirait
+	// dans le répertoire temporaire et lirait ailleurs, avec des échecs qui ne
+	// désigneraient rien.
+	//
+	// t.Setenv restaure la valeur précédente à la fin du test et interdit le
+	// parallélisme, ce qui est le bon comportement pour un état global.
+	t.Setenv(storage.EnvKeyPath, dir)
+
 	ancien := storage.KeyPath
 	storage.KeyPath = dir
 	t.Cleanup(func() { storage.KeyPath = ancien })

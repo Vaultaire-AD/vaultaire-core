@@ -1,6 +1,10 @@
 package main
 
 import (
+	duckytool "duckynetworkclient/V1/duckynetwork/ducky_tool"
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	tramesmanager "duckynetworkclient/V1/duckynetwork/trames_manager"
 	"flag"
 	"fmt"
 	"log"
@@ -8,10 +12,10 @@ import (
 	"time"
 	"vaultaire_client/config"
 	"vaultaire_client/gpo"
-	"vaultaire_client/logs"
 	pamcommunication "vaultaire_client/pam_communication"
+	"vaultaire_client/revocation"
 	serveurcommunication "vaultaire_client/serveur_communication"
-	"vaultaire_client/storage"
+	"vaultaire_client/sshauth"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
 	yaml_vaultaire "vaultaire_client/yaml"
@@ -40,14 +44,44 @@ func StartDailyUserCleanup() {
 	}()
 }
 
+// brancherSocleDucky raccorde l'agent au socle partagé.
+//
+// À appeler EN PREMIER dans main, avant toute ouverture de session : la boucle
+// de réception consulte le registre des gestionnaires dès la connexion établie,
+// et une catégorie branchée après coup laisserait passer sans traitement les
+// trames arrivées entre-temps.
+func brancherSocleDucky() {
+	// L'agent reste connecté. Persistent et non IsServeur : ce dernier décrit
+	// la MACHINE — serveur membre du domaine — et vient de client_software.yaml,
+	// où il vaut false pour un poste ordinaire. S'en servir pour décider de la
+	// reconnexion faisait sortir de la boucle à la première coupure.
+	storage.Persistent = true
+
+	// La boucle de connexion de l'agent, et non celle du socle : elle lit
+	// /etc/vaultaire_client/client_conf.json, au format JSON déjà déployé sur
+	// le parc, là où le socle attend du YAML.
+	duckytool.DemarrerSessionMachine = func() {
+		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+	}
+
+	// Les catégories propres à l'agent. 01 et 02 sont fournies par le socle :
+	// 01 est lue de façon synchrone avant que la boucle ne démarre, 02 est
+	// branchée par le socle lui-même.
+	tramesmanager.RegisterHandler("03", sshauth.HandleTrameSSH)
+	tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
+	tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
+}
+
 func main() {
+	brancherSocleDucky()
+
 	// ... chargement config ...
 	err := config.LoadConfig("/etc/vaultaire_client/client_conf.json")
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
 	}
-	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePath)
+	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu())
 
 	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
 	flag.Parse()

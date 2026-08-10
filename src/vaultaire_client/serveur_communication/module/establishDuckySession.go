@@ -1,16 +1,16 @@
 package module
 
 import (
+	"duckynetworkclient/V1/duckynetwork/logs"
+	serveur "duckynetworkclient/V1/duckynetwork/serveurauth"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/userauth"
+	"duckynetworkclient/V1/sessionmgr"
 	"fmt"
 	"net"
 	"strconv"
 	"time"
 	"vaultaire_client/config"
-	serveur "vaultaire_client/duckynetworkClient/serveurauth"
-	"vaultaire_client/duckynetworkClient/userauth"
-	"vaultaire_client/logs"
-	"vaultaire_client/sessionmgr"
-	"vaultaire_client/storage"
 )
 
 func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {

@@ -1,6 +1,8 @@
 package sshreq
 
-import "vaultaire_client/storage"
+import (
+	"vaultaire_client/pamstate"
+)
 
 // Pop extrait et supprime le channel de réponse associé à un utilisateur.
 // Retourne le channel et true si trouvé, sinon nil et false.
@@ -10,7 +12,7 @@ import "vaultaire_client/storage"
 //	if ch, ok := sshreq.Pop(user); ok {
 //	    ch <- result
 //	}
-func Pop(user string) (chan storage.AuthResult, bool) {
+func Pop(user string) (chan pamstate.AuthResult, bool) {
 	mu.Lock()
 	defer mu.Unlock()
 	ch, ok := requests[user]

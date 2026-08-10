@@ -2,10 +2,13 @@
 
 ## 🟢 Versions supportées
 
-| Version | Status |
+| Version | Statut |
 | ------- | ------ |
-| Alpha 1.1.3+ | ✅ Maintenue / support limitée |
-| Alpha <1.1.3 | ⚠️ Ancienne version – patch recommandé |
+| Alpha 2.0.0+ | ✅ Maintenue |
+| Alpha 1.1.x | ⚠️ Non maintenue — deux élévations de privilèges corrigées en 2.0.0, mise à jour requise |
+| Alpha < 1.1 | ❌ Abandonnée |
+
+Le détail des correctifs de sécurité est dans [`../Version/2.0/2.0.md`](../Version/2.0/2.0.md).
 
 ---
 
@@ -21,11 +24,20 @@
 
 ## ⚠️ Limitations actuelles
 
-- Linux uniquement (Rocky Linux)  
-- SSH premier-login pour utilisateur privilégié : en cours de patch  
-- username@domain : erreurs possibles sur certaines requêtes LDAP  
-- WebAdmin fonctionnelle mais interface non sécurisée  
-- Windows / macOS : non supporté
+- **Linux uniquement.** Windows et macOS ne sont ni supportés ni prévus : l'agent
+  repose sur des modules PAM et NSS
+- **Pas d'atomicité sur les actions groupées** du portail : un lot partiellement
+  appliqué est signalé dans le message, pas annulé
+- **L'écriture d'`authorized_keys` par l'agent ne se protège pas des liens
+  symboliques**, et une injection shell reste possible dans la gestion du groupe
+  sudo — 17 constats de l'audit `Audit_Client_SDK_PAM` restent ouverts
+- **Le certificat du portail web n'a ni CommonName ni SAN** :
+  `security.GenerateSelfSignedCertPEM` n'en pose pas. Le navigateur affiche un
+  avertissement contournable là où la JVM refuse net — corrigé pour LDAPS, pas
+  pour le web
+- **Aucune limitation de débit** sur l'authentification web, LDAP ou API
+- La configuration de référence livre des identifiants de démonstration
+  (`root`/`root`, `admin`/`admin123`) : à changer avant toute exposition
 
 ---
 

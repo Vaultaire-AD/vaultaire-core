@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 type ServerConfig struct {

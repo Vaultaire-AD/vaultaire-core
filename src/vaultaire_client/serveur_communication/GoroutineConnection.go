@@ -1,11 +1,11 @@
 package serveurcommunication
 
 import (
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
+	br "duckynetworkclient/V1/duckynetwork/trames_manager"
 	"fmt"
-	br "vaultaire_client/duckynetworkClient/trames_manager"
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
-	sto_session "vaultaire_client/storage/stosession"
 )
 
 func handleConnection(user string, duckysession *storage.DuckySession) {

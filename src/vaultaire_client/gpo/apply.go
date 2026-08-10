@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Moteur d'application des politiques.

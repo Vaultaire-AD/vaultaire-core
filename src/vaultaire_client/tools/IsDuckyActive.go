@@ -1,6 +1,6 @@
 package tools
 
-import sto_session "vaultaire_client/storage/stosession"
+import sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
 
 // IsDuckySessionActive vérifie s'il existe au moins une session "vaultaire"
 // authentifiée et utilisable (il peut y en avoir plusieurs ; on n'a besoin

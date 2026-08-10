@@ -3,7 +3,7 @@ package localusermanagement
 import (
 	"os/exec"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Restauration du contexte SELinux après création de fichiers.

@@ -8,6 +8,25 @@ import (
 	"time"
 )
 
+// DemarrerSessionMachine ouvre la session machine quand il n'en existe aucune.
+//
+// # Pourquoi une variable et non un appel direct
+//
+// Tous les programmes du socle n'ouvrent pas leur session de la même façon.
+// L'agent garde sa propre boucle de connexion : elle lit une configuration au
+// format JSON, déjà déployée sur le parc, là où le SDK lit du YAML. Fusionner
+// les deux formats obligerait à réécrire le fichier de configuration de chaque
+// machine — pour un gain nul, puisque les deux décrivent la même chose.
+//
+// L'indirection laisse donc chaque programme fournir sa boucle, sans dupliquer
+// OpenVaultaireDefaultSession, qui est identique pour tout le monde : c'est elle
+// que le canal PAM appelle à chaque authentification.
+//
+// À remplacer AVANT le premier appel, dans le main du programme.
+var DemarrerSessionMachine = func() {
+	serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+}
+
 func OpenVaultaireDefaultSession() *sessionmgr.Session {
 
 	var sess *sessionmgr.Session
@@ -24,7 +43,9 @@ func OpenVaultaireDefaultSession() *sessionmgr.Session {
 		// bout de 100 secondes sans rien dire d'autre que « tunnel pas prêt ».
 	} else if !IsDuckySessionActive() {
 		logs.Write_log("INFO", "Aucune session Vaultaire active, démarrage d'une nouvelle session")
-		go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		// logs.Go et non « go » : une panique dans la boucle de connexion
+		// tuerait tout le processus, pas seulement cette goroutine.
+		logs.Go("communication serveur", DemarrerSessionMachine)
 	}
 
 	if !tunnelReady {

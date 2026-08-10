@@ -1,9 +1,9 @@
 package module
 
 import (
+	"duckynetworkclient/V1/duckynetwork/storage"
 	"os"
 	"path/filepath"
-	"vaultaire_client/storage"
 )
 
 func HaveServeurKey() bool {

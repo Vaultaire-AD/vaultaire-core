@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 	localusermanagement "vaultaire_client/tools/local_user_management"
 )
 

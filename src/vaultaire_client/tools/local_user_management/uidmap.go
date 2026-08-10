@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Carte des identifiants d'utilisateurs du domaine.

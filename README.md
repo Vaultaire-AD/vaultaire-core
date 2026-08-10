@@ -90,7 +90,7 @@ vaultaire-core/
 | Schéma de base de données | [`docs/Developement/DataBase_Struct.md`](./docs/Developement/DataBase_Struct.md) |
 | Sécurité | [`docs/Securite/SECURITY.md`](./docs/Securite/SECURITY.md) |
 | SELinux, LDAPS/Keycloak | [`docs/exploitation/`](./docs/exploitation/) |
-| Historique des versions | [`docs/Version_History.md`](./docs/Version_History.md) |
+| Historique des versions | [`docs/Version_History.md`](./docs/Version_History.md) — index ; détail dans [`docs/Version/`](./docs/Version/) |
 | Reste à faire | [`docs/Developement/TO-DO.md`](./docs/Developement/TO-DO.md) |
 
 ---
@@ -99,7 +99,7 @@ vaultaire-core/
 
 | | |
 | --- | --- |
-| **Go** | ≥ 1.22 avec `GOTOOLCHAIN=auto` (le défaut). Les modules déclarent de `go 1.19` à `go 1.26.1` ; le toolchain réclamé est téléchargé automatiquement. La CI compile avec **1.26.5**. |
+| **Go** | **1.26** pour les sept modules, avec `toolchain go1.26.5`. Un Go local plus ancien suffit : `GOTOOLCHAIN=auto` — le défaut — télécharge le toolchain réclamé. La CI compile avec 1.26.5. |
 | **GCC + `libpam0g-dev`** | Pour les modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) |
 | **Docker / Docker Compose** | ≥ 24.x, pour les environnements dev et préprod |
 | **MariaDB** | Fournie par le compose ; sinon instance accessible |
@@ -194,8 +194,9 @@ git status          # ne doit lister que de vraies modifications
   transférés par `rsync` (`deployments/pre-prod/deploy.sh`).
 - 📂 **Respecter la structure** : toute nouvelle fonctionnalité vit dans `src/`,
   avec ses tests.
-- 🗒️ **Documenter les changements** : mise à jour de
-  [`docs/Version_History.md`](./docs/Version_History.md) obligatoire.
+- 🗒️ **Documenter les changements** : consigner dans le fichier de la version en
+  cours, `docs/Version/<majeure>/<mineure>.md`. Les nouvelles entrées vont **en
+  haut**.
 - 🔁 **Modifier le portail web dans `web_packet/`**, jamais dans `cmd/web_packet/`,
   qui est écrasé à chaque compilation.
 - ✅ Une tâche terminée se déplace de `docs/Developement/TO-DO.md` vers

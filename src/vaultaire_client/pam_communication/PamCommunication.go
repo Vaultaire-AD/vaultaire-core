@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"syscall"
+	"vaultaire_client/pamstate"
 
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 func isValidUserInput(input string) bool {
@@ -75,7 +75,7 @@ func handleUnixSocketConnection(conn net.Conn) {
 
 // UnixSocketServer ouvre le canal PAM à l'emplacement configuré.
 func UnixSocketServer() {
-	serveSocket(storage.SocketPath)
+	serveSocket(pamstate.SocketPath)
 }
 
 // serveSocket fait le travail, sur un chemin EXPLICITE.
@@ -100,13 +100,13 @@ func serveSocket(chemin string) {
 	// retire, sans traiter l'échec comme fatal : le fichier peut appartenir à
 	// quelqu'un d'autre, ce qui est précisément le scénario d'attaque et mérite
 	// d'être signalé plutôt que d'empêcher l'agent de démarrer.
-	if _, err := os.Stat(storage.LegacySocketPath); err == nil {
-		if err := os.Remove(storage.LegacySocketPath); err != nil {
+	if _, err := os.Stat(pamstate.LegacySocketPath); err == nil {
+		if err := os.Remove(pamstate.LegacySocketPath); err != nil {
 			logs.Write_log("CRITICAL", fmt.Sprintf(
 				"socket PAM : ancien socket %s non supprimé (%v) — vérifiez à qui il appartient",
-				storage.LegacySocketPath, err))
+				pamstate.LegacySocketPath, err))
 		} else {
-			logs.Write_log("WARNING", "socket PAM : ancien socket "+storage.LegacySocketPath+" supprimé")
+			logs.Write_log("WARNING", "socket PAM : ancien socket "+pamstate.LegacySocketPath+" supprimé")
 		}
 	}
 

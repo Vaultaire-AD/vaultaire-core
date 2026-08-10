@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Cycles complets : demander, appliquer, enregistrer l'état, rapporter.

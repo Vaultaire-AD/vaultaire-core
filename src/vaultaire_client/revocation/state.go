@@ -15,7 +15,7 @@ import (
 	"sync"
 	"time"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // État local des ordres déjà appliqués.

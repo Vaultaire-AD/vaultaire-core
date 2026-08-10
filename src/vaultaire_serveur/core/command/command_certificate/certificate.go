@@ -2,7 +2,15 @@
 //
 //	vlt certificate list
 //	vlt certificate show ldaps
-//	vlt certificate regenerate ldaps [--dns nom1,nom2] [--ip 10.0.0.1,10.0.0.2]
+//	vlt certificate regenerate ldaps|web|api|all [--dns nom1,nom2] [--ip 10.0.0.1,10.0.0.2]
+//
+// # Pourquoi le portail et l'API sont régénérables
+//
+// Leurs certificats sont produits une seule fois, au premier démarrage, puis
+// conservés en base. Une déclaration `web_tls_dns_names` ajoutée ensuite en
+// configuration restait donc sans effet, et rien ne le signalait : le
+// navigateur affichait ERR_CERT_COMMON_NAME_INVALID et le seul recours était de
+// supprimer la ligne en base à la main.
 //
 // # Pourquoi une commande, et pas seulement une régénération automatique
 //
@@ -23,6 +31,7 @@ import (
 	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
 	dbcertificates "vaultaire/core/database/db_certificates"
+	"vaultaire/core/global/security"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -171,8 +180,7 @@ func showCertificate(args []string, appelant action.Appelant) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "Certificat %s\n  %s\n\n", nom, ldaptools.CertSummary(certPEM))
 
-	attendus := ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
-	issues := ldaptools.AuditServedCertificate(certPEM, attendus)
+	issues := ldaptools.AuditServedCertificate(certPEM, nomsAttendus(nom))
 	if len(issues) == 0 {
 		b.WriteString("Aucun défaut constaté.\n\n")
 	} else {
@@ -194,9 +202,50 @@ func showCertificate(args []string, appelant action.Appelant) string {
 	return b.String()
 }
 
+// nomsAttendus rend les noms que le certificat DEVRAIT couvrir.
+//
+// Le jeu dépend du service : LDAPS est configuré par `ldaps_tls_dns_names`, le
+// portail et l'API par `web_tls_dns_names`. Ce sont deux entrées distinctes de
+// la configuration, parce que ces services ne sont pas joints par les mêmes
+// noms — le portail par une URL en signet, l'annuaire par un alias de service.
+//
+// Avant, `show web` était audité contre les noms du LDAPS : un certificat
+// parfaitement valide se voyait reprocher de ne pas couvrir un alias d'annuaire
+// qui n'avait rien à y faire, et un vrai défaut se serait perdu dans ce bruit.
+func nomsAttendus(nom string) ldaptools.SANSet {
+	if nom == duckykey.LDAPSServerCertName {
+		return ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+	}
+	return ldaptools.BuildSANSet(storage.Web_TLS_DNSNames, storage.Web_TLS_IPs)
+}
+
+// certificatsRegenerables décrit ce que la commande sait reconstruire.
+//
+// # Pourquoi le portail et l'API ont rejoint la liste
+//
+// Ils en étaient absents, et la commande refusait explicitement tout autre nom
+// que LDAPS. Or leurs certificats sont produits UNE FOIS, au premier démarrage,
+// puis conservés en base : `web_tls_dns_names` ajouté ensuite dans la
+// configuration n'avait aucun effet, et rien ne le signalait.
+//
+// L'administrateur se retrouvait devant un avertissement de navigateur
+// (ERR_CERT_COMMON_NAME_INVALID) sans autre recours que de supprimer la ligne
+// en base à la main. Le correctif de l'identité des certificats était donc
+// écrit, testé — et inatteignable sur toute installation déjà démarrée.
+var certificatsRegenerables = map[string]struct {
+	nom         string
+	description string
+	service     string
+}{
+	duckykey.LDAPSServerCertName: {duckykey.LDAPSServerCertName, "Certificat TLS LDAPS", "l'écouteur LDAPS"},
+	duckykey.WebServerCertName:   {duckykey.WebServerCertName, "Certificat TLS portail web", "le portail web"},
+	duckykey.APIServerCertName:   {duckykey.APIServerCertName, "Certificat TLS API REST", "l'API REST"},
+}
+
 func regenerate(args []string, senderUsername string) string {
 	nom := duckykey.LDAPSServerCertName
 	var dnsSupp, ipsSupp []string
+	tous := false
 
 	for i := 0; i < len(args); i++ {
 		switch strings.ToLower(args[i]) {
@@ -213,45 +262,77 @@ func regenerate(args []string, senderUsername string) string {
 			i++
 		default:
 			if !strings.HasPrefix(args[i], "-") {
-				nom = nomCanonique(args[i])
+				if c := nomCanonique(args[i]); c == "all" {
+					tous = true
+				} else {
+					nom = c
+				}
 			}
 		}
 	}
 
-	if nom != duckykey.LDAPSServerCertName {
-		return fmt.Sprintf("Seul le certificat %q est régénérable par cette commande pour le moment.",
-			duckykey.LDAPSServerCertName)
+	if tous {
+		var b strings.Builder
+		// Ordre fixe : une sortie qui change d'ordre d'une exécution à l'autre
+		// est pénible à comparer, et les maps Go n'en garantissent aucun.
+		for _, n := range []string{duckykey.LDAPSServerCertName, duckykey.WebServerCertName, duckykey.APIServerCertName} {
+			b.WriteString(regenererUn(n, dnsSupp, ipsSupp, senderUsername))
+			b.WriteString("\n")
+		}
+		return b.String()
 	}
 
-	sans := ldaptools.BuildSANSet(
-		append(append([]string{}, ldaptools.ConfiguredDNSNames()...), dnsSupp...),
-		append(append([]string{}, ldaptools.ConfiguredIPs()...), ipsSupp...))
+	if _, connu := certificatsRegenerables[nom]; !connu {
+		return fmt.Sprintf("Certificat %q inconnu. Valeurs acceptées : ldaps, web, api, all.", nom)
+	}
+	return regenererUn(nom, dnsSupp, ipsSupp, senderUsername)
+}
 
-	certPEM, keyPEM, err := ldaptools.GenerateLDAPSCertPEM(sans)
+// regenererUn reconstruit un certificat et le remplace en base.
+func regenererUn(nom string, dnsSupp, ipsSupp []string, senderUsername string) string {
+	info := certificatsRegenerables[nom]
+
+	var certPEM, keyPEM string
+	var err error
+
+	if nom == duckykey.LDAPSServerCertName {
+		// LDAPS garde son propre générateur : ses SAN sont construits par
+		// BuildSANSet, qui applique les règles particulières attendues par les
+		// clients Java — voir docs/exploitation/ldaps_keycloak.md.
+		sans := ldaptools.BuildSANSet(
+			append(append([]string{}, ldaptools.ConfiguredDNSNames()...), dnsSupp...),
+			append(append([]string{}, ldaptools.ConfiguredIPs()...), ipsSupp...))
+		certPEM, keyPEM, err = ldaptools.GenerateLDAPSCertPEM(sans)
+	} else {
+		// Portail et API : même générateur qu'au premier démarrage, donc mêmes
+		// CommonName et SubjectAltName. Régénérer ne doit pas produire un
+		// certificat d'une autre nature que celui qu'on remplace.
+		certPEM, keyPEM, err = security.GenerateSelfSignedCertPEMAvec(dnsSupp, ipsSupp)
+	}
 	if err != nil {
-		return "Génération impossible : " + err.Error()
+		return fmt.Sprintf("Certificat %s : génération impossible — %v\n", nom, err)
 	}
 
 	// Suppression puis création : SaveCertificateToDB refuse d'écraser, et
 	// c'est un bon défaut ailleurs. Ici le remplacement est ce qu'on demande.
 	if existant, errGet := dbcertificates.GetCertificateByName(nom); errGet == nil {
 		if errDel := dbcertificates.DeleteCertificate(existant.ID); errDel != nil {
-			return "Ancien certificat non supprimé : " + errDel.Error()
+			return fmt.Sprintf("Certificat %s : ancien non supprimé — %v\n", nom, errDel)
 		}
 	}
-	if err := duckykey.SaveCertificateToDB(nom, "tls_cert", "Certificat TLS LDAPS", certPEM, keyPEM); err != nil {
-		return "Enregistrement impossible : " + err.Error()
+	if err := duckykey.SaveCertificateToDB(nom, "tls_cert", info.description, certPEM, keyPEM); err != nil {
+		return fmt.Sprintf("Certificat %s : enregistrement impossible — %v\n", nom, err)
 	}
 
 	logs.Write_Log("INFO", fmt.Sprintf(
-		"certificate: certificat LDAPS régénéré par %s — %s", senderUsername, ldaptools.CertSummary(certPEM)))
+		"certificate: certificat %s régénéré par %s — %s", nom, senderUsername, ldaptools.CertSummary(certPEM)))
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Certificat LDAPS régénéré.\n  %s\n\n", ldaptools.CertSummary(certPEM))
+	fmt.Fprintf(&b, "Certificat %s régénéré.\n  %s\n\n", nom, ldaptools.CertSummary(certPEM))
 	// Le redémarrage est obligatoire et facile à oublier : le certificat est
 	// chargé une fois, à l'ouverture de l'écouteur TLS. Sans redémarrage, le
 	// serveur continue de présenter l'ancien et le diagnostic repart à zéro.
-	b.WriteString("⚠ Redémarrez le serveur : le certificat est chargé au démarrage de l'écouteur LDAPS.\n")
+	fmt.Fprintf(&b, "⚠ Redémarrez le serveur : le certificat est chargé au démarrage de %s.\n", info.service)
 	b.WriteString("⚠ L'empreinte a changé — chaque client qui l'avait importé doit réimporter.\n\n")
 	b.WriteString("À importer dans le magasin de confiance des clients :\n\n")
 	b.WriteString(certPEM)
@@ -263,6 +344,12 @@ func nomCanonique(v string) string {
 	switch strings.ToLower(strings.TrimSpace(v)) {
 	case "ldaps", "ldap", "ldaps_server":
 		return duckykey.LDAPSServerCertName
+	case "web", "web_server", "portail", "sso":
+		return duckykey.WebServerCertName
+	case "api", "api_server", "rest":
+		return duckykey.APIServerCertName
+	case "all", "tous", "tout":
+		return "all"
 	default:
 		return strings.TrimSpace(v)
 	}
@@ -274,7 +361,11 @@ func helpText() string {
   list                    certificats en base et ce qu'ils couvrent
   show [ldaps]            détail, défauts constatés, et PEM à distribuer
   fingerprint             empreinte de la clé du core, attendue par les agents
-  regenerate ldaps        régénère le certificat LDAPS
+  regenerate <cible>      régénère un certificat et le remplace en base
+      ldaps               écouteur LDAPS
+      web                 portail web
+      api                 API REST
+      all                 les trois
       --dns nom1,nom2     noms DNS supplémentaires à couvrir
       --ip  10.0.0.1      adresses supplémentaires à couvrir
 

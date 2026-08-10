@@ -3,7 +3,7 @@ package revocation
 import (
 	"sync"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Émission de trames hors réponse directe.

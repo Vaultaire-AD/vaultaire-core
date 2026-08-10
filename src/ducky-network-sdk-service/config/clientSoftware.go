@@ -5,7 +5,6 @@ import (
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"gopkg.in/yaml.v2"
 )
@@ -34,8 +33,12 @@ type ClientSoftware struct {
 // Il vit à côté des clés, dans KeyPath, et non près de la configuration : les
 // deux vont ensemble. Une identité sans sa clé privée est inutilisable, et les
 // séparer permettrait d'en sauvegarder une sans l'autre.
+//
+// VAULTAIRE_CLIENT_SOFTWARE permet malgré tout de les séparer, pour un
+// déploiement qui range vraiment l'identité sur un volume distinct de celui des
+// secrets. La résolution complète est dans storage.SoftwarePathResolu.
 func ClientSoftwarePath() string {
-	return filepath.Join(storage.KeyPath, "client_software.yaml")
+	return storage.SoftwarePathResolu()
 }
 
 // LoadClientSoftware lit l'identité et renseigne les variables globales.
@@ -81,8 +84,8 @@ func SaveClientSoftware(computeurID, logicielType string, isServeur bool) error 
 	if err != nil {
 		return fmt.Errorf("sérialisation de l'identité : %w", err)
 	}
-	if err := os.MkdirAll(storage.KeyPath, 0700); err != nil {
-		return fmt.Errorf("création de %s : %w", storage.KeyPath, err)
+	if err := os.MkdirAll(storage.KeyPathResolu(), 0700); err != nil {
+		return fmt.Errorf("création de %s : %w", storage.KeyPathResolu(), err)
 	}
 	path := ClientSoftwarePath()
 	if err := os.WriteFile(path, data, 0600); err != nil {

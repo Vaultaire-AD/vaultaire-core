@@ -13,7 +13,10 @@ import (
 	duckykey "vaultaire/ducky-network/key_management"
 )
 
-var templates = template.Must(template.ParseFiles("./web_packet/sso_WEB_page/templates/sso_login.html"))
+// Le gabarit de connexion est analysé au chargement du paquet : une erreur ici
+// empêche le démarrage, ce qui est voulu — sans page de connexion, personne
+// n'entre. Le chemin passe par CheminGabarit, seule source de vérité.
+var templates = template.Must(template.ParseFiles(CheminGabarit("sso_login.html")))
 
 func StartWebServer() {
 	certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.WebServerCertName)
@@ -37,7 +40,8 @@ func StartWebServer() {
 	}
 	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 
-	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir("./web_packet/sso_WEB_page/static"))))
+	VerifierRessourcesWeb()
+	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(RepertoireStatiques()))))
 	http.HandleFunc("/", LoginPageHandler)
 	http.HandleFunc("/login", LoginHandler)
 	// Étape du second facteur : atteignable uniquement avec le cookie

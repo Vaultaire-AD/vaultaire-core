@@ -77,10 +77,18 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 ---
 
-## 🕰️ Historique
+## 🕰️ Versions
 
-[`Version_History.md`](./Version_History.md) — versions, correctifs et changements
-de protocole, de l'Alpha 1.0 à l'Alpha 2.0.0 « PIG ».
+[`Version_History.md`](./Version_History.md) est l'**index**. Le détail vit dans
+[`Version/`](./Version/), un dossier par version majeure et un fichier par
+version mineure, **du plus récent au plus ancien**.
+
+| Fichier | Contenu |
+| --- | --- |
+| [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Cycle 2.1 — refactorisation, et travaux non publiés |
+| [`Version/2.0/2.0.md`](./Version/2.0/2.0.md) | Alpha 2.0.0 « PIG » — les deux audits de sécurité |
+| [`Version/1.0/1.1.md`](./Version/1.0/1.1.md) | Cycle 1.1 — GPO, LDAP puis LDAPS, portail web, API |
+| [`Version/1.0/1.0.md`](./Version/1.0/1.0.md) | Cycle 1.0 « ROCKET » — premières versions |
 
 ---
 

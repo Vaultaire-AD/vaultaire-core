@@ -7,7 +7,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"duckynetworkclient/V1/duckynetwork/storage"
@@ -55,7 +54,7 @@ const FingerprintFileName = "core_key_fingerprint"
 
 // CoreFingerprintPath rend le chemin du fichier d'empreinte.
 func CoreFingerprintPath() string {
-	return filepath.Join(storage.KeyPath, FingerprintFileName)
+	return storage.CheminDansKeyPath(FingerprintFileName)
 }
 
 // EmpreinteClePublique calcule l'empreinte d'une clé publique au format PEM.
@@ -139,7 +138,7 @@ func (e *ErrCleCoreInattendue) Error() string {
 			"  reçue est bien la sienne, avec « vlt certificate show core » ou\n"+
 			"  « openssl pkey -pubin -in <clé> -outform DER | openssl dgst -sha256 -binary | base64 ».",
 		e.Attendue, e.Recue,
-		CoreFingerprintPath(), filepath.Join(storage.KeyPath, "serveurpublickey.pem"))
+		CoreFingerprintPath(), storage.CheminDansKeyPath("serveurpublickey.pem"))
 }
 
 // VerifierCleCore compare la clé reçue à l'empreinte connue.
@@ -230,7 +229,7 @@ func VerifierCleCore(pemRecu string) (avertissement string, err error) {
 //	true, motif   la clé est à écarter et à redemander
 //	false, ""     rien à faire — conforme, absente, ou non vérifiable
 func CleLocaleConforme() (aEcarter bool, motif string) {
-	cheminCle := filepath.Join(storage.KeyPath, "serveurpublickey.pem")
+	cheminCle := storage.CheminDansKeyPath("serveurpublickey.pem")
 
 	contenu, err := os.ReadFile(cheminCle)
 	if os.IsNotExist(err) {
@@ -285,7 +284,7 @@ func CleLocaleConforme() (aEcarter bool, motif string) {
 // Séparée de la vérification : constater et agir sont deux choses, et l'appelant
 // doit pouvoir journaliser le motif avant que le fichier ne disparaisse.
 func EcarterCleLocale() error {
-	chemin := filepath.Join(storage.KeyPath, "serveurpublickey.pem")
+	chemin := storage.CheminDansKeyPath("serveurpublickey.pem")
 	if err := os.Remove(chemin); err != nil && !os.IsNotExist(err) {
 		return fmt.Errorf("suppression de %s : %w", chemin, err)
 	}
@@ -302,7 +301,7 @@ func EcrireEmpreinte(empreinte string) error {
 	if !strings.HasPrefix(empreinte, "SHA256:") {
 		return fmt.Errorf("empreinte %q : forme attendue « SHA256:... »", empreinte)
 	}
-	if err := os.MkdirAll(storage.KeyPath, 0o700); err != nil {
+	if err := os.MkdirAll(storage.KeyPathResolu(), 0o700); err != nil {
 		return err
 	}
 	contenu := "# Empreinte de la clé publique du core, déposée à l'installation.\n" +

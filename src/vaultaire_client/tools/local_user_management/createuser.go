@@ -2,12 +2,12 @@ package localusermanagement
 
 import (
 	"bufio"
+	"duckynetworkclient/V1/duckynetwork/logs"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"vaultaire_client/logs"
 )
 
 // ProvisionVaultaireUser : La fonction maîtresse (Brute Force + UID Dynamique)

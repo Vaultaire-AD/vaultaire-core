@@ -1,20 +1,21 @@
 package serveurcommunication
 
 import (
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/storage/stosession"
+	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
 	"fmt"
 	"time"
-	"vaultaire_client/duckynetworkClient/sendmessage"
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
-	"vaultaire_client/storage/stosession"
-	sto_session "vaultaire_client/storage/stosession"
+	"vaultaire_client/pamstate"
 	"vaultaire_client/tools/sshreq"
 )
 
 func WaitForSSHFetch(user string, sshUser string) {
 	logs.Write_log("INFO", fmt.Sprintf("Attente de clé fetch pour requete SSH (%s)", sshUser))
 	// 1. On prépare le canal de réception
-	respChan := make(chan storage.AuthResult, 1)
+	respChan := make(chan pamstate.AuthResult, 1)
 	sshreq.Register(sshUser, respChan)
 
 	// 2. Boucle d'attente du TUNNEL : on interroge le manager de sessions

@@ -1,5 +1,20 @@
 #!/bin/bash
-# set -euo pipefail
+# Arrêt à la première erreur.
+#
+#   -e            une commande qui échoue interrompt le script
+#   -u            une variable non définie est une erreur, pas une chaîne vide
+#   -o pipefail   un échec au milieu d'un tuyau n'est pas masqué par le succès
+#                 de la dernière commande
+#
+# Sans -e, un script de déploiement poursuit après une étape ratée et rend 0 :
+# la copie continue avec des binaires non compilés, le conteneur redémarre sur
+# l'ancienne version, et rien ne le signale.
+#
+# La ligne était présente, en commentaire, depuis l'écriture du script. Elle est
+# activée : une compilation ratée laissait jusqu'ici l'ancien binaire en place
+# et le script rendait 0, si bien qu'on déployait sans le savoir une version
+# qui n'avait pas compilé.
+set -euo pipefail
 
 # Variables
 
@@ -148,8 +163,18 @@ build_go() {
 # -------------------------
 build_go "du serveur" "$ROOT_DIR/src/vaultaire_serveur/main" "$SERVER_BIN"
 
-# Copier web_packet
-cp -r "$ROOT_DIR/web_packet" "$BUILD_DIR/"
+# web_packet n'est PLUS recopié dans cmd/.
+#
+# La copie ne servait personne : les fichiers Compose montent ../../web_packet,
+# c'est-à-dire la source, et deploy.sh ne transfère que les binaires — le code
+# arrive sur l'hôte par git pull. Seul un test lisait la copie, et jugeait donc
+# une version périmée.
+#
+# Elle nuisait, en revanche : une modification de gabarit paraissait sans effet
+# tant que ce script n'avait pas tourné.
+#
+# Le serveur cherche web_packet/sso_WEB_page relativement à son répertoire de
+# travail ; VAULTAIRE_WEB_PACKET permet de le désigner autrement.
 
 build_go "du CLI"    "$ROOT_DIR/src/vaultaire_cli"    "$CLI_BIN"
 build_go "du client" "$ROOT_DIR/src/vaultaire_client" "$CLIENT_BIN"

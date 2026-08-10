@@ -8,7 +8,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
-	"path/filepath"
 )
 
 // KeyBits est la taille des clés générées.
@@ -43,8 +42,8 @@ func GenerateClientKeyPair() (string, error) {
 	}
 	publicPEM := pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: publicDER})
 
-	if err := os.MkdirAll(storage.KeyPath, 0700); err != nil {
-		return "", fmt.Errorf("création de %s : %w", storage.KeyPath, err)
+	if err := os.MkdirAll(storage.KeyPathResolu(), 0700); err != nil {
+		return "", fmt.Errorf("création de %s : %w", storage.KeyPathResolu(), err)
 	}
 
 	// La PRIVÉE d'abord, en 0600.
@@ -53,10 +52,10 @@ func GenerateClientKeyPair() (string, error) {
 	// publique, ce qui est réparable — la publique se redérive de la privée.
 	// L'inverse laisserait une publique orpheline, dont rien ne dit qu'elle ne
 	// correspond à aucune clé détenue.
-	if err := os.WriteFile(filepath.Join(storage.KeyPath, "private_key.pem"), privatePEM, 0600); err != nil {
+	if err := os.WriteFile(storage.CheminDansKeyPath("private_key.pem"), privatePEM, 0600); err != nil {
 		return "", fmt.Errorf("écriture de la clé privée : %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(storage.KeyPath, "public.pem"), publicPEM, 0644); err != nil {
+	if err := os.WriteFile(storage.CheminDansKeyPath("public.pem"), publicPEM, 0644); err != nil {
 		return "", fmt.Errorf("écriture de la clé publique : %w", err)
 	}
 	return string(publicPEM), nil
@@ -64,6 +63,6 @@ func GenerateClientKeyPair() (string, error) {
 
 // HasClientKeys indique si la paire du service est déjà en place.
 func HasClientKeys() bool {
-	_, err := os.Stat(filepath.Join(storage.KeyPath, "private_key.pem"))
+	_, err := os.Stat(storage.CheminDansKeyPath("private_key.pem"))
 	return err == nil
 }

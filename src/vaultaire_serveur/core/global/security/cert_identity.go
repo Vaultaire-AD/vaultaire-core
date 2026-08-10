@@ -75,6 +75,27 @@ type identiteCertificat struct {
 // machine elle-même. Une omission ici se paie par une erreur TLS que rien ne
 // rattache à ce fichier.
 func construireIdentite() identiteCertificat {
+	return construireIdentiteAvec(nil, nil)
+}
+
+// construireIdentiteAvec ajoute des noms et des adresses fournis à la volée.
+//
+// # Pourquoi ce paramètre existe
+//
+// Les certificats du portail et de l'API sont produits UNE FOIS, au premier
+// démarrage, puis conservés en base. Déclarer `web_tls_dns_names` après coup
+// n'avait donc aucun effet : le certificat déjà stocké n'était jamais
+// reconstruit, et l'administrateur voyait sa configuration ignorée sans qu'un
+// message le dise.
+//
+// `vlt certificate regenerate web` reconstruit le certificat, et ses options
+// `--dns` / `--ip` passent par ici — pour couvrir un nom sans avoir à modifier
+// la configuration puis redémarrer, quand on cherche encore lequel il faut.
+//
+// Les valeurs fournies s'AJOUTENT à la configuration et à la détection
+// automatique : régénérer avec `--dns sso.exemple.fr` ne doit pas faire perdre
+// l'adresse locale par laquelle on teste.
+func construireIdentiteAvec(dnsSupplementaires, ipsSupplementaires []string) identiteCertificat {
 	noms := map[string]bool{}
 	ips := map[string]net.IP{}
 
@@ -111,6 +132,14 @@ func construireIdentite() identiteCertificat {
 		ajouterNom(n)
 	}
 	for _, a := range storage.Web_TLS_IPs {
+		ajouterIP(a)
+	}
+
+	// 1 bis. Ce que la commande de régénération a passé sur la ligne.
+	for _, n := range dnsSupplementaires {
+		ajouterNom(n)
+	}
+	for _, a := range ipsSupplementaires {
 		ajouterIP(a)
 	}
 

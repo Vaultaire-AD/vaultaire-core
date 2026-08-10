@@ -1,308 +1,45 @@
-# 🕰️ Historique des Versions & Changements
+# 🕰️ Historique des versions
 
--   ## 🔰 Alpha
+Index. Le détail de chaque version vit dans `docs/Version/`, un dossier par
+version majeure et un fichier par version mineure.
 
-    - ### 🚀 **Alpha 1.0** *(nom de code : ROCKET)* - *06/03/2025*  
-        **Première version Alpha de Vaultaire_AD**  
-
-        📌 **Fonctionnalités incluses :**  
-            - Implémentation des **commandes principales** du serveur. - Lorens Viguie
-            - **Gestion des Admin Locaux** fonctionnelle via les permissions. - Lorens Viguie
-            - **Compatibilité Linux uniquement**. - Lorens Viguie  
-            - Fichiers de configuration **minimaux** : - Lorens Viguie  
-                - `server.conf` : Port d’écoute & base de données.  
-                - `client.conf` : IP du serveur.  
-
-        ⚠️ **Limitations connues :**  
-            - **Permissions et gestion des groupes** non encore fonctionnelles. - Lorens Viguie  
-            - **Compatibilité Windows & macOS** non supportée. - Lorens Viguie  
-            - ☠️ **Intégrité Du DuckyNetwork Compromise**. - Lorens Viguie
-
-        📅 **À venir dans les prochaines versions :**  
-            - Implémentation des **règles de permissions Client et groupes**.    
-            - Amélioration de la **sécurité patch de la faille connue**.  
-            - Implementation Du **Super Administrateur**
-
-        - #### 🛠️ Patch**Alpha 1.0.1** - *08/03/2025*
-            - Correction des verification des droit administrateur via les permission client et non plus user - Lorens Viguie
-            - Correction du bug de logout qui faisait crash les clients - Lorens Viguie
-            - Correction du bug sur les commandes delete via le cli - Lorens Viguie
-            - Correction du bug du never failed sur la connection tjrs timeout - Lorens Viguie
-            - ajout de la commande get -p pour voire toutes les permissions - Lorens Viguie
-            - ajout du check des entrée utilisateur lors de relation avec la database - Lorens Viguie
-            - Ajout du check des connection via la presence dans le meme groupe ou permission pour les user et les clients - Lorens Viguie
-        - #### 🛠️ Patch**Alpha 1.0.2** - *15/03/2025*
-            - Correction du bug d'affichage lors de la création d'un client - Lorens Viguie
-            - Correction du bug qui empecher de crée des groupes -> **UPDATE** dans la man sur la commande create -g - Lorens Viguie
-            - Correction du bug qui faisait crash le serveur avec vlt get -g groupequiexsitepas - Lorens Viguie
-            - Correction des bug qui empeche de delete des user client et group - Lorens Viguie
-            - Correction du bug qui empeche de retiré une perm client a un group - Lorens Viguie
-            - Ajout a la commande get -p d'une colone IsAdmin pour voir si une perm est admin - Lorens Viguie 
-            - Ajout de la verification de l'integrité Du DuckyNetwork Patch Faille de sécu sur le DuckyNetwork - Lorens Viguie
-        - #### 🛠️ Patch**Alpha 1.1.0** - *16/04/2025*
-            - Modification de la creation des users - Lorens Viguie
-            - Ajout du tracking automatique des client serveur au demarage des serveurs - Lorens Viguie
-            - Ajout de la version Alpha des GPO linux - Lorens Viguie
-            - Gestion des commandes sudo via l'auth local et non plus via des requetesr au serveur central - Lorens Viguie
-            - Suppresion automatique des comptes vaultaire sur les client apres 4 jour sans connection - Lorens Viguie
-        - #### 🛠️ Patch**Alpha 1.1.1** - *11/05/2025*
-            - Ajout automatique de nouveau client sous rocky linux - Lorens Viguie
-            - Bug for status of serveur session for see if they are online - Lorens Viguie
-        - #### 🛠️ Patch**Alpha 1.1.2** - *09/06/2025*
-            - correction bug de surchage de logs - Lorens Viguie
-            - ajout de la gestion de la perte de connection pour les serveur distant - Lorens Viguie
-            - implementation de la premiere version du plugin ldap - Lorens Viguie
-            - Correction d'un bug sur la comparaison des password avec les salts - Lorens Viguie
-            - implementation de la premiere version de ldap fonctionnelle - Lorens Viguie
-            - update de la structure des user dans la base de donnée - Lorens Viguie
-         
-        - #### 🛠️ Patch**Alpha 1.1.3** - *11/07/2025* 
-            - Ajout de la feature LDAPS - Lorens Viguie
-            - Optimisation mineur de certain de la sanitize fonction - Lorens Viguie
-            - Ajout du site internet pour que les utilisateurs puissent mettre a jour leur information personnel - Lorens Viguie
-        - ### 🛠️ Patch**Alpha 1.1.4** - *20/07/2026* 
-            - Changement sur la table user_permission ("api_write_permission, api_read_permission) - Lorens Viguie
-            - Debut de l'api REST pour vaultaire - Lorens Viguie
-            - Changement sur la gestion des clé pour les differents services cle unique mtn - Lorens Viguie
-            - Ajout des clé public pour les users via WebUI ou vaultaire_cli/vaultaire_ctl - Lorens Viguie
-            - Ajout de la logique des permission pour l'api et ldap par encore implémenter - Lorens Viguie
-            - Intégration des permissions dans les commandes toutes a faire sauf - Lorens Viguie
-            - Intégration des permissions dans ldap toutes a faire / en cour search
-    - ### 🐷 **Alpha 2.0.0** *(nom de code : PIG)* - *02/08/2026*
-        📌 **Changements depuis Alpha 1.1.4 :**
-
-        - 🔐 **Sécurité**
-            - Correction d'un bug **critique** sur la vérification du mot de passe lors de l'authentification - Lorens Viguie
-            - Le droit super-admin `*` (tous domaines) donnait accès à des domaines inexistants ou mal tapés (ex `vault.fr` au lieu de `vaultaire.fr`) ; vérification de l'existence réelle du domaine avant d'accorder l'accès - Lorens Viguie
-            - Immuabilité de l'identité d'amorçage : user `vaultaire`, groupe `vaultaire` et permissions `vaultaire_all`/`vaultaire_admin` non supprimables et non renommables, sur CLI, web, LDAP et API - Lorens Viguie
-            - Le mot de passe ne transite plus en clair dans le Ducky-Network lors de l'authentification SSH - Lorens Viguie
-            - Vérification du domaine du client déplacée du module PAM vers le serveur central (plus fiable, plus difficile à contourner) - Lorens Viguie
-            - **Audit complet du système de permissions sur les 4 points d'entrée** (client Ducky, LDAP, CLI local/distant, interface web) — 14 constats, rapport dans `docs/Developement/Audit_Permissions.md` - Lorens Viguie
-            - **Élévation de privilèges corrigée** : `GetGroupIDsForUser` retournait tous les groupes des *domaines* de l'utilisateur au lieu des groupes dont il est *membre*. Un compte du seul groupe « stagiaires » héritait des permissions de tous les groupes de son domaine, « admins » compris — l'appartenance à un groupe ne servait plus à rien pour le RBAC. Procédure de bascule et requêtes de diagnostic dans `docs/Developement/migrations/rbac_groupes_stricts.md` - Lorens Viguie
-            - **Le `ClientSoftwareID` est désormais figé à la poignée de main et vérifié à chaque trame.** Un client authentifié pouvait réclamer les GPO d'une autre machine — donc ses règles sudo, sa configuration SSH et le contenu de ses fichiers déployés — ou le sel d'un utilisateur via 03_04 - Lorens Viguie
-            - **Contrôle multi-domaines strict sur toutes les écritures** (`CheckPermissionsAllDomains`). Un droit sur un seul domaine suffisait pour agir sur une entité qui en couvre plusieurs : `add -u X -k <clé>` laissait un délégué poser sa propre clé SSH sur un compte ayant des droits ailleurs, puis s'authentifier à l'API sous cette identité. La lecture reste tolérante - Lorens Viguie
-            - **Anti-rejeu sur l'API signée** : horodatage dans le corps signé et registre de nonces sur fenêtre glissante de 2 minutes. La signature dit qui, jamais quand — une requête capturée restait rejouable indéfiniment. ⚠️ Changement de protocole : `api_client_package` et `vaultaire_ctl` mis à jour, tout consommateur externe de `/api/command` doit ajouter `timestamp` au corps signé - Lorens Viguie
-            - Socket UNIX d'administration passé en 0600 explicite. Toute commande y est exécutée en tant que `vaultaire` sans authentification : sa seule protection était le umask du processus, fixé nulle part - Lorens Viguie
-            - `vaultaire_all` n'est plus modifiable de l'intérieur : les gardes couvraient la suppression et le renommage, mais `update -pu vaultaire_all web_admin nil` verrouillait tout le monde dehors sans rien supprimer - Lorens Viguie
-            - Suppression d'un certificat réservée aux membres du groupe `vaultaire` (supprimer le certificat TLS de l'API ou de LDAPS interrompt le service, et un certificat ne porte aucun domaine sur lequel déléguer) - Lorens Viguie
-            - Filtrage des entrées séparé en deux niveaux : `SanitizeIdentifier` en liste blanche pour ce qui **nomme** une entité, `SanitizeInput` en liste noire pour le texte libre. Un durcissement global aurait cassé les mots de passe, les infos matérielles (« Intel(R) Core(TM) i7 ») et les motifs regex des restrictions GPO - Lorens Viguie
-            - `AuthID` généré en hexadécimal : `string(rune(bigint))` tronquait vers `U+FFFD`, faisant s'écraser deux authentifications simultanées dans le store — échecs de login aléatoires en charge - Lorens Viguie
-            - Refus explicite d'une trame `02_03` vide : `bytes.Equal(nil, []byte(""))` vaut `true` en Go, la comparaison du challenge était franchie avec un username vide. La requête était arrêtée juste après, mais par accident - Lorens Viguie
-            - **Second audit, ciblé base de données et interface web** — 10 constats, 7 corrigés. Rapport dans `docs/Developement/Audit_Serveur.md` - Lorens Viguie
-            - **Les vues liste ne filtraient par aucun domaine.** Régression du correctif précédent : en ouvrant les pages aux administrateurs délégués, le contrôle par entité n'avait été ajouté que sur les écritures. Un délégué d'un domaine voyait tout l'annuaire. Nouveau `permission.DomainsWhereAllowed` et filtrage des quatre listes plus la recherche globale - Lorens Viguie
-            - **Changement de mot de passe** : l'ancien est désormais exigé, et toutes les autres sessions sont fermées. Un jeton volé permettait de changer le mot de passe sans le connaître, et la victime ne pouvait pas reprendre la main — changer son mot de passe n'évinçait pas l'intrus - Lorens Viguie
-            - **Aucune déconnexion n'existait** : route `/logout`, invalidation par jeton et par utilisateur, purge des sessions expirées (la map ne rétrécissait jamais). Le kill switch ferme maintenant aussi les sessions web, il ne fermait que les sessions Ducky - Lorens Viguie
-            - `generateToken` journalisait l'échec de `rand.Read` puis retournait la valeur quand même — un tableau de zéros, donc un jeton de session parfaitement prévisible. L'erreur est remontée et la connexion refusée - Lorens Viguie
-            - `SameSite=Strict` déclaré explicitement sur le cookie de session : la protection CSRF dépendait jusqu'ici du défaut du navigateur - Lorens Viguie
-            - `rows.Err()` ajouté sur 12 lectures. Deux alimentent `CheckPermissionsAllDomains`, où le sens de l'erreur était le mauvais : une liste de domaines tronquée est **plus facile** à satisfaire, donc une coupure passagère élargissait l'accès - Lorens Viguie
-            - Délais d'attente sur les serveurs HTTP web et API : `http.Serve` n'en pose aucun, une connexion lente immobilisait une goroutine sans limite - Lorens Viguie
-            - **Nouvelle permission `read:log`** : les journaux étaient adossés à `read:get:user`, si bien qu'administrer un seul domaine donnait l'activité de tout le parc. Le droit est maintenant séparé dans les deux sens — auditer sans administrer, administrer sans lire les journaux des autres - Lorens Viguie
-            - Suppression de `UpdateUserPermissionBooleanField`, sans appelant et sans garde sur `vaultaire_all` - Lorens Viguie
-
-        - 🩹 **Session management (Ducky-Network, client & serveur)**
-            - Refonte complète de la gestion des sessions avec un système map + mutex propre (remplace plusieurs variables globales non synchronisées : liste d'auth partagée, statut serveur en ligne, ancien package `sync`) - Lorens Viguie
-            - Le SessionID devient la source de vérité pour identifier une session (plusieurs sessions peuvent partager le même username) - Lorens Viguie
-            - Suivi du statut de connexion (authentifié / en attente / fermé) par session, côté client comme serveur - Lorens Viguie
-            - Nombreux correctifs sur le flux d'authentification SSH (challenge / salt / nonce, transmission de l'ID client dans les trames, réponses 03_02/03_05, timeouts de fetch de clé) - Lorens Viguie
-
-        - 🧹 **Logs & lisibilité**
-            - Nettoyage complet du système de logs : plus aucun log en fonctionnement normal, WARNING pour ce qui est inhabituel, ERROR/WARNING pour les vrais problèmes (permissions, web, base de données) - Lorens Viguie
-            - Correction des logs de la base de données systématiquement marqués `[ERROR]` même pour des messages informationnels - Lorens Viguie
-            - Le module PAM crée maintenant son dossier de logs s'il est manquant (auparavant les logs disparaissaient silencieusement, donnant l'impression que le module n'était pas chargé) - Lorens Viguie
-            - Correction d'un bug récurrent de parsing de date dans le nettoyage des sessions expirées - Lorens Viguie
-
-        - 🛑 **Kill switch — désactivation d'urgence d'un compte** *(TO-DO tâche 5)*
-            - Nouvelle catégorie de trames **06** (06_01 à 06_06), documentée et validée dans `Tableau_Protocole_Reseau.md`. Catégorie séparée des GPO : celles-ci sont *tirées* par le client à son rythme, une révocation est *poussée* et ne peut pas attendre le cycle horaire - Lorens Viguie
-            - Trois modes : `soft` (verrouille partout, réversible), `unlock`, `hard` (supprime le compte de l'annuaire **et** des machines, répertoire personnel compris) - Lorens Viguie
-            - **Le verrouillage local est indispensable, y compris en `soft`** : le module PAM écrit le mot de passe dans le `/etc/shadow` de chaque machine visitée, donc une révocation limitée au serveur laisserait le compte compromis utilisable en local partout. Côté agent : `usermod -L` **et** `chage -E 1` — le premier seul laisse entrer par clé SSH - Lorens Viguie
-            - **Les ordres sont durables**, pas des messages : écrits en base avec leur liste de machines cibles, poussés aux machines en ligne, rejoués à la reconnexion des autres. Sans cela, éteindre son poste suffisait à échapper à une révocation - Lorens Viguie
-            - Point de coupure unique côté RBAC (`GetGroupIDsForUser`) : un compte révoqué n'a aucun groupe, donc aucune permission, sur tous les chemins d'un coup. Refus explicites ajoutés aux points d'authentification Ducky, SSH, LDAP, web et API — l'API compte, un compte révoqué garde ses clés SSH et sa signature resterait valide - Lorens Viguie
-            - Nouvelle action RBAC `write:killswitch` (action spéciale, aucune colonne ajoutée à la matrice), vérifiée sur **tous** les domaines de la cible. Séparée de `write:delete:user` pour pouvoir confier l'urgence à une équipe d'astreinte sans lui donner la suppression au quotidien ; le mode `hard` exige les deux - Lorens Viguie
-            - `delete -u` et le bouton de suppression web passent désormais par ce flux en mode `hard`. Auparavant la suppression retirait le compte de l'annuaire et laissait le compte local vivant sur chaque machine : **le compte survivait à sa propre suppression** - Lorens Viguie
-            - Le compte `vaultaire` n'est pas révocable ; il reste le filet de secours pour lever une révocation déclenchée par erreur - Lorens Viguie
-            - Interface : pas de confirmation pour `soft` (réversible, c'est un bouton d'urgence), saisie du nom du compte exigée pour `hard`. CLI : `vlt kill -u <user> [--unlock|--hard] [--reason ...]`, mode par défaut `soft` — une commande tapée dans l'urgence ne doit jamais détruire - Lorens Viguie
-
-        - ⚙️ **GPO**
-            - Les restrictions GPO ne sont plus stockées en JSON en dur mais en base de données (tables `gpo_restriction`, `gpo_field_rule`, `gpo_value_definition`), éditables via une page d'administration `/admin/gpo/restrictions` réservée au groupe `vaultaire` - Lorens Viguie
-            - Modes par champ (liste / motif regex / libre) avec motif d'exclusion prioritaire, socle par défaut réinitialisable - Lorens Viguie
-            - Lecture fail-closed : plus aucun repli sur des valeurs internes si la base ne répond pas - Lorens Viguie
-            - Peuplement initial via `gpo_seed.sql` (embarqué, exécuté uniquement au premier démarrage) - Lorens Viguie
-            - Correction des jeux de commandes sudo par défaut absents du menu déroulant, et de l'aperçu qui affichait toutes les valeurs custom au lieu de la sélection - Lorens Viguie
-            - Systeme de Scope User machines avec des actions prédefinis et des regles de restrictions - Lorens Viguie
-            - **Ordre d'application repensé en phases** *(TO-DO tâche 2)*. L'ancien ordre était faux : fichiers en 30, **après** les paquets (20) et les services (21). Un service démarrait donc sur la configuration par défaut de son paquet, puis la GPO déposait la vraie configuration sans rien relancer — la machine tournait avec une conf que personne n'avait choisie, jusqu'au prochain redémarrage - Lorens Viguie
-            - Nouvelles phases : `10-19` fichiers, `20-29` sources (DNS, dépôts), `30-39` paquets, `40-59` configuration, `60-69` services, `70-79` ménage, `80+` utilisateur. Bornes constantes, donc un ajout ne demande jamais de renumérotation - Lorens Viguie
-            - Conséquence traitée : déposer une configuration avant d'installer son paquet crée un conflit de *conffile*. `--force-confold` ajouté côté apt, sans quoi le comportement dépendrait de la distribution et de son mode interactif - Lorens Viguie
-            - **Catalogue porté de 8 à 34 modules.** Nouveaux : `directory_manage`, `templated_file_deploy` (marqueurs `{{hostname}}` `{{fqdn}}` `{{username}}` `{{domain}}`), `file_acl`, `trusted_ca`, `dns_resolver`, `package_repository`, `boot_params`, `kernel_module_policy`, `ssh_known_hosts`, `pam_policy`, `local_account_policy`, `auditd_rule`, `selinux_mode`, `firewall_rule`, `ntp_config`, `log_policy`, `update_policy`, `system_env`, `resource_limits`, `file_retention`, `user_group_membership`, `user_shell`, `user_password_policy`, `user_ssh_client_config`, `user_git_config`, `user_resource_limits` - Lorens Viguie
-            - **Garde-fous sur les modules capables de rendre une machine injoignable** : `pam_policy` n'écrit jamais dans `/etc/pam.d/` (uniquement des fichiers de *paramètres*) et refuse un verrouillage sans déverrouillage automatique ; `boot_params` valide la génération GRUB avant installation et restaure sinon ; `selinux_mode` refuse `enforcing` sur un système jamais réétiqueté ; `local_account_policy` exclut root et uid < 1000, et son mode par défaut liste sans modifier - Lorens Viguie
-            - `file_retention` est le seul module qui détruit des données : motif sans séparateur de chemin, âge minimal d'un jour vérifié des deux côtés, liens symboliques jamais suivis, un seul niveau de récursion - Lorens Viguie
-            - Trois nouveaux champs dynamiques éditables en base : modules noyau interdictibles, shells attribuables, groupes locaux attribuables. ⚠️ Cette dernière liste ne contient volontairement que des groupes de périphériques — `docker`, `lxd`, `disk`, `sudo` en sont absents, appartenir à `docker` revenant à être root - Lorens Viguie
-            - `user_git_config` n'accepte qu'une liste fermée de clés : git permet de définir des commandes exécutées automatiquement (`core.pager`, alias, filtres), un champ libre donnerait une exécution de code arbitraire à chaque commande git - Lorens Viguie
-
-        - 🖥️ **Interface web**
-            - **Page GPO repensée** *(TO-DO tâche 3)* : quatre onglets (Modules / Ajouter / Groupes / Réglages), tableau compact avec édition dépliable, catalogue filtrable dont un seul formulaire est monté à la fois. Motivation : rendre 34 formulaires dans une même page la rendait impraticable - Lorens Viguie
-            - Colonne « Cible » dérivée de `ModuleStateKey` et non recalculée : deux modules partageant la même clé d'état se voient donc immédiatement - Lorens Viguie
-            - **Page permissions repensée** : les 30+ clés RBAC sont présentées en **matrice objet × verbe** au lieu d'une liste de 37 lignes. Un éditeur unique, alimenté par la case cliquée, remplace les deux formulaires par ligne - Lorens Viguie
-            - Retrait d'un domaine par bouton, avec vérification serveur que le domaine est réellement accordé. Auparavant il fallait ressaisir le nom à la main : une faute de frappe affichait « domaine retiré » sans que rien ne change - Lorens Viguie
-            - `web_admin` redevient une simple porte d'entrée : les droits RBAC sont ensuite vérifiés **sur les domaines de l'entité visée**, comme en CLI. L'interface exigeait jusqu'ici un droit global pour toute action, si bien qu'un administrateur délégué pouvait tout faire en ligne de commande et rien en web - Lorens Viguie
-            - Le découpage en onglets et les filtres sont du JavaScript d'agrément : sans lui, toutes les sections s'affichent à la suite. Aucun contrôle de sécurité n'en dépend - Lorens Viguie
-            - Message clair au rejet d'une clé publique déjà enregistrée : l'erreur MySQL brute remontait telle quelle et taisait le nom du compte qui la détient. Code HTTP 409 au lieu de 500 - Lorens Viguie
-
-        - 📖 **Documentation**
-            - Mise à jour du `MAN.md` (modèle déclaratif GPO, restrictions, définitions, lecture fail-closed) et de `DataBase_Struct.md` (nouvelles tables GPO) - Lorens Viguie
-            - Nouveau `GPO.md` : fonctionnement complet, catalogue des 34 modules avec leur ordre, et procédure pour ajouter un module, un champ ou un type de contenu - Lorens Viguie
-            - Nouveau `Permissions.md` : modèle RBAC, actions à portée globale, et ce qu'il faut toucher pour ajouter un objet - Lorens Viguie
-            - Nouveau `Audit_Permissions.md` : constats restant ouverts, avec la décision associée à chacun - Lorens Viguie
-            - Nouveau `migrations/rbac_groupes_stricts.md` : requêtes de diagnostic à lancer **avant** la bascule du RBAC en appartenance stricte - Lorens Viguie
-            - `Tableau_Protocole_Reseau.md` complété : transport GPO (catégorie 05) et révocation (catégorie 06) - Lorens Viguie
-    - ### 🐷 **Alpha 2.1.0** *refactorisation* - *...*
-
-        - 🧱 **Nettoyage du paquet `core/database`** *(TO-DO_Database §2.1 à §2.4)*
-            - **79 fichiers → 30**, dont la racine qui passe de 52 fichiers à 12. Le paquet tenait 75 lignes par fichier en moyenne, une fonction par fichier : les fonctions liées vivaient chacune dans son coin, et 26 noms de fichiers sur 57 ne correspondaient plus à leur contenu - Lorens Viguie
-            - Regroupement par sujet : `users.go`, `groups.go`, `clients.go`, `sessions.go`, `domains.go`, `permissions.go`, `ldap_reads.go`, `schema.go`, `sanitize.go`, `db.go`, `resolve.go`, `protected.go`. `db_permission` passe de 13 fichiers à 4 - Lorens Viguie
-            - **Aucun appelant touché** : le regroupement ne change pas de paquet, et l'empreinte de la surface exportée (331 entrées : nom, signature, types, variables) a été comparée avant/après à chaque étape — identique - Lorens Viguie
-            - Noms de paquets alignés sur la convention Go : `db_permission` → `dbpermission`, `db_revocation` → `dbrevocation`, `db_authpolicy` → `dbauthpolicy`. Les alias divergents pour un même paquet (`dbperm` et `db_permission`, `dbcert` et `dbcertificates`) sont unifiés - Lorens Viguie
-            - **Requêtes de résolution d'identifiant dédupliquées** : les mêmes `SELECT id_group FROM groups WHERE group_name = ?` et consorts étaient recopiés dans une vingtaine de fonctions, et ne se comportaient pas tous pareil — certains assainissaient leur entrée, d'autres non. Nouveau `resolve.go` avec cinq résolveurs `Lookup*` - Lorens Viguie
-            - Les résolveurs rendent `found bool` plutôt que de formuler l'absence : chaque appelant conserve **au caractère près** le message que voit l'administrateur. Ils prennent une interface `RowQuerier` que `*sql.DB` et `*sql.Tx` satisfont tous deux, pour qu'une résolution à l'intérieur d'une transaction ne lise jamais en dehors - Lorens Viguie
-            - L'assainissement est fait dans le résolveur, au plus près de la base : `Command_GET_UserPermissionID` et `EnsureSuperadminActions` y gagnent une vérification qu'elles n'avaient pas - Lorens Viguie
-
-        - 🧩 **Clients service : catalogue, enrôlement autonome et restriction des trames**
-            - **Deux familles de clients sont désormais distinguées.** Un client BASIC est un agent : il représente une machine, il est créé d'abord sur le core qui génère sa paire de clés, puis installé. Un client SERVICE est une extension qui ajoute une fonction au cluster : il s'enrôle seul et génère sa propre paire - Lorens Viguie
-            - Nouveau paquet `core/clienttype` : le catalogue des types de programmes vit dans le CODE et non en base. Un type détermine quelles trames un programme peut émettre — c'est une frontière de privilège, elle ne doit pas être éditable depuis une interface d'administration - Lorens Viguie
-            - **Le core ne figure pas au catalogue et ne peut pas y figurer** : c'est lui qui juge la légitimité des trames qu'il reçoit en fonction du type de leur émetteur, il ne peut pas se juger lui-même. Il n'est d'ailleurs jamais enregistré comme client - Lorens Viguie
-            - **Un seul type d'agent.** Le drapeau `isServeur` ne crée pas un second type : c'est le même binaire, qui émet les mêmes trames et ouvre seulement un tunnel machine en plus. Ce n'est pas une frontière de privilège - Lorens Viguie
-            - Les listes de trames sont relevées sur ce que les programmes émettent **réellement**, pas sur la table du protocole qui décrit aussi des trames restées à l'état d'intention : l'agent émet `02_12` et jamais `02_13`, le proxy n'émet pas encore `04_05` - Lorens Viguie
-            - **`create -c` ne demande plus de type** : ce chemin ne peut produire qu'un client basic. Le type était une chaîne libre saisie à la main, que rien ne validait et dont rien ne dépendait — le formulaire web proposait « client » en simple exemple. Champ retiré de la commande, du handler web et du gabarit - Lorens Viguie
-            - **Les droits portent sur la SOUS-TRAME, pas sur la catégorie.** L'interface web utilise 02 pour s'authentifier mais n'a rien à faire de `02_11`, `02_12` et `02_13`, qui sont l'inventaire matériel d'une machine — elle n'a ni processeur ni mémoire à déclarer. Un contrôle par catégorie lui ouvrirait les trois - Lorens Viguie
-            - La liste des trames est exhaustive et **fail-closed** : une sous-trame ajoutée au protocole n'est émissible par personne tant qu'elle n'est pas déclarée. Un oubli produit un refus visible, jamais une ouverture silencieuse - Lorens Viguie
-            - Contrôle posé dans `Split_Action`, immédiatement après la vérification d'identité machine qui existait déjà : un point unique couvre toutes les catégories, présentes et futures - Lorens Viguie
-            - `BoundClientType` est figé à la poignée de main comme `BoundClientSoftwareID`, et hérite de sa preuve : la réponse `01_02` est chiffrée avec la clé publique de cet identifiant, donc qui ment sur son identifiant ne déchiffre rien - Lorens Viguie
-            - ⚠️ **Migration requise avant bascule.** `logiciel_type` était un `VARCHAR(255)` libre, sans validation. Toute valeur sans équivalent au catalogue empêchera la machine de se connecter : `SELECT logiciel_type, COUNT(*) FROM id_logiciels GROUP BY logiciel_type` avant la mise en service - Lorens Viguie
-
-        - 🔑 **Enrôlement autonome des clients service (trames 01_03 à 01_06)**
-            - Le service génère sa paire RSA localement et présente une clé d'enrôlement pour faire enregistrer sa clé PUBLIQUE. **Sa clé privée ne quitte jamais son hôte**, contrairement à celle d'un agent que le core génère et livre avec sa configuration - Lorens Viguie
-            - Les clés portent **un type, une expiration et un quota**. `vlt enroll create --type vaultaire_web --uses 1 --expires 30m`. Par défaut : une utilisation, trente minutes - Lorens Viguie
-            - **LE TYPE VIENT DE LA CLÉ, jamais du client.** S'il l'annonçait, il suffirait de s'enrôler pour se déclarer `vaultaire_web` et obtenir avec lui le droit d'agir au nom de n'importe quel utilisateur de l'annuaire - Lorens Viguie
-            - Émettre une clé pour un type portant l'assertion d'identité est réservé au groupe `vaultaire` : ce pouvoir ne se délègue pas par une clé RBAC ordinaire - Lorens Viguie
-            - **Seul le condensat de la clé est stocké**, comme un mot de passe. Le secret est affiché une fois et n'est jamais réécrit : une fuite de la base ne rend aucune clé utilisable - Lorens Viguie
-            - Les cinq motifs de refus (inconnue, expirée, épuisée, révoquée, type retiré) sont **distincts dans les journaux et indistincts pour le client**. Les détailler ferait du point d'enrôlement un oracle confirmant qu'une clé a existé - Lorens Viguie
-            - La réponse `01_04` est chiffrée avec la clé publique qui vient d'être soumise : **la preuve de possession est acquise sans défi explicite**, exactement comme en `01_02` - Lorens Viguie
-            - Le décompte précède la création du client : une panne entre les deux perd un jeton, elle ne crée jamais de client non autorisé. `Release` rattrape l'échec de création - Lorens Viguie
-            - Table `service_enrollment_use` : sans elle, impossible de répondre à « quels services sont entrés par cette clé ? » le jour où l'on découvre qu'elle a fuité - Lorens Viguie
-            - `create -c` refuse désormais un type service : il s'enrôle, il ne se crée pas sur le core - Lorens Viguie
-
-        - 🌐 **Cluster : enregistrement des services (trames 04_09 à 04_14)**
-            - Enregistrement, battement de cœur et sortie propre d'un service dans `cluster_nodes`. Distinct de `04_01`, qui déclare une machine : un service déclare une fonction — type, version, point d'accès - Lorens Viguie
-            - Les séparer garde la restriction par sous-trame utile : un proxy émet `04_01` et pas `04_09`, l'interface web l'inverse - Lorens Viguie
-            - Le type vient de la SESSION, jamais du contenu de la trame. Les capacités déclarées sont de l'INVENTAIRE et n'accordent aucun droit : ce qu'un service peut émettre est décidé par son type au catalogue - Lorens Viguie
-            - Le passage hors ligne est écrit par un balayage serveur plutôt que déduit à la lecture — une vue calculée à la volée ne garderait aucune trace du moment où le service a cessé de répondre - Lorens Viguie
-            - La sortie propre `04_14` évite qu'un arrêt planifié soit indistinguable d'une panne pendant toute la fenêtre de battement - Lorens Viguie
-
-        - 📁 **Découpage de `core/database` en sous-paquets, une déclaration par fichier**
-            - Le regroupement thématique précédent produisait des fichiers de 500 lignes, aussi peu praticables que les 52 fichiers d'une fonction qu'ils remplaçaient : on troquait « où est cette fonction ? » contre « où est-elle dans ce fichier ? » - Lorens Viguie
-            - **266 fichiers, 34 lignes en moyenne.** Le nom de chaque fichier est dérivé mécaniquement du nom de sa déclaration (CamelCase → minuscules soulignées, préfixe `Command_` retiré) : un nom de fichier ne peut donc plus mentir sur son contenu, ce qui était le défaut principal de l'organisation d'origine - Lorens Viguie
-            - **En Go un dossier est un paquet** : des dossiers signifiaient de vrais sous-paquets. 637 références qualifiées réécrites dans 155 fichiers, `database.Command_ADD_UserToGroup` devenant `dbgroups.Command_ADD_UserToGroup`. Cohérent avec `db_gpo`, `db_permission` et `db_revocation`, qui étaient déjà des sous-paquets - Lorens Viguie
-            - Douze sous-paquets : `dbusers`, `dbgroups`, `dbclients`, `dbsessions`, `dbdomains`, `dbldap`, `dbschema`, `dbpermission`, `dbgpo`, `dbauthpolicy`, `dbrevocation`, `dbcertificates` - Lorens Viguie
-            - **Le socle `core/database` ne contient plus une seule requête métier** : connexion, filtrage des entrées, résolveurs d'identifiants, gardes d'immuabilité. Il n'importe aucun sous-paquet, ce qui garantit l'absence de cycle - Lorens Viguie
-            - Exception assumée : `IsUserInGroup` reste dans le socle bien que ce soit une lecture d'appartenance, parce que `IsSuperadmin` en a besoin et que `dbgroups` importe déjà les gardes. La déplacer aurait obligé à dupliquer la requête - Lorens Viguie
-            - `permissions.go` rejoint `dbpermission` (deux paquets pour le même sujet n'avaient pas de sens), `db-user` disparaît dans `dbusers` (une clé SSH est un attribut de compte), `db-certificates` devient `db_certificates` - Lorens Viguie
-            - **Piège du découpage : les commentaires d'en-tête de fichier**, ceux qui précèdent la première déclaration sans lui être attachés, sont perdus — et ce sont justement ceux qui portent le raisonnement d'ensemble. Vérifié par comptage (1 173 lignes avant) et restaurés en `doc.go` par paquet, ce qui est leur place correcte en Go - Lorens Viguie
-            - ⚠️ Les 155 fichiers appelants ne sont pas prouvés par le compilateur : vérification au parseur (547 fichiers, 0 échec) et contrôle statique confirmant que les 637 références désignent un symbole réellement exporté. **Recompiler avant de pousser** - Lorens Viguie
-
-        - 🐛 **Correction : retirer une permission utilisateur d'un groupe n'a jamais fonctionné**
-            - `Command_Remove_UserPermissionFromGroup` résolvait le nom de la permission dans `client_permission`, la table des permissions **client**, alors qu'elle retire une permission **utilisateur** — deux familles numérotées séparément - Lorens Viguie
-            - Elle interrogeait ensuite puis supprimait dans `group_permission_user`, **table qui n'existe pas** : le schéma déclare `group_user_permission`. MySQL rendait « table inconnue » dès le `COUNT` - Lorens Viguie
-            - Les deux chemins offerts échouaient : `vlt remove -g <groupe> -pu <permission>` et le bouton de la page groupe. En web l'appelant ne teste que `== nil`, donc le clic ne produisait **aucun message** et la permission restait affichée sans explication - Lorens Viguie
-            - **Portée réelle** : un droit accordé à un groupe ne pouvait plus lui être repris. Le seul contournement était de supprimer la permission entière, donc de la retirer à *tous* les groupes. Une réduction de privilèges était impossible sans en casser d'autres - Lorens Viguie
-            - Trouvé en redirigeant les requêtes recopiées. Même famille que `DeleteGroup`, morte et cassée pour la même raison : du code visant des tables inexistantes, donc jamais exécuté sur une vraie base - Lorens Viguie
-
-        - 🔧 **LDAP : encodeurs BER manuels remplacés par la bibliothèque** *(TO-DO 12)*
-            - Trois fichiers construisaient leurs réponses octet par octet — bind, unbind et ExtendedRequest — alors que le reste du paquet utilisait déjà `ber.Encode` correctement. C'était du code plus ancien que la dépendance - Lorens Viguie
-            - **Bug 1, forme longue absente.** `byte(len(payload))` n'est valide que sous 128 octets. Mesuré en rejouant l'ancien encodage : un diagnostic de 1000 octets annonçait une longueur de 234. Le client lit la longueur annoncée, tombe au milieu du message suivant, et tout le reste de la connexion devient illisible - Lorens Viguie
-            - **Bug 2, identifiant de message tronqué — le plus grave des deux.** `[]byte{0x02, 0x01, byte(messageID)}` figeait la valeur sur un octet : le message 256 devenait 0. Vérifié en rejouant l'ancien encodage, **5 collisions sur 5 couples testés** (0/256, 1/257, 42/298, 255/511, 1/65537) - Lorens Viguie
-            - Le premier bug casse franchement le flux et le client se plaint ; le second produit une réponse **parfaitement valide portant l'identifiant de quelqu'un d'autre**. Un client à connexion longue — SSSD, JumpServer, un pool applicatif — dépasse 255 opérations en quelques minutes puis corrèle des réponses aux mauvaises requêtes. « Marche en test, casse en production après quelques minutes » - Lorens Viguie
-            - Nouveau paquet `core/ldap/LDAP_RESPONSE` : `BuildResult` couvre le LDAPResult commun à toutes les réponses d'opération, `BuildExtendedResult` gère les champs facultatifs `[10]` et `[11]` — **omis quand ils sont vides**, la RFC les déclarant OPTIONAL et un champ vide présent n'ayant pas le même sens qu'un champ absent - Lorens Viguie
-            - Codes de résultat nommés au lieu de littéraux : l'ExtendedRequest renvoyait `0x40` comme refus, soit 64, **qui n'est pas un code de résultat LDAP** — un client ne pouvait rien en faire - Lorens Viguie
-            - **Les tests ont été vérifiés contre l'ancien encodage** pour s'assurer qu'ils échouent bien dessus. Un piège rencontré en chemin : le bouchon de dépendance utilisé pour la vérification hors ligne rendait `nil`, si bien que le test d'encodage passait au vert sans rien mesurer — un paquet de 0 octet satisfait n'importe quelle vérification de troncature - Lorens Viguie
-            - Aucun changement de protocole : c'est le même LDAP, correctement encodé. Aucun client à modifier, aucune migration - Lorens Viguie
-
-        - 🩺 **GPO : détection de dérive et reporting de conformité centralisé** *(TO-DO 4 et 7)*
-            - **Deux angles morts qui n'en font qu'un.** Côté agent, `applied_policies.json` disait « appliqué avec succès » et rien ne revérifiait jamais : un administrateur qui éditait à la main `/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf` laissait l'agent convaincu d'être à jour, l'empreinte n'ayant pas bougé. Côté core, les rapports d'application étaient journalisés puis oubliés — le serveur savait ce qu'il avait DEMANDÉ, jamais ce qu'il avait obtenu - Lorens Viguie
-            - **Un seul point d'écriture à instrumenter.** Les 34 appliers déposent 29 fichiers système, et tous passent par `writeSystemFile` — vérifié par relevé exhaustif. Enregistrer l'empreinte à cet endroit unique couvre tous les modules, y compris ceux qui seront écrits plus tard. **Aucun applier n'a été modifié** ; l'attribution d'un fichier à son module se fait en comparant l'inventaire avant et après l'appel - Lorens Viguie
-            - Quatre types d'écart, délibérément distincts : `modified`, `missing`, `unreadable` et `permissions`. Un fichier de clés passé en 0644 est un incident de sécurité alors que son contenu est intact — le ranger sous « modifié » le rendrait invisible. `unreadable` n'est pas non plus un synonyme : là, on ne sait pas, on ne constate pas - Lorens Viguie
-            - Sur écart : l'agent **rapporte d'abord, corrige ensuite**, en effaçant l'empreinte des modules concernés pour que le cycle suivant réapplique. Dans cet ordre — un rapport envoyé après correction dirait « tout va bien » sur une machine qui dérivait. Un mode `audit` constate sans corriger - Lorens Viguie
-            - **La correction n'attend pas l'accusé du serveur** : elle est locale. Une panne du core ne doit pas laisser une machine en dérive - Lorens Viguie
-            - 🔌 **Nouvelles trames `05_15` → `05_16` / `05_17`.** Volontairement distinctes de `05_12` : celle-ci rapporte une APPLICATION — ce que l'agent vient de faire — quand `05_15` rapporte une VÉRIFICATION — ce qu'il constate sans rien changer. Les fusionner rendrait impossible de distinguer « appliqué avec succès » de « toujours conforme trois semaines plus tard », qui est précisément la question posée - Lorens Viguie
-            - **Le contenu des fichiers ne voyage jamais**, ni l'ancien ni le nouveau. Un fichier géré par une GPO peut porter des clés ou des jetons ; un rapport de conformité n'est pas un canal d'exfiltration. Seuls le chemin, le type d'écart et un détail court sont transmis - Lorens Viguie
-            - Le nombre de fichiers vérifiés est transmis **même sans écart** : zéro écart sur zéro fichier vérifié ne veut pas dire « conforme », il veut dire « rien n'était inventorié ». Sans ce compte, une machine à l'inventaire vide s'afficherait comme parfaitement conforme - Lorens Viguie
-            - Contrairement à `05_12`, un échec d'enregistrement **est** signalé à l'agent (`storage`). L'application est faite et la rejouer n'apporterait rien ; un scan, lui, est bon marché et sera refait au cycle suivant - Lorens Viguie
-            - 🗄️ Trois tables — `gpo_compliance`, `gpo_module_report`, `gpo_drift` — **écrasées à chaque rapport, pas accumulées**. Mille machines rapportant toutes les heures feraient des millions de lignes pour une question, « où en est-on maintenant ? », à laquelle la dernière ligne suffit. L'historique, c'est le journal - Lorens Viguie
-            - Écriture **en transaction** : sans elle, une panne entre l'état courant et son détail laisserait un statut « applied » accompagné du détail de l'application PRÉCÉDENTE — une machine affichée conforme avec la liste des modules qui avaient échoué la fois d'avant. Plus trompeur que pas d'information du tout - Lorens Viguie
-            - Un rapport d'application ne remet **pas** à zéro les colonnes de dérive : cela effacerait un écart constaté que rien n'a encore corrigé - Lorens Viguie
-            - Au-delà de 200 écarts, le détail est tronqué mais le compteur porte le **total avant troncature** : afficher 200 sur 4000 laisserait croire la situation vingt fois moins grave qu'elle ne l'est - Lorens Viguie
-            - 🖥️ **Nouvelle commande `vlt gpo status`**, avec `vlt gpo status <computeur_id>` pour le détail et `vlt gpo drift` pour ce qui a dérivé. Deux colonnes séparées, APPLICATION et CONFORMITÉ, parce que ce sont deux questions : une machine peut être « applied » ET en dérive — elle a bien reçu la politique, et quelqu'un a édité les fichiers depuis - Lorens Viguie
-            - « **non vérifié** » n'est pas « conforme » : une machine qui n'a jamais scanné l'affiche explicitement, plutôt qu'un zéro rassurant. Tri par échecs puis par écarts — qui tape la commande cherche ce qui ne va pas - Lorens Viguie
-            - Le suivi est purgé à la suppression d'un client : sans cela une machine mise au rebut resterait à jamais en échec dans le rapport de parc, et un tableau de bord qu'on apprend à ignorer ne sert plus à rien - Lorens Viguie
-            - 🐛 **Deux défauts trouvés en chemin.** `sanitizeDetail` coupait à 240 OCTETS : un accent à cheval sur la limite produisait une séquence UTF-8 invalide que MariaDB en `utf8mb4` refuse — l'INSERT entier échouait et le rapport était perdu, pour un message de diagnostic tronqué. Or les messages d'erreur système sont précisément là où les accents abondent - Lorens Viguie
-            - Second défaut : le même assainisseur remplace `|` par `/`, ce qui convient à un message mais transformerait `/etc/a|b` en `/etc/a/b` — un AUTRE chemin, plausible et faux, que l'administrateur irait inspecter en vain. `|` est légal dans un nom de fichier sous Linux ; un `sanitizePath` distinct l'encode en `%7C` - Lorens Viguie
-            - **Chaque test a été vérifié contre le code fautif**, pas seulement contre le code corrigé : ordre des champs inversé, `Split` au lieu de `SplitN`, contenu lu un cran trop tôt, ancienne troncature en octets. Deux montages de test ont dû être refaits parce qu'ils passaient au vert sans rien mesurer — « é » fait deux octets et 240 est pair, la coupure tombait toujours sur une frontière ; et la ligne d'en-tête testée ne contenait pas de séparateur, donc un décalage d'index passait inaperçu - Lorens Viguie
-            - Le catalogue étant fail-closed, `05_15` a dû être déclarée pour `vaultaire_client` : sans cette ligne, la trame serait refusée et la connexion fermée. Aucune migration : les tables sont créées au démarrage, et un core à jour face à des agents anciens affiche explicitement l'absence de données plutôt que de la présenter comme un parc sain - Lorens Viguie
-
-        - 🧪 **Suite de tests : dérive GPO et conformité LDAP** *(`vlt --test`, 242 cas)*
-            - `run_gpo_drift.go` exerce le **vrai routeur** de la catégorie 05, pas une copie. Sans base, un rapport bien formé va jusqu'au bout de la validation puis échoue à l'écriture — ce qui prouve au passage que le refus d'un rapport MALFORMÉ se produit avant toute écriture, et n'est pas un effet de bord de l'absence de base - Lorens Viguie
-            - Validation fail-closed des quatre types d'écart, refus compris : casse différente, espace parasite, synonyme plausible. Et la règle qui compte : « aucun écart » ne veut pas dire « conforme », un rapport vide sur zéro fichier vérifié doit rester distinguable d'un parc sain - Lorens Viguie
-            - 🐛 **Filtre de sous-chaîne inopérant** *(RFC 4511 §4.5.1)*. Le parseur concaténait les morceaux en jetant leurs balises de position, et l'évaluateur comparait le résultat par **égalité** : `(cn=jo*)` cherchait une entrée dont le cn vaut exactement « jo ». Aucune recherche par préfixe, suffixe ou contenu ne rendait quoi que ce soit — et la réponse vide était parfaitement valide, donc indiagnosticable côté client. Cas dégénéré : `(cn=a*c)` cherchait « ac » et pouvait répondre pour une entrée sans rapport - Lorens Viguie
-            - Corrigé des deux côtés : le parseur conserve `initial` / `any` / `final`, et un nouvel évaluateur applique la sémantique — morceaux **dans l'ordre**, sans chevauchement, suffixe consommé avant les morceaux intermédiaires, comparaison insensible à la casse. `(cn=*)` vaut présence - Lorens Viguie
-            - 🐛 **Attributs opérationnels diffusés sans avoir été demandés.** Le code entrait dans la branche « non demandé » puis ajoutait quand même l'attribut dès qu'il portait une valeur. `entryuuid`, `nsuniqueid`, `objectguid`, `guid` et `ipauniqueid` en portent toujours une : ils partaient à **chaque** recherche, y compris sur « 1.1 », qui veut précisément dire « aucun attribut ». Des identifiants internes diffusés sans qu'on les demande, et les clients qui utilisent « 1.1 » pour un test d'existence recevaient cinq attributs à analyser - Lorens Viguie
-            - 🐛 **Types d'attribut de DN sensibles à la casse** *(RFC 4514 §3)*. Le test portait sur la version minuscule, la découpe sur la version d'origine : `TrimPrefix(part, "uid=")` ne retirait rien de « UID=jdupont ». L'utilisateur devenait littéralement « UID=jdupont » et le domaine « DC=example.DC=com » — or les outils Microsoft écrivent volontiers en majuscules - Lorens Viguie
-            - 🐛 **Unbind pouvait recevoir une réponse** *(RFC 4511 §4.3)*. `ResponseTagFor` traitait l'Abandon mais laissait l'Unbind tomber dans le `default`, qui répond une ExtendedResponse. Le chemin nominal ne passe pas par là, mais la règle doit tenir si le routage change - Lorens Viguie
-            - 🐛 **Un test du testrunner était rouge en permanence** : « l'URL otpauth est bien formée » exigeait `%3A`, alors que la spécification otpauth donne le libellé avec un deux-points **littéral** et que `url.PathEscape` ne l'échappe pas. Le code était juste, le test faux. Un test rouge en permanence est pire qu'absent — il apprend à lire « 160/161 » sans regarder lequel manque - Lorens Viguie
-            - Couverture LDAP ajoutée : filtres logiques et imbrication ; **RFC 4526** — `(&)` vaut VRAI absolu et `(|)` FAUX absolu, que les clients Microsoft envoient comme filtre neutre et dont l'évaluation à faux viderait l'annuaire sans la moindre erreur ; `(attr=*)` envoyé en égalité ; sélection d'attributs `1.1` / `*` / `+` / typesOnly ; les dix codes de résultat comparés aux valeurs de la **RFC** et non à eux-mêmes ; les tags de réponse des huit opérations qui en ont une ; RootDSE, dont quatre DN ordinaires qui ne doivent PAS être pris pour elle ; analyse de DN, casse, espaces et ordre des `dc` - Lorens Viguie
-            - **Treize mutations, treize détections.** Une seule est passée inaperçue au départ — inverser `initial` et `final` dans le parseur ne casse rien à la compilation, les trois champs étant des chaînes, et les tests du testrunner portent sur l'évaluateur avec des filtres construits à la main. D'où un fichier de test **séparé** pour le parseur : l'évaluateur peut être parfaitement juste alors que le filtre évalué n'est pas celui que le client a envoyé - Lorens Viguie
-            - Le bouchon BER de vérification hors ligne rendait une séquence vide sur `DecodePacket` : tout test de parsing serait passé au vert sans rien mesurer, le même piège que celui déjà rencontré sur l'encodage. Un décodeur réel y a été écrit — sans lui, les cinq tests du parseur n'auraient rien prouvé - Lorens Viguie
-
-        - 🔐 **LDAPS : certificat sans nom alternatif — les clients Java ne pouvaient pas se connecter**
-            - Signalé depuis Keycloak : `Error when trying to connect to LDAP: 'SSLHandshakeFailed'`. Le certificat auto-signé portait `CommonName: "localhost"` et un unique SAN `IP:127.0.0.1` — **aucun nom DNS** - Lorens Viguie
-            - Depuis **JDK 9**, la vérification du nom d'hôte côté Java ignore complètement le CommonName et exige un SAN correspondant. Une connexion à `ldaps://vaultaire-ad:636` ne pouvait donc pas aboutir. Le CommonName est déprécié comme identifiant d'hôte depuis la RFC 2818 et interdit depuis la RFC 6125 : le remplir ne sert plus à rien - Lorens Viguie
-            - **Le message est le même pour trois causes distinctes** — SAN absent, certificat non importé dans le magasin de confiance, certificat expiré. C'est ce qui rend ce diagnostic long : corriger l'une sans les autres laisse l'erreur identique - Lorens Viguie
-            - Nouveau jeu de SAN construit par **fusion** entre ce qui est détecté sur l'hôte (nom court, nom qualifié, adresses des interfaces hors boucle locale et lien-local) et ce qui est déclaré en configuration. Fusion et non remplacement : déclarer un nom de service ne doit pas faire perdre l'adresse locale par laquelle l'administrateur teste depuis la machine - Lorens Viguie
-            - `localhost` et `127.0.0.1` sont ajoutés inconditionnellement — c'est par là que passe le premier réflexe de diagnostic, et les perdre transformerait le diagnostic en seconde panne - Lorens Viguie
-            - Une adresse IP écrite dans la liste des noms est **récupérée** vers la liste des adresses, et réciproquement. Une IP rangée en SAN DNS n'est comparée par aucun client : elle serait silencieusement inerte, et le certificat aurait l'air complet - Lorens Viguie
-            - Deux clés de configuration : `ldap.ldaps_tls_dns_names` et `ldap.ldaps_tls_ip_addresses`. La détection ne peut pas deviner un enregistrement DNS de service, un nom de conteneur ni un alias derrière un répartiteur — le cas courant en conteneur, où le nom d'hôte est un identifiant aléatoire - Lorens Viguie
-            - 🩹 Trois défauts corrigés au passage sur le même certificat : le **numéro de série** venait de `time.Now().UnixNano()`, si bien que deux serveurs provisionnés par le même script produisaient le même couple (émetteur, numéro) que la RFC 5280 §4.1.2.2 exige unique ; le certificat n'était **pas marqué CA**, alors que `keytool` refuse d'installer comme ancre de confiance un certificat qui ne l'est pas — c'est pourtant ce qu'on demande de faire d'un auto-signé ; et `NotBefore` était fixé à l'instant présent, sans marge pour le décalage d'horloge, un certificat « pas encore valide » échouant exactement comme un expiré - Lorens Viguie
-            - 🖥️ **Nouvelle commande `vlt certificate`** : `list`, `show ldaps` (couverture, défauts constatés, PEM à distribuer) et `regenerate ldaps [--dns …] [--ip …]`. La régénération reste un **geste explicite** : remplacer un certificat change son empreinte, et un serveur qui le ferait de lui-même casserait au redémarrage tous les clients qui l'avaient importé - Lorens Viguie
-            - 🔎 **Contrôle au démarrage.** Le certificat étant persisté en base, corriger le générateur ne remplace pas celui d'un parc déjà déployé — et l'échec est muet côté serveur, qui ne voit qu'une connexion ouverte puis fermée. Le serveur audite désormais ce qu'il sert réellement et nomme le défaut, sans rien remplacer automatiquement - Lorens Viguie
-            - **StartTLS n'est pas une solution de repli** et la question revient souvent : l'OID `1.3.6.1.4.1.1466.20037` n'est pas implémenté, le RootDSE ne l'annonce pas, et la combinaison `ldaps://` + StartTLS n'a pas de sens — StartTLS élève une connexion *en clair* sur le 389 - Lorens Viguie
-            - Sept mutations, sept détections : SAN DNS retirés, `IsCA` retiré, numéro de série horodaté, noms configurés ignorés, `localhost` non garanti, IP rangée parmi les noms, audit muet. La dernière n'était **pas** détectée au premier essai — une branche voisine du diagnostic la masquait en produisant elle aussi un message grave. Le test distingue désormais « aucun SAN du tout » de « aucun nom DNS », qui n'appellent pas le même geste - Lorens Viguie
-            - Documentation : `docs/exploitation/ldaps_keycloak.md` — diagnostic, `openssl s_client -verify_hostname` (la seule vérification qui prédise le comportement de Keycloak, celle sans nom pouvant réussir quand la vérification du nom échoue), import dans le magasin de confiance en conteneur et hors conteneur, et le tableau des messages d'erreur - Lorens Viguie
-            - ⚠️ **Le certificat du serveur web a le même défaut, en pire** : `security.GenerateSelfSignedCertPEM` ne pose ni CommonName ni SAN. Non traité ici — le navigateur affiche un avertissement contournable là où la JVM refuse net - Lorens Viguie
-
-        - 🚨 **Agent et PAM : trois failles critiques du chemin d'authentification** *(audit Audit_Client_SDK_PAM.md, points 1 à 3)*
-            - ⚠️ **Déploiement séquencé obligatoire** — modules PAM et agent partent **ensemble**. Un module ancien face à un agent récent cherche le socket dans `/tmp`, ne le trouve pas, et rend `PAM_AUTHINFO_UNAVAIL` : plus aucun compte du domaine ne peut ouvrir de session. Procédure et vérifications dans `docs/migrations/pam_socket_et_uid.md` - Lorens Viguie
-            - 🔓 **Le socket d'authentification était dans `/tmp`, en mode 0666.** Le mot de passe en clair de chaque connexion y transite. `/tmp` étant accessible en écriture à tous, n'importe quel compte local pouvait **créer le socket** quand l'agent ne tournait pas — au démarrage de la machine, après un arrêt, après un plantage — capturer les mots de passe et répondre `{"status":"success","is_admin":true}`. Le module PAM en tirait directement un ajout au groupe sudo : **élévation locale vers root** - Lorens Viguie
-            - Second effet du 0666, indépendant : tout compte local pouvait émettre des requêtes `check`, donc **tester des mots de passe contre l'annuaire central**, sans limite ni trace - Lorens Viguie
-            - Corrigé sur quatre fronts : `/run/vaultaire` en 0700 root:root — un non-root ne peut rien y créer ; socket en 0600 créé **sous `umask`**, pour qu'il n'existe jamais avec un mode plus large, là où un `Chmod` après `Listen` laisserait une fenêtre ; vérification `SO_PEERCRED` côté agent, que l'appelant ne peut pas falsifier puisque le noyau la renseigne ; et côté PAM, `lstat` avant `connect` — `lstat` et non `stat`, qui suit les liens symboliques et laisserait choisir la cible - Lorens Viguie
-            - L'agent supprime au démarrage un `/tmp/vaultaire_client.sock` résiduel et le signale. S'il n'y parvient pas, c'est que le fichier appartient à quelqu'un d'autre — la ligne part en CRITICAL - Lorens Viguie
-            - 👥 **Tous les utilisateurs du domaine partageaient l'UID 5001.** Sous Unix l'UID *est* l'identité : `alice@dom` pouvait lire et supprimer les fichiers de `bob@dom`, tuer ses processus, lire sa mémoire par `ptrace`. **Aucune séparation entre les comptes sur une machine gérée** — l'inverse de ce qu'un annuaire apporte - Lorens Viguie
-            - L'agent maintient désormais `/etc/vaultaire/uid.map` et attribue un UID **unique et stable** par utilisateur ; le module NSS se contente de la lire et **n'invente plus jamais d'identité** — un nom absent donne `NOTFOUND`. Un fichier plutôt qu'un appel au socket, parce qu'un module NSS est chargé dans *tous* les processus de la machine : une latence y pèserait sur l'ensemble du système, et un blocage le figerait - Lorens Viguie
-            - Le module refuse toute entrée hors de la plage 5000-60000. C'est le contrôle qui compte : si quoi que ce soit permettait d'écrire dans la carte, `attaquant@dom:0:0` ferait de ce compte root aux yeux de la libc - Lorens Viguie
-            - Le module NSS respecte enfin son contrat : toutes les chaînes pointent **dans le tampon de l'appelant** — il rendait auparavant des pointeurs vers la mémoire de l'appelant et vers des littéraux —, `errnop` est renseigné, et un tampon trop court donne `ERANGE`/`TRYAGAIN` au lieu de **tronquer en silence** un nom d'utilisateur. `getpwuid_r` fait la résolution inverse, qui manquait : les fichiers s'affichaient avec un numéro nu - Lorens Viguie
-            - 🐛 **`useradd` recevait ses arguments dans le désordre** : `--shell` consommait `-c` comme valeur. Vérifié sur le binaire réel — `useradd: invalid shell '-c'`, sortie 3. La création de compte local échouait donc **à chaque appel** - Lorens Viguie
-            - Les trois défauts se **masquaient mutuellement** : l'ancien module NSS répondant pour tout nom du domaine, `getpwnam` réussissait et `useradd` n'était jamais appelé. D'où la correction en un seul bloc — traiter l'UID sans traiter `useradd` aurait fait échouer toutes les premières connexions - Lorens Viguie
-            - `getNextAvailableUID` a été **retirée** : elle relisait `/etc/passwd` sans verrou, et deux provisionnements simultanés y trouvaient le même trou — le défaut de l'UID partagé réintroduit par une autre porte. L'attribution passe par une fonction sérialisée, vérifiée sous `-race` - Lorens Viguie
-            - **Tests** : 7 cas Go sur la carte d'UID (unicité, stabilité, concurrence, bornes, lignes invalides, mode du fichier) et 17 cas C sur le module NSS, exécutables par `pam_module/run_tests.sh` sans installer quoi que ce soit dans `/lib`. Les tests C ont été confrontés à l'**ancien module** : 11 échecs, dont l'unicité des UID et le contrat du tampon. Quatre mutations sur le Go, quatre détections - Lorens Viguie
-            - Les 17 autres points de l'audit restent ouverts — notamment l'écriture d'`authorized_keys` en root sans protection contre les liens symboliques, et une injection shell possible dans la gestion du groupe sudo - Lorens Viguie
+> **Ordre inversé** : la version la plus récente est en haut, ici comme dans
+> chaque fichier.
 
 ---
 
+## [Cycle 2.1 — refactorisation](./Version/2.0/2.1.md)
 
-- ## 🚧 Non publié
+Unification CLI/web derrière le registre d'actions, filtrage des lectures par domaine, sélecteur d'entités du portail.
 
-    - ### 🎛️ Interface web — sélecteur d'entités
-        - Nouveau module `web_packet/sso_WEB_page/static/vlt_picker.js` : les 14 listes déroulantes qui portent des **données** (utilisateurs, clients, permissions, permissions client, GPO, groupes, types de service) s'ouvrent désormais sur un panneau avec recherche insensible aux accents, filtres par étiquette et navigation clavier complète. Les 11 listes d'**énumération** — Oui/Non, type DNS, niveau de journal, motif de verrouillage — gardent le `<select>` natif, plus rapide au clavier et accessible d'office - Lorens Viguie
-        - Le `<select>` d'origine n'est pas remplacé mais **enrichi** : il reste dans le formulaire et reste la source de vérité. Sans JavaScript la page reste utilisable et `required` continue de fonctionner ; un `<select multiple>` soumet nativement plusieurs valeurs, sans qu'aucun champ caché n'ait à être fabriqué en JavaScript - Lorens Viguie
-        - 🧺 **Ajout groupé** : 13 des 14 listes acceptent plusieurs cibles en une soumission — douze comptes ajoutés à un groupe d'un seul geste, là où il fallait douze allers-retours. Le compte rendu nomme les échecs : « 7 réussites : … 1 échec : heidi — Permission refusée : aucun droit sur le domaine lyon » - Lorens Viguie
-        - Côté serveur, `core/web_serveur/web_action_groupe.go` : **une exécution par cible, donc un contrôle de droits par cible**. Grouper les cibles en un seul appel aurait fait porter le contrôle sur la première et laissé passer les suivantes avec le droit d'une autre — une élévation de privilèges offerte par une optimisation - Lorens Viguie
-        - Le formulaire **déclare** son champ multi-valué par un caché `bulk_field`. La détection automatique a été écartée parce que `r.Form` fusionne le corps de la requête et la chaîne de requête de l'URL : sur une page postant vers `/admin/groups?group=X`, un champ nommé `group` aurait été vu comme deux cibles. Les cibles sont lues dans `r.PostForm`, jamais dans `r.Form` — ajouter `?username=victime` à l'URL n'ajoute aucune cible - Lorens Viguie
-        - Sans `bulk_field`, le chemin d'exécution est celui d'avant à l'instruction près : aucun des formulaires existants n'a changé de comportement. Garde-fous : 200 cibles maximum et **rien** d'exécuté au-delà (refuser après deux cents écritures laisserait un état partiel qu'aucun message ne décrit), cibles vides et doublons écartés, refus explicite si rien n'est coché, champs de transport non groupables. Pas de transaction : l'atomicité n'est pas garantie et le message dit ce qui a eu lieu - Lorens Viguie
-        - Tests : 32 assertions jsdom côté navigateur (`web_packet/sso_WEB_page/tests/run_tests.sh`) et 16 tests Go sur l'exécution groupée, écrits autour des cinq manières dont la boucle pourrait mentir — dont le piège des alias, où écraser le champ après leur résolution ferait viser douze fois la première cible en annonçant douze réussites - Lorens Viguie
-        - `README.md` racine et `docs/README.md` remis en phase avec l'arborescence réelle ; `.gitattributes` ajouté pour normaliser les fins de ligne en LF (580 fichiers suivis portaient des CRLF, ce qui gonflait chaque diff de 609 fichiers pour 38 réellement modifiés) - Lorens Viguie
+Contient : 🚧 non publié, Alpha 2.1.0.
+
+## [Alpha 2.0.0 « PIG » — 02/08/2026](./Version/2.0/2.0.md)
+
+Deux audits de sécurité : élévation de privilèges RBAC, `ClientSoftwareID` figé, anti-rejeu API, sessions web.
+
+Contient : Alpha 2.0.0.
+
+## [Cycle 1.1 — 16/04/2025 → 20/07/2026](./Version/1.0/1.1.md)
+
+GPO Linux, plugin LDAP puis LDAPS, portail web, début de l'API REST, clés publiques utilisateur.
+
+Contient : Alpha 1.1.4, Alpha 1.1.3, Alpha 1.1.2, Alpha 1.1.1, Alpha 1.1.0.
+
+## [Cycle 1.0 « ROCKET » — 06/03/2025 → 15/03/2025](./Version/1.0/1.0.md)
+
+Premières versions : commandes serveur, administrateurs locaux, permissions et groupes.
+
+Contient : Alpha 1.0.2, Alpha 1.0.1, Alpha 1.0.
+
+---
+
+## Convention
+
+- Un dossier par version **majeure** : `docs/Version/1.0/`, `docs/Version/2.0/`.
+- Un fichier par version **mineure** : `1.0.md`, `1.1.md`, `2.0.md`, `2.1.md`.
+- Les correctifs d'une même mineure sont regroupés dans son fichier, du plus
+  récent au plus ancien.
+- Toute modification doit être consignée dans le fichier de la version en cours
+  — voir `CONTRIBUTING.MD`. Une tâche terminée se déplace de
+  `docs/Developement/TO-DO.md` vers `docs/Developement/DO/<version>/`.

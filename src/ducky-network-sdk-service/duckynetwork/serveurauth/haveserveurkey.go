@@ -3,7 +3,6 @@ package serveurauth
 import (
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"os"
-	"path/filepath"
 )
 
 // HaveServeurKey indique si la clé publique du core est déjà sur disque.
@@ -13,6 +12,6 @@ import (
 // reconstruire le chemin de son côté, c'est se garantir qu'un jour l'un d'eux
 // regardera au mauvais endroit après un renommage.
 func HaveServeurKey() bool {
-	_, err := os.Stat(filepath.Join(storage.KeyPath, "serveurpublickey.pem"))
+	_, err := os.Stat(storage.CheminDansKeyPath("serveurpublickey.pem"))
 	return err == nil
 }

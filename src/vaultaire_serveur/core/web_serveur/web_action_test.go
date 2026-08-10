@@ -13,11 +13,17 @@ import (
 
 // cheminGabarits localise les gabarits depuis le répertoire du paquet.
 //
-// Chemin relatif et non adminTplDir : cette constante vaut un chemin
+// Chemin relatif et non CheminGabarit : cette fonction rend un chemin
 // d'exécution du serveur, alors qu'un test tourne dans le répertoire de son
-// paquet. Employer la constante ferait échouer le test partout sauf sur une
-// machine où le serveur est installé.
-const cheminGabarits = "../../../../cmd/web_packet/sso_WEB_page/templates"
+// paquet. L'employer ferait échouer le test partout sauf sur une machine où le
+// serveur est installé.
+//
+// Il pointait sur `cmd/web_packet/`, une COPIE que `auto-compil.sh` produisait
+// à la compilation. Le test jugeait donc l'état des gabarits à la dernière
+// compilation, pas leur état réel : une action ajoutée à un formulaire et non
+// déclarée au pont passait inaperçue tant qu'on n'avait pas recompilé. La copie
+// a disparu ; le chemin vise la source.
+const cheminGabarits = "../../../../web_packet/sso_WEB_page/templates"
 
 // --- La garantie architecturale ---------------------------------------------
 //

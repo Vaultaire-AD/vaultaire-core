@@ -184,7 +184,7 @@ func decorateKey(k dbenrollment.Record, now time.Time) enrollKeyView {
 
 // renderAdminTemplate rend une page d'administration avec sa barre latérale.
 func renderAdminTemplate(w http.ResponseWriter, name string, data any) {
-	tmpl, err := template.ParseFiles(adminTplDir+"/"+name, adminTplDir+"/admin_sidebar.html")
+	tmpl, err := template.ParseFiles(CheminGabarit(name), CheminGabarit("admin_sidebar.html"))
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "webadmin: template "+name+" illisible : "+err.Error())
 		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)

@@ -44,6 +44,30 @@ Elle ne rend la main qu'une fois le client **authentifié**, pas dès la connexi
 TCP : sinon vous auriez une session qui a l'air ouverte mais que le core refusera
 à la première trame utile, avec un message qui ne dira pas que le login manque.
 
+## Qui utilise ce paquet
+
+| Programme | Porte d'entrée | Configuration |
+|-----------|----------------|---------------|
+| `vaultaire_proxy` | `ducky.Start` / `ducky.Handle` | YAML, ou variables |
+| tout service | idem | idem |
+| `vaultaire_client` (l'agent) | **paquets bas niveau**, boucle propre | JSON `/etc/vaultaire_client/client_conf.json` |
+
+L'agent n'entre pas par `ducky.Start` : il garde son cycle de connexion, parce
+qu'il porte des choses qu'un service n'a pas — le canal PAM, les catégories 03,
+05 et 06, les sessions utilisateur — et parce que sa configuration est au format
+JSON, déjà déployée sur le parc. Il consomme le reste : trames, clés,
+authentification, sessions, journaux, dégressivité.
+
+Ce qu'il branche, dans son `main`, avant toute connexion :
+
+```go
+storage.Persistent = true
+duckytool.DemarrerSessionMachine = func() { /* sa boucle */ }
+tramesmanager.RegisterHandler("03", sshauth.HandleTrameSSH)
+tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
+tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
+```
+
 ## Configuration
 
 Deux valeurs suffisent : l'adresse du core et la clé d'enrôlement. Elles se
@@ -97,11 +121,26 @@ La section `enrollment` n'est lue **qu'au premier démarrage**. Une fois l'ident
 écrite, la clé ne sert plus et peut être retirée du fichier — la laisser garde un
 secret sur le disque sans raison.
 
+### Chemins : l'environnement d'abord
+
+| Variable | Défaut | Contenu |
+|----------|--------|---------|
+| `VAULTAIRE_KEY_PATH` | `/etc/vaultaire_client/.ssh` | clés et identité |
+| `VAULTAIRE_CLIENT_SOFTWARE` | `<KeyPath>/client_software.yaml` | identité seule, si on la range ailleurs |
+| `VAULTAIRE_LOG_PATH` | `/var/log/vaultaire/` | journaux |
+
+L'ordre est le même partout : **variable d'environnement**, puis ce que le
+programme a posé (`ducky.Options`, ou `storage.KeyPath` directement), puis le
+défaut du paquet. La résolution passe par `storage.KeyPathResolu()` et
+`storage.SoftwarePathResolu()` — jamais par une lecture directe de la variable,
+sans quoi l'ordre d'initialisation des paquets déciderait du gagnant.
+
 ## Ce que `KeyPath` contient
 
 | Fichier | Écrit par | Perte = |
 |---------|-----------|---------|
 | `client_software.yaml` | l'enrôlement | réenrôlement |
+| `core_fingerprint` | `vlt create -join` | l'agent refuse de démarrer |
 | `private_key.pem` | l'enrôlement | réenrôlement |
 | `public.pem` | l'enrôlement | régénérable depuis la privée |
 | `serveurpublickey.pem` | `askkey` | `askkey` au démarrage suivant |
@@ -195,6 +234,23 @@ directement, de façon synchrone, avant que la boucle de réception ne démarre.
 `Handle` accepte de remplacer une catégorie déjà branchée — un programme peut
 vouloir son propre 02 — mais le journalise, parce que le faire par inadvertance
 rendrait l'authentification muette sans autre symptôme.
+
+## Reconnexion
+
+Le délai double à chaque échec, de 2 secondes à 5 minutes, avec une dispersion
+aléatoire de ±30 % — voir `backoff/`.
+
+La dispersion est ce qui compte le plus pour un parc : sans elle, mille clients
+qui perdent le core au même instant le retrouvent au même instant, et la
+dégressivité les garde synchronisés au lieu de les étaler. L'intervalle fixe de
+30 secondes qui précédait ramenait tout le monde sur le core toutes les 30
+secondes, chacun réclamant une poignée de main RSA-4096 : la charge de reprise
+devenait le problème suivant.
+
+`Persistent: true` active la boucle. **`Persistent`, et pas `IsServeur`** : ce
+dernier décrit la MACHINE et vient de `client_software.yaml`, où l'enrôlement
+écrit `false` pour un service — s'en servir faisait tourner tout service en mode
+une-passe, sortant de la boucle à la première coupure pour ne jamais revenir.
 
 ## Ce que le paquet ne fait pas
 

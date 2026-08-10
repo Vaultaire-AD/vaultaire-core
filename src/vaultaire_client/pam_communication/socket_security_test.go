@@ -10,8 +10,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
-
-	"vaultaire_client/storage"
+	"vaultaire_client/pamstate"
 )
 
 // Tests de non-exploitabilité du canal PAM.
@@ -272,24 +271,24 @@ func TestAncienSocketEstSupprime(t *testing.T) {
 	// donc le comportement sur le chemin réel, en ne créant le leurre que si
 	// l'emplacement est libre — pour ne pas perturber un agent qui tournerait
 	// sur la machine de test.
-	if _, err := os.Stat(storage.LegacySocketPath); err == nil {
+	if _, err := os.Stat(pamstate.LegacySocketPath); err == nil {
 		t.Skip("un fichier occupe déjà l'ancien emplacement : test non concluant")
 	}
 
-	leurre, err := net.Listen("unix", storage.LegacySocketPath)
+	leurre, err := net.Listen("unix", pamstate.LegacySocketPath)
 	if err != nil {
 		t.Skipf("impossible de créer le leurre dans /tmp : %v", err)
 	}
 	defer func() {
 		_ = leurre.Close()
-		_ = os.Remove(storage.LegacySocketPath)
+		_ = os.Remove(pamstate.LegacySocketPath)
 	}()
 
 	serveurDeTest(t)
 
-	if _, err := os.Stat(storage.LegacySocketPath); err == nil {
+	if _, err := os.Stat(pamstate.LegacySocketPath); err == nil {
 		t.Errorf("l'ancien socket %s n'a pas été supprimé au démarrage",
-			storage.LegacySocketPath)
+			pamstate.LegacySocketPath)
 	}
 }
 

@@ -17,28 +17,18 @@ build/
 *.o
 
 # ------------------------------------------------------------------
-# Artefacts de compilation
+# Binaires de cmd/ : VOLONTAIREMENT versionnés
 # ------------------------------------------------------------------
-# cmd/ contient les binaires produits par auto-compil.sh. Ils ne sont plus
-# versionnés : chaque itération y ajoutait ~17 Mo (serveur, cli, client,
-# modules PAM), et un historique git ne se dégonfle pas quand on supprime les
-# fichiers plus tard.
+# Les règles qui les ignoraient ont été retirées. Elles ne produisaient aucun
+# effet — les fichiers étaient déjà suivis, et un fichier suivi le reste malgré
+# .gitignore — mais elles affirmaient le contraire de ce que fait le dépôt.
 #
-# Ils arrivent maintenant sur l'hôte pre-prod par rsync
-# (deployments/pre-prod/deploy.sh), et sont montés en volume par le conteneur.
+# Un .gitignore qui décrit une intention non appliquée est pire que pas de
+# règle : il fait croire que les binaires ne sont pas là, et fait chercher
+# ailleurs quand le dépôt grossit.
 #
-# Les fichiers déjà suivis restent suivis malgré ces règles : voir
-# deployments/pre-prod/README.md pour la commande de détachement.
-/cmd/vaultaire_server/vaultaire_serveur
-/cmd/vaultaire_server/vaultaire_cli
-/cmd/vaultaire_client/vaultaire_client
-/cmd/vaultaire_client/*.so
-/cmd/vaultaire_client/*.so.*
-/cmd/vaultaire_ctl/vaultaire_ctl
-
-# web_packet est copié dans cmd/ par auto-compil.sh : c'est un doublon de la
-# source, régénéré à chaque build.
-/cmd/web_packet/
+# cmd/web_packet n'y figure plus non plus : la copie a disparu. Les gabarits
+# sont servis depuis web_packet/ à la racine, seule arborescence.
 
 # Modules PAM compilés à côté de leurs sources
 /src/vaultaire_client/pam_module/*.so

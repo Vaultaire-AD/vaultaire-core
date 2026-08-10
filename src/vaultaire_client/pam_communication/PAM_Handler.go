@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"net"
 	"time"
+	"vaultaire_client/pamstate"
 
-	duckytool "vaultaire_client/duckynetworkClient/ducky_tool"
-	"vaultaire_client/duckynetworkClient/sendmessage"
-	"vaultaire_client/duckynetworkClient/userauth"
+	duckytool "duckynetworkclient/V1/duckynetwork/ducky_tool"
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/userauth"
 	"vaultaire_client/gpo"
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
 	"vaultaire_client/tools/sshreq"
 )
 
@@ -38,7 +39,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	logs.Write_log("INFO", fmt.Sprintf("[%s] Requete recue pour l'utilisateur: %s", reqType, req.User))
 
 	// 2. Enregistrement du canal de reponse pour async/concurrence
-	saltChan := make(chan storage.AuthResult, 1)
+	saltChan := make(chan pamstate.AuthResult, 1)
 	sshreq.Register(req.User, saltChan)
 	defer sshreq.Remove(req.User)
 
@@ -79,7 +80,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		sendResponse(conn, Response{Status: "failed"})
 		return
 	}
-	finalChan := make(chan storage.AuthResult, 1)
+	finalChan := make(chan pamstate.AuthResult, 1)
 	sshreq.Register(req.User, finalChan)
 	defer sshreq.Remove(req.User)
 

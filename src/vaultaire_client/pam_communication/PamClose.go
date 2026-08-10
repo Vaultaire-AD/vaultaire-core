@@ -1,13 +1,13 @@
 package pamcommunication
 
 import (
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
 	"encoding/json"
 	"fmt"
 	"net"
-	"vaultaire_client/duckynetworkClient/sendmessage"
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
-	sto_session "vaultaire_client/storage/stosession"
 )
 
 type CloseRequest struct {

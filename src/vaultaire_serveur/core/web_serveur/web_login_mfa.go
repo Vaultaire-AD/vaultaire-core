@@ -31,7 +31,7 @@ import (
 const mfaPendingCookie = "mfa_pending"
 
 // mfaTemplatePath est la page de saisie du code.
-var mfaTemplatePath = adminTplDir + "/login_mfa.html"
+var mfaTemplatePath = CheminGabarit("login_mfa.html")
 
 // startSecondFactor décide de la suite après un mot de passe valide.
 //

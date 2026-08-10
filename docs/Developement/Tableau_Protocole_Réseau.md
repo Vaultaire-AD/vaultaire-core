@@ -1142,7 +1142,7 @@ jusqu'à 04_19.**
 
 > **Statut : proposition, en attente de validation. Aucune implémentation avant
 > accord.** Contexte et découpage des programmes dans
-> [`Architecture_Services.md`](./Architecture_Services.md).
+> `Architecture_Services.md`.
 
 ## Pourquoi une catégorie séparée
 

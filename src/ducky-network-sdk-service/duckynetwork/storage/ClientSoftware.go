@@ -1,6 +1,9 @@
 package storage
 
-var SoftwarePath = "/etc/vaultaire_client/client_software.yaml"
+// SoftwarePath a rejoint KeyPath.go, avec sa résolution par variable
+// d'environnement. Il n'était lu nulle part : le chemin réel se déduisait de
+// KeyPath, et cette variable annonçait un emplacement différent de celui
+// effectivement utilisé.
 var Computeur_ID string
 var LogicielType string
 var IsServeur bool

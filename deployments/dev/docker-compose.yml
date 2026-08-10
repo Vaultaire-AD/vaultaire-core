@@ -28,7 +28,12 @@ services:
   vaultaire-dev:
     build:
       context: ../..
-      dockerfile: deployments/dev/Dockerfile
+      # Nom EXACT du fichier : « dockerfile », en minuscules.
+      #
+      # Docker Desktop sur Windows résout « Dockerfile » par insensibilité à la
+      # casse du système de fichiers hôte ; un build sur Linux ou en CI échoue
+      # sur un fichier introuvable.
+      dockerfile: deployments/dev/dockerfile
     image: vaultaire-dev:latest
     container_name: vaultaire-dev
     restart: unless-stopped

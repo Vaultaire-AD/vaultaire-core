@@ -1,10 +1,12 @@
 package ducky
 
 import (
+	"fmt"
+	"os"
+	"time"
+
 	"duckynetworkclient/V1/config"
 	"duckynetworkclient/V1/duckynetwork/storage"
-	"fmt"
-	"time"
 )
 
 // ServiceAccount est le compte sous lequel un PROGRAMME s'authentifie.
@@ -59,6 +61,8 @@ type Options struct {
 	Persistent bool
 
 	// LogPath, Debug, SilentConsole pilotent la journalisation.
+	//
+	// LogPath n'est qu'un défaut : VAULTAIRE_LOG_PATH l'emporte.
 	LogPath       string
 	Debug         bool
 	SilentConsole bool
@@ -79,8 +83,12 @@ const DefaultTimeout = 30 * time.Second
 // invalide » qui ne désigne pas le fichier absent. Un contrôle en amont coûte
 // deux appels système et remplace une heure de recherche.
 func (o *Options) prepare() error {
-	if o.KeyPath == "" {
-		return fmt.Errorf("KeyPath est requis")
+	// KeyPath devient facultatif quand VAULTAIRE_KEY_PATH est posée : la
+	// variable l'emporterait de toute façon, exiger l'option en plus reviendrait
+	// à demander deux fois la même chose et à refuser un déploiement
+	// parfaitement configuré.
+	if o.KeyPath == "" && os.Getenv(storage.EnvKeyPath) == "" {
+		return fmt.Errorf("KeyPath est requis, ou la variable %s", storage.EnvKeyPath)
 	}
 	if o.ConfigPath == "" {
 		return fmt.Errorf("ConfigPath est requis : fichier YAML du service")
@@ -95,7 +103,14 @@ func (o *Options) prepare() error {
 
 	// KeyPath est posé AVANT toute lecture : les chemins de l'identité et des
 	// clés en dérivent.
-	storage.KeyPath = o.KeyPath
+	//
+	// C'est un DÉFAUT, pas une valeur définitive : storage.KeyPathResolu donne
+	// la priorité à VAULTAIRE_KEY_PATH. L'ordre est le même partout dans le
+	// socle — environnement d'abord, puis ce que le programme a posé, puis le
+	// défaut du paquet.
+	if o.KeyPath != "" {
+		storage.KeyPath = o.KeyPath
+	}
 	storage.DEBUG = o.Debug
 	storage.SilentConsole = o.SilentConsole
 	// Persistent, et PAS IsServeur : ce dernier décrit la machine et sera

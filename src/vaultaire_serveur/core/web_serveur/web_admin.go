@@ -13,7 +13,8 @@ import (
 	duckykey "vaultaire/ducky-network/key_management"
 )
 
-const adminTplDir = "web_packet/sso_WEB_page/templates"
+// adminTplDir a disparu au profit de CheminGabarit : le chemin des gabarits
+// n'est plus écrit qu'à un seul endroit, dans web_assets.go.
 
 // rendreDansTampon exécute un gabarit EN MÉMOIRE avant d'écrire quoi que ce
 // soit dans la réponse.
@@ -75,7 +76,7 @@ func rendreGabarit(w http.ResponseWriter, tmpl *template.Template, data interfac
 
 // executeAdminPage parse le partial sidebar + la page et exécute la page (sidebar commun à toutes les pages admin).
 func executeAdminPage(w http.ResponseWriter, pageName string, data interface{}) error {
-	tmpl, err := template.ParseFiles(adminTplDir+"/admin_sidebar.html", adminTplDir+"/"+pageName)
+	tmpl, err := template.ParseFiles(CheminGabarit("admin_sidebar.html"), CheminGabarit(pageName))
 	if err != nil {
 		// Journalisé ici : les appelants rendent tous « Template manquant », un
 		// message qui vaut pour l'analyse syntaxique mais induit en erreur quand

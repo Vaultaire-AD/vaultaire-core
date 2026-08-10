@@ -59,7 +59,7 @@ func Write_log(level string, content string) {
 	}
 
 	// Définir le chemin du répertoire et du fichier
-	dirPath := storage.LogPath
+	dirPath := storage.LogPathResolu()
 	filepath := dirPath + "vaultaire_client.log"
 
 	// Créer le répertoire s'il n'existe pas

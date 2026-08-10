@@ -1,10 +1,10 @@
 package yaml
 
 import (
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/storage"
 	"fmt"
 	"os"
-	"vaultaire_client/logs"
-	"vaultaire_client/storage"
 
 	"gopkg.in/yaml.v2"
 )

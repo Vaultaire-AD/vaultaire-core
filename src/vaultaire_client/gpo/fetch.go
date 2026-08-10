@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Réception des politiques — côté client des trames 05_XX.

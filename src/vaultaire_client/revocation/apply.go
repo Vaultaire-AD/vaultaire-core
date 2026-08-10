@@ -6,7 +6,7 @@ import (
 	"os/user"
 	"strings"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Modes acceptés. Doivent rester alignés sur core/revocation côté serveur —

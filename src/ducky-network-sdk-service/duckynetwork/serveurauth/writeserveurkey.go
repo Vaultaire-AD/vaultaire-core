@@ -8,7 +8,7 @@ import (
 
 func WriteToFile(content string) error {
 	// Définir le chemin du fichier et le créer s'il n'existe pas
-	filePath := filepath.Join(storage.KeyPath, "serveurpublickey.pem")
+	filePath := storage.CheminDansKeyPath("serveurpublickey.pem")
 
 	// Le répertoire du fichier qu'on écrit — et lui seul.
 	//

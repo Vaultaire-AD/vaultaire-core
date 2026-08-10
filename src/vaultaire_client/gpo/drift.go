@@ -5,7 +5,7 @@ import (
 	"os"
 	"sort"
 
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Détection de dérive.

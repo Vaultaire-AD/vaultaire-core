@@ -3,7 +3,7 @@
 package sshreq
 
 import (
-	"vaultaire_client/storage"
+	"vaultaire_client/pamstate"
 )
 
 // Register enregistre un channel de réponse pour un utilisateur donné.
@@ -11,10 +11,10 @@ import (
 //
 // Exemple d'utilisation :
 //
-//	respChan := make(chan storage.AuthResult, 1)
+//	respChan := make(chan pamstate.AuthResult, 1)
 //	sshreq.Register("alice@corp.local", respChan)
 //	defer sshreq.Remove("alice@corp.local")
-func Register(user string, ch chan storage.AuthResult) {
+func Register(user string, ch chan pamstate.AuthResult) {
 	mu.Lock()
 	defer mu.Unlock()
 	requests[user] = ch

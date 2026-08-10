@@ -4,17 +4,55 @@ LABEL maintainer="adm-lviguie"
 LABEL description="Vaultaire Dev Server - Rocky Linux based"
 LABEL env="dev"
 
-# Installation de Go (Rocky 9 possède Go 1.21+ dans ses dépôts officiels)
-# Si tu as besoin d'une version très spécifique, on peut l'installer manuellement,
-# mais dnf est plus propre ici.
+# ---------------------------------------------------------------------------
+# Version de Go
+# ---------------------------------------------------------------------------
+# Go vient de l'archive officielle et NON de `dnf install golang`.
+#
+# Deux raisons, et la seconde est bloquante :
+#
+#   - Rocky 9 livre la version que Red Hat a choisie — 1.25.7 aujourd'hui —,
+#     qui change au rythme de la distribution et pas au nôtre. Les sept modules
+#     déclarent `go 1.26.1` : l'image ne compilait plus rien ;
+#
+#   - le paquet Red Hat fixe GOTOOLCHAIN=local, ce qui INTERDIT à Go de
+#     télécharger le toolchain réclamé par go.mod. Le repli habituel — laisser
+#     GOTOOLCHAIN=auto faire son travail — ne fonctionne donc pas ici, et
+#     l'erreur ne dit pas que la cause est dans l'empaquetage :
+#
+#         go: go.mod requires go >= 1.26.1 (running go 1.25.7; GOTOOLCHAIN=local)
+#
+# La version est alignée sur `toolchain go1.26.5` des go.mod et sur GO_VERSION
+# de .github/workflows/dev.yaml. Les trois doivent bouger ensemble.
+ARG GO_VERSION=1.26.5
+
 RUN dnf install -y \
     sudo \
     openssh-server \
     openssh-clients \
-    golang \
     git \
+    tar \
+    gzip \
     ca-certificates \
     && dnf clean all
+
+# Installation de Go depuis l'archive officielle.
+#
+# L'architecture est déduite de l'image plutôt que codée en dur : la même
+# recette sert sur amd64 et sur arm64, sans quoi un poste ARM produirait un
+# binaire x86 incapable de démarrer.
+RUN set -eux; \
+    arch="$(uname -m)"; \
+    case "$arch" in \
+      x86_64)  goarch=amd64 ;; \
+      aarch64) goarch=arm64 ;; \
+      *) echo "architecture non gérée : $arch" >&2; exit 1 ;; \
+    esac; \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-${goarch}.tar.gz" -o /tmp/go.tgz; \
+    rm -rf /usr/local/go; \
+    tar -C /usr/local -xzf /tmp/go.tgz; \
+    rm -f /tmp/go.tgz; \
+    /usr/local/go/bin/go version
 
 # Création de l'utilisateur
 RUN useradd -m -d /opt/vaultaire -s /bin/bash vaultaire
@@ -33,7 +71,16 @@ WORKDIR /app
 # L'environnement est défini ici, mais peut être écrasé par le docker-compose
 ENV VAULTAIRE_ENV=dev
 ENV GOPATH=/opt/vaultaire/go
-ENV PATH=$PATH:$GOPATH/bin
+ENV PATH=/usr/local/go/bin:$PATH:$GOPATH/bin
+
+# auto et non local : si un jour un go.mod réclame plus récent que l'image, Go
+# récupère le toolchain au lieu de refuser. C'est exactement ce que le paquet
+# Red Hat interdisait.
+ENV GOTOOLCHAIN=auto
+
+# Le cache de compilation vit dans le volume de l'utilisateur : sans lui, chaque
+# `docker compose run` recompile l'intégralité des dépendances.
+ENV GOCACHE=/opt/vaultaire/.cache/go-build
 
 # Commande par défaut
 CMD ["go", "run", "./main"]

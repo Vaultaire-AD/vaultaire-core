@@ -24,3 +24,37 @@ Une fois une action faite est validé definitevement c'est a un humain de dépla
             deployments/selinux/ : collect.sh, vaultaire.te, vaultaire.fc, install.sh
             Reste a faire : un domaine dedie pour l'agent (aujourd'hui unconfined_service_t).
 
+23.[SECU] [AUTH] - Aucune limitation de debit sur l'authentification
+            Ni le portail web, ni LDAP, ni l'API n'imposent de delai ou de blocage apres
+            des echecs repetes. Le bruteforce en ligne n'a rien en face : un mot de passe
+            faible tombe en quelques heures, et rien dans les journaux ne distingue une
+            campagne d'essais d'un utilisateur maladroit.
+            A prevoir : compteur par compte ET par adresse source (un seul des deux se
+            contourne), delai croissant plutot que blocage sec — un blocage sec permet a
+            un tiers de verrouiller un compte a volonte.
+
+24.[TEST] [CI] - La CI ne lance aucun `go test`, et quatre modules n'ont aucun test
+            Le workflow dev.yaml enchaine gofmt, go vet, golangci-lint, gosec, semgrep,
+            govulncheck, trivy et hadolint — mais pas un seul test. Les 287 fonctions de
+            test du depot ne sont donc jamais executees automatiquement : une regression
+            passe la CI au vert.
+            Sans aucun test : api_client_package, vaultaire_cli, vaultaire_ctl,
+            vaultaire_proxy. Les deux premiers portent la signature des requetes API.
+            A faire : job `go test ./...` par module, avec -race sur le serveur.
+
+25.[BUILD] - auto-compil.sh porte un chemin absolu en dur
+            ROOT_DIR="/mnt/c/Users/loren/Documents/git/vaultaire-core". Personne d'autre
+            ne peut compiler sans editer le script, et une CI ne le peut pas du tout.
+            A faire : deduire la racine du script lui-meme
+            (ROOT_DIR="$(cd "$(dirname "$0")" && pwd)"), en laissant une variable
+            d'environnement la surcharger.
+
+26.[FAIT-IA] [DUCKY] - Le protocole existe en double et les deux copies ont diverge
+            src/vaultaire_client/duckynetworkClient/ et
+            src/ducky-network-sdk-service/duckynetwork/ portent les memes sept
+            repertoires — ducky_tool, key_encode_decode, keymanagement, sendmessage,
+            serveurauth, trames_manager, userauth — et leur contenu differe.
+            Un correctif de protocole doit donc etre ecrit deux fois, et le sera un jour
+            une seule. A faire : un module partage dont les deux dependent.
+
+

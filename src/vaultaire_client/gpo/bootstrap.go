@@ -1,11 +1,11 @@
 package gpo
 
 import (
-	"vaultaire_client/duckynetworkClient/sendmessage"
-	"vaultaire_client/logs"
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/storage/stosession"
 	"vaultaire_client/revocation"
-	"vaultaire_client/storage"
-	"vaultaire_client/storage/stosession"
 )
 
 // Amorçage du transport GPO côté agent.
