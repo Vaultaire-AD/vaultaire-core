@@ -27,7 +27,8 @@ Créez `~/.vaultaire/config.json` :
 {
   "server": "https://192.168.10.57:6643",
   "username": "alice",
-  "private_key": "/home/alice/.ssh/id_rsa"
+  "private_key": "/home/alice/.ssh/id_rsa",
+  "ca_certificate": "/root/.vaultaire/api-cert.pem"
 }
 ```
 
