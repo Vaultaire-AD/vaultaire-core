@@ -29,8 +29,12 @@ la liste de courses.
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
 9.[SSH] - il y a un bug sur la gestion des clé ssh authorizek sur les compte de domain il faut mettre en place une logique comme pour le mot de passe les clé sont overwrite a chaque nouvelle connection avec les nouvelles pour eviter que des vielle clé ne reste 
+
 10.[LOG] - sur l'ajout d'une clé public sur un user il  manque le username qui subit l'ajout / lors de la suppresion d'un certificat il manque le nom du certificat 
 11.[MAN] - il manque des commandes vlt dans le man deja les commandes pour les certificats
+12.[Command] - sur les commandes create permission Man pas a jour impossibilité de crée des des permissions client pas possible de crée des descriptions . problmes dans l'afficahge qui est pas coherent apres update on a une sortie qui manque d'informations  
+apres create pas de reponse du serveur alors que pourtant la création a bien été prise en compte  
+
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
             et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »
