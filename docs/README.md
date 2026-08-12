@@ -17,11 +17,16 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 ## 📚 Utilisation
 
+Documentation destinée à qui **exploite** Vaultaire : administrateurs, délégués,
+intégrateurs. Elle répond à « que taper » et « quel droit accorder », jamais à
+« comment c'est écrit ».
+
 | Fichier | Contenu |
 | --- | --- |
-| [`Utilisation/MAN.md`](./Utilisation/MAN.md) | Manuel des commandes `vlt` : create, get, add, remove, delete, update, status, clear, eyes, DNS |
+| [`Utilisation/MAN.md`](./Utilisation/MAN.md) | Manuel des commandes `vlt` : create, get, add, remove, delete, update, status, clear, eyes, DNS, certificate, kill, mfa, enroll, gpo, cluster |
+| [`Utilisation/Group-Permission.md`](./Utilisation/Group-Permission.md) | Groupes et permissions au quotidien : ce que donne un droit sur un domaine |
+| [`Utilisation/Actions_et_Permissions.md`](./Utilisation/Actions_et_Permissions.md) | **Quel droit pour quelle opération** — la référence à consulter avant de déléguer |
 | [`Utilisation/vaultairectl.md`](./Utilisation/vaultairectl.md) | `vaultaire_ctl` — administration distante via l'API REST signée |
-| [`Utilisation/Group-Permission.md`](./Utilisation/Group-Permission.md) | Gestion des groupes et des permissions au quotidien |
 | [`Utilisation/vaultaireLDAP.md`](./Utilisation/vaultaireLDAP.md) | Module LDAP : arborescence, filtres, intégrations |
 
 ---
@@ -36,15 +41,28 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 ## 🧪 Développement
 
+### `Developement/how it work/` — comment les modules fonctionnent
+
+Documentation **interne**, destinée à qui modifie le code. Chaque fichier répond
+à « comment ce module marche, et comment y toucher sans rien casser ».
+
 | Fichier | Contenu |
 | --- | --- |
-| [`Developement/Tableau_Protocole_Réseau.md`](./Developement/Tableau_Protocole_Réseau.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
-| [`Developement/Permissions.md`](./Developement/Permissions.md) | Modèle de permissions : domaines, portées, héritage |
-| [`Developement/Actions_et_Permissions.md`](./Developement/Actions_et_Permissions.md) | Catalogue des actions et des droits requis |
-| [`Developement/GPO.md`](./Developement/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions |
-| [`Developement/DataBase_Struct.md`](./Developement/DataBase_Struct.md) | Schéma de la base de données |
-| [`Developement/MFA_et_Expiration.md`](./Developement/MFA_et_Expiration.md) | Authentification multifacteur et expiration des mots de passe |
-| [`Developement/Journalisation.md`](./Developement/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi |
+| [`Actions.md`](./Developement/how%20it%20work/Actions.md) | Le registre `core/action` : chemin d'une requête, portées, filtrage, **comment ajouter une action** |
+| [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
+| [`Protocole_Ducky.md`](./Developement/how%20it%20work/Protocole_Ducky.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
+| [`GPO.md`](./Developement/how%20it%20work/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions, **ajouter un module** |
+| [`Base_de_donnees.md`](./Developement/how%20it%20work/Base_de_donnees.md) | Schéma de la base de données |
+| [`MFA_et_Expiration.md`](./Developement/how%20it%20work/MFA_et_Expiration.md) | Second facteur et expiration des mots de passe |
+| [`Journalisation.md`](./Developement/how%20it%20work/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi |
+
+> **Ce qui n'a pas sa place ici** : « comment déléguer un droit », « quelle
+> commande taper ». Cela relève de [`Utilisation/`](./Utilisation/). La règle est
+> le LECTEUR, pas le sujet : le même sujet peut avoir une page dans chaque
+> dossier, l'une expliquant le mécanisme, l'autre l'usage.
+
+| | |
+| --- | --- |
 | [`../CONTRIBUTING.MD`](../CONTRIBUTING.MD) | Comment contribuer (à la racine du dépôt) |
 
 ### Suivi des travaux

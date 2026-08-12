@@ -5,6 +5,12 @@ la page d'administration en dérive, et ce qu'il faut toucher pour ajouter un
 objet ou un verbe. Il ne couvre pas les permissions **client** (droits des
 machines), qui sont un simple couple nom + drapeau admin.
 
+> **Public : développeurs.** Pour *déléguer* des droits au quotidien, voir
+> [`Utilisation/Group-Permission.md`](../../Utilisation/Group-Permission.md) ;
+> pour savoir *quel droit* exige telle opération,
+> [`Utilisation/Actions_et_Permissions.md`](../../Utilisation/Actions_et_Permissions.md).
+> Pour le registre qui applique ces droits, [`Actions.md`](./Actions.md).
+
 ---
 
 ## 1. Le modèle en une page

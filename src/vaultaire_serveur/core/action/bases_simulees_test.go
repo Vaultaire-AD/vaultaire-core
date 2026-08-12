@@ -2,6 +2,7 @@ package action
 
 import (
 	"database/sql"
+	"errors"
 	"testing"
 )
 
@@ -22,10 +23,12 @@ import (
 // alors plus rien. Un test qui ne mesure qu'un message ne devrait pas pouvoir
 // emporter les autres.
 //
-// Tous les tests du paquet ne sont pas encore affranchis : ceux qui évaluent
-// une PORTÉE résolvent les domaines d'une permission en base, et cette
-// résolution n'est pas encore substituable. Ils restent tributaires du
-// conteneur de test.
+// Les LECTURES de domaines le sont désormais aussi — voir `portees_acces.go`.
+// C'était le dernier chemin qui exigeait une base, et le plus gênant des deux :
+// la portée EST le mécanisme de délégation. La règle « une écriture exige le
+// droit sur TOUS les domaines de la cible » est ce qui empêche un délégué de
+// Paris d'agir sur un compte à cheval sur Lyon, et elle n'était vérifiée par
+// aucun test.
 
 // Les vraies fonctions, saisies AVANT toute substitution.
 //
@@ -37,6 +40,15 @@ var (
 	vraiCreerPermUtilDéfaut = creerPermUtilDefaut
 	vraiCreerPermClient     = creerPermClientEnBase
 	vraiModifierPermClient  = modifierPermClientEnBase
+
+	vraiDomainesUtilisateur    = domainesDeLUtilisateur
+	vraiDomainesGroupe         = domainesDuGroupe
+	vraiDomainesMachine        = domainesDeLaMachine
+	vraiDomainesPermissionUtil = domainesDeLaPermissionUtil
+	vraiDomainesPermissionCli  = domainesDeLaPermissionCli
+	vraiDomainesGPO            = domainesDeLaGPO
+	vraiGroupesUtilisateur     = groupesDeLUtilisateur
+	vraiDomainesGroupes        = domainesDesGroupes
 )
 
 // baseSimulee neutralise les écritures pour la durée du test.
@@ -57,5 +69,70 @@ func baseSimulee(t *testing.T) {
 		creerPermUtilDefaut = vraiCreerPermUtilDéfaut
 		creerPermClientEnBase = vraiCreerPermClient
 		modifierPermClientEnBase = vraiModifierPermClient
+	})
+}
+
+// annuaireSimule substitue les LECTURES de domaines.
+//
+// `domaines` associe une clé « genre:nom » — « utilisateur:alice »,
+// « groupe:paris », « permission:lecture » — aux domaines de cette entité. Une
+// entité absente rend une liste vide SANS erreur : c'est le cas qui compte le
+// plus, puisque c'est lui qui déclenche le repli sur « * ».
+//
+// Le préfixe de genre n'est pas une coquetterie : sans lui, un utilisateur et un
+// groupe portant le même nom partageraient leur entrée, et un test croirait
+// éprouver l'un en décrivant l'autre.
+func annuaireSimule(t *testing.T, domaines map[string][]string) {
+	t.Helper()
+
+	lire := func(genre string) func(string) ([]string, error) {
+		return func(nom string) ([]string, error) { return domaines[genre+":"+nom], nil }
+	}
+
+	domainesDeLUtilisateur = lire("utilisateur")
+	domainesDuGroupe = lire("groupe")
+	domainesDeLaMachine = lire("machine")
+	domainesDeLaPermissionUtil = lire("permission")
+	domainesDeLaPermissionCli = lire("permission_client")
+	domainesDeLaGPO = lire("gpo")
+	groupesDeLUtilisateur = func(string) ([]int, error) { return nil, nil }
+	domainesDesGroupes = func([]int) ([]string, error) { return nil, nil }
+
+	t.Cleanup(func() {
+		domainesDeLUtilisateur = vraiDomainesUtilisateur
+		domainesDuGroupe = vraiDomainesGroupe
+		domainesDeLaMachine = vraiDomainesMachine
+		domainesDeLaPermissionUtil = vraiDomainesPermissionUtil
+		domainesDeLaPermissionCli = vraiDomainesPermissionCli
+		domainesDeLaGPO = vraiDomainesGPO
+		groupesDeLUtilisateur = vraiGroupesUtilisateur
+		domainesDesGroupes = vraiDomainesGroupes
+	})
+}
+
+// annuaireEnPanne fait échouer toutes les lectures de domaines.
+//
+// Pour éprouver le repli : une erreur de lecture ne doit pas empêcher un
+// administrateur global d'agir — c'est souvent pour réparer le rattachement
+// illisible qu'il intervient — mais elle ne doit rien accorder à un délégué.
+func annuaireEnPanne(t *testing.T) {
+	t.Helper()
+
+	echec := func(string) ([]string, error) { return nil, errors.New("base injoignable") }
+
+	domainesDeLUtilisateur = echec
+	domainesDuGroupe = echec
+	domainesDeLaMachine = echec
+	domainesDeLaPermissionUtil = echec
+	domainesDeLaPermissionCli = echec
+	domainesDeLaGPO = echec
+
+	t.Cleanup(func() {
+		domainesDeLUtilisateur = vraiDomainesUtilisateur
+		domainesDuGroupe = vraiDomainesGroupe
+		domainesDeLaMachine = vraiDomainesMachine
+		domainesDeLaPermissionUtil = vraiDomainesPermissionUtil
+		domainesDeLaPermissionCli = vraiDomainesPermissionCli
+		domainesDeLaGPO = vraiDomainesGPO
 	})
 }

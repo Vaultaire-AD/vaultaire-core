@@ -3,6 +3,7 @@ package webserveur
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -755,8 +756,25 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminCertificatesHandler lists certificates or shows certificate detail when ?cert= is set.
-// Access: web_admin only (no specific RBAC key for certificates; same as before).
+// AdminCertificatesHandler liste les certificats, ou en affiche un si ?cert= est
+// fourni.
+//
+// # Accès : web_admin ET read:certificate
+//
+// Le commentaire d'origine disait « web_admin only (no specific RBAC key for
+// certificates; same as before) ». Il était vrai quand il a été écrit, et il est
+// resté après que la clé `read:certificate` a été créée : cette page lisait la
+// base directement, sans jamais passer par l'action `certificate.list` qui porte
+// pourtant la clé.
+//
+// Conséquence : TOUT compte disposant de `web_admin` voyait les certificats du
+// serveur, y compris celui à qui `read:certificate` avait été explicitement
+// refusé. La ligne de commande, elle, refusait correctement — les deux façades
+// répondaient donc l'inverse l'une de l'autre sur la même question.
+//
+// C'est la même classe de défaut que le registre existe pour supprimer : le
+// contrôle vaut ce que vaut le chemin le plus court, et un chemin qui contourne
+// le registre n'a aucun contrôle.
 func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	// requireWebAdminWithGroupIDs et non requireWebAdmin : les actions sur les
 	// certificats exigent l'appartenance au groupe protégé, laquelle se lit
@@ -767,6 +785,8 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	appelant := act.Appelant{Username: username, GroupIDs: groupIDs}
+
 	detailCertID := r.URL.Query().Get("cert")
 	if detailCertID != "" {
 		certID, err := strconv.Atoi(detailCertID)
@@ -774,6 +794,23 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "ID certificat invalide", http.StatusBadRequest)
 			return
 		}
+
+		// Contrôle par le REGISTRE, sans rien exécuter.
+		//
+		// La fiche se lit par identifiant et l'action `certificate.get` prend un
+		// nom : on ne peut donc pas l'employer telle quelle. Controler applique
+		// néanmoins la même clé, la même portée et le même journal que
+		// `certificate.list` — c'est le même chemin de décision, pas une
+		// vérification recopiée. Voir Executeur.Controler et, côté ligne de
+		// commande, verifierLectureCertificat, qui procède ainsi pour la même
+		// raison.
+		if _, err := act.Defaut.Controler("certificate.list", appelant, act.Params{}); err != nil {
+			logs.Write_Log("SECURITY", "webadmin: "+username+
+				" tente de consulter un certificat sans le droit "+permission.ActionReadCertificate)
+			http.Redirect(w, r, "/profil", http.StatusSeeOther)
+			return
+		}
+
 		cert, err := dbcertificates.GetCertificateByID(certID)
 		if err != nil {
 			http.Error(w, "Certificat introuvable", http.StatusNotFound)
@@ -831,13 +868,31 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	certificates, err := dbcertificates.GetAllCertificates()
+	// La liste vient de l'ACTION, pas d'une lecture directe de la base.
+	//
+	// C'est ce qui rend le contrôle ci-dessus difficile à contourner : le jour
+	// où quelqu'un retire la garde de la page, l'action refusera quand même.
+	// Lire la base ici, c'était s'en remettre entièrement à un `if` qu'un
+	// remaniement pouvait déplacer sans que rien ne le signale — et c'est
+	// exactement ce qui était arrivé.
+	resCerts, err := act.Executer("certificate.list", appelant, act.Params{})
 	if err != nil {
+		// Le refus de droit renvoie vers /profil comme partout ailleurs ; une
+		// panne de lecture reste une erreur 500. Les confondre ferait
+		// disparaître une indisponibilité de la base derrière une redirection
+		// muette.
+		var refus *act.ErrRefusee
+		if errors.As(err, &refus) {
+			logs.Write_Log("SECURITY", "webadmin: "+username+
+				" tente de consulter les certificats sans le droit "+permission.ActionReadCertificate)
+			http.Redirect(w, r, "/profil", http.StatusSeeOther)
+			return
+		}
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: list certificates failed: "+err.Error())
 		http.Error(w, "Erreur liste certificats", http.StatusInternalServerError)
 		return
 	}
-	data.Certificates = certificates
+	data.Certificates, _ = resCerts.Donnees.([]storage.Certificate)
 
 	if err := executeAdminPage(w, "admin_certificates.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)

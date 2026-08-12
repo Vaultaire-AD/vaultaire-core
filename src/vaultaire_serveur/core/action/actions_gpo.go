@@ -9,7 +9,6 @@ import (
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
-	"vaultaire/core/permission"
 )
 
 // Écritures sur les GPO.
@@ -120,8 +119,8 @@ func EnregistrerActionsGPO(r *Registre) {
 // À vérifier chez vous : un délégué qui rattachait à ses groupes des GPO
 // venues d'un autre domaine perdra cette possibilité.
 func PorteeGPOEtGroupe(p Params) ([]string, error) {
-	domainesGroupe, errG := permission.GetDomainsFromGroupName(p.Get("group"))
-	domainesGPO, errP := permission.GetDomainslistFromGPO(p.Get("gpo"))
+	domainesGroupe, errG := domainesDuGroupe(p.Get("group"))
+	domainesGPO, errP := domainesDeLaGPO(p.Get("gpo"))
 
 	if errG != nil {
 		// Le groupe est la cible obligatoire : ne pas savoir le situer interdit

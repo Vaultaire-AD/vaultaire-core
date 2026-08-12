@@ -116,8 +116,18 @@ func TestPorteeDeRattachementCouvreLesDeuxEntites(t *testing.T) {
 	r := NouveauRegistre()
 	EnregistrerActionsGroupe(r)
 
-	// Le stub de permission rend « dom-<nom> » pour un groupe ou un
-	// utilisateur, et « dom-<id> » pour une machine.
+	// L'annuaire simulé rend « dom-<nom> » pour chaque entité.
+	//
+	// Le commentaire d'origine annonçait « le stub de permission » — un stub qui
+	// n'existait pas. Ce test appelait donc la vraie résolution, qui interroge la
+	// base ; sans base, database.GetDatabase() rend nil et l'appel PANIQUAIT,
+	// emportant le binaire de test du paquet entier. Voir portees_acces.go.
+	annuaireSimule(t, map[string][]string{
+		"groupe:paris":      {"dom-paris"},
+		"utilisateur:alice": {"dom-alice"},
+		"machine:poste1":    {"dom-poste1"},
+	})
+
 	cas := []struct {
 		action  string
 		params  Params
@@ -192,6 +202,10 @@ func TestUnionDomainesSansDoublon(t *testing.T) {
 func TestPorteeDesActionsDeRattachement(t *testing.T) {
 	r := NouveauRegistre()
 	EnregistrerActionsGroupe(r)
+
+	annuaireSimule(t, map[string][]string{
+		"groupe:paris": {"dom-paris"},
+	})
 
 	for _, nom := range []string{
 		"group.add_user", "group.remove_user",

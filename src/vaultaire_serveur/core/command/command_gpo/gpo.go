@@ -110,9 +110,24 @@ func conformiteMachine(appelant action.Appelant, computeurID string) string {
 // Ne lit plus la base et ne contrôle plus rien : l'action a fait les deux, et
 // les lignes reçues sont DÉJÀ réduites au périmètre de l'appelant.
 func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly bool) string {
+	return rendreConformiteA(rows, driftOnly, time.Now())
+}
+
+// rendreConformiteA prend l'instant en paramètre, pour être éprouvable.
+//
+// La fraîcheur d'un rapport se juge par rapport à MAINTENANT. Un rendu qui
+// appelle time.Now() en son sein ne se teste qu'en attendant trois heures,
+// c'est-à-dire jamais.
+func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant time.Time) string {
 	if len(rows) == 0 {
-		return "Aucun rapport reçu. Les agents rapportent après application ; si le parc\n" +
-			"est actif depuis plus d'un cycle, vérifiez le journal côté serveur."
+		// Le message a changé de sens avec la vue.
+		//
+		// Il disait « aucun rapport reçu », parce que la liste venait des
+		// rapports : zéro ligne signifiait zéro rapport. Elle vient désormais de
+		// l'INVENTAIRE — zéro ligne signifie donc zéro machine enregistrée, ce
+		// qui est un tout autre problème et appelle une tout autre action.
+		return "Aucune machine à l'inventaire. Créez-en une avec « vlt create -c », puis\n" +
+			"installez l'agent : la conformité apparaîtra dès son premier rapport."
 	}
 
 	// Les largeurs ne sont plus imposées ni les valeurs tronquées.
@@ -122,20 +137,27 @@ func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly bool) string {
 	// précisément la partie qui distingue deux machines d'un même parc. Le
 	// tableau calcule maintenant chaque colonne sur son contenu réel.
 	tb := display.NouvelleTable(
-		"MACHINE", "SCOPE", "UTILISATEUR", "APPLICATION", "MODULES", "CONFORMITÉ", "VU")
+		"MACHINE", "SCOPE", "UTILISATEUR", "SUIVI", "APPLICATION", "MODULES", "CONFORMITÉ", "VU")
 
 	affichées := 0
 	for _, r := range rows {
-		if driftOnly && r.DriftCount == 0 {
+		// Le filtre « écarts seulement » ne masque PAS les machines muettes.
+		//
+		// Une machine qui ne rapporte plus a zéro écart constaté — non parce
+		// qu'elle est saine, mais parce que plus personne ne regarde. La retirer
+		// d'une vue qui cherche les problèmes reviendrait à cacher le seul cas
+		// où l'on ne sait rien.
+		if driftOnly && r.DriftCount == 0 && !r.Silencieuse(maintenant) {
 			continue
 		}
 		affichées++
 		tb.Ajouter(
 			r.ComputeurID,
-			r.Scope,
+			orDash(r.Scope),
 			orDash(r.TargetUser),
+			string(r.Fraicheur(maintenant)),
 			orDash(r.Status),
-			fmt.Sprintf("%d/%d", r.ModulesTotal-r.ModulesFailed, r.ModulesTotal),
+			modulesTexte(r),
 			conformitéTexte(r),
 			âge(r.ReportedAt))
 	}
@@ -144,14 +166,54 @@ func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly bool) string {
 	b.WriteString(tb.String())
 
 	if affichées == 0 {
-		return "Aucun écart de conformité sur les " + fmt.Sprint(len(rows)) + " scope(s) suivi(s)."
+		return "Aucun écart de conformité, et aucune machine muette, sur les " +
+			fmt.Sprint(len(rows)) + " ligne(s) suivie(s)."
 	}
 
 	// Le total est rappelé même en vue filtrée : « 3 machines en dérive » ne veut
 	// rien dire sans savoir si le parc en compte 4 ou 4000.
-	fmt.Fprintf(&b, "\n%d ligne(s) sur %d scope(s) suivi(s).\n", affichées, len(rows))
+	fmt.Fprintf(&b, "\n%d ligne(s) sur %d suivie(s).\n", affichées, len(rows))
+	b.WriteString(resumeTexte(dbgpo.ResumerParc(rows, maintenant)))
 	fmt.Fprintf(&b, "Détail d'une machine : vlt gpo status <computeur_id>\n")
 	return b.String()
+}
+
+// resumeTexte rend l'état du parc en une ligne.
+//
+// Compté en MACHINES, pas en lignes : une machine dont deux portées sont en
+// échec est un problème, pas deux. Le total gonflerait à proportion du nombre
+// d'utilisateurs connectés, et « 47 échecs » sur douze machines ne veut rien
+// dire.
+func resumeTexte(r dbgpo.ResumeParc) string {
+	var parties []string
+	if r.Jamais > 0 {
+		parties = append(parties, fmt.Sprintf("%d jamais rapporté", r.Jamais))
+	}
+	if r.EnRetard > 0 {
+		parties = append(parties, fmt.Sprintf("%d en retard", r.EnRetard))
+	}
+	if r.EnEchec > 0 {
+		parties = append(parties, fmt.Sprintf("%d en échec", r.EnEchec))
+	}
+	if r.AvecEcarts > 0 {
+		parties = append(parties, fmt.Sprintf("%d avec écarts", r.AvecEcarts))
+	}
+	if len(parties) == 0 {
+		return fmt.Sprintf("%d machine(s), toutes à jour.\n", r.Machines)
+	}
+	return fmt.Sprintf("%d machine(s) : %s.\n", r.Machines, strings.Join(parties, ", "))
+}
+
+// modulesTexte évite d'écrire « 0/0 » pour une machine qui n'a rien dit.
+//
+// « 0/0 » se lit comme « aucun module à appliquer », c'est-à-dire comme une
+// réussite. La machine n'a rien appliqué du tout, ce qui n'est pas la même
+// chose et se dit autrement.
+func modulesTexte(r dbgpo.ComplianceRow) string {
+	if r.JamaisRapporte {
+		return "-"
+	}
+	return fmt.Sprintf("%d/%d", r.ModulesTotal-r.ModulesFailed, r.ModulesTotal)
 }
 
 // rendreConformiteMachine met en forme le détail d'une machine.
@@ -297,12 +359,20 @@ func helpText() string {
 
   status                 état d'application et de conformité du parc
   status <computeur_id>  détail d'une machine : modules en échec, écarts
-  drift                  uniquement les machines en écart
+  drift                  machines en écart, et machines muettes
 
-Deux informations distinctes :
+Trois informations distinctes :
+  SUIVI        la machine parle-t-elle encore ? à jour / en retard / jamais
   APPLICATION  le dernier rapport de l'agent — la politique a-t-elle pu être posée ?
   CONFORMITÉ   le dernier scan de l'agent    — est-elle encore en place ?
 
 « non vérifié » ne veut pas dire conforme : il veut dire que l'agent n'a pas
-encore rapporté de scan, ou qu'il n'a aucun fichier inventorié.`
+encore rapporté de scan, ou qu'il n'a aucun fichier inventorié.
+
+La vue part de l'INVENTAIRE et non des rapports : une machine créée mais jamais
+installée, ou dont l'agent est tombé, apparaît en « jamais » ou « en retard ».
+« en retard » se déclenche après trois cycles manqués, soit trois heures — un
+redémarrage ou une maintenance en coûtent un et ne remontent pas.
+
+Le tri place devant ce dont on ne sait rien, puis les échecs, puis les écarts.`
 }

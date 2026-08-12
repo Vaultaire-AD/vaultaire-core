@@ -1,5 +1,8 @@
 # Second facteur et expiration des mots de passe
 
+> **Public : développeurs.** Second facteur et expiration : où vit quoi, et pourquoi.
+> Pour l'usage au quotidien, voir [`docs/Utilisation/`](../../Utilisation/).
+
 Deux fonctionnalités traitées ensemble parce qu'elles répondent à la même
 question — *cette authentification est-elle encore recevable ?* — et qu'elles
 sont interrogées par les mêmes chemins.
@@ -313,6 +316,6 @@ et le message de confirmation le dit explicitement.
 
 ## Voir aussi
 
-- [`Permissions.md`](./Permissions.md) — modèle RBAC, actions spéciales
-- [`DataBase_Struct.md`](./DataBase_Struct.md) — schéma
+- [`Permissions_RBAC.md`](./Permissions_RBAC.md) — modèle RBAC, actions spéciales
+- [`Base_de_donnees.md`](./Base_de_donnees.md) — schéma
 - `core/testrunner/run_totp.go` — vecteurs RFC 6238

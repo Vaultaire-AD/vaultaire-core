@@ -12,7 +12,7 @@ import (
 
 // Transport des GPO — catégorie de trames 05.
 //
-// Voir docs/Developement/Tableau_Protocole_Réseau.md, section « Détail du
+// Voir docs/Developement/how it work/Protocole_Ducky.md, section « Détail du
 // transport GPO ». Modèle pull : le client initie toujours.
 //
 //	05_01 demande machine  → 05_02 manifeste / 05_03 rien à faire / 05_04 erreur

@@ -1,3 +1,7 @@
+# Protocole Ducky Network
+
+> **Public : développeurs.** Référence des trames `MM_SS` : format, ordre, contrôles.
+
 dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui l'envoie
 
 | Name_trames                 | Main Number | Second Number | desciption                       | Example                                                                                   |
@@ -25,8 +29,8 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 12            | serveur_information              | la trame d'information envoyé par les softwares serveur                                   |
 | serveur                     |             | 13            | client_information               | la trame d'information envoyé par les softwares client                                    |
 |                             |             |               |                                  |                                                                                           |
-| server                      |             | 17            | ask list proxy/core              | le client Demande la liste des serveurs a joindre pour se connecter au réseau             |
-| client                      |             | 18            | respond list                     | le serveur repond la liste des serveur joignable                                          |
+| ~~server~~                  |             | ~~17~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_03` — voir « Découverte de service et proxies »           |
+| ~~client~~                  |             | ~~18~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_04`                                                       |
 |                             |             |               |                                  |                                                                                           |
 | SSH                         | 03          |               |                                  |                                                                                           |
 | server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user       |
@@ -39,7 +43,7 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | client (host/proxy)         |             | 01            | register_host                    | enregistrement d’un hôte (proxy, etc.) : hostname, fqdn, ip, role, domain                 |
 | serveur                     |             | 02            | register_host_ok                 | confirmation + session considérée établie pour le host                                    |
 | client                      |             | 03            | list_cores                       | demande la liste des Cores en ligne (service discovery)                                   |
-| serveur                     |             | 04            | list_cores_response              | liste des Cores (id, hostname, ip, port, stress, capabilities)                            |
+| serveur                     |             | 04            | list_cores_response              | liste des Cores ET des proxies, triée par le serveur — voir la section dédiée              |
 | client                      |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                      |
 | serveur                     |             | 06            | proxy_metrics_ack                | accusé de réception                                                                       |
 | client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
@@ -1424,3 +1428,224 @@ Deux options, à trancher au moment de l'étape 6 :
 La première est plus longue, la seconde laisse une exception qui aura tendance à
 s'installer. Aucune n'est à décider maintenant : c'est l'étape 6, elle vient après
 la bascule des vues en lecture.
+
+---
+
+# Découverte de service et proxies (catégorie 04)
+
+> **Statut : proposition, en attente de validation.** Trois arbitrages ont été
+> rendus et figurent ci-dessous ; le reste est ouvert. Aucune implémentation
+> avant accord. Couvre les points 9 et 10 de la TO-DO, qui sont un seul sujet.
+
+## Ce qui existe déjà, et pourquoi personne ne s'en sert
+
+La catégorie 04 est écrite **côté serveur** presque en entier :
+
+| Trame | Rôle | Code serveur | Émetteur | Autorisée au catalogue |
+|---|---|---|---|---|
+| `04_01` | `register_host` | oui | personne | à personne |
+| `04_03` | `list_cores` | oui | personne | à personne |
+| `04_05` | `proxy_metrics` | oui | personne | à personne |
+| `04_07` | `host_heartbeat` | oui | personne | à personne |
+| `04_09`/`04_12`/`04_14` | services | oui | interface web | web seulement |
+
+`handleListCores` rend déjà la liste des nœuds actifs de rôle `core`. La table
+`proxy_metrics` existe et n'a jamais reçu une ligne. `vaultaire_proxy` fait
+soixante-quatre lignes : il s'enrôle, s'authentifie, attend un signal.
+
+Le blocage n'est donc pas l'écriture du serveur — c'est que **le catalogue de
+types n'accorde `04` à aucun client**, et que rien ne l'émet.
+
+## Arbitrage 1 — `02_17`/`02_18` sont SUPPRIMÉES
+
+Le tableau en tête de document déclarait `02_17 ask list proxy/core` et
+`02_18 respond list`. Aucune ligne de code ne les a jamais implémentées, et
+elles font **doublon** avec `04_03`/`04_04`.
+
+La découverte de service reste en `04`, qui porte déjà ce nom. La catégorie `02`
+est « User auth » : y ranger la découverte de service est un mauvais classement
+qui se paierait à chaque lecture du protocole. Qui a le droit de demander reste
+décidé par le catalogue de types, pas par le numéro de trame.
+
+## Arbitrage 2 — le proxy est un RELAIS, il ne déchiffre rien
+
+Deux modèles étaient possibles. Le proxy peut transporter les octets sans les
+lire, ou terminer la session Ducky et en ouvrir une autre vers le core.
+
+C'est le **point 29 qui a tranché**. Avant lui, le chemin PAM ne faisait passer
+qu'une preuve HMAC : un proxy qui terminait la session ne voyait rien
+d'utilisable. Depuis, le mot de passe transite dans le tunnel. Un proxy qui
+déchiffrerait deviendrait **un point de collecte des mots de passe du parc
+entier**, et sa compromission équivaudrait à celle du core.
+
+En relais, la poignée de main RSA et la clé de session restent de bout en bout
+entre l'agent et le core. Le proxy ne peut ni lire, ni modifier, ni se faire
+passer pour le core : l'empreinte de clé est vérifiée par le client, à travers
+lui.
+
+Ce que cela coûte, et qu'il faut accepter :
+
+- **LDAPS présente le certificat du CORE.** Ses SAN doivent donc couvrir le nom
+  du proxy, sans quoi les clients LDAP refuseront la connexion.
+  `GenerateSelfSignedCertPEM` prend déjà `DNSNames` et `IPAddresses` : c'est de
+  la configuration, pas du code neuf.
+- **Le core est choisi à l'ouverture de connexion, pas à la trame.** Pas de
+  répartition fine, pas de cache, pas de reprise en cours de session.
+
+## Arbitrage 3 — les empreintes de core s'apprennent par une session de confiance
+
+`core_key_fingerprint` porte aujourd'hui **une** empreinte, déposée par
+`vlt create -join` sur un canal authentifié. Un second core avec sa propre clé
+serait refusé par tous les agents : distribuer une liste de plusieurs cores ne
+servirait donc à rien.
+
+Le fichier devient une **liste**. La réponse `04_04` porte l'empreinte de chaque
+nœud, et l'agent n'accepte une empreinte nouvelle que si elle arrive **par une
+session déjà authentifiée avec un core déjà connu** — lui-même ancré par
+`vlt create -join`. La condition est remplie par construction, puisque `04_04`
+n'existe qu'à l'intérieur d'une session Ducky établie.
+
+**À écrire noir sur blanc, parce que c'est la limite du modèle :** tout core de
+confiance peut ajouter de la confiance. Un core compromis peut faire accepter
+l'empreinte d'un serveur qu'il contrôle. Seule une autorité de cluster signant
+les clés supprimerait cela ; elle n'est pas dans ce lot, et le jour où elle le
+sera, ce paragraphe est le point d'entrée.
+
+Deux conséquences pratiques :
+
+- la liste apprise est **remplacée**, pas fusionnée, à chaque `04_04` — sinon
+  l'empreinte d'un core retiré du cluster resterait de confiance indéfiniment ;
+- la liste **statique du fichier de configuration n'est jamais écrasée**. C'est
+  l'amorce et le chemin de secours : une liste apprise fausse ou vide rendrait
+  sinon la machine définitivement injoignable.
+
+## `04_03` — demande de la liste (client → serveur)
+
+```
+04_03
+serveur_central
+<session_integrity_key>
+<username_du_programme>
+<client_software_id>
+```
+
+Aucun contenu : le serveur sait qui demande par le `client_software_id`, déjà
+figé à la poignée de main `01_01`. Le client n'annonce pas ses groupes — le
+serveur les lit, et une liste de groupes fournie par le client serait une liste
+de groupes CHOISIE par le client.
+
+**À ajouter au catalogue** pour `vaultaire_client`, `vaultaire_proxy` et
+`vaultaire_web`. Elle est aujourd'hui refusée à tous.
+
+## `04_04` — la liste (serveur → client)
+
+```
+04_04
+serveur_central
+<session_integrity_key>
+<username>
+<client_software_id>
+<nombre de lignes>
+<role>|<hostname>|<fqdn>|<ip>|<port>|<priorité>|<empreinte>|<capabilities>
+...
+```
+
+Ce que la version actuelle rend — `hostname|ip|version|capabilities` — n'est pas
+exploitable : **il manque le port**, le rôle, et la priorité.
+
+| Champ | Pourquoi |
+|---|---|
+| `role` | `core` ou `proxy`. Le client ne traite pas les deux pareil |
+| `fqdn` **et** `ip` | voir ci-dessous |
+| `port` | absent de `cluster_nodes` aujourd'hui. Sans lui, une liste ne sert à rien |
+| `priorité` | entier, **le plus petit est préféré** — convention SRV/MX |
+| `empreinte` | `SHA256:<base64>`, même format que `core_key_fingerprint` |
+| `capabilities` | JSON, **en dernier** : il contient des virgules et pourrait contenir le séparateur. Le découpage se fait avec une limite de champs |
+
+**Le FQDN vient en plus de l'IP, pas à sa place.** Vaultaire *est* le DNS du
+domaine : se reposer sur le nom pour joindre le serveur qui sert les noms est
+une dépendance circulaire au démarrage. L'IP est donc le chemin de connexion ;
+le FQDN sert à vérifier le certificat LDAPS et à nommer la machine dans les
+journaux.
+
+### Le tri est fait par le SERVEUR
+
+Le client applique l'ordre reçu, il ne le recalcule pas. Le serveur connaît les
+groupes du demandeur, les affinités de proxy et la charge ; trier côté client
+obligerait à lui envoyer tout cela et ferait vivre la logique de priorité en
+deux endroits, qui divergeraient.
+
+Ordre rendu :
+
+1. les **proxies affinés** aux groupes de la machine, par priorité croissante ;
+   à priorité égale, **ordre mélangé** — c'est ce qui répartit la charge sans
+   que le client ait à décider ;
+2. les autres proxies actifs ;
+3. les **cores**, toujours en dernier.
+
+**Les cores figurent TOUJOURS dans la liste**, même quand des proxies sont
+disponibles. Sans ce secours, un proxy en panne couperait le parc.
+
+### Quand le client demande
+
+La TO-DO dit « à chaque authentification réussie ». À nuancer : sur un serveur
+multi-utilisateurs, l'authentification d'utilisateur arrive des dizaines de fois
+par heure, et autant de `04_03` n'apprendraient rien de neuf.
+
+Proposition : à l'établissement de la **session machine** — une par connexion au
+core — plus le rafraîchissement horaire que les services persistants font déjà
+pour les GPO.
+
+## Affinité proxy ↔ groupe
+
+Une table d'affinité `(proxy, groupe, priorité)`.
+
+**L'affinité donne une PRIORITÉ, pas une exclusivité.** Un proxy affiné au
+groupe Paris est préféré par les machines de Paris, mais reste joignable par les
+autres, plus bas dans la liste. L'exclusivité ferait qu'un groupe dont l'unique
+proxy tombe ne pourrait pas utiliser un proxy voisin en parfait état.
+
+Le cas qui plaide pour l'exclusivité existe — un proxy en DMZ qu'on ne veut pas
+voir servir les machines internes. Il n'est pas traité ici : un drapeau
+`exclusif` sur la ligne d'affinité le couvrirait, et il sera temps de l'ajouter
+quand un besoin réel de segmentation se présentera, pas avant.
+
+## Ce que le proxy doit émettre pour exister
+
+Rien de neuf à écrire côté serveur, tout est déjà là :
+
+| Trame | À quoi elle sert |
+|---|---|
+| `04_01` | s'enregistrer dans `cluster_nodes` au démarrage |
+| `04_07` | battre, pour ne pas être marqué hors ligne |
+| `04_05` | remonter ses métriques, pour que le tri puisse tenir compte de la charge |
+| `04_03` | trouver les cores vers qui relayer |
+
+Il faut les **émettre**, et les **ajouter au catalogue** pour le type
+`vaultaire_proxy`, qui n'a aujourd'hui aucune trame `04`.
+
+## Une question laissée ouverte
+
+**Que fait un proxy dont tous les cores sont injoignables ?** Refuser
+franchement, ou accepter la connexion et la mettre en attente ?
+
+Proposition : **refuser**. Un client qui reçoit un refus essaie le suivant de sa
+liste — un core, puisqu'ils y figurent toujours. Un client en attente ne fait
+rien pendant tout le délai, et le proxy en panne devient un trou noir au lieu
+d'un nœud qu'on contourne.
+
+## Découpage
+
+| Lot | Contenu | Dépend de |
+|---|---|---|
+| 0 | Liste d'empreintes côté agent, apprise par session de confiance | — |
+| 1 | Port, rôle, priorité dans `cluster_nodes` ; `04_04` enrichie ; `04_03` au catalogue | — |
+| 2 | Le SDK émet `04_03`, fusionne avec le statique et persiste | 0, 1 |
+| 3 | Le proxy émet `04_01`, `04_07`, `04_05` | 1 |
+| 4 | Relais TCP Ducky | 3 |
+| 5 | Relais LDAP/S, SAN du core couvrant les proxies | 4 |
+| 6 | Affinité proxy ↔ groupe et tri côté serveur | 1, 3 |
+
+Le lot 0 conditionne le 2 : sans lui, distribuer une liste de cores ne sert à
+rien, puisque les agents refuseraient de joindre ceux qu'ils ne connaissent pas.
+Les lots 1 et 3 sont indépendants et peuvent démarrer les premiers.

@@ -1,8 +1,11 @@
 # GPO Vaultaire — fonctionnement et extension
 
+> **Public : développeurs.** Modèle déclaratif, catalogue de modules, ajout d'un module.
+> Pour l'usage au quotidien, voir [`docs/Utilisation/`](../../Utilisation/).
+
 Document de développement. Pour l'usage des commandes, voir
-[MAN.md](../Utilisation/MAN.md) §5.6. Pour le protocole réseau, voir
-[Tableau_Protocole_Réseau.md](./Tableau_Protocole_Réseau.md), section
+[MAN.md](../../Utilisation/MAN.md) §5.6. Pour le protocole réseau, voir
+[Protocole_Ducky.md](./Protocole_Ducky.md), section
 « Détail du transport GPO ».
 
 ---
@@ -125,7 +128,7 @@ un seul point de vérité pour la portée.
 | `gpo_field_rule` | Mode de validation d'un champ : liste, motif, libre |
 | `gpo_value_definition` | Valeurs nommées porteuses d'un contenu |
 
-Schéma détaillé : [DataBase_Struct.md](./DataBase_Struct.md).
+Schéma détaillé : [Base_de_donnees.md](./Base_de_donnees.md).
 
 ---
 
@@ -181,7 +184,7 @@ Trames `05_01` à `05_14`. Manifeste puis fragments de 32 Kio — la couche de
 transport annonce la taille sur 2 octets, ce qui plafonne une trame à ~48 Kio
 utiles alors qu'un seul `file_deploy` accepte 256 Kio.
 
-Détail complet dans [Tableau_Protocole_Réseau.md](./Tableau_Protocole_Réseau.md).
+Détail complet dans [Protocole_Ducky.md](./Protocole_Ducky.md).
 
 ### 4.5 Application
 

@@ -1,5 +1,8 @@
 # Journalisation du serveur
 
+> **Public : développeurs.** Ce que le serveur écrit, à quel niveau, et pourquoi.
+> Pour l'usage au quotidien, voir [`docs/Utilisation/`](../../Utilisation/).
+
 Ce que le serveur écrit, à quel niveau, et pourquoi.
 
 ---
@@ -125,7 +128,7 @@ un fichier dédié : `date`, `SQL_Injection`.
 
 ## Ce qui reste à faire
 
-Le point 26 de [`TO-DO.md`](./TO-DO.md) demandait aussi :
+Le point 26 de [`TO-DO.md`](../TO-DO.md) demandait aussi :
 
 - **Ducky** : « user X connecté au client X via le groupe suivant, en tant
   qu'admin ou non » — la trame `02` journalise l'authentification, mais sans le

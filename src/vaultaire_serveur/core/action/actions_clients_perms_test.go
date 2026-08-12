@@ -212,6 +212,20 @@ func TestPorteeDesPermissionsNestPasGlobalePourLaSuppression(t *testing.T) {
 	r := NouveauRegistre()
 	EnregistrerActionsPermission(r)
 
+	// La permission « lecture » porte un domaine dans l'annuaire simulé.
+	//
+	// Sans simulation, ce test appelait la vraie résolution — donc la base — et
+	// PANIQUAIT sur un *sql.DB nul, emportant le binaire de test du paquet.
+	// C'était le dernier chemin du paquet à exiger un conteneur ; voir
+	// portees_acces.go.
+	//
+	// Le domaine doit être NON VIDE : une permission sans domaine se replie sur
+	// « * », et le test conclurait à tort à une portée globale.
+	annuaireSimule(t, map[string][]string{
+		"permission:lecture":        {"paris.fr"},
+		"permission_client:lecture": {"paris.fr"},
+	})
+
 	for _, nom := range []string{"permission.delete", "client_permission.delete", "client_permission.update"} {
 		d, ok := r.Definition(nom)
 		if !ok {

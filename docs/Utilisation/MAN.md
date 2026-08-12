@@ -204,17 +204,11 @@ La configuration se fait via `update -pu` (voir [§12.3](#123-mise-à-jour-des-a
 
 #### Ce qu'un droit sur un domaine précis vous donne
 
-Accorder `read:get:user` sur `paris` — avec ou sans propagation — donne bien
-accès à la **liste** des utilisateurs, en ligne de commande comme sur le portail.
-La liste s'ouvre, et elle ne montre que ce que votre périmètre couvre.
-
 ```bash
 update -pu lecture read:get:user -a 1 paris.fr   # paris.fr et ses sous-domaines
 update -pu lecture read:get:user -a 0 paris.fr   # paris.fr seul
 get -u                                            # les utilisateurs de paris.fr
 ```
-
-Trois questions distinctes se posent, et elles n'attendent pas la même réponse :
 
 | Vous voulez | Il vous faut |
 |---|---|
@@ -222,34 +216,13 @@ Trois questions distinctes se posent, et elles n'attendent pas la même réponse
 | **consulter** une entité | le droit sur **un** de ses domaines |
 | **modifier** une entité | le droit sur **tous** ses domaines |
 
-La troisième ligne n'est pas une sévérité gratuite : un compte présent dans
-`paris` et `lyon` appartient aux deux, et le modifier depuis `paris` porterait
-aussi sur `lyon`.
+Certains droits ne se délèguent **pas** par domaine et s'accordent avec `all` ou
+pas du tout : `web_admin`, `read:log`, `read:dns`, `write:dns`,
+`read:enrollment`, `read:cluster`, `write:cluster`, `read:certificate`,
+`write:certificate`, `write:server`.
 
-> ⚠️ **Jusqu'à la version 2.1, les listes exigeaient à tort le droit global.**
-> `get -u` répondait « Permission refusée : * : refusée » à un délégué qui
-> détenait pourtant `read:get:user` sur son domaine, et la page utilisateurs du
-> portail s'ouvrait sur « Erreur liste utilisateurs ». La propagation `1` ou `0`
-> n'y changeait rien : l'exigence portait sur `*`. Corrigé.
-
-#### Les droits qui ne se délèguent PAS par domaine
-
-Ceux-ci sont des **booléens** : accordez-les avec `all`, ou pas du tout. Leur
-donner une liste de domaines ne les restreint pas, elle les **refuse**.
-
-```
-web_admin   read:log   read:dns   write:dns   read:enrollment
-read:cluster   write:cluster   read:certificate   write:certificate   write:server
-```
-
-La raison est la même pour tous : l'objet visé n'appartient à aucun domaine de
-l'annuaire. Un certificat sert le serveur entier, une ligne de journal porte
-l'activité de tout le parc, une zone DNS n'est pas une entité de l'annuaire.
-
-```bash
-update -pu audit read:log all      # ✅
-update -pu audit read:log -a 1 paris.fr   # ❌ refuse le droit au lieu de le restreindre
-```
+> 📘 **Détail, exemples et raisons** : [`Group-Permission.md`](./Group-Permission.md).
+> **Quel droit pour quelle opération** : [`Actions_et_Permissions.md`](./Actions_et_Permissions.md).
 
 ### 5.1 Permission utilisateur
 
@@ -844,7 +817,7 @@ Les PTR sont créés automatiquement à l’ajout d’un enregistrement A, selon
 
 Toutes les opérations d’écriture passent par le registre d’actions (`dns.create_zone`, `dns.delete_zone`, `dns.add_record`, `dns.delete_record`, `dns.delete_ptr`) et exigent `write:dns` sur `*`.
 
-Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé, faute d’une clé de lecture distincte. Voir `docs/Developement/Actions_et_Permissions.md`.
+Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé, faute d’une clé de lecture distincte. Voir `./Actions_et_Permissions.md`.
 
 ### 14.7 Types d’enregistrements supportés
 
@@ -992,14 +965,30 @@ gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
 gpo drift                  # uniquement les machines en écart
 ```
 
-**Deux informations distinctes, à ne pas confondre :**
+**Trois informations distinctes, à ne pas confondre :**
 
 | | Ce qu'elle dit |
 |---|---|
+| **SUIVI**       | la machine parle-t-elle encore ? `à jour`, `en retard`, `jamais` |
 | **APPLICATION** | le dernier rapport de l’agent — la politique a-t-elle **pu être posée** ? |
 | **CONFORMITÉ**  | le dernier scan de l’agent — est-elle **encore en place** ? |
 
 > « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
+
+**La vue part de l’inventaire, pas des rapports.** Une machine créée mais jamais
+installée, ou dont l’agent est tombé, apparaît donc — en `jamais` ou en `en
+retard`. C’est volontaire : auparavant elle n’apparaissait pas du tout, et son
+silence se lisait comme une absence de problème.
+
+`en retard` se déclenche après **trois** cycles manqués, soit trois heures. Un
+redémarrage ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
+
+Le tri place devant ce dont on ne sait rien — les muettes —, puis les modules en
+échec, puis les écarts. Un échec est visible et chiffré ; un silence ne dit rien,
+et c’est pour cela qu’il passe en premier.
+
+`gpo drift` ne masque **pas** les machines muettes : elles ont zéro écart
+constaté parce que plus personne ne regarde, pas parce qu’elles sont saines.
 
 La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’interface web.
 

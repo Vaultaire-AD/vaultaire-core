@@ -50,7 +50,7 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 			strings.Join(activeSession, ",")
 
 	// Le transport des GPO a quitté la catégorie 02 : il a désormais sa propre
-	// catégorie 05 (voir Tableau_Protocole_Réseau.md). L'ancien 02_16 recevait
+	// catégorie 05 (voir Protocole_Ducky.md). L'ancien 02_16 recevait
 	// une liste de commandes shell exécutées telles quelles, ce que le modèle
 	// déclaratif remplace entièrement.
 

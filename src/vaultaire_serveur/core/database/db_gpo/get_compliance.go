@@ -4,6 +4,8 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"vaultaire/core/clienttype"
 )
 
 // ComplianceRow est l'état de conformité d'un scope sur une machine.
@@ -20,6 +22,13 @@ type ComplianceRow struct {
 	DriftCount     int
 	DriftChecked   int
 	DriftAt        sql.NullTime
+
+	// JamaisRapporte : la machine est à l'inventaire, elle n'a jamais rapporté.
+	//
+	// Ce n'est pas une valeur lue en base — c'est une ligne qui n'existe PAS
+	// dans gpo_compliance, et c'est précisément l'information qui manquait.
+	// Voir ListCompliance.
+	JamaisRapporte bool
 }
 
 const complianceSelect = `
@@ -28,22 +37,63 @@ const complianceSelect = `
 	       drift_count, drift_checked, drift_at
 	  FROM gpo_compliance`
 
+// listeParcSelect part de l'INVENTAIRE des machines, pas des rapports.
+//
+// # Le défaut que cette jointure corrige
+//
+// La version précédente lisait `FROM gpo_compliance`. Une machine qui n'a
+// jamais rapporté n'a pas de ligne dans cette table : elle ne s'affichait donc
+// ni en échec, ni en retard — elle ne s'affichait PAS.
+//
+// C'est le pire des trois états possibles présenté comme le meilleur. Un agent
+// mort, un service arrêté, une machine jamais installée : autant de silences
+// qui se lisaient comme une absence de problème. La question à laquelle cette
+// vue doit répondre — « quelles machines sont en échec ou en retard » — n'avait
+// de réponse que pour celles qui parlaient encore.
+//
+// La LEFT JOIN renverse la source de vérité : c'est l'inventaire qui décide
+// quelles machines doivent apparaître, et le rapport qui vient s'y accrocher
+// quand il existe.
+//
+// # Pourquoi seuls les agents
+//
+// Un proxy ou l'interface web ne reçoivent aucune politique : les faire
+// apparaître comme « jamais rapporté » remplirait la vue de faux positifs
+// permanents, et le premier réflexe serait de désactiver la colonne.
+const listeParcSelect = `
+	SELECT l.computeur_id,
+	       COALESCE(c.scope, ''), COALESCE(c.target_user, ''),
+	       COALESCE(c.fingerprint, ''), COALESCE(c.status, ''),
+	       COALESCE(c.modules_total, 0), COALESCE(c.modules_failed, 0),
+	       COALESCE(c.modules_skipped, 0),
+	       c.reported_at,
+	       COALESCE(c.drift_count, 0), COALESCE(c.drift_checked, 0),
+	       c.drift_at
+	  FROM id_logiciels l
+	  LEFT JOIN gpo_compliance c ON c.computeur_id = l.computeur_id
+	 WHERE l.logiciel_type = ?`
+
 // ListCompliance retourne l'état du parc, machine par machine.
 //
-// L'ordre place devant ce qui va mal : un administrateur qui tape la commande
-// cherche ce qui ne va pas, et le lui faire chercher dans une liste triée par
-// nom rendrait la commande inutile au-delà de vingt machines.
+// L'ordre place devant ce qui va mal — voir TrierConformite. Il est calculé en
+// Go et non par la base : il dépend de l'heure courante, et un tri qu'on ne
+// peut pas éprouver sans base est un tri que personne ne vérifie.
 func ListCompliance(db *sql.DB) ([]ComplianceRow, error) {
 	if db == nil {
 		return nil, fmt.Errorf("gpo: connexion base indisponible")
 	}
-	rows, err := db.Query(complianceSelect + `
-		ORDER BY (modules_failed > 0) DESC, drift_count DESC, computeur_id, scope, target_user`)
+	rows, err := db.Query(listeParcSelect, clienttype.Client)
 	if err != nil {
 		return nil, fmt.Errorf("gpo: lecture de la conformité : %w", err)
 	}
 	defer closeRows(rows)
-	return scanCompliance(rows)
+
+	out, err := scanCompliance(rows)
+	if err != nil {
+		return nil, err
+	}
+	TrierConformite(out, time.Now())
+	return out, nil
 }
 
 // GetComplianceForClient retourne les scopes d'une seule machine.
@@ -65,12 +115,20 @@ func scanCompliance(rows *sql.Rows) ([]ComplianceRow, error) {
 	var out []ComplianceRow
 	for rows.Next() {
 		var r ComplianceRow
+		// reported_at est lu en NullTime et non en time.Time.
+		//
+		// La colonne est NOT NULL dans gpo_compliance, mais la LEFT JOIN de
+		// listeParcSelect produit un NULL pour toute machine sans rapport —
+		// c'est justement la ligne qu'on cherche à faire apparaître. Scanner
+		// dans un time.Time échouerait sur ces lignes-là, et la vue
+		// retomberait sur les seules machines qui parlent.
+		var rapporteA sql.NullTime
 		if err := rows.Scan(&r.ComputeurID, &r.Scope, &r.TargetUser, &r.Fingerprint, &r.Status,
-			&r.ModulesTotal, &r.ModulesFailed, &r.ModulesSkipped, &r.ReportedAt,
+			&r.ModulesTotal, &r.ModulesFailed, &r.ModulesSkipped, &rapporteA,
 			&r.DriftCount, &r.DriftChecked, &r.DriftAt); err != nil {
 			return nil, fmt.Errorf("gpo: lecture d'une ligne de conformité : %w", err)
 		}
-		out = append(out, r)
+		out = append(out, NormaliserLigne(r, rapporteA))
 	}
 	// rows.Err() et pas seulement la fin de boucle : une connexion coupée en
 	// cours de parcours termine la boucle SANS erreur, et le rapport

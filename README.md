@@ -84,10 +84,10 @@ vaultaire-core/
 | CLI distante par API | [`docs/Utilisation/vaultairectl.md`](./docs/Utilisation/vaultairectl.md) |
 | Groupes & permissions | [`docs/Utilisation/Group-Permission.md`](./docs/Utilisation/Group-Permission.md) |
 | Module LDAP | [`docs/Utilisation/vaultaireLDAP.md`](./docs/Utilisation/vaultaireLDAP.md) |
-| Protocole Ducky Network | [`docs/Developement/Tableau_Protocole_Réseau.md`](./docs/Developement/Tableau_Protocole_Réseau.md) |
-| GPO | [`docs/Developement/GPO.md`](./docs/Developement/GPO.md) |
-| Modèle de permissions | [`docs/Developement/Permissions.md`](./docs/Developement/Permissions.md) · [`Actions_et_Permissions.md`](./docs/Developement/Actions_et_Permissions.md) |
-| Schéma de base de données | [`docs/Developement/DataBase_Struct.md`](./docs/Developement/DataBase_Struct.md) |
+| Protocole Ducky Network | [`docs/Developement/how it work/Protocole_Ducky.md`](./docs/Developement/how%20it%20work/Protocole_Ducky.md) |
+| GPO | [`docs/Developement/how it work/GPO.md`](./docs/Developement/how%20it%20work/GPO.md) |
+| Modèle de permissions | [`docs/Developement/how it work/Permissions_RBAC.md`](./docs/Developement/how%20it%20work/Permissions_RBAC.md) · [`Utilisation/Actions_et_Permissions.md`](./docs/Utilisation/Actions_et_Permissions.md) |
+| Schéma de base de données | [`docs/Developement/how it work/Base_de_donnees.md`](./docs/Developement/how%20it%20work/Base_de_donnees.md) |
 | Sécurité | [`docs/Securite/SECURITY.md`](./docs/Securite/SECURITY.md) |
 | SELinux, LDAPS/Keycloak | [`docs/exploitation/`](./docs/exploitation/) |
 | Historique des versions | [`docs/Version_History.md`](./docs/Version_History.md) — index ; détail dans [`docs/Version/`](./docs/Version/) |

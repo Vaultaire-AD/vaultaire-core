@@ -3,7 +3,7 @@
 //
 // Le client est un module Go distinct du serveur : il ne peut pas importer
 // core/gpo. Les types ci-dessous reproduisent donc le contrat de la charge utile
-// décrit dans docs/Developement/Tableau_Protocole_Réseau.md, section « Charge
+// décrit dans docs/Developement/how it work/Protocole_Ducky.md, section « Charge
 // utile de la politique ».
 //
 // Point important : l'agent ne recalcule NI l'empreinte de politique NI celle des

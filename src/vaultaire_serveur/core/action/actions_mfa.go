@@ -63,7 +63,7 @@ func porteeMFAUtilisateur(p Params) ([]string, error) {
 		return nil, fmt.Errorf("utilisateur cible requis")
 	}
 
-	groupIDs, err := permission.GetGroupIDsFromUsername(cible)
+	groupIDs, err := groupesDeLUtilisateur(cible)
 	if err != nil {
 		return nil, fmt.Errorf("groupes de %q illisibles : %w", cible, err)
 	}
@@ -71,7 +71,7 @@ func porteeMFAUtilisateur(p Params) ([]string, error) {
 		return nil, fmt.Errorf("utilisateur %q introuvable ou sans groupe", cible)
 	}
 
-	domaines, err := permission.GetDomainListsFromGroupIDs(groupIDs)
+	domaines, err := domainesDesGroupes(groupIDs)
 	if err != nil {
 		return nil, fmt.Errorf("domaines de %q illisibles : %w", cible, err)
 	}

@@ -11,7 +11,7 @@ import (
 
 // Primitives de transport des politiques vers les agents clients.
 //
-// Voir docs/Developement/Tableau_Protocole_Réseau.md, section « Détail du
+// Voir docs/Developement/how it work/Protocole_Ducky.md, section « Détail du
 // transport GPO » : catégorie de trames 05_01 à 05_14, modèle pull, manifeste
 // suivi de fragments.
 //

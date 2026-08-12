@@ -1,5 +1,8 @@
 # Schéma de la base de données — Vaultaire
 
+> **Public : développeurs.** Schéma consommé par `core/database`.
+> Pour l'usage au quotidien, voir [`docs/Utilisation/`](../../Utilisation/).
+
 ## Arbre ASCII
 
 ```

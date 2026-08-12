@@ -20,6 +20,7 @@ import (
 	dbenrollment "vaultaire/core/database/db_enrollment"
 	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
 
@@ -64,10 +65,21 @@ func AdminEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	db := database.GetDatabase()
 
-	// Même clé RBAC que le CLI, et exigée sur « * » : une clé d'enrôlement
-	// n'appartient à aucun domaine, le service qu'elle fera naître parle au
-	// cluster entier.
-	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:client") {
+	// read:enrollment, et non plus read:get:client.
+	//
+	// Le commentaire d'origine annonçait « même clé RBAC que le CLI ». Ce n'est
+	// plus vrai depuis que les clés d'enrôlement ont la leur : `enroll list`
+	// exige `read:enrollment`, cette page se contentait de `read:get:client`.
+	//
+	// L'écart n'était pas anodin. `read:get:client` est le droit de lire les
+	// MACHINES, délégué par domaine et détenu par tout administrateur de
+	// périmètre : il ouvrait donc la liste des clés d'enrôlement — qui
+	// permettent de faire naître un service parlant au cluster entier — à qui
+	// n'avait qu'une délégation locale.
+	//
+	// Même défaut que la page des certificats : deux façades, deux réponses à
+	// la même question. Voir AdminCertificatesHandler.
+	if !checkWebAdminRBAC(w, r, groupIDs, permission.ActionReadEnrollment) {
 		return
 	}
 	canCreate, _ := checkWebAdminRBACOnDomains(groupIDs, "write:create:client", []string{"*"})

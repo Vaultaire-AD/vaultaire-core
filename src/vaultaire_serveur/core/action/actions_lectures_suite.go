@@ -130,7 +130,7 @@ func EnregistrerActionsLectureSuite(r *Registre) {
 // accessible du système, puisque la liste vide de CheckPermissions n'a rien à
 // vérifier.
 func porteeGPO(p Params) ([]string, error) {
-	return domainesOuGlobal(permission.GetDomainslistFromGPO(p.Get("gpo")))
+	return domainesOuGlobal(domainesDeLaGPO(p.Get("gpo")))
 }
 
 // --- filtres -----------------------------------------------------------------

@@ -12,7 +12,7 @@ import (
 	"vaultaire/core/storage"
 )
 
-// Trames de la catégorie 06 — voir Tableau_Protocole_Réseau.md.
+// Trames de la catégorie 06 — voir Protocole_Ducky.md.
 //
 //	06_01  revoke_order          serveur → client
 //	  06_02  revoke_ack          client → serveur

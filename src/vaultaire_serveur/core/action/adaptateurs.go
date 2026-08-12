@@ -108,12 +108,12 @@ func (JournalVaultaire) Echec(msg string) {
 // doit fournir sa propre portée — sans quoi le contrôle porterait sur une chaîne
 // vide, donc sur les domaines de personne.
 func PorteeUtilisateur(p Params) ([]string, error) {
-	return domainesOuGlobal(permission.GetDomainListFromUsername(p.Get("username")))
+	return domainesOuGlobal(domainesDeLUtilisateur(p.Get("username")))
 }
 
 // PorteeGroupe exige le droit sur les domaines du groupe visé, paramètre « group ».
 func PorteeGroupe(p Params) ([]string, error) {
-	return domainesOuGlobal(permission.GetDomainsFromGroupName(p.Get("group")))
+	return domainesOuGlobal(domainesDuGroupe(p.Get("group")))
 }
 
 // PorteeGroupeEtUtilisateur exige le droit sur les domaines des DEUX.
@@ -146,8 +146,8 @@ func PorteeGroupe(p Params) ([]string, error) {
 // À vérifier chez vous : un délégué qui rattachait des comptes à des groupes
 // d'un autre domaine perdra cette possibilité.
 func PorteeGroupeEtUtilisateur(p Params) ([]string, error) {
-	domainesGroupe, errG := permission.GetDomainsFromGroupName(p.Get("group"))
-	domainesUser, errU := permission.GetDomainListFromUsername(p.Get("username"))
+	domainesGroupe, errG := domainesDuGroupe(p.Get("group"))
+	domainesUser, errU := domainesDeLUtilisateur(p.Get("username"))
 
 	// Une erreur de lecture d'un côté ne doit pas réduire la portée à l'autre :
 	// ce serait affaiblir le contrôle au moment précis où l'on sait le moins de
@@ -160,8 +160,8 @@ func PorteeGroupeEtUtilisateur(p Params) ([]string, error) {
 
 // PorteeGroupeEtClient : même raisonnement pour le rattachement d'une machine.
 func PorteeGroupeEtClient(p Params) ([]string, error) {
-	domainesGroupe, errG := permission.GetDomainsFromGroupName(p.Get("group"))
-	domainesClient, errC := permission.GetDomainsFromClientByComputerID(p.Get("computeur_id"))
+	domainesGroupe, errG := domainesDuGroupe(p.Get("group"))
+	domainesClient, errC := domainesDeLaMachine(p.Get("computeur_id"))
 
 	if errG != nil || errC != nil {
 		return domainesOuGlobal(nil, fmt.Errorf("groupe : %v ; machine : %v", errG, errC))
@@ -193,7 +193,7 @@ func unionDomaines(a, b []string) []string {
 // PorteeClient exige le droit sur les domaines de la machine visée,
 // paramètre « computeur_id ».
 func PorteeClient(p Params) ([]string, error) {
-	return domainesOuGlobal(permission.GetDomainsFromClientByComputerID(p.Get("computeur_id")))
+	return domainesOuGlobal(domainesDeLaMachine(p.Get("computeur_id")))
 }
 
 // permissionDomainesUtilisateur et permissionDomainesClient isolent les deux
@@ -205,11 +205,11 @@ func PorteeClient(p Params) ([]string, error) {
 // mauvaise permission — sans erreur visible, puisque les deux rendent une liste
 // de chaînes.
 func permissionDomainesUtilisateur(nom string) ([]string, error) {
-	return permission.GetDomainslistFromUserpermission(nom)
+	return domainesDeLaPermissionUtil(nom)
 }
 
 func permissionDomainesClient(nom string) ([]string, error) {
-	return permission.GetDomainslistFromClientpermission(nom)
+	return domainesDeLaPermissionCli(nom)
 }
 
 // domainesOuGlobal traduit « aucun domaine » en « droit global exigé ».
