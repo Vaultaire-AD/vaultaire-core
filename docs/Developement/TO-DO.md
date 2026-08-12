@@ -35,6 +35,18 @@ la liste de courses.
 12.[Command] - sur les commandes create permission Man pas a jour impossibilité de crée des des permissions client pas possible de crée des descriptions . problmes dans l'afficahge qui est pas coherent apres update on a une sortie qui manque d'informations  
 apres create pas de reponse du serveur alors que pourtant la création a bien été prise en compte  
 
+14.[Command] pb avec la gestion des permissions via domain 
+          - permission a un user qui mui donnée get sur l'object user sur un domain precis sans propagation sur le cli pas d'acces au suer 
+          - vlt get -u = Permission refusée : * : refusée
+          - sur la page web Erreur liste utilisateurs = 12/08/2026 11:31:07 [WARNING] [VLT-AUTH003] Action 'read:get:user' refusée sur le domaine '*' (aucune règle applicable dans les groupes [11])
+12/08/2026 11:31:07 [WARNING] action user.list refusée à scope.propage : droit read:get:user exigé sur [*] — * : refusée
+12/08/2026 11:31:07 [ERROR] [VLT-WEB003] webadmin: list users failed: permission refusée pour user.list (read:get:user) : * : refusée 
+          - il faut donc verifier la gestion des permission sur les domaines de facon precise le problemes et le meme avec le domaun avec ou sans propagation 1 ou 0
+          - Globalement les permission de domain precise sont cassé quand je fait par exemple un get -u avec le droit de lecture sur un domain precis avec ou sans propagation je dois voire l'ensemble des user que j'ai le droit de voire pareil sur la page web quand je clique sur la page user a partit du moment ou j'ai un droit de lecture je dois pouvoir acceder a la page et voir les user que je peut voir cela s'applique a l'ensemble des objet sauf pour certain permission tres precise qui sont les usivante qui sont des boolean en gros 
+          - dont voici la liste = read:log,read:cluster,write:cluster,read:certificate,write:certificate,read:enrollment,write:serv 
+          -toutes les modification doivent etre marquer dans la documentation (pour la partie dns pour le moment si trop compliquer on peut la laissé en gestion boolean )que cela soit dans le man ou la doc sur les permissions
+          
+
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
             et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »
