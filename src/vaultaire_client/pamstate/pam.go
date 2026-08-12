@@ -59,9 +59,13 @@ var SocketPath = SocketDir + "/" + SocketName
 const LegacySocketPath = "/tmp/vaultaire_client.sock"
 
 type AuthResult struct {
-	Type    string `json:"type"` // "AUTH" ou "CHECK"
-	Salt    string `json:"salt"`
-	Nonce   string `json:"nonce"`
+	// Salt et Nonce ont été RETIRÉS avec le défi d'authentification.
+	//
+	// Ils portaient le sel du compte et le nonce du serveur jusqu'au calcul de
+	// la preuve HMAC. Le mot de passe partant désormais dans le tunnel, plus
+	// personne ne les remplit — et les laisser en place aurait laissé croire
+	// qu'un chemin les alimente encore.
+	Type    string `json:"type"` // "AUTH", "CHECK" ou "FETCH"
 	IsAdmin bool   `json:"is_admin"`
 	SSHKeys string `json:"ssh_keys"`
 }

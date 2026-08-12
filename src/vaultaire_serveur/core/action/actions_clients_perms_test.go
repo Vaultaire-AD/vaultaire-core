@@ -61,6 +61,8 @@ func TestInventaireNestPasEfface(t *testing.T) {
 // administrateur qui compte sur cette action pour retirer un poste compromis se
 // tromperait — et c'est précisément dans ce cas qu'il ne faut pas se tromper.
 func TestMessageDeSuppressionDitCeQuiResteEnPlace(t *testing.T) {
+	baseSimulee(t)
+
 	res, err := supprimerClient(Appelant{}, Params{"computeur_id": "ABC-123"})
 	if err != nil {
 		t.Fatalf("suppression : %v", err)
@@ -123,6 +125,8 @@ func TestNomDePermissionSansDeuxPoints(t *testing.T) {
 // message doit nommer la conséquence, parce que c'est le moment où l'on peut
 // encore revenir en arrière sans avoir rien cassé.
 func TestMessageDeCreationAdminEstExplicite(t *testing.T) {
+	baseSimulee(t)
+
 	res, err := creerPermissionUtilisateur(Appelant{Username: "alice"},
 		Params{"name": "admins", "web_admin": "on"})
 	if err != nil {
@@ -147,6 +151,8 @@ func TestMessageDeCreationAdminEstExplicite(t *testing.T) {
 // Le cas est même moins visible : le privilège s'exerce sans qu'aucun humain
 // soit identifié derrière.
 func TestPermissionClientAdminEstSignalee(t *testing.T) {
+	baseSimulee(t)
+
 	res, err := creerPermissionClient(Appelant{Username: "alice"},
 		Params{"name": "postes-admin", "is_admin": "on"})
 	if err != nil {
@@ -163,6 +169,8 @@ func TestPermissionClientAdminEstSignalee(t *testing.T) {
 // inexplicables. Ne tracer que l'octroi laisserait le diagnostic sans point de
 // départ.
 func TestRetraitDAdministrationEgalementTrace(t *testing.T) {
+	baseSimulee(t)
+
 	res, err := modifierPermissionClient(Appelant{Username: "alice"},
 		Params{"permission_name": "postes-admin", "is_admin": "off"})
 	if err != nil {
@@ -284,11 +292,25 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 		}
 	}
 
-	// 3 utilisateur + 13 groupe + 3 client + 5 permission + 1 certificat
-	// + 2 enrôlement + 3 DNS + 2 clés SSH + 1 politique + 1 suppression + 1 MFA + 2 DNS
-	if len(defs) != 37 {
-		t.Fatalf("%d actions au catalogue, attendu 37 — "+
-			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée", len(defs))
+	// Le compte attendu couvre les écritures ET les lectures.
+	//
+	// Il valait 37 — le total des seules écritures, à l'époque où le registre ne
+	// portait qu'elles. Les lots de lecture (utilisateur, groupe, client,
+	// permission, GPO, état de session, arborescence, cluster, certificats, DNS,
+	// enrôlement) l'ont porté à 80, et ce chiffre-ci n'avait pas suivi.
+	//
+	// Personne ne l'a vu parce que ce paquet ne compilait pas : le test n'avait
+	// pas tourné depuis. Un compte figé qu'aucune exécution ne confronte au
+	// catalogue ne surveille rien du tout.
+	//
+	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
+	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
+	// disparu de EnregistrerTout ne ferait que le faire baisser en silence.
+	const actionsAttendues = 80
+	if len(defs) != actionsAttendues {
+		t.Fatalf("%d actions au catalogue, attendu %d — "+
+			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée",
+			len(defs), actionsAttendues)
 	}
 }
 

@@ -57,6 +57,16 @@ func Run() int {
 	// --- Unit: états de la politique d'expiration des mots de passe ---
 	results = append(results, testPasswordPolicy()...)
 
+	// --- Unit: hachage argon2id et migration depuis SHA-256 ---
+	//
+	// Placé ici et pas seulement dans les tests unitaires du paquet : c'est le
+	// seul endroit où argon2 est la VRAIE fonction. Le harnais hors ligne la
+	// remplace par une substitution, ce qui suffit à éprouver l'encodage et la
+	// règle de réencodage, mais pas à vérifier que les paramètres sont
+	// réellement appliqués — une empreinte instantanée n'est pas de l'argon2id,
+	// quelle que soit l'allure de la chaîne qui la porte.
+	results = append(results, testPassword()...)
+
 	// --- Unit: contrôle d'accès du registre d'actions ---
 	//
 	// Sans base : les vérificateurs de droits et la résolution des domaines

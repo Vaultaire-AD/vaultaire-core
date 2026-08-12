@@ -7,7 +7,6 @@ import (
 	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
-	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/web_serveur/session"
@@ -75,7 +74,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(db, userID)
+	valide, err := dbusers.VerifierMotDePasse(db, userID, password)
 	if err != nil {
 		// Ici l'utilisateur existe : un échec à ce stade est un vrai problème DB, pas
 		// juste un mauvais mot de passe.
@@ -84,7 +83,7 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !gc.ComparePasswords(password, salt, Hpassword) {
+	if !valide {
 		logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied, "Mauvais mot de passe pour "+username)
 		ratelimit.Echec(username, source)
 		http.Redirect(w, r, "/", http.StatusSeeOther)

@@ -89,5 +89,50 @@ else
     echo "  [SKIP] useradd absent de cette machine"
 fi
 
+# ---------------------------------------------------------------------------
+echo
+echo "=== Point 9 : les cles revoquees ne survivent pas a la connexion ==="
+# ---------------------------------------------------------------------------
+#
+# Le comportement du parseur est verifie par hardening_test.c. Ce qui suit
+# verifie ses APPELANTS, qu'aucun test ne peut exercer sans un daemon vivant et
+# un serveur au bout : les deux modules PAM appellent le parseur depuis
+# pam_sm_authenticate.
+#
+# Le defaut tenait a trois caracteres. « == 0 && keys » sautait l'ecriture des
+# que la liste etait vide, donc laissait l'ancien authorized_keys intact apres
+# une revocation totale — la seule revocation qui ne prenait jamais effet.
+#
+# On verifie les deux sens : que la forme fautive est absente, ET que l'appel
+# attendu est bien present. Sans le second controle, deplacer ou renommer
+# l'appel ferait passer ce garde-fou au vert sans plus rien surveiller.
+
+verif_point9() {
+    fichier="$1"
+    if grep -q 'vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0 && keys' "$fichier"; then
+        echo "  [FAIL] $(basename "$fichier") : l'ecriture des cles est sautee quand la liste est vide"
+        return 1
+    fi
+    if ! grep -q 'vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0)' "$fichier"; then
+        echo "  [FAIL] $(basename "$fichier") : appel a vaultaire_json_get_ssh_keys introuvable sous la forme attendue"
+        return 1
+    fi
+    echo "  [PASS] $(basename "$fichier") reecrit authorized_keys meme sans aucune cle"
+    return 0
+}
+
+verif_point9 "$ICI/pam_ssh_auth_module.c"
+verif_point9 "$ICI/pam_login_custom_module.c"
+
+# Le garde-fou teste sur lui-meme : soumis a la forme fautive, il doit refuser.
+# Un controle par grep qui ne verrait plus rien passerait silencieusement.
+sed 's/&key_count) == 0)/\&key_count) == 0 \&\& keys)/' \
+    "$ICI/pam_ssh_auth_module.c" > "$TMP/fautif.c"
+if verif_point9 "$TMP/fautif.c" >/dev/null 2>&1; then
+    echo "  [FAIL] le controle ci-dessus ne detecte PAS la forme fautive"
+    exit 1
+fi
+echo "  [PASS] le controle detecte bien la forme fautive"
+
 echo
 echo "Tous les tests sont passes."

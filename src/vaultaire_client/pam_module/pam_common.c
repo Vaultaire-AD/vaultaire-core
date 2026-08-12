@@ -1058,33 +1058,67 @@ int vaultaire_json_get_bool(const char *json, const char *key, bool *out) {
     return 0;
 }
 
+/* Lit "ssh_keys":["...","..."].
+ *
+ * # Pourquoi le contrat de retour compte plus que l'analyse elle-meme
+ *
+ * L'appelant se sert du resultat pour REECRIRE authorized_keys. Il doit donc
+ * pouvoir distinguer deux situations que l'ancienne version rendait
+ * identiques — toutes deux « 0, zero cle » :
+ *
+ *   a) le serveur repond que ce compte n'a PLUS AUCUNE cle. Il faut alors
+ *      ecrire un fichier vide, sinon les cles revoquees restent en place et
+ *      continuent d'ouvrir la session. C'est le defaut signale.
+ *
+ *   b) la reponse est illisible — champ absent, tableau non ferme, chaine non
+ *      terminee. Ecrire un fichier vide LA priverait de sa cle un compte qui
+ *      en a une, sur un simple incident de lecture du socket.
+ *
+ * D'ou : 0 uniquement si le tableau a ete lu ENTIEREMENT, -1 sinon. Le cas (a)
+ * rend 0 avec zero cle, le cas (b) rend -1. Confondre les deux, c'est choisir
+ * entre laisser entrer un revoque et verrouiller un ayant droit.
+ *
+ * En cas d'echec, rien n'est rendu a l'appelant : les cles deja lues sont
+ * liberees et *count_out reste a 0. Une liste partielle serait le pire des
+ * deux mondes — assez credible pour etre ecrite, incomplete pour de bon.
+ */
 int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *count_out) {
     if (!json || !keys_out || !count_out) return -1;
     *keys_out = NULL;
     *count_out = 0;
 
     const char *p = strstr(json, "\"ssh_keys\"");
-    if (!p) return 0;
-    p = strchr(p, '[');
-    if (!p) return 0;
+    if (!p) return -1;
+    p += strlen("\"ssh_keys\"");
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+    if (*p != ':') return -1;
+    p++;
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
+
+    /* Un tableau, et rien d'autre. « null » arrive des qu'un encodeur JSON
+     * serialise une tranche vide non initialisee ; le prendre pour une liste
+     * vide effacerait les cles de l'utilisateur. */
+    if (*p != '[') return -1;
     p++;
 
     char **keys = NULL;
     size_t count = 0;
+    int erreur = 0;
 
-    while (*p && *p != ']') {
+    for (;;) {
         while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
-        if (*p != '"') break;
-        p++; // Sauter le " ouvrant
+        if (*p == ']') break;                 /* fin normale, y compris tableau vide */
+        if (*p != '"') { erreur = 1; break; } /* tronque, ou autre chose qu'une chaine */
+        p++; /* Sauter le " ouvrant */
 
         const char *start = p;
-        // Trouver la fin de la string en ignorant les \" (guillemets échappés)
+        /* Trouver la fin de la string en ignorant les \" (guillemets échappés) */
         while (*p && !(*p == '"' && *(p-1) != '\\')) p++;
-        if (!*p) break;
+        if (*p != '"') { erreur = 1; break; } /* chaine non terminee : reponse coupee */
 
         size_t raw_len = (size_t)(p - start);
         char *key = malloc(raw_len + 1);
-        if (!key) break;
+        if (!key) { erreur = 1; break; }
 
         // Copie intelligente pour supprimer les échappements (ex: \/ -> /)
         size_t j = 0;
@@ -1092,7 +1126,7 @@ int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *coun
             if (start[i] == '\\' && i + 1 < raw_len) {
                 // On saute le backslash si c'est un slash ou un guillemet échappé
                 if (start[i+1] == '/' || start[i+1] == '"' || start[i+1] == '\\') {
-                    continue; 
+                    continue;
                 }
             }
             key[j++] = start[i];
@@ -1100,11 +1134,18 @@ int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *coun
         key[j] = '\0';
 
         char **tmp = realloc(keys, sizeof(char *) * (count + 1));
-        if (!tmp) { free(key); break; }
+        if (!tmp) { free(key); erreur = 1; break; }
         keys = tmp;
         keys[count++] = key;
         p++; // Sauter le " fermant
     }
+
+    if (erreur) {
+        for (size_t i = 0; i < count; i++) free(keys[i]);
+        free(keys);
+        return -1;
+    }
+
     *keys_out = keys;
     *count_out = count;
     return 0;

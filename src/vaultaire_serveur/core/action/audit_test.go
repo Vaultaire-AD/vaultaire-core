@@ -110,15 +110,18 @@ func TestUneEcritureEnEchecPasseParEchec(t *testing.T) {
 // changement d'ordre ferait nommer la mauvaise entité — un rattachement porte
 // à la fois un utilisateur et un groupe, et c'est l'utilisateur qui change de
 // situation.
+//
+// Le reste de la table de correspondance, et la confrontation de cette liste
+// aux paramètres que les actions lisent vraiment, sont dans cible_test.go.
 func TestLaCibleEstNommeeSelonLAction(t *testing.T) {
 	cas := []struct {
 		params  Params
 		attendu string
 	}{
 		{Params{"username": "bob"}, "username bob"},
-		{Params{"group": "paris"}, "group paris"},
+		{Params{"group": "paris"}, "groupe paris"},
 		{Params{"username": "bob", "group": "paris"}, "username bob"},
-		{Params{"gpo": "durcissement"}, "gpo durcissement"},
+		{Params{"gpo": "durcissement"}, "GPO durcissement"},
 		{Params{}, "le serveur"},
 		{Params{"inconnu": "x"}, "le serveur"},
 	}

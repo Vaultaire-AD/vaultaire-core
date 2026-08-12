@@ -10,7 +10,6 @@ import (
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbusers "vaultaire/core/database/db_users"
-	gc "vaultaire/core/global/security"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	ldapresponse "vaultaire/core/ldap/LDAP_RESPONSE"
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
@@ -208,14 +207,19 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	}
 
 	// 🔐 Vérification du mot de passe
-	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(database.GetDatabase(), userID)
+	//
+	// VerifierMotDePasse réencode au passage l'empreinte des comptes restés en
+	// SHA-256. Le bind LDAP compte parmi les portes qui doivent le faire : sur
+	// une installation où l'annuaire ne sert qu'à des applications, c'est peut-être
+	// la SEULE par laquelle un compte donné se connecte jamais.
+	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), userID, string(op.Authentication))
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf("ldap bind: password lookup failed for user=%s: %v", user, err))
 		respondProtocolError(messageID, conn, "password lookup failed")
 		return
 	}
 
-	if !gc.ComparePasswords(string(op.Authentication), salt, Hpassword) {
+	if !valide {
 		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: invalid password user=%s from %s", user, conn.RemoteAddr().String()))
 		refuser(conn, messageID, source, user)
 		return

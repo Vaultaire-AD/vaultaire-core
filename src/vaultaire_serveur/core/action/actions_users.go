@@ -1,15 +1,13 @@
 package action
 
 import (
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"strings"
 	"time"
 
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
+	"vaultaire/core/global/security"
 	"vaultaire/core/tools"
 )
 
@@ -179,22 +177,21 @@ func deduireIdentite(username string) (prenom, nom string) {
 	return parts[0], parts[1]
 }
 
-// hacherMotDePasse produit le sel et le haché stockés en base.
+// hacherMotDePasse produit le sel et l'empreinte stockés en base.
 //
-// Reprend exactement le calcul des deux anciennes versions — SHA-256 de
-// sel‖mot de passe — pour que les comptes existants restent utilisables.
+// Délègue à security.Hacher — argon2id — et ne recopie plus le calcul.
 //
-// Ce n'est pas une validation de ce choix : il est discuté ailleurs. Le
-// modifier ici, au passage d'une refonte de structure, invaliderait tous les
-// mots de passe du parc sans que ce soit la question du jour.
+// Le SHA-256 qui vivait ici était l'un des TROIS endroits qui produisaient une
+// empreinte, avec le bootstrap de l'administrateur et le changement de mot de
+// passe. Trois copies du même calcul, qu'il fallait faire évoluer ensemble sous
+// peine de créer des comptes illisibles par les autres chemins. Il n'en reste
+// qu'une définition, dans security.
 func hacherMotDePasse(motDePasse string) (selHex, hacheHex string, err error) {
-	sel := make([]byte, 16)
-	if _, err := rand.Read(sel); err != nil {
-		return "", "", fmt.Errorf("erreur lors de la génération du sel : %w", err)
+	empreinte, sel, err := security.Hacher(motDePasse)
+	if err != nil {
+		return "", "", err
 	}
-	sale := append(append([]byte{}, sel...), []byte(motDePasse)...)
-	somme := sha256.Sum256(sale)
-	return hex.EncodeToString(sel), hex.EncodeToString(somme[:]), nil
+	return sel, empreinte, nil
 }
 
 // modifierUtilisateur change identifiant, prénom ou nom.

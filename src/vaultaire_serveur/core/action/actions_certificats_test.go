@@ -2,8 +2,12 @@ package action
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
+
+	dbcertificates "vaultaire/core/database/db_certificates"
+	"vaultaire/core/storage"
 )
 
 // Tests du contrôle par appartenance au groupe protégé.
@@ -219,7 +223,29 @@ func TestCumulDesDeuxControles(t *testing.T) {
 
 // --- l'action elle-même -----------------------------------------------------
 
+// baseCertificatSimulee substitue les deux accès à la base et rend de quoi les
+// rétablir.
+//
+// Sans cela, ces tests dépendraient de ce que la couche base fait SANS base,
+// c'est-à-dire d'un comportement que personne n'a choisi.
+func baseCertificatSimulee(t *testing.T, nom string, existe bool) {
+	t.Helper()
+	lireCertificat = func(id int) (*storage.Certificate, error) {
+		if !existe {
+			return nil, fmt.Errorf("certificat non trouvé: ID %d", id)
+		}
+		return &storage.Certificate{ID: id, Name: nom}, nil
+	}
+	supprimerEnBaseCert = func(int) error { return nil }
+	t.Cleanup(func() {
+		lireCertificat = dbcertificates.GetCertificateByID
+		supprimerEnBaseCert = dbcertificates.DeleteCertificate
+	})
+}
+
 func TestCertificatIdentifiantInvalide(t *testing.T) {
+	baseCertificatSimulee(t, "ldaps", true)
+
 	cas := []string{"", "abc", "0", "-1", "1.5"}
 	for _, v := range cas {
 		t.Run("id="+v, func(t *testing.T) {
@@ -231,12 +257,27 @@ func TestCertificatIdentifiantInvalide(t *testing.T) {
 	}
 }
 
+// TestCertificatInexistantRefuse.
+//
+// DeleteCertificate ne distingue pas « zéro ligne touchée » d'une suppression
+// réussie : sans lecture préalable, supprimer un identifiant qui n'existe pas
+// était rapporté comme un succès.
+func TestCertificatInexistantRefuse(t *testing.T) {
+	baseCertificatSimulee(t, "", false)
+
+	if _, err := supprimerCertificat(Appelant{Username: "root"}, Params{"certificate_id": "42"}); err == nil {
+		t.Fatal("suppression d'un certificat inexistant rapportée comme un succès")
+	}
+}
+
 // TestMessageDeSuppressionDitLaConsequence.
 //
 // « Certificat supprimé » ne prépare pas l'administrateur à voir un service
 // tomber au redémarrage suivant, ni les clients qui avaient importé l'ancien
 // certificat à cesser de se connecter.
 func TestMessageDeSuppressionDitLaConsequence(t *testing.T) {
+	baseCertificatSimulee(t, "ldaps", true)
+
 	res, err := supprimerCertificat(Appelant{Username: "root"}, Params{"certificate_id": "3"})
 	if err != nil {
 		t.Fatalf("suppression : %v", err)
@@ -245,6 +286,28 @@ func TestMessageDeSuppressionDitLaConsequence(t *testing.T) {
 		if !strings.Contains(res.Message, attendu) {
 			t.Errorf("message %q : ne contient pas %q", res.Message, attendu)
 		}
+	}
+}
+
+// TestSuppressionNommeLeCertificat.
+//
+// Le journal disait « certificat 3 supprimé ». Retrouver à quoi correspondait
+// l'identifiant 3 demanderait de consulter une table d'où la ligne a
+// précisément disparu. C'est le NOM qui désigne le service interrompu, et c'est
+// la seule chose qu'on cherche quand LDAPS cesse de répondre.
+func TestSuppressionNommeLeCertificat(t *testing.T) {
+	baseCertificatSimulee(t, "ldaps", true)
+
+	res, err := supprimerCertificat(Appelant{Username: "root"}, Params{"certificate_id": "3"})
+	if err != nil {
+		t.Fatalf("suppression : %v", err)
+	}
+	if !strings.Contains(res.Message, "ldaps") {
+		t.Errorf("message %q : ne nomme pas le certificat", res.Message)
+	}
+	if !strings.Contains(res.Cible, "ldaps") {
+		t.Errorf("Cible = %q : la ligne d'audit ne nommera pas le certificat, "+
+			"les paramètres ne portant que certificate_id", res.Cible)
 	}
 }
 

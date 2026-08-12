@@ -11,7 +11,6 @@ import (
 	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
-	gc "vaultaire/core/global/security"
 	"vaultaire/core/global/security/qrcode"
 	"vaultaire/core/global/security/totp"
 	"vaultaire/core/logs"
@@ -217,11 +216,11 @@ func confirmOwnPassword(db *sql.DB, username, password string) bool {
 	if err != nil {
 		return false
 	}
-	hash, salt, err := dbusers.Get_User_Password_By_ID(db, userID)
+	valide, err := dbusers.VerifierMotDePasse(db, userID, password)
 	if err != nil {
 		return false
 	}
-	return gc.ComparePasswords(password, salt, hash)
+	return valide
 }
 
 // renderMFAEnroll affiche la page d'enrôlement.

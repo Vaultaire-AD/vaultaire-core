@@ -140,6 +140,15 @@ func valeurOuCourante(p Params, nom, courante string) string {
 	return courante
 }
 
+// supprimerEnBaseClient : l'accès à la base, isolé derrière une variable.
+//
+// Même raison que pour les certificats (actions_certificats.go) : le test qui
+// vérifie le MESSAGE de suppression ne mesure qu'une chaîne, et n'a aucune
+// raison d'exiger une base vivante. Sans elle, database.GetDatabase() rend nil
+// et l'appel panique — ce qui emporte le binaire de test du paquet entier, pas
+// seulement ce contrôle.
+var supprimerEnBaseClient = dbclients.Command_DELETE_ClientWithComputeurID
+
 // supprimerClient retire la machine de l'annuaire.
 func supprimerClient(_ Appelant, p Params) (Resultat, error) {
 	cible := p.Get("computeur_id")
@@ -147,7 +156,7 @@ func supprimerClient(_ Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("identifiant de machine requis")
 	}
 
-	if err := dbclients.Command_DELETE_ClientWithComputeurID(database.GetDatabase(), cible); err != nil {
+	if err := supprimerEnBaseClient(database.GetDatabase(), cible); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la suppression de la machine %q : %w", cible, err)
 	}
 

@@ -74,26 +74,19 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		if respChan, ok := sshreq.Pop(sshUser); ok {
 			close(respChan)
 		}
-	case "05": // RÉUSSITE FETCH BRUT (03_05)
-		// Format Content: "vaultaire\n<username>\n<salt>\n<nonce>"
-		lines := strings.Split(strings.TrimSpace(trames_content.Content), "\n")
-
-		if len(lines) < 4 {
-			logs.Write_log("ERROR", "Trame 03_05 malformee, champs manquants")
-		}
-
-		sshrequser := lines[1] // le vrai username, pas "vaultaire"
-		salt := lines[2]
-		nonce := lines[3]
-		if respChan, ok := sshreq.Pop(sshrequser); ok {
-			select {
-			case respChan <- pamstate.AuthResult{Type: "SALT", Salt: salt, Nonce: nonce, IsAdmin: false}:
-				logs.Write_log("INFO", fmt.Sprintf("Salt/Nonce 03_05 transmis au channel pour %s", sshrequser))
-			default:
-			}
-		} else {
-			logs.Write_log("WARNING", fmt.Sprintf("Réception 03_05 pour %s mais aucun channel en attente", sshrequser))
-		}
+	case "05":
+		// 03_05 portait le sel et le nonce du défi d'authentification. Le défi a
+		// été supprimé : le serveur ne distribue plus le sel, et l'agent ne le
+		// demande plus.
+		//
+		// La branche est conservée pour NOMMER le cas plutôt que de le laisser
+		// tomber dans le `default`, qui n'écrit qu'en DEBUG. Recevoir cette trame
+		// signifie que le serveur d'en face est resté à l'ancienne version, et
+		// c'est exactement ce qu'un administrateur doit lire dans le journal
+		// quand les connexions échouent après une mise à jour partielle du parc.
+		logs.Write_log("WARNING",
+			"Trame 03_05 reçue : le serveur central utilise l'ancienne authentification par défi. "+
+				"Mettre à jour vaultaire_serveur.")
 	case "07":
 		SSH_Handle_Fetch_Pubkey(trames_content)
 	default:

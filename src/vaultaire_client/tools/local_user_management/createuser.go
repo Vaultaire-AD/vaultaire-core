@@ -14,7 +14,6 @@ import (
 func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error {
 	const startUID = 5000
 	var uid int
-	var err error
 
 	// 1. VÉRIFICATION : Est-ce que l'user est DÉJÀ dans /etc/passwd ?
 	exists := false
@@ -79,17 +78,22 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 		os.Chown(homeDir, uid, uid)
 	}
 
-	// 3. CLÉS SSH : On les pose dans le home (qu'il soit nouveau ou ancien)
-	sshDir := filepath.Join("/home/", username, ".ssh")
-	os.MkdirAll(sshDir, 0700)
-	os.Chown(sshDir, uid, uid)
-
-	authFile := filepath.Join(sshDir, "authorized_keys")
-	err = os.WriteFile(authFile, []byte(pubKeys+"\n"), 0600)
-	if err != nil {
+	// 3. CLÉS SSH : le fichier est RÉÉCRIT, pas complété.
+	//
+	// L'ensemble posé ici est exactement celui que le serveur vient de rendre.
+	// Une clé révoquée côté annuaire disparaît donc de la machine dès la
+	// connexion suivante — y compris quand il n'en reste aucune, cas où le
+	// fichier devient vide.
+	//
+	// Le détail de l'écriture (liens symboliques, droits à la création,
+	// remplacement atomique) est dans EcrireClesAutorisees. Ce qui tenait ici en
+	// un os.WriteFile suivait les liens et écrivait en place, alors que le module
+	// PAM se protégeait déjà des deux : deux chemins pour un même fichier, dont
+	// un seul était sûr.
+	home := filepath.Join("/home", username)
+	if err := EcrireClesAutorisees(home, uid, uid, DecouperCles(pubKeys)); err != nil {
 		return fmt.Errorf("erreur écriture authorized_keys: %v", err)
 	}
-	os.Chown(authFile, uid, uid)
 
 	// Contexte SELinux, APRÈS l'écriture et le chown.
 	//
@@ -101,7 +105,7 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 	// Relevé sur une machine réelle :
 	//   denied { open } path="/home/<user>/.ssh/authorized_keys"
 	//   tcontext=system_u:object_r:home_root_t
-	RestaurerContexteSELinux(filepath.Join("/home", username))
+	RestaurerContexteSELinux(home)
 
 	// 4. SUDO : Gestion du groupe wheel/sudo
 	if isAdmin {

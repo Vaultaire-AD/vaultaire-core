@@ -1,14 +1,13 @@
 package dbschema
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	"log"
 	"time"
 	database "vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
+	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -39,15 +38,20 @@ func CreateDefaultAdminUser(db *sql.DB) {
 	}
 
 	logs.Write_Log("INFO", "bootstrap: creating new administrator")
-	salt, err := dbusers.GenerateSalt(16)
+
+	// argon2id dès l'amorçage, comme partout ailleurs.
+	//
+	// Ce compte-ci a une raison de plus de ne pas naître en SHA-256 : c'est le
+	// SEUL qui existe au premier démarrage, il porte l'accès total, et son mot de
+	// passe vient d'un fichier de configuration — donc, sur une installation qui
+	// n'a pas changé les valeurs de démonstration, d'une chaîne connue de tous.
+	// Le laisser en SHA-256 en attendant sa première connexion aurait offert la
+	// cible la plus intéressante de la base dans le format le plus faible.
+	hashHex, saltHex, err := security.Hacher(storage.Administrateur_Password)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"génération salt admin: "+err.Error())
-		log.Fatalf("[BOOTSTRAP] Erreur génération salt: %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"hachage du mot de passe admin: "+err.Error())
+		log.Fatalf("[BOOTSTRAP] Erreur hachage du mot de passe: %v", err)
 	}
-	saltHex := hex.EncodeToString(salt)
-	saltedPassword := append(salt, []byte(storage.Administrateur_Password)...)
-	hash := sha256.Sum256(saltedPassword)
-	hashHex := hex.EncodeToString(hash[:])
 
 	firstname := "Admin"
 	lastname := "System"

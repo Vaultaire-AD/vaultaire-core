@@ -73,21 +73,12 @@ func ajouterCleUtilisateur(_ Appelant, p Params) (Resultat, error) {
 	if label == "" {
 		return Resultat{}, fmt.Errorf("libellé requis : il identifie la clé pour la retirer plus tard")
 	}
-	if cle == "" {
-		return Resultat{}, fmt.Errorf("clé publique requise")
-	}
-
 	// Une clé sur plusieurs lignes casserait authorized_keys : chaque ligne y
 	// est une clé distincte, et la seconde moitié deviendrait une entrée
 	// invalide — ou pire, une entrée valide qu'on n'a pas voulu ajouter.
-	if strings.ContainsAny(cle, "\n\r") {
-		return Resultat{}, fmt.Errorf("clé publique invalide : elle contient un saut de ligne")
-	}
-
-	if !typeDeCleAccepte(cle) {
-		return Resultat{}, fmt.Errorf(
-			"clé publique invalide : type non reconnu. Types acceptés : %s",
-			strings.Join(typesDeClesAcceptes, ", "))
+	// Le détail des contrôles est dans ValiderCleSSH, partagée avec /profil.
+	if err := ValiderCleSSH(cle); err != nil {
+		return Resultat{}, err
 	}
 
 	db := database.GetDatabase()
@@ -125,6 +116,40 @@ func typeDeCleAccepte(cle string) bool {
 		}
 	}
 	return false
+}
+
+// ValiderCleSSH applique à une clé publique les mêmes contrôles que
+// « add -u <user> -k ».
+//
+// Exportée parce que la page /profil n'emprunte PAS le registre, et ne le peut
+// pas : modifier son propre profil ne doit pas exiger « write:update:user », qui
+// est le droit d'agir sur le compte d'autrui. Elle recopiait donc sa
+// validation — et la copie était plus faible que l'originale :
+//
+//   - deux types acceptés au lieu de sept. Une clé ECDSA ou une clé matérielle
+//     (sk-…@openssh.com) était refusée sur le portail et acceptée en ligne de
+//     commande, sans que le message dise pourquoi ;
+//   - aucun contrôle du saut de ligne. Un fichier de deux lignes déposé sur la
+//     page ajoutait DEUX entrées à authorized_keys pour une seule visible dans
+//     la liste des clés — la seconde ne se retirerait donc jamais par
+//     l'interface.
+//
+// Une seule définition ferme les deux écarts, et la commande comme la page
+// refusent désormais la même chose.
+func ValiderCleSSH(cle string) error {
+	cle = strings.TrimSpace(cle)
+	if cle == "" {
+		return fmt.Errorf("clé publique requise")
+	}
+	if strings.ContainsAny(cle, "\n\r") {
+		return fmt.Errorf("clé publique invalide : elle contient un saut de ligne")
+	}
+	if !typeDeCleAccepte(cle) {
+		return fmt.Errorf(
+			"clé publique invalide : type non reconnu. Types acceptés : %s",
+			strings.Join(typesDeClesAcceptes, ", "))
+	}
+	return nil
 }
 
 func retirerCleUtilisateur(_ Appelant, p Params) (Resultat, error) {

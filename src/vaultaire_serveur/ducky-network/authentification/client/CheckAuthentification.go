@@ -10,7 +10,6 @@ import (
 	"vaultaire/core/database"
 	dbsessions "vaultaire/core/database/db_sessions"
 	dbusers "vaultaire/core/database/db_users"
-	gc "vaultaire/core/global/security"
 	logs "vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -93,7 +92,7 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		ratelimit.Echec(trames_content.Username, source)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
-	Hpassword, salt, err := dbusers.Get_User_Password_By_ID(database.GetDatabase(), user_ID)
+	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), user_ID, trames_content.Content)
 	if err != nil {
 		// Panne de lecture, pas un mauvais mot de passe : ne pas compter d'échec.
 		// Le faire ferait dégénérer une indisponibilité de la base en freinage
@@ -101,7 +100,7 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but error for get password", meta)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
 	}
-	if !gc.ComparePasswords(trames_content.Content, salt, Hpassword) {
+	if !valide {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but password is not correct", meta)
 		ratelimit.Echec(trames_content.Username, source)
 		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")

@@ -119,7 +119,7 @@ func EnregistrerActionsServeur(r *Registre) {
 		Portee:          PorteeGlobale,
 		UnDomaineSuffit: true,
 		Resume:          "affiche un certificat public et son audit",
-		Executer:        lireCertificat,
+		Executer:        ficheCertificatParNom,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -270,7 +270,13 @@ func listerCertificats(_ Appelant, _ Params) (Resultat, error) {
 	}, nil
 }
 
-func lireCertificat(_ Appelant, p Params) (Resultat, error) {
+// ficheCertificatParNom sert « certificate.get ».
+//
+// Le nom compte : lireCertificat existe déjà dans actions_certificats.go, où
+// c'est une VARIABLE portant l'accès en base par identifiant, remplacée par les
+// tests. Les deux ont coexisté sans être vues — le paquet ne compilait pas, et
+// rien ne le disait tant que ce paquet-ci n'était pas rebâti.
+func ficheCertificatParNom(_ Appelant, p Params) (Resultat, error) {
 	nom := p.Get("certificate_name")
 	if nom == "" {
 		return Resultat{}, fmt.Errorf("nom de certificat requis")

@@ -3,14 +3,15 @@ package webserveur
 import (
 	"fmt"
 	"html/template"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
 	dbusers "vaultaire/core/database/db_users"
 
+	act "vaultaire/core/action"
 	"vaultaire/core/database"
 
-	gc "vaultaire/core/global/security"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -148,14 +149,14 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		// l'ancien, et le propriétaire légitime ne pouvait plus reprendre la
 		// main : changer son propre mot de passe n'évinçait pas l'intrus.
 		if password != "" {
-			storedHash, salt, err := dbusers.Get_User_Password_By_ID(db, userID)
+			valide, err := dbusers.VerifierMotDePasse(db, userID, currentPassword)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					"profil: lecture du mot de passe impossible pour "+currentUsername+" : "+err.Error())
 				http.Error(w, "Erreur interne", http.StatusInternalServerError)
 				return
 			}
-			if !gc.ComparePasswords(currentPassword, salt, storedHash) {
+			if !valide {
 				logs.Write_Log("SECURITY",
 					"profil: changement de mot de passe refusé pour "+currentUsername+" — mot de passe actuel incorrect")
 				http.Error(w, "Mot de passe actuel incorrect", http.StatusForbidden)
@@ -218,13 +219,66 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		// Mettre dans un slice pour passer à la fonction
-		err = dbusers.DeleteUserKeys([]int{keyID})
+		// LA CLÉ APPARTIENT-ELLE BIEN À CELUI QUI LA SUPPRIME ?
+		//
+		// DeleteUserKeys supprime par identifiant, sans regarder le
+		// propriétaire. Cette page est ouverte à TOUT compte authentifié : sans
+		// ce contrôle, n'importe qui pouvait retirer la clé SSH de n'importe
+		// qui d'autre en postant un identifiant — un entier, donc facile à
+		// parcourir. C'était un déni de service sur l'accès SSH du parc, à la
+		// portée du premier compte venu.
+		//
+		// L'action user.remove_key portait déjà ce contrôle. Cette page ne
+		// passe pas par le registre, et la garde n'avait pas été recopiée.
+		cles, err := dbusers.GetUserKeys(userid)
 		if err != nil {
-			logs.Write_Log("ERROR", "Erreur suppression clé : "+err.Error())
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+				"profil: lecture des clés de "+username+" impossible : "+err.Error())
 			http.Error(w, "Erreur suppression clé", http.StatusInternalServerError)
 			return
 		}
+
+		// L'appartenance est portée par un BOOLÉEN, pas par le libellé.
+		//
+		// Déduire « trouvée » de « libellé non vide » confondrait deux cas
+		// distincts : la clé d'un autre compte, et une clé du bon compte dont le
+		// libellé est vide. Le libellé n'est obligatoire que depuis que l'ajout
+		// passe par le registre ; les lignes antérieures peuvent en être
+		// dépourvues, et leur propriétaire n'aurait plus aucun moyen de les
+		// retirer — une clé SSH devenue indélébile par un contrôle de sécurité.
+		appartient := false
+		libelle := ""
+		for _, k := range cles {
+			if k.ID == keyID {
+				appartient = true
+				libelle = k.Label
+				break
+			}
+		}
+		if !appartient {
+			logs.Write_LogCode("SECURITY", logs.CodeAuthPermission, fmt.Sprintf(
+				"profil: %s a tenté de supprimer la clé %d, qui ne lui appartient pas",
+				username, keyID))
+			// 404 et non 403 : dire « elle ne vous appartient pas » confirmerait
+			// que la clé existe, donc permettrait d'énumérer les identifiants.
+			http.Error(w, "Clé introuvable", http.StatusNotFound)
+			return
+		}
+		if libelle == "" {
+			libelle = "sans libellé"
+		}
+
+		if err := dbusers.DeleteUserKeys([]int{keyID}); err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+				"profil: suppression de la clé "+strconv.Itoa(keyID)+" de "+username+" : "+err.Error())
+			http.Error(w, "Erreur suppression clé", http.StatusInternalServerError)
+			return
+		}
+
+		// La suppression réussie n'était PAS journalisée : retirer une clé SSH
+		// coupe un accès, et rien ne disait qui l'avait fait ni laquelle.
+		logs.Write_Log("INFO", fmt.Sprintf(
+			"profil: clé publique %q (id %d) retirée de %s", libelle, keyID, username))
 
 	case "add_key":
 		file, header, err := r.FormFile("public_key_file")
@@ -234,9 +288,13 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		defer file.Close()
 
-		// Lire tout le contenu du fichier
-		fileContent := make([]byte, header.Size)
-		_, err = file.Read(fileContent)
+		// io.ReadAll et non un unique file.Read.
+		//
+		// Read n'est pas tenu de remplir le tampon en une fois : il peut rendre
+		// moins d'octets que demandé sans que ce soit une erreur. La clé arrivait
+		// alors tronquée, donc inutilisable — et le contrôle de préfixe, lui,
+		// passait, puisque c'est la FIN qui manquait.
+		fileContent, err := io.ReadAll(file)
 		if err != nil {
 			http.Error(w, "Impossible de lire le fichier", http.StatusInternalServerError)
 			return
@@ -245,9 +303,17 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 		keyStr := strings.TrimSpace(string(fileContent))
 		label := header.Filename
 
-		// Vérifier que le contenu ressemble à une clé publique SSH
-		if !strings.HasPrefix(keyStr, "ssh-rsa") && !strings.HasPrefix(keyStr, "ssh-ed25519") {
-			http.Error(w, "Le fichier ne contient pas une clé publique valide", http.StatusBadRequest)
+		// Les MÊMES contrôles que « add -u <user> -k », et non une copie affaiblie.
+		//
+		// Cette page en avait sa propre version : deux types acceptés au lieu de
+		// sept — une clé ECDSA ou matérielle était refusée ici et acceptée en
+		// ligne de commande — et aucun contrôle du saut de ligne. Un fichier de
+		// deux lignes ajoutait DEUX entrées à authorized_keys pour une seule
+		// visible dans la liste : la seconde ne se serait jamais retirée par
+		// l'interface.
+		if err := act.ValiderCleSSH(keyStr); err != nil {
+			logs.Write_Log("WARNING", "profil: clé refusée pour "+username+" : "+err.Error())
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -257,8 +323,10 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			// Le message d'AddUserKey est déjà explicite : on ne le préfixe pas
 			// une seconde fois. Le journal affichait « Erreur ajout clé
 			// publique : Erreur ajout clé publique : Error 1062... ».
-			logs.Write_Log("WARNING", "profil: ajout de clé refusé pour l'utilisateur "+
-				strconv.Itoa(userid)+" : "+err.Error())
+			// Le NOM, et non l'identifiant numérique : « l'utilisateur 47 » oblige
+			// à interroger la base pour lire son propre journal.
+			logs.Write_Log("WARNING", "profil: ajout de clé refusé pour "+
+				username+" : "+err.Error())
 			// 409 et non 500 : une clé déjà enregistrée est un conflit, pas une
 			// panne du serveur. Et le message part à l'utilisateur, sinon il
 			// voit « Erreur lors de l'ajout » sans savoir quoi corriger.
@@ -266,7 +334,13 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		logs.Write_Log("INFO", "Ajout d’une nouvelle clé publique : "+label)
+		// Le compte visé est nommé. La ligne disait « Ajout d'une nouvelle clé
+		// publique : id_rsa.pub » — c'est-à-dire le nom du FICHIER déposé, et
+		// rien d'autre. Or une clé publique donne un accès SSH sans mot de
+		// passe : savoir sur QUEL compte elle a été posée est toute
+		// l'information.
+		logs.Write_Log("INFO", fmt.Sprintf(
+			"profil: clé publique %q ajoutée à %s", label, username))
 	}
 
 	http.Redirect(w, r, "/profil", http.StatusSeeOther)

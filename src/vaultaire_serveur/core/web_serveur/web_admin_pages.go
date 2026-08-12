@@ -642,8 +642,13 @@ func AdminPermissionsHandler(w http.ResponseWriter, r *http.Request) {
 				// plutôt que de le remplacer par nil : la page montrera des
 				// valeurs d'avant l'écriture, ce qui déroute, mais une
 				// déréférence de nil planterait la requête entière.
-				if relue, ok := res.Donnees.(*storage.UserPermission); ok && relue != nil {
-					perm = relue
+				// Le type suit celui de permission.get depuis que
+				// permission.update_action rend aussi les droits RBAC. Cette
+				// page n'en a pas l'usage — buildPermissionMatrix les relit
+				// pour construire sa grille — mais elle a besoin de la
+				// permission elle-même.
+				if relue, ok := res.Donnees.(act.PermissionAvecActions); ok {
+					perm = &relue.Permission
 					detailData.Perm = perm
 				}
 			}

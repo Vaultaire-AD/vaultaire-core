@@ -11,7 +11,6 @@ import (
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/sendmessage"
 	"duckynetworkclient/V1/duckynetwork/storage"
-	"duckynetworkclient/V1/duckynetwork/userauth"
 	"vaultaire_client/gpo"
 	"vaultaire_client/tools/sshreq"
 )
@@ -39,62 +38,52 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	logs.Write_log("INFO", fmt.Sprintf("[%s] Requete recue pour l'utilisateur: %s", reqType, req.User))
 
 	// 2. Enregistrement du canal de reponse pour async/concurrence
-	saltChan := make(chan pamstate.AuthResult, 1)
-	sshreq.Register(req.User, saltChan)
-	defer sshreq.Remove(req.User)
-
-	sess := duckytool.OpenVaultaireDefaultSession()
-	//----------------------------------------
-	// --- Etape 1 : demande du salt/nonce ---
-	//----------------------------------------
-	var msg = "03_04\nserveur_central\n" + string(sess.DuckySession.SessionKey) + "\n" + "vaultaire" + "\n" + storage.Computeur_ID + "\n" + req.User
-	sendmessage.SendMessage(msg, sess.DuckySession)
-
-	// 4. Attente du resultat ou du Timeout
-	statusRep := "failed"
-	var salt, nonce string
-	isAdminResult := false
-	var sshKeys []string
-
-	select {
-	case result := <-saltChan:
-		sshreq.Remove(req.User) // le Pop côté serveur l'a déjà retiré, mais on nettoie par sécurité
-		if result.Type != "SALT" {
-			logs.Write_log("WARNING", fmt.Sprintf("[%s] Type inattendu en etape 1 pour %s: %s", reqType, req.User, result.Type))
-			sendResponse(conn, Response{Status: "failed"})
-			return
-		}
-		salt = result.Salt
-		nonce = result.Nonce
-		logs.Write_log("INFO", fmt.Sprintf("[%s] Salt/Nonce recus pour %s", reqType, req.User))
-
-	case <-time.After(7 * time.Second):
-		logs.Write_log("ERROR", fmt.Sprintf("[%s] Timeout lors de l'auth pour %s", reqType, req.User))
-		statusRep = "timeout"
-		return
-	}
-	// --- Calcul de la preuve ---
-	proof, err := userauth.GenerateChallengeProof(req.User, req.Password, salt, nonce, string(sess.DuckySession.SessionKey))
-	if err != nil {
-		logs.Write_log("ERROR", fmt.Sprintf("[%s] Erreur generation proof pour %s: %v", reqType, req.User, err))
-		sendResponse(conn, Response{Status: "failed"})
-		return
-	}
 	finalChan := make(chan pamstate.AuthResult, 1)
 	sshreq.Register(req.User, finalChan)
 	defer sshreq.Remove(req.User)
 
-	// ⚠️ ordre de message a confirmer (celui qui route vers SSH_SEND_Pubkey_AUTH côté serveur)
+	statusRep := "failed"
+	isAdminResult := false
+	// Non nil dès le départ : voir parseSSHKeys, une tranche nil se sérialise en
+	// `null` et le module PAM y lit « réponse illisible », donc « ne touche pas
+	// à authorized_keys ».
+	sshKeys := []string{}
+
+	sess := duckytool.OpenVaultaireDefaultSession()
+
+	// --- UN SEUL aller-retour : le mot de passe, dans le tunnel ---
+	//
+	// L'échange en comptait deux. Le poste demandait d'abord le SEL du compte
+	// (03_04), le serveur le lui donnait avec un nonce (03_05), et le poste
+	// renvoyait un HMAC calculé avec SHA-256(sel‖mot de passe) pour clé. Le mot
+	// de passe ne quittait jamais la machine.
+	//
+	// Ce que cela coûtait est invisible d'ici : pour recalculer ce HMAC, le
+	// serveur devait détenir la même clé, donc STOCKER cette clé. L'empreinte en
+	// base était donc directement rejouable — la lire suffisait à ouvrir une
+	// session SSH sur le compte, sans connaître le mot de passe. Le hachage ne
+	// protégeait rien sur ce chemin, et interdisait de passer à argon2id.
+	//
+	// Le mot de passe transite maintenant comme sur les trois autres portes du
+	// serveur — portail web, bind LDAP, trame 02_03 — c'est-à-dire à l'intérieur
+	// de la session Ducky, déjà chiffrée et authentifiée. Le serveur vérifie
+	// seul, et l'empreinte redevient une empreinte.
+	//
+	// Effet de bord : plus de premier aller-retour, donc une ouverture de session
+	// plus courte et une fenêtre de moins où l'échange pouvait rester en plan.
 	logs.Write_log("DEBUG", fmt.Sprintf("CLIENT SOFTWARE ID: %s", storage.Computeur_ID))
-	proofMsg := sendmessage.BuildClientTrame("03_01", "serveur_central", string(sess.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID, req.User, proof)
-	sendmessage.SendMessage(proofMsg, sess.DuckySession)
+	authMsg := sendmessage.BuildClientTrame("03_01", "serveur_central",
+		string(sess.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID,
+		req.User, req.Password)
+	sendmessage.SendMessage(authMsg, sess.DuckySession)
+
 	//----------------------------------------------------------------
-	// --- Etape 2 : envoi de la preuve, attente du resultat final ---
+	// --- Attente du resultat final ---
 	//----------------------------------------------------------------
 	select {
 	case result := <-finalChan:
 		if result.Type != "" && result.Type != "AUTH" {
-			logs.Write_log("WARNING", fmt.Sprintf("[%s] Mismatch de type en etape 2 pour %s: recu %s",
+			logs.Write_log("WARNING", fmt.Sprintf("[%s] Type de reponse inattendu pour %s: recu %s",
 				reqType, req.User, result.Type))
 			statusRep = "failed"
 		} else {
@@ -106,7 +95,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		}
 
 	case <-time.After(7 * time.Second):
-		logs.Write_log("ERROR", fmt.Sprintf("[%s] Timeout etape 2 (proof) pour %s", reqType, req.User))
+		logs.Write_log("ERROR", fmt.Sprintf("[%s] Timeout d'authentification pour %s", reqType, req.User))
 		statusRep = "timeout"
 	}
 

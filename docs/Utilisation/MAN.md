@@ -24,6 +24,12 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 13. [eyes — Arborescence LDAP](#13-eyes--arborescence-ldap)
 14. [Commandes DNS](#14-commandes-dns)
 15. [Référence rapide](#15-référence-rapide)
+16. [certificate — Certificats TLS](#16-certificate--certificats-tls)
+17. [kill — Verrouillage d'urgence](#17-kill--verrouillage-durgence)
+18. [mfa — Second facteur et mots de passe](#18-mfa--second-facteur-et-mots-de-passe)
+19. [enroll — Clés d'enrôlement](#19-enroll--clés-denrôlement)
+20. [gpo — Application et conformité](#20-gpo--application-et-conformité)
+21. [cluster — Nœuds du parc](#21-cluster--nœuds-du-parc)
 
 ---
 
@@ -161,6 +167,15 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `update` | Renommer user, modifier actions d'une permission user (-pu, RBAC / legacy), debug |
 | `eyes`   | Arborescence des groupes (forêt LDAP) |
 | `dns`    | Gestion DNS (zones, enregistrements, PTR) — voir [§14](#14-commandes-dns) |
+| `certificate` | Certificats TLS du serveur : LDAPS, portail web, API — voir [§16](#16-certificate--certificats-tls) |
+| `kill`   | Verrouillage d’urgence d’un compte — voir [§17](#17-kill--verrouillage-durgence) |
+| `mfa`    | Second facteur et politique d’expiration des mots de passe — voir [§18](#18-mfa--second-facteur-et-mots-de-passe) |
+| `enroll` | Clés d’enrôlement des clients **service** — voir [§19](#19-enroll--clés-denrôlement) |
+| `gpo`    | État d’application et de conformité des GPO du parc — voir [§20](#20-gpo--application-et-conformité) |
+| `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
+| `help`   | Liste les commandes. Chaque commande accepte `-h`. |
+
+> Chaque commande répond à `-h` avec sa syntaxe à jour. En cas de désaccord entre ce manuel et `vlt <commande> -h`, **c’est l’aide qui fait foi** : elle vit dans le même fichier que le code qui l’applique.
 
 ---
 
@@ -190,15 +205,36 @@ La configuration se fait via `update -pu` (voir [§12.3](#123-mise-à-jour-des-a
 ### 5.1 Permission utilisateur
 
 ```bash
-create -p -u "nom_permission" <description_sans_espace>
+create -p <nom_permission> <oui|non> [--desc "texte"]
 ```
 
-Crée une permission **user**. Les actions (legacy et RBAC) sont ensuite configurées avec `update -pu` ou depuis l’admin web.
+Le second argument accorde ou non l’accès à l’**administration web**.
+
+> ⚠️ La syntaxe documentée ici jusqu’à la version 2.1 — `create -p -u "nom" <description>` — n’a jamais existé : `-u` était pris pour le nom de la permission. De même, `<yes|not>` n’est pas accepté : `not` n’a jamais figuré parmi les valeurs booléennes reconnues.
+
+**Valeurs booléennes acceptées**, partout dans `vlt` : `oui|non`, `yes|no`, `true|false`, `on|off`, `1|0`.
+
+Une permission naît **sans aucun droit RBAC** : elle n’autorise rien tant qu’elle n’est pas réglée.
+
+```bash
+create -p lecture non --desc "Consultation de l'annuaire"
+update -pu lecture read:get:user all      # lui donner un droit
+get -p -u lecture                          # vérifier
+add -gu IT_Group -p lecture                # la rattacher à un groupe
+```
 
 ### 5.2 Permission client
 
 ```bash
-create -p -c "nom_permission" <yes|not>
+create -pc <nom_permission> <oui|non>
+```
+
+Le second argument accorde l’administration aux **machines** du groupe qui portera la permission — ce n’est pas le même privilège que le `web_admin` de `-p`.
+
+```bash
+create -pc postes-admin oui
+get -p -c postes-admin
+add -gc IT_Group -p postes-admin
 ```
 
 ### 5.3 Groupe
@@ -229,14 +265,18 @@ create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
 ### 5.5 Client
 
 ```bash
-create -c <yes|not>
+create -c <oui|non>
 # Option : intégration automatique
-create -c <yes|not> -join <IP> <Username>
+create -c <oui|non> -join <hôte[:port]> <Username>
 ```
 
-Le paramètre `<yes|not>` indique si l'agent tourne sur un serveur membre. Ce
+Le paramètre `<oui|non>` indique si l'agent tourne sur un serveur membre. Ce
 n'est pas un type : c'est le même binaire, qui émet les mêmes trames et ouvre
 seulement un tunnel machine en plus.
+
+> ⚠️ Ce manuel écrivait `<yes|not>`. `not` **n'est pas accepté** — les valeurs booléennes reconnues sont `oui|non`, `yes|no`, `true|false`, `on|off`, `1|0`.
+
+Le port de `-join` est facultatif et vaut 22. Une adresse IPv6 suivie d'un port s'écrit entre crochets.
 
 **Le type de client n'est plus demandé.** Cette commande ne peut créer qu'un
 **agent** — un programme installé sur une machine du parc, dont le core génère la
@@ -489,6 +529,21 @@ add -gc "group_name" -p "permission_name"
 add -gpo "gpo_name" -g "group_name"
 ```
 
+### 9.6 Clé publique SSH à un compte
+
+```bash
+add -u "username" -k "libellé" "ssh-ed25519 AAAAC3Nz…"
+```
+
+Le **libellé** est obligatoire : c'est lui qui permettra de retirer la clé plus tard (`remove -u "username" -k <id>`).
+
+> Une clé publique donne un accès SSH au compte **sans mot de passe**, sur toutes les machines du parc où il est provisionné, et son titulaire n'a aucune raison d'aller inspecter la liste de ses clés. L'opération exige donc `write:update:user` sur les domaines du compte visé, et elle est tracée.
+
+**Types acceptés** : `ssh-rsa`, `ssh-ed25519`, `ecdsa-sha2-nistp256|384|521`, et leurs variantes `sk-…@openssh.com`.
+`ssh-dss` (DSA) est refusé : OpenSSH le désactive par défaut depuis la version 7.0, et la clé serait acceptée ici pour être ensuite ignorée par le serveur SSH — un échec de connexion sans cause visible.
+
+Une clé n'appartient qu'à **un seul compte** : la contrainte est globale, parce que l'API authentifie par signature SSH. Une clé partagée entre deux comptes permettrait à son porteur d'agir sous l'une ou l'autre identité, au choix, à chaque requête.
+
 ---
 
 ## 10. remove — Retrait
@@ -508,20 +563,32 @@ remove -c "computeur_id" -g "group_name"
 ### 10.3 Permission user d’un groupe
 
 ```bash
-remove -g "group_name" -pu "permission_name"
+remove -gu "group_name" -p "permission_name"
 ```
 
 ### 10.4 Permission client d’un groupe
 
 ```bash
-remove -g "group_name" -pc "permission_name"
+remove -gc "group_name" -p "permission_name"
 ```
+
+> ⚠️ Ce manuel documentait `remove -g "group" -pu "perm"` et `remove -g "group" -pc "perm"`. Ces formes **n’existent pas** : c’est le drapeau du groupe qui porte le type (`-gu` / `-gc`), et `-p` désigne la permission — symétrique de `add`.
 
 ### 10.5 GPO d’un groupe
 
 ```bash
 remove -gpo "gpo_name" -g "group_name"
 ```
+
+### 10.6 Clé publique SSH d’un compte
+
+```bash
+remove -u "username" -k <id_clé>
+```
+
+L’identifiant se lit dans `get -u "username"`. Le retrait vérifie que la clé appartient bien au compte visé : sans ce contrôle, un délégué autorisé sur un compte pourrait supprimer la clé d’un autre en devinant un identifiant — un entier, donc facile à parcourir.
+
+> `remove` **détache**, il ne supprime pas. Retirer un utilisateur d’un groupe ne supprime pas son compte : voir [§11](#11-delete--suppression).
 
 ---
 
@@ -530,23 +597,33 @@ remove -gpo "gpo_name" -g "group_name"
 Supprime l’entité et ses liaisons.
 
 ```bash
-delete -u "username"
+delete -u "username"        # supprime le compte et le révoque sur tout le parc
 delete -g "group_name"
-delete -p -u "permission_name"
-delete -p -c "permission_name"
-delete -c "computeur_id"
+delete -c "computeur_id"    # retire la machine de l'annuaire
+delete -p "permission_name" # permission utilisateur
 delete -gpo "gpo_name"
 ```
+
+> ⚠️ Ce manuel documentait `delete -p -u "perm"` et `delete -p -c "perm"`. La première forme prend `-u` pour le nom de la permission ; la seconde n’existe pas — **la suppression d’une permission client n’a pas de commande** et se fait depuis l’interface web (**Admin → Permissions**).
+
+**Notes :**
+
+- `-u` la suppression **révoque** le compte sur les machines : celles qui sont hors ligne le nettoieront à leur reconnexion. Vous ne pouvez pas supprimer votre propre compte.
+- `-c` retire la machine de l’annuaire mais **ne désinstalle pas** l’agent, qui reste en place sur le poste.
 
 ---
 
 ## 12. update — Mise à jour
 
-### 12.1 Renommer un utilisateur
+### 12.1 Changer le mot de passe d’un utilisateur
 
 ```bash
-update -u "username" -uu "new_username"
+update -u "username" -p <nouveau mot de passe>
 ```
+
+Le mot de passe occupe **tous les arguments restants** : les espaces qu’il contient sont conservés.
+
+> ⚠️ Ce manuel documentait `update -u "username" -uu "new_username"`. Le renommage **n’existe pas en ligne de commande** ; il se fait depuis la page profil ou l’administration web, qui reporte le nom sur les sessions ouvertes et émet un jeton neuf — ce qu’un simple `UPDATE` ne ferait pas.
 
 ### 12.2 Mode debug
 
@@ -742,6 +819,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Voir les sessions | `status -u` / `status -c` |
 | Détail d’un groupe | `get -g "group_name"` |
 | Ajouter user au groupe | `add -u "user" -g "group"` |
+| Ajouter une clé SSH à un compte | `add -u "user" -k "libellé" "ssh-ed25519 AAAA…"` |
 | Permission user : tous domaines (auth) | `update -pu PERM auth all` |
 | Permission user : un domaine (auth) | `update -pu PERM auth -a 1 domain.fr` |
 | Permission user : lecture utilisateurs (RBAC) | `update -pu PERM read:get:user all` |
@@ -754,8 +832,15 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Ajouter / éditer les modules d'une GPO | Interface web : **Admin → GPO → détail** |
 | Déclarer un service, paquet ou jeu sudo custom | Interface web : **Admin → GPO → Restrictions** (groupe `vaultaire`) |
 | Voir tout ce qui est attaché à un groupe | Interface web : **Admin → Groupes → détail** |
-| Créer une permission client | Interface web : **Admin → Permissions** |
-| Attribuer une permission client à un groupe | `add -pc "perm" -g "group"` ou **Admin → Groupes → détail** |
+| Créer une permission user | `create -p lecture non --desc "Consultation"` |
+| Créer une permission client | `create -pc postes-admin oui` |
+| Attribuer une permission user à un groupe | `add -gu "group" -p "perm"` |
+| Attribuer une permission client à un groupe | `add -gc "group" -p "perm"` |
+| Régénérer le certificat du portail | `certificate regenerate web --dns sso.interne.lan` |
+| Verrouiller un compte en urgence | `kill -u alice --reason compromised` |
+| Imposer le second facteur à un groupe | `mfa -g IT_Group --require` |
+| Émettre une clé d'enrôlement de service | `enroll create --type proxy --uses 1 --expires 30m` |
+| Machines en écart de conformité GPO | `gpo drift` |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
@@ -765,4 +850,121 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 
 ---
 
-*Ce manuel est conçu pour être copié dans un wiki (sections, ancres, table des matières). Pour les détails d’exemples de sortie et les cas particuliers, se reporter au [MAN.md](./MAN.md) d’origine.*
+## 16. certificate — Certificats TLS
+
+Les certificats du **LDAPS**, du **portail web** et de l’**API REST** sont auto-signés et conservés en base. Ils sont produits au premier démarrage : une déclaration `web_tls_dns_names` ajoutée ensuite reste sans effet tant que le certificat n’a pas été régénéré.
+
+```bash
+certificate list                    # certificats en base et ce qu'ils couvrent
+certificate show [ldaps|web|api]    # détail, défauts constatés, PEM à distribuer
+certificate fingerprint             # empreinte de la clé du core, attendue par les agents
+certificate regenerate <cible>      # régénère et remplace en base
+```
+
+**Cibles de `regenerate`** : `ldaps`, `web`, `api`, `all`.
+
+**Options** — elles **s’ajoutent** à la configuration et à la détection automatique :
+
+| Option | Effet |
+|--------|-------|
+| `--dns nom1,nom2` | noms DNS supplémentaires à couvrir |
+| `--ip 10.0.0.1`   | adresses supplémentaires à couvrir |
+
+Les noms de la machine et ses adresses sont détectés seuls. Déclarez en plus **tout nom par lequel un client vous joint sans que le serveur le connaisse** : nom de service DNS, nom de conteneur, alias derrière un répartiteur.
+
+> Les clients Java — Keycloak, connecteurs JNDI — ignorent le CommonName depuis le JDK 9 et exigent un nom alternatif (SAN) correspondant. Un certificat sans SAN échoue sur `SSLHandshakeFailed`, sans autre indice.
+
+Le certificat étant auto-signé, il doit aussi être importé dans le magasin de confiance de chaque client : `certificate show` en affiche la partie publique.
+
+```bash
+certificate regenerate web --dns sso.interne.lan,vaultaire.exemple.fr
+certificate show web
+```
+
+> `certificate delete` existe côté action mais est réservé au **groupe protégé** : supprimer un certificat interrompt le service concerné jusqu’au prochain démarrage, et les clients qui avaient importé l’ancien devront réimporter le nouveau.
+
+---
+
+## 17. kill — Verrouillage d'urgence
+
+Coupe l’accès d’un compte **partout à la fois** : portail, LDAP, Ducky. Le refus précède toute évaluation du mot de passe, et le message renvoyé est le même que pour un mot de passe faux — sans quoi le verrouillage deviendrait un moyen de confirmer qu’un compte existe.
+
+```bash
+kill -u <username>                  # verrouille (mode par défaut)
+kill -u <username> --unlock         # lève le verrouillage
+kill -u <username> --hard           # SUPPRIME le compte de l'annuaire et des machines
+kill -u <username> --reason <code>  # compromised (défaut) | offboarding | admin_request
+```
+
+> `--hard` est irréversible : il ne verrouille pas, il supprime.
+
+---
+
+## 18. mfa — Second facteur et mots de passe
+
+```bash
+mfa -u <user>                          # état du second facteur d'un compte
+mfa -u <user> --reset                  # efface son secret            (write:mfa)
+mfa -g <groupe> --require              # impose le second facteur     (write:mfa)
+mfa -g <groupe> --optional             # le rend facultatif           (write:mfa)
+mfa policy                             # lit la politique d'expiration
+mfa policy --max-age <j> --warn <j>    # l'écrit          (groupe vaultaire)
+```
+
+L’exigence se pose sur un **groupe**, pas sur un compte : elle s’applique à tous ses membres.
+
+> LDAP n’a aucun mécanisme standard de second facteur. Le bind d’un compte soumis au MFA est refusé, et non challengé — comportement désactivé par défaut (`RefuseBindWhenMFARequired`), pour ne pas couper un parc existant à la mise à jour.
+
+---
+
+## 19. enroll — Clés d'enrôlement
+
+Un client **service** ne se crée pas avec `create -c` : il s’enrôle lui-même, avec sa propre paire de clés, dont la partie privée ne doit jamais quitter l’hôte qui l’utilisera. Ces clés d’enrôlement sont ce qui l’autorise à le faire.
+
+```bash
+enroll create --type <type> [--uses N] [--expires 30m] [--label texte]
+enroll list                      # les clés émises et leur état
+enroll show <id>                 # détail d'une clé et services entrés avec
+enroll revoke <id>               # neutralise une clé sans effacer sa trace
+enroll types                     # catalogue des types de clients
+```
+
+`--uses` borne le nombre d’enrôlements, `--expires` la durée de validité. Les deux limitent ce qu’une clé divulguée permet.
+
+> `revoke` **neutralise sans effacer** : la trace de ce qui s’est enrôlé avec cette clé reste consultable, ce qui est précisément ce qu’on cherche après une fuite.
+
+---
+
+## 20. gpo — Application et conformité
+
+```bash
+gpo status                 # état d'application et de conformité du parc
+gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
+gpo drift                  # uniquement les machines en écart
+```
+
+**Deux informations distinctes, à ne pas confondre :**
+
+| | Ce qu'elle dit |
+|---|---|
+| **APPLICATION** | le dernier rapport de l’agent — la politique a-t-elle **pu être posée** ? |
+| **CONFORMITÉ**  | le dernier scan de l’agent — est-elle **encore en place** ? |
+
+> « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
+
+La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’interface web.
+
+---
+
+## 21. cluster — Nœuds du parc
+
+```bash
+cluster list                  # tous les nœuds enregistrés
+cluster list <role>           # nœuds actifs d'un rôle
+cluster purge-delay           # délai avant suppression d'un service parti
+cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
+```
+
+---
+
+*Ce manuel est conçu pour être copié dans un wiki (sections, ancres, table des matières). En cas de désaccord avec `vlt <commande> -h`, c’est l’aide en ligne qui fait foi.*

@@ -74,12 +74,20 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     else vaultaire_remove_user_from_sudo_group(username);
 
     // 5. Injecter aussi les Clés SSH au passage
+    //
+    // Meme regle que dans le module SSH : le fichier est REECRIT a partir de la
+    // reponse du serveur, y compris quand elle ne porte plus aucune cle. Sauter
+    // l'ecriture dans ce cas — ce que faisait le « && keys » — laissait les
+    // anciennes cles en place apres une revocation complete.
     char **keys = NULL;
     size_t key_count = 0;
-    if (vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0 && keys) {
+    if (vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0) {
         setup_user_ssh_keys(username, keys, key_count);
         for (size_t i = 0; i < key_count; i++) free(keys[i]);
         free(keys);
+    } else {
+        vaultaire_log_err("cles SSH illisibles dans la reponse pour %s : "
+                          "authorized_keys laisse en l'etat", username);
     }
 
     vaultaire_log_info("Login successful for Vaultaire user: %s", username);

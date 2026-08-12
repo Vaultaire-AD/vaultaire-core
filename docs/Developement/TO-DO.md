@@ -28,13 +28,6 @@ la liste de courses.
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
-9.[SSH] - il y a un bug sur la gestion des clé ssh authorizek sur les compte de domain il faut mettre en place une logique comme pour le mot de passe les clé sont overwrite a chaque nouvelle connection avec les nouvelles pour eviter que des vielle clé ne reste 
-
-10.[LOG] - sur l'ajout d'une clé public sur un user il  manque le username qui subit l'ajout / lors de la suppresion d'un certificat il manque le nom du certificat 
-11.[MAN] - il manque des commandes vlt dans le man deja les commandes pour les certificats
-12.[Command] - sur les commandes create permission Man pas a jour impossibilité de crée des des permissions client pas possible de crée des descriptions . problmes dans l'afficahge qui est pas coherent apres update on a une sortie qui manque d'informations  
-apres create pas de reponse du serveur alors que pourtant la création a bien été prise en compte  
-
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
             et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »
@@ -42,23 +35,18 @@ apres create pas de reponse du serveur alors que pourtant la création a bien é
             deployments/selinux/ : collect.sh, vaultaire.te, vaultaire.fc, install.sh
             Reste a faire : un domaine dedie pour l'agent (aujourd'hui unconfined_service_t).
 
-29.[SECU] [AUTH] - Les mots de passe sont haches en SHA-256 SIMPLE
-            core/global/security/password.go : un seul tour de sha256.Sum256 sur sel+mot de
-            passe. Ni bcrypt, ni scrypt, ni argon2.
+30.[TEST] [ACTION] - Des tests de core/action exigent une base vivante
+            Ils appellent une action directement pour verifier son MESSAGE, et l'action
+            ecrit en base. Sans base, database.GetDatabase() rend nil et l'appel PANIQUE —
+            or un panic ne fait pas echouer ce seul test, il fait tomber le BINAIRE de test
+            du paquet : les dizaines d'autres controles, matrice RBAC comprise, ne rendent
+            plus rien.
 
-            Une limitation de debit (point 23) ne protege que l'attaque EN LIGNE. Sur une
-            base volee, un GPU essaie des milliards de candidats par seconde : un mot de
-            passe faible tombe en secondes, et aucune limite cote serveur n'y change quoi
-            que ce soit. C'est le risque DOMINANT des deux.
+            Quatre acces ont ete isoles derriere des variables substituables (suppression
+            de machine, creation et mise a jour des permissions). Restent ceux qui evaluent
+            une PORTEE : elle resout les domaines d'une permission en base, et cette
+            resolution n'est pas encore substituable —
+            TestPorteeDesPermissionsNestPasGlobalePourLaSuppression en particulier.
 
-            La comparaison finale « newHashHex == hashHex » n'est pas non plus a temps
-            constant — marginal sur un hachage compare a travers le reseau, mais gratuit a
-            corriger avec subtle.ConstantTimeCompare.
-
-            A faire : argon2id (ou bcrypt), avec reencodage TRANSPARENT a la prochaine
-            connexion reussie — la seule migration possible, puisqu'on ne peut pas
-            recalculer une empreinte forte a partir d'une faible. Prevoir une colonne qui
-            porte l'algorithme, sans quoi on ne saura pas distinguer les deux formats.
-
-            Touche les quatre chemins d'authentification : web, LDAP, Ducky, et la creation
-            comme le changement de mot de passe.
+            A faire : rendre le resolveur de portee injectable, comme l'ont ete les autres
+            acces, pour que le paquet soit testable sans conteneur.

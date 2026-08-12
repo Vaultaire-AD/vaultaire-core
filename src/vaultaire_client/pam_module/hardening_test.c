@@ -189,6 +189,97 @@ int main(void) {
         unlink(faux); rmdir(vraidir); rmdir(base2);
     }
 
+    printf("\n--- Point 9 : les cles revoquees ne doivent pas survivre ---\n");
+
+    /* Le fichier est REECRIT a chaque connexion a partir de ce que le serveur
+     * rend. Encore faut-il savoir distinguer « ce compte n'a plus aucune cle »
+     * de « je n'ai pas su lire la reponse » : le premier doit vider le fichier,
+     * le second ne doit toucher a rien.
+     *
+     * L'ancienne version rendait 0 dans les deux cas, et l'appelant ajoutait un
+     * « && keys » qui sautait l'ecriture des que la liste etait vide. Revoquer
+     * la DERNIERE cle d'un compte etait donc la seule revocation sans effet :
+     * l'ancien authorized_keys restait en place et ouvrait encore la session. */
+    {
+        char **k = NULL;
+        size_t n = 99;
+
+        /* Tableau vide : succes, zero cle. C'est ce qui declenche l'effacement. */
+        int r = vaultaire_json_get_ssh_keys(
+            "{\"status\":\"success\",\"is_admin\":false,\"ssh_keys\":[]}", &k, &n);
+        ok("tableau vide : lecture REUSSIE (et non 'illisible')", r == 0);
+        ok("tableau vide : zero cle rendue", n == 0);
+        free(k); k = NULL; n = 99;
+
+        /* Champ absent : la reponse n'est pas exploitable. */
+        r = vaultaire_json_get_ssh_keys("{\"status\":\"success\",\"is_admin\":true}", &k, &n);
+        ok("champ ssh_keys absent : REFUSE", r == -1);
+        free(k); k = NULL; n = 99;
+
+        /* null : ce que produit un encodeur JSON sur une tranche non
+         * initialisee. Le prendre pour une liste vide effacerait les cles d'un
+         * utilisateur en regle. */
+        r = vaultaire_json_get_ssh_keys("{\"status\":\"success\",\"ssh_keys\":null}", &k, &n);
+        ok("ssh_keys a null : REFUSE", r == -1);
+        free(k); k = NULL; n = 99;
+
+        /* Reponse coupee au milieu du tableau : le socket a rendu un morceau. */
+        r = vaultaire_json_get_ssh_keys("{\"ssh_keys\":[\"ssh-ed25519 AAAAa a\",\"ssh-ed", &k, &n);
+        ok("tableau non ferme (reponse coupee) : REFUSE", r == -1);
+        ok("rien n'est rendu sur une lecture partielle", n == 0 && k == NULL);
+        free(k); k = NULL; n = 99;
+
+        /* Cas nominal, pour que les refus ci-dessus ne passent pas simplement
+         * parce que la fonction refuserait tout. */
+        r = vaultaire_json_get_ssh_keys(
+            "{\"ssh_keys\":[\"ssh-ed25519 AAAAa poste\",\"ssh-ed25519 AAAAb portable\"]}", &k, &n);
+        ok("deux cles bien formees : lues", r == 0 && n == 2);
+        ok("la premiere cle est intacte",
+           n == 2 && strcmp(k[0], "ssh-ed25519 AAAAa poste") == 0);
+        for (size_t i = 0; i < n; i++) free(k[i]);
+        free(k);
+    }
+
+    /* Et l'ecriture elle-meme : zero cle doit VIDER un fichier existant. */
+    char base3[] = "/tmp/vltrevokXXXXXX";
+    if (mkdtemp(base3)) {
+        char sshdir3[256], reel3[320];
+        snprintf(sshdir3, sizeof(sshdir3), "%s/.ssh", base3);
+        snprintf(reel3,   sizeof(reel3),   "%s/authorized_keys", sshdir3);
+        mkdir(sshdir3, 0700);
+
+        FILE *v = fopen(reel3, "w");
+        if (v) { fputs("ssh-ed25519 AAAAvieille portable-vole\n", v); fclose(v); }
+        ok("preparation : une ancienne cle est en place", access(reel3, F_OK) == 0);
+
+        vaultaire_write_ssh_keys(base3, getuid(), getgid(), NULL, 0);
+
+        struct stat st3;
+        int vide = (stat(reel3, &st3) == 0 && st3.st_size == 0);
+        ok("zero cle VIDE authorized_keys (revocation totale effective)", vide);
+
+        /* Une cle, puis une autre : la premiere ne doit pas subsister. */
+        char *avant[] = { (char *)"ssh-ed25519 AAAAancienne poste" };
+        char *apres[] = { (char *)"ssh-ed25519 AAAAnouvelle poste" };
+        vaultaire_write_ssh_keys(base3, getuid(), getgid(), avant, 1);
+        vaultaire_write_ssh_keys(base3, getuid(), getgid(), apres, 1);
+
+        int trouve_ancienne = 0, trouve_nouvelle = 0;
+        FILE *r3 = fopen(reel3, "r");
+        if (r3) {
+            char l[256];
+            while (fgets(l, sizeof(l), r3)) {
+                if (strstr(l, "AAAAancienne")) trouve_ancienne = 1;
+                if (strstr(l, "AAAAnouvelle")) trouve_nouvelle = 1;
+            }
+            fclose(r3);
+        }
+        ok("la cle remplacee a disparu du fichier", !trouve_ancienne);
+        ok("la nouvelle cle est bien la", trouve_nouvelle);
+
+        unlink(reel3); rmdir(sshdir3); rmdir(base3);
+    }
+
     printf("\n--- Point 12 : lecture socket en plusieurs segments ---\n");
 
     /* Un faux daemon qui repond en DEUX morceaux, avec une pause entre les deux.

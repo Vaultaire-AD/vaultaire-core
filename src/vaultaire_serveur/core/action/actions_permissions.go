@@ -9,6 +9,20 @@ import (
 	"vaultaire/core/logs"
 )
 
+// Accès à la base, isolés derrière des variables.
+//
+// Même motif que pour les certificats et les machines : les tests de MESSAGE
+// appellent ces actions directement alors qu'ils ne mesurent qu'une chaîne.
+// Sans substitution, ils exigent une base vivante — et paniquent sur un *sql.DB
+// nul quand elle manque, ce qui emporte le binaire de test entier au lieu du
+// seul contrôle concerné.
+var (
+	creerPermUtilAdmin       = dbpermission.CreateUserPermission
+	creerPermUtilDefaut      = dbpermission.CreateUserPermissionDefault
+	creerPermClientEnBase    = dbpermission.CreateClientPermission
+	modifierPermClientEnBase = dbpermission.Command_UPDATE_ClientPermission
+)
+
 // Actions sur les permissions.
 //
 // # Pourquoi ce fichier demande plus d'attention que les autres
@@ -121,10 +135,10 @@ func creerPermissionUtilisateur(a Appelant, p Params) (Resultat, error) {
 	// web_admin pour qu'elle serve à quelque chose. La ligne de commande
 	// n'offrait pas ce raccourci ; il est repris ici pour les deux.
 	if adminWeb {
-		_, err = dbpermission.CreateUserPermission(
+		_, err = creerPermUtilAdmin(
 			database.GetDatabase(), nom, description, "nil", "all", "nil", "nil", "nil")
 	} else {
-		_, err = dbpermission.CreateUserPermissionDefault(database.GetDatabase(), nom, description)
+		_, err = creerPermUtilDefaut(database.GetDatabase(), nom, description)
 	}
 	if err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la création de la permission : %w", err)
@@ -138,15 +152,32 @@ func creerPermissionUtilisateur(a Appelant, p Params) (Resultat, error) {
 			"permission utilisateur %q créée avec web_admin par %s", nom, a.Username))
 	}
 
-	message := fmt.Sprintf("Permission %s créée. Ouvrez son détail pour régler les actions RBAC.", nom)
-	if adminWeb {
-		message = fmt.Sprintf(
-			"Permission %s créée avec accès à l'administration web. "+
-				"Tout groupe qui la portera pourra administrer Vaultaire.", nom)
+	// Le compte rendu dit ce qui a été enregistré ET la suite à donner.
+	//
+	// Il annonçait « Ouvrez son détail pour régler les actions RBAC », ce qui ne
+	// désigne rien pour qui vient de taper une commande : « son détail » est une
+	// page du portail. Une permission naît SANS AUCUN droit — elle n'autorise
+	// donc rien tant qu'on ne l'a pas réglée — et la commande qui la règle
+	// n'était nommée nulle part.
+	message := fmt.Sprintf("Permission %s créée", nom)
+	if description != "" {
+		message += fmt.Sprintf(" (%s)", description)
 	}
+	message += ".\n"
+
+	if adminWeb {
+		message += "Elle ouvre l'ADMINISTRATION WEB : tout groupe qui la portera pourra " +
+			"administrer Vaultaire.\n"
+	} else {
+		message += "Elle n'accorde encore AUCUN droit.\n"
+	}
+	message += "  régler un droit  : update -pu " + nom + " <clé> nil|all|-a|-r [propagation] [domaine]\n" +
+		"  consulter        : get -p -u " + nom + "\n" +
+		"  rattacher        : add -gu <groupe> -p " + nom
+
 	return Resultat{
 		Message: message,
-		Donnees: map[string]any{"name": nom, "web_admin": adminWeb},
+		Donnees: map[string]any{"name": nom, "web_admin": adminWeb, "description": description},
 	}, nil
 }
 
@@ -176,7 +207,7 @@ func creerPermissionClient(a Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("valeur is_admin invalide : %w", err)
 	}
 
-	if _, err := dbpermission.CreateClientPermission(database.GetDatabase(), nom, estAdmin); err != nil {
+	if _, err := creerPermClientEnBase(database.GetDatabase(), nom, estAdmin); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la création de la permission client : %w", err)
 	}
 
@@ -189,12 +220,18 @@ func creerPermissionClient(a Appelant, p Params) (Resultat, error) {
 			"permission client ADMIN %q créée par %s", nom, a.Username))
 	}
 
-	message := fmt.Sprintf("Permission client %s créée.", nom)
+	message := fmt.Sprintf("Permission client %s créée.\n", nom)
 	if estAdmin {
 		message = fmt.Sprintf(
-			"Permission client %s créée en ADMIN. Les machines du groupe qui la portera "+
-				"disposeront des droits d'administration.", nom)
+			"Permission client %s créée en ADMIN : les machines du groupe qui la portera "+
+				"disposeront des droits d'administration.\n", nom)
 	}
+	// Comme pour les permissions utilisateur : une permission qui n'est
+	// rattachée à aucun groupe ne s'applique à personne, et la commande qui
+	// l'attache n'était nommée nulle part.
+	message += "  consulter  : get -p -c " + nom + "\n" +
+		"  rattacher  : add -gc <groupe> -p " + nom
+
 	return Resultat{
 		Message: message,
 		Donnees: map[string]any{"name": nom, "is_admin": estAdmin},
@@ -213,7 +250,7 @@ func modifierPermissionClient(a Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("valeur is_admin invalide : %w", err)
 	}
 
-	if err := dbpermission.Command_UPDATE_ClientPermission(database.GetDatabase(), nom, estAdmin); err != nil {
+	if err := modifierPermClientEnBase(database.GetDatabase(), nom, estAdmin); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la mise à jour de la permission client %q : %w", nom, err)
 	}
 

@@ -167,7 +167,7 @@ XX_YY
 ...
 
 //EXEMPLE
-msg := "03_04\nserveur_central\n" + SessionKey + "\nvaultaire\n" + Computeur_ID + "\n" + req.User
+msg := "03_01\nserveur_central\n" + SessionKey + "\nvaultaire\n" + Computeur_ID + "\n" + req.User + "\n" + req.Password
 ```
 
 ## Format Serveur → Client
@@ -187,8 +187,73 @@ XX_YY
 <contenu ligne 2>
 ...
 //EXEMPLE
-return "03_05\nserveur_central\n" + SessionIntegritykey + "\nvaultaire\n" + sshUser + "\n" + salt + "\n" + nonce
+return "03_02\nserveur_central\n" + SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + isAdmin + "\n" + clesPubliques
 ```
+---
+
+# Authentification SSH / PAM (catégorie 03)
+
+## Ce qui a changé, et pourquoi
+
+L'échange comptait DEUX allers-retours :
+
+```
+03_04  le poste demande le sel du compte
+  03_05  le serveur rend sel + nonce
+03_01  le poste renvoie HMAC(clé = SHA-256(sel‖mot de passe), nonce)
+  03_02  le serveur rend is_admin + clés publiques
+  03_03  refus
+```
+
+Le mot de passe ne traversait jamais le réseau — mais le serveur devait
+recalculer le même HMAC, donc **stocker la clé qui servait à le produire**.
+L'empreinte en base était par conséquent directement rejouable : la lire
+suffisait à ouvrir une session SSH sur n'importe quel compte, sans connaître le
+mot de passe et sans rien casser. Le hachage ne protégeait rien sur ce chemin,
+et interdisait de passer à argon2id — le poste aurait dû le calculer à
+l'identique, et l'empreinte serait restée la clé.
+
+## Échange actuel
+
+```
+03_01  <utilisateur@domaine>\n<mot de passe>
+  03_02  <utilisateur@domaine>\n<is_admin>\n<clé publique 1>\n<clé publique 2>…
+  03_03  <utilisateur@domaine>\n<raison>
+
+03_06  <utilisateur@domaine>              demande des clés publiques seules
+  03_07  vaultaire\n\n<utilisateur@domaine>\n<clés>
+
+03_04  OBSOLÈTE — refusée par « obsolete client, update required »
+03_05  OBSOLÈTE — l'agent la journalise en WARNING
+```
+
+Le mot de passe transite à l'intérieur de la session Ducky, déjà chiffrée et
+authentifiée, exactement comme sur les trois autres portes du serveur : portail
+web, bind LDAP, et trame `02_03`. L'empreinte stockée redevient vérifiable sans
+être rejouable.
+
+`03_04` et `03_05` ne sont pas simplement effacées : chaque camp répond
+explicitement quand l'autre est resté à l'ancienne version. Sans cela, un agent
+non mis à jour attendrait sept secondes puis rendrait « timeout » à PAM, et
+l'administrateur chercherait une panne réseau.
+
+## Ordre des contrôles dans `SSH_SEND_Pubkey_AUTH`
+
+L'ordre n'est pas indifférent :
+
+1. **limitation de débit** — avant tout, y compris avant de savoir si le compte
+   existe. Cette porte-ci n'en avait pas ; elle prend désormais un mot de passe ;
+2. **compte inconnu** — même refus, même message qu'un mot de passe faux ;
+3. **mot de passe** — une panne de lecture de la base n'est PAS comptée comme un
+   échec, sinon une base indisponible freinerait tout le parc ;
+4. **kill switch** — APRÈS la vérification, pour ne pas révéler l'état d'un
+   compte à qui n'en détient pas les identifiants ;
+5. **droit sur le domaine**, puis **droit sur la machine** ;
+6. clés publiques et statut administrateur.
+
+Tous les refus rendent `03_03` avec le même libellé : distinguer les motifs
+transformerait cette trame en oracle.
+
 ---
 
 # Détail du transport GPO (catégorie 05)
@@ -842,7 +907,7 @@ pour couper avant même d'évaluer un mot de passe :
 | Chemin | Fonction |
 |--------|----------|
 | Ducky | `SendAuthRequest` (02_01) |
-| SSH | `SSH_SEND_SALT` (03_04), `SSH_SEND_Pubkey_AUTH` (03_01), `SSH_SEND_Fetch_Pubkey` (03_06) |
+| SSH | `SSH_SEND_Pubkey_AUTH` (03_01), `SSH_SEND_Fetch_Pubkey` (03_06), `SSH_SEND_SALT` (03_04 — **obsolète**, refuse) |
 | LDAP | `CanUserConnectToDomain` |
 | Web | `LoginHandler` |
 | API | `commandHandler`, avant la vérification de signature |

@@ -51,9 +51,27 @@ sans clé mais réservée au groupe protégé compte aussi pour une écriture : 
 suppression d'un certificat interrompt un service.
 
 **La cible** est déduite d'une liste ordonnée de noms de paramètres —
-`username`, `group`, `computeur_id`, `permission`… Le premier présent gagne. Un
-rattachement porte deux cibles ; c'est l'utilisateur qui est nommé, parce que
+`username`, `group`, `computeur_id`, `permission_name`… Le premier présent gagne.
+Un rattachement porte deux cibles ; c'est l'utilisateur qui est nommé, parce que
 c'est lui qui change de situation.
+
+> ⚠️ **Cette liste se tient à jour avec les PARAMÈTRES, pas avec les noms
+> d'entités.** Sa première version avait été écrite d'après le vocabulaire du
+> modèle : elle déclarait `certificate` et `record` là où les actions lisent
+> `certificate_id` et `record_name`, et ignorait `permission_name`, que huit
+> actions emploient. Toutes les écritures sur les permissions, les certificats et
+> les zones DNS étaient donc journalisées « sur le serveur » — la ligne existait,
+> elle ne nommait rien. Le défaut ne se voit pas en relisant le code qui écrit la
+> ligne, seulement en confrontant les deux listes. `cible_test.go` fait cette
+> confrontation en lisant les sources du paquet.
+
+Quand le paramètre est un **identifiant** et le nom connu seulement après lecture
+en base, l'action renseigne `Resultat.Cible`, qui l'emporte. C'est le cas de la
+suppression d'un certificat : « certificat 3 supprimé » obligerait à retrouver
+l'identifiant 3 dans une table d'où la ligne vient de disparaître, alors que le
+nom — `ldaps`, `web`, `api` — désigne le service interrompu. Ce champ n'est pris
+en compte qu'en cas de succès : sur un échec, l'audit retombe sur les paramètres,
+c'est-à-dire sur ce qui a réellement été demandé.
 
 **Réussite et échec ne passent pas par la même porte** : `Journal.Execution` en
 `INFO`, `Journal.Echec` en `WARNING`. Les deux passaient par `Execution`, donc au

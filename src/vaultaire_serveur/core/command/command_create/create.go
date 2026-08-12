@@ -40,6 +40,7 @@ var ActionsUtilisees = []string{
 	"group.create",
 	"client.create",
 	"permission.create",
+	"client_permission.create",
 }
 
 // Create_Command traite « create … ».
@@ -78,14 +79,36 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		return create_ClientSoftware(command_list, sender_groupsIDs, sender_Username)
 
 	case "-p":
-		// create -p <nom> <yes/not>
+		// create -p <nom> <oui/non> [--desc "texte"]
 		//
 		// Le second argument vaut « permission d'administration web ». Il est
 		// transmis tel quel : l'action accepte oui/non/yes/no/1/0, ce qui
 		// couvre la forme historique de cette commande comme celle de la case à
 		// cocher du formulaire.
-		p := commandaction.ParamsDepuisPositionnels(command_list[1:], "name", "web_admin")
+		//
+		// LA DESCRIPTION N'ÉTAIT PAS TRANSMISE. L'action la lit — `description`
+		// —, la base porte la colonne, la fiche l'affiche, et le formulaire web
+		// la renseigne : seule cette commande n'avait aucun moyen de la fournir.
+		// Une permission créée en ligne de commande naissait donc anonyme, et
+		// rien n'a jamais permis de la décrire ensuite.
+		options, positionnels := extraireOptions(command_list[1:])
+		p := commandaction.ParamsDepuisPositionnels(positionnels, "name", "web_admin")
+		p = commandaction.FusionnerParams(p, options)
 		return commandaction.ExecuterAction("permission.create", p, sender_groupsIDs, sender_Username)
+
+	case "-pc":
+		// create -pc <nom> <oui/non>
+		//
+		// Les permissions CLIENT ne se créaient nulle part en ligne de commande.
+		// L'action client_permission.create existait, l'interface web l'appelait,
+		// `get -p -c` savait afficher le résultat — mais aucune commande ne
+		// permettait d'en créer une. Le seul chemin était le portail web.
+		//
+		// Le second argument accorde l'administration aux MACHINES du groupe qui
+		// portera la permission ; il est nommé `is_admin` et non `web_admin`,
+		// parce qu'il ne s'agit pas du même privilège.
+		p := commandaction.ParamsDepuisPositionnels(command_list[1:], "name", "is_admin")
+		return commandaction.ExecuterAction("client_permission.create", p, sender_groupsIDs, sender_Username)
 
 	case "-gpo":
 		// Le contrôle de droits qui vivait ici a disparu : l'action gpo.create
@@ -144,21 +167,61 @@ func create_ClientSoftware(command_list []string, groupIDs []int, sender string)
 	return res.Message
 }
 
+// extraireOptions sépare les options longues des arguments positionnels.
+//
+// `SplitArgsPreserveBlocks`, en amont, a déjà regroupé ce qui suit une option
+// longue en un seul argument : « --desc lecture seule » arrive comme
+// « --desc », « lecture seule ». On n'a donc pas à gérer les guillemets ici.
+//
+// Les options sont retirées de la liste rendue : sans cela, « create -p lecture
+// oui --desc "…" » verrait `--desc` compté comme un positionnel, et l'action
+// recevrait un nom ou un booléen aberrant selon la position.
+func extraireOptions(args []string) (action.Params, []string) {
+	options := action.Params{}
+	positionnels := make([]string, 0, len(args))
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--desc", "-d":
+			if i+1 < len(args) {
+				options["description"] = args[i+1]
+				i++
+			}
+		default:
+			positionnels = append(positionnels, args[i])
+		}
+	}
+	return options, positionnels
+}
+
 func aide() string {
+	// « yes/not » a disparu de cette aide, et ce n'était pas un détail de
+	// rédaction : « not » n'a JAMAIS été accepté. Les valeurs reconnues sont
+	// oui/non, yes/no, true/false, on/off, 1/0. Qui recopiait l'aide à la lettre
+	// obtenait « valeur "not" invalide : attendu oui/non » et n'avait aucune
+	// raison de soupçonner l'aide elle-même.
 	return `create — crée des utilisateurs, groupes, machines, permissions et GPO.
 
   create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
   create -g <nom> <domaine>
-  create -c <yes/not> [-join <hôte[:port]> <user>]
-  create -p <nom> <yes/not>
+  create -c <oui|non> [-join <hôte[:port]> <user>]
+  create -p <nom> <oui|non> [--desc "texte"]
+  create -pc <nom> <oui|non>
   create -gpo <nom> --scope <machine|user> [--desc "texte"]
 
 Notes :
-  -u  la date de naissance est vérifiée ; prénom et nom sont déduits d'un
-      identifiant de la forme « prénom.nom » s'ils ne sont pas fournis.
-  -c  crée un agent. Un client service ne se crée pas ici, il s'enrôle seul :
-      voir « enroll -h ». Avec -join, l'agent est installé à distance par SSH.
-  -p  le second argument accorde ou non l'accès à l'administration web.`
+  -u   la date de naissance est vérifiée ; prénom et nom sont déduits d'un
+       identifiant de la forme « prénom.nom » s'ils ne sont pas fournis.
+  -c   crée un agent. Un client service ne se crée pas ici, il s'enrôle seul :
+       voir « enroll -h ». Avec -join, l'agent est installé à distance par SSH.
+  -p   permission UTILISATEUR. Le second argument accorde ou non l'accès à
+       l'administration web. La permission naît sans aucun droit RBAC : les
+       régler ensuite avec « update -pu », les consulter avec « get -p -u ».
+  -pc  permission CLIENT. Le second argument accorde ou non l'administration
+       aux MACHINES du groupe qui la portera — ce n'est pas le même privilège
+       que -p.
+
+Les valeurs booléennes acceptées sont oui|non, yes|no, true|false, on|off, 1|0.`
 }
 
 // verifierDroit a disparu, et c'était sa raison d'être.

@@ -28,7 +28,7 @@ func WaitForSSHFetch(user string, sshUser string) {
 		return
 	}
 	ds := sess.DuckySession
-	// 3. Le tunnel est OK, on envoie la demande 03_04
+	// 3. Le tunnel est OK, on envoie la demande 03_06
 	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s", sshUser))
 	msg := fmt.Sprintf("03_06\nserveur_central\n%s\n%s\n%s\n%s", string(ds.SessionKey), user, storage.Computeur_ID, sshUser)
 	sendmessage.SendMessage(msg, ds)

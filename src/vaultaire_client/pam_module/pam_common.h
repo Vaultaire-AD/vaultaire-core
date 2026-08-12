@@ -88,7 +88,15 @@ int vaultaire_json_get_string(const char *json, const char *key, char *out, size
 /* Get boolean for key "key". Returns 0 on success, -1 if not found. */
 int vaultaire_json_get_bool(const char *json, const char *key, bool *out);
 
-/* --- SSH keys array: parse "ssh_keys":["...","..."] into allocated array. Caller frees keys[]. --- */
+/* --- SSH keys array: parse "ssh_keys":["...","..."] into allocated array. Caller frees keys[]. ---
+ *
+ * Rend 0 SEULEMENT si le tableau a ete lu en entier — un tableau vide compte
+ * pour un succes, avec *count_out a 0. Rend -1 si le champ manque, s'il ne
+ * porte pas un tableau, ou si la reponse est coupee.
+ *
+ * Cette distinction est le coeur du contrat : l'appelant reecrit
+ * authorized_keys, donc « plus aucune cle » (ecrire un fichier vide) et
+ * « reponse illisible » (ne rien toucher) ne peuvent pas se ressembler. */
 int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *count_out);
 int ensure_local_user_with_password(const char *username, const char *password);
 int setup_user_ssh_keys(const char *username, char **keys, size_t key_count);

@@ -1,13 +1,12 @@
 package dbusers
 
 import (
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"fmt"
 	database "vaultaire/core/database"
 	dbdomains "vaultaire/core/database/db_domains"
 	guardprotected "vaultaire/core/database/guard_protected"
+	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
 )
 
@@ -65,16 +64,16 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 	)
 
 	if password != "" {
-		salt, err := GenerateSalt(16)
+		// Un changement de mot de passe produit toujours une empreinte argon2id,
+		// quel que soit le format de celle qu'il remplace. C'est le second chemin
+		// de migration, en plus du réencodage à la connexion : qui change son mot
+		// de passe quitte le SHA-256 par ce seul geste.
+		var err error
+		hashHex, saltHex, err = security.Hacher(password)
 		if err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur génération salt: "+err.Error())
-			return fmt.Errorf("erreur génération salt: %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur hachage du mot de passe: "+err.Error())
+			return fmt.Errorf("erreur hachage du mot de passe: %v", err)
 		}
-		saltHex = hex.EncodeToString(salt)
-
-		saltedPassword := append(salt, []byte(password)...)
-		hash := sha256.Sum256(saltedPassword)
-		hashHex = hex.EncodeToString(hash[:])
 	}
 
 	if password != "" {

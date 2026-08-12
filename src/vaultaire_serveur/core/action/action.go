@@ -118,6 +118,22 @@ type Resultat struct {
 	// analyser du texte destiné à un terminal pour en extraire des données,
 	// et retomberait aussitôt sur son propre accès à la base.
 	Donnees any
+
+	// Cible nomme, pour le journal d'audit, l'objet sur lequel l'action a porté
+	// — quand l'action seule peut le dire.
+	//
+	// Vide pour la quasi-totalité des actions : cibleDe déduit alors la cible
+	// des paramètres reçus, ce qui suffit dès que le paramètre EST le nom.
+	//
+	// Ce champ existe pour le cas contraire : celui où le paramètre est un
+	// IDENTIFIANT et où le nom n'est connu qu'après la lecture en base.
+	// « certificat 3 supprimé » n'apprend rien à qui lit le journal six mois
+	// plus tard ; « certificat ldaps » désigne le service interrompu.
+	//
+	// Renseigné après coup, il n'est pris en compte qu'en cas de SUCCÈS : sur
+	// un échec, le résultat est vide et l'audit retombe sur les paramètres,
+	// qui sont ce qu'on a réellement demandé.
+	Cible string
 }
 
 // PorteeFunc détermine les domaines sur lesquels le droit est exigé.
@@ -701,8 +717,15 @@ func (e *Executeur) Executer(nom string, a Appelant, p Params) (Resultat, error)
 			e.Journal.Echec(fmt.Sprintf("%s a tenté %s sur %s : %v",
 				a.Username, nom, cibleDe(p), err))
 		} else {
+			// La cible déclarée par l'action l'emporte : elle a lu la base et
+			// connaît le NOM là où les paramètres ne portaient qu'un
+			// identifiant. Voir Resultat.Cible.
+			cible := res.Cible
+			if cible == "" {
+				cible = cibleDe(p)
+			}
 			e.Journal.Execution(fmt.Sprintf("%s a fait %s sur %s",
-				a.Username, nom, cibleDe(p)))
+				a.Username, nom, cible))
 		}
 	}
 	return res, err
@@ -755,13 +778,63 @@ func estEcriture(d Definition) bool {
 //
 // Aucune cible reconnue rend « le serveur », qui est exact pour les actions qui
 // ne visent aucune entité : régler le mode debug, purger les sessions.
+//
+// # Le défaut que cette liste a porté
+//
+// Sa première version avait été écrite d'après le VOCABULAIRE du modèle plutôt
+// que d'après les paramètres réellement lus par les actions. Quatre entrées
+// s'en distinguaient d'un mot, et un mot suffit :
+//
+//	déclaré          réellement lu par les actions
+//	permission       permission   ✔ (via rattacher, param dynamique)
+//	certificate      certificate_id, certificate_name
+//	record           record_name, record_type
+//	—                permission_name  (8 actions : create, delete, update…)
+//	—                name             (4 actions de création)
+//	—                zone_name
+//
+// Conséquence : toutes les écritures sur les permissions — celles qui décident
+// de ce que chacun peut faire — et toutes celles sur les certificats étaient
+// journalisées « sur le serveur ». La ligne d'audit existait, elle ne nommait
+// simplement rien. C'est le genre de panne qu'on ne voit pas en lisant le code
+// qui l'écrit, seulement en confrontant les deux listes.
+//
+// Le tableau ci-dessous est donc à tenir à jour avec les paramètres, pas avec
+// les noms d'entités. cibleDe_test.go compare les deux.
+var parametresDeCible = []struct{ param, libelle string }{
+	// Entités nommées directement.
+	{"username", "username"},
+	{"group", "groupe"},
+	{"computeur_id", "machine"},
+	{"permission", "permission"},
+	{"permission_name", "permission"},
+	{"client_permission", "permission client"},
+	{"gpo", "GPO"},
+	{"module_id", "module"},
+
+	// DNS : la zone d'abord, l'enregistrement ensuite — un enregistrement sans
+	// sa zone ne se retrouve pas.
+	{"zone", "zone"},
+	{"zone_name", "zone"},
+	{"record_name", "enregistrement"},
+
+	// Certificats et clés : des identifiants, pas des noms. Les actions qui le
+	// peuvent renseignent Resultat.Cible et l'emportent alors sur cette ligne.
+	{"certificate_name", "certificat"},
+	{"certificate_id", "certificat"},
+	{"key_id", "clé"},
+
+	// Les plus généraux en dernier : « name » est le paramètre de toutes les
+	// créations et ne dit pas de QUOI. Placé avant les autres, il masquerait
+	// une cible plus précise présente dans la même requête.
+	{"domain", "domaine"},
+	{"name", "nom"},
+}
+
 func cibleDe(p Params) string {
-	for _, nom := range []string{
-		"username", "group", "computeur_id", "permission", "client_permission",
-		"gpo", "zone", "record", "domain", "key_id", "module_id", "certificate",
-	} {
-		if v := p.Get(nom); v != "" {
-			return nom + " " + v
+	for _, c := range parametresDeCible {
+		if v := p.Get(c.param); v != "" {
+			return c.libelle + " " + v
 		}
 	}
 	return "le serveur"

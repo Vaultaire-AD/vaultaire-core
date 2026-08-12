@@ -4,7 +4,6 @@ import (
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
-	"vaultaire/core/storage"
 )
 
 // update_UserPermission_Command_Parser règle une action RBAC d'une permission.
@@ -63,13 +62,34 @@ func update_UserPermission_Command_Parser(command_list []string, sender_groupsID
 	// C'est ce qui empêche les deux façades de diverger : relire chacune de son
 	// côté, c'était deux requêtes, deux instants, et deux affichages possibles
 	// pour une même écriture.
-	if perm, ok := res.Donnees.(*storage.UserPermission); ok && perm != nil {
-		// Les actions RBAC ne sont pas relues : cette commande vient d'en
-		// modifier UNE, et la fiche sert à confirmer le changement. Passer nil
-		// affiche les colonnes historiques et signale que les droits RBAC n'ont
-		// pas été lus — plutôt que de laisser croire que la permission
-		// n'accorde rien. Pour la fiche complète : get -p -u <nom>.
-		return res.Message + "\n\n" + display.DisplayUserPermission(*perm, nil)
+	//
+	// LES DROITS RBAC EN FONT PARTIE. Ils étaient passés à nil, et l'affichage
+	// rendait alors « Droits RBAC — état : non lus (base indisponible) » : un
+	// message faux, sur une fiche qui taisait justement le droit qu'on venait de
+	// modifier. Confirmer le changement est pourtant la seule raison d'afficher
+	// une fiche après une écriture.
+	if d, ok := res.Donnees.(action.PermissionAvecActions); ok {
+		return res.Message + "\n\n" +
+			display.DisplayUserPermission(d.Permission, actionsPourAffichage(d.Actions))
 	}
 	return res.Message
+}
+
+// actionsPourAffichage convertit le type du registre vers celui du rendu.
+//
+// Le paquet display ne connaît pas le registre, et ne doit pas le connaître :
+// lui faire importer `action` inverserait la dépendance — le rendu tirerait le
+// métier — et le rendrait intestable seul.
+//
+// nil est propagé tel quel : l'affichage distingue « non lu » de « n'accorde
+// rien », et une tranche vide dirait le second.
+func actionsPourAffichage(src []action.ActionRBAC) []display.ActionRBAC {
+	if src == nil {
+		return nil
+	}
+	out := make([]display.ActionRBAC, 0, len(src))
+	for _, a := range src {
+		out = append(out, display.ActionRBAC{Cle: a.Cle, Valeur: a.Valeur})
+	}
+	return out
 }

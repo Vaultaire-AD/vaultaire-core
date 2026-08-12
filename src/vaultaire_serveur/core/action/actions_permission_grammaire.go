@@ -262,5 +262,28 @@ func reglerActionPermission(a Appelant, p Params) (Resultat, error) {
 			" (relecture impossible, l'affichage peut être en retard)"}, nil
 	}
 
-	return Resultat{Message: message, Donnees: perm}, nil
+	// LES DROITS RBAC SONT RELUS AVEC LA PERMISSION.
+	//
+	// Ils ne l'étaient pas, et la conséquence se lisait à chaque `update -pu` :
+	// la fiche rendue affichait « Droits RBAC — état : non lus (base
+	// indisponible) ». La base était parfaitement disponible ; c'est cette
+	// action qui ne les fournissait pas, et l'affichage n'avait aucun moyen de
+	// distinguer les deux cas.
+	//
+	// Le résultat était doublement mauvais : un message faux, et une fiche qui
+	// taisait précisément le droit qu'on venait de modifier — alors que
+	// confirmer le changement est la seule raison d'afficher une fiche après
+	// une écriture.
+	//
+	// Le type rendu est désormais le MÊME que celui de permission.get. Deux
+	// formes pour une même fiche obligeaient chaque appelant à traiter les
+	// deux, et celui qui n'en traitait qu'une retombait silencieusement sur
+	// res.Message.
+	return Resultat{
+		Message: message,
+		Donnees: PermissionAvecActions{
+			Permission: *perm,
+			Actions:    LireActionsRBAC(int64(perm.ID)),
+		},
+	}, nil
 }
