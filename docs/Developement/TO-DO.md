@@ -45,7 +45,8 @@ apres create pas de reponse du serveur alors que pourtant la création a bien é
           - Globalement les permission de domain precise sont cassé quand je fait par exemple un get -u avec le droit de lecture sur un domain precis avec ou sans propagation je dois voire l'ensemble des user que j'ai le droit de voire pareil sur la page web quand je clique sur la page user a partit du moment ou j'ai un droit de lecture je dois pouvoir acceder a la page et voir les user que je peut voir cela s'applique a l'ensemble des objet sauf pour certain permission tres precise qui sont les usivante qui sont des boolean en gros 
           - dont voici la liste = read:log,read:cluster,write:cluster,read:certificate,write:certificate,read:enrollment,write:serv 
           -toutes les modification doivent etre marquer dans la documentation (pour la partie dns pour le moment si trop compliquer on peut la laissé en gestion boolean )que cela soit dans le man ou la doc sur les permissions
-          
+
+15.[DOC] - dans le package action ecrire une doc sur comment cela marche et comment rajouter une action proprement 
 
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
