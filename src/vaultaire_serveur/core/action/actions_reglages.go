@@ -30,6 +30,24 @@ import (
 // beaucoup plus que ce que la commande fait, et son nom ne laissait pas deviner
 // qu'elle ouvrait ces deux-là.
 
+// # Ces droits sont des BOOLÉENS, et c'est délibéré
+//
+// read:dns, read:enrollment, write:server — comme read:cluster, write:cluster,
+// read:certificate, write:certificate et read:log — ne se délèguent PAS par
+// domaine. Ils portent sur des objets qui n'appartiennent à aucun domaine de
+// l'annuaire : une zone DNS, une clé d'enrôlement, le mode debug du serveur.
+//
+// Ils gardent donc PorteeGlobale sans PorteeOuverte : on les accorde avec
+// « all », ou pas du tout. Leur donner une liste de domaines ne les
+// restreindrait pas, elle les REFUSERAIT — la portée exige « * », qu'aucune
+// liste de domaines ne satisfait.
+//
+// Le `UnDomaineSuffit: true` qu'ils portaient a été retiré : il ne faisait rien.
+// « au moins un des domaines de la liste » appliqué à `["*"]` n'a qu'un seul
+// candidat, `*`. Le laisser laissait croire à une souplesse qui n'existait pas —
+// et c'est exactement la confusion qui a rendu les listes d'entités
+// inaccessibles aux délégués pendant tout un cycle.
+
 // EnregistrerActionsReglages ajoute DNS (lecture), enrôlement (lecture) et
 // réglages serveur.
 func EnregistrerActionsReglages(r *Registre) {
@@ -39,7 +57,6 @@ func EnregistrerActionsReglages(r *Registre) {
 		Nom:             "dns.list_zones",
 		CleRBAC:         permission.ActionReadDNS,
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
 		FiltreInutile: "une zone DNS n'appartient à aucun domaine de l'annuaire ; " +
 			"il n'y a pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les zones DNS",
@@ -50,7 +67,6 @@ func EnregistrerActionsReglages(r *Registre) {
 		Nom:             "dns.list_records",
 		CleRBAC:         permission.ActionReadDNS,
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
 		FiltreInutile: "un enregistrement DNS n'appartient à aucun domaine de " +
 			"l'annuaire ; il n'y a pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les enregistrements d'une zone",
@@ -66,7 +82,6 @@ func EnregistrerActionsReglages(r *Registre) {
 		// Les clés RÉVOQUÉES, expirées et épuisées sont incluses : la question
 		// « qui a émis une clé pour ce type, et quand ? » se pose surtout après
 		// coup. Les masquer rendrait l'audit impossible.
-		UnDomaineSuffit: true,
 		FiltreInutile: "une clé d'enrôlement n'appartient à aucun domaine ; il n'y " +
 			"a pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les clés d'enrôlement",

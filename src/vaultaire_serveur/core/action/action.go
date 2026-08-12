@@ -50,6 +50,7 @@ package action
 
 import (
 	"fmt"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -157,6 +158,23 @@ type PorteeFunc func(p Params) ([]string, error)
 // pouvoir les déclencher, puisque leur effet dépasse son périmètre.
 func PorteeGlobale(Params) ([]string, error) { return []string{"*"}, nil }
 
+// estPorteeGlobale dit si une portée EST PorteeGlobale.
+//
+// Les fonctions ne se comparent pas en Go — seule la comparaison à nil est
+// permise —, d'où le passage par l'adresse du code. C'est le même procédé que
+// portees_declarees_test.go emploie pour nommer les portées dans ses messages.
+//
+// Employé par un seul contrôle, à l'enregistrement : une action qui exige « * »
+// et déclare un filtre se contredit, puisque qui détient « * » n'a rien à se
+// voir filtrer. Reconnaître cette portée précise est le seul moyen de refuser
+// cette combinaison avant qu'elle ne serve.
+func estPorteeGlobale(p PorteeFunc) bool {
+	if p == nil {
+		return false
+	}
+	return reflect.ValueOf(p).Pointer() == reflect.ValueOf(PorteeGlobale).Pointer()
+}
+
 // Definition décrit une action métier.
 type Definition struct {
 	// Nom identifie l'action, sous la forme « objet.verbe » : « user.create »,
@@ -242,7 +260,46 @@ type Definition struct {
 	// Le défaut est `false`, donc l'exigence stricte. Un oubli rend une action
 	// plus sévère que voulu — visible et corrigeable — plutôt que plus
 	// permissive, ce qui ne se verrait pas.
+	//
+	// ⚠️ SANS EFFET quand la portée est PorteeGlobale. « Un seul des domaines
+	// suffit » appliqué à la liste `["*"]` exige toujours `*`. Pour une liste
+	// qu'on veut ouvrir à un délégué, c'est PorteeOuverte qu'il faut — voir ce
+	// champ, et le contrôle posé à l'enregistrement.
 	UnDomaineSuffit bool
+
+	// PorteeOuverte ouvre l'action à qui détient la clé SUR QUOI QUE CE SOIT,
+	// le filtre se chargeant de réduire le résultat à son périmètre.
+	//
+	// # Le défaut qu'elle corrige
+	//
+	// Les listes déclaraient `Portee: PorteeGlobale` avec `UnDomaineSuffit:
+	// true` et un filtre. L'intention était claire : le droit sur un domaine
+	// ouvre la liste, le filtre la réduit. Le résultat ne l'était pas —
+	// PorteeGlobale rend la liste `["*"]`, et « au moins un des domaines de
+	// cette liste » n'a qu'un seul candidat : `*`. Toutes ces lectures
+	// exigeaient donc le droit GLOBAL, et le filtre ne servait jamais.
+	//
+	// Un délégué de paris ouvrait la page utilisateurs — l'interface, elle,
+	// demandait bien HasActionAnywhere — puis recevait « Action 'read:get:user'
+	// refusée sur le domaine '*' ». La page s'ouvrait sur une erreur. En ligne
+	// de commande, `get -u` répondait « Permission refusée : * : refusée ».
+	//
+	// # Pourquoi un champ distinct plutôt qu'un cas particulier
+	//
+	// On aurait pu faire traiter PorteeGlobale + UnDomaineSuffit comme « partout
+	// » dans l'exécuteur. C'eût été une règle implicite, déduite d'une
+	// combinaison — donc invisible à la lecture d'une définition, et surprenante
+	// pour l'action suivante qui emploierait la même combinaison sans vouloir la
+	// même chose.
+	//
+	// # Ce qu'elle exige en retour
+	//
+	// Un FILTRE, ou une justification écrite de son absence. Sans filtre, elle
+	// rend l'annuaire entier à qui détient le droit sur un seul domaine : c'est
+	// précisément la divulgation que la délégation existe pour empêcher, et elle
+	// est invisible — la liste ne dit pas ce qu'elle aurait dû masquer. Le
+	// registre refuse l'enregistrement dans ce cas.
+	PorteeOuverte bool
 
 	// Filtre réduit les données rendues au périmètre de l'appelant.
 	//
@@ -343,6 +400,41 @@ func (r *Registre) Enregistrer(d Definition) error {
 				"entités à qui détient %q sur un seul domaine. Déclarez Filtre, ou "+
 				"FiltreInutile avec la raison écrite si la liste ne porte pas d'entités "+
 				"à filtrer", d.Nom, d.CleRBAC)
+	}
+	// PorteeOuverte sans filtre : la divulgation que le contrôle précédent
+	// empêche, par l'autre bout. Le nom d'une action ne contient pas toujours
+	// « .list » — domain.list_tree, oui, mais une future « annuaire.export »
+	// non — et c'est ici que le risque est réel, puisque l'action s'ouvre à qui
+	// détient le droit n'importe où.
+	if d.PorteeOuverte && d.Filtre == nil && strings.TrimSpace(d.FiltreInutile) == "" {
+		return fmt.Errorf(
+			"action %q déclare PorteeOuverte sans filtre : elle s'ouvrirait à qui détient "+
+				"%q sur un seul domaine et rendrait TOUT. Déclarez Filtre, ou FiltreInutile "+
+				"avec la raison écrite", d.Nom, d.CleRBAC)
+	}
+	// PorteeGlobale + Filtre sans PorteeOuverte : une contradiction.
+	//
+	// C'est LE défaut de conception que ce contrôle ferme. Ces trois choix
+	// ensemble disent : « exige le droit sur *, puis réduis le résultat au
+	// périmètre de l'appelant ». Or qui détient « * » a tous les domaines dans
+	// son périmètre : le filtre ne peut rien réduire. Autrement dit, le filtre
+	// écrit ne servira JAMAIS, et l'action refusera tout délégué.
+	//
+	// Onze actions de liste étaient dans ce cas — utilisateurs, groupes,
+	// machines, permissions, GPO, sessions, arborescence. Chacune portait un
+	// filtre soigneusement écrit, et aucune ne l'atteignait. Le défaut est
+	// invisible en lisant une définition : il faut savoir que PorteeGlobale rend
+	// `["*"]` et que « un seul de ces domaines » n'a alors qu'un candidat.
+	//
+	// Le refus est à l'enregistrement plutôt que dans un test : il arrête le
+	// serveur au démarrage, avec le nom de l'action et la correction à faire.
+	if estPorteeGlobale(d.Portee) && d.Filtre != nil && !d.PorteeOuverte {
+		return fmt.Errorf(
+			"action %q : PorteeGlobale avec un filtre mais sans PorteeOuverte. "+
+				"Le droit %q serait exigé sur « * », or qui détient « * » voit déjà tout : "+
+				"le filtre ne réduirait rien et tout délégué serait refusé. "+
+				"Déclarez PorteeOuverte pour que le droit sur un domaine quelconque ouvre "+
+				"la liste, le filtre la réduisant ensuite", d.Nom, d.CleRBAC)
 	}
 
 	r.mu.Lock()
@@ -479,6 +571,26 @@ type VerificateurDroits interface {
 	// test — à répondre explicitement aux deux questions. Une implémentation
 	// qui n'aurait pensé qu'à l'une ne compile pas.
 	AutoriseSurUnDomaine(groupIDs []int, cle string, domaines []string) (bool, string)
+
+	// AutorisePartout rend vrai si l'appelant détient `cle` SUR QUOI QUE CE
+	// SOIT — globalement, ou sur au moins un domaine, quel qu'il soit.
+	//
+	// # Ce qu'elle répond, et ce qu'elle ne répond pas
+	//
+	// « As-tu quelque chose à faire ici ? », et non « as-tu le droit sur cette
+	// entité ? ». La seconde question reste posée entité par entité, par le
+	// FILTRE appliqué au résultat.
+	//
+	// Elle ne prend donc AUCUNE liste de domaines, et c'est délibéré : lui en
+	// passer une laisserait croire qu'elle les vérifie. C'est exactement le
+	// piège dans lequel AutoriseSurUnDomaine est tombée — appelée avec la liste
+	// « * » d'une portée globale, « un seul suffit » exigeait quand même le
+	// droit global, et le filtre n'avait jamais l'occasion de servir.
+	//
+	// Réservée aux LISTES FILTRÉES. Sans filtre, elle rendrait l'annuaire entier
+	// à qui détient le droit sur un seul domaine : le registre le refuse à
+	// l'enregistrement.
+	AutorisePartout(groupIDs []int, cle string) (bool, string)
 }
 
 // VerificateurSuperadmin contrôle l'appartenance au groupe protégé.
@@ -658,17 +770,31 @@ func (e *Executeur) Controler(nom string, a Appelant, p Params) (Definition, err
 		// les vrais refus seraient devenus introuvables.
 		var autorise bool
 		var motif string
-		if d.UnDomaineSuffit {
+		exige := fmt.Sprintf("sur %v", domaines)
+		switch {
+		case d.PorteeOuverte:
+			// La liste s'ouvre dès que la clé est détenue quelque part ; le
+			// filtre réduit ensuite au périmètre réel. Aucune liste de domaines
+			// n'est transmise : lui en passer une ramènerait le défaut que ce
+			// cas corrige.
+			autorise, motif = e.Droits.AutorisePartout(a.GroupIDs, d.CleRBAC)
+			exige = "sur au moins un domaine"
+		case d.UnDomaineSuffit:
 			autorise, motif = e.Droits.AutoriseSurUnDomaine(a.GroupIDs, d.CleRBAC, domaines)
-		} else {
+		default:
 			autorise, motif = e.Droits.Autorise(a.GroupIDs, d.CleRBAC, domaines)
 		}
 		if !autorise {
 			refus := &ErrRefusee{Action: nom, Cle: d.CleRBAC, Motif: motif}
 			if e.Journal != nil {
+				// Le message dit CE QUI ÉTAIT EXIGÉ, et non seulement la liste
+				// des domaines. « droit read:get:user exigé sur [*] » se lisait
+				// comme une exigence de droit global alors que l'action voulait
+				// « au moins un domaine » — et c'est ce message qui a fait
+				// chercher le défaut du mauvais côté.
 				e.Journal.Refus(fmt.Sprintf(
-					"action %s refusée à %s : droit %s exigé sur %v — %s",
-					nom, a.Username, d.CleRBAC, domaines, motif))
+					"action %s refusée à %s : droit %s exigé %s — %s",
+					nom, a.Username, d.CleRBAC, exige, motif))
 			}
 			return Definition{}, refus
 		}

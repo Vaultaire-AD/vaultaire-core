@@ -77,6 +77,25 @@ func (d droitsFictifs) AutoriseSurUnDomaine(_ []int, cle string, domaines []stri
 	return false, fmt.Sprintf("droit %s sur aucun de %v", cle, domaines)
 }
 
+// AutorisePartout reproduit permission.HasActionAnywhere.
+//
+// Ne reçoit AUCUN domaine, et c'est le point : elle répond « ce droit est-il
+// accordé quelque part ? ». La doublure balaie donc les droits accordés à la
+// recherche de la clé, quel que soit le domaine associé.
+//
+// C'est cette sémantique qui manquait au registre. Les listes déclaraient
+// PorteeGlobale — donc la liste `["*"]` — avec « un seul domaine suffit » : le
+// seul candidat étant `*`, elles exigeaient le droit global et leur filtre ne
+// servait jamais.
+func (d droitsFictifs) AutorisePartout(_ []int, cle string) (bool, string) {
+	for accorde := range d.accordes {
+		if strings.HasPrefix(accorde, cle+"|") && d.accordes[accorde] {
+			return true, ""
+		}
+	}
+	return false, fmt.Sprintf("droit %s accordé sur aucun domaine", cle)
+}
+
 // superadminFictif : appartenance au groupe protégé, décidée par le test.
 type superadminFictif struct{ membres map[string]bool }
 

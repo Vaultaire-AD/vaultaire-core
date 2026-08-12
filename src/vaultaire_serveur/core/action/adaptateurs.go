@@ -44,6 +44,23 @@ func (DroitsVaultaire) AutoriseSurUnDomaine(groupIDs []int, cle string, domaines
 	return permission.CheckPermissionsMultipleDomains(groupIDs, cle, domaines)
 }
 
+// AutorisePartout répond « as-tu quelque chose à faire ici ? ».
+//
+// C'est la question que l'interface web posait déjà avant d'ouvrir une page —
+// permission.HasActionAnywhere — mais que le registre ne posait nulle part. La
+// page s'ouvrait donc, puis l'action qu'elle appelait refusait sur « * ».
+//
+// Le motif de refus nomme la clé et non un domaine : il n'y en a aucun à citer,
+// et écrire « * : refusée » a fait chercher un problème de domaine là où il n'y
+// avait qu'une absence totale de droit.
+func (DroitsVaultaire) AutorisePartout(groupIDs []int, cle string) (bool, string) {
+	if permission.HasActionAnywhere(groupIDs, cle) {
+		return true, ""
+	}
+	return false, fmt.Sprintf(
+		"le droit %s n'est accordé sur aucun domaine", cle)
+}
+
 // SuperadminVaultaire branche le registre sur le groupe protégé.
 type SuperadminVaultaire struct{}
 

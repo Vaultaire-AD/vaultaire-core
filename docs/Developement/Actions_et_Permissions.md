@@ -66,14 +66,42 @@ Pour une **écriture**, le droit est exigé sur **tous** les domaines listés. U
 délégué de `paris` seul ne peut pas modifier une entité présente dans `paris` et
 `lyon`.
 
-Pour une **lecture**, un seul suffit — la même entité lui est visible. Voir
-« Voir et agir ne s'exigent pas pareil » plus bas : c'est la nuance qui rend la
-délégation utilisable.
+Pour une **lecture d'entité**, un seul suffit — la même entité lui est visible.
+Voir « Voir et agir ne s'exigent pas pareil » plus bas : c'est la nuance qui rend
+la délégation utilisable.
+
+Pour une **liste**, ni l'un ni l'autre : la vue s'ouvre dès que le droit est
+détenu **quelque part**, et un **filtre** réduit le résultat au périmètre réel.
+C'est une troisième exigence, `PorteeOuverte`, et non un cas particulier des deux
+autres :
+
+| | La question posée | Ce qui décide |
+|---|---|---|
+| écriture | « ai-je le droit sur cette entité ? » | tous ses domaines |
+| lecture d'entité | « cette entité m'est-elle visible ? » | un de ses domaines |
+| **liste** | « ai-je quelque chose à faire ici ? » | le droit **n'importe où**, puis le filtre |
+
+> ⚠️ **`UnDomaineSuffit` ne sert à rien sur une portée globale**, et c'est ce qui
+> a cassé toutes les listes pendant un cycle. La portée globale rend la liste de
+> domaines `["*"]` ; « au moins un de cette liste » n'a alors qu'un candidat,
+> `*`. Les onze listes d'entités exigeaient donc le droit global et leur filtre
+> n'était jamais atteint — `vlt get -u` répondait « Permission refusée : * :
+> refusée » à un délégué parfaitement légitime.
+>
+> Cette combinaison — portée globale, un filtre, pas de `PorteeOuverte` — est
+> désormais **refusée au démarrage du serveur**. Voir
+> [`Permissions.md` §1 bis](./Permissions.md).
 
 **Pourquoi certaines actions sont globales.** Une création n'a pas de cible dont
 déduire un domaine — le compte n'existe pas encore. Un certificat, une zone DNS,
 une politique de mot de passe n'appartiennent à aucun domaine : ce qu'ils
 engagent dépasse tout périmètre délégué.
+
+**Les droits qui ne se délèguent pas du tout** — `read:log`, `read:dns`,
+`write:dns`, `read:enrollment`, `read:cluster`, `write:cluster`,
+`read:certificate`, `write:certificate`, `write:server`, `web_admin` — sont des
+**booléens** : on les accorde avec `all`, ou pas du tout. Leur donner une liste
+de domaines ne les restreint pas, elle les refuse.
 
 ### Le groupe protégé
 

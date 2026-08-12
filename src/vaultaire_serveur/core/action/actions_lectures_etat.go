@@ -34,7 +34,7 @@ func EnregistrerActionsLectureEtat(r *Registre) {
 		Nom:             "session.list_users",
 		CleRBAC:         "read:status:user",
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
+		PorteeOuverte:   true,
 		Filtre:          filtrerSessionsUtilisateur,
 		Resume:          "liste les utilisateurs connectés",
 		Executer:        listerSessionsUtilisateur,
@@ -63,7 +63,7 @@ func EnregistrerActionsLectureEtat(r *Registre) {
 		Nom:             "session.list_clients",
 		CleRBAC:         "read:status:client",
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
+		PorteeOuverte:   true,
 		Filtre:          filtrerSessionsClient,
 		Resume:          "liste les machines connectées",
 		Executer:        listerSessionsClient,
@@ -86,7 +86,7 @@ func EnregistrerActionsLectureEtat(r *Registre) {
 		// n'appartient à aucun domaine. Le filtre réduit ensuite aux machines
 		// visibles.
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
+		PorteeOuverte:   true,
 		Filtre:          filtrerSessionsClient,
 		Resume:          "machines connectées d'un type de logiciel",
 		Executer:        listerSessionsClientParType,

@@ -91,8 +91,50 @@ mais sous forme **structurée et flexible** :
 -   `auth` → autorisation d'authentification (si désactivé, l'utilisateur ne peut pas se connecter ; à utiliser avec un groupe de quarantaine dédié).
 -   `compare` → comparaison LDAP/ressource (authentification).
 -   `search` → recherche d'objets (LDAP, base de données, etc.).
--   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (idem pour `group`, `client`) + `write:dns`, `write:eyes`.
--   Exemples (CLI) : l’admin et l’`vaultaire update -pu Inspecteur read:get:user all` ; `vaultaire update -pu DevApp write:create:client -a 1 apps.interne`.
+-   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (idem pour `group`, `client`, `permission`, `gpo`).
+-   Exemples (CLI) : `vlt update -pu Inspecteur read:get:user all` ; `vlt update -pu DevApp write:create:client -a 1 apps.interne`.
+
+#### Ce que donne un droit sur un domaine précis
+
+Un droit accordé sur `paris.fr`, avec ou sans propagation, vous donne accès à la
+**liste** des entités concernées : elle s'ouvre, et ne montre que votre
+périmètre. Vous n'avez jamais besoin du droit global pour lister.
+
+| Vous voulez | Il vous faut |
+|---|---|
+| **lister** des entités | le droit sur **un domaine quelconque** — la liste est réduite à ce que vous couvrez |
+| **consulter** une entité | le droit sur **un** de ses domaines |
+| **modifier** une entité | le droit sur **tous** ses domaines |
+
+La dernière ligne protège les entités à cheval : un compte présent dans
+`paris.fr` et `lyon.fr` appartient aux deux, et le modifier depuis `paris.fr`
+porterait aussi sur `lyon.fr`. Il reste en revanche **visible** au délégué de
+`paris.fr` — le lui cacher l'empêcherait de constater qu'il est là.
+
+> ⚠️ Jusqu'à la version 2.1, les listes exigeaient à tort le droit global :
+> `get -u` répondait « Permission refusée : * : refusée » à un délégué légitime,
+> et la page utilisateurs du portail s'ouvrait sur une erreur. La propagation
+> `1` ou `0` n'y changeait rien. Corrigé.
+
+#### Les droits qui s'accordent en tout ou rien
+
+Ceux-ci ne se délèguent **pas** par domaine — leur donner une liste de domaines
+ne les restreint pas, elle les **refuse** :
+
+```
+web_admin   read:log   read:dns   write:dns   read:enrollment
+read:cluster   write:cluster   read:certificate   write:certificate   write:server
+```
+
+La raison est commune : l'objet visé n'appartient à aucun domaine de l'annuaire.
+Un certificat sert le serveur entier, une ligne de journal porte l'activité de
+tout le parc, une zone DNS n'est pas une entité de l'annuaire. Accordez-les avec
+`all`, ou pas du tout.
+
+```bash
+vlt update -pu Audit read:log all              # ✅
+vlt update -pu Audit read:log -a 1 paris.fr    # ❌ refuse au lieu de restreindre
+```
 
 ## 📖 **CONVENTION**
 

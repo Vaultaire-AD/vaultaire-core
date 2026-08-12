@@ -28,6 +28,23 @@ la liste de courses.
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
+9.[SSH] - il y a un bug sur la gestion des clé ssh authorizek sur les compte de domain il faut mettre en place une logique comme pour le mot de passe les clé sont overwrite a chaque nouvelle connection avec les nouvelles pour eviter que des vielle clé ne reste 
+
+13.[COMMAND] - « aucune réponse du serveur » apres un create : NON REPRODUIT
+            Reste de l'ancien point 12, dont tout le reste est traite (voir DO/2.1/2.1.md).
+            Trois causes voisines ont ete corrigees — troncature a 1024 octets dans
+            l'invite interactive, reponse vide affichee comme une ligne blanche, message
+            de create -p muet sur la suite a donner — mais AUCUNE ne reproduit exactement
+            « la creation aboutit, le serveur ne repond pas ».
+
+            Le client signale desormais explicitement une reponse vide au lieu d'afficher
+            une ligne blanche : si le symptome persiste, le message le dira.
+
+            Pour trancher il faut : la commande EXACTE tapee, le mode (argument ou invite
+            interactive), et les lignes du journal serveur au meme instant.
+
+15.[DOC] - dans le package action ecrire une doc sur comment cela marche et comment rajouter une action proprement 
+
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
             et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »

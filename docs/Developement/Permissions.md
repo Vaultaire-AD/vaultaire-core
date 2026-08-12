@@ -44,6 +44,54 @@ l'écrit, `UpdatePermissionAction` ajoute ou retire un domaine.
 
 ---
 
+## 1 bis. Comment une clé est exigée : les trois portées
+
+Détenir `read:get:user` sur `paris` doit permettre de **voir les utilisateurs de
+paris**. Encore faut-il que l'action sache quoi exiger. Trois cas, déclarés sur
+chaque action dans `core/action` :
+
+| Déclaration | Ce qui est exigé | Pour quoi |
+|---|---|---|
+| *(défaut)* | la clé sur **tous** les domaines de la cible | les **écritures**. Un compte à cheval sur `paris` et `lyon` ne se modifie qu'avec le droit sur les deux : le geste porterait aussi sur `lyon`. |
+| `UnDomaineSuffit` | la clé sur **au moins un** des domaines de la cible | la **lecture d'une entité**. Ce même compte m'est légitimement visible si j'administre `paris` : me le cacher m'empêcherait de constater qu'il y est. |
+| `PorteeOuverte` | la clé **quelque part**, puis le `Filtre` réduit le résultat | les **listes**. « As-tu quelque chose à faire ici ? » ouvre la vue ; « qu'as-tu le droit de voir ? » décide du contenu. |
+
+### Le piège, et pourquoi il a coûté un cycle
+
+`PorteeOuverte` n'existait pas. Les onze listes d'entités déclaraient
+`Portee: PorteeGlobale` + `UnDomaineSuffit` + un filtre, ce qui se lit
+naturellement comme « le droit sur un domaine ouvre la liste ».
+
+Ce n'est pas ce que ça faisait. `PorteeGlobale` rend la liste de domaines
+`["*"]`, et « au moins un des domaines de cette liste » n'a qu'**un seul
+candidat** : `*`. Ces lectures exigeaient donc le droit **global**, et le filtre
+écrit pour chacune n'était jamais atteint.
+
+Symptômes, tous dus à cette seule cause :
+
+```
+$ vlt get -u
+Permission refusée : * : refusée
+
+[WARNING] Action 'read:get:user' refusée sur le domaine '*' (aucune règle applicable dans les groupes [11])
+[ERROR]   webadmin: list users failed: permission refusée pour user.list (read:get:user)
+```
+
+Le portail, lui, laissait bien entrer — il pose la bonne question,
+`HasActionAnywhere` — puis l'action qu'il appelait refusait. La page s'ouvrait
+sur une erreur, ce qui a fait chercher du côté de l'affichage.
+
+> **Le contrôle qui ferme la classe de défaut.** `PorteeGlobale` + un `Filtre`
+> sans `PorteeOuverte` est désormais **refusé à l'enregistrement**, donc au
+> démarrage du serveur : exiger `*` puis filtrer est contradictoire, qui détient
+> `*` n'a rien à se voir filtrer. Symétriquement, `PorteeOuverte` sans filtre est
+> refusée — elle rendrait tout à qui détient le droit sur un seul domaine.
+
+La propagation (`1:` / `0:`) n'était pour rien dans l'affaire : elle n'entrait
+jamais en jeu, l'exigence portant sur `*`.
+
+---
+
 ## 2. Actions à portée globale
 
 Certaines actions sont **toujours** contrôlées contre le domaine `*` :
@@ -60,6 +108,31 @@ d'administration, y compris pour se corriger.
 L'interface n'affiche donc pas les boutons de domaine sur ces actions, et le
 serveur refuse l'opération `add` / `remove` même sur une requête forgée —
 l'interface ne doit jamais être la seule barrière.
+
+La liste réelle, dans `core/permission/isValidAction.go` :
+
+| Clé | Pourquoi elle ne se délègue pas |
+|---|---|
+| `web_admin` | ouvre l'interface d'administration : c'est un accès, pas un périmètre |
+| `read:log` | une ligne de journal n'appartient à aucun domaine, et elle porte l'activité de **tout** le parc |
+| `read:dns`, `write:dns` | une zone DNS n'est pas une entité de l'annuaire |
+| `read:enrollment` | une clé d'enrôlement n'appartient à aucun domaine |
+| `read:cluster`, `write:cluster` | un nœud du cluster n'appartient à aucun domaine |
+| `read:certificate`, `write:certificate` | un certificat sert tout le serveur ; le régénérer ou le supprimer coupe le service pour tout le monde |
+| `write:server` | un réglage du serveur — mode debug, purge des sessions — engage l'ensemble |
+
+Ces clés s'accordent avec **`all`**, ou pas du tout. Leur donner une liste de
+domaines les refuse.
+
+> Le cas DNS est traité comme booléen **par choix**, pas par impossibilité : une
+> zone pourrait un jour être rattachée à un domaine de l'annuaire, et la clé
+> deviendrait alors déléguable comme les autres. Tant que ce lien n'existe pas,
+> la restreindre par domaine ne ferait que la refuser.
+
+Les actions du registre qui portent ces clés gardent donc `PorteeGlobale` **sans**
+`PorteeOuverte`. Le `UnDomaineSuffit` qu'elles portaient a été retiré : il ne
+faisait rien — « au moins un de `["*"]` » n'a qu'un candidat — et laissait croire
+à une souplesse inexistante. C'est exactement la confusion décrite en §1 bis.
 
 **Si vous modifiez un appelant** pour qu'il transmette un domaine réel, retirez
 l'entrée correspondante de `globalOnlyActions`. Les appelants concernés sont

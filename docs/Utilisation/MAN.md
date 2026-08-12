@@ -194,13 +194,62 @@ Les **permissions utilisateur** contrôlent l’accès aux ressources (SSO, API,
 |------|--------|
 | **Legacy** | `none`, `web_admin`, `auth`, `compare`, `search` |
 | **RBAC** | Format `catégorie:action:objet` — ex. `read:get:user`, `write:create:group` |
-| **Spécial** | `write:dns`, `write:eyes` |
+| **Spécial** | `read:log`, `read:dns`, `write:dns`, `write:mfa`, `write:killswitch`, `read:enrollment`, `read:cluster`, `write:cluster`, `read:certificate`, `write:certificate`, `write:server` |
 
 **Objets RBAC** : `user`, `group`, `client`, `permission`, `gpo`.  
 **Lecture** : `read:get:<objet>`, `read:status:<objet>`.  
 **Écriture** : `write:create:<objet>`, `write:delete:<objet>`, `write:update:<objet>`, `write:add:<objet>`.
 
 La configuration se fait via `update -pu` (voir [§12.3](#123-mise-à-jour-des-actions-dune-permission-utilisateur--pu)) ou l’interface web **Admin → Permissions**.
+
+#### Ce qu'un droit sur un domaine précis vous donne
+
+Accorder `read:get:user` sur `paris` — avec ou sans propagation — donne bien
+accès à la **liste** des utilisateurs, en ligne de commande comme sur le portail.
+La liste s'ouvre, et elle ne montre que ce que votre périmètre couvre.
+
+```bash
+update -pu lecture read:get:user -a 1 paris.fr   # paris.fr et ses sous-domaines
+update -pu lecture read:get:user -a 0 paris.fr   # paris.fr seul
+get -u                                            # les utilisateurs de paris.fr
+```
+
+Trois questions distinctes se posent, et elles n'attendent pas la même réponse :
+
+| Vous voulez | Il vous faut |
+|---|---|
+| **lister** des entités | le droit sur **un domaine quelconque** — la liste est réduite à votre périmètre |
+| **consulter** une entité | le droit sur **un** de ses domaines |
+| **modifier** une entité | le droit sur **tous** ses domaines |
+
+La troisième ligne n'est pas une sévérité gratuite : un compte présent dans
+`paris` et `lyon` appartient aux deux, et le modifier depuis `paris` porterait
+aussi sur `lyon`.
+
+> ⚠️ **Jusqu'à la version 2.1, les listes exigeaient à tort le droit global.**
+> `get -u` répondait « Permission refusée : * : refusée » à un délégué qui
+> détenait pourtant `read:get:user` sur son domaine, et la page utilisateurs du
+> portail s'ouvrait sur « Erreur liste utilisateurs ». La propagation `1` ou `0`
+> n'y changeait rien : l'exigence portait sur `*`. Corrigé.
+
+#### Les droits qui ne se délèguent PAS par domaine
+
+Ceux-ci sont des **booléens** : accordez-les avec `all`, ou pas du tout. Leur
+donner une liste de domaines ne les restreint pas, elle les **refuse**.
+
+```
+web_admin   read:log   read:dns   write:dns   read:enrollment
+read:cluster   write:cluster   read:certificate   write:certificate   write:server
+```
+
+La raison est la même pour tous : l'objet visé n'appartient à aucun domaine de
+l'annuaire. Un certificat sert le serveur entier, une ligne de journal porte
+l'activité de tout le parc, une zone DNS n'est pas une entité de l'annuaire.
+
+```bash
+update -pu audit read:log all      # ✅
+update -pu audit read:log -a 1 paris.fr   # ❌ refuse le droit au lieu de le restreindre
+```
 
 ### 5.1 Permission utilisateur
 

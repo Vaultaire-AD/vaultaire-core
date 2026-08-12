@@ -42,7 +42,7 @@ func EnregistrerActionsConformiteGPO(r *Registre) {
 		Nom:             "gpo.list_compliance",
 		CleRBAC:         "read:get:gpo",
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
+		PorteeOuverte:   true,
 		Filtre:          filtrerConformite,
 		Resume:          "état d'application des GPO sur le parc",
 		Executer:        listerConformite,

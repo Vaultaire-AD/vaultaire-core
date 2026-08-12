@@ -31,6 +31,9 @@ type droitsFixes struct {
 	// Trace séparée des appels « un domaine suffit », pour vérifier qu'une
 	// action interroge bien la sémantique qu'elle déclare.
 	appelsUnDomaine []appelDroit
+
+	// Trace des appels « le droit quelque part suffit », troisième sémantique.
+	appelsPartout []appelDroit
 }
 
 type appelDroit struct {
@@ -51,6 +54,16 @@ func (d *droitsFixes) Autorise(_ []int, cle string, domaines []string) (bool, st
 // serait alors plus laxiste, ou plus strict, que déclaré.
 func (d *droitsFixes) AutoriseSurUnDomaine(_ []int, cle string, domaines []string) (bool, string) {
 	d.appelsUnDomaine = append(d.appelsUnDomaine, appelDroit{cle: cle, domaines: domaines})
+	return d.autorise, d.motif
+}
+
+// AutorisePartout : troisième sémantique, tracée à part elle aussi.
+//
+// Aucune liste de domaines n'est reçue, et c'est précisément ce que les tests
+// doivent pouvoir constater : une action de liste qui passerait encore une
+// liste de domaines retomberait dans le défaut d'origine.
+func (d *droitsFixes) AutorisePartout(_ []int, cle string) (bool, string) {
+	d.appelsPartout = append(d.appelsPartout, appelDroit{cle: cle})
 	return d.autorise, d.motif
 }
 

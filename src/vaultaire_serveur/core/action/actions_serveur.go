@@ -71,7 +71,6 @@ func EnregistrerActionsServeur(r *Registre) {
 		// que nuancé. Une règle sans exception se relit sans réfléchir ; une
 		// règle avec « sauf les objets sans domaine » demande de savoir
 		// lesquels, et se contourne le jour où l'on se trompe de catégorie.
-		UnDomaineSuffit: true,
 		FiltreInutile: "un nœud de cluster n'appartient à aucun domaine ; il n'y a " +
 			"pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les nœuds du cluster",
@@ -82,7 +81,6 @@ func EnregistrerActionsServeur(r *Registre) {
 		Nom:             "cluster.get_purge_delay",
 		CleRBAC:         permission.ActionReadCluster,
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
 		Resume:          "lit le délai avant suppression d'un service parti",
 		Executer: func(_ Appelant, _ Params) (Resultat, error) {
 			return lireDelaiDePurge()
@@ -106,7 +104,6 @@ func EnregistrerActionsServeur(r *Registre) {
 		Nom:             "certificate.list",
 		CleRBAC:         permission.ActionReadCertificate,
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
 		FiltreInutile: "un certificat TLS n'appartient à aucun domaine ; il n'y a " +
 			"pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les certificats du serveur",
@@ -117,7 +114,6 @@ func EnregistrerActionsServeur(r *Registre) {
 		Nom:             "certificate.get",
 		CleRBAC:         permission.ActionReadCertificate,
 		Portee:          PorteeGlobale,
-		UnDomaineSuffit: true,
 		Resume:          "affiche un certificat public et son audit",
 		Executer:        ficheCertificatParNom,
 	})

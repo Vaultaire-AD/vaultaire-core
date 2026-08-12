@@ -49,7 +49,7 @@ func EnregistrerActionsArborescence(r *Registre) {
 		Portee:  PorteeGlobale,
 		// Même souplesse que group.list : le droit sur un domaine ouvre la
 		// vue, le filtre la réduit.
-		UnDomaineSuffit: true,
+		PorteeOuverte:   true,
 		Filtre:          filtrerArborescence,
 		Resume:          "arborescence des domaines et de leurs groupes",
 		Executer:        listerArborescence,
