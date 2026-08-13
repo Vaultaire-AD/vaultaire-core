@@ -77,7 +77,9 @@ la liste de courses.
             Reste ouvert, a trancher : que fait un proxy dont tous les cores sont
             injoignables ? La spec propose de refuser franchement plutot que de mettre en
             attente.
-10.[AUTH-DUCKY-SSH] - Comment son stocké transmit les mots de passe via l'auth ssh ducky 03
+10.[DUCKY-Client] - Comment gère la liste des serveur joignable pour les clients basics (client qui ne sont pas des services) : aujourd'jui un client n'a que un seul serveur core joingable dans son fichier de conf l'idée c'est que a chaque connection apres avoir été authentifié pour tous les client et pour les serveur tous les X temps parametrables le client demande via sa session actuelle la liste des serveur qu'il peut joindre (priorité sur les proxys qui sont dans son groupe - puis les proxy - puis les core ou alors reflechir a un autre moyen de crée cette liste on imagnine un contexte d'entreprise ou des employé d'un bureau ne peuvent pas joindre tous les proxy et n'ont acces a aucun core - peut etre pouvoir choisr si un core est exposé ou non au client basic et peut etre aussi pouvoir liées des cores a des groupes - dans ce cas peut etre aussi pouvoir liée des clé d'enrollement a des groupes et donc pouvoir faire des regles d'afinité)
+11.[AUTH-DUCKY-SSH] - Comment son stocké transmit les mots de passe via l'auth ssh ducky 03
+12.[LEXIQUE] - faire un lexique des definition de vulaitare client service basic etc etc
 
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
