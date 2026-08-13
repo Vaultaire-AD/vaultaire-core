@@ -77,7 +77,7 @@ la liste de courses.
             Reste ouvert, a trancher : que fait un proxy dont tous les cores sont
             injoignables ? La spec propose de refuser franchement plutot que de mettre en
             attente.
-
+10.[AUTH-DUCKY-SSH] - Comment son stocké transmit les mots de passe via l'auth ssh ducky 03
 
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
