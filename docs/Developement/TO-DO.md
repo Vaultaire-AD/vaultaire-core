@@ -41,6 +41,7 @@ la liste de courses.
                sudo/wheel, regles nftables. On ne devine pas l'etat d'un service depuis
                un fichier.
 5.[WEB-COMMAND] - BUG sur l'execution des commandse via la CLI web aucun logs present lord de l'execution des commandes il y a un pb
+6.[WEB-CLIENT] - Bug la page details des client ne marche plus ->  web: exécution du gabarit admin_client_detail.html échouée : template: admin_client_detail.html:53:44: executing "admin_client_detail.html" at <.Client.Proc>: can't evaluate field Proc in type *storage.Software
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
 9.[Ducky] [PROXY] - Decouverte de service et proxies
