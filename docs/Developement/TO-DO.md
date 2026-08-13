@@ -40,7 +40,7 @@ la liste de courses.
                portent un privilege — sshd et firewalld sous systemctl, appartenance a
                sudo/wheel, regles nftables. On ne devine pas l'etat d'un service depuis
                un fichier.
-
+5.[WEB-COMMAND] - BUG sur l'execution des commandse via la CLI web aucun logs present lord de l'execution des commandes il y a un pb
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
 9.[Ducky] [PROXY] - Decouverte de service et proxies
