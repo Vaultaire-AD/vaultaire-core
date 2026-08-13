@@ -10,60 +10,9 @@ la solution.
 
 ---
 
-## 📂 Structure du dépôt
-
-```plaintext
-vaultaire-core/
-│
-├── src/                            # Code source — 7 modules Go indépendants
-│   ├── vaultaire_serveur/          #   Serveur central (« core »)
-│   │   ├── core/                   #     auth, permission, ldap, dns, gpo, api,
-│   │   │                           #     web_serveur, database, action, command…
-│   │   ├── ducky-network/          #     Implémentation serveur du protocole Ducky
-│   │   ├── cluster/                #     Découverte de service, nœuds, métriques
-│   │   └── main/
-│   ├── vaultaire_client/           #   Agent poste client
-│   │   ├── pam_module/             #     Modules PAM + NSS, en C
-│   │   ├── pam_communication/      #     Socket UNIX agent ↔ PAM (/run/vaultaire)
-│   │   ├── duckynetworkClient/     #     Implémentation client du protocole Ducky
-│   │   ├── gpo/, sessionmgr/, storage/, tools/
-│   ├── vaultaire_proxy/            #   Relais entre clients et cores
-│   ├── vaultaire_cli/              #   CLI locale, via le socket d'administration
-│   ├── vaultaire_ctl/              #   CLI distante, via l'API REST signée
-│   ├── api_client_package/         #   Bibliothèque cliente de l'API (Go)
-│   └── ducky-network-sdk-service/  #   SDK Ducky Network pour clients de type service
-│
-├── web_packet/sso_WEB_page/        # Portail web — SOURCE
-│   ├── templates/                  #   Gabarits HTML (login, profil, admin_*)
-│   └── static/                     #   CSS / JS
-│
-├── cmd/                            # SORTIE DE COMPILATION (produite par auto-compil.sh)
-│   ├── vaultaire_server/           #   vaultaire_serveur, vaultaire_cli
-│   ├── vaultaire_client/           #   vaultaire_client, *.so (PAM/NSS)
-│   ├── vaultaire_ctl/              #   vaultaire_ctl
-│   ├── vaultaire_proxy/            #   vaultaire_proxy
-│   └── web_packet/                 #   copie de web_packet/, régénérée à chaque build
-│
-├── deployments/
-│   ├── configs/serveur_conf.yaml   #   Configuration serveur de référence
-│   ├── dev/                        #   Compose de développement + Rocky/SSH de test
-│   ├── pre-prod/                   #   Compose préprod, deploy.sh, scripts d'init
-│   └── selinux/                    #   Politique SELinux (vaultaire.te / .fc)
-│
-├── automatisation/                 # Scripts déployés côté client (auto-join Rocky)
-├── docs/                           # Documentation technique — voir docs/README.md
-├── images/                         # Logo
-│
-├── auto-compil.sh                  # Compilation des 7 modules + des modules C
-├── repo_manage.sh                  # Création/fusion de branches selon le workflow
-├── .gitattributes                  # Normalisation LF (voir « Fins de ligne »)
-├── CONTRIBUTING.MD
-├── LICENSE
-└── README.md
-```
 
 > ⚠️ `cmd/` est un **répertoire de sortie**, pas du code. Il est produit par
-> `auto-compil.sh` et listé dans `.gitignore`. Quelques binaires y restent suivis
+> `auto-compil.sh`
 > pour des raisons historiques : la procédure de détachement est dans
 > [`deployments/pre-prod/README.md`](./deployments/pre-prod/README.md).
 
