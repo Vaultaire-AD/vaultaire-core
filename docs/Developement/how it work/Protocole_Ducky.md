@@ -13,8 +13,8 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | server                      |             | 05            | service ask for enrollement      | le client envoie une trame avec une clé tmp et la clé d'enrollement                       |
 | client                      |             | 06            | server respond                   | le serveur valide les infos et lui renvoie les infos du client qu'il vient de crée        |
 | server                      |             | 07            | client send pubkey               | apres avoir recu les infos et les avoir enregistré le client envoit sa clé via la clé TMP |
-| client                      |             | 08            | server respond ok                | le serveur chiffre ok via la clé public du client pour validé l'enregistrement             |
-| client                      |             | 09            | enroll denied                    | refus, EN CLAIR : le serveur n'a ni clé publique du client ni clé tmp utilisable            |
+| client                      |             | 08            | server respond ok                | le serveur chiffre ok via la clé public du client pour validé l'enregistrement            |
+| client                      |             | 09            | enroll denied                    | refus, EN CLAIR : le serveur n'a ni clé publique du client ni clé tmp utilisable          |
 |                             |             |               |                                  |                                                                                           |
 | User auth                   | 02          |               |                                  |                                                                                           |
 | serveur                     |             | 01            | ask auth                         | le client demande une auth pour le user qui tente de se co                                |
@@ -29,8 +29,8 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 12            | serveur_information              | la trame d'information envoyé par les softwares serveur                                   |
 | serveur                     |             | 13            | client_information               | la trame d'information envoyé par les softwares client                                    |
 |                             |             |               |                                  |                                                                                           |
-| ~~server~~                  |             | ~~17~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_03` — voir « Découverte de service et proxies »           |
-| ~~client~~                  |             | ~~18~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_04`                                                       |
+| ~~server~~                  |             | ~~17~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_03` — voir « Découverte de service et proxies »          |
+| ~~client~~                  |             | ~~18~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_04`                                                      |
 |                             |             |               |                                  |                                                                                           |
 | SSH                         | 03          |               |                                  |                                                                                           |
 | server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user       |
@@ -40,10 +40,8 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | client                      |             | 05            | server respond with key          | le serveur repond simplement le salt du user                                              |
 |                             |             |               |                                  |                                                                                           |
 | Cluster / Service discovery | 04          |               | (plage réservée : 04_01 à 04_19) |                                                                                           |
-| client (host/proxy)         |             | 01            | register_host                    | enregistrement d’un hôte (proxy, etc.) : hostname, fqdn, ip, role, domain                 |
-| serveur                     |             | 02            | register_host_ok                 | confirmation + session considérée établie pour le host                                    |
 | client                      |             | 03            | list_cores                       | demande la liste des Cores en ligne (service discovery)                                   |
-| serveur                     |             | 04            | list_cores_response              | liste des Cores ET des proxies, triée par le serveur — voir la section dédiée              |
+| serveur                     |             | 04            | list_cores_response              | liste des Cores ET des proxies, triée par le serveur — voir la section dédiée             |
 | client                      |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                      |
 | serveur                     |             | 06            | proxy_metrics_ack                | accusé de réception                                                                       |
 | client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
@@ -1146,22 +1144,9 @@ la question se pose.
 
 # Cluster : enregistrement d'un service (04_09 à 04_14)
 
-> **Statut : proposition, en attente de validation.**
-
-La catégorie 04 porte déjà l'enregistrement d'un **hôte** (`04_01`), le service
-discovery (`04_03`), les métriques proxy (`04_05`) et le battement de cœur
-(`04_07`). La plage réservée va jusqu'à `04_19`.
-
-## Pourquoi ne pas réutiliser 04_01
-
-`register_host` déclare une **machine** : hostname, fqdn, ip, role, domain. Un
-service déclare une **fonction** : son type, sa version, ce qu'il sait faire.
-Ce ne sont pas les mêmes données.
-
-Les séparer a une seconde conséquence, plus importante : la restriction par
-sous-trame reste utile. Un `vaultaire_proxy` peut émettre `04_01` et pas `04_09` ;
-un `vaultaire_web` l'inverse. Un enregistrement unique pour les deux effacerait
-cette distinction.
+un service n'a pas besoin de se reenregistré tous cela est fait via la clé d'enrollement utiliser lors de la premiere connection d'un service dans la base de donné il y a son client ID et son profil
+la seul chose que le service peut mettre a jour de son coté dans cette base c'est sa version le premiere trames doivent servir a se signalé comme up pour etre enregistré dans le cluster comme disponible 
+ cette section doit etre reserve au client type service
 
 ### 04_09 — register_service (client → serveur)
 
