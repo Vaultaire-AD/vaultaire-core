@@ -39,7 +39,8 @@ la liste de courses.
                fonction d'application. Module par module, en commencant par ceux qui
                portent un privilege — sshd et firewalld sous systemctl, appartenance a
                sudo/wheel, regles nftables. On ne devine pas l'etat d'un service depuis
-               un fichier.
+               un fichier.  
+               
 5.[WEB-COMMAND] - BUG sur l'execution des commandse via la CLI web aucun logs present lord de l'execution des commandes il y a un pb
 6.[WEB-CLIENT] - Bug la page details des client ne marche plus ->  web: exécution du gabarit admin_client_detail.html échouée : template: admin_client_detail.html:53:44: executing "admin_client_detail.html" at <.Client.Proc>: can't evaluate field Proc in type *storage.Software
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
@@ -82,7 +83,8 @@ la liste de courses.
 11.[AUTH-DUCKY-SSH] - Comment son stocké transmit les mots de passe via l'auth ssh ducky 03
 12.[LEXIQUE] - faire un lexique des definition de vulaitare client service basic etc etc
 13.[CONFIG] - sur l'interface web est en command crée une route pour (action aussi du coup ) pour gère toutes les variables de temps configurables pénsé a les rentrée en base de donnée sortir la gestion des boucles de temps du fichier de conf et codé des varaibles en brut pour des valeur par default dans le code
-14.[DUCKY] - il n'y aucune gestion des groupes sur les client basic il faut donc crée un systeme pour au lancement du service et tous les X temps configurable - pour que le client demande la lsite des groupes qui peuvent se connecter pour ajouter les nouveau et supprimé ceux qu'il n'y sont plus (gere cela un peu comme les uid du module nfs pour pouvoir suivre l'etat des groupes (voir point 13 avant) , et donc aussi rajouter une info lors de la connection du client via 03 pour avoir la liste des groupes du user qui doit etre refresh a chaque connection 
+14.[DUCKY] - il n'y aucune gestion des groupes sur les client basic il faut donc crée un systeme pour au lancement du service et tous les X temps configurable - pour que le client demande la lsite des groupes qui peuvent se connecter pour ajouter les nouveau et supprimé ceux qu'il n'y sont plus (gere cela un peu comme les uid du module nfs pour pouvoir suivre l'etat des groupes (voir point 13 avant) , et donc aussi rajouter une info lors de la connection du client via 03 pour avoir la liste des groupes du user qui doit etre refresh a chaque connection   
+15. [GPO] - Bug sur la supression des regles firewalls
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
             et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »
