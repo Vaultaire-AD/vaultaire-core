@@ -10,10 +10,18 @@ type Config struct {
 		API_Port   *int  `yaml:"api_port"`
 	} `yaml:"api"`
 	Path struct {
-		SocketPath             *string `yaml:"socketpath"`
-		Client_Conf_path       *string `yaml:"clientconfpath"`
-		LogPath                *string `yaml:"logpath"`
-		ServerCheckOnlineTimer *int    `yaml:"servercheckonlinetimer"`
+		SocketPath       *string `yaml:"socketpath"`
+		Client_Conf_path *string `yaml:"clientconfpath"`
+		LogPath          *string `yaml:"logpath"`
+
+		// ServerCheckOnlineTimerObsolete n'est plus LU, seulement DÉTECTÉ.
+		//
+		// Le champ est conservé pour qu'une installation qui le porte encore
+		// reçoive un avertissement nommant son remplacement. Le retirer de la
+		// structure ferait ignorer la ligne en silence : l'exploitant verrait sa
+		// valeur dans le fichier, sans effet, et chercherait la panne du côté de
+		// la boucle plutôt que du côté de la configuration.
+		ServerCheckOnlineTimerObsolete *int `yaml:"servercheckonlinetimer"`
 	} `yaml:"file-path"`
 	Ldap struct {
 		Ldap_Enable  *bool `yaml:"ldap_enable"`
@@ -91,7 +99,18 @@ var PrivateKeyPath string = "/opt/vaultaire/.ssh/private_key.pem"
 var PublicKeyPath string = "/opt/vaultaire/.ssh/public_key.pub"
 var PrivateKeyforlogintoclient string = "/opt/vaultaire/.ssh/private_key_for_login_client_rsa"
 var PublicKeyforlogintoclient string = "/opt/vaultaire/.ssh/private_key_for_login_client_rsa.pub"
-var ServerCheckOnlineTimer int = 2
+
+// ServerCheckOnlineTimer a été RETIRÉ.
+//
+// La cadence de vérification des machines en ligne est un réglage
+// d'exploitation, pas une propriété d'installation : elle vit maintenant en base
+// sous la clé « check_online_minutes », avec son défaut codé dans
+// core/reglages. La changer ne demande plus de redémarrer le core — c'est-à-dire
+// de couper le parc pour ajuster une période.
+//
+// Le champ « servercheckonlinetimer » du YAML est ignoré s'il subsiste : voir
+// ReadConfigFile, qui le signale une fois au démarrage plutôt que de le lire en
+// silence.
 
 var Database_username string = "root"
 var Database_password string = "root"

@@ -30,6 +30,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 19. [enroll — Clés d'enrôlement](#19-enroll--clés-denrôlement)
 20. [gpo — Application et conformité](#20-gpo--application-et-conformité)
 21. [cluster — Nœuds du parc](#21-cluster--nœuds-du-parc)
+22. [settings — Durées d'exploitation](#22-settings--durées-dexploitation)
 
 ---
 
@@ -63,7 +64,11 @@ file-path:
   socketpath: "/opt/vaultaire/vaultaire.sock"
   # Les chemins de clés (privatekeypath, publickeypath, privatekeyforlogintoclient, publickeyforlogintoclient)
   # ne sont plus nécessaires - toutes les clés et certificats sont maintenant stockés en base de données
-  # ... autres chemins (clientconfpath, logpath, servercheckonlinetimer, etc.)
+  # ... autres chemins (clientconfpath, logpath, etc.)
+  #
+  # servercheckonlinetimer a QUITTÉ ce fichier : les durées d'exploitation
+  # vivent en base — voir §22. Une ligne laissée ici produit un avertissement
+  # au démarrage plutôt que d'être ignorée en silence.
 
 ldap:
   ldap_enable: true    # LDAP (port 389)
@@ -173,6 +178,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `enroll` | Clés d’enrôlement des clients **service** — voir [§19](#19-enroll--clés-denrôlement) |
 | `gpo`    | État d’application et de conformité des GPO du parc — voir [§20](#20-gpo--application-et-conformité) |
 | `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
+| `settings`| Durées d'exploitation du serveur — voir [§22](#22-settings--durées-dexploitation) |
 | `help`   | Liste les commandes. Chaque commande accepte `-h`. |
 
 > Chaque commande répond à `-h` avec sa syntaxe à jour. En cas de désaccord entre ce manuel et `vlt <commande> -h`, **c’est l’aide qui fait foi** : elle vit dans le même fichier que le code qui l’applique.
@@ -863,6 +869,8 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Imposer le second facteur à un groupe | `mfa -g IT_Group --require` |
 | Émettre une clé d'enrôlement de service | `enroll create --type proxy --uses 1 --expires 30m` |
 | Machines en écart de conformité GPO | `gpo drift` |
+| Voir les durées d'exploitation | `settings list` |
+| Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
@@ -983,6 +991,20 @@ silence se lisait comme une absence de problème.
 `en retard` se déclenche après **trois** cycles manqués, soit trois heures. Un
 redémarrage ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
 
+### La même vue sur le portail
+
+**Admin → Conformité** (`/admin/gpo/compliance`) affiche exactement le même état :
+résumé du parc, tableau trié dans le même ordre, détail d'une machine au clic, et
+un filtre « écarts seulement » équivalent à `gpo drift`.
+
+Le tri, les états de fraîcheur et les libellés viennent du **même code** que la
+ligne de commande — c'est délibéré. Deux vues qui les recalculeraient séparément
+finiraient par ne plus dire la même chose, et personne ne remarquerait l'écart
+tant qu'il serait petit. Un test refuse que l'une des deux les réécrive.
+
+Droit : `read:get:gpo`, comme en ligne de commande. La vue est réduite au
+périmètre de l'appelant, et le nombre de lignes masquées est annoncé.
+
 Le tri place devant ce dont on ne sait rien — les muettes —, puis les modules en
 échec, puis les écarts. Un échec est visible et chiffré ; un silence ne dit rien,
 et c’est pour cela qu’il passe en premier.
@@ -1002,6 +1024,60 @@ cluster list <role>           # nœuds actifs d'un rôle
 cluster purge-delay           # délai avant suppression d'un service parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 ```
+
+## 22. settings — Durées d'exploitation
+
+Les périodes des boucles du serveur : vérification des machines, purge des
+sessions, battement et nettoyage du cluster, balayage des services, durée d'une
+session web.
+
+```bash
+settings list                  # les durées, leur valeur et leur défaut
+settings set <clé> <valeur>    # règle une durée
+settings reset <clé>           # la ramène à son défaut codé
+```
+
+| Clé | Unité | Défaut | Ce qu'elle gouverne |
+|---|---|---|---|
+| `check_online_minutes` | min | 2 | vérification des machines en ligne |
+| `ducky_session_purge_minutes` | min | 5 | purge des sessions Ducky expirées |
+| `cluster_heartbeat_seconds` | s | 30 | battement du nœud vers le cluster |
+| `cluster_cleanup_seconds` | s | 30 | mise hors ligne des nœuds silencieux |
+| `service_sweep_seconds` | s | 60 | balayage des services hors ligne |
+| `web_session_minutes` | min | 30 | durée d'une session du portail |
+| `web_session_purge_minutes` | min | 5 | purge des sessions web expirées |
+
+**Les valeurs vivent en base ; les défauts sont codés dans le serveur.** Un
+changement prend effet au **prochain tour** de la boucle concernée — aucun
+redémarrage, donc aucune coupure du parc pour ajuster une cadence.
+
+`settings list` marque d'une étoile les valeurs écartées du défaut : c'est la
+question qu'on se pose devant un serveur qu'on ne connaît pas.
+
+**Droits** : `read:log` pour consulter, `write:server` pour régler.
+
+> ⚠️ `web_session_minutes` fixe la fenêtre pendant laquelle un jeton volé reste
+> utilisable. Les sessions **déjà ouvertes** gardent leur échéance : raccourcir
+> la durée n'écourte pas les sessions en cours. Après un incident, c'est
+> `kill -u` qu'il faut, pas ce réglage.
+
+> ⚠️ `service_sweep_seconds` doit rester **inférieur** au seuil de péremption
+> d'un battement, et `cluster_heartbeat_seconds` **nettement inférieur** : sinon
+> un service tombé reste affiché en ligne, ou un nœud vivant est déclaré hors
+> ligne entre deux battements.
+
+### Ce qui n'est pas ici
+
+Les délais de **protocole** et de **sécurité** — échéances de lecture réseau,
+fenêtre anti-rejeu de l'API, barème de la limitation de débit — restent des
+constantes du serveur. Ce ne sont pas des préférences d'exploitation mais des
+propriétés du protocole : une échéance trop longue ouvre un déni de service,
+trop courte casse les connexions lentes.
+
+Les durées de l'**agent** vivent sur la machine du parc et relèvent des GPO.
+
+> Le réglage `servercheckonlinetimer` du fichier YAML **n'est plus lu**. Une
+> ligne laissée en place produit un avertissement au démarrage.
 
 ---
 

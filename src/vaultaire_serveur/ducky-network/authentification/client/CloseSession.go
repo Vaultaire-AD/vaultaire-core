@@ -26,11 +26,17 @@ func closeSession(trames_content storage.Trames_struct_client, duckysession *sto
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "DB cleanup failed: "+err.Error(), meta)
 	}
 
-	// 2. Nettoyage de l'auth en mémoire (cache applicatif des challenges en
-	// attente). Note : ClientSoftwareID n'est normalement pas un AuthID
-	// valide ici (comportement préexistant, hors périmètre de ce nettoyage) ;
-	// gardé tel quel pour ne pas changer le comportement.
-	DeleteAuthByID(trames_content.ClientSoftwareID)
+	// 2. Nettoyage des défis en attente de CETTE MACHINE.
+	//
+	// L'appel était `DeleteAuthByID(ClientSoftwareID)`, et son commentaire
+	// disait déjà que ce n'était pas un AuthID valide — la carte est indexée par
+	// AuthID. La suppression ne trouvait donc jamais rien, et le commentaire
+	// gardait le comportement « pour ne pas le changer ».
+	//
+	// Conséquence : un défi émis puis abandonné restait en mémoire pour toute la
+	// vie du processus. Il portait aussi le mot de passe en clair, jusqu'à ce
+	// que ce champ soit retiré.
+	SupprimerDefisDuClient(trames_content.ClientSoftwareID)
 
 	if duckysession == nil {
 		logs.Write_LogCodeMeta("INFO", logs.CodeNone, "Clean logout completed (no active DuckySession)", meta)

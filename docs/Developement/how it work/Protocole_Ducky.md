@@ -32,12 +32,17 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | ~~server~~                  |             | ~~17~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_03` — voir « Découverte de service et proxies »          |
 | ~~client~~                  |             | ~~18~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_04`                                                      |
 |                             |             |               |                                  |                                                                                           |
-| SSH                         | 03          |               |                                  |                                                                                           |
+| SSH / identités du poste    | 03          |               | (plage utilisée : 03_01 à 03_10) | voir « Authentification SSH / PAM » et « Synchronisation des groupes de la machine »      |
 | server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user       |
-| client                      |             | 02            | server awnser   succes           | le server renvoie un succes  avec les clé public du user et le boolean admin              |
+| client                      |             | 02            | server awnser   succes           | succès : is_admin, la ligne `groups:` des groupes du user, puis ses clés publiques        |
 | client                      |             | 03            | server anwser failed             | le server renvoie un failed avec la raison de l'echec                                     |
-| server                      |             | 04            | client ask for salt              | le client demande le salt d'un user                                                       |
-| client                      |             | 05            | server respond with key          | le serveur repond simplement le salt du user                                              |
+| ~~server~~                  |             | ~~04~~        | **OBSOLÈTE**                     | demandait le sel d'un user — le défi HMAC a disparu, refusée par « obsolete client »      |
+| ~~client~~                  |             | ~~05~~        | **OBSOLÈTE**                     | rendait sel + nonce — l'agent la journalise en WARNING si un vieux core l'envoie          |
+| server                      |             | 06            | fetch_pubkey                     | le client demande les clés publiques seules, sans authentifier personne                   |
+| client                      |             | 07            | fetch_pubkey_response            | réponse à 03_06 : les clés publiques du user                                              |
+| server                      |             | 08            | group_sync_request               | le client demande la liste des groupes de ses domaines — contenu VIDE, l'ID est en en-tête |
+| client                      |             | 09            | group_sync_list                  | réponse succès à 03_08 : `sync:<minutes>` puis une ligne `<nom>:<id_group>` par groupe    |
+| client                      |             | 10            | group_sync_denied                | réponse erreur à 03_08 : l'agent ne touche à rien et garde ses groupes                    |
 |                             |             |               |                                  |                                                                                           |
 | Cluster / Service discovery | 04          |               | (plage réservée : 04_01 à 04_19) |                                                                                           |
 | client                      |             | 03            | list_cores                       | demande la liste des Cores en ligne (service discovery)                                   |
@@ -219,15 +224,61 @@ l'identique, et l'empreinte serait restée la clé.
 
 ```
 03_01  <utilisateur@domaine>\n<mot de passe>
-  03_02  <utilisateur@domaine>\n<is_admin>\n<clé publique 1>\n<clé publique 2>…
+  03_02  <utilisateur@domaine>\n<is_admin>\ngroups:<g1>,<g2>\n<clé pub 1>\n<clé pub 2>…
   03_03  <utilisateur@domaine>\n<raison>
 
 03_06  <utilisateur@domaine>              demande des clés publiques seules
   03_07  vaultaire\n\n<utilisateur@domaine>\n<clés>
 
+03_08  (vide)                            synchronisation des groupes du domaine
+  03_09  sync:<minutes>\n<nom>:<id_group>…
+  03_10  <raison>
+
 03_04  OBSOLÈTE — refusée par « obsolete client, update required »
 03_05  OBSOLÈTE — l'agent la journalise en WARNING
 ```
+
+`03_08` à `03_10` ont leur propre section, plus bas : « Synchronisation des
+groupes de la machine ».
+
+## La ligne des groupes dans `03_02`
+
+Les clés publiques occupent « tout le reste » du contenu : il n'existait donc
+aucune position libre APRÈS elles. La liste des groupes se place avant, et se
+reconnaît à son **préfixe** `groups:` plutôt qu'à son rang.
+
+Compter les lignes aurait lié l'agent à une version précise du serveur : face à
+un serveur qui n'envoie pas encore la ligne, tout serait décalé et la première
+clé serait lue comme une liste de groupes. Avec le préfixe, son absence est
+simplement un contenu sans groupes.
+
+**La compatibilité ne va que dans un sens, et c'est assumé.** Un agent à jour
+fonctionne avec un serveur ancien : il n'applique aucune appartenance, soit
+l'ancien comportement. L'inverse ne tient pas — un agent ancien prend la ligne
+pour une clé et l'écrit dans `authorized_keys`, où sshd l'ignore comme entrée
+malformée. Le fichier étant réécrit à chaque connexion, l'artefact disparaît dès
+la mise à jour. Ce chemin porte déjà une contrainte de version du même ordre :
+voir `03_04`.
+
+Le préfixe est déclaré **des deux côtés** — l'agent et le serveur sont des
+modules Go distincts, et aucune compilation ne peut les tenir liés. Deux tests
+jumeaux figent la chaîne (`sshauth/groupes_trame_test.go` et
+`ssh_client_test.go`) : sans eux, un changement d'un seul côté échouerait en
+silence, puisque sshd ne signale pas les lignes qu'il ignore.
+
+### Ce que l'agent en fait
+
+Il **ne retire que ce qu'il a lui-même posé**. `/etc/group` porte aussi les
+appartenances de l'administrateur local, d'un paquet, d'un installeur : aligner
+naïvement sur la liste du serveur les effacerait toutes, silencieusement, à la
+première connexion et sur tout le parc à la fois.
+
+La mémoire de ce qu'il a posé est `/etc/vaultaire/user_groups.map`, sur le modèle
+de `uid.map`. État illisible ⇒ **aucun retrait** : retirer sans savoir ce qu'on a
+posé reviendrait exactement à ce que le fichier existe pour éviter.
+
+Il ne **crée** aucun groupe : un groupe du domaine absent de la machine est
+ignoré, et le journal le dit. C'est l'objet de la spécification ci-dessous.
 
 Le mot de passe transite à l'intérieur de la session Ducky, déjà chiffrée et
 authentifiée, exactement comme sur les trois autres portes du serveur : portail
@@ -1194,9 +1245,19 @@ jusqu'à 04_19.**
 
 # Découverte de service et proxies (catégorie 04)
 
-> **Statut : proposition, en attente de validation.** Trois arbitrages ont été
-> rendus et figurent ci-dessous ; le reste est ouvert. Aucune implémentation
-> avant accord. Couvre les points 9 et 10 de la TO-DO, qui sont un seul sujet.
+> **Statut : proposition, en attente de validation.** Six arbitrages sont rendus
+> ci-dessous ; deux questions restent ouvertes, nommées en fin de section. Aucune
+> implémentation avant accord. Couvre les points 9 et 10 de la TO-DO, qui sont un
+> seul sujet.
+>
+> | | Arbitrage |
+> |---|---|
+> | 1 | `02_17`/`02_18` supprimées — la découverte reste en `04` |
+> | 2 | le proxy est un **relais**, il ne déchiffre rien |
+> | 3 | les empreintes de core s'**apprennent** par une session de confiance |
+> | 4 | un core est **joignable par défaut**, sauf s'il est retiré de la liste |
+> | 5 | l'**affinité core ↔ groupe** suit celle des proxies, même table |
+> | 6 | une clé d'enrôlement porte une **affinité**, pas un droit |
 
 ## Ce qui existe déjà, et pourquoi personne ne s'en sert
 
@@ -1371,6 +1432,87 @@ voir servir les machines internes. Il n'est pas traité ici : un drapeau
 `exclusif` sur la ligne d'affinité le couvrirait, et il sera temps de l'ajouter
 quand un besoin réel de segmentation se présentera, pas avant.
 
+## Arbitrage 4 — un core est joignable par défaut, sauf s'il est retiré
+
+**Le besoin.** Dans un parc d'entreprise, les postes d'un bureau ne joignent pas
+tous les proxies, et souvent aucun core : ceux-ci sont derrière un pare-feu, dans
+un réseau d'administration. Distribuer la liste complète leur donnerait des
+adresses qu'ils ne peuvent pas atteindre, et une liste d'échecs à parcourir avant
+d'arriver au nœud utile.
+
+**La décision : un drapeau `expose_aux_agents` sur `cluster_nodes`, VRAI par
+défaut.**
+
+Le défaut compte plus que le drapeau. À `false` par défaut, un core ajouté au
+cluster serait invisible aux agents jusqu'à ce que quelqu'un pense à l'exposer —
+et le symptôme serait « le nouveau core ne sert à rien », sans rien pour le
+relier à un réglage oublié. À `true`, un core mal exposé est *joignable par trop
+de monde*, ce qui se voit dans les journaux du core lui-même.
+
+> **Ce drapeau n'est PAS un contrôle d'accès.** Il enlève une adresse d'une
+> liste ; il n'empêche personne de se connecter à un core dont il connaît
+> l'adresse par un autre moyen. Ce qui protège un core reste le pare-feu et
+> l'authentification. Le présenter comme une segmentation serait une fausse
+> sécurité — et c'est le genre de malentendu qui fait qu'on ouvre le pare-feu
+> « puisque Vaultaire filtre déjà ».
+
+Il ne s'applique qu'aux clients de la famille **agent**. Un service qui demande
+`04_03` reçoit la liste complète : il est lui-même dans le réseau
+d'administration, et un proxy à qui l'on cacherait les cores ne pourrait plus
+relayer.
+
+## Arbitrage 5 — l'affinité core ↔ groupe suit celle des proxies
+
+Même table, même sémantique : `(nœud, groupe, priorité)`, **priorité et non
+exclusivité**, pour la raison déjà écrite plus haut — un groupe dont l'unique
+nœud affiné tombe doit pouvoir en joindre un autre.
+
+Une seule table pour les deux rôles plutôt que deux : le tri est le même
+algorithme, et deux tables se seraient mises à diverger sur la façon de départager
+les priorités égales.
+
+L'ordre final servi à un agent devient donc :
+
+1. les **proxies affinés** à ses groupes, par priorité croissante ;
+2. les **autres proxies** ;
+3. les **cores affinés** à ses groupes, s'ils sont exposés ;
+4. les **autres cores** exposés.
+
+À priorité égale, ordre **mélangé** — c'est ce qui répartit la charge sans qu'un
+nœud reçoive tout le parc parce qu'il est premier dans l'ordre alphabétique.
+
+Les cores restent **toujours présents en fin de liste** pour un agent qui n'a
+aucun proxy joignable, sauf s'ils sont explicitement non exposés. Une liste qui
+pourrait être vide rendrait la machine injoignable, et le chemin de secours du
+fichier de configuration statique n'existe que pour l'amorçage.
+
+## Arbitrage 6 — les clés d'enrôlement portent une affinité, pas un droit
+
+**Le besoin.** Rattacher un service à des groupes dès sa naissance, pour qu'il
+hérite d'une affinité sans intervention manuelle après l'enrôlement.
+
+**La décision : une clé d'enrôlement peut porter une liste de groupes, qui sont
+appliqués au service créé — et rien d'autre.**
+
+Ce que cela ne fait PAS, et qu'il faut écrire :
+
+- **la clé n'accorde aucun droit.** Elle dit « ce service naîtra dans ces
+  groupes » ; ce que les groupes portent est décidé ailleurs, et reste modifiable
+  après coup. Une clé qui accorderait des droits deviendrait un second système de
+  permissions, à tenir d'accord avec le premier ;
+- **elle ne restreint pas ce que le service peut joindre.** L'affinité est une
+  préférence de tri, pas un filtre.
+
+Le rattachement est **appliqué une fois, à l'enrôlement**. Le relire à chaque
+connexion ferait qu'une clé modifiée — ou révoquée — changerait les groupes d'un
+service déjà en production, et le lien entre la cause et l'effet serait
+introuvable des mois plus tard.
+
+> **Limite assumée.** Qui détient une clé d'enrôlement choisit les groupes de
+> naissance du service qu'il crée, donc son affinité. C'est déjà vrai du type
+> qu'elle vise. Le contrôle reste sur l'émission de la clé — `write:create:client`
+> — et sur ses bornes d'usage et de durée.
+
 ## Ce que le proxy doit émettre pour exister
 
 Rien de neuf à écrire côté serveur, tout est déjà là :
@@ -1400,13 +1542,209 @@ d'un nœud qu'on contourne.
 | Lot | Contenu | Dépend de |
 |---|---|---|
 | 0 | Liste d'empreintes côté agent, apprise par session de confiance | — |
-| 1 | Port, rôle, priorité dans `cluster_nodes` ; `04_04` enrichie ; `04_03` au catalogue | — |
+| 1 | Port, rôle, priorité et `expose_aux_agents` dans `cluster_nodes` ; `04_04` enrichie ; `04_03` au catalogue | — |
 | 2 | Le SDK émet `04_03`, fusionne avec le statique et persiste | 0, 1 |
 | 3 | Le proxy émet `04_01`, `04_07`, `04_05` | 1 |
 | 4 | Relais TCP Ducky | 3 |
 | 5 | Relais LDAP/S, SAN du core couvrant les proxies | 4 |
-| 6 | Affinité proxy ↔ groupe et tri côté serveur | 1, 3 |
+| 6 | Table d'affinité `(nœud, groupe, priorité)` et tri côté serveur | 1, 3 |
+| 7 | Groupes portés par une clé d'enrôlement, appliqués à la naissance du service | 6 |
 
 Le lot 0 conditionne le 2 : sans lui, distribuer une liste de cores ne sert à
 rien, puisque les agents refuseraient de joindre ceux qu'ils ne connaissent pas.
 Les lots 1 et 3 sont indépendants et peuvent démarrer les premiers.
+
+Le lot 7 vient **après** le 6 et non avant : rattacher un service à des groupes
+n'a aucun effet observable tant que l'affinité ne trie rien. L'écrire d'abord
+donnerait une fonctionnalité qu'on ne peut pas éprouver.
+
+## Ce qui reste ouvert
+
+Deux questions, volontairement non tranchées ici.
+
+**La périodicité du rafraîchissement** — « tous les X temps configurable » —
+dépend du **point 13** de la TO-DO, qui sort la gestion des durées du fichier de
+configuration pour la mettre en base. Fixer une constante maintenant créerait un
+réglage de plus à migrer ensuite.
+
+**Que fait un proxy dont tous les cores sont injoignables ?** Voir plus haut : la
+proposition est de refuser franchement. Elle attend validation.
+
+---
+
+# Synchronisation des groupes de la machine (catégorie 03)
+
+Les appartenances arrivent avec `03_02`, à chaque connexion. Encore faut-il que
+les groupes existent sur la machine : sans eux, une appartenance annoncée n'est
+posée nulle part. C'est ce que cet échange apporte.
+
+```
+03_08  demande            (agent → core)   contenu vide
+  03_09  liste            (core → agent)   sync:<minutes> puis <nom>:<id_group>
+  03_10  refus            (core → agent)   <raison>
+```
+
+L'agent émet au démarrage du service, puis à la cadence que le core lui annonce,
+et une fois de plus quand une ouverture de session révèle un groupe annoncé mais
+absent localement — le seul moment où l'écart est visible et où il a une
+conséquence immédiate.
+
+## Le GID vient du core
+
+`GID = 100000 + id_group`.
+
+Un GID choisi localement serait différent sur chaque machine. Sur un partage NFS,
+où seuls des nombres circulent, deux postes du même domaine liraient alors des
+droits différents sur les mêmes fichiers. C'est le problème que `uid.map` résout
+pour les utilisateurs, et il ne se résout pas machine par machine : le seul point
+qui voit tout le domaine est le core.
+
+La formule est **sans état**. Une machine réinstallée retrouve les mêmes numéros
+sans rien recopier, et deux machines qui découvrent les groupes dans un ordre
+différent obtiennent le même résultat. Une table d'allocation aurait ajouté un
+état à sauvegarder, à migrer, et à réparer le jour où il diverge de `groups`.
+
+### Pourquoi 100000
+
+`ProvisionVaultaireUser` donne à chaque compte un groupe primaire dont le GID
+vaut l'UID : **5000–60000 est déjà consommé en entier**. Y placer les groupes du
+domaine garantirait la collision — deux groupes portant le même numéro, donc des
+droits qui s'appliquent au mauvais.
+
+60001–65533 est libre mais étroit et bute sur `nogroup`. Les GID sont des entiers
+32 bits ; 100000 laisse la place et reste lisible dans un `ls -n`.
+
+Borne haute : `id_group ≤ 60000`. La table `groups` en est très loin — la borne
+existe pour que l'hypothèse soit **vérifiée** plutôt que supposée.
+
+### La règle est écrite des deux côtés
+
+`db_groups.GIDDeGroupe` et `localusermanagement.GIDDeGroupe`, dans deux modules
+Go qu'aucune compilation ne relie.
+
+C'est le prix d'un choix : `03_09` porte les `id_group`, **pas les GID**. Envoyer
+le numéro déjà calculé laisserait un core en imposer un arbitraire — dont `0`,
+qui est `root`. Le core est authentifié, il n'est pas infaillible : une injection
+SQL, une base restaurée de travers, un bogue suffisent.
+
+Des tests jumeaux figent les constantes aux deux bouts, plus un test côté agent
+qui refuse que la plage des groupes descende sur celle des UID. Sans eux, une
+divergence n'apparaîtrait qu'au premier partage NFS, sous forme de droits qui ne
+s'appliquent pas, sans message d'erreur nulle part.
+
+## Ce que la machine reçoit
+
+Les groupes des **domaines** auxquels elle appartient — pas ceux dont elle est
+membre, pas ceux du reste de l'organisation.
+
+Le filtre porte sur le domaine parce qu'un utilisateur qui s'y connecte peut
+appartenir à un groupe que la machine ne partage pas. Il ne va pas plus loin
+parce que la liste complète des groupes de l'organisation est une information de
+structure, et que `/etc/group` est lisible par tous les comptes locaux du poste.
+
+L'identifiant de la machine est lu dans **l'en-tête** de `03_08`, où la couche de
+session l'a posé — donc authentifié. Le lire dans le contenu laisserait n'importe
+quel agent réclamer les groupes d'un autre.
+
+## La cadence voyage avec la liste
+
+`group_sync_minutes` est un réglage du core (défaut 60 min), mais la boucle qu'il
+pilote tourne sur l'agent. Sa valeur part donc dans `03_09`, sur une ligne
+préfixée `sync:`.
+
+L'alternative — une constante côté agent — aurait reproduit un défaut déjà nommé
+ici : `IntervalleRapportAgent` duplique `gpo.MachineRefreshInterval`, et allonger
+l'un sans l'autre fait apparaître tout le parc en retard du jour au lendemain.
+Surtout, **un réglage qui s'affiche sans agir est plus trompeur que pas de
+réglage du tout**.
+
+La boucle de l'agent reconstruit son `time.After` à chaque tour : un `Ticker`
+lirait sa période une seule fois, et la nouvelle valeur n'aurait d'effet qu'au
+redémarrage du service. C'est la raison d'être de `reglages.Boucle` côté core, et
+la même ici.
+
+Une machine hors ligne applique la nouvelle cadence à son retour, pas avant.
+
+## La suppression vide le groupe, elle n'efface pas la ligne
+
+Quand un groupe disparaît du domaine, l'agent **retire ses membres** et
+**conserve la ligne**.
+
+Effacer la ligne rendrait orphelins tous les fichiers dont c'est le groupe
+propriétaire : `ls -l` n'afficherait plus qu'un nombre, sur des données que
+personne n'a demandé à toucher, et sans qu'aucune trace n'explique le numéro. Un
+agent ne peut pas savoir ce qui en porte la marque sans parcourir tous les
+systèmes de fichiers montés — partages réseau compris, où le parcours dure des
+heures et où les fichiers appartiennent à d'autres machines.
+
+Vider suffit à couper les droits, immédiatement et partout. Le nom subsiste pour
+que l'administrateur puisse lire ce qu'il regarde.
+
+L'effacement définitif est une décision humaine : `vaultaire_client
+--purge-groups` affiche ce qui serait effacé, et n'agit qu'avec `--confirm`.
+
+> **Écart avec la spécification initiale.** Elle proposait `vlt purge groups
+> --machine <id>`, une commande du core. Cela aurait supposé une trame de plus,
+> autorisant une écriture dans `/etc/group` à distance : une frontière de
+> privilège neuve, donc une clé RBAC, une action et une entrée de catalogue —
+> pour un geste dont le seul bénéfice est de la propreté, le vidage ayant déjà
+> coupé les droits. La commande est donc locale, sur la machine concernée.
+
+## Ce que l'agent ne touche jamais
+
+Les groupes qu'il n'a pas créés. La limite est tenue par `/etc/vaultaire/groups.map`,
+au format `<nom>:<gid>`, écrit atomiquement — même modèle que `user_groups.map`
+pour les appartenances, et que `uid.map` pour les identifiants.
+
+Un groupe local **homonyme** d'un groupe du domaine n'est jamais repris : il est
+signalé en WARNING et laissé intact, GID compris. Le renuméroter changerait le
+propriétaire de tous les fichiers qui en portent la marque.
+
+**État illisible ⇒ aucun vidage.** Vider sans savoir ce qu'on a créé reviendrait
+à toucher aux groupes de l'administrateur local — ce que le fichier existe pour
+empêcher. Les créations, elles, se font quand même : elles n'enlèvent rien.
+
+**Trois fichiers d'état sont deux de trop.** Les fusionner est possible, mais
+`uid.map` est lu par le module NSS, en C, dans des processus non privilégiés :
+en changer le format engage bien plus que la synchronisation des groupes. La
+séparation est le choix prudent, pas le choix élégant.
+
+## Les refus, et la liste vide
+
+`03_10` et « aucun groupe » ne se confondent pas, et la distinction compte : un
+domaine peut légitimement n'avoir aucun groupe, auquel cas il faut vider ceux qui
+restent — mais vider le parc parce que la base du core est indisponible serait
+exactement le mauvais réflexe.
+
+Devant un refus, l'agent ne touche à rien. Devant une réponse dont **toutes** les
+lignes ont été rejetées, non plus : elle ressemble à une liste vide sans en être
+une.
+
+Le motif du refus est volontairement grossier — « indisponible », jamais le
+détail de l'erreur SQL. La trame part vers une machine du parc, dont le journal
+est lisible par qui a un accès local.
+
+## Ordre des opérations
+
+Créations **avant** vidages — l'inverse de ce que fait `03_02` pour les
+appartenances, et pour la même raison de fond.
+
+Pour les appartenances, retirer d'abord garantit qu'un incident au milieu laisse
+l'utilisateur avec moins de droits qu'attendu, jamais plus. Ici, vider d'abord
+ouvrirait une fenêtre pendant laquelle un groupe renommé — disparu sous un nom,
+réapparu sous un autre — n'existerait sous aucun des deux. Créer d'abord ne
+retire jamais de droit par accident : le vidage qui suit s'en charge, sur une
+liste déjà à jour.
+
+## Ce qui reste ouvert
+
+**Le groupe primaire de l'utilisateur** porte le nom du compte et le GID de son
+UID. Le remplacer par un groupe du domaine toucherait `/etc/passwd` et la
+propriété des fichiers déjà créés. Choix retenu : ne pas y toucher, ne gérer que
+les groupes secondaires.
+
+**Les machines hors ligne longtemps.** Une machine absente six mois retrouve des
+groupes supprimés depuis. Le vidage les traite au premier contact, mais entre son
+démarrage et cette synchronisation, les droits sont ceux d'il y a six mois.
+Refuser les sessions en attendant transformerait une panne de réseau en
+verrouillage de la machine : ce n'est pas fait.

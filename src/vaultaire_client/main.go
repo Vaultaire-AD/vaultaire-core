@@ -72,6 +72,47 @@ func brancherSocleDucky() {
 	tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
 }
 
+// purgerGroupesOrphelins affiche, et n'efface que sur confirmation explicite.
+//
+// # Pourquoi l'affichage est le comportement par défaut
+//
+// La commande retire des lignes d'un fichier système. Un opérateur qui se
+// trompe de machine doit s'en apercevoir AVANT, pas en lisant le compte rendu.
+//
+// Le vidage a déjà coupé les droits : l'effacement ne gagne que de la propreté.
+// Rien ne presse assez pour justifier d'agir sans montrer.
+func purgerGroupesOrphelins(confirmer bool) {
+	orphelins, err := localusermanagement.GroupesOrphelins()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Erreur :", err)
+		os.Exit(1)
+	}
+
+	if len(orphelins) == 0 {
+		fmt.Println("Aucun groupe du domaine à effacer.")
+		return
+	}
+
+	fmt.Printf("%d groupe(s) créé(s) par Vaultaire, sans membre, absent(s) du domaine :\n\n", len(orphelins))
+	for _, o := range orphelins {
+		fmt.Printf("  %-32s GID %d\n", o.Nom, o.GID)
+	}
+
+	if !confirmer {
+		fmt.Println("\nAucun effacement. Relancer avec --confirm pour effacer ces lignes.")
+		fmt.Println("Les fichiers qui portent encore ces GID deviendront orphelins :")
+		fmt.Println("`ls -l` n'affichera plus qu'un nombre à la place du nom du groupe.")
+		return
+	}
+
+	effaces, err := localusermanagement.PurgerGroupesOrphelins()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Erreur :", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\n%d groupe(s) effacé(s) : %v\n", len(effaces), effaces)
+}
+
 func main() {
 	brancherSocleDucky()
 
@@ -84,7 +125,16 @@ func main() {
 	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu())
 
 	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
+	purgeGroupes := flag.Bool("purge-groups", false,
+		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
+	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
 	flag.Parse()
+
+	if *purgeGroupes {
+		purgerGroupesOrphelins(*confirmer)
+		os.Exit(0)
+	}
+
 	if *fetchKey != "" {
 		sshUser := *fetchKey
 		_, domain := tools.ExctractDomainFromUsername(sshUser)
@@ -120,6 +170,17 @@ func main() {
 		// serveur. Le premier cycle attend qu'une session mère soit disponible,
 		// donc l'appel n'a pas à être ordonné avec l'ouverture du tunnel.
 		gpo.Bootstrap()
+
+		// Synchronisation des groupes du domaine.
+		//
+		// Après gpo.Bootstrap et pour la même raison : la boucle attend
+		// elle-même une session utilisable, donc l'appel n'a pas à être
+		// ordonné avec l'ouverture du tunnel.
+		//
+		// Sans elle, l'agent poserait des appartenances dans des groupes qui
+		// n'existent pas sur la machine — le mécanisme du point 14 tourne à vide
+		// tant que son référentiel n'est pas là.
+		sshauth.BootstrapGroupes()
 
 		// Le service d'allocation d'identifiants AVANT le canal PAM.
 		//

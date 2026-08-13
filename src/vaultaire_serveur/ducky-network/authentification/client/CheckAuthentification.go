@@ -36,7 +36,6 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 			RandomAuth:       token,
 			AuthID:           alphaCheck,
 			Username:         trames_content.Username,
-			Password:         trames_content.Content,
 			ClientSoftwareID: trames_content.ClientSoftwareID,
 		}
 		storeAuth(nouvelleAuth)
@@ -144,7 +143,6 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		RandomAuth:       token,
 		AuthID:           alphaCheck,
 		Username:         trames_content.Username,
-		Password:         trames_content.Content,
 		ClientSoftwareID: trames_content.ClientSoftwareID,
 	}
 	storeAuth(nouvelleAuth)

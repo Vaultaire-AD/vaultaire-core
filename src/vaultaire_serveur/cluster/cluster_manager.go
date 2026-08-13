@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"net"
 	"os"
-	"time"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
 	"vaultaire/core/logs"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 )
 
@@ -55,27 +55,25 @@ func StartManager(db *sql.DB) {
 }
 
 // startHeartbeatLoop met à jour régulièrement le heartbeat du nœud courant.
+//
+// La cadence est relue à chaque tour : un ticker créé une fois garderait sa
+// période même après changement du réglage, et rien ne le dirait — la valeur
+// s'afficherait, sans agir.
 func startHeartbeatLoop(db *sql.DB, hostname string) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
+	reglages.Boucle(reglages.CleBattementCluster, func() {
 		if err := clusterdatabase.UpdateHeartbeat(db, hostname); err != nil {
 			logs.Write_Log("ERROR", "cluster: failed to update heartbeat: "+err.Error())
 		}
-	}
+	})
 }
 
 // startCleanupLoop applique périodiquement les règles de mise hors ligne / purge.
 func startCleanupLoop(db *sql.DB) {
-	ticker := time.NewTicker(30 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
+	reglages.Boucle(reglages.CleNettoyageCluster, func() {
 		if err := clusterdatabase.CleanupStaleNodes(db); err != nil {
 			logs.Write_Log("ERROR", "cluster: cleanup stale nodes failed: "+err.Error())
 		}
-	}
+	})
 }
 
 // detectPrimaryIP essaie de trouver une adresse IP non loopback.

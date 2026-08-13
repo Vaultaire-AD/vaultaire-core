@@ -64,7 +64,7 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 		if err := appendToFile("/etc/passwd", passwdLine); err != nil {
 			return err
 		}
-		if err := appendToFile("/etc/group", groupLine); err != nil {
+		if err := appendToFile(groupPath(), groupLine); err != nil {
 			return err
 		}
 		if err := appendToFile("/etc/shadow", shadowLine); err != nil {
@@ -110,7 +110,19 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 	// 4. SUDO : Gestion du groupe wheel/sudo
 	if isAdmin {
 		logs.Write_log("INFO", "Ajout de "+username+" au groupe wheel")
-		addUserToGroupManual("wheel", username)
+		// L'échec est dit, pas fatal : le compte est créé et ses clés posées.
+		// Refuser la session parce que le groupe d'administration manque
+		// laisserait l'utilisateur dehors, alors qu'il lui reste un accès valide
+		// — sans les droits sudo, ce que le journal permet de diagnostiquer.
+		switch pose, err := addUserToGroupManual("wheel", username); {
+		case err != nil:
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"Ajout de %s au groupe wheel impossible : %v", username, err))
+		case !pose:
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"Groupe wheel absent de cette machine : %s n'aura pas les droits "+
+					"d'administration", username))
+		}
 	}
 
 	return nil
@@ -174,21 +186,53 @@ func appendToFile(path, line string) error {
 }
 
 // Ajoute un utilisateur à la liste d'un groupe (ex: wheel)
-func addUserToGroupManual(groupName, username string) {
-	path := "/etc/group"
-	content, _ := os.ReadFile(path)
+// addUserToGroupManual inscrit un utilisateur dans un groupe existant.
+//
+// Ne crée aucun groupe : un groupe absent est ignoré, et la fonction le dit par
+// son booléen de retour. Voir groupes_utilisateur.go pour la raison.
+//
+// # L'appartenance se lit champ par champ
+//
+// La version précédente testait `strings.Contains(line, username)`, ce qui
+// confondait l'appartenance avec la simple présence des lettres dans la ligne.
+// Un utilisateur « bob » était considéré comme déjà membre d'un groupe nommé
+// « bobs », ou dès qu'un « bobby » y figurait : l'inscription n'avait pas lieu,
+// sans erreur, et les droits manquaient sans que rien ne l'indique. Le nom du
+// groupe lui-même ouvre la ligne, donc un compte homonyme de son groupe primaire
+// tombait systématiquement dans le piège — or c'est précisément ce que
+// ProvisionVaultaireUser crée pour chaque compte.
+func addUserToGroupManual(groupName, username string) (bool, error) {
+	content, err := os.ReadFile(groupPath())
+	if err != nil {
+		return false, err
+	}
+
 	lines := strings.Split(string(content), "\n")
 	for i, line := range lines {
-		if strings.HasPrefix(line, groupName+":") {
-			if !strings.Contains(line, username) {
-				if strings.HasSuffix(line, ":") {
-					lines[i] = line + username
-				} else {
-					lines[i] = line + "," + username
-				}
-				os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0644)
-			}
-			break
+		if !strings.HasPrefix(line, groupName+":") {
+			continue
 		}
+		champs := strings.Split(line, ":")
+		if len(champs) < 4 {
+			// Ligne malformée : ne pas y toucher. La compléter inventerait des
+			// champs qu'on n'a pas lus.
+			return false, fmt.Errorf("ligne de groupe %q malformée", groupName)
+		}
+		for _, m := range decouper(champs[3]) {
+			if m == username {
+				return true, nil // déjà membre
+			}
+		}
+		if strings.TrimSpace(champs[3]) == "" {
+			champs[3] = username
+		} else {
+			champs[3] = champs[3] + "," + username
+		}
+		lines[i] = strings.Join(champs, ":")
+		if err := os.WriteFile(groupPath(), []byte(strings.Join(lines, "\n")), 0644); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
+	return false, nil // le groupe n'existe pas sur cette machine
 }

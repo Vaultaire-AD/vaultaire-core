@@ -61,11 +61,13 @@ func StartWebServer() {
 	http.HandleFunc("/admin/permissions", AdminPermissionsHandler)
 	http.HandleFunc("/admin/gpo", AdminGPOHandler)
 	http.HandleFunc("/admin/gpo/restrictions", AdminGPORestrictionsHandler)
+	http.HandleFunc("/admin/gpo/compliance", AdminGPOComplianceHandler)
 	// Politique d'authentification : réservée au groupe vaultaire, atteinte
 	// depuis le tableau de bord (le bandeau de navigation n'est pas modifié).
 	http.HandleFunc("/admin/authpolicy", AdminAuthPolicyHandler)
 	http.HandleFunc("/admin/enroll", AdminEnrollHandler)
 	http.HandleFunc("/admin/certificates", AdminCertificatesHandler)
+	http.HandleFunc("/admin/settings", AdminSettingsHandler)
 	http.HandleFunc("/admin/logs", AdminLogsHandler)
 	http.HandleFunc("/admin/api/logs", AdminLogsAPIHandler)
 	http.HandleFunc("/admin/dns", AdminDNSHandler)

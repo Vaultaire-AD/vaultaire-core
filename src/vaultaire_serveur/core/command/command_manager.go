@@ -18,6 +18,7 @@ import (
 	commandkill "vaultaire/core/command/command_kill"
 	commandmfa "vaultaire/core/command/command_mfa"
 	commandremove "vaultaire/core/command/command_remove"
+	commandsettings "vaultaire/core/command/command_settings"
 	commandstatus "vaultaire/core/command/command_status"
 	commandupdate "vaultaire/core/command/command_update"
 	commandaction "vaultaire/core/command/commandaction"
@@ -59,6 +60,7 @@ func ExecuteCommand(input, sender string) string {
 		"enroll":      commandenroll.Enroll_Command,
 		"gpo":         commandgpo.GPO_Command,
 		"certificate": commandcertificate.Certificate_Command,
+		"settings":    commandsettings.Settings_Command,
 	}
 
 	if cmd == "clear" {
@@ -76,6 +78,7 @@ func ExecuteCommand(input, sender string) string {
   enroll [OPTIONS] : clés d'enrôlement des clients service. Voir enroll -h.
   gpo    [OPTIONS] : état d'application et de conformité des GPO. Voir gpo -h.
   certificate      : certificats TLS du serveur (LDAPS). Voir certificate -h.
+  settings         : durées d'exploitation du serveur. Voir settings -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.
@@ -92,7 +95,112 @@ func ExecuteCommand(input, sender string) string {
 		return "Erreur de permission : " + err.Error()
 	}
 
+	// QUI A TAPÉ QUOI — journalisé ici, une fois, pour les deux façades.
+	//
+	// # Ce qui manquait
+	//
+	// Rien ne traçait la commande elle-même. Les ACTIONS journalisent leurs
+	// écritures, mais les lectures sont volontairement muettes : exécuter
+	// « get -u » ou « eyes -g » depuis la console d'administration web ne
+	// laissait donc AUCUNE trace. Ni la commande, ni son auteur.
+	//
+	// Ce n'est pas anodin pour cette façade en particulier. La console web
+	// exécute des commandes `vlt` arbitraires et elle est atteignable par tout
+	// détenteur de `web_admin`, à travers le réseau. Le socket local, lui,
+	// suppose déjà un accès root à la machine.
+	//
+	// # Pourquoi la commande est CAVIARDÉE
+	//
+	// Une commande porte parfois un mot de passe en clair — « create -u alice
+	// paris.fr <motdepasse> », « update -u alice -p <motdepasse> ». Journaliser
+	// la ligne telle quelle écrirait ces secrets dans un fichier conservé,
+	// recopié et souvent lisible par plus de monde que la base. On aurait
+	// remplacé une absence de trace par une fuite.
+	logs.Write_LogCode("INFO", logs.CodeNone,
+		"commande de "+sender+" : "+CommandePourJournal(input))
+
 	return entry(argv, groupIDs, sender)
+}
+
+// argumentsSensibles dit, pour une commande donnée, à partir de quel rang les
+// arguments portent un secret.
+//
+// La position est fixée par la GRAMMAIRE de chaque commande, pas devinée : un
+// caviardage approximatif masquerait des arguments utiles au diagnostic, ou
+// pire, en laisserait passer un.
+//
+//	create -u <identifiant> <domaine> <MOTDEPASSE> <naissance> …   rang 4
+//	update -u <identifiant> -p <MOT DE PASSE…>                     rang 4 et suivants
+//
+// Les autres commandes ne transportent aucun secret : une clé publique SSH est
+// publique, et « enroll create » PRODUIT un secret au lieu d'en recevoir un.
+var argumentsSensibles = []struct {
+	prefixe []string // les mots qui identifient la commande, rang par rang
+	rang    int      // premier argument à caviarder
+	etSuite bool     // caviarder aussi tout ce qui suit
+}{
+	// create -u <identifiant> <domaine> <MOTDEPASSE> <naissance> [prénom] [nom]
+	{prefixe: []string{"create", "-u"}, rang: 4, etSuite: false},
+
+	// update -u <identifiant> -p <MOT DE PASSE…>
+	//
+	// etSuite, parce que le mot de passe occupe TOUS les arguments restants :
+	// la commande les rejoint pour qu'un mot de passe contenant des espaces ne
+	// soit pas tronqué au premier.
+	{prefixe: []string{"update", "-u", "", "-p"}, rang: 4, etSuite: true},
+}
+
+// CommandePourJournal rend la commande privée de ses secrets.
+//
+// Exportée pour être éprouvée : c'est une fonction dont l'échec est SILENCIEUX
+// — un mot de passe non caviardé ne se découvre que dans le journal, après coup,
+// et le journal est justement ce qu'on recopie et conserve.
+func CommandePourJournal(input string) string {
+	mots := strings.Fields(input)
+	if len(mots) == 0 {
+		return ""
+	}
+
+	for _, regle := range argumentsSensibles {
+		if !correspond(mots, regle.prefixe) || len(mots) <= regle.rang {
+			continue
+		}
+		if regle.etSuite {
+			// La queue entière devient UN seul « *** ». Un « *** *** *** » dirait
+			// combien de mots comptait le mot de passe — une indication qu'on
+			// n'a aucune raison d'écrire, et qui rétrécit la recherche pour qui
+			// lira le journal.
+			return strings.Join(append(mots[:regle.rang], "***"), " ")
+		}
+		mots[regle.rang] = "***"
+		break
+	}
+	return strings.Join(mots, " ")
+}
+
+// correspond compare les mots au motif, rang par rang.
+//
+// Une chaîne vide dans le motif signifie « n'importe quoi à ce rang » : c'est
+// ainsi que « update -u <identifiant> -p » se décrit sans connaître le nom du
+// compte.
+//
+// Le motif doit être ENTIÈREMENT présent. Une commande plus courte ne
+// correspond pas : « update -u alice » sans « -p » n'a pas de mot de passe à
+// masquer, et le caviarder quand même priverait le journal de ce qui a
+// réellement été tapé de travers.
+func correspond(mots, motif []string) bool {
+	if len(mots) < len(motif) {
+		return false
+	}
+	for i, attendu := range motif {
+		if attendu == "" {
+			continue
+		}
+		if !strings.EqualFold(mots[i], attendu) {
+			return false
+		}
+	}
+	return true
 }
 
 // handleClear purge les sessions expirées.

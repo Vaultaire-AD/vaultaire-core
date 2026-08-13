@@ -946,3 +946,46 @@ redémarrer le service client, ou attendre le rafraîchissement horaire
 | Intervalle de rafraîchissement configurable | En dur dans le code |
 | `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent |
 | Persistance des rapports d'application en base | Journalisés seulement |
+
+
+---
+
+## Où la conformité s'affiche
+
+Deux façades, **un seul code de décision**.
+
+| | |
+|---|---|
+| `vlt gpo status` / `drift` / `status <id>` | `core/command/command_gpo` |
+| **Admin → Conformité** (`/admin/gpo/compliance`) | `core/web_serveur/web_admin_conformite.go` |
+
+Ni l'une ni l'autre ne trie, ne décide d'un état ni ne compose un libellé. Tout
+cela vit dans `db_gpo` :
+
+| Fonction | Ce qu'elle décide |
+|---|---|
+| `TrierConformite` | l'ordre — silence, puis échecs, puis écarts |
+| `ComplianceRow.Fraicheur` | « à jour », « en retard », « jamais » |
+| `ComplianceRow.EtatConformite` | « non vérifié », « ok (N) », « N écart(s) » |
+| `ComplianceRow.ModulesAppliques` | « N/M », ou « - » si rien n'a été dit |
+| `ComplianceRow.ARetenirDansLaVueDesEcarts` | ce que `drift` montre |
+| `ResumerParc` / `ResumeParc.Lisible` | le résumé, compté en **machines** |
+| `AgeRelatif` | « il y a 2h » |
+
+Ces fonctions ont d'abord vécu en privé dans `commandgpo`. Tant qu'il n'y avait
+qu'une façade, cela n'avait aucune conséquence ; le jour où le portail a eu sa
+page, il n'avait que deux choix — les recopier ou les remonter.
+
+**Recopier aurait produit deux vues qui disent *presque* la même chose.** Presque
+est le pire cas : personne ne remarque l'écart tant qu'il est petit, et quand il
+grandit, on ne sait plus laquelle des deux avait raison. C'est justement la vue
+qu'on consulte quand quelque chose ne va pas.
+
+`conformite_sans_divergence_test.go` inspecte la page web et refuse qu'elle
+recalcule un seuil, trie, ou recompose un compteur — et vérifie l'inverse, qu'elle
+appelle bien les fonctions partagées. Une inspection du texte, parce que rendre
+la page pour la comparer demanderait une base peuplée, un serveur HTTP et un
+agent qui rapporte : ce test-là n'existerait pas.
+
+Aucune de ces fonctions n'appelle `time.Now()` : l'instant est un paramètre. Un
+rendu qui prend l'heure lui-même ne se teste qu'en attendant trois heures.

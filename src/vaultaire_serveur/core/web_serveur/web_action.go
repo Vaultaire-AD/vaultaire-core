@@ -51,6 +51,10 @@ import (
 // La table est donc la trace d'une transition. Le jour où les gabarits
 // emploieront directement les noms du registre, elle disparaîtra.
 var actionsFormulaire = map[string]string{
+	// durées d'exploitation
+	"set_setting":   "settings.set",
+	"reset_setting": "settings.reset",
+
 	// utilisateurs
 	"create_user":     "user.create",
 	"update_user":     "user.update",

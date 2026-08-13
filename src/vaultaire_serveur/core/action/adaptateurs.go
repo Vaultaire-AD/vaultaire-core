@@ -292,6 +292,7 @@ func EnregistrerTout() {
 	EnregistrerActionsEnrolement(Catalogue)
 	EnregistrerActionsDNS(Catalogue)
 	EnregistrerActionsPolitiqueMotDePasse(Catalogue)
+	EnregistrerActionsDuree(Catalogue)
 }
 
 // Executer applique une action du registre partagé.

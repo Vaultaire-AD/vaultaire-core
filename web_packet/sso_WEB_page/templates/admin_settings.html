@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Durées d'exploitation — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Durées d'exploitation</h1>
+
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-danger">{{ .Error }}</div>{{ end }}
+
+    <p class="muted">
+      Les valeurs vivent en base ; les défauts sont codés dans le serveur.
+      Un changement prend effet au <strong>prochain tour</strong> de la boucle
+      concernée — aucun redémarrage, donc aucune coupure du parc.
+    </p>
+
+    {{ if not .PeutEcrire }}
+      <div class="alert alert-info">
+        Consultation seule : le réglage exige le droit <code>write:server</code>.
+      </div>
+    {{ end }}
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Réglage</th>
+            <th>Valeur</th>
+            <th>Défaut</th>
+            <th>Bornes</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+        {{ range .Reglages }}
+          <tr>
+            <td>
+              <strong>{{ .Libelle }}</strong><br>
+              <code class="small">{{ .Cle }}</code>
+              <p class="muted small">{{ .Consequence }}</p>
+            </td>
+            <td>
+              {{ .Affichage }}
+              {{ if not .AuDefaut }}<span class="badge">modifié</span>{{ end }}
+            </td>
+            <td class="muted">{{ .Defaut }} {{ .Unite }}</td>
+            <td class="muted small">{{ .BornesLisibles }}</td>
+            <td>
+              {{ if .Modifiable }}
+              <form method="post" style="display:inline">
+                <input type="hidden" name="action" value="set_setting">
+                <input type="hidden" name="setting" value="{{ .Cle }}">
+                <input type="number" name="value" value="{{ .Valeur }}"
+                       min="{{ .Min }}" max="{{ .Max }}" required
+                       style="width:6rem" aria-label="{{ .Libelle }}">
+                <button type="submit" class="btn btn-primary">Régler</button>
+              </form>
+              {{ if not .AuDefaut }}
+              <form method="post" style="display:inline">
+                <input type="hidden" name="action" value="reset_setting">
+                <input type="hidden" name="setting" value="{{ .Cle }}">
+                <button type="submit" class="btn btn-ghost">Défaut</button>
+              </form>
+              {{ end }}
+              {{ else }}—{{ end }}
+            </td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+
+    <hr>
+    <h2 class="h2">Ce qui n'est pas réglable ici</h2>
+    <p class="muted">
+      Les délais de <strong>protocole</strong> et de <strong>sécurité</strong> —
+      échéances de lecture réseau, fenêtre anti-rejeu de l'API, durée de vie d'un
+      défi d'authentification, barème de la limitation de débit — restent des
+      constantes du serveur. Ce ne sont pas des préférences d'exploitation mais
+      des propriétés du protocole : une échéance trop longue ouvre un déni de
+      service, trop courte casse les connexions lentes.
+    </p>
+    <p class="muted">
+      Les durées de l'<strong>agent</strong> vivent sur la machine du parc et
+      relèvent des GPO.
+    </p>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

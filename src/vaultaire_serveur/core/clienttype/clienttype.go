@@ -104,7 +104,11 @@ var catalogue = []Definition{
 		Frames: []string{
 			"01_01",
 			"02_01", "02_03", "02_05", "02_12",
-			"03_01", "03_04", "03_06",
+			// 03_08 : demande de synchronisation des groupes du domaine.
+			// N'est accordée qu'à l'agent — un service du cluster n'a pas de
+			// /etc/group à tenir, et la liste des groupes d'un domaine est une
+			// information de structure.
+			"03_01", "03_04", "03_06", "03_08",
 			"05_01", "05_05", "05_09", "05_12", "05_15",
 			"06_02", "06_03", "06_04",
 		},

@@ -7,6 +7,7 @@ import (
 	"time"
 	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
+	dbgroups "vaultaire/core/database/db_groups"
 	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
@@ -23,6 +24,8 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 		message = SSH_SEND_SALT(trames_content)
 	case "06":
 		message = SSH_SEND_Fetch_Pubkey(trames_content)
+	case "08":
+		message = SSH_SEND_GroupSync(trames_content)
 	default:
 
 	}
@@ -165,10 +168,60 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 		return refus("admin check error")
 	}
 
+	// LES GROUPES DU COMPTE, rafraîchis à chaque connexion.
+	//
+	// # Pourquoi ici et pas dans une trame à part
+	//
+	// La question « à quels groupes appartient ce compte » n'a de réponse utile
+	// qu'au moment où il ouvre une session : c'est là que la machine doit poser
+	// ses appartenances locales. Une trame séparée ajouterait un aller-retour à
+	// l'ouverture de session — celui-là même que la suppression du défi HMAC
+	// vient de retirer — pour une donnée que le serveur a déjà en main.
+	//
+	// Rafraîchi à chaque connexion PAR CONSTRUCTION, donc : il n'y a pas de cache
+	// à invalider ni de cadence à régler. Un utilisateur retiré d'un groupe le
+	// perd sur la machine dès sa prochaine ouverture de session.
+	//
+	// # Une lecture qui échoue n'empêche pas la connexion
+	//
+	// Le compte est authentifié, son droit d'accès à la machine est vérifié : lui
+	// refuser la session parce que la liste de ses groupes est illisible serait
+	// disproportionné. Il ouvre sa session avec les appartenances de la fois
+	// précédente, et l'incident part dans le journal.
+	groupes, errG := dbgroups.NomsDesGroupesDeLUtilisateur(db, sshUser)
+	if errG != nil {
+		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+			"SSH: groupes de "+sshUser+" illisibles ("+errG.Error()+") — session ouverte sans mise à jour")
+		groupes = nil
+	}
+
 	sshkeyString := strings.Join(sshkey, "\n")
-	logs.Write_Log("INFO", "SSH access granted for user "+sshUser+" (Admin: "+strconv.FormatBool(isadmin)+")"+"| On client :"+trames_content.ClientSoftwareID)
-	return "03_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + strconv.FormatBool(isadmin) + "\n" + sshkeyString
+	logs.Write_Log("INFO", "SSH access granted for user "+sshUser+" (Admin: "+strconv.FormatBool(isadmin)+
+		", groupes: "+strconv.Itoa(len(groupes))+")"+"| On client :"+trames_content.ClientSoftwareID)
+
+	// La ligne des groupes porte un PRÉFIXE, et se place avant les clés.
+	//
+	// Les clés occupent « tout le reste » du contenu : il n'existe donc aucune
+	// position après elles. Le préfixe permet à l'agent de reconnaître ce champ
+	// et de ne pas le prendre pour une clé — et à un agent qui l'ignorerait de
+	// n'écrire qu'une ligne inerte dans authorized_keys, que sshd passe.
+	//
+	// C'est le compromis assumé de la compatibilité descendante sur ce chemin,
+	// qui en a déjà un : un agent resté à l'ancienne authentification reçoit
+	// « obsolete client, update required » sur 03_04.
+	return "03_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" +
+		sshUser + "@" + domaine + "\n" +
+		strconv.FormatBool(isadmin) + "\n" +
+		PrefixeGroupes + strings.Join(groupes, ",") + "\n" +
+		sshkeyString
 }
+
+// PrefixeGroupes ouvre la ligne des groupes dans la réponse 03_02.
+//
+// Exporté et nommé d'un seul côté : l'agent le reconnaît par la même chaîne, et
+// une valeur recopiée dans les deux dépôts finirait par différer d'un caractère
+// — auquel cas l'agent prendrait la ligne pour une clé publique, en silence.
+const PrefixeGroupes = "groups:"
 
 // SSH_SEND_SALT refuse : la trame 03_04 n'existe plus.
 //

@@ -1,7 +1,9 @@
 package gpo
 
 import (
+	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -82,8 +84,23 @@ func applyFirewalld(port, proto, source, action string, remove bool) (string, er
 	if source != "" {
 		// Une source précise demande une rich rule : la règle simple ne sait pas
 		// restreindre l'origine.
+		//
+		// LE VERDICT SUIT `action`, PAS `drop`. firewalld supprime une rich rule
+		// par comparaison EXACTE de son texte : pour retirer une règle, il faut
+		// lui repasser mot pour mot celle qui a été posée.
+		//
+		// La version précédente composait le texte avec `drop`, qui vaut vrai dès
+		// que l'on supprime. Elle demandait donc à firewalld de retirer une règle
+		// « reject » alors que la règle installée disait « accept » : aucune ne
+		// correspondait, firewalld répondait que la règle n'était pas là, et
+		// l'autorisation restait en place. Une GPO retirée laissait le port
+		// ouvert à sa source — exactement l'inverse de ce qu'on demandait.
+		verdict := "accept"
+		if action == "deny" {
+			verdict = "reject"
+		}
 		rich := fmt.Sprintf(`rule family="ipv4" source address="%s" port port="%s" protocol="%s" %s`,
-			source, port, proto, map[bool]string{true: "reject", false: "accept"}[drop])
+			source, port, proto, verdict)
 		richVerb := "--add-rich-rule"
 		if remove {
 			richVerb = "--remove-rich-rule"
@@ -122,28 +139,117 @@ func applyNftables(port, proto, source, action string, remove bool) (string, err
 	}
 
 	spec := port + "/" + proto
+	cle := cleRegleNft(proto, port, source)
+
 	if remove {
-		// nftables ne sait pas supprimer une règle par sa description : il faut
-		// son handle. Plutôt que de le chercher — fragile, et dépendant du
-		// format de sortie — on vide la chaîne et on laisse le prochain cycle
-		// reposer les règles encore actives. L'agent réapplique l'intégralité
-		// des modules dont l'empreinte a changé, donc l'état converge.
-		if _, err := runCommand("nft", "flush", "chain", "inet", vaultaireNftTable, "input"); err != nil {
-			return "", fmt.Errorf("purge de la chaine impossible : %v", err)
-		}
-		return "regle " + spec + " retiree (chaine purgee, les regles actives seront reposees)", nil
+		return retirerRegleNft(cle, spec)
 	}
 
 	args := []string{"add", "rule", "inet", vaultaireNftTable, "input"}
 	if source != "" {
 		args = append(args, "ip", "saddr", source)
 	}
-	args = append(args, proto, "dport", port, verdict)
+	// Le COMMENTAIRE est ce qui rend la règle retrouvable plus tard.
+	//
+	// nftables ne sait pas supprimer une règle par sa description : il faut son
+	// handle, attribué à la pose et connu de lui seul. Sans repère, on ne peut
+	// désigner la règle qu'en la décrivant — et la décrire suppose de reproduire
+	// exactement la forme que nft a choisi d'afficher, qui varie.
+	//
+	// Le commentaire est stable, choisi par nous, et nft l'expose dans sa sortie
+	// JSON. C'est le seul lien fiable entre un module de GPO et la règle qu'il a
+	// posée.
+	args = append(args, proto, "dport", port, verdict, "comment", `"`+cle+`"`)
 
 	if _, err := runCommand("nft", args...); err != nil {
 		return "", err
 	}
 	return describeFirewallResult("nftables", spec, source, action, false), nil
+}
+
+// cleRegleNft identifie une règle indépendamment de son verdict.
+//
+// Le verdict n'entre PAS dans la clé, à dessein : une règle posée en « accept »
+// puis déclarée absente alors que le module est passé à « deny » doit quand même
+// se retrouver. Ce qu'on veut exprimer est « cette règle de port ne doit plus
+// exister », pas « cette règle exactement telle qu'elle était ».
+func cleRegleNft(proto, port, source string) string {
+	if source == "" {
+		source = "any"
+	}
+	return "vlt:" + proto + ":" + port + ":" + source
+}
+
+// regleNft : la partie de la sortie JSON de nft qui nous intéresse.
+type regleNft struct {
+	Rule struct {
+		Handle  int    `json:"handle"`
+		Comment string `json:"comment"`
+	} `json:"rule"`
+}
+
+// retirerRegleNft supprime UNE règle, par son handle.
+//
+// # Ce que faisait la version précédente
+//
+// Elle vidait la chaîne entière — `nft flush chain` — en expliquant que « le
+// prochain cycle reposera les règles actives, donc l'état converge ».
+//
+// Il ne converge pas. `apply.go` saute les modules dont l'empreinte n'a pas
+// changé (« empreinte identique ») : un module dont rien n'a bougé n'est jamais
+// réappliqué. Retirer UNE règle de pare-feu supprimait donc TOUTES les autres,
+// définitivement — jusqu'à ce qu'un changement sans rapport vienne les remettre.
+//
+// Et rien ne le signalait : le scan de conformité ne couvre que les fichiers,
+// pas les effets de commande. La machine était déclarée conforme, pare-feu grand
+// ouvert.
+//
+// # Pourquoi le JSON
+//
+// `nft -j` est l'interface destinée aux programmes, et le handle y est un
+// entier, pas un fragment de ligne à découper. Analyser la sortie texte
+// dépendrait d'une mise en forme que nft ne s'engage pas à conserver.
+func retirerRegleNft(cle, spec string) (string, error) {
+	sortie, err := runCommand("nft", "-j", "list", "chain", "inet", vaultaireNftTable, "input")
+	if err != nil {
+		// La table peut ne pas exister — rien n'a jamais été posé. Ce n'est pas
+		// un échec : l'état demandé est déjà celui du système.
+		return "regle " + spec + " absente (aucune table " + vaultaireNftTable + ")", nil
+	}
+
+	var doc struct {
+		Nftables []regleNft `json:"nftables"`
+	}
+	if err := json.Unmarshal([]byte(sortie), &doc); err != nil {
+		// On NE VIDE PAS la chaîne en repli. Échouer franchement laisse le
+		// pare-feu tel qu'il est et fait remonter le module en erreur ; purger
+		// « au cas où » ouvrirait le parc pour cacher une sortie illisible.
+		return "", fmt.Errorf("sortie JSON de nft illisible : %v", err)
+	}
+
+	handle := -1
+	for _, r := range doc.Nftables {
+		if r.Rule.Comment == cle {
+			handle = r.Rule.Handle
+			break
+		}
+	}
+	if handle < 0 {
+		// Idempotent : la règle n'est pas là, l'état voulu est atteint.
+		//
+		// ⚠️ Les règles posées AVANT l'introduction du commentaire n'en portent
+		// pas et ne se retrouvent donc pas ici. Elles subsistent jusqu'à un
+		// `nft flush chain inet vaultaire_gpo input` fait à la main, une fois.
+		// C'est le prix de ne plus purger automatiquement, et il est préférable :
+		// une règle de trop se voit, une règle manquante non.
+		return "regle " + spec + " deja absente", nil
+	}
+
+	if _, err := runCommand("nft", "delete", "rule", "inet", vaultaireNftTable, "input",
+		"handle", strconv.Itoa(handle)); err != nil {
+		return "", fmt.Errorf("suppression de la regle %s impossible : %v", spec, err)
+	}
+	return "regle " + spec + " retiree", nil
 }
 
 // describeFirewallResult produit le détail rapporté au serveur.

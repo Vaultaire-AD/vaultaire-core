@@ -23,6 +23,7 @@ intégrateurs. Elle répond à « que taper » et « quel droit accorder », jam
 
 | Fichier | Contenu |
 | --- | --- |
+| [`Utilisation/Lexique.md`](./Utilisation/Lexique.md) | **Le vocabulaire** : client, agent, service, core, proxy, domaine, portée, trame, GPO… |
 | [`Utilisation/MAN.md`](./Utilisation/MAN.md) | Manuel des commandes `vlt` : create, get, add, remove, delete, update, status, clear, eyes, DNS, certificate, kill, mfa, enroll, gpo, cluster |
 | [`Utilisation/Group-Permission.md`](./Utilisation/Group-Permission.md) | Groupes et permissions au quotidien : ce que donne un droit sur un domaine |
 | [`Utilisation/Actions_et_Permissions.md`](./Utilisation/Actions_et_Permissions.md) | **Quel droit pour quelle opération** — la référence à consulter avant de déléguer |
@@ -50,6 +51,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | --- | --- |
 | [`Actions.md`](./Developement/how%20it%20work/Actions.md) | Le registre `core/action` : chemin d'une requête, portées, filtrage, **comment ajouter une action** |
 | [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
+| [`Reglages_de_duree.md`](./Developement/how%20it%20work/Reglages_de_duree.md) | Comment une période de boucle est déclarée, lue et changée |
 | [`Protocole_Ducky.md`](./Developement/how%20it%20work/Protocole_Ducky.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
 | [`GPO.md`](./Developement/how%20it%20work/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions, **ajouter un module** |
 | [`Base_de_donnees.md`](./Developement/how%20it%20work/Base_de_donnees.md) | Schéma de la base de données |

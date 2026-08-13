@@ -4,7 +4,11 @@ import (
 	"bytes"
 	"html/template"
 	"net/http"
+	"strconv"
 	"strings"
+
+	act "vaultaire/core/action"
+	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/command"
 	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
@@ -211,10 +215,37 @@ func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == http.MethodPost {
 		if r.FormValue("action") == "set_debug" {
-			storage.Debug = r.FormValue("debug") == "on" || r.FormValue("debug") == "1"
+			// LE MODE DEBUG PASSE PAR L'ACTION, comme partout ailleurs.
+			//
+			// Cette page écrivait `storage.Debug` DIRECTEMENT. Aucun contrôle de
+			// droit — l'action `server.set_debug` exige pourtant `write:server` —
+			// et aucune trace. Tout détenteur de `web_admin` pouvait donc activer
+			// le mode debug du serveur, alors que la ligne de commande le lui
+			// refusait, et sans qu'on puisse savoir ensuite qui l'avait fait.
+			//
+			// Le mode debug n'est pas un détail d'affichage : il ouvre le détail
+			// des échanges et des contrôles de droits dans les journaux.
+			groupIDs, err := permission.GetGroupIDsForUser(username)
+			if err != nil {
+				data.Output = "Erreur de permission : " + err.Error()
+			} else {
+				actif := r.FormValue("debug") == "on" || r.FormValue("debug") == "1"
+				res, err := act.Executer("server.set_debug",
+					act.Appelant{Username: username, GroupIDs: groupIDs},
+					act.Params{"debug": strconv.FormatBool(actif)})
+				data.Output = MessageDActionPourAffichage(res, err)
+			}
 		} else {
 			cmd := strings.TrimSpace(r.FormValue("command"))
 			if cmd != "" {
+				// La commande elle-même est journalisée par ExecuteCommand, avec
+				// ses secrets caviardés. La SOURCE l'est ici : c'est la seule
+				// chose que le paquet command ne peut pas savoir, et c'est ce
+				// qui distingue cette console du socket local — celui-ci suppose
+				// déjà un accès root à la machine, celle-là est atteignable à
+				// travers le réseau.
+				logs.Write_Log("INFO", "webadmin: console de "+username+
+					" depuis "+ratelimit.SourceHTTP(r))
 				data.Output = command.ExecuteCommand(cmd, username)
 			}
 		}

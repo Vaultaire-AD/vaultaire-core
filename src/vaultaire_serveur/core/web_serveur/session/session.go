@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"vaultaire/core/logs"
+	"vaultaire/core/reglages"
 )
 
 type Session struct {
@@ -35,7 +36,6 @@ type Session struct {
 var (
 	sessions = make(map[string]Session)
 	mu       sync.RWMutex
-	duration = 30 * time.Minute
 
 	// lastPurge borne la fréquence du nettoyage. Parcourir toute la map à
 	// chaque validation de jeton ferait payer un balayage complet à chaque
@@ -43,8 +43,27 @@ var (
 	lastPurge time.Time
 )
 
+// duration rend la durée de vie d'une session, lue au moment où on la pose.
+//
+// Une VARIABLE de paquet valait 30 minutes en dur. La lire à chaque ouverture
+// permet de la régler sans redémarrer le core — et c'est le réglage dont on veut
+// le plus pouvoir changer d'avis, puisqu'il fixe la fenêtre pendant laquelle un
+// jeton volé reste utilisable.
+//
+// Les sessions DÉJÀ ouvertes gardent leur échéance : elle est calculée à la
+// pose, pas à la lecture. Raccourcir la durée n'écourte donc pas les sessions en
+// cours. C'est le comportement le moins surprenant — l'inverse déconnecterait
+// tout le monde d'un coup au moment d'un ajustement — mais il faut le savoir :
+// après un incident, raccourcir la durée ne ferme rien. Pour cela il y a
+// DeleteOtherSessionsOf et le kill switch.
+func duration() time.Duration {
+	return reglages.Duree(reglages.CleSessionWeb)
+}
+
 // purgeInterval espace les nettoyages du registre.
-const purgeInterval = 5 * time.Minute
+func purgeInterval() time.Duration {
+	return reglages.Duree(reglages.CleSessionWebPurge)
+}
 
 // generateToken tire un jeton de session aléatoire.
 //
@@ -84,7 +103,7 @@ func CreateSessionWithConstraint(username string, mustChangePassword bool) strin
 
 	sessions[token] = Session{
 		Username:           username,
-		ExpiresAt:          time.Now().Add(duration),
+		ExpiresAt:          time.Now().Add(duration()),
 		MustChangePassword: mustChangePassword,
 	}
 	return token
@@ -224,7 +243,7 @@ func ActiveCount() int {
 // gardés sans raison.
 func purgeExpiredLocked() {
 	now := time.Now()
-	if now.Sub(lastPurge) < purgeInterval {
+	if now.Sub(lastPurge) < purgeInterval() {
 		return
 	}
 	lastPurge = now

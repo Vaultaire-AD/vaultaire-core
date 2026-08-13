@@ -4,7 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
-	"time"
+
 	dbschema "vaultaire/core/database/db_schema"
 
 	"vaultaire/cluster"
@@ -20,6 +20,7 @@ import (
 	ldap "vaultaire/core/ldap"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 	"vaultaire/core/testrunner"
 	"vaultaire/core/vaultairegoroutine"
@@ -33,11 +34,13 @@ type ClientInfo struct {
 	Conn net.Conn
 }
 
-// serviceSweepInterval : période de balayage des services hors ligne.
+// La période de balayage des services vit désormais en base, sous la clé
+// « service_sweep_seconds » — voir core/reglages. Elle valait une minute en dur
+// et ne pouvait changer qu'à la recompilation.
 //
-// Inférieure au seuil de péremption d'un battement de cœur, sinon un service
-// tombé resterait affiché en ligne pendant près de deux fois ce seuil.
-const serviceSweepInterval = time.Minute
+// La contrainte reste écrite avec le réglage : elle doit rester INFÉRIEURE au
+// seuil de péremption d'un battement de cœur, sinon un service tombé reste
+// affiché en ligne pendant près de deux fois ce seuil.
 
 func main() {
 	for _, arg := range os.Args[1:] {
@@ -122,21 +125,18 @@ func main() {
 	// lecture : une vue calculée à la volée répondrait différemment selon
 	// l'instant de la requête, et rien ne garderait trace du moment où le
 	// service a cessé de répondre.
-	go func() {
-		for {
-			time.Sleep(serviceSweepInterval)
-			if err := hosthandler.MarkStaleServicesOffline(db.GetDatabase()); err != nil {
-				logs.Write_Log("ERROR", "cluster: balayage des services échoué : "+err.Error())
-			}
-			// Purge des services définitivement partis. Passe dans le même
-			// cycle que le balayage, mais son délai se compte en heures : les
-			// deux répondent à deux questions différentes, « répond-il en ce
-			// moment ? » et « existe-t-il encore ? ».
-			if err := hosthandler.PurgeDepartedServices(db.GetDatabase()); err != nil {
-				logs.Write_Log("ERROR", "cluster: purge des services échouée : "+err.Error())
-			}
+	go reglages.Boucle(reglages.CleBalayageServices, func() {
+		if err := hosthandler.MarkStaleServicesOffline(db.GetDatabase()); err != nil {
+			logs.Write_Log("ERROR", "cluster: balayage des services échoué : "+err.Error())
 		}
-	}()
+		// Purge des services définitivement partis. Passe dans le même
+		// cycle que le balayage, mais son délai se compte en heures : les
+		// deux répondent à deux questions différentes, « répond-il en ce
+		// moment ? » et « existe-t-il encore ? ».
+		if err := hosthandler.PurgeDepartedServices(db.GetDatabase()); err != nil {
+			logs.Write_Log("ERROR", "cluster: purge des services échouée : "+err.Error())
+		}
+	})
 
 	// La permission d'amorçage reçoit toutes les actions connues du code, pas
 	// une liste recopiée dans du SQL. Passe à chaque démarrage, en INSERT

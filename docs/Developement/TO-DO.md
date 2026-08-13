@@ -41,8 +41,6 @@ la liste de courses.
                sudo/wheel, regles nftables. On ne devine pas l'etat d'un service depuis
                un fichier.  
                
-5.[WEB-COMMAND] - BUG sur l'execution des commandse via la CLI web aucun logs present lord de l'execution des commandes il y a un pb
-6.[WEB-CLIENT] - Bug la page details des client ne marche plus ->  web: exécution du gabarit admin_client_detail.html échouée : template: admin_client_detail.html:53:44: executing "admin_client_detail.html" at <.Client.Proc>: can't evaluate field Proc in type *storage.Software
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
 9.[Ducky] [PROXY] - Decouverte de service et proxies
@@ -79,12 +77,46 @@ la liste de courses.
             Reste ouvert, a trancher : que fait un proxy dont tous les cores sont
             injoignables ? La spec propose de refuser franchement plutot que de mettre en
             attente.
-10.[DUCKY-Client] - Comment gère la liste des serveur joignable pour les clients basics (client qui ne sont pas des services) : aujourd'jui un client n'a que un seul serveur core joingable dans son fichier de conf l'idée c'est que a chaque connection apres avoir été authentifié pour tous les client et pour les serveur tous les X temps parametrables le client demande via sa session actuelle la liste des serveur qu'il peut joindre (priorité sur les proxys qui sont dans son groupe - puis les proxy - puis les core ou alors reflechir a un autre moyen de crée cette liste on imagnine un contexte d'entreprise ou des employé d'un bureau ne peuvent pas joindre tous les proxy et n'ont acces a aucun core - peut etre pouvoir choisr si un core est exposé ou non au client basic et peut etre aussi pouvoir liées des cores a des groupes - dans ce cas peut etre aussi pouvoir liée des clé d'enrollement a des groupes et donc pouvoir faire des regles d'afinité) - (voir point 13 avant)
-11.[AUTH-DUCKY-SSH] - Comment son stocké transmit les mots de passe via l'auth ssh ducky 03
-12.[LEXIQUE] - faire un lexique des definition de vulaitare client service basic etc etc
-13.[CONFIG] - sur l'interface web est en command crée une route pour (action aussi du coup ) pour gère toutes les variables de temps configurables pénsé a les rentrée en base de donnée sortir la gestion des boucles de temps du fichier de conf et codé des varaibles en brut pour des valeur par default dans le code
-14.[DUCKY] - il n'y aucune gestion des groupes sur les client basic il faut donc crée un systeme pour au lancement du service et tous les X temps configurable - pour que le client demande la lsite des groupes qui peuvent se connecter pour ajouter les nouveau et supprimé ceux qu'il n'y sont plus (gere cela un peu comme les uid du module nfs pour pouvoir suivre l'etat des groupes (voir point 13 avant) , et donc aussi rajouter une info lors de la connection du client via 03 pour avoir la liste des groupes du user qui doit etre refresh a chaque connection   
-15. [GPO] - Bug sur la supression des regles firewalls
+            
+10.[DUCKY-Client] - Liste des serveurs joignables pour les AGENTS
+            SPECIFIE en entier dans « how it work/Protocole_Ducky.md », section
+            « Decouverte de service et proxies (categorie 04) ». Six arbitrages rendus,
+            dont les trois de ce point :
+
+              - 4 : drapeau expose_aux_agents sur cluster_nodes, VRAI par defaut. Ce
+                    n'est PAS un controle d'acces — il retire une adresse d'une liste,
+                    il n'empeche personne de se connecter. Le pare-feu reste ce qui
+                    protege un core ;
+              - 5 : affinite core <-> groupe dans la MEME table que celle des proxies,
+                    priorite et non exclusivite. Ordre servi : proxies affines, autres
+                    proxies, cores affines exposes, autres cores exposes ;
+              - 6 : une cle d'enrolement porte des groupes de naissance, PAS un droit.
+                    Applique une fois, a l'enrolement.
+
+            Lot 7 ajoute au decoupage, apres le lot 6 : rattacher un service a des
+            groupes n'a aucun effet observable tant que l'affinite ne trie rien.
+
+            La periodicite du rafraichissement peut desormais se declarer : le point 13
+            est traite, core/reglages accueille une nouvelle duree en une entree de
+            catalogue (voir DO/2.1/2.1.md). A ajouter au lot 2.
+
+            AUCUNE IMPLEMENTATION AVANT VALIDATION de la spec.
+
+35.[GPO] - Les regles nftables posees AVANT le commentaire ne se suppriment pas
+            Suite du point 15 (voir DO/2.1/2.1.md). La suppression retrouve desormais sa
+            regle par un commentaire nftables, pose a l'application.
+
+            Les regles ecrites par une version anterieure n'en portent pas : elles ne se
+            retrouvent donc pas, et subsistent. Ce n'est plus une purge automatique — on
+            ne vide plus la chaine, precisement parce que cela emportait les autres.
+
+            A faire, une fois par machine deja deployee :
+              nft flush chain inet vaultaire_gpo input
+            puis laisser le cycle suivant reposer les regles voulues.
+
+            Une regle de trop se voit ; une regle manquante non. C'est pourquoi le repli
+            retenu est de laisser en place plutot que de purger.
+
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier
             et ouvre un socket. Sous sshd_t, SELinux refuse — d'ou « Invalid user »
@@ -103,18 +135,6 @@ la liste de courses.
             A faire : etendre baseSimulee au coup par coup, quand un nouveau test de
             message en aura besoin. Ne PAS poser une variable sur les 76 points d'entree
             du paquet — le critere reste ce qu'un test traverse reellement.
-
-32.[GPO] [WEB] - La conformite du parc n'existe qu'en ligne de commande
-            Suite du point 7, dont la VUE a ete traitee (voir DO/2.1/2.1.md).
-
-            L'action gpo.list_compliance est au registre avec sa cle RBAC read:get:gpo et
-            son filtre de perimetre ; gpo.get_compliance porte le detail d'une machine.
-            Il n'y a donc aucun metier a ecrire — seulement un gabarit et un handler.
-
-            A faire : une page qui montre le resume du parc, le tableau trie comme en CLI,
-            et le detail d'une machine au clic. Le tri et les etats viennent de
-            db_gpo.TrierConformite et ComplianceRow.Fraicheur : ne pas les recopier dans
-            le gabarit, sans quoi la CLI et le web finiront par ne plus dire la meme chose.
 
 33.[GPO] - Le scope UTILISATEUR n'est jamais scanne
             scanMachineDrift n'existe que pour le scope machine. RunUserCycle applique les

@@ -130,8 +130,17 @@ func LoadConfig(filePath string) error {
 	if config.Debug.Debug != nil {
 		storage.Debug = *config.Debug.Debug
 	}
-	if config.Path.ServerCheckOnlineTimer != nil {
-		storage.ServerCheckOnlineTimer = *config.Path.ServerCheckOnlineTimer
+	// servercheckonlinetimer a quitté le fichier pour la base.
+	//
+	// Le champ n'est plus lu. Il n'est pas non plus ignoré en silence : une
+	// installation qui le porte encore verrait sinon sa valeur sans effet, et
+	// chercherait la panne du côté de la boucle. Le message nomme le
+	// remplacement.
+	if config.Path.ServerCheckOnlineTimerObsolete != nil {
+		logs.Write_Log("WARNING",
+			"config: « servercheckonlinetimer » n'est plus lu. La cadence de "+
+				"vérification des machines vit en base : « vlt settings set "+
+				"check_online_minutes <valeur> ». Retirez la ligne du fichier.")
 	}
 
 	// Administrateur settings

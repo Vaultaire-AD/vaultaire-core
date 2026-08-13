@@ -18,7 +18,8 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 	switch trames_content.Message_Order[1] {
 
 	case "02": // RÉUSSITE : Le serveur envoie les clés (Anciennement 03_02 dans tes logs)
-		// Découpage du content : [0]username, [1]isAdmin, [2:]clés
+		// Découpage du content : [0]username, [1]isAdmin, puis une ligne
+		// « groups:… » facultative, puis les clés jusqu'à la fin.
 		lines := strings.Split(strings.TrimSpace(trames_content.Content), "\n")
 
 		if len(lines) < 2 {
@@ -28,10 +29,44 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 
 		sshUser := lines[0]
 		isAdmin := (lines[1] == "true")
-		pubKeys := strings.Join(lines[2:], "\n")
+		groupes, reste := extraireGroupes(lines[2:])
+		pubKeys := strings.Join(reste, "\n")
 
 		// 🔥 ACTION SYSTÈME : On crée le user et on pose les clés
 		err := localusermanagement.ProvisionVaultaireUser(sshUser, isAdmin, pubKeys)
+
+		// Les APPARTENANCES DE GROUPE, alignées sur ce que le serveur vient de
+		// dire. Rafraîchies à chaque connexion, donc sans cache ni cadence.
+		//
+		// APRÈS le provisionnement : le compte doit exister avant qu'on puisse
+		// l'inscrire quelque part.
+		//
+		// Un échec ici n'annule PAS la connexion. Le mot de passe est vérifié, le
+		// droit d'accès à la machine aussi : refuser la session parce qu'une
+		// appartenance n'a pas pu être posée serait disproportionné, et laisserait
+		// l'utilisateur dehors pour un problème qui ne le concerne pas.
+		if err == nil {
+			if poses, errG := localusermanagement.AppliquerGroupesUtilisateur(sshUser, groupes); errG != nil {
+				logs.Write_log("WARNING", fmt.Sprintf(
+					"Groupes de %s non appliqués : %v", sshUser, errG))
+			} else if len(poses) < len(groupes) {
+				// Le dire : la différence vient de groupes absents de la machine,
+				// et c'est exactement ce qu'on cherchera si un droit manque.
+				logs.Write_log("INFO", fmt.Sprintf(
+					"%s : %d groupe(s) posé(s) sur %d annoncé(s) — les autres n'existent pas "+
+						"localement", sshUser, len(poses), len(groupes)))
+
+				// Et le corriger. C'est le seul moment où l'écart entre la liste
+				// du domaine et l'état de la machine est VISIBLE et a une
+				// conséquence immédiate : un utilisateur ouvre sa session sans
+				// les droits qu'il devrait avoir.
+				//
+				// La demande est asynchrone et ne retarde pas cette session-ci —
+				// elle ne peut plus être réparée, la réponse arriverait trop
+				// tard. Elle répare la suivante.
+				DemanderSynchro()
+			}
+		}
 
 		// 🔥 Transmission au binaire en attente via le channel
 		if respChan, ok := sshreq.Pop(sshUser); ok {
@@ -89,11 +124,68 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 				"Mettre à jour vaultaire_serveur.")
 	case "07":
 		SSH_Handle_Fetch_Pubkey(trames_content)
+	case "09":
+		HandleGroupSync(trames_content.Content)
+	case "10":
+		HandleGroupSyncRefus(trames_content.Content)
 	default:
 		logs.Write_log("DEBUG", "Sous-ordre SSH 03_"+trames_content.Message_Order[1]+" non géré")
 	}
 
 	return message
+}
+
+// PrefixeGroupes ouvre la ligne des groupes dans la réponse 03_02.
+//
+// La même chaîne que côté serveur. Les deux vivent dans des modules Go distincts
+// — l'agent n'importe pas le serveur — et rien ne peut donc les tenir liées à la
+// compilation. Les faire diverger d'un caractère ferait prendre la ligne pour une
+// clé publique, en silence : elle atterrirait dans authorized_keys, où sshd
+// l'ignorerait sans rien dire, et les appartenances ne seraient jamais posées.
+const PrefixeGroupes = "groups:"
+
+// extraireGroupes sépare la ligne des groupes des clés publiques.
+//
+// # Pourquoi la ligne est reconnue et non comptée
+//
+// Les clés occupent « tout le reste » du contenu : il n'existait aucune position
+// libre après elles. La ligne des groupes se place donc AVANT, et se reconnaît à
+// son préfixe plutôt qu'à son rang.
+//
+// Compter les lignes aurait lié l'agent à une version précise du serveur : un
+// serveur qui n'envoie pas encore les groupes décalerait tout, et la première clé
+// serait lue comme une liste de groupes. Ici, son absence est simplement un
+// contenu sans groupes.
+//
+// # Le sens de la compatibilité
+//
+// Cet agent fonctionne avec un serveur qui n'envoie pas la ligne : il n'applique
+// alors aucune appartenance, ce qui est l'ancien comportement.
+//
+// L'INVERSE ne tient pas, et c'est assumé : un agent resté à l'ancienne version
+// prendra la ligne pour une clé et l'écrira dans authorized_keys, où sshd
+// l'ignorera comme une entrée malformée. Le fichier est réécrit à chaque
+// connexion, donc l'artefact disparaît dès la mise à jour de l'agent. Ce chemin a
+// déjà une contrainte de version du même ordre — voir la trame 03_04, qui répond
+// « obsolete client, update required ».
+func extraireGroupes(lignes []string) (groupes []string, reste []string) {
+	for i, l := range lignes {
+		if !strings.HasPrefix(l, PrefixeGroupes) {
+			continue
+		}
+		liste := strings.TrimPrefix(l, PrefixeGroupes)
+		for _, g := range strings.Split(liste, ",") {
+			if g = strings.TrimSpace(g); g != "" {
+				groupes = append(groupes, g)
+			}
+		}
+		// La ligne est RETIRÉE du reste : la laisser la ferait écrire dans
+		// authorized_keys par le provisionnement, ce que la reconnaissance existe
+		// précisément pour éviter.
+		reste = append(append([]string{}, lignes[:i]...), lignes[i+1:]...)
+		return groupes, reste
+	}
+	return nil, lignes
 }
 
 func SSH_Handle_Fetch_Pubkey(trames_content storage.Trames_struct_client) {

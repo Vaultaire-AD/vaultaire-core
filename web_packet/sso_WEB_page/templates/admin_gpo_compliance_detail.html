@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conformité — {{ .Machine }}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Machine {{ .Machine }}</h1>
+
+    {{ if not .Etats }}
+      <div class="alert alert-info">
+        Aucun rapport pour cette machine. Soit elle n'a jamais appliqué de
+        politique, soit son identifiant diffère de celui de l'inventaire.
+      </div>
+    {{ else }}
+
+    <h2 class="h2">État par portée</h2>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Portée</th>
+            <th>Utilisateur</th>
+            <th>Application</th>
+            <th>Modules</th>
+            <th>Empreinte</th>
+            <th>Conformité</th>
+            <th>Vu</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{ range .Etats }}
+          <tr>
+            <td>{{ .Scope }}</td>
+            <td>{{ if .TargetUser }}{{ .TargetUser }}{{ else }}—{{ end }}</td>
+            <td>{{ if .Status }}{{ .Status }}{{ else }}—{{ end }}</td>
+            <td>
+              {{ .ModulesTotal }} module(s), {{ .ModulesFailed }} échec(s),
+              {{ .ModulesSkipped }} ignoré(s)
+            </td>
+            <td><code class="small">{{ .Fingerprint }}</code></td>
+            <td>
+              {{ if .JamaisScanne }}
+                <span class="badge badge-danger">jamais vérifiée</span>
+              {{ else }}
+                {{ .Conformite }} <span class="muted small">— {{ .ScanIlYA }}</span>
+              {{ end }}
+            </td>
+            <td class="muted small">{{ .VuIlYA }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+
+    <h2 class="h2">Modules en échec</h2>
+    {{ if .ModulesIllisibles }}
+      <div class="alert alert-danger">
+        Détail des modules illisible : {{ .ModulesIllisibles }}
+        <p class="muted small">
+          L'état par portée reste affiché : il suffit à répondre à « cette
+          machine est-elle conforme ».
+        </p>
+      </div>
+    {{ else if not .Echecs }}
+      <p class="muted">Aucun module en échec.</p>
+    {{ else }}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Portée</th><th>Clé</th><th>Type</th><th>Détail</th></tr></thead>
+        <tbody>
+        {{ range .Echecs }}
+          <tr>
+            <td>{{ .Scope }}</td>
+            <td><code class="small">{{ .StateKey }}</code></td>
+            <td>{{ .ModuleType }}</td>
+            <td>{{ .Detail }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+
+    <h2 class="h2">Écarts constatés</h2>
+    {{ if .EcartsIllisibles }}
+      <div class="alert alert-danger">Écarts illisibles : {{ .EcartsIllisibles }}</div>
+    {{ else if not .Ecarts }}
+      <p class="muted">
+        Aucun écart constaté. Attention : cela ne vaut que pour les portées
+        réellement scannées — voir la colonne « conformité » ci-dessus.
+      </p>
+    {{ else }}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Nature</th><th>Chemin</th><th>Portée</th><th>Détail</th></tr></thead>
+        <tbody>
+        {{ range .Ecarts }}
+          <tr>
+            <td><span class="badge badge-danger">{{ .Kind }}</span></td>
+            <td><code class="small">{{ .Path }}</code></td>
+            <td>{{ .Scope }}</td>
+            <td>{{ .Detail }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+
+    <p class="muted" style="margin-top:1.5rem">
+      <a href="/admin/gpo/compliance">← Retour à la conformité du parc</a>
+    </p>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

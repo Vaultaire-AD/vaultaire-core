@@ -147,7 +147,7 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 		// qu'elle est saine, mais parce que plus personne ne regarde. La retirer
 		// d'une vue qui cherche les problèmes reviendrait à cacher le seul cas
 		// où l'on ne sait rien.
-		if driftOnly && r.DriftCount == 0 && !r.Silencieuse(maintenant) {
+		if driftOnly && !r.ARetenirDansLaVueDesEcarts(maintenant) {
 			continue
 		}
 		affichées++
@@ -157,9 +157,9 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 			orDash(r.TargetUser),
 			string(r.Fraicheur(maintenant)),
 			orDash(r.Status),
-			modulesTexte(r),
-			conformitéTexte(r),
-			âge(r.ReportedAt))
+			r.ModulesAppliques(),
+			r.EtatConformite(),
+			dbgpo.AgeRelatif(r.ReportedAt, maintenant))
 	}
 
 	var b strings.Builder
@@ -173,48 +173,12 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 	// Le total est rappelé même en vue filtrée : « 3 machines en dérive » ne veut
 	// rien dire sans savoir si le parc en compte 4 ou 4000.
 	fmt.Fprintf(&b, "\n%d ligne(s) sur %d suivie(s).\n", affichées, len(rows))
-	b.WriteString(resumeTexte(dbgpo.ResumerParc(rows, maintenant)))
+	b.WriteString(dbgpo.ResumerParc(rows, maintenant).Lisible() + "\n")
 	fmt.Fprintf(&b, "Détail d'une machine : vlt gpo status <computeur_id>\n")
 	return b.String()
 }
 
-// resumeTexte rend l'état du parc en une ligne.
-//
-// Compté en MACHINES, pas en lignes : une machine dont deux portées sont en
-// échec est un problème, pas deux. Le total gonflerait à proportion du nombre
-// d'utilisateurs connectés, et « 47 échecs » sur douze machines ne veut rien
-// dire.
-func resumeTexte(r dbgpo.ResumeParc) string {
-	var parties []string
-	if r.Jamais > 0 {
-		parties = append(parties, fmt.Sprintf("%d jamais rapporté", r.Jamais))
-	}
-	if r.EnRetard > 0 {
-		parties = append(parties, fmt.Sprintf("%d en retard", r.EnRetard))
-	}
-	if r.EnEchec > 0 {
-		parties = append(parties, fmt.Sprintf("%d en échec", r.EnEchec))
-	}
-	if r.AvecEcarts > 0 {
-		parties = append(parties, fmt.Sprintf("%d avec écarts", r.AvecEcarts))
-	}
-	if len(parties) == 0 {
-		return fmt.Sprintf("%d machine(s), toutes à jour.\n", r.Machines)
-	}
-	return fmt.Sprintf("%d machine(s) : %s.\n", r.Machines, strings.Join(parties, ", "))
-}
 
-// modulesTexte évite d'écrire « 0/0 » pour une machine qui n'a rien dit.
-//
-// « 0/0 » se lit comme « aucun module à appliquer », c'est-à-dire comme une
-// réussite. La machine n'a rien appliqué du tout, ce qui n'est pas la même
-// chose et se dit autrement.
-func modulesTexte(r dbgpo.ComplianceRow) string {
-	if r.JamaisRapporte {
-		return "-"
-	}
-	return fmt.Sprintf("%d/%d", r.ModulesTotal-r.ModulesFailed, r.ModulesTotal)
-}
 
 // rendreConformiteMachine met en forme le détail d'une machine.
 //
@@ -223,6 +187,12 @@ func modulesTexte(r dbgpo.ComplianceRow) string {
 // fiche parce que le détail des modules manque priverait de la réponse
 // principale : « cette machine est-elle conforme ».
 func rendreConformiteMachine(d action.ConformiteMachine) string {
+	return rendreConformiteMachineA(d, time.Now())
+}
+
+// rendreConformiteMachineA prend l'instant en paramètre, pour la même raison que
+// rendreConformiteA : la fraîcheur d'un rapport se juge par rapport à MAINTENANT.
+func rendreConformiteMachineA(d action.ConformiteMachine, maintenant time.Time) string {
 	if len(d.Etats) == 0 {
 		return "Aucun rapport pour " + d.ComputeurID + ".\n" +
 			"Soit la machine n'a jamais appliqué de politique, soit son identifiant diffère."
@@ -234,10 +204,11 @@ func rendreConformiteMachine(d action.ConformiteMachine) string {
 	for _, r := range d.Etats {
 		fmt.Fprintf(&b, "  %s%s\n", r.Scope, userSuffix(r.TargetUser))
 		fmt.Fprintf(&b, "    application : %s (%d module(s), %d échec(s), %d ignoré(s)) — %s\n",
-			orDash(r.Status), r.ModulesTotal, r.ModulesFailed, r.ModulesSkipped, âge(r.ReportedAt))
+			orDash(r.Status), r.ModulesTotal, r.ModulesFailed, r.ModulesSkipped, dbgpo.AgeRelatif(r.ReportedAt, maintenant))
 		fmt.Fprintf(&b, "    empreinte   : %s\n", courte(r.Fingerprint))
 		if r.DriftAt.Valid {
-			fmt.Fprintf(&b, "    conformité  : %s — %s\n", conformitéTexte(r), âge(r.DriftAt.Time))
+			fmt.Fprintf(&b, "    conformité  : %s — %s\n", r.EtatConformite(),
+				dbgpo.AgeRelatif(r.DriftAt.Time, maintenant))
 		} else {
 			// Distinguer « conforme » de « jamais vérifié » : afficher un tiret
 			// plutôt qu'un zéro rassurant.
@@ -272,37 +243,7 @@ func rendreConformiteMachine(d action.ConformiteMachine) string {
 	return b.String()
 }
 
-// conformitéTexte rend l'état de conformité en une cellule.
-func conformitéTexte(r dbgpo.ComplianceRow) string {
-	if !r.DriftAt.Valid {
-		return "non vérifié"
-	}
-	if r.DriftCount == 0 {
-		return fmt.Sprintf("ok (%d)", r.DriftChecked)
-	}
-	return fmt.Sprintf("%d écart(s)", r.DriftCount)
-}
 
-// âge rend une date en durée relative.
-//
-// Un horodatage absolu oblige à faire la soustraction de tête, et c'est
-// précisément ce qu'on veut savoir : est-ce que cette machine rapporte encore ?
-func âge(t time.Time) string {
-	if t.IsZero() {
-		return "jamais"
-	}
-	d := time.Since(t.UTC())
-	switch {
-	case d < time.Minute:
-		return "à l'instant"
-	case d < time.Hour:
-		return fmt.Sprintf("il y a %dmin", int(d.Minutes()))
-	case d < 48*time.Hour:
-		return fmt.Sprintf("il y a %dh", int(d.Hours()))
-	default:
-		return fmt.Sprintf("il y a %dj", int(d.Hours()/24))
-	}
-}
 
 func userSuffix(username string) string {
 	if username == "" {

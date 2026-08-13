@@ -8,6 +8,7 @@ import (
 	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/logs"
 	"vaultaire/core/netguard"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/sessionmgr"
@@ -115,13 +116,12 @@ func closeConnection(duckysession *storage.DuckySession) {
 //
 
 // checkServeurOnline lance une vérification périodique des serveurs en ligne.
+//
+// La cadence vient du réglage `check_online_minutes`, relu à chaque tour. Elle
+// venait du fichier YAML : la changer imposait un redémarrage du core, donc une
+// coupure du parc pour ajuster une cadence.
 func checkServeurOnline() {
-	ticker := time.NewTicker(time.Duration(storage.ServerCheckOnlineTimer) * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		verifyServersOnline()
-	}
+	reglages.Boucle(reglages.CleVerificationEnLigne, verifyServersOnline)
 }
 
 // Délais d'inactivité du balayage.
@@ -236,12 +236,7 @@ func pingServer(sess *sessionmgr.Session) {
 
 // clearSession supprime périodiquement les sessions expirées.
 func clearSession() {
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		cleanExpiredSessions()
-	}
+	reglages.Boucle(reglages.CleSessionsDucky, cleanExpiredSessions)
 }
 
 // cleanExpiredSessions nettoie une fois les sessions expirées dans la DB.
