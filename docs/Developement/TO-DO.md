@@ -63,21 +63,6 @@ la liste de courses.
             comparer des dates dans une sortie localisee. Mieux vaut ne rien
             affirmer sur cette facette que de l'affirmer de travers.
 
-42.[GPO] - Porter « en attente de redemarrage » dans l'etat de conformite
-            Prerequis du point 41 pour boot_params et kernel_module_policy, et
-            utile bien au-dela : applyKernelModulePolicy dit deja « effectif au
-            redemarrage » dans son detail, mais ce detail n'est qu'un texte — rien
-            ne le retient, et le scan suivant l'a oublie.
-
-            Il faudrait une attente qui ne devienne exigible qu'apres le prochain
-            demarrage : SystemCheck porterait un « PasAvant » (date de boot
-            courante au moment de la declaration), et scanChecks sauterait
-            l'attente tant que /proc/stat btime n'a pas depasse cette valeur.
-
-            Attention au piege : une machine qui ne redemarre jamais garderait
-            l'attente en suspens indefiniment, donc silencieusement non verifiee.
-            Il faut probablement un ecart d'un troisieme genre — « politique en
-            attente de redemarrage depuis N jours » — plutot qu'un simple silence.
 
 43.[DUCKY] [CLUSTER] - Aucune limite de debit sur 04_05 (metriques)
             Un proxy peut emettre autant de trames 04_05 qu'il veut, et chacune
@@ -145,21 +130,6 @@ la liste de courses.
               la cause et l'effet serait introuvable des mois plus tard.
 
             Reste ouvert : rien. Les six arbitrages sont rendus.
-
-35.[GPO] - Les regles nftables posees AVANT le commentaire ne se suppriment pas
-            Suite du point 15 (voir DO/2.1/2.1.md). La suppression retrouve desormais sa
-            regle par un commentaire nftables, pose a l'application.
-
-            Les regles ecrites par une version anterieure n'en portent pas : elles ne se
-            retrouvent donc pas, et subsistent. Ce n'est plus une purge automatique — on
-            ne vide plus la chaine, precisement parce que cela emportait les autres.
-
-            A faire, une fois par machine deja deployee :
-              nft flush chain inet vaultaire_gpo input
-            puis laisser le cycle suivant reposer les regles voulues.
-
-            Une regle de trop se voit ; une regle manquante non. C'est pourquoi le repli
-            retenu est de laisser en place plutot que de purger.
 
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier

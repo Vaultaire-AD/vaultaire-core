@@ -339,5 +339,21 @@ func Create_DataBase(db *sql.DB) {
 		}
 	}
 
+	// Compléments de schéma sur les tables DÉJÀ créées.
+	//
+	// `CREATE TABLE IF NOT EXISTS` ne fait rien sur une table existante : elle ne
+	// compare pas les colonnes. Une colonne ajoutée au texte ci-dessus n'atteint
+	// donc jamais une base en service, et le défaut se manifeste bien plus tard,
+	// à la première requête qui la nomme — « Unknown column », en exploitation,
+	// sur un chemin qui marchait la veille.
+	//
+	// Ici plutôt que dans main : c'est le même sujet que ce qui précède, et le
+	// séparer laisserait un jour créer les tables sans les compléter.
+	if err := EnsureClusterNodesSchema(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: complément du schéma cluster_nodes échoué : "+err.Error())
+		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
+	}
+
 	logs.Write_Log("INFO", "database: all tables and relations created successfully")
 }
