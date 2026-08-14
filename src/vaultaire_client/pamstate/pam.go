@@ -68,4 +68,30 @@ type AuthResult struct {
 	Type    string `json:"type"` // "AUTH", "CHECK" ou "FETCH"
 	IsAdmin bool   `json:"is_admin"`
 	SSHKeys string `json:"ssh_keys"`
+
+	// Accepte porte le VERDICT du serveur, explicitement.
+	//
+	// # Le défaut que ce champ ferme
+	//
+	// Il n'existait pas. Le refus (03_03) se signalait en FERMANT le canal, et
+	// le lecteur côté PAM faisait `result := <-finalChan` sans le second
+	// retour. Or lire un canal fermé rend le ZÉRO du type, immédiatement et
+	// sans erreur : `AuthResult{}`, dont le `Type` vaut « ».
+	//
+	// Le test qui suivait — « si Type n'est ni vide ni AUTH, échec » — laissait
+	// donc passer ce zéro dans la branche du SUCCÈS. Un mot de passe refusé par
+	// le serveur central devenait un « status: success » rendu au module PAM,
+	// qui ouvrait la session ET réécrivait /etc/shadow avec le mot de passe
+	// essayé.
+	//
+	// # Pourquoi un champ et non un test plus fin
+	//
+	// Parce que le zéro de la structure doit vouloir dire REFUS. Tant que
+	// l'acceptation se déduisait de l'absence d'information, tout chemin qui
+	// oubliait de remplir la structure — canal fermé, message perdu, champ
+	// ajouté ailleurs — produisait une acceptation.
+	//
+	// `false` par défaut : un émetteur qui oublie de le poser refuse, il
+	// n'accepte pas. C'est le sens dans lequel un oubli doit se tromper.
+	Accepte bool `json:"accepte"`
 }

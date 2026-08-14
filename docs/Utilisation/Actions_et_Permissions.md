@@ -35,7 +35,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 | `read:cluster` / `write:cluster` | état du cluster / réglages |
 | `read:certificate` / `write:certificate` | certificats TLS du serveur |
 | `read:enrollment` | consultation des clés d'enrôlement |
-| `write:server` | réglages d'exploitation (debug, purge des sessions) |
+| `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées** |
 
 **Pourquoi des clés spéciales et non des objets RBAC.** Un journal, un nœud de
 cluster, un certificat n'appartiennent à aucun domaine : la délégation par
@@ -224,11 +224,14 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `enroll.list_keys` | `read:enrollment` | Globale | — | **Registre** — `enroll list`, `show` | — |
 | `server.set_debug` | `write:server` | Globale | — | **Registre** — `update -debug` | — |
 | `server.clear_sessions` | `write:server` | Globale | — | **Registre** — `clear` | — |
+| `settings.list` | `read:log` | Globale | — | **Registre** — `settings list` | **Registre** — `/admin/settings` |
+| `settings.set` | `write:server` | Globale | — | **Registre** — `settings set` | **Registre** — `/admin/settings` |
+| `settings.reset` | `write:server` | Globale | — | **Registre** — `settings reset` | **Registre** — `/admin/settings` |
 | **Certificats et politique** |
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**80 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+**85 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
 ligne de commande.**
 
 ³ **Sept clés RBAC nouvelles** — voir ci-dessous.
@@ -250,6 +253,8 @@ empruntaient donc celle des machines :
 | `enroll list` / `show` | `read:get:client` sur `*` | `read:enrollment` |
 | `update -debug` | `write:update:user` | `write:server` |
 | `clear` (sessions expirées) | `write:update:user` | `write:server` |
+| `settings list` | *(commande neuve)* | `read:log` |
+| `settings set` / `reset` | *(commande neuve)* | `write:server` |
 
 Les deux dernières sont les plus parlantes : **régler le mode debug ou vider une
 table de sessions n'a rien d'une modification de compte.** La clé accordait
@@ -472,6 +477,41 @@ Le défaut du champ est `false`, donc l'exigence stricte : un oubli rend une
 action plus sévère que voulu — visible et corrigeable — plutôt que plus
 permissive, ce qui ne se verrait pas. Un test refuse toute **écriture** qui
 déclarerait `UnDomaineSuffit`.
+
+---
+
+### La page « Durées » : deux droits distincts sur une même page
+
+`/admin/settings` est le seul écran du portail où **voir** et **modifier** ne
+demandent pas la même clé.
+
+| | Clé | Effet |
+|---|---|---|
+| Ouvrir la page | `read:log` | la liste des durées, leur valeur et leur défaut |
+| Modifier une valeur | `write:server` | les champs de saisie et les boutons apparaissent |
+
+`web_admin` reste exigé en amont, comme pour toute page d'administration.
+
+**Sans `write:server`, la page s'ouvre en lecture seule.** Les valeurs
+s'affichent, les commandes de saisie non. Le droit est vérifié **par ligne** et
+non pour la page entière : le gabarit n'a pas à refaire le raisonnement, et
+masquer un bouton n'est de toute façon pas un contrôle — c'est l'action
+`settings.set` qui refuse, comme en ligne de commande.
+
+**Pourquoi `read:log` pour la lecture, et pas une clé neuve.** Les deux
+répondent à la même question — « puis-je regarder comment ce serveur est
+réglé ». Créer un `read:server` pour trois actions l'aurait ajouté à accorder
+dans **toutes** les permissions existantes : un droit qui manque partout jusqu'à
+ce que quelqu'un s'en aperçoive.
+
+**Les deux clés sont des actions spéciales**, donc des booléens : on les accorde
+avec `all`, jamais avec une liste de domaines. Une durée d'exploitation
+n'appartient à aucun domaine — il n'y a rien selon quoi restreindre.
+
+```
+> update -pu <permission> read:log all        # voir la page
+> update -pu <permission> write:server all    # et pouvoir régler
+```
 
 ---
 

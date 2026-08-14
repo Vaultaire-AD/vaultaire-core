@@ -1029,7 +1029,7 @@ cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 
 Les périodes des boucles du serveur : vérification des machines, purge des
 sessions, battement et nettoyage du cluster, balayage des services, durée d'une
-session web.
+session web, synchronisation des groupes.
 
 ```bash
 settings list                  # les durées, leur valeur et leur défaut
@@ -1046,6 +1046,7 @@ settings reset <clé>           # la ramène à son défaut codé
 | `service_sweep_seconds` | s | 60 | balayage des services hors ligne |
 | `web_session_minutes` | min | 30 | durée d'une session du portail |
 | `web_session_purge_minutes` | min | 5 | purge des sessions web expirées |
+| `group_sync_minutes` | min | 60 | synchronisation des groupes du domaine sur les machines |
 
 **Les valeurs vivent en base ; les défauts sont codés dans le serveur.** Un
 changement prend effet au **prochain tour** de la boucle concernée — aucun

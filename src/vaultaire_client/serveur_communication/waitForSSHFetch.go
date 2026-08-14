@@ -37,13 +37,26 @@ func WaitForSSHFetch(user string, sshUser string) {
 	// C'est ce select qui va capturer ce que le SSH_Auth_Manager envoie
 	select {
 	case res, ok := <-respChan:
-		if ok {
+		switch {
+		case !ok:
+			logs.Write_log("ERROR", "Le channel SSH a été fermé sans données")
 
+		case !res.Accepte:
+			// Le serveur a REFUSÉ (03_03). Depuis que le refus est explicite, il
+			// arrive ici comme un message et non comme une fermeture : sans ce
+			// contrôle, la ligne vide partirait sur la sortie standard et le
+			// journal dirait « Clés affichées avec succès » sur un refus.
+			//
+			// Rien n'est écrit : sshd lit cette sortie comme la liste des clés
+			// autorisées, et une liste vide est exactement ce qu'un compte
+			// refusé doit produire.
+			logs.Write_log("ERROR",
+				"Le serveur central a refusé la demande de clés pour "+sshUser)
+
+		default:
 			// C'est ici que le binaire écrit les clés sur Stdout pour SSH
 			fmt.Println(res.SSHKeys)
 			logs.Write_log("INFO", "Clés affichées avec succès")
-		} else {
-			logs.Write_log("ERROR", "Le channel SSH a été fermé sans données")
 		}
 	case <-time.After(10 * time.Second):
 		logs.Write_log("ERROR", "Timeout : Le serveur central n'a pas répondu à la demande 03_06")

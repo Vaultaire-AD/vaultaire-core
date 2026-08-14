@@ -153,13 +153,32 @@ faire diverger.
 | lire | `read:log` — « puis-je regarder comment ce serveur est réglé » |
 | écrire | `write:server` — la même clé que le mode debug et la purge des sessions |
 
-`read:log` plutôt qu'un `read:server` neuf : créer une clé pour deux actions
+`read:log` plutôt qu'un `read:server` neuf : créer une clé pour trois actions
 l'ajouterait à accorder dans toutes les permissions existantes, donc un droit qui
 manque partout jusqu'à ce que quelqu'un s'en aperçoive.
 
-Les deux sont exigés **séparément**, et le bouton n'apparaît pas sans le second.
-Une page qui montrerait des champs modifiables refusés à la soumission ferait
-perdre du temps sans dire lequel manque.
+Les trois actions du catalogue portent ces clés :
+
+| Action | Clé | Portée |
+|---|---|---|
+| `settings.list` | `read:log` | Globale, `FiltreInutile` |
+| `settings.set` | `write:server` | Globale |
+| `settings.reset` | `write:server` | Globale |
+
+**Les deux clés sont des actions SPÉCIALES**, donc des booléens : `all` ou rien.
+Une durée d'exploitation n'appartient à aucun domaine — il n'y a rien selon quoi
+restreindre, et leur donner une liste de domaines ne les limite pas, elle les
+refuse. Voir `specialActions` dans `core/permission/isValidAction.go`.
+
+Les deux sont exigés **séparément**. `/admin/settings` s'ouvre avec `read:log`
+seul, en lecture seule : les valeurs s'affichent, les champs de saisie non. Une
+page qui montrerait des champs modifiables refusés à la soumission ferait perdre
+du temps sans dire lequel manque.
+
+Le droit d'écriture est porté **par ligne** (`reglageVue.Modifiable`) et non par
+page : le gabarit n'a pas à refaire le raisonnement. Masquer un champ n'est de
+toute façon pas un contrôle — c'est l'action `settings.set` qui refuse, comme en
+ligne de commande.
 
 ---
 

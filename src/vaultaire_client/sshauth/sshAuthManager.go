@@ -83,7 +83,12 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			// Le cycle est lancé depuis le gestionnaire PAM, juste avant de
 			// rendre le résultat au module — même ordonnancement, sans blocage
 			// du lecteur (voir pam_communication/PAM_Handler.go).
+			//
+			// Le VERDICT est posé explicitement. Sans lui, l'acceptation se
+			// déduisait de l'absence d'information — voir pamstate.AuthResult.
 			result := pamstate.AuthResult{
+				Type:    "AUTH",
+				Accepte: true,
 				IsAdmin: isAdmin,
 			}
 			select {
@@ -105,8 +110,19 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 
 		logs.Write_log("ERROR", "Le serveur central a refusé l'accès SSH pour : "+sshUser)
 
-		// On débloque le channel avec un résultat vide pour éviter le timeout infini
+		// Un REFUS EXPLICITE, et non plus une simple fermeture du canal.
+		//
+		// La fermeture seule débloquait bien l'attente, mais elle y déposait le
+		// ZÉRO du type — indistinguable d'une réponse pour qui lit sans le
+		// second retour. C'est exactement ce que faisait le gestionnaire PAM :
+		// un mot de passe refusé par le serveur devenait un « success » rendu à
+		// sshd, et /etc/shadow était réécrit avec le mot de passe essayé.
+		//
+		// Le canal est tamponné à 1 : l'envoi n'attend personne. La fermeture
+		// suit, pour qu'un lecteur qui arriverait après l'envoi ne reste pas
+		// bloqué — il lira le refus, puis le canal fermé.
 		if respChan, ok := sshreq.Pop(sshUser); ok {
+			respChan <- pamstate.AuthResult{Type: "AUTH", Accepte: false}
 			close(respChan)
 		}
 	case "05":
@@ -208,7 +224,7 @@ func SSH_Handle_Fetch_Pubkey(trames_content storage.Trames_struct_client) {
 	}
 
 	select {
-	case respChan <- pamstate.AuthResult{Type: "FETCH", SSHKeys: sshKeys}:
+	case respChan <- pamstate.AuthResult{Type: "FETCH", Accepte: true, SSHKeys: sshKeys}:
 		logs.Write_log("INFO", fmt.Sprintf("Cles publiques 03_07 transmises au channel pour %s", sshUser))
 	default:
 		logs.Write_log("WARNING", "Channel réponse SSH plein pour "+sshUser)

@@ -81,18 +81,20 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	// --- Attente du resultat final ---
 	//----------------------------------------------------------------
 	select {
-	case result := <-finalChan:
-		if result.Type != "" && result.Type != "AUTH" {
-			logs.Write_log("WARNING", fmt.Sprintf("[%s] Type de reponse inattendu pour %s: recu %s",
-				reqType, req.User, result.Type))
+	case result, recu := <-finalChan:
+		motif := VerdictRefuse(result, recu)
+		if motif != "" {
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"[%s] Authentification REFUSEE pour %s : %s", reqType, req.User, motif))
 			statusRep = "failed"
-		} else {
-			statusRep = "success"
-			isAdminResult = result.IsAdmin
-			sshKeys = parseSSHKeys(result.SSHKeys)
-			logs.Write_log("INFO", fmt.Sprintf("[%s] Reponse du serveur central recue %s (Admin: %t, Cles: %d)",
-				reqType, req.User, isAdminResult, len(sshKeys)))
+			break
 		}
+
+		statusRep = "success"
+		isAdminResult = result.IsAdmin
+		sshKeys = parseSSHKeys(result.SSHKeys)
+		logs.Write_log("INFO", fmt.Sprintf("[%s] Reponse du serveur central recue %s (Admin: %t, Cles: %d)",
+			reqType, req.User, isAdminResult, len(sshKeys)))
 
 	case <-time.After(7 * time.Second):
 		logs.Write_log("ERROR", fmt.Sprintf("[%s] Timeout d'authentification pour %s", reqType, req.User))
