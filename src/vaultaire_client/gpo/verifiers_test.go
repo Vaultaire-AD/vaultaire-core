@@ -3,6 +3,7 @@ package gpo
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -219,19 +220,59 @@ func TestUnCompteDeverrouilleEstUneDerive(t *testing.T) {
 
 // --- le registre ------------------------------------------------------------
 
-// TestLesCinqVerificateursSontEnregistres.
+// constantesDAttente lit les constantes Check… déclarées dans les sources.
+//
+// # Pourquoi les lire plutôt que les écrire
+//
+// La version antérieure de ces garde-fous portait une liste tenue à la main,
+// recopiée dans deux tests. Elle était juste pour cinq vérificateurs ; elle
+// serait fausse à trente-six, et sa fausseté serait SILENCIEUSE — un
+// vérificateur absent de la liste n'est pas signalé, il est simplement pas
+// contrôlé.
+//
+// C'est le défaut même que ces tests existent pour empêcher, reproduit dans les
+// tests. La liste vient donc des sources.
+func constantesDAttente(t *testing.T) map[string]string {
+	t.Helper()
+
+	fichiers, err := filepath.Glob("verifiers*.go")
+	if err != nil || len(fichiers) == 0 {
+		t.Fatalf("aucun fichier de verificateur trouve : %v", err)
+	}
+
+	// Les fichiers de test déclarent des constantes factices ; les inclure
+	// ferait exiger un vérificateur pour des types qui n'existent que dans un
+	// test.
+	motif := regexp.MustCompile(`(?m)^\s*(Check\w+)\s*=\s*"([^"]+)"`)
+	out := map[string]string{}
+	for _, f := range fichiers {
+		if strings.HasSuffix(f, "_test.go") {
+			continue
+		}
+		contenu, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("lecture de %s : %v", f, err)
+		}
+		for _, m := range motif.FindAllStringSubmatch(string(contenu), -1) {
+			out[m[1]] = m[2]
+		}
+	}
+	if len(out) == 0 {
+		t.Fatal("aucune constante Check… trouvee : ce garde-fou ne verifie plus rien")
+	}
+	return out
+}
+
+// TestChaqueConstanteDAttenteAUnVerificateur.
 //
 // Un vérificateur écrit mais non enregistré ne s'exécute jamais, et l'attente
 // correspondante est ignorée en silence — c'est-à-dire une fausse conformité,
 // exactement ce que le point 4 supprime.
-func TestLesCinqVerificateursSontEnregistres(t *testing.T) {
-	attendus := []string{
-		CheckSystemdUnit, CheckNftRule, CheckGroupMember,
-		CheckSELinux, CheckAccountLock,
-	}
-	for _, kind := range attendus {
+func TestChaqueConstanteDAttenteAUnVerificateur(t *testing.T) {
+	for nom, kind := range constantesDAttente(t) {
 		if _, ok := CheckerFor(kind); !ok {
-			t.Errorf("aucun verificateur enregistre pour %q", kind)
+			t.Errorf("%s (%q) est declaree mais aucun verificateur n'est enregistre "+
+				"pour elle : toute attente de ce type serait ignoree en silence", nom, kind)
 		}
 	}
 }
@@ -252,13 +293,7 @@ func TestChaqueAttenteDeclareeSaitEtreVerifiee(t *testing.T) {
 
 	// Les constantes, résolues depuis leur nom : les appliqueurs écrivent
 	// `recordCheck(CheckSystemdUnit, ...)`, pas la chaîne littérale.
-	parNom := map[string]string{
-		"CheckSystemdUnit": CheckSystemdUnit,
-		"CheckNftRule":     CheckNftRule,
-		"CheckGroupMember": CheckGroupMember,
-		"CheckSELinux":     CheckSELinux,
-		"CheckAccountLock": CheckAccountLock,
-	}
+	parNom := constantesDAttente(t)
 
 	trouvés := 0
 	for _, f := range fichiers {
@@ -308,15 +343,7 @@ func TestAucunVerificateurEnTrop(t *testing.T) {
 	}
 	sources := tout.String()
 
-	parNom := map[string]string{
-		"CheckSystemdUnit": CheckSystemdUnit,
-		"CheckNftRule":     CheckNftRule,
-		"CheckGroupMember": CheckGroupMember,
-		"CheckSELinux":     CheckSELinux,
-		"CheckAccountLock": CheckAccountLock,
-	}
-
-	for nom, kind := range parNom {
+	for nom, kind := range constantesDAttente(t) {
 		if _, enregistré := CheckerFor(kind); !enregistré {
 			continue
 		}

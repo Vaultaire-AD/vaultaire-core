@@ -17,44 +17,67 @@ Le fichier DO est l'archive, l'historique de version est le compte rendu, celui-
 la liste de courses.
 
       
-37.[GPO] - Verification des effets non-fichier : les 31 modules restants
-            Suite du point 4, dont la premiere moitie et cinq modules sont traites
-            (voir DO/2.1/2.1.md). Le SOCLE est en place : recordCheck a cote de
-            l'appliqueur, registre de verificateurs, deux types d'ecart
-            (system_state, unverifiable), et le scan les parcourt.
+41.[GPO] - Verification des effets non-fichier : les 27 modules restants
+            Suite des points 4 et 37. Neuf modules declarent maintenant une
+            attente (voir DO/2.1/2.1.md) : cinq dont la derive donne un DROIT,
+            quatre dont la derive coute de la COHERENCE.
 
-            Cinq modules declarent une attente : systemd_service, firewall_rule,
-            user_group_membership, selinux_mode, local_account_policy. Ce sont
-            ceux dont la derive DONNE UN DROIT.
-
-            Les 31 autres n'en declarent aucune. Leur derive coute de la coherence,
-            pas de la securite — un fuseau horaire, un alias de shell, une limite
-            de ressources — mais elle reste invisible.
+            Le socle n'a pas bouge et n'a pas besoin de bouger : recordCheck a
+            cote de l'appliqueur, registre de verificateurs, deux types d'ecart
+            (system_state, unverifiable), et le scan les parcourt. Les garde-fous
+            lisent desormais les constantes DANS les sources, donc ils resteront
+            justes a trente-six verificateurs.
 
             A faire, module par module : un recordCheck dans l'appliqueur, un
             verificateur enregistre, un test de son ANALYSE (pas de la commande —
             la sortie depend de la machine).
 
-            Candidats par ordre d'interet :
-              - sysctl : la valeur courante se lit par « sysctl -n <cle> ». Le
-                fichier est deja surveille, mais une valeur ecrasee a chaud ne
-                l'est pas ;
-              - package : « rpm -q » / « dpkg -s ». Un paquet desinstalle a la
-                main n'est vu par rien ;
-              - user_shell : le shell courant se lit dans /etc/passwd ;
-              - file_acl : « getfacl » — les ACL ne sont pas le mode, que le scan
-                verifie deja ;
-              - boot_params, kernel_module_policy : « lsmod », /proc/cmdline.
+            Candidats restants, par ordre d'interet :
+              - ntp_config : « timedatectl show -p NTPSynchronized » dit si
+                l'horloge est reellement synchronisee, ce que le fichier ne dit
+                pas ;
+              - user_env / system_env : une variable exportee ailleurs masque
+                celle de la GPO sans toucher au fichier ;
+              - resource_limits / user_resource_limits : « ulimit -a » dans un
+                shell de connexion, mais la valeur depend de la session, donc le
+                constat ne vaut pas pour l'utilisateur connecte ;
+              - auditd_rule : « auditctl -l » — les regles chargees, pas le
+                fichier.
 
             NE PAS les ecrire toutes d'affilee. Une verification approximative est
             PIRE qu'aucune : elle declare conforme ce qui ne l'est pas, et personne
-            ne va plus regarder. C'est la raison pour laquelle le point 4 s'est
-            arrete a cinq.
+            ne va plus regarder.
 
-            Reste ouvert : « expire » de local_account_policy n'est pas verifie.
-            chage -E 1 fixe une date passee, et la relire supposerait de comparer
-            des dates dans une sortie localisee. Mieux vaut ne rien affirmer sur
-            cette facette que de l'affirmer de travers.
+            Trois refus a NE PAS defaire sans traiter leur cause :
+              - la VERSION d'un paquet n'est pas verifiee (formats rpm/dpkg
+                incomparables de facon fiable) ;
+              - une ACL RECURSIVE ne declare aucune attente (getfacl ne constate
+                que le chemin de tete) ;
+              - boot_params et kernel_module_policy ne sont pas verifiables tant
+                que l'etat ne sait pas porter « en attente de redemarrage » : les
+                constater signalerait une derive permanente sur toute machine qui
+                n'a pas encore redemarre.
+
+            Reste ouvert aussi : « expire » de local_account_policy n'est pas
+            verifie. chage -E 1 fixe une date passee, et la relire supposerait de
+            comparer des dates dans une sortie localisee. Mieux vaut ne rien
+            affirmer sur cette facette que de l'affirmer de travers.
+
+42.[GPO] - Porter « en attente de redemarrage » dans l'etat de conformite
+            Prerequis du point 41 pour boot_params et kernel_module_policy, et
+            utile bien au-dela : applyKernelModulePolicy dit deja « effectif au
+            redemarrage » dans son detail, mais ce detail n'est qu'un texte — rien
+            ne le retient, et le scan suivant l'a oublie.
+
+            Il faudrait une attente qui ne devienne exigible qu'apres le prochain
+            demarrage : SystemCheck porterait un « PasAvant » (date de boot
+            courante au moment de la declaration), et scanChecks sauterait
+            l'attente tant que /proc/stat btime n'a pas depasse cette valeur.
+
+            Attention au piege : une machine qui ne redemarre jamais garderait
+            l'attente en suspens indefiniment, donc silencieusement non verifiee.
+            Il faut probablement un ecart d'un troisieme genre — « politique en
+            attente de redemarrage depuis N jours » — plutot qu'un simple silence.
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 

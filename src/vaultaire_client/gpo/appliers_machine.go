@@ -116,6 +116,13 @@ func applySysctl(ctx Context, m Module) (string, error) {
 			// noyau courant, espace de noms restreint en conteneur).
 			return "", fmt.Errorf("valeur ecrite dans %s mais application a chaud refusee : %v", path, err)
 		}
+		// Le FICHIER est déjà surveillé ; la valeur EN VIGUEUR ne l'était pas.
+		// Un « sysctl -w » passé à la main change le noyau sans toucher au
+		// fichier, et le scan déclarait la machine conforme.
+		//
+		// Déclarée seulement si sysctl existe : sans lui, rien n'a été appliqué
+		// à chaud, et il n'y a donc pas de valeur courante à constater.
+		recordCheck(CheckSysctl, key, value)
 	}
 	return fmt.Sprintf("%s = %s (%s)", key, value, path), nil
 }
@@ -267,6 +274,20 @@ func applyPackage(ctx Context, m Module) (string, error) {
 	if _, err := runCommand(manager, args...); err != nil {
 		return "", err
 	}
+
+	// La PRÉSENCE, pas la version. Un paquet désinstallé à la main n'était vu
+	// par rien : aucun fichier de la GPO ne disparaît avec lui, et le scan des
+	// fichiers restait donc muet.
+	//
+	// « state » vaut « present », « » ou toute autre valeur pour une
+	// installation — l'appliqueur ci-dessus ne distingue que « absent ». Le
+	// vérificateur applique la même règle, sinon les deux dérivent.
+	etatAttendu := "present"
+	if state == "absent" {
+		etatAttendu = "absent"
+	}
+	recordCheck(CheckPackage, pkg, etatAttendu)
+
 	detail := fmt.Sprintf("%s %s via %s", state, target, manager)
 	if env != "" {
 		detail += " (non interactif)"

@@ -36,10 +36,28 @@ func applyFileACL(ctx Context, m Module) (string, error) {
 	if target == "" {
 		return "", fmt.Errorf("beneficiaire manquant")
 	}
-	spec := map[string]string{"user": "u", "group": "g"}[kind] + ":" + target
+	genre := map[string]string{"user": "u", "group": "g"}[kind]
+	spec := genre + ":" + target
+
+	recursif := m.Param("recursive") == "true"
+
+	// verifiable : ce que le vérificateur saura CONSTATER, et rien de plus.
+	//
+	// Faux dès que la politique est récursive. getfacl ne constaterait alors que
+	// le chemin de tête, et une ACL retirée sur un sous-répertoire passerait pour
+	// conforme — c'est-à-dire une affirmation plus large que le constat.
+	//
+	// Le silence est un défaut de COUVERTURE, connu et écrit dans la
+	// documentation. La fausse conformité est un défaut de CONFIANCE, et il ne
+	// se limite pas au module fautif : il décrédibilise tout le rapport.
+	//
+	// Faux aussi sur un genre inconnu : « spec » vaudrait « :alice », que
+	// getfacl n'écrit jamais, et le vérificateur conclurait « entrée disparue »
+	// sur une machine où elle n'a jamais existé.
+	verifiable := !recursif && genre != ""
 
 	var args []string
-	if m.Param("recursive") == "true" {
+	if recursif {
 		args = append(args, "-R")
 	}
 
@@ -47,6 +65,9 @@ func applyFileACL(ctx Context, m Module) (string, error) {
 		args = append(args, "-x", spec, path)
 		if _, err := runCommand("setfacl", args...); err != nil {
 			return "", err
+		}
+		if verifiable {
+			recordCheck(CheckFileACL, path+"|"+spec, "absent")
 		}
 		return "ACL " + spec + " retiree de " + path, nil
 	}
@@ -61,9 +82,15 @@ func applyFileACL(ctx Context, m Module) (string, error) {
 	if _, err := runCommand("setfacl", args...); err != nil {
 		return "", err
 	}
+	if verifiable {
+		// Les droits ORIGINAUX, pas « perms » : « --- » a été remplacé par la
+		// chaîne vide pour setfacl, alors que getfacl rend bien « --- ». Déclarer
+		// l'attente sur la forme envoyée à setfacl produirait un écart permanent.
+		recordCheck(CheckFileACL, path+"|"+spec, m.Param("permissions"))
+	}
 
 	detail := "ACL " + spec + ":" + m.Param("permissions") + " sur " + path
-	if m.Param("recursive") == "true" {
+	if recursif {
 		// L'ACL par défaut fait hériter les fichiers créés ENSUITE. Sans elle,
 		// la récursion ne vaudrait que pour le contenu présent au moment de
 		// l'application, et la politique se dégraderait silencieusement.
@@ -148,6 +175,11 @@ func applyUserShell(ctx Context, m Module) (string, error) {
 	if _, err := runCommandTimeout(UserCommandTimeout, "usermod", "-s", shell, ctx.Username); err != nil {
 		return "", fmt.Errorf("changement de shell impossible : %v", err)
 	}
+	// Le shell ne laisse aucune trace dans un fichier déposé par la GPO :
+	// usermod réécrit /etc/passwd, que le scan des fichiers ne surveille pas —
+	// et ne doit pas surveiller, puisque toute création de compte le modifie.
+	// Sans cette attente, un « chsh » local passait inaperçu.
+	recordCheck(CheckUserShell, ctx.Username, shell)
 	return "shell de " + ctx.Username + " : " + shell, nil
 }
 

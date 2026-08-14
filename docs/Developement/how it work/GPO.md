@@ -1003,7 +1003,7 @@ qu'il a fait, et lui seul : c'est donc lui qui déclare ce qu'il faudra
 revérifier, par `recordCheck`, au moment où il l'applique. Un module écrit demain
 sans `recordCheck` n'est simplement pas vérifié — silence, pas fausse conformité.
 
-Cinq vérificateurs, choisis parce que leur dérive **donne un droit** :
+Premier lot — les modules dont la dérive **donne un droit** :
 
 | Type | Cible | Ce qui est constaté |
 |---|---|---|
@@ -1013,11 +1013,55 @@ Cinq vérificateurs, choisis parce que leur dérive **donne un droit** :
 | `selinux` | `mode` ou `bool:<nom>` | mode courant, valeur du booléen |
 | `account_lock` | compte local | verrou dans shadow, `chage -l` |
 
-Les 31 autres modules dérivent aussi, mais leur dérive coûte de la cohérence, pas
-de la sécurité — un fuseau horaire, un alias de shell, une limite de ressources.
-Ils suivront, un par un : **une vérification approximative est pire qu'aucune**,
-parce qu'elle déclare conforme ce qui ne l'est pas et que personne ne va plus
-regarder.
+Second lot — les modules dont la dérive coûte de la **cohérence** :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `sysctl` | clé du noyau | valeur courante par `sysctl -n`, espaces normalisés |
+| `package` | nom du paquet | présence par `dpkg-query` ou `rpm -q` — **pas la version** |
+| `user_shell` | compte | septième champ de `getent passwd`, pas `/etc/passwd` |
+| `file_acl` | `<chemin>\|<u\|g>:<bénéficiaire>` | entrée `getfacl` **et droits effectifs** |
+
+#### Trois choses que ce lot refuse d'affirmer
+
+**La version d'un paquet.** Chaque gestionnaire écrit ses versions à sa façon —
+rpm préfixe d'une époque et suffixe d'une révision, dpkg fait autrement, et la
+politique porte le plus souvent la version amont seule. Un comparateur qui se
+tromperait déclarerait conforme une version qui ne l'est pas. Le vérificateur
+affirme donc uniquement ce qu'il constate : le paquet est là, ou il n'y est pas.
+
+**Une ACL récursive.** `getfacl` ne constate que le chemin de tête. Une entrée
+retirée sur un sous-répertoire y échapperait. `applyFileACL` ne déclare donc
+**aucune attente** quand la politique est récursive. Le silence est un défaut de
+couverture, connu ; la fausse conformité est un défaut de confiance, et elle
+contamine tout le rapport.
+
+**Ce qui dépend d'un redémarrage.** `boot_params` et `kernel_module_policy`
+écrivent une configuration qui ne prend effet qu'au prochain démarrage —
+l'appliqueur le dit lui-même, « effectif au redemarrage ». Constater
+`/proc/cmdline` ou `lsmod` signalerait une dérive sur toute machine en attente de
+redémarrage : une alerte permanente que personne ne peut lever. Ils deviendront
+vérifiables le jour où l'état saura porter « en attente de redémarrage ».
+
+Restent 27 modules sans vérificateur. Ils suivront, un par un : **une
+vérification approximative est pire qu'aucune**, parce qu'elle déclare conforme
+ce qui ne l'est pas et que personne ne va plus regarder.
+
+#### Les garde-fous du registre
+
+Trois tests, qui lisent les **sources** plutôt qu'une liste tenue à la main :
+
+| Test | Ce qu'il empêche |
+|---|---|
+| `TestChaqueConstanteDAttenteAUnVerificateur` | une constante `Check…` sans vérificateur enregistré — l'attente serait ignorée en silence |
+| `TestChaqueAttenteDeclareeSaitEtreVerifiee` | un `recordCheck` sans vérificateur — silence permanent, donc fausse conformité |
+| `TestAucunVerificateurEnTrop` | un vérificateur que plus aucun appliqueur ne déclare — la déclaration a été retirée par mégarde |
+
+La liste des constantes est **extraite de `verifiers*.go`**. Elle était écrite à
+la main : juste pour cinq vérificateurs, fausse à trente-six, et fausse en
+silence — un vérificateur oublié dans la liste n'est pas signalé, il n'est
+simplement pas contrôlé. C'est le défaut même que ces tests existent pour
+empêcher, reproduit dans les tests.
 
 ### `system_state` et `unverifiable` ne se confondent pas
 

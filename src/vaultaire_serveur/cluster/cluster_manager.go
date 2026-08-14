@@ -60,9 +60,13 @@ func StartManager(db *sql.DB) {
 	//
 	// C'est ce que la liste distribuée transporte, et ce qui permet à un agent
 	// d'apprendre un core sans devoir accepter sa clé en aveugle. Elle est
-	// calculée depuis GetPublicKey() — la MÊME source que celle servie à
-	// `askkey`. En prendre une autre rendrait possible qu'elles divergent, et
-	// l'agent refuserait alors une clé pourtant légitime.
+	// calculée depuis le certificat ServerMainKeyName en base — la MÊME source
+	// que celle servie à `askkey`. En prendre une autre rendrait possible
+	// qu'elles divergent, et l'agent refuserait alors une clé légitime.
+	//
+	// Les clés sont amorcées par main (keymanagement.EnsureServerKeys), avant
+	// cet appel. C'est ce qui manquait : sur une base neuve, cette ligne lisait
+	// une clé qui n'existait pas encore.
 	//
 	// Vide en cas d'échec plutôt qu'une valeur de repli : la requête écarte les
 	// nœuds sans empreinte, donc ce core n'est pas annoncé. Ne pas être annoncé

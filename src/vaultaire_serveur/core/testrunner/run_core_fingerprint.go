@@ -245,7 +245,7 @@ func testEmpreinteDepotPourClient() []Result {
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
-	// EcrireEmpreintePourClient passe par GetPublicKey(), indisponible hors
+	// EcrireEmpreintePourClient lit la clé du core EN BASE, indisponible hors
 	// d'un core démarré. On vérifie donc la forme du fichier à partir du même
 	// gabarit, en calculant l'empreinte d'une clé de test.
 	cle, err := clePubliqueDeTest()
