@@ -403,6 +403,37 @@ sudo chown root:root /etc/systemd/system/vaultaire.service
 alias vlt=vaultaire
 ```
 
+### Rotation des journaux
+
+```bash
+sudo cp deployments/logrotate/vaultaire-core /etc/logrotate.d/
+sudo logrotate --debug /etc/logrotate.d/vaultaire-core   # simulation
+```
+
+Le journal **principal** du core n'est pas concerné : il part sur la sortie
+standard, et c'est systemd ou le moteur de conteneurs qui le collecte, avec sa
+propre rétention. Le faire tourner ici en tiendrait deux, et « où sont les
+journaux » aurait deux réponses.
+
+Deux familles passent par un fichier, parce qu'on veut pouvoir les lire à part :
+
+| Fichier | Contenu |
+|---|---|
+| `/var/log/vaultaire/date.log` | dates de naissance refusées à la création d'un compte |
+| `/var/log/vaultaire/SQL_Injection.log` | identifiants écartés par l'assainissement des requêtes |
+
+Politique : **un fichier par jour, 30 archives, compressées sauf la plus
+récente**, et une taille maximale de 50 Mo pour qu'un incident bavard ne
+remplisse pas la partition avant minuit.
+
+> ⚠️ La borne de taille ne joue que si logrotate est invoqué **plus souvent
+> qu'une fois par jour**. Le minuteur systemd standard est quotidien — dans ce
+> cas la seule borne réelle est la cadence. Voir
+> `deployments/logrotate/README.md` pour le passer à l'heure.
+
+Ces deux fichiers sont créés en `0600 root:root`, dans un répertoire en `0700` :
+ils nomment des comptes et des tentatives d'injection.
+
 ---
 
 ## ⚙️ Vérification du Service

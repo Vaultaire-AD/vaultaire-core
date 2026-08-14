@@ -124,6 +124,48 @@ cat > /etc/vaultaire_client/client_conf.json <<'EOF'
 }
 EOF
 
+# 4bis. Rotation du journal
+#
+# Sans ce fichier, /var/log/vaultaire/vaultaire_client.log grossit
+# indéfiniment. Sur une machine isolée on s'en apercevrait ; sur un parc,
+# personne ne voit grossir un fichier — jusqu'au jour où /var est plein sur des
+# dizaines de postes à la fois.
+#
+# Aucune ligne de code de rotation n'est nécessaire : l'agent rouvre son journal
+# PAR SON CHEMIN à chaque ligne, donc le renommage que fait logrotate est suivi
+# tout seul. Pas de copytruncate, pas de signal, pas de redémarrage du service.
+#
+# ⚠ COPIE. L'original est deployments/logrotate/vaultaire-client, avec les
+# commentaires complets. Ce script est autonome — il tourne sur une machine qui
+# n'a pas le dépôt — d'où la duplication, comme pour l'unité systemd ci-dessus.
+log_info "Installation de la rotation des journaux..."
+cat > /etc/logrotate.d/vaultaire-client <<'EOF'
+/var/log/vaultaire/vaultaire_client.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    maxsize 20M
+    missingok
+    notifempty
+    create 0600 root root
+    sharedscripts
+}
+EOF
+chmod 644 /etc/logrotate.d/vaultaire-client
+
+# Un ancien répertoire, écrit en dur par une version antérieure du socle et
+# couvert par aucune rotation. Retiré s'il est vide ; signalé sinon, plutôt que
+# supprimé — il peut contenir la trace d'un incident qu'on cherche encore.
+if [[ -d /var/log/vaultaire_client ]]; then
+    if rmdir /var/log/vaultaire_client 2>/dev/null; then
+        log_info "Ancien répertoire /var/log/vaultaire_client retiré (vide)."
+    else
+        log_info "ATTENTION : /var/log/vaultaire_client contient des fichiers d'une"
+        log_info "            version antérieure. Aucune rotation ne les couvre."
+    fi
+fi
+
 # 5. Configuration NSS (Idempotente)
 log_info "Configuration de NSS..."
 for db in passwd group; do

@@ -15,6 +15,8 @@ import (
 //	cluster list <role>           nœuds actifs d'un rôle
 //	cluster purge-delay           lit le délai de purge
 //	cluster purge-delay <heures>  le règle
+//	cluster metrics-retention          lit la rétention des métriques
+//	cluster metrics-retention <jours>  la règle
 //
 // # Deux droits nouveaux, et pourquoi
 //
@@ -36,6 +38,9 @@ func Cluster_Command(args []string, sender_groupsIDs []int, sender_Username stri
 	switch args[0] {
 	case "purge-delay":
 		return purgeDelay(args[1:], appelant)
+
+	case "metrics-retention":
+		return retentionMetriques(args[1:], appelant)
 
 	case "list":
 		p := action.Params{}
@@ -78,18 +83,43 @@ func purgeDelay(args []string, appelant action.Appelant) string {
 	return res.Message
 }
 
+// retentionMetriques lit ou règle la conservation des métriques de nœuds.
+//
+// Même découpage en deux actions que purgeDelay, et pour la même raison :
+// raccourcir la rétention DÉTRUIT des lignes au prochain balayage. Consulter ne
+// doit pas donner ce droit.
+func retentionMetriques(args []string, appelant action.Appelant) string {
+	nom := "cluster.get_metrics_retention"
+	p := action.Params{}
+	if len(args) > 0 {
+		nom = "cluster.set_metrics_retention"
+		p["days"] = strings.TrimSpace(args[0])
+	}
+
+	res, err := action.Executer(nom, appelant, p)
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
+}
+
 func aide() string {
 	return fmt.Sprintf(`cluster — supervision du cluster.
 
-  cluster list                  tous les nœuds enregistrés
-  cluster list <role>           nœuds actifs d'un rôle
-  cluster purge-delay           délai avant suppression d'un service parti
-  cluster purge-delay <heures>  règle ce délai (0 désactive la purge)
+  cluster list                       tous les nœuds enregistrés
+  cluster list <role>                nœuds actifs d'un rôle
+  cluster purge-delay                délai avant suppression d'un service parti
+  cluster purge-delay <heures>       règle ce délai (0 désactive la purge)
+  cluster metrics-retention          conservation des métriques de nœuds
+  cluster metrics-retention <jours>  la règle (0 conserve sans limite)
 
 Un service qui cesse de battre est marqué hors ligne immédiatement. Ce n'est
 qu'après le délai ci-dessus que son client est SUPPRIMÉ, et il devra alors se
 réenrôler avec une nouvelle clé.
 
-Droits : %s pour consulter, %s pour régler le délai.`,
+Les métriques au-delà de la rétention sont SUPPRIMÉES, pas résumées : cette
+table n'agrège pas. Raccourcir la valeur détruit au prochain balayage.
+
+Droits : %s pour consulter, %s pour régler.`,
 		"read:cluster", "write:cluster")
 }

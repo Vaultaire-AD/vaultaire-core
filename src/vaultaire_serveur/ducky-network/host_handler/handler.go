@@ -312,6 +312,25 @@ func handleProxyMetrics(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		return "", fmt.Errorf("proxy_metrics: nœud %s non enregistré, rejouez 04_01", proprietaire)
 	}
 
+	// Le QUOTA, avant toute lecture du contenu.
+	//
+	// # Le refus n'est PAS une sanction
+	//
+	// Ni fermeture de connexion, ni erreur remontée. Punir un nœud qui remonte
+	// trop de métriques couperait aussi son enregistrement et son battement,
+	// donc le retirerait de la liste servie aux agents : la sanction serait
+	// bien pire que le problème qu'elle traite.
+	//
+	// La métrique est abandonnée, et le core le DIT dans sa réponse plutôt que
+	// d'accuser réception d'une écriture qui n'a pas eu lieu. Aucun client ne lit
+	// encore ce champ, mais mentir dans une trame se paie le jour où quelqu'un
+	// s'y fie.
+	if !AutoriseMetrique(proprietaire) {
+		return trame.ReponseClient("04_06",
+			tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
+			"throttled"), nil
+	}
+
 	lines := strings.Split(content, "\n")
 	if len(lines) < 4 {
 		return "", fmt.Errorf("proxy_metrics: contenu invalide")

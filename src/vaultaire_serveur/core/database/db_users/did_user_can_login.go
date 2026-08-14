@@ -38,7 +38,14 @@ func DidUserCanLogin(db *sql.DB, username, computeur_id string) (bool, error) {
 		return false, err
 	}
 
-	// Si aucune correspondance n'est trouvée
-	logs.WriteLog("WARNING", "L'utilisateur "+username+" ne peut pas se connecter avec ce client "+computeur_id)
+	// Si aucune correspondance n'est trouvée.
+	//
+	// Write_Log et non WriteLog : le second prend une FAMILLE de journal, pas un
+	// niveau. L'appel déposait donc un fichier littéralement nommé « WARNING »
+	// dans /var/log/vaultaire/, qu'aucune rotation ne couvrait et que personne
+	// n'allait lire — alors que c'est un refus d'accès, exactement le genre de
+	// ligne qu'on cherche dans le journal principal.
+	logs.Write_Log("WARNING",
+		"L'utilisateur "+username+" ne peut pas se connecter avec ce client "+computeur_id)
 	return false, nil
 }

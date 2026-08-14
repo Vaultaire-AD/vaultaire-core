@@ -71,6 +71,13 @@ func main() {
 	// le démarrage de la session.
 	storage.VersionComposant = version.Info().Complete()
 
+	// Le NOM DE JOURNAL de ce binaire, posé au même endroit et pour une raison
+	// voisine : le socle est partagé avec l'agent, et son défaut est
+	// « vaultaire_client.log ». Sans cette ligne, le proxy écrirait son journal
+	// dans le fichier de l'agent — sous un nom qui annonce autre chose que son
+	// contenu, et sans qu'une rotation puisse lui appliquer sa propre politique.
+	storage.NomJournal = "vaultaire_proxy.log"
+
 	session, err := ducky.Start(ducky.Options{
 		ConfigPath: *configPath,
 		KeyPath:    *keyPath,

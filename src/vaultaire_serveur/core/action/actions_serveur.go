@@ -98,6 +98,27 @@ func EnregistrerActionsServeur(r *Registre) {
 		Executer: reglerDelaiDePurge,
 	})
 
+	r.MustEnregistrer(Definition{
+		Nom:     "cluster.get_metrics_retention",
+		CleRBAC: permission.ActionReadCluster,
+		Portee:  PorteeGlobale,
+		Resume:  "lit la durée de conservation des métriques de nœuds",
+		Executer: func(_ Appelant, _ Params) (Resultat, error) {
+			return lireRetentionMetriques()
+		},
+	})
+
+	r.MustEnregistrer(Definition{
+		Nom: "cluster.set_metrics_retention",
+		// Même clé d'écriture que le délai de purge, et pour la même raison :
+		// raccourcir la rétention DÉTRUIT des données au prochain passage. Ce
+		// n'est pas une consultation.
+		CleRBAC:  permission.ActionWriteCluster,
+		Portee:   PorteeGlobale,
+		Resume:   "règle la durée de conservation des métriques de nœuds",
+		Executer: reglerRetentionMetriques,
+	})
+
 	// --- certificats ---
 
 	r.MustEnregistrer(Definition{
@@ -251,6 +272,69 @@ func reglerDelaiDePurge(a Appelant, p Params) (Resultat, error) {
 			"service ne sera plus supprimé automatiquement."}, nil
 	}
 	return Resultat{Message: fmt.Sprintf("Délai porté à %d heure(s).", heures)}, nil
+}
+
+// RetentionMetriques porte la valeur courante.
+//
+// Comme DelaiDePurge : zéro signifie « conservation illimitée » et non « purge
+// immédiate », et le type dédié force l'appelant à lire lequel des deux.
+type RetentionMetriques struct {
+	Duree time.Duration
+
+	// Desactivee distingue les deux sens de zéro.
+	Desactivee bool
+}
+
+func lireRetentionMetriques() (Resultat, error) {
+	d := hosthandler.MetricsRetention(database.GetDatabase())
+	if d <= 0 {
+		return Resultat{
+			Message: "Purge des métriques désactivée : la table proxy_metrics grossit " +
+				"sans limite. À n'utiliser que si les métriques sont exportées ailleurs.",
+			Donnees: RetentionMetriques{Desactivee: true},
+		}, nil
+	}
+	return Resultat{
+		Message: fmt.Sprintf(
+			"Les métriques de nœuds sont conservées %d jour(s). Au-delà, elles sont "+
+				"supprimées — elles ne sont pas résumées, cette table n'agrège pas.",
+			int(d.Hours()/24)),
+		Donnees: RetentionMetriques{Duree: d},
+	}, nil
+}
+
+func reglerRetentionMetriques(a Appelant, p Params) (Resultat, error) {
+	brut := strings.TrimSpace(p.Get("days"))
+	if brut == "" {
+		return Resultat{}, fmt.Errorf("nombre de jours requis")
+	}
+	jours, err := strconv.Atoi(brut)
+	if err != nil {
+		return Resultat{}, fmt.Errorf("« %s » n'est pas un nombre de jours", brut)
+	}
+	// Même garde que pour le délai de purge : « -5 » serait enregistré sans
+	// broncher, puis lu comme « <= 0 », c'est-à-dire une désactivation annoncée
+	// comme un réglage.
+	if jours < 0 {
+		return Resultat{}, fmt.Errorf(
+			"durée négative refusée : pour conserver sans limite, réglez explicitement 0")
+	}
+
+	if err := hosthandler.SetMetricsRetention(database.GetDatabase(), jours, a.Username); err != nil {
+		return Resultat{}, fmt.Errorf("enregistrement de la rétention : %w", err)
+	}
+
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"%s a réglé la rétention des métriques à %d jour(s)", a.Username, jours))
+
+	if jours == 0 {
+		return Resultat{Message: "Purge des métriques désactivée. La table " +
+			"proxy_metrics grossira sans limite."}, nil
+	}
+	// Le raccourcissement est DIT, parce qu'il détruit au prochain passage.
+	return Resultat{Message: fmt.Sprintf(
+		"Rétention portée à %d jour(s). Les métriques plus anciennes seront "+
+			"supprimées au prochain balayage.", jours)}, nil
 }
 
 // --- certificats -------------------------------------------------------------

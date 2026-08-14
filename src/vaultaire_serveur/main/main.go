@@ -147,6 +147,18 @@ func main() {
 		if err := hosthandler.PurgeDepartedServices(db.GetDatabase()); err != nil {
 			logs.Write_Log("ERROR", "cluster: purge des services échouée : "+err.Error())
 		}
+		// Rétention des métriques, dans le même cycle et pour la même
+		// raison d'économie : une troisième boucle pour une requête qui ne
+		// fait rien la plupart du temps coûterait plus en lisibilité qu'en
+		// ressources.
+		//
+		// La suppression est BORNÉE par passage — voir LotPurgeMetriques.
+		// Le premier passage après la mise en service est celui qui a le
+		// plus à supprimer, c'est-à-dire que le comportement le plus lourd
+		// arriverait au moment le moins attendu.
+		if _, err := hosthandler.PurgeMetriquesAnciennes(db.GetDatabase()); err != nil {
+			logs.Write_Log("ERROR", "cluster: purge des métriques échouée : "+err.Error())
+		}
 	})
 
 	// La permission d'amorçage reçoit toutes les actions connues du code, pas

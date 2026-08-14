@@ -1,103 +1,142 @@
 package logs
 
 import (
-	"duckynetworkclient/V1/duckynetwork/storage"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
+
+	"duckynetworkclient/V1/duckynetwork/storage"
 )
 
-func WriteLog(filename string, content string) {
-	// Définir le chemin du répertoire et du fichier
-	dirPath := "/var/log/vaultaire_client/"
-	filepath := dirPath + filename
+// Journalisation FICHIER du socle.
+//
+// # Le fichier est rouvert PAR SON CHEMIN à chaque ligne
+//
+// C'est ce qui rend `logrotate` suffisant sans la moindre ligne de code de
+// rotation, et cette propriété est trop facile à détruire pour rester implicite.
+//
+// logrotate, dans sa configuration par défaut, RENOMME le fichier puis en crée
+// un neuf. Un programme qui garderait un descripteur ouvert continuerait
+// d'écrire dans le fichier renommé — donc dans l'archive — et le fichier courant
+// resterait vide indéfiniment. C'est le défaut classique, celui qui oblige à
+// `copytruncate` (qui perd les lignes écrites pendant la copie) ou à un signal
+// de réouverture (qu'il faut alors implémenter et tester).
+//
+// Ici, chaque ligne fait un `OpenFile` sur le CHEMIN : après un renommage, la
+// ligne suivante recrée le fichier. La rotation est suivie toute seule.
+//
+// Le coût est réel — deux appels système par ligne — et il est assumé. Le volume
+// d'un agent se compte en dizaines de lignes par minute, pas en milliers par
+// seconde. Un jour où ce ne sera plus vrai, garder le descripteur exigera
+// d'ajouter la réouverture sur SIGHUP dans le même geste, sans quoi le journal
+// disparaîtra silencieusement à la première rotation.
 
-	// Créer le répertoire s'il n'existe pas
-	err := os.MkdirAll(dirPath, 0755)
-	if err != nil {
-		fmt.Printf("erreur lors de la création du répertoire: %v", err)
+// # Un second répertoire, que personne ne surveillait
+//
+// `WriteLog` écrivait dans « /var/log/vaultaire_client/ », en dur, alors que le
+// journal principal va dans storage.LogPath — « /var/log/vaultaire/ ». Deux
+// répertoires, dont un seul est créé par l'installeur et protégé en 0700 ;
+// l'autre naissait au vol en 0755, lisible par tout le monde, et aucune rotation
+// ne l'aurait couvert.
+//
+// Les deux fonctions résolvent désormais le même répertoire. Un déploiement
+// existant peut contenir l'ancien : la documentation d'exploitation dit quoi en
+// faire.
+
+// modeRepertoireJournal : les journaux d'un agent nomment des comptes et des
+// machines. 0700 plutôt que 0755, comme le répertoire posé par l'installeur.
+const modeRepertoireJournal = 0o700
+
+// WriteLog écrit dans un fichier dédié à une famille d'événements.
+//
+// La famille devient un nom de fichier : elle est donc VALIDÉE. Sans cela, un
+// appelant peut créer un fichier arbitraire — c'est déjà arrivé, avec un appel
+// qui passait un niveau de journal en guise de famille — et surtout un chemin
+// contenant « / » ou « .. » sortirait du répertoire.
+func WriteLog(famille string, content string) {
+	nom, ok := nomDeFichierFamille(famille)
+	if !ok {
+		Write_log("ERROR", "logs: famille de journal refusée : "+famille)
+		return
 	}
-
-	// Ouvre le fichier en mode append, le crée s'il n'existe pas
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
-	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// Handle or log the error
-			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
-		}
-	}()
-
-	// Formatte l'heure actuelle
-	timestamp := time.Now().Format("2006-01-02 15:04")
-
-	// Formatte la ligne à écrire [date/heure:minutes/contenu]
-	logLine := fmt.Sprintf("[%s] %s\n", timestamp, content)
-
-	// Écrit la ligne dans le fichier
-	if _, err := file.WriteString(logLine); err != nil {
-		fmt.Printf("erreur lors de l'écriture dans le fichier: %v", err)
-	}
+	ecrireLigne(storage.LogPathResolu()+nom, content)
 }
 
-//func main() {
-//	// Exemple d'utilisation
-//	err := WriteLog("logfile.log", "Ceci est une ligne de log")
-//	if err != nil {
-//		fmt.Println("Erreur:", err)
-//	} else {
-//		fmt.Println("Log ajouté avec succès")
-//	}
-//}
+// nomDeFichierFamille valide une famille et rend le nom de fichier.
+//
+// Le suffixe « .log » est ajouté pour que la rotation puisse cibler un motif
+// unique. Les fichiers portaient jusqu'ici le nom brut de la famille — « date »,
+// « error » — que rien ne distinguait d'un répertoire ou d'un fichier de travail.
+func nomDeFichierFamille(famille string) (string, bool) {
+	f := strings.TrimSpace(famille)
+	if f == "" || len(f) > 64 {
+		return "", false
+	}
+	for _, r := range f {
+		estAutorise := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') ||
+			(r >= '0' && r <= '9') || r == '_' || r == '-'
+		if !estAutorise {
+			return "", false
+		}
+	}
+	return f + ".log", true
+}
 
+// Write_log écrit une ligne dans le journal principal du programme.
 func Write_log(level string, content string) {
-	// Si c'est un log DEBUG et que le mode debug est désactivé, on ignore
 	if level == "DEBUG" && !storage.DEBUG {
 		return
 	}
 
-	// Définir le chemin du répertoire et du fichier
-	dirPath := storage.LogPathResolu()
-	filepath := dirPath + "vaultaire_client.log"
+	timestamp := time.Now().Format("2006-01-02 15:04:05")
+	logLine := fmt.Sprintf("%s [%s] %s", timestamp, level, content)
 
-	// Créer le répertoire s'il n'existe pas
-	err := os.MkdirAll(dirPath, 0755)
-	if err != nil {
-		fmt.Printf("erreur lors de la création du répertoire: %v", err)
+	// La console d'abord : si l'écriture fichier échoue — disque plein, droits —
+	// la ligne a au moins été vue quelque part. L'ordre inverse ferait perdre les
+	// deux à la fois, au moment précis où l'on a besoin de savoir.
+	if err := Print_Log(logLine); err != nil {
+		fmt.Printf("erreur lors de l'impression du log: %v\n", err)
 	}
 
-	// Ouvre le fichier en mode append, le crée s'il n'existe pas
-	file, err := os.OpenFile(filepath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	ecrireLigne(storage.LogPathResolu()+storage.NomJournalResolu(), logLine)
+}
+
+// ecrireLigne ajoute une ligne à un fichier, en le créant au besoin.
+//
+// Les erreurs vont sur la sortie standard et NON dans le journal : écrire dans
+// le journal l'échec d'écriture du journal se rappellerait indéfiniment.
+func ecrireLigne(chemin string, ligne string) {
+	if err := os.MkdirAll(filepath.Dir(chemin), modeRepertoireJournal); err != nil {
+		fmt.Printf("erreur lors de la création du répertoire de journal: %v\n", err)
+		return
+	}
+
+	// 0600 : un journal d'agent nomme des comptes, des machines et des motifs de
+	// refus. Il était en 0644, donc lisible par tout utilisateur de la machine —
+	// y compris ceux dont il raconte les tentatives de connexion.
+	file, err := os.OpenFile(chemin, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		fmt.Printf("erreur lors de l'ouverture ou de la création du fichier: %v", err)
+		fmt.Printf("erreur lors de l'ouverture du fichier de journal: %v\n", err)
+		return
 	}
 	defer func() {
 		if err := file.Close(); err != nil {
-			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
+			fmt.Printf("erreur lors de la fermeture du fichier de journal: %v\n", err)
 		}
 	}()
 
-	// Formatte l'heure actuelle
-	timestamp := time.Now().Format("2006-01-02 15:04:05")
-
-	// Formatte la ligne à écrire [date/heure niveau contenu]
-	logLine := fmt.Sprintf("%s [%s] %s\n", timestamp, level, content)
-
-	// Affiche dans la console
-	if err := Print_Log(logLine); err != nil {
-		fmt.Printf("erreur lors de l'impression du log: %v", err)
-	}
-
-	// Écrit dans le fichier
-	if _, err := file.WriteString(logLine); err != nil {
-		fmt.Printf("erreur lors de l'écriture dans le fichier: %v\n", err)
+	if _, err := file.WriteString(strings.TrimRight(ligne, "\n") + "\n"); err != nil {
+		fmt.Printf("erreur lors de l'écriture dans le fichier de journal: %v\n", err)
 	}
 }
 
+// Print_Log affiche une ligne sur la sortie standard.
+//
+// Silencieux en mode « fetch SSH » : la sortie standard est alors le canal de
+// réponse lu par le module PAM, et y écrire une ligne de journal la corromprait.
 func Print_Log(logline string) error {
-	// Si on est en mode SSH Fetch, on n'affiche RIEN sur la console
 	if storage.SilentConsole {
 		return nil
 	}

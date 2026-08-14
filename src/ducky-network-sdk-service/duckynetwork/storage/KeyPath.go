@@ -52,6 +52,35 @@ var KeyPath = "/etc/vaultaire_client/.ssh"
 // LogPath est le répertoire des journaux.
 var LogPath = "/var/log/vaultaire/"
 
+// NomJournal est le fichier de journal de CE programme, sans répertoire.
+//
+// # Pourquoi une variable et pas une constante
+//
+// Le SDK est partagé : l'agent et le proxy tournent tous deux dessus. Le nom
+// était écrit en dur — « vaultaire_client.log » — et le proxy écrivait donc son
+// journal dans le fichier de l'agent, sous un nom qui annonce autre chose que
+// son contenu.
+//
+// Sans conséquence tant que les deux ne tournent pas sur la même machine ; sur
+// la même, leurs lignes s'entrelacent dans un fichier qui n'appartient à
+// personne. Et surtout, la rotation ne peut pas avoir de politique PAR ENTITÉ
+// s'il n'y a qu'un fichier pour deux.
+//
+// Chaque programme la pose au démarrage, comme il pose déjà VersionComposant.
+var NomJournal = "vaultaire_client.log"
+
+// NomJournalResolu rend le nom de fichier de journal, jamais vide.
+//
+// Un nom vide donnerait un chemin qui désigne le RÉPERTOIRE : l'ouverture
+// échouerait à chaque ligne, et le programme perdrait son journal en silence —
+// puisque c'est précisément le journal qui aurait dû le dire.
+func NomJournalResolu() string {
+	if n := strings.TrimSpace(NomJournal); n != "" {
+		return filepath.Base(n)
+	}
+	return "vaultaire.log"
+}
+
 // SoftwarePath est le chemin par défaut du fichier d'identité.
 //
 // Vide par défaut : la valeur est alors déduite de KeyPath, ce qui garde les

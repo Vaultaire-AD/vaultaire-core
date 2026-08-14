@@ -1450,6 +1450,38 @@ dirige.
 mais c'était juste *par dépendance* : le jour où ce contrôle bouge, ce code
 devient faux sans avoir été touché.
 
+### Ce qui borne les métriques
+
+`04_05` insère une ligne dans `proxy_metrics`. Rien ne bornait ni le **débit**
+d'écriture ni la **durée de vie** des lignes : la table grossissait
+indéfiniment, y compris en fonctionnement normal.
+
+| | Valeur | Réglable |
+|---|---|---|
+| rétention | 30 jours (0 = illimité) | `cluster metrics-retention <jours>` |
+| débit | 60 par nœud et par minute | au démarrage du core |
+
+**Le refus de quota n'est pas une sanction.** Ni fermeture de connexion, ni
+erreur : punir un nœud qui remonte trop de métriques couperait aussi son
+enregistrement et son battement, donc le retirerait de la liste servie aux
+agents. La sanction serait pire que le problème. La métrique est abandonnée et
+le core répond `throttled` plutôt que d'accuser réception d'une écriture qui n'a
+pas eu lieu.
+
+**Le journal est lui-même limité** — une ligne par nœud toutes les cinq minutes.
+Journaliser chaque métrique refusée déplacerait l'inondation de la table vers le
+fichier de journal, qui la supporte encore moins bien.
+
+**La purge est bornée par passage** (10 000 lignes). Le premier passage après la
+mise en service est celui qui a le plus à supprimer : sans borne, le comportement
+le plus lourd arriverait au moment le moins attendu, sur une base en service.
+
+Ce n'est **pas** `core/auth/ratelimit`. Ce paquet-là freine la force brute sur
+les mots de passe — trois essais gratuits, échéance qui double, deux compteurs
+croisés — et se pilote par `Echec`/`Reussite`. Une métrique n'échoue jamais : le
+réutiliser voudrait dire appeler `Echec` sur chaque écriture légitime. Un
+plafond et un frein sont deux problèmes différents.
+
 ### Le piège de `RowsAffected`
 
 `RegisterNode` fait un `SELECT` puis un `UPDATE` par identifiant, et non un

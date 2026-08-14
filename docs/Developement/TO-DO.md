@@ -16,7 +16,6 @@ Les trois gestes, dans le même passage que le code :
 Le fichier DO est l'archive, l'historique de version est le compte rendu, celui-ci est
 la liste de courses.
 
-      
 41.[GPO] - Verification des effets non-fichier : les 27 modules restants
             Suite des points 4 et 37. Neuf modules declarent maintenant une
             attente (voir DO/2.1/2.1.md) : cinq dont la derive donne un DROIT,
@@ -63,28 +62,6 @@ la liste de courses.
             comparer des dates dans une sortie localisee. Mieux vaut ne rien
             affirmer sur cette facette que de l'affirmer de travers.
 
-
-43.[DUCKY] [CLUSTER] - Aucune limite de debit sur 04_05 (metriques)
-            Un proxy peut emettre autant de trames 04_05 qu'il veut, et chacune
-            insere une ligne dans proxy_metrics. Ce n'est plus une usurpation
-            depuis le correctif de propriete — les lignes portent son nom — mais
-            c'est une saturation de table par un client authentifie.
-
-            La table n'a aucune purge non plus : elle croit indefiniment meme en
-            fonctionnement normal.
-
-            A faire, dans cet ordre d'importance :
-              - une purge periodique, sur le modele de PurgeDepartedServices
-                (une retention en jours, en base, pas en dur) ;
-              - un debit maximal par noeud, cote core. Attention : le refus doit
-                etre SILENCIEUX pour le noeud — fermer sa connexion parce qu'il
-                remonte trop de metriques couperait aussi son enregistrement et
-                son battement, donc le retirerait de la liste servie aux agents.
-                La sanction serait pire que le probleme.
-
-            Le paquet core/auth/ratelimit existe deja (point 16) mais il compte
-            des tentatives d'authentification, pas des ecritures. Verifier s'il
-            se generalise avant d'en ecrire un second.
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 

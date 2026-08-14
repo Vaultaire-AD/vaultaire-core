@@ -18,16 +18,20 @@ func ReadYAMLFile(filename string) {
 }
 
 func readConfig[T any](filePath string) (*T, error) {
+	// Write_log et non WriteLog : le second prend une FAMILLE de journal, pas un
+	// niveau. Les deux appels déposaient un fichier nommé « error » dans un
+	// répertoire que rien ne surveillait — et leur message portait un « %v » qui
+	// n'était jamais formaté, donc ne disait pas la cause.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		logs.WriteLog("error", "erreur lors de la lecture du fichier de configuration: %v")
+		logs.Write_log("ERROR", "lecture du fichier de configuration "+filePath+" : "+err.Error())
 		return nil, fmt.Errorf("erreur lors de la lecture du fichier de configuration: %v", err)
 	}
 
 	var config T
 	err = yaml.Unmarshal(data, &config)
 	if err != nil {
-		logs.WriteLog("error", "erreur lors du décodage du fichier de configuration: %v")
+		logs.Write_log("ERROR", "décodage du fichier de configuration "+filePath+" : "+err.Error())
 		return nil, fmt.Errorf("erreur lors du décodage du fichier de configuration: %v", err)
 	}
 
