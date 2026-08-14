@@ -245,6 +245,38 @@ func MayAssertUser(clientType string) bool {
 	return ok && d.AssertsUser
 }
 
+// RoleCluster est le rôle qu'un type de programme prend dans cluster_nodes.
+//
+// # Le rôle ne se DÉCLARE pas, il se DÉDUIT
+//
+// `handleRegisterHost` lisait le rôle dans le contenu de la trame 04_01. Un
+// proxy pouvait donc s'annoncer « core » — et `NoeudsPourAgents` sert les rôles
+// « core » et « proxy » aux agents, avec leur empreinte. Le parc apprenait alors
+// l'empreinte d'un proxy comme étant celle d'un serveur d'authentification.
+//
+// Le rôle est donc rendu ici, à partir du type figé à la poignée de main. Un
+// champ que le client remplit et que le serveur croit n'est pas une donnée, c'est
+// une permission.
+//
+// # « core » n'est le rôle d'AUCUN type, et ne peut pas l'être
+//
+// Un core n'est pas dans ce catalogue — il ne peut pas se juger lui-même — et il
+// ne s'enregistre pas par le réseau : il écrit sa propre ligne au démarrage,
+// depuis son propre processus. Aucune trame ne peut donc produire ce rôle, ce
+// qui est exactement la propriété recherchée.
+//
+// Rend « » pour un type qui n'a rien à faire dans le cluster en tant que
+// MACHINE. Un client SERVICE s'enregistre par 04_09, qui porte son type tel quel
+// — un service déclare une fonction, pas un nœud joignable.
+func RoleCluster(clientType string) string {
+	switch strings.TrimSpace(clientType) {
+	case Proxy:
+		return "proxy"
+	default:
+		return ""
+	}
+}
+
 // IsService indique si un type s'enrôle seul plutôt que d'être créé sur le core.
 func IsService(clientType string) bool {
 	d, ok := Lookup(clientType)

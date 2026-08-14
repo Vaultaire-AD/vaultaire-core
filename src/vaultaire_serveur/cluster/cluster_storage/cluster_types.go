@@ -56,4 +56,30 @@ type Node struct {
 	// Vide pour un core : il n'embarque pas le SDK — c'est lui qui juge les
 	// clients, il ne partage pas leur socle.
 	VersionSDK string
+
+	// Proprietaire est le SEUL client autorisé à modifier cette ligne.
+	//
+	// # Le défaut que ce champ ferme
+	//
+	// `handleRegisterHost` lisait le hostname, l'IP et le RÔLE dans le contenu
+	// de la trame 04_01, sans aucun lien avec la session authentifiée. Un proxy
+	// enrôlé pouvait donc envoyer le hostname d'un core existant : l'upsert
+	// écrasait sa ligne — adresse, port et EMPREINTE comprises — et la liste
+	// servie aux agents annonçait dès lors l'empreinte de l'attaquant sous le
+	// nom du core. Les agents l'apprenaient, la mettaient en tête de leur liste,
+	// et s'y connectaient pour s'authentifier.
+	//
+	// # Deux formes
+	//
+	//	<client_software_id>   un nœud enregistré par le réseau (proxy, service)
+	//	@core:<hostname>       un core qui se déclare lui-même, sans session
+	//
+	// Le préfixe « @ » est RÉSERVÉ : un propriétaire venu d'une session ne peut
+	// pas commencer par lui. Sans cette réserve, un client dont l'identifiant
+	// ressemblerait à « @core:… » revendiquerait la ligne d'un core.
+	//
+	// Par hostname et non une valeur unique pour tous les cores : sur un cluster
+	// à plusieurs cores, un propriétaire commun laisserait chacun écrire la
+	// ligne des autres — le défaut corrigé, sous une autre forme.
+	Proprietaire string
 }

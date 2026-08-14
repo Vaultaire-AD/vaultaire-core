@@ -3,6 +3,7 @@ package hosthandler
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,9 +11,11 @@ import (
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
+	"vaultaire/core/clienttype"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
+	"vaultaire/ducky-network/trame"
 )
 
 // HandleHostTrame traite les trames 04_xx (Cluster / Service discovery) et retourne la réponse à envoyer.
@@ -25,7 +28,7 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 
 	switch sub {
 	case "01":
-		return handleRegisterHost(db, tramesContent, content)
+		return handleRegisterHost(db, tramesContent, content, duckysession)
 	case "03":
 		return handleListCores(db, tramesContent, duckysession)
 	case "05":
@@ -68,7 +71,37 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 // Un port hors de 1-65535 est REFUSÉ et non corrigé : une valeur aberrante vient
 // d'une configuration fausse, et l'accepter en la ramenant à une borne
 // produirait un nœud enregistré sur une adresse que personne n'écoute.
-func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, content string) (string, error) {
+func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, content string,
+	duckysession *storage.DuckySession) (string, error) {
+
+	// Le PROPRIÉTAIRE de la ligne vient de la session, jamais du contenu.
+	//
+	// C'est l'identifiant machine figé à la poignée de main 01_01. Il décide
+	// quelle ligne de cluster_nodes ce nœud a le droit d'écrire — la sienne, et
+	// elle seule.
+	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
+	if err != nil {
+		logs.Write_Log("SECURITY", "register_host refusé : "+err.Error())
+		return "", fmt.Errorf("register_host: %w", err)
+	}
+
+	// Le RÔLE aussi vient du type de programme, et non du contenu.
+	//
+	// Un proxy pouvait s'annoncer « core ». Or NoeudsPourAgents sert les rôles
+	// « core » et « proxy » aux agents AVEC LEUR EMPREINTE : le parc apprenait
+	// alors l'empreinte d'un proxy comme celle d'un serveur d'authentification.
+	//
+	// Aucun type ne peut produire « core » : un core n'est pas au catalogue et
+	// ne s'enregistre pas par le réseau — il écrit sa ligne depuis son propre
+	// processus, au démarrage.
+	role := clienttype.RoleCluster(duckysession.BoundClientType)
+	if role == "" {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"register_host refusé : %q est de type %q, qui ne prend aucun rôle de nœud",
+			proprietaire, duckysession.BoundClientType))
+		return "", fmt.Errorf("register_host: ce type de client ne s'enregistre pas comme nœud du cluster")
+	}
+
 	lines := strings.Split(content, "\n")
 	if len(lines) < 5 {
 		return "", fmt.Errorf("register_host: contenu invalide (attendu hostname, fqdn, ip, role, domain)")
@@ -76,10 +109,17 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	hostname := strings.TrimSpace(lines[0])
 	fqdn := strings.TrimSpace(lines[1])
 	ip := strings.TrimSpace(lines[2])
-	role := strings.TrimSpace(lines[3])
+	// lines[3] portait le rôle. Il est LU pour être journalisé quand il diffère
+	// de celui du type, et n'est plus utilisé : un écart signale soit un nœud mal
+	// configuré, soit une tentative — les deux méritent une ligne.
+	if declare := strings.TrimSpace(lines[3]); declare != "" && declare != role {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"register_host : %q (type %q) declare le role %q — enregistre comme %q",
+			proprietaire, duckysession.BoundClientType, declare, role))
+	}
 	domain := strings.TrimSpace(lines[4])
-	if hostname == "" || ip == "" || role == "" {
-		return "", fmt.Errorf("register_host: hostname, ip et role requis")
+	if hostname == "" || ip == "" {
+		return "", fmt.Errorf("register_host: hostname et ip requis")
 	}
 	if fqdn == "" {
 		fqdn = hostname
@@ -138,8 +178,7 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 			groupName = parts[0]
 		}
 	}
-	_, err := dbgroups.GetGroupIDByName(db, groupName)
-	if err != nil {
+	if _, errGroupe := dbgroups.GetGroupIDByName(db, groupName); errGroupe != nil {
 		_, errCreate := dbgroups.CreateGroup(db, groupName, domain)
 		if errCreate != nil {
 			logs.Write_Log("WARNING", "host_handler: CreateGroup failed: "+errCreate.Error())
@@ -157,18 +196,21 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		Port:         port,
 		Empreinte:    empreinte,
 		VersionSDK:   versionSDK,
+		Proprietaire: proprietaire,
 	}
 	if err := clusterdatabase.RegisterNode(db, node); err != nil {
+		// L'usurpation mérite un journal SECURITY, pas une simple erreur : c'est
+		// un nœud qui réclame le hostname d'un autre.
+		if errors.Is(err, clusterdatabase.ErrNoeudAppartientAUnAutre) {
+			logs.Write_Log("SECURITY", "register_host refusé : "+err.Error())
+		}
 		return "", fmt.Errorf("register_host: %w", err)
 	}
 	logs.Write_Log("INFO", "host registered: "+hostname+" role="+role+" ip="+ip+
 		" port="+strconv.Itoa(port))
-	return "04_02\nserver_central\n" + tramesContent.SessionIntegritykey + "\n" + tramesContent.Username + "\n" + tramesContent.ClientSoftwareID + "\nok\n" + hostname, nil
-}
-
-// getTramesFromRequest retourne sessionKey, username, clientID pour construire la réponse.
-func getTramesFromRequest(t storage.Trames_struct_client) (sessionKey, username, clientID string) {
-	return t.SessionIntegritykey, t.Username, t.ClientSoftwareID
+	return trame.ReponseClient("04_02",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
+		"ok", hostname), nil
 }
 
 // handleListCores : 04_03 -> 04_04 (nœuds joignables, dans l'ordre)
@@ -232,18 +274,53 @@ func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 				" (aucun en ligne, exposé, avec un port ET une empreinte déclarés)")
 	}
 
-	sk, un, cid := getTramesFromRequest(tramesContent)
-	return "04_04\nserver_central\n" + sk + "\n" + un + "\n" + cid + "\n" + strconv.Itoa(len(nodes)) + "\n" + body, nil
+	// Le NOMBRE puis les lignes. L'agent vérifie l'un contre l'autre : une trame
+	// tronquée annoncerait dix nœuds et n'en porterait que trois.
+	contenu := []string{strconv.Itoa(len(nodes))}
+	if body != "" {
+		contenu = append(contenu, body)
+	}
+	return trame.ReponseClient("04_04",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
+		contenu...), nil
 }
 
 // handleProxyMetrics : 04_05 -> 04_06 (enregistrement en BDD proxy_metrics)
-// Content: proxy_hostname\nproxy_ip\nmetric_type\nmetric_value\nextra_json
+//
+//	Content : proxy_hostname\nproxy_ip\nmetric_type\nmetric_value\nextra_json
+//
+// # Le hostname du contenu est IGNORÉ
+//
+// Il servait de clé d'insertion. N'importe quel nœud pouvait donc écrire des
+// métriques sous le nom d'un autre — et ces métriques alimentent le tri de la
+// liste servie aux agents : fabriquer les chiffres d'un pair revenait à décider
+// vers qui le parc se dirige.
+//
+// Le nom retenu est celui de la ligne du DEMANDEUR. La première ligne du contenu
+// n'est plus lue que pour signaler un écart.
 func handleProxyMetrics(db *sql.DB, tramesContent storage.Trames_struct_client, content string, duckysession *storage.DuckySession) (string, error) {
+	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
+	if err != nil {
+		logs.Write_Log("SECURITY", "proxy_metrics refusé : "+err.Error())
+		return "", fmt.Errorf("proxy_metrics: %w", err)
+	}
+	proxyHostname, err := clusterdatabase.HostnameDuProprietaire(db, proprietaire)
+	if err != nil {
+		// Un nœud qui remonte des métriques sans s'être enregistré. Ce n'est pas
+		// une attaque : c'est l'ordre des opérations à son démarrage. On le lui
+		// dit plutôt que d'écrire une ligne que personne ne saura rattacher.
+		return "", fmt.Errorf("proxy_metrics: nœud %s non enregistré, rejouez 04_01", proprietaire)
+	}
+
 	lines := strings.Split(content, "\n")
 	if len(lines) < 4 {
 		return "", fmt.Errorf("proxy_metrics: contenu invalide")
 	}
-	proxyHostname := strings.TrimSpace(lines[0])
+	if declare := strings.TrimSpace(lines[0]); declare != "" && declare != proxyHostname {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"proxy_metrics : %q remonte des metriques au nom de %q — enregistrees sous %q",
+			proprietaire, declare, proxyHostname))
+	}
 	proxyIP := strings.TrimSpace(lines[1])
 	metricType := strings.TrimSpace(lines[2])
 	metricValueStr := strings.TrimSpace(lines[3])
@@ -262,8 +339,8 @@ func handleProxyMetrics(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	if err != nil {
 		return "", err
 	}
-	clientID := tramesContent.ClientSoftwareID
-	return "04_06\nserver_central\n" + tramesContent.SessionIntegritykey + "\n" + tramesContent.Username + "\n" + clientID + "\nack", nil
+	return trame.ReponseClient("04_06",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey, "ack"), nil
 }
 
 func emptyOrJSON(s string) interface{} {
@@ -277,18 +354,39 @@ func emptyOrJSON(s string) interface{} {
 	return s
 }
 
-// handleHostHeartbeat : 04_07 -> 04_08 (mise à jour last_heartbeat par hostname ou IP)
-// Content: hostname (ou ip en fallback)
+// handleHostHeartbeat : 04_07 -> 04_08.
+//
+// # Le hostname du contenu n'est plus lu
+//
+// Il désignait la ligne à rafraîchir. N'importe quel nœud pouvait donc maintenir
+// n'importe quelle ligne « en ligne » — y compris celle d'un core éteint, qui
+// restait annoncé aux agents et absorbait leurs tentatives de connexion. Un
+// battement dit « JE suis là », pas « celui-là est là ».
+//
+// Le contenu reste dans le protocole : les agents et proxies déjà déployés
+// l'envoient. Il est simplement ignoré.
 func handleHostHeartbeat(db *sql.DB, tramesContent storage.Trames_struct_client, content string, duckysession *storage.DuckySession) (string, error) {
-	hostname := strings.TrimSpace(content)
-	if hostname == "" {
-		return "", fmt.Errorf("heartbeat: hostname vide")
+	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
+	if err != nil {
+		logs.Write_Log("SECURITY", "heartbeat refusé : "+err.Error())
+		return "", fmt.Errorf("heartbeat: %w", err)
 	}
-	if err := clusterdatabase.UpdateHeartbeat(db, hostname); err != nil {
+
+	touchees, err := clusterdatabase.UpdateHeartbeat(db, proprietaire)
+	if err != nil {
 		return "", err
 	}
-	clientID := tramesContent.ClientSoftwareID
-	return "04_08\nserver_central\n" + tramesContent.SessionIntegritykey + "\n" + tramesContent.Username + "\n" + clientID + "\nack", nil
+	if touchees == 0 {
+		// Le nœud bat sans s'être enregistré : le core a peut-être été
+		// réinstallé sous lui. On le lui dit plutôt que d'accuser réception d'un
+		// battement qui n'a rien mis à jour — sinon il bat dans le vide
+		// indéfiniment, et la supervision le croit absent sans savoir pourquoi.
+		logs.Write_Log("WARNING", "heartbeat: nœud "+proprietaire+
+			" non enregistré dans cluster_nodes — il doit rejouer 04_01")
+		return "", fmt.Errorf("heartbeat: nœud non enregistré, rejouez 04_01")
+	}
+	return trame.ReponseClient("04_08",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey, "ack"), nil
 }
 
 // SendHostResponse envoie la réponse 04_xx au client.

@@ -249,7 +249,28 @@ func Create_DataBase(db *sql.DB) {
     		-- construire cette image ». Vide pour le core, qui n'embarque pas
     		-- le SDK — c'est lui qui juge les clients, il ne partage pas leur
     		-- socle.
-    		sdk_version VARCHAR(64) NOT NULL DEFAULT ''
+    		sdk_version VARCHAR(64) NOT NULL DEFAULT '',
+
+    		-- Le SEUL client autorisé à modifier cette ligne.
+    		--
+    		-- Sans cette colonne, un nœud déclarait son hostname, son IP et son
+    		-- RÔLE dans le CONTENU de la trame 04_01, sans aucun lien avec la
+    		-- session authentifiée. Un proxy enrôlé pouvait donc envoyer le
+    		-- hostname d'un core existant : l'écriture écrasait sa ligne —
+    		-- adresse, port et EMPREINTE comprises — et la liste servie aux
+    		-- agents annonçait ensuite l'empreinte de l'attaquant sous le nom du
+    		-- core. Les agents l'apprenaient et s'y connectaient pour
+    		-- s'authentifier.
+    		--
+    		-- Deux formes : « <client_software_id> » pour un nœud enregistré par
+    		-- le réseau, « @core:<hostname> » pour un core qui se déclare
+    		-- lui-même, sans session. Le préfixe « @ » est réservé et refusé à
+    		-- tout propriétaire venu d'une session.
+    		--
+    		-- UNIQUE : un client possède au plus une ligne. Deux lignes pour un
+    		-- même propriétaire rendraient « la ligne du demandeur » ambiguë.
+    		owner_client_id VARCHAR(191) NOT NULL DEFAULT '',
+    		UNIQUE KEY uk_owner (owner_client_id)
 		);`,
 
 		// ----- Métriques proxy (exposées pour l'interface Web) -----

@@ -97,6 +97,17 @@ func StartManager(db *sql.DB) {
 		Capabilities: capabilitiesJSON,
 		Port:         port,
 		Empreinte:    empreinte,
+
+		// Le core est propriétaire de SA ligne, et personne d'autre.
+		//
+		// Il ne s'enregistre pas par le réseau — il écrit ici, depuis son propre
+		// processus, sans session. Le propriétaire porte donc un préfixe réservé
+		// que ProprietaireDepuisSession refuse : aucun client, quel que soit son
+		// identifiant, ne peut revendiquer cette ligne.
+		//
+		// Par hostname : sur un cluster à plusieurs cores, une valeur commune
+		// laisserait chacun écrire la ligne des autres.
+		Proprietaire: clusterdatabase.ProprietaireCoreLocal(hostname),
 	}
 
 	if err := clusterdatabase.RegisterNode(db, node); err != nil {
@@ -116,9 +127,25 @@ func StartManager(db *sql.DB) {
 // période même après changement du réglage, et rien ne le dirait — la valeur
 // s'afficherait, sans agir.
 func startHeartbeatLoop(db *sql.DB, hostname string) {
+	// Le core bat sur SA ligne, désignée par le même propriétaire que celui de
+	// son enregistrement. Battre par hostname reviendrait à rafraîchir la ligne
+	// qui porte ce nom, quelle qu'elle soit.
+	proprietaire := clusterdatabase.ProprietaireCoreLocal(hostname)
+
 	reglages.Boucle(reglages.CleBattementCluster, func() {
-		if err := clusterdatabase.UpdateHeartbeat(db, hostname); err != nil {
+		touchees, err := clusterdatabase.UpdateHeartbeat(db, proprietaire)
+		if err != nil {
 			logs.Write_Log("ERROR", "cluster: failed to update heartbeat: "+err.Error())
+			return
+		}
+		if touchees == 0 {
+			// La ligne de ce core a disparu — purge trop agressive, base
+			// réinitialisée sous lui. Sans ce message, il battrait indéfiniment
+			// dans le vide et se croirait en ligne alors qu'il n'est plus
+			// annoncé à personne.
+			logs.Write_Log("WARNING", "cluster: la ligne de ce core a disparu de "+
+				"cluster_nodes — il n'est plus annoncé aux agents, redémarrez-le "+
+				"pour la recréer")
 		}
 	})
 }

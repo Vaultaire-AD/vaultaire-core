@@ -24,6 +24,7 @@ import (
 	"vaultaire/core/clienttype"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
+	"vaultaire/ducky-network/trame"
 )
 
 // serviceStaleAfter borne la fraîcheur d'un battement de cœur.
@@ -75,13 +76,23 @@ func handleRegisterService(db *sql.DB, trames storage.Trames_struct_client, cont
 		return serviceError(trames, "invalid_request", "capacités illisibles"), nil
 	}
 
-	// hostname et fqdn portent l'identifiant machine du service : c'est la seule
-	// chose qui l'identifie de façon stable, et les deux colonnes sont uniques.
-	hostname := trames.ClientSoftwareID
+	// hostname, fqdn ET propriétaire portent tous l'identifiant machine du
+	// service, pris dans la SESSION.
+	//
+	// C'est la seule chose qui l'identifie de façon stable, et les trois colonnes
+	// sont uniques. Ce chemin-ci n'a jamais eu le défaut de 04_01 — il n'a jamais
+	// lu de hostname dans le contenu — mais le propriétaire doit être posé quand
+	// même : la colonne est UNIQUE, et deux services enregistrés sans
+	// propriétaire entreraient en conflit sur la chaîne vide.
+	hostname := session.BoundClientSoftwareID
+	if strings.TrimSpace(hostname) == "" {
+		return serviceError(trames, "unknown_service", "session non liée à une machine"), nil
+	}
 	if _, err := db.Exec(
 		`INSERT INTO cluster_nodes
-		   (hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat)
-		 VALUES (?, ?, ?, ?, 'online', ?, ?, ?)
+		   (hostname, fqdn, ip_address, role, status, version_code, capabilities,
+		    owner_client_id, last_heartbeat)
+		 VALUES (?, ?, ?, ?, 'online', ?, ?, ?, ?)
 		 ON DUPLICATE KEY UPDATE
 		   ip_address     = VALUES(ip_address),
 		   role           = VALUES(role),
@@ -89,7 +100,8 @@ func handleRegisterService(db *sql.DB, trames storage.Trames_struct_client, cont
 		   version_code   = VALUES(version_code),
 		   capabilities   = VALUES(capabilities),
 		   last_heartbeat = VALUES(last_heartbeat)`,
-		hostname, hostname, endpoint, clientType, version, capsJSON, time.Now().UTC()); err != nil {
+		hostname, hostname, endpoint, clientType, version, capsJSON, hostname,
+		time.Now().UTC()); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "cluster: enregistrement de service échoué : "+err.Error())
 		return serviceError(trames, "server_error", "enregistrement impossible"), nil
 	}
@@ -98,7 +110,7 @@ func handleRegisterService(db *sql.DB, trames storage.Trames_struct_client, cont
 		"cluster: service %s (%s) enregistré en version %s sur %s",
 		hostname, clientType, version, endpoint))
 
-	return fmt.Sprintf("04_10\n%s\n%s\n%s\n%s",
+	return trame.ReponseClient("04_10",
 		trames.Destination_Server, trames.SessionIntegritykey, hostname, clientType), nil
 }
 
@@ -112,11 +124,17 @@ func handleServiceHeartbeat(db *sql.DB, trames storage.Trames_struct_client, ses
 		return serviceError(trames, "unknown_service", "ce type de client n'est pas un service"), nil
 	}
 
+	// Par PROPRIÉTAIRE, et depuis la session.
+	//
+	// L'identifiant de l'en-tête serait équivalent — Split_Action refuse déjà une
+	// trame dont l'en-tête ne correspond pas à la session — mais s'appuyer sur un
+	// contrôle fait ailleurs rend ce code juste par dépendance. Le jour où ce
+	// contrôle bouge, celui-ci devient faux sans être touché.
 	res, err := db.Exec(
 		`UPDATE cluster_nodes
 		    SET last_heartbeat = ?, status = 'online'
-		  WHERE hostname = ?`,
-		time.Now().UTC(), trames.ClientSoftwareID)
+		  WHERE owner_client_id = ?`,
+		time.Now().UTC(), session.BoundClientSoftwareID)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "cluster: battement de cœur échoué : "+err.Error())
 		return serviceError(trames, "server_error", "battement non enregistré"), nil
@@ -128,7 +146,8 @@ func handleServiceHeartbeat(db *sql.DB, trames storage.Trames_struct_client, ses
 		return serviceError(trames, "unknown_service", "service non enregistré, rejouez 04_09"), nil
 	}
 
-	return fmt.Sprintf("04_13\n%s\n%s", trames.Destination_Server, trames.SessionIntegritykey), nil
+	return trame.ReponseClient("04_13",
+		trames.Destination_Server, trames.SessionIntegritykey), nil
 }
 
 // handleDeregisterService : 04_14, sans réponse.
@@ -139,13 +158,16 @@ func handleDeregisterService(db *sql.DB, trames storage.Trames_struct_client, se
 	if !clienttype.IsService(session.BoundClientType) {
 		return "", nil
 	}
+	// Par propriétaire : un service ne sort que LUI-MÊME du cluster. Par
+	// hostname, il aurait pu marquer n'importe quelle ligne hors ligne — donc
+	// retirer un core de la liste servie aux agents, sans rien casser de visible.
 	if _, err := db.Exec(
-		`UPDATE cluster_nodes SET status = 'offline' WHERE hostname = ?`,
-		trames.ClientSoftwareID); err != nil {
+		`UPDATE cluster_nodes SET status = 'offline' WHERE owner_client_id = ?`,
+		session.BoundClientSoftwareID); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "cluster: sortie de service échouée : "+err.Error())
 		return "", nil
 	}
-	logs.Write_Log("INFO", "cluster: service "+trames.ClientSoftwareID+" sorti proprement")
+	logs.Write_Log("INFO", "cluster: service "+session.BoundClientSoftwareID+" sorti proprement")
 	return "", nil
 }
 
@@ -206,6 +228,6 @@ func encodeCapabilities(raw string) (string, error) {
 
 // serviceError construit une trame 04_11.
 func serviceError(trames storage.Trames_struct_client, code, message string) string {
-	return fmt.Sprintf("04_11\n%s\n%s\n%s\n%s",
+	return trame.ReponseClient("04_11",
 		trames.Destination_Server, trames.SessionIntegritykey, code, message)
 }

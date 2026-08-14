@@ -20,8 +20,9 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 	switch trames_content.Message_Order[1] {
 	case "01":
 		message = SSH_SEND_Pubkey_AUTH(trames_content)
-	case "04":
-		message = SSH_SEND_SALT(trames_content)
+	// liée a l'ancien methode d'auth garde dans le code au cas ou?
+	// case "04":
+	// 	message = SSH_SEND_SALT(trames_content)
 	case "06":
 		message = SSH_SEND_Fetch_Pubkey(trames_content)
 	case "08":

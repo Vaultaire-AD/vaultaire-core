@@ -29,9 +29,6 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 12            | serveur_information              | la trame d'information envoyé par les softwares serveur                                   |
 | serveur                     |             | 13            | client_information               | la trame d'information envoyé par les softwares client                                    |
 |                             |             |               |                                  |                                                                                           |
-| ~~server~~                  |             | ~~17~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_03` — voir « Découverte de service et proxies »          |
-| ~~client~~                  |             | ~~18~~        | **SUPPRIMÉE**                    | doublon jamais implémenté de `04_04`                                                      |
-|                             |             |               |                                  |                                                                                           |
 | SSH / identités du poste    | 03          |               | (plage utilisée : 03_01 à 03_10) | voir « Authentification SSH / PAM » et « Synchronisation des groupes de la machine »      |
 | server                      |             | 01            | client ask if user can login     | le client envoie un username/password et attend  d'auth avec les clé public du user       |
 | client                      |             | 02            | server awnser   succes           | succès : is_admin, la ligne `groups:` des groupes du user, puis ses clés publiques        |
@@ -1281,16 +1278,18 @@ l'accordait à personne**, et que rien ne l'émettait.
 | `04_05` | oui | personne | proxy |
 | `04_07` | oui | personne | proxy |
 
-## Arbitrage 1 — `02_17`/`02_18` sont SUPPRIMÉES
+## Arbitrage 1 — la découverte vit en `04`, et nulle part ailleurs
 
-Le tableau en tête de document les déclarait « ask list proxy/core » et
-« respond list ». Aucune ligne de code ne les a jamais implémentées, et elles
-font doublon avec `04_03`/`04_04`.
+Le tableau en tête de document a longtemps porté deux entrées de la catégorie
+`02` pour « demander la liste des proxies/cores » et « rendre la liste ». Aucune
+ligne de code ne les a jamais implémentées, et elles faisaient doublon avec
+`04_03`/`04_04`. Elles ont été retirées du protocole.
 
-La découverte reste en `04`, qui porte déjà ce nom. La catégorie `02` est
-« User auth » : y ranger la découverte de service se paierait à chaque lecture du
-protocole. Qui a le droit de demander reste décidé par le catalogue de types,
-pas par le numéro de trame.
+La catégorie `02` est « User auth » : y ranger la découverte de service se
+paierait à chaque lecture. Qui a le droit de demander reste décidé par le
+catalogue de types, pas par le numéro de trame.
+
+*(Détail du retrait : DO/2.1/2.1.md, entrée 9+10.)*
 
 ## Arbitrage 2 — le proxy est un RELAIS, il ne déchiffre rien
 
@@ -1391,6 +1390,74 @@ d'écoute — la même source, pour que les deux ne puissent pas diverger. Sur u
 installation mono-core, un défaut ici reviendrait à n'annoncer personne, et rien
 ne relierait « les agents ne trouvent plus de serveur » à une colonne ajoutée au
 schéma. D'où le message d'erreur explicite.
+
+## Un nœud n'écrit que SA ligne
+
+C'est la règle dont dépend toute la chaîne de confiance de la découverte. Elle
+n'existait pas : `04_01` lisait le hostname, l'IP et le **rôle** dans le contenu
+de la trame, sans aucun lien avec la session authentifiée.
+
+Un proxy enrôlé pouvait donc envoyer le hostname d'un core. L'écriture écrasait
+sa ligne — adresse, port et **empreinte** comprises. La `04_04` annonçait ensuite
+l'empreinte de l'attaquant sous le nom du core ; les agents l'apprenaient, la
+plaçaient devant leurs serveurs statiques, et s'y connectaient pour
+s'authentifier. Élévation de « service qui relaie » à « serveur qui
+authentifie ».
+
+### Deux barrières indépendantes
+
+**La ligne appartient à quelqu'un.** `cluster_nodes.owner_client_id` porte
+l'identifiant machine figé à la poignée de main `01_01`. Un nœud met à jour la
+ligne dont il est propriétaire, ou la crée — et se voit refuser un hostname déjà
+pris par un autre propriétaire, ce qui est précisément le geste de l'usurpation.
+
+Deux formes de propriétaire :
+
+| Forme | Qui |
+|---|---|
+| `<client_software_id>` | un nœud enregistré par le réseau — proxy, service |
+| `@core:<hostname>` | un core, qui écrit sa ligne depuis son propre processus |
+
+Le préfixe `@` est **réservé** : un propriétaire venu d'une session ne peut pas
+commencer par lui. Et le nom du core porte son **hostname**, parce qu'une valeur
+commune à tous les cores laisserait chacun écrire la ligne des autres — le même
+défaut, sous une autre forme.
+
+**Le rôle se déduit, il ne se déclare pas.** `clienttype.RoleCluster` le rend à
+partir du type figé à la poignée de main. `vaultaire_proxy` → `proxy`, et rien
+d'autre ne prend de rôle de nœud. **Aucun type ne peut produire `core`** : un
+core n'est pas au catalogue — il ne peut pas se juger lui-même — et n'entre dans
+la table que par son propre processus. Le rôle annoncé dans la trame n'est plus
+lu que pour journaliser un écart.
+
+### La même règle sur les trois autres trames
+
+| Trame | Désignait la ligne par | Désormais |
+|---|---|---|
+| `04_01` | hostname et IP du contenu | propriétaire |
+| `04_07` | hostname du contenu | propriétaire |
+| `04_05` | hostname du contenu | hostname de la ligne du propriétaire |
+| `04_12`, `04_14` | hostname de l'en-tête | propriétaire |
+
+Un battement dit « **je** suis là », pas « celui-là est là ». Sans quoi n'importe
+quel nœud maintenait en ligne la ligne d'un core éteint, qui restait annoncé aux
+agents et absorbait leurs tentatives. Et les métriques alimentent le **tri** de
+la liste : les écrire au nom d'un pair revenait à décider vers qui le parc se
+dirige.
+
+`04_12` et `04_14` prenaient l'identifiant dans l'**en-tête** — que
+`Split_Action` vérifie déjà contre la session. Ce n'était donc pas exploitable,
+mais c'était juste *par dépendance* : le jour où ce contrôle bouge, ce code
+devient faux sans avoir été touché.
+
+### Le piège de `RowsAffected`
+
+`RegisterNode` fait un `SELECT` puis un `UPDATE` par identifiant, et non un
+`UPDATE` dont on lirait le nombre de lignes touchées. MySQL rend `0` quand
+l'`UPDATE` ne **change** rien — le cas ordinaire d'un nœud qui se réenregistre
+sans avoir bougé. S'en servir pour conclure « la ligne n'existe pas » ferait
+échouer chaque réenregistrement sur un conflit de hostname : un défaut qui
+n'apparaît qu'au **deuxième** démarrage d'un nœud stable.
 
 ## Ce que l'agent fait de la liste
 
