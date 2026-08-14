@@ -267,7 +267,7 @@ func (e *ErrCleCoreInattendue) Error() string {
 			"  Avant d'effacer quoi que ce soit : vérifiez sur le core que l'empreinte\n"+
 			"  reçue est bien la sienne, avec « vlt certificate show core » ou\n"+
 			"  « openssl pkey -pubin -in <clé> -outform DER | openssl dgst -sha256 -binary | base64 ».",
-		e.Attendue, e.Recue,
+		attendues, e.Recue,
 		CoreFingerprintPath(), storage.CheminDansKeyPath("serveurpublickey.pem"))
 }
 
