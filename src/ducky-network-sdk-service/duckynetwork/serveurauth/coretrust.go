@@ -84,18 +84,33 @@ func EmpreinteClePublique(pemContent string) (string, error) {
 	return "SHA256:" + base64.RawStdEncoding.EncodeToString(somme[:]), nil
 }
 
-// EmpreinteAttendue lit l'empreinte déposée sur la machine.
+// EmpreintesAttendues lit les empreintes déposées sur la machine.
 //
-// Rend la chaîne vide sans erreur quand le fichier n'existe pas : c'est le cas
+// # Pourquoi une LISTE et non une empreinte
+//
+// Un parc peut compter plusieurs cores, et un agent doit pouvoir basculer de
+// l'un à l'autre — c'est tout l'objet de la découverte de service. Avec une
+// empreinte unique, distribuer une liste de cores ne servait à rien : l'agent
+// aurait refusé tous ceux qu'il ne connaissait pas, c'est-à-dire tous sauf un.
+//
+// Rend une liste vide sans erreur quand le fichier n'existe pas : c'est le cas
 // d'une installation qui n'est pas passée par `-join`, et non une anomalie.
-func EmpreinteAttendue() (string, error) {
+//
+// L'ordre du fichier est conservé. La PREMIÈRE ligne est celle déposée à
+// l'installation, par un canal authentifié ; les suivantes ont été apprises. La
+// distinction ne change rien à la vérification — toutes valent — mais elle rend
+// le fichier lisible pour qui l'inspecte après coup.
+func EmpreintesAttendues() ([]string, error) {
 	brut, err := os.ReadFile(CoreFingerprintPath())
 	if os.IsNotExist(err) {
-		return "", nil
+		return nil, nil
 	}
 	if err != nil {
-		return "", err
+		return nil, err
 	}
+
+	var out []string
+	vues := map[string]bool{}
 	// Le fichier peut avoir été édité à la main, ou déposé avec un saut de
 	// ligne final selon l'outil qui l'écrit. On tolère les deux, et les
 	// commentaires, pour qu'il reste lisible.
@@ -104,23 +119,138 @@ func EmpreinteAttendue() (string, error) {
 		if ligne == "" || strings.HasPrefix(ligne, "#") {
 			continue
 		}
-		return ligne, nil
+		// Une ligne qui n'a pas la forme attendue est IGNORÉE, pas fatale. Le
+		// fichier est éditable à la main ; une faute de frappe ne doit pas faire
+		// perdre les empreintes valides qui l'entourent, ce qui ferait retomber
+		// la machine en confiance au premier usage — l'inverse du but.
+		if !strings.HasPrefix(ligne, "SHA256:") {
+			continue
+		}
+		if vues[ligne] {
+			continue
+		}
+		vues[ligne] = true
+		out = append(out, ligne)
 	}
-	return "", nil
+	return out, nil
+}
+
+// EmpreinteAttendue rend la première empreinte, ou la chaîne vide.
+//
+// Conservée pour les appelants qui n'ont besoin que d'une valeur à AFFICHER —
+// un message d'erreur, un diagnostic. Ne jamais s'en servir pour VÉRIFIER : elle
+// ignorerait les empreintes apprises, et refuserait des cores légitimes.
+func EmpreinteAttendue() (string, error) {
+	liste, err := EmpreintesAttendues()
+	if err != nil || len(liste) == 0 {
+		return "", err
+	}
+	return liste[0], nil
+}
+
+// MaxEmpreintes borne la liste.
+//
+// Sans borne, chaque core rencontré ajouterait une ligne, indéfiniment. Un fichier
+// de confiance qui grossit tout seul finit par ne plus rien attester : personne
+// ne relit trente empreintes pour savoir laquelle n'a rien à y faire.
+//
+// La valeur est large au regard d'un cluster réel, et l'atteindre est un signal
+// en soi — d'où le refus explicite plutôt qu'une éviction silencieuse de la plus
+// ancienne, qui retirerait justement celle déposée à l'installation.
+const MaxEmpreintes = 16
+
+// ApprendreEmpreinte ajoute une empreinte à la liste de confiance.
+//
+// # La règle : on n'apprend QUE depuis une confiance existante
+//
+// L'appelant doit se trouver dans une session déjà vérifiée. Cette fonction ne
+// peut pas le constater elle-même — elle ne voit pas la session — mais elle
+// refuse le cas où la question ne se pose pas : une liste VIDE signifie que la
+// machine n'a aucun point d'ancrage, et apprendre y reviendrait à faire de la
+// confiance au premier usage sous un autre nom.
+//
+// Un seul appelant existe, dans le traitement de `04_04` : la liste de nœuds
+// arrive par une session dont la clé du core a été vérifiée à l'ouverture.
+//
+// # La limite, écrite parce qu'elle est réelle
+//
+// TOUT CORE DE CONFIANCE PEUT AJOUTER DE LA CONFIANCE. Un core compromis peut
+// faire apprendre à tout le parc l'empreinte d'une machine qu'il contrôle.
+//
+// C'est le prix d'un parc où les agents suivent le cluster sans intervention
+// manuelle. L'alternative — déposer chaque empreinte par `-join` — ne se tient
+// que sur un parc dont la liste de cores ne bouge jamais, et rendrait l'ajout
+// d'un core impossible sans repasser sur chaque machine.
+//
+// Ce qui borne le risque est ailleurs : un core compromis a déjà les clés du
+// domaine. L'empreinte n'est pas ce qui le retient.
+//
+// Rend « appris » à faux quand l'empreinte était déjà connue — cas courant, ce
+// n'est pas une erreur.
+func ApprendreEmpreinte(empreinte string) (appris bool, err error) {
+	if !strings.HasPrefix(empreinte, "SHA256:") {
+		return false, fmt.Errorf("empreinte %q : forme attendue « SHA256:... »", empreinte)
+	}
+
+	connues, err := EmpreintesAttendues()
+	if err != nil {
+		return false, fmt.Errorf("empreintes connues illisibles : %w", err)
+	}
+	if len(connues) == 0 {
+		return false, fmt.Errorf(
+			"aucune empreinte de référence sur cette machine : il n'y a pas de "+
+				"confiance à étendre. Déployez l'agent avec « vlt create -join » pour "+
+				"déposer la première empreinte dans %s", CoreFingerprintPath())
+	}
+	for _, c := range connues {
+		if c == empreinte {
+			return false, nil
+		}
+	}
+	if len(connues) >= MaxEmpreintes {
+		return false, fmt.Errorf(
+			"%d empreintes déjà connues (maximum %d) : %s n'est pas ajoutée. "+
+				"Vérifiez le contenu de %s — un fichier de confiance qui grossit "+
+				"sans raison n'atteste plus rien",
+			len(connues), MaxEmpreintes, empreinte, CoreFingerprintPath())
+	}
+
+	// Ajout en QUEUE, avec la date. La première ligne reste celle de
+	// l'installation : c'est la seule dont on sait par quel canal elle est
+	// arrivée, et l'ordre est ce qui le dit.
+	ligne := empreinte + "\n"
+	f, err := os.OpenFile(CoreFingerprintPath(), os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return false, fmt.Errorf("ouverture de %s : %w", CoreFingerprintPath(), err)
+	}
+	defer func() { _ = f.Close() }()
+	if _, err := f.WriteString(ligne); err != nil {
+		return false, fmt.Errorf("écriture dans %s : %w", CoreFingerprintPath(), err)
+	}
+	return true, nil
 }
 
 // ErrCleCoreInattendue signale une clé qui ne correspond pas à l'empreinte
 // connue. Type distinct pour que l'appelant puisse la traiter à part : ce n'est
 // pas une panne de réseau, et le message à afficher n'est pas le même.
 type ErrCleCoreInattendue struct {
-	Attendue string
-	Recue    string
+	// Attendues porte TOUTES les empreintes connues, pas seulement la première.
+	//
+	// Le message doit les montrer : sur un parc à plusieurs cores, n'en afficher
+	// qu'une ferait chercher un écart entre la clé reçue et un core qui n'est
+	// peut-être pas celui qu'on joint.
+	Attendues []string
+	Recue     string
 }
 
 func (e *ErrCleCoreInattendue) Error() string {
+	attendues := "aucune"
+	if len(e.Attendues) > 0 {
+		attendues = strings.Join(e.Attendues, "\n                       ")
+	}
 	return fmt.Sprintf(
-		"la clé publique du core ne correspond pas à celle attendue sur cette machine.\n"+
-			"  empreinte attendue : %s\n"+
+		"la clé publique du core ne correspond à aucune empreinte connue de cette machine.\n"+
+			"  empreintes connues : %s\n"+
 			"  empreinte reçue    : %s\n"+
 			"\n"+
 			"  Deux explications possibles, et elles n'appellent pas la même réponse :\n"+
@@ -158,15 +288,15 @@ func VerifierCleCore(pemRecu string) (avertissement string, err error) {
 		return "", err
 	}
 
-	attendue, err := EmpreinteAttendue()
+	attendues, err := EmpreintesAttendues()
 	if err != nil {
 		// Lecture impossible alors que le fichier existe : droits, disque. On
 		// refuse plutôt que de poursuivre — un défaut de lecture ne doit pas
 		// se traduire par un affaiblissement silencieux de la vérification.
-		return "", fmt.Errorf("empreinte attendue illisible (%s) : %w", CoreFingerprintPath(), err)
+		return "", fmt.Errorf("empreintes attendues illisibles (%s) : %w", CoreFingerprintPath(), err)
 	}
 
-	if attendue == "" {
+	if len(attendues) == 0 {
 		return fmt.Sprintf(
 			"aucune empreinte de référence sur cette machine (%s absent) : "+
 				"la clé du core est acceptée en confiance au premier usage, empreinte %s. "+
@@ -174,12 +304,22 @@ func VerifierCleCore(pemRecu string) (avertissement string, err error) {
 			CoreFingerprintPath(), recue), nil
 	}
 
-	// Comparaison à temps constant. La valeur n'est pas secrète et l'attaque
-	// par mesure du temps n'est ici guère praticable — mais une comparaison de
-	// chaînes ordinaire dans un chemin d'authentification est le genre de
-	// détail qu'on recopie ailleurs, où il comptera.
-	if subtle.ConstantTimeCompare([]byte(attendue), []byte(recue)) != 1 {
-		return "", &ErrCleCoreInattendue{Attendue: attendue, Recue: recue}
+	// N'IMPORTE LAQUELLE des empreintes connues suffit.
+	//
+	// Le parcours va jusqu'au bout même après une correspondance : sortir tôt
+	// ferait dépendre le temps de réponse du RANG de l'empreinte trouvée, ce que
+	// la comparaison à temps constant juste en dessous existe précisément pour
+	// éviter. La liste compte au plus MaxEmpreintes entrées, le coût est nul.
+	correspond := 0
+	for _, attendue := range attendues {
+		// La valeur n'est pas secrète et l'attaque par mesure du temps n'est ici
+		// guère praticable — mais une comparaison de chaînes ordinaire dans un
+		// chemin d'authentification est le genre de détail qu'on recopie
+		// ailleurs, où il comptera.
+		correspond |= subtle.ConstantTimeCompare([]byte(attendue), []byte(recue))
+	}
+	if correspond != 1 {
+		return "", &ErrCleCoreInattendue{Attendues: attendues, Recue: recue}
 	}
 
 	return "", nil
@@ -239,12 +379,13 @@ func CleLocaleConforme() (aEcarter bool, motif string) {
 		return false, ""
 	}
 
-	attendue, err := EmpreinteAttendue()
-	if err != nil || attendue == "" {
+	attendues, err := EmpreintesAttendues()
+	if err != nil || len(attendues) == 0 {
 		// Pas d'empreinte, ou illisible : rien à quoi comparer. On ne touche
 		// pas à une clé en place sur la foi de rien.
 		return false, ""
 	}
+	attendue := strings.Join(attendues, ", ")
 
 	presente, err := EmpreinteClePublique(string(contenu))
 	if err != nil {
@@ -252,19 +393,27 @@ func CleLocaleConforme() (aEcarter bool, motif string) {
 		// Il ne servira à rien ; autant le redemander.
 		return true, fmt.Sprintf(
 			"la clé du core présente sur cette machine est illisible (%s : %v) — "+
-				"elle va être redemandée au core, et vérifiée contre l'empreinte %s",
+				"elle va être redemandée au core, et vérifiée contre les empreintes %s",
 			cheminCle, err, attendue)
 	}
 
-	if subtle.ConstantTimeCompare([]byte(attendue), []byte(presente)) == 1 {
-		return false, "" // Conforme.
+	// N'IMPORTE LAQUELLE des empreintes connues rend la clé locale acceptable.
+	//
+	// Ne comparer qu'à la première écarterait la clé d'un core APPRIS à chaque
+	// démarrage : l'agent la redemanderait, la revérifierait avec succès — la
+	// vérification, elle, parcourt toute la liste — et la réécrirait. Une boucle
+	// sans effet visible, sinon un aller-retour réseau à chaque cycle.
+	for _, a := range attendues {
+		if subtle.ConstantTimeCompare([]byte(a), []byte(presente)) == 1 {
+			return false, "" // Conforme.
+		}
 	}
 
 	return true, fmt.Sprintf(
-		"la clé du core présente sur cette machine ne correspond PAS à l'empreinte attestée.\n"+
-			"  fichier            : %s\n"+
+		"la clé du core présente sur cette machine ne correspond à AUCUNE empreinte attestée.\n"+
+			"  fichier              : %s\n"+
 			"  empreinte du fichier : %s\n"+
-			"  empreinte attendue   : %s\n"+
+			"  empreintes connues   : %s\n"+
 			"\n"+
 			"  Cette clé ne peut pas servir : le core ne saura pas déchiffrer ce qu'elle\n"+
 			"  chiffre, et la connexion échouerait sur un « EOF » qui ne dirait pas pourquoi.\n"+

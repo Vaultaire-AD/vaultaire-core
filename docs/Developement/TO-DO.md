@@ -17,90 +17,89 @@ Le fichier DO est l'archive, l'historique de version est le compte rendu, celui-
 la liste de courses.
 
       
-4.[PATCH] [GPO] - La derive ne voit que les fichiers
-            Le scan de conformite existe et fonctionne : ScanScope compare chaque fichier
-            depose a son SHA-256 et a son mode, toutes les heures, avant le cycle. Un seul
-            entonnoir d'ecriture dans le paquet, donc tout module qui ecrit un fichier est
-            couvert automatiquement. Voir DO/2.1/2.1.md.
+37.[GPO] - Verification des effets non-fichier : les 31 modules restants
+            Suite du point 4, dont la premiere moitie et cinq modules sont traites
+            (voir DO/2.1/2.1.md). Le SOCLE est en place : recordCheck a cote de
+            l'appliqueur, registre de verificateurs, deux types d'ecart
+            (system_state, unverifiable), et le scan les parcourt.
 
-            Deux angles morts subsistent.
+            Cinq modules declarent une attente : systemd_service, firewall_rule,
+            user_group_membership, selinux_mode, local_account_policy. Ce sont
+            ceux dont la derive DONNE UN DROIT.
 
-            a) Les fichiers qui doivent etre ABSENTS. 25 os.Remove dans les appliqueurs :
-               des modules dont l'effet est « ce fichier ne doit pas exister ». Rien ne
-               l'inventorie, donc le recreer ne produit aucun ecart.
-               A faire : recordAbsent a cote de recordWrite, et le scan signale la
-               reapparition. Mecanique, petit.
+            Les 31 autres n'en declarent aucune. Leur derive coute de la coherence,
+            pas de la securite — un fuseau horaire, un alias de shell, une limite
+            de ressources — mais elle reste invisible.
 
-            b) Les effets NON-fichier. 55 appels de commandes dans les appliqueurs :
-               systemctl x25, nft x7, chage x6, usermod/sysctl x3, gpasswd, setsebool.
-               Un service reactive, une table nftables videe, un compte remis dans sudo :
-               invisible, et la machine est declaree conforme.
-               A faire : chaque module declare une fonction de VERIFICATION a cote de sa
-               fonction d'application. Module par module, en commencant par ceux qui
-               portent un privilege — sshd et firewalld sous systemctl, appartenance a
-               sudo/wheel, regles nftables. On ne devine pas l'etat d'un service depuis
-               un fichier.  
-               
+            A faire, module par module : un recordCheck dans l'appliqueur, un
+            verificateur enregistre, un test de son ANALYSE (pas de la commande —
+            la sortie depend de la machine).
+
+            Candidats par ordre d'interet :
+              - sysctl : la valeur courante se lit par « sysctl -n <cle> ». Le
+                fichier est deja surveille, mais une valeur ecrasee a chaud ne
+                l'est pas ;
+              - package : « rpm -q » / « dpkg -s ». Un paquet desinstalle a la
+                main n'est vu par rien ;
+              - user_shell : le shell courant se lit dans /etc/passwd ;
+              - file_acl : « getfacl » — les ACL ne sont pas le mode, que le scan
+                verifie deja ;
+              - boot_params, kernel_module_policy : « lsmod », /proc/cmdline.
+
+            NE PAS les ecrire toutes d'affilee. Une verification approximative est
+            PIRE qu'aucune : elle declare conforme ce qui ne l'est pas, et personne
+            ne va plus regarder. C'est la raison pour laquelle le point 4 s'est
+            arrete a cinq.
+
+            Reste ouvert : « expire » de local_account_policy n'est pas verifie.
+            chage -E 1 fixe une date passee, et la relire supposerait de comparer
+            des dates dans une sortie localisee. Mieux vaut ne rien affirmer sur
+            cette facette que de l'affirmer de travers.
+
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
-9.[Ducky] [PROXY] - Decouverte de service et proxies
-            Les points 9 et 10 d'origine sont UN SEUL sujet : un client ne peut pas se voir
-            offrir une liste de serveurs tant qu'il ne sait pas leur faire confiance, et un
-            proxy ne sert a rien tant que personne ne sait qu'il existe.
+38.[DUCKY] [PROXY] - Le relais, et l'affinite noeud <-> groupe
+            Ce qui reste des points 9 et 10, dont les lots 0 a 3 sont traites : un
+            agent apprend ses noeuds joignables, un proxy existe dans le cluster et
+            bat. Voir DO/2.1/2.1.md.
 
-            SPECIFICATION COMPLETE dans « how it work/Protocole_Ducky.md », section
-            « Decouverte de service et proxies (categorie 04) ». Trois arbitrages y sont
-            rendus :
+            Le proxy est VISIBLE et connait ses cores. Il ne transporte aucun octet.
 
-              - 02_17/02_18 SUPPRIMEES : doublon jamais implemente de 04_03/04_04.
-                La decouverte reste en 04, qui porte deja ce nom ;
-              - le proxy est un RELAIS TCP, il ne dechiffre rien. C'est le point 29 qui
-                tranche : le mot de passe transite desormais dans le tunnel, un proxy qui
-                terminerait la session serait un point de collecte des mots de passe du parc ;
-              - les empreintes de core s'APPRENNENT par une session deja de confiance.
-                core_key_fingerprint devient une liste. Limite assumee et ecrite : tout core
-                de confiance peut ajouter de la confiance.
+            SPECIFICATION dans « how it work/Protocole_Ducky.md », section « Ce qui
+            reste du sujet 04 ». Les arbitrages 2, 5 et 6 y sont rendus et VALIDES ;
+            la question ouverte est tranchee.
 
-            Etat reel du code, qui surprend : 04_01, 04_03, 04_05 et 04_07 sont DEJA
-            implementees cote serveur. Personne ne les emet, et le catalogue de types ne les
-            accorde a personne — pas meme 04 au proxy. La table proxy_metrics n'a jamais recu
-            une ligne.
+            Lot 4 — RELAIS TCP DUCKY.
+              Le proxy transporte les octets sans les lire. Arbitrage 2 : il ne
+              termine PAS la session. Depuis le point 29, le mot de passe transite
+              dans le tunnel — un proxy qui dechiffrerait deviendrait un point de
+              collecte des mots de passe du parc.
 
-            Trois manques concrets : cluster_nodes n'a pas de colonne PORT ; rien ne persiste
-            une liste apprise ; le SDK lit « servers » en YAML quand vaultaire_client le lit
-            en JSON, pour la meme structure.
+              Tranche : un proxy dont tous les cores sont injoignables REFUSE
+              franchement. Le client essaie le suivant de sa liste — un core,
+              puisqu'ils y figurent toujours. Un client en attente ne fait rien
+              pendant tout le delai, et le proxy en panne devient un trou noir.
 
-            Decoupage en 7 lots dans la spec. Les lots 1 (schema + trame enrichie + catalogue)
-            et 3 (le proxy s'enregistre) sont independants et peuvent demarrer les premiers.
-            Le lot 0 (liste d'empreintes) conditionne le lot 2.
+              C'est du code reseau neuf sur le chemin qui porte les mots de passe :
+              a ecrire avec le meme soin que le reste de la categorie 02.
 
-            Reste ouvert, a trancher : que fait un proxy dont tous les cores sont
-            injoignables ? La spec propose de refuser franchement plutot que de mettre en
-            attente.
-            
-10.[DUCKY-Client] - Liste des serveurs joignables pour les AGENTS
-            SPECIFIE en entier dans « how it work/Protocole_Ducky.md », section
-            « Decouverte de service et proxies (categorie 04) ». Six arbitrages rendus,
-            dont les trois de ce point :
+            Lot 5 — RELAIS LDAP/S. Depend du lot 4. Demande que le SAN du
+              certificat du core couvre les proxies, sinon le client TLS refuse.
 
-              - 4 : drapeau expose_aux_agents sur cluster_nodes, VRAI par defaut. Ce
-                    n'est PAS un controle d'acces — il retire une adresse d'une liste,
-                    il n'empeche personne de se connecter. Le pare-feu reste ce qui
-                    protege un core ;
-              - 5 : affinite core <-> groupe dans la MEME table que celle des proxies,
-                    priorite et non exclusivite. Ordre servi : proxies affines, autres
-                    proxies, cores affines exposes, autres cores exposes ;
-              - 6 : une cle d'enrolement porte des groupes de naissance, PAS un droit.
-                    Applique une fois, a l'enrolement.
+            Lot 6 — AFFINITE noeud <-> groupe. Table (noeud, groupe, priorite), la
+              MEME que celle des proxies. Priorite et non exclusivite. Ordre servi :
+              proxies affins, autres proxies, cores affins exposes, autres cores
+              exposes. Le tri existe deja (TrierNoeudsPourAgents) : c'est un
+              quatrieme critere a y inserer, pas un tri neuf.
 
-            Lot 7 ajoute au decoupage, apres le lot 6 : rattacher un service a des
-            groupes n'a aucun effet observable tant que l'affinite ne trie rien.
+            Lot 7 — GROUPES DE NAISSANCE d'une cle d'enrolement. APRES le lot 6, et
+              non avant : rattacher un service a des groupes n'a aucun effet
+              observable tant que l'affinite ne trie rien. Applique une fois, a
+              l'enrolement — le relire a chaque connexion ferait qu'une cle modifiee
+              change les groupes d'un service deja en production, et le lien entre
+              la cause et l'effet serait introuvable des mois plus tard.
 
-            La periodicite du rafraichissement peut desormais se declarer : le point 13
-            est traite, core/reglages accueille une nouvelle duree en une entree de
-            catalogue (voir DO/2.1/2.1.md). A ajouter au lot 2.
-
-            AUCUNE IMPLEMENTATION AVANT VALIDATION de la spec.
+            Reste ouvert : rien. Les six arbitrages sont rendus.
 
 35.[GPO] - Les regles nftables posees AVANT le commentaire ne se suppriment pas
             Suite du point 15 (voir DO/2.1/2.1.md). La suppression retrouve desormais sa

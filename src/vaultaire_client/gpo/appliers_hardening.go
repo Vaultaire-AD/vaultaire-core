@@ -43,11 +43,10 @@ func applyPAMPolicy(ctx Context, m Module) (string, error) {
 	if m.Param("state") == "absent" {
 		var removed []string
 		for _, path := range []string{pwqualityDropIn} {
-			if err := os.Remove(path); err == nil {
-				removed = append(removed, path)
-			} else if !os.IsNotExist(err) {
+			if _, err := removeSystemFile(path); err != nil {
 				return "", fmt.Errorf("retrait de %s impossible : %v", path, err)
 			}
+			removed = append(removed, path)
 		}
 		if len(removed) == 0 {
 			return "aucune politique Vaultaire a retirer", nil
@@ -170,6 +169,31 @@ func applyLocalAccountPolicy(ctx Context, m Module) (string, error) {
 				return "", fmt.Errorf("inactivite de %s impossible : %v", account, err)
 			}
 		}
+
+		// L'attente, compte par compte et facette par facette.
+		//
+		// Le déverrouillage d'un compte local — un `usermod -U` fait à la main,
+		// ou par un outil de dépannage — rendait au poste un accès que la
+		// politique avait fermé, sans laisser aucune trace.
+		//
+		// « expire » n'est PAS revérifié : `chage -E 1` fixe une date passée, et
+		// la relire supposerait de comparer des dates dans une sortie localisée.
+		// Une vérification approximative déclarerait conforme ce qui ne l'est
+		// pas ; mieux vaut ne rien affirmer sur cette facette-là.
+		var attentes []string
+		if action == "lock_password" {
+			attentes = append(attentes, "locked=yes")
+		}
+		if maxAge > 0 {
+			attentes = append(attentes, "max="+strconv.Itoa(maxAge))
+		}
+		if inactive > 0 {
+			attentes = append(attentes, "inactive="+strconv.Itoa(inactive))
+		}
+		if len(attentes) > 0 {
+			recordCheck(CheckAccountLock, account, strings.Join(attentes, ","))
+		}
+
 		touched = append(touched, account)
 	}
 	return fmt.Sprintf("%s applique a %d compte(s) : %s",
@@ -229,7 +253,7 @@ func applyKernelModulePolicy(ctx Context, m Module) (string, error) {
 	path := "/etc/modprobe.d/vaultaire-" + name + ".conf"
 
 	if m.Param("state") == "absent" {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(path); err != nil {
 			return "", fmt.Errorf("retrait de %s impossible : %v", path, err)
 		}
 		return "interdiction de " + name + " levee", nil
@@ -301,7 +325,7 @@ func applySSHKnownHosts(ctx Context, m Module) (string, error) {
 
 	if m.Param("state") == "absent" {
 		if rebuilt == "" {
-			if err := os.Remove(knownHostsPath); err != nil && !os.IsNotExist(err) {
+			if _, err := removeSystemFile(knownHostsPath); err != nil {
 				return "", err
 			}
 			return "hote " + host + " retire (fichier vide supprime)", nil
@@ -354,7 +378,7 @@ func applyAuditdRule(ctx Context, m Module) (string, error) {
 	file := "/etc/audit/rules.d/99-vaultaire-" + key + ".rules"
 
 	if m.Param("state") == "absent" {
-		if err := os.Remove(file); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(file); err != nil {
 			return "", fmt.Errorf("retrait de %s impossible : %v", file, err)
 		}
 		reloadAuditRules()
@@ -441,6 +465,7 @@ func applySELinuxMode(ctx Context, m Module) (string, error) {
 			_, _ = runCommand("setenforce", map[string]string{"enforcing": "0", "permissive": "1"}[mode])
 			return "", fmt.Errorf("mode persistant non ecrit, mode courant restaure : %v", err)
 		}
+		recordCheck(CheckSELinux, "mode", mode)
 		applied = append(applied, "mode "+mode)
 	}
 
@@ -450,6 +475,7 @@ func applySELinuxMode(ctx Context, m Module) (string, error) {
 			if _, err := runCommand("setsebool", "-P", name, value); err != nil {
 				return "", fmt.Errorf("booleen %s impossible : %v", name, err)
 			}
+			recordCheck(CheckSELinux, "bool:"+name, value)
 			applied = append(applied, name+"="+value)
 		}
 	}

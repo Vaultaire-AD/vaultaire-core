@@ -164,6 +164,11 @@ func applyNftables(port, proto, source, action string, remove bool) (string, err
 	if _, err := runCommand("nft", args...); err != nil {
 		return "", err
 	}
+	// La règle doit RESTER là. C'est le point aveugle que le scan ne couvrait
+	// pas : un `nft flush ruleset` local emportait les règles Vaultaire sans que
+	// rien ne le signale, et la machine restait déclarée conforme, pare-feu
+	// grand ouvert.
+	recordCheck(CheckNftRule, cle, "present")
 	return describeFirewallResult("nftables", spec, source, action, false), nil
 }
 
@@ -214,6 +219,7 @@ func retirerRegleNft(cle, spec string) (string, error) {
 	if err != nil {
 		// La table peut ne pas exister — rien n'a jamais été posé. Ce n'est pas
 		// un échec : l'état demandé est déjà celui du système.
+		recordCheck(CheckNftRule, cle, "absent")
 		return "regle " + spec + " absente (aucune table " + vaultaireNftTable + ")", nil
 	}
 
@@ -242,6 +248,7 @@ func retirerRegleNft(cle, spec string) (string, error) {
 		// `nft flush chain inet vaultaire_gpo input` fait à la main, une fois.
 		// C'est le prix de ne plus purger automatiquement, et il est préférable :
 		// une règle de trop se voit, une règle manquante non.
+		recordCheck(CheckNftRule, cle, "absent")
 		return "regle " + spec + " deja absente", nil
 	}
 
@@ -249,6 +256,7 @@ func retirerRegleNft(cle, spec string) (string, error) {
 		"handle", strconv.Itoa(handle)); err != nil {
 		return "", fmt.Errorf("suppression de la regle %s impossible : %v", spec, err)
 	}
+	recordCheck(CheckNftRule, cle, "absent")
 	return "regle " + spec + " retiree", nil
 }
 

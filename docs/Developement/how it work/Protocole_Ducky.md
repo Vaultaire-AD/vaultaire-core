@@ -44,13 +44,15 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | client                      |             | 09            | group_sync_list                  | réponse succès à 03_08 : `sync:<minutes>` puis une ligne `<nom>:<id_group>` par groupe    |
 | client                      |             | 10            | group_sync_denied                | réponse erreur à 03_08 : l'agent ne touche à rien et garde ses groupes                    |
 |                             |             |               |                                  |                                                                                           |
-| Cluster / Service discovery | 04          |               | (plage réservée : 04_01 à 04_19) |                                                                                           |
-| client                      |             | 03            | list_cores                       | demande la liste des Cores en ligne (service discovery)                                   |
-| serveur                     |             | 04            | list_cores_response              | liste des Cores ET des proxies, triée par le serveur — voir la section dédiée             |
-| client                      |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                      |
-| serveur                     |             | 06            | proxy_metrics_ack                | accusé de réception                                                                       |
-| client                      |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
-| serveur                     |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                          |
+| Cluster / Service discovery | 04          |               | (plage réservée : 04_01 à 04_19) | voir « Découverte de service et proxies » en fin de document                               |
+| serveur                     |             | 01            | register_host                    | un nœud se déclare : hostname, fqdn, ip, rôle, domaine, port, empreinte                   |
+| client                      |             | 02            | register_host_ack                | accusé d'enregistrement                                                                   |
+| serveur                     |             | 03            | list_cores                       | demande les nœuds joignables — contenu VIDE, l'ID est lu dans l'en-tête                   |
+| client                      |             | 04            | list_cores_response              | `<nombre>` puis `<host>\|<ip>\|<port>\|<rôle>\|<priorité>\|<empreinte>`, ORDONNÉE par le core |
+| serveur                     |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                      |
+| client                      |             | 06            | proxy_metrics_ack                | accusé de réception                                                                       |
+| serveur                     |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
+| client                      |             | 08            | host_heartbeat_ack               | accusé heartbeat                                                                          |
 |                             |             |               |                                  |                                                                                           |
 | GPO                         | 05          |               | (plage utilisée : 05_01 à 05_17) | voir « Détail du transport GPO » en fin de document                                       |
 | serveur                     |             | 01            | ask_gpo_machine                  | le client demande ses GPO machine, en annonçant l'empreinte qu'il applique déjà           |
@@ -1245,332 +1247,229 @@ jusqu'à 04_19.**
 
 # Découverte de service et proxies (catégorie 04)
 
-> **Statut : proposition, en attente de validation.** Six arbitrages sont rendus
-> ci-dessous ; deux questions restent ouvertes, nommées en fin de section. Aucune
-> implémentation avant accord. Couvre les points 9 et 10 de la TO-DO, qui sont un
-> seul sujet.
->
-> | | Arbitrage |
-> |---|---|
-> | 1 | `02_17`/`02_18` supprimées — la découverte reste en `04` |
-> | 2 | le proxy est un **relais**, il ne déchiffre rien |
-> | 3 | les empreintes de core s'**apprennent** par une session de confiance |
-> | 4 | un core est **joignable par défaut**, sauf s'il est retiré de la liste |
-> | 5 | l'**affinité core ↔ groupe** suit celle des proxies, même table |
-> | 6 | une clé d'enrôlement porte une **affinité**, pas un droit |
+Un agent ne connaissait que les serveurs de son fichier de configuration.
+Ajouter un core au cluster demandait de repasser sur chaque machine du parc ; en
+retirer un laissait les agents s'y acharner. Un proxy déployé, lui, n'apparaissait
+dans aucune configuration — donc aucun agent n'y passait, donc il ne servait à
+rien.
 
-## Ce qui existe déjà, et pourquoi personne ne s'en sert
+```
+04_01  s'enregistrer dans le cluster   (nœud → core)
+  04_02  accusé
+04_03  demander les nœuds joignables   (client → core)   contenu vide
+  04_04  la liste, ORDONNÉE            (core → client)
+04_05  remonter une métrique           (nœud → core)
+  04_06  accusé
+04_07  battre                          (nœud → core)
+  04_08  accusé
+```
 
-La catégorie 04 est écrite **côté serveur** presque en entier :
+> **Ce qui est en place** : les lots 0 à 3 — un agent apprend ses nœuds
+> joignables, un proxy existe dans le cluster et bat. **Le relais TCP et le
+> relais LDAP/S ne sont pas écrits** ; ils restent spécifiés plus bas.
 
-| Trame | Rôle | Code serveur | Émetteur | Autorisée au catalogue |
-|---|---|---|---|---|
-| `04_01` | `register_host` | oui | personne | à personne |
-| `04_03` | `list_cores` | oui | personne | à personne |
-| `04_05` | `proxy_metrics` | oui | personne | à personne |
-| `04_07` | `host_heartbeat` | oui | personne | à personne |
-| `04_09`/`04_12`/`04_14` | services | oui | interface web | web seulement |
+## Ce qui bloquait
 
-`handleListCores` rend déjà la liste des nœuds actifs de rôle `core`. La table
-`proxy_metrics` existe et n'a jamais reçu une ligne. `vaultaire_proxy` fait
-soixante-quatre lignes : il s'enrôle, s'authentifie, attend un signal.
+La catégorie `04` était écrite **côté serveur** presque en entier. Ce qui
+manquait n'était pas le code du core : c'est que le **catalogue de types ne
+l'accordait à personne**, et que rien ne l'émettait.
 
-Le blocage n'est donc pas l'écriture du serveur — c'est que **le catalogue de
-types n'accorde `04` à aucun client**, et que rien ne l'émet.
+| Trame | Code serveur | Émetteur, avant | Émetteur, maintenant |
+|---|---|---|---|
+| `04_01` | oui | personne | proxy |
+| `04_03` | oui | personne | agent, proxy |
+| `04_05` | oui | personne | proxy |
+| `04_07` | oui | personne | proxy |
 
 ## Arbitrage 1 — `02_17`/`02_18` sont SUPPRIMÉES
 
-Le tableau en tête de document déclarait `02_17 ask list proxy/core` et
-`02_18 respond list`. Aucune ligne de code ne les a jamais implémentées, et
-elles font **doublon** avec `04_03`/`04_04`.
+Le tableau en tête de document les déclarait « ask list proxy/core » et
+« respond list ». Aucune ligne de code ne les a jamais implémentées, et elles
+font doublon avec `04_03`/`04_04`.
 
-La découverte de service reste en `04`, qui porte déjà ce nom. La catégorie `02`
-est « User auth » : y ranger la découverte de service est un mauvais classement
-qui se paierait à chaque lecture du protocole. Qui a le droit de demander reste
-décidé par le catalogue de types, pas par le numéro de trame.
+La découverte reste en `04`, qui porte déjà ce nom. La catégorie `02` est
+« User auth » : y ranger la découverte de service se paierait à chaque lecture du
+protocole. Qui a le droit de demander reste décidé par le catalogue de types,
+pas par le numéro de trame.
 
 ## Arbitrage 2 — le proxy est un RELAIS, il ne déchiffre rien
 
-Deux modèles étaient possibles. Le proxy peut transporter les octets sans les
-lire, ou terminer la session Ducky et en ouvrir une autre vers le core.
+Deux modèles étaient possibles : transporter les octets sans les lire, ou
+terminer la session Ducky et en ouvrir une autre vers le core.
 
 C'est le **point 29 qui a tranché**. Avant lui, le chemin PAM ne faisait passer
 qu'une preuve HMAC : un proxy qui terminait la session ne voyait rien
-d'utilisable. Depuis, le mot de passe transite dans le tunnel. Un proxy qui
-déchiffrerait deviendrait **un point de collecte des mots de passe du parc
-entier**, et sa compromission équivaudrait à celle du core.
+d'utilisable. Depuis, le mot de passe transite dans le tunnel — un proxy qui
+déchiffrerait deviendrait un point de collecte des mots de passe du parc.
 
-En relais, la poignée de main RSA et la clé de session restent de bout en bout
-entre l'agent et le core. Le proxy ne peut ni lire, ni modifier, ni se faire
-passer pour le core : l'empreinte de clé est vérifiée par le client, à travers
-lui.
+*Non implémenté.* C'est ce qui reste du sujet.
 
-Ce que cela coûte, et qu'il faut accepter :
+## Arbitrage 3 — les empreintes s'apprennent depuis une confiance existante
 
-- **LDAPS présente le certificat du CORE.** Ses SAN doivent donc couvrir le nom
-  du proxy, sans quoi les clients LDAP refuseront la connexion.
-  `GenerateSelfSignedCertPEM` prend déjà `DNSNames` et `IPAddresses` : c'est de
-  la configuration, pas du code neuf.
-- **Le core est choisi à l'ouverture de connexion, pas à la trame.** Pas de
-  répartition fine, pas de cache, pas de reprise en cours de session.
+Sans cela, distribuer une liste de cores ne servirait à rien : l'agent
+refuserait tous ceux qu'il ne connaît pas — c'est-à-dire tous sauf un.
 
-## Arbitrage 3 — les empreintes de core s'apprennent par une session de confiance
+`core_key_fingerprint` est donc devenu une **liste**. N'importe laquelle de ses
+entrées suffit à accepter une clé. La première ligne reste celle déposée par
+`vlt create -join`, la seule dont on sache par quel canal elle est arrivée ;
+l'ordre du fichier le dit.
 
-`core_key_fingerprint` porte aujourd'hui **une** empreinte, déposée par
-`vlt create -join` sur un canal authentifié. Un second core avec sa propre clé
-serait refusé par tous les agents : distribuer une liste de plusieurs cores ne
-servirait donc à rien.
+Une empreinte s'apprend en recevant `04_04`, qui la porte pour chaque nœud
+annoncé. Le message ne s'atteste pas lui-même : il arrive sur une session dont la
+clé du core a **déjà** été vérifiée. Ce n'est pas un nœud qui se déclare, c'est
+un core de confiance qui atteste ses pairs.
 
-Le fichier devient une **liste**. La réponse `04_04` porte l'empreinte de chaque
-nœud, et l'agent n'accepte une empreinte nouvelle que si elle arrive **par une
-session déjà authentifiée avec un core déjà connu** — lui-même ancré par
-`vlt create -join`. La condition est remplie par construction, puisque `04_04`
-n'existe qu'à l'intérieur d'une session Ducky établie.
+**On n'apprend jamais depuis rien.** Une machine sans aucune empreinte est en
+confiance au premier usage ; y ajouter une valeur venue du réseau serait la même
+chose sous un autre nom. `ApprendreEmpreinte` refuse ce cas.
 
-**À écrire noir sur blanc, parce que c'est la limite du modèle :** tout core de
-confiance peut ajouter de la confiance. Un core compromis peut faire accepter
-l'empreinte d'un serveur qu'il contrôle. Seule une autorité de cluster signant
-les clés supprimerait cela ; elle n'est pas dans ce lot, et le jour où elle le
-sera, ce paragraphe est le point d'entrée.
+La liste est **bornée** à 16 entrées. Un fichier de confiance qui grossit tout
+seul finit par ne plus rien attester — personne ne relit trente empreintes pour
+savoir laquelle n'a rien à y faire. L'atteindre est un signal, d'où le refus
+explicite plutôt qu'une éviction de la plus ancienne, qui retirerait justement
+celle de l'installation.
 
-Deux conséquences pratiques :
+> **Limite assumée.** Tout core de confiance peut ajouter de la confiance. Un
+> core compromis fait apprendre au parc l'empreinte de son choix. Ce qui borne le
+> risque est ailleurs : un core compromis détient déjà les clés du domaine, et
+> l'empreinte n'est pas ce qui le retient.
 
-- la liste apprise est **remplacée**, pas fusionnée, à chaque `04_04` — sinon
-  l'empreinte d'un core retiré du cluster resterait de confiance indéfiniment ;
-- la liste **statique du fichier de configuration n'est jamais écrasée**. C'est
-  l'amorce et le chemin de secours : une liste apprise fausse ou vide rendrait
-  sinon la machine définitivement injoignable.
+## Arbitrage 4 — un nœud est joignable par défaut
 
-## `04_03` — demande de la liste (client → serveur)
+`expose_aux_agents`, **VRAI par défaut**, y compris pour les nœuds déjà
+enregistrés. Le défaut compte : à faux, la migration aurait retiré d'un coup tous
+les cores existants de la liste, et le parc n'aurait plus eu aucune adresse — sur
+une mise à jour censée n'ajouter qu'une fonctionnalité.
 
-```
-04_03
-serveur_central
-<session_integrity_key>
-<username_du_programme>
-<client_software_id>
-```
+**Ce n'est pas un contrôle d'accès.** Le drapeau retire une adresse d'une liste,
+il n'empêche personne de se connecter. Le pare-feu reste ce qui protège un core.
+Il sert à sortir un nœud de la rotation sans le désenregistrer, ce qui le ferait
+disparaître des vues de supervision au moment précis où on le surveille.
 
-Aucun contenu : le serveur sait qui demande par le `client_software_id`, déjà
-figé à la poignée de main `01_01`. Le client n'annonce pas ses groupes — le
-serveur les lit, et une liste de groupes fournie par le client serait une liste
-de groupes CHOISIE par le client.
+## Le tri est fait par le SERVEUR
 
-**À ajouter au catalogue** pour `vaultaire_client`, `vaultaire_proxy` et
-`vaultaire_web`. Elle est aujourd'hui refusée à tous.
+L'agent parcourt la liste de haut en bas, sans rien décider.
 
-## `04_04` — la liste (serveur → client)
+Trier côté agent supposerait de lui envoyer de quoi le faire — métriques,
+affinités, état de chaque nœud — c'est-à-dire de distribuer à toutes les machines
+du parc une carte de l'infrastructure. Et chaque agent trierait avec SA version
+du code : changer la règle demanderait de mettre le parc à jour avant qu'elle
+prenne effet.
 
-```
-04_04
-serveur_central
-<session_integrity_key>
-<username>
-<client_software_id>
-<nombre de lignes>
-<role>|<hostname>|<fqdn>|<ip>|<port>|<priorité>|<empreinte>|<capabilities>
-...
-```
+L'ordre, en trois critères :
 
-Ce que la version actuelle rend — `hostname|ip|version|capabilities` — n'est pas
-exploitable : **il manque le port**, le rôle, et la priorité.
+1. les **proxies** avant les cores — c'est leur raison d'être ;
+2. à rôle égal, la **priorité la plus basse** d'abord ;
+3. à priorité égale, le **nom**, pour que l'ordre soit reproductible.
 
-| Champ | Pourquoi |
+Les cores restent **toujours** dans la liste, en queue : un client dont tous les
+proxies échouent doit pouvoir en joindre un, sans quoi la panne d'un relais
+deviendrait une panne d'authentification.
+
+**Zéro se range APRÈS.** Une priorité nulle vaut « sans préférence ». Si elle se
+rangeait avant, donner une priorité à un seul nœud le reléguerait derrière tous
+les autres — l'exact inverse de l'intention. C'est le piège classique d'un défaut
+à zéro sur un champ d'ordre, et il se paie une fois en production.
+
+Le troisième critère n'est pas décoratif : sans lui, deux nœuds équivalents
+s'ordonneraient selon le plan d'exécution, et tout le parc basculerait ensemble
+sur un nœud que rien n'a désigné.
+
+## Ce qu'un nœud doit déclarer pour être annoncé
+
+Trois choses, et leur absence l'écarte de la liste plutôt que de l'y faire
+figurer à moitié :
+
+| | Sans quoi |
 |---|---|
-| `role` | `core` ou `proxy`. Le client ne traite pas les deux pareil |
-| `fqdn` **et** `ip` | voir ci-dessous |
-| `port` | absent de `cluster_nodes` aujourd'hui. Sans lui, une liste ne sert à rien |
-| `priorité` | entier, **le plus petit est préféré** — convention SRV/MX |
-| `empreinte` | `SHA256:<base64>`, même format que `core_key_fingerprint` |
-| `capabilities` | JSON, **en dernier** : il contient des virgules et pourrait contenir le séparateur. Le découpage se fait avec une limite de champs |
+| un **port** | l'agent composerait l'adresse avec un port deviné — une tentative qui échoue, un délai, un basculement retardé |
+| une **empreinte** | l'agent devrait accepter la clé de ce nœud en aveugle à sa première connexion |
+| l'état **en ligne** | l'adresse serait servie alors que personne n'écoute |
 
-**Le FQDN vient en plus de l'IP, pas à sa place.** Vaultaire *est* le DNS du
-domaine : se reposer sur le nom pour joindre le serveur qui sert les noms est
-une dépendance circulaire au démarrage. L'IP est donc le chemin de connexion ;
-le FQDN sert à vérifier le certificat LDAPS et à nommer la machine dans les
-journaux.
+Le core se déclare lui-même au démarrage, avec le port de sa configuration
+d'écoute — la même source, pour que les deux ne puissent pas diverger. Sur une
+installation mono-core, un défaut ici reviendrait à n'annoncer personne, et rien
+ne relierait « les agents ne trouvent plus de serveur » à une colonne ajoutée au
+schéma. D'où le message d'erreur explicite.
 
-### Le tri est fait par le SERVEUR
+## Ce que l'agent fait de la liste
 
-Le client applique l'ordre reçu, il ne le recalcule pas. Le serveur connaît les
-groupes du demandeur, les affinités de proxy et la charge ; trier côté client
-obligerait à lui envoyer tout cela et ferait vivre la logique de priorité en
-deux endroits, qui divergeraient.
+Il la **fusionne** : les nœuds appris devant, les serveurs du fichier de
+configuration derrière.
 
-Ordre rendu :
+**Les statiques ne sont jamais écrasés.** Ils sont le dernier recours. Un agent
+qui les remplacerait par les nœuds reçus n'aurait plus rien à joindre le jour où
+la liste distribuée est vide, fausse, ou pointe sur des nœuds tous éteints — et
+il faudrait repasser à la main sur les machines, c'est-à-dire exactement ce que
+la découverte existe pour éviter.
 
-1. les **proxies affinés** aux groupes de la machine, par priorité croissante ;
-   à priorité égale, **ordre mélangé** — c'est ce qui répartit la charge sans
-   que le client ait à décider ;
-2. les autres proxies actifs ;
-3. les **cores**, toujours en dernier.
+**Une liste vide n'en écrase pas une pleine.** Un core qui répond « aucun nœud » a
+peut-être une base indisponible. Effacer sur cette foi couperait l'agent de tout
+ce qu'il avait appris, au moment précis où le core va mal.
 
-**Les cores figurent TOUJOURS dans la liste**, même quand des proxies sont
-disponibles. Sans ce secours, un proxy en panne couperait le parc.
+Cadence : 30 minutes, constante côté agent. La liste ne change qu'à l'ajout ou au
+retrait d'un nœud. Une machine qui a besoin de la liste *tout de suite* — parce
+que son serveur habituel ne répond plus — ne l'attend pas : elle bascule sur
+l'adresse suivante, qu'elle a déjà.
 
-### Quand le client demande
+## Ce que le proxy émet
 
-La TO-DO dit « à chaque authentification réussie ». À nuancer : sur un serveur
-multi-utilisateurs, l'authentification d'utilisateur arrive des dizaines de fois
-par heure, et autant de `04_03` n'apprendraient rien de neuf.
+`04_01` au démarrage, `04_07` toutes les 20 secondes, `04_03` pour trouver ses
+cores. La cadence de battement est **locale et volontairement courte** : un
+`reglages` lit la base, qu'un proxy n'a pas, et un battement trop espacé ferait
+déclarer hors ligne un nœud parfaitement vivant.
 
-Proposition : à l'établissement de la **session machine** — une par connexion au
-core — plus le rafraîchissement horaire que les services persistants font déjà
-pour les GPO.
+`-listen-port` est **obligatoire et sans défaut**. Une valeur devinée serait
+annoncée à tout le parc, et les agents s'y connecteraient sans que rien n'écoute.
 
-## Affinité proxy ↔ groupe
+Un échec de raccordement **n'arrête pas le proxy** : il reste connecté et
+authentifié, il perd sa visibilité. Traiter cela comme fatal ferait qu'un nom
+d'hôte introuvable coupe un service qui fonctionne par ailleurs.
 
-Une table d'affinité `(proxy, groupe, priorité)`.
+---
 
-**L'affinité donne une PRIORITÉ, pas une exclusivité.** Un proxy affiné au
-groupe Paris est préféré par les machines de Paris, mais reste joignable par les
-autres, plus bas dans la liste. L'exclusivité ferait qu'un groupe dont l'unique
-proxy tombe ne pourrait pas utiliser un proxy voisin en parfait état.
+# Ce qui reste du sujet 04
 
-Le cas qui plaide pour l'exclusivité existe — un proxy en DMZ qu'on ne veut pas
-voir servir les machines internes. Il n'est pas traité ici : un drapeau
-`exclusif` sur la ligne d'affinité le couvrirait, et il sera temps de l'ajouter
-quand un besoin réel de segmentation se présentera, pas avant.
+## Arbitrage 5 — l'affinité core ↔ groupe *(non implémenté)*
 
-## Arbitrage 4 — un core est joignable par défaut, sauf s'il est retiré
+Table `(nœud, groupe, priorité)`, la MÊME que celle des proxies. Priorité et non
+exclusivité : ordre servi — proxies affins, autres proxies, cores affins exposés,
+autres cores exposés.
 
-**Le besoin.** Dans un parc d'entreprise, les postes d'un bureau ne joignent pas
-tous les proxies, et souvent aucun core : ceux-ci sont derrière un pare-feu, dans
-un réseau d'administration. Distribuer la liste complète leur donnerait des
-adresses qu'ils ne peuvent pas atteindre, et une liste d'échecs à parcourir avant
-d'arriver au nœud utile.
+## Arbitrage 6 — une clé d'enrôlement porte une affinité, pas un droit *(non implémenté)*
 
-**La décision : un drapeau `expose_aux_agents` sur `cluster_nodes`, VRAI par
-défaut.**
+Le rattachement est appliqué **une fois**, à l'enrôlement. Le relire à chaque
+connexion ferait qu'une clé modifiée changerait les groupes d'un service déjà en
+production, et le lien entre la cause et l'effet serait introuvable des mois plus
+tard.
 
-Le défaut compte plus que le drapeau. À `false` par défaut, un core ajouté au
-cluster serait invisible aux agents jusqu'à ce que quelqu'un pense à l'exposer —
-et le symptôme serait « le nouveau core ne sert à rien », sans rien pour le
-relier à un réglage oublié. À `true`, un core mal exposé est *joignable par trop
-de monde*, ce qui se voit dans les journaux du core lui-même.
+Ce que les groupes portent est décidé ailleurs, et reste modifiable après coup.
+Une clé qui accorderait des droits deviendrait un second système de permissions,
+à tenir d'accord avec le premier.
 
-> **Ce drapeau n'est PAS un contrôle d'accès.** Il enlève une adresse d'une
-> liste ; il n'empêche personne de se connecter à un core dont il connaît
-> l'adresse par un autre moyen. Ce qui protège un core reste le pare-feu et
-> l'authentification. Le présenter comme une segmentation serait une fausse
-> sécurité — et c'est le genre de malentendu qui fait qu'on ouvre le pare-feu
-> « puisque Vaultaire filtre déjà ».
+## Le relais *(non implémenté)*
 
-Il ne s'applique qu'aux clients de la famille **agent**. Un service qui demande
-`04_03` reçoit la liste complète : il est lui-même dans le réseau
-d'administration, et un proxy à qui l'on cacherait les cores ne pourrait plus
-relayer.
+Relais TCP Ducky, puis relais LDAP/S avec le SAN du core couvrant les proxies.
 
-## Arbitrage 5 — l'affinité core ↔ groupe suit celle des proxies
-
-Même table, même sémantique : `(nœud, groupe, priorité)`, **priorité et non
-exclusivité**, pour la raison déjà écrite plus haut — un groupe dont l'unique
-nœud affiné tombe doit pouvoir en joindre un autre.
-
-Une seule table pour les deux rôles plutôt que deux : le tri est le même
-algorithme, et deux tables se seraient mises à diverger sur la façon de départager
-les priorités égales.
-
-L'ordre final servi à un agent devient donc :
-
-1. les **proxies affinés** à ses groupes, par priorité croissante ;
-2. les **autres proxies** ;
-3. les **cores affinés** à ses groupes, s'ils sont exposés ;
-4. les **autres cores** exposés.
-
-À priorité égale, ordre **mélangé** — c'est ce qui répartit la charge sans qu'un
-nœud reçoive tout le parc parce qu'il est premier dans l'ordre alphabétique.
-
-Les cores restent **toujours présents en fin de liste** pour un agent qui n'a
-aucun proxy joignable, sauf s'ils sont explicitement non exposés. Une liste qui
-pourrait être vide rendrait la machine injoignable, et le chemin de secours du
-fichier de configuration statique n'existe que pour l'amorçage.
-
-## Arbitrage 6 — les clés d'enrôlement portent une affinité, pas un droit
-
-**Le besoin.** Rattacher un service à des groupes dès sa naissance, pour qu'il
-hérite d'une affinité sans intervention manuelle après l'enrôlement.
-
-**La décision : une clé d'enrôlement peut porter une liste de groupes, qui sont
-appliqués au service créé — et rien d'autre.**
-
-Ce que cela ne fait PAS, et qu'il faut écrire :
-
-- **la clé n'accorde aucun droit.** Elle dit « ce service naîtra dans ces
-  groupes » ; ce que les groupes portent est décidé ailleurs, et reste modifiable
-  après coup. Une clé qui accorderait des droits deviendrait un second système de
-  permissions, à tenir d'accord avec le premier ;
-- **elle ne restreint pas ce que le service peut joindre.** L'affinité est une
-  préférence de tri, pas un filtre.
-
-Le rattachement est **appliqué une fois, à l'enrôlement**. Le relire à chaque
-connexion ferait qu'une clé modifiée — ou révoquée — changerait les groupes d'un
-service déjà en production, et le lien entre la cause et l'effet serait
-introuvable des mois plus tard.
-
-> **Limite assumée.** Qui détient une clé d'enrôlement choisit les groupes de
-> naissance du service qu'il crée, donc son affinité. C'est déjà vrai du type
-> qu'elle vise. Le contrôle reste sur l'émission de la clé — `write:create:client`
-> — et sur ses bornes d'usage et de durée.
-
-## Ce que le proxy doit émettre pour exister
-
-Rien de neuf à écrire côté serveur, tout est déjà là :
-
-| Trame | À quoi elle sert |
-|---|---|
-| `04_01` | s'enregistrer dans `cluster_nodes` au démarrage |
-| `04_07` | battre, pour ne pas être marqué hors ligne |
-| `04_05` | remonter ses métriques, pour que le tri puisse tenir compte de la charge |
-| `04_03` | trouver les cores vers qui relayer |
-
-Il faut les **émettre**, et les **ajouter au catalogue** pour le type
-`vaultaire_proxy`, qui n'a aujourd'hui aucune trame `04`.
-
-## Une question laissée ouverte
-
-**Que fait un proxy dont tous les cores sont injoignables ?** Refuser
-franchement, ou accepter la connexion et la mettre en attente ?
-
-Proposition : **refuser**. Un client qui reçoit un refus essaie le suivant de sa
+**Que fait un proxy dont tous les cores sont injoignables ?** Tranché : il
+**refuse franchement**. Un client qui reçoit un refus essaie le suivant de sa
 liste — un core, puisqu'ils y figurent toujours. Un client en attente ne fait
 rien pendant tout le délai, et le proxy en panne devient un trou noir au lieu
 d'un nœud qu'on contourne.
 
-## Découpage
+## Découpage restant
 
 | Lot | Contenu | Dépend de |
 |---|---|---|
-| 0 | Liste d'empreintes côté agent, apprise par session de confiance | — |
-| 1 | Port, rôle, priorité et `expose_aux_agents` dans `cluster_nodes` ; `04_04` enrichie ; `04_03` au catalogue | — |
-| 2 | Le SDK émet `04_03`, fusionne avec le statique et persiste | 0, 1 |
-| 3 | Le proxy émet `04_01`, `04_07`, `04_05` | 1 |
-| 4 | Relais TCP Ducky | 3 |
+| 4 | Relais TCP Ducky | fait (3) |
 | 5 | Relais LDAP/S, SAN du core couvrant les proxies | 4 |
-| 6 | Table d'affinité `(nœud, groupe, priorité)` et tri côté serveur | 1, 3 |
-| 7 | Groupes portés par une clé d'enrôlement, appliqués à la naissance du service | 6 |
-
-Le lot 0 conditionne le 2 : sans lui, distribuer une liste de cores ne sert à
-rien, puisque les agents refuseraient de joindre ceux qu'ils ne connaissent pas.
-Les lots 1 et 3 sont indépendants et peuvent démarrer les premiers.
+| 6 | Table d'affinité `(nœud, groupe, priorité)` et tri côté serveur | fait (1, 3) |
+| 7 | Groupes portés par une clé d'enrôlement | 6 |
 
 Le lot 7 vient **après** le 6 et non avant : rattacher un service à des groupes
 n'a aucun effet observable tant que l'affinité ne trie rien. L'écrire d'abord
 donnerait une fonctionnalité qu'on ne peut pas éprouver.
 
-## Ce qui reste ouvert
-
-Deux questions, volontairement non tranchées ici.
-
-**La périodicité du rafraîchissement** — « tous les X temps configurable » —
-dépend du **point 13** de la TO-DO, qui sort la gestion des durées du fichier de
-configuration pour la mettre en base. Fixer une constante maintenant créerait un
-réglage de plus à migrer ensuite.
-
-**Que fait un proxy dont tous les cores sont injoignables ?** Voir plus haut : la
-proposition est de refuser franchement. Elle attend validation.
-
----
 
 # Synchronisation des groupes de la machine (catégorie 03)
 

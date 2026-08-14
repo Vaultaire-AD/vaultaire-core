@@ -63,6 +63,27 @@ const (
 	DriftUnreadable DriftKind = "unreadable"
 	// DriftPermissions : le contenu est bon, le mode ne l'est plus.
 	DriftPermissions DriftKind = "permissions"
+	// DriftReappeared : un fichier que la politique RETIRE a été recréé.
+	//
+	// L'exact opposé de DriftMissing, et il fallait les distinguer : ils
+	// n'appellent pas la même lecture. « Disparu » se lit comme un fichier
+	// effacé par erreur ; « réapparu » se lit comme une interdiction contournée
+	// — un module noyau réautorisé, un dépôt de paquets remis, un durcissement
+	// PAM annulé.
+	DriftReappeared DriftKind = "reappeared"
+	// DriftSystemState : un effet NON-fichier ne tient plus.
+	//
+	// Un service réactivé, une règle nftables disparue, un compte remis dans
+	// sudo. Le fichier qui décrit l'état voulu peut être parfaitement intact :
+	// c'est l'état lui-même qui a bougé.
+	DriftSystemState DriftKind = "system_state"
+	// DriftUnverifiable : l'état n'a pas pu être constaté.
+	//
+	// Le pendant de DriftUnreadable pour les effets non-fichier — commande
+	// absente, délai dépassé, sortie inattendue. Distinct de DriftSystemState
+	// pour la même raison : ici on ne sait pas, on ne constate pas. Confondre
+	// les deux ferait réapplique un module sur une simple incertitude.
+	DriftUnverifiable DriftKind = "unverifiable"
 )
 
 // DriftItem est un écart constaté sur un fichier.
@@ -104,7 +125,11 @@ func (r DriftReport) ModulesConcerned() []string {
 	return keys
 }
 
-// ScanScope compare l'état réel des fichiers d'un scope à l'inventaire.
+// ScanScope compare l'état réel d'un scope à l'inventaire.
+//
+// Deux inventaires, deux comparaisons : les FICHIERS déposés ou retirés, et les
+// ATTENTES d'état système déclarées par les modules — un service actif, une
+// règle de pare-feu, une appartenance de groupe.
 //
 // Ne modifie rien : c'est une lecture. La correction est décidée par
 // EnforceDrift, séparément, pour qu'un scan puisse être lancé sans effet de bord.
@@ -120,6 +145,21 @@ func ScanScope(scope, username string) DriftReport {
 // c'est précisément la partie qu'il faut vérifier.
 func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 	report := DriftReport{Scope: scope, Username: username}
+
+	// Les attentes d'état système sont constatées AVANT les fichiers, et
+	// séparément : elles ne dépendent pas de l'inventaire des fichiers, et un
+	// module peut très bien n'avoir déclaré qu'une attente — un service à
+	// laisser actif, sans aucun fichier déposé.
+	//
+	// Compté dans Checked, au même titre qu'un fichier : « conforme » et « rien
+	// à vérifier » doivent rester distinguables, et un module qui ne dépose
+	// aucun fichier aurait sinon un rapport à zéro contrôle.
+	if scopeState != nil {
+		verifs := scanChecks(scopeState)
+		report.Checked += len(scopeState.Checks)
+		report.Items = append(report.Items, verifs...)
+	}
+
 	if scopeState == nil || len(scopeState.Files) == 0 {
 		// Aucun inventaire : soit rien n'a été appliqué, soit l'état vient d'une
 		// version antérieure qui ne l'enregistrait pas. Dans les deux cas il n'y
@@ -139,6 +179,24 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 	for _, path := range chemins {
 		attendu := scopeState.Files[path]
 		report.Checked++
+
+		// Les entrées d'ABSENCE se lisent à l'envers : la dérive n'est pas la
+		// disparition, c'est la réapparition. Traitées avant tout le reste, car
+		// aucun des contrôles qui suivent — hachage, mode — n'a de sens sur un
+		// fichier qui ne doit pas exister.
+		if attendu.Absent {
+			if _, err := os.Stat(path); err == nil {
+				report.Items = append(report.Items, DriftItem{
+					Path: path, StateKey: attendu.StateKey, Kind: DriftReappeared,
+					Detail: "fichier recree alors que la politique le retire",
+				})
+			}
+			// Une erreur autre que « n'existe pas » — un répertoire parent
+			// devenu illisible, par exemple — n'est PAS signalée. On ne peut
+			// alors rien affirmer, et déclarer une dérive sur une incertitude
+			// ferait réappliquer un module sans motif.
+			continue
+		}
 
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {

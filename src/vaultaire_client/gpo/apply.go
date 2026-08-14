@@ -53,6 +53,11 @@ type ModuleOutcome struct {
 	// N'est PAS transmis au serveur : le rapport 05_12 porte le résultat,
 	// pas l'inventaire. Les chemins restent locaux à la machine.
 	Files map[string]FileState
+
+	// Checks sont les attentes d'état système que ce module vient de déclarer.
+	// Même règle que Files : renseigné pour un module réellement appliqué, et
+	// jamais transmis au serveur.
+	Checks map[string]SystemCheck
 }
 
 // Report est le résultat complet d'une application.
@@ -202,6 +207,7 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	// fichier dérivé au module qui l'a déposé — donc de savoir quoi
 	// réappliquer — sans rien demander aux 34 appliqueurs.
 	avant := manifestSnapshot()
+	avantChecks := checkSnapshot()
 
 	detail, err := applier(ctx, m)
 	if err != nil {
@@ -212,6 +218,7 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	outcome.Result = ResultApplied
 	outcome.Detail = sanitizeDetail(detail)
 	outcome.Files = manifestSince(avant, m.StateKey)
+	outcome.Checks = checksSince(avantChecks, m.StateKey)
 	return outcome
 }
 
@@ -224,12 +231,16 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *ScopeState {
 	modules := map[string]string{}
 	files := map[string]FileState{}
+	checks := map[string]SystemCheck{}
 	if previous != nil {
 		for key, fp := range previous.Modules {
 			modules[key] = fp
 		}
 		for path, state := range previous.Files {
 			files[path] = state
+		}
+		for id, c := range previous.Checks {
+			checks[id] = c
 		}
 	}
 
@@ -259,6 +270,15 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 		}
 	}
 
+	// Et ses attentes d'état système, pour la même raison exactement : une
+	// vérification orpheline signalerait éternellement un écart que plus aucun
+	// module ne sait corriger.
+	for id, c := range checks {
+		if _, still := byKey[c.StateKey]; !still {
+			delete(checks, id)
+		}
+	}
+
 	for _, outcome := range report.Modules {
 		switch outcome.Result {
 		case ResultApplied, ResultUnchanged:
@@ -272,6 +292,9 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 			for path, state := range outcome.Files {
 				files[path] = state
 			}
+			for id, c := range outcome.Checks {
+				checks[id] = c
+			}
 		default:
 			delete(modules, outcome.StateKey)
 		}
@@ -282,6 +305,7 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 		Status:  string(report.Status),
 		Modules: modules,
 		Files:   files,
+		Checks:  checks,
 	}
 	// L'empreinte de politique n'est enregistrée que si TOUT est en place.
 	// Sinon le prochain cycle croirait la machine à jour et n'y reviendrait pas.

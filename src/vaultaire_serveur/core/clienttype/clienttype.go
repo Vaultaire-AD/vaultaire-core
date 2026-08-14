@@ -109,6 +109,14 @@ var catalogue = []Definition{
 			// /etc/group à tenir, et la liste des groupes d'un domaine est une
 			// information de structure.
 			"03_01", "03_04", "03_06", "03_08",
+			// 04_03 : demander la liste des nœuds joignables.
+			//
+			// C'est une LECTURE, et elle ne révèle que ce que l'agent doit
+			// pouvoir joindre — un nœud retiré de la rotation n'y figure pas.
+			// 04_01 et 04_07 ne sont PAS accordées : un agent est une machine du
+			// parc, pas un nœud du cluster, et lui laisser s'enregistrer comme
+			// tel le ferait apparaître dans la liste servie aux autres.
+			"04_03",
 			"05_01", "05_05", "05_09", "05_12", "05_15",
 			"06_02", "06_03", "06_04",
 		},
@@ -133,12 +141,23 @@ var catalogue = []Definition{
 		// s'authentifie sous le compte de service, et attend l'inventaire en
 		// retour. Le refuser ferme la connexion juste après l'authentification.
 		//
-		// La catégorie 04 n'est PAS encore émise : elle est spécifiée, pas
-		// implémentée. Elle sera ajoutée ici le jour où elle le sera là-bas,
-		// pas avant.
+		// La catégorie 04 est désormais ÉMISE — c'est ce qui débloque le
+		// proxy, qui s'enrôlait puis attendait un signal que personne
+		// n'envoyait. Quatre trames, et pas une de plus :
+		//
+		//   04_01  s'enregistrer dans cluster_nodes au démarrage ;
+		//   04_07  battre, pour ne pas être marqué hors ligne ;
+		//   04_05  remonter ses métriques, pour que le tri en tienne compte ;
+		//   04_03  trouver les cores vers qui relayer.
+		//
+		// 04_09/04_12/04_14 restent à l'interface web : ce sont les trames des
+		// clients SERVICE, qui déclarent une fonction. Le proxy déclare une
+		// machine — c'est 04_01, qu'il a. Lui donner les deux jeux le ferait
+		// exister deux fois dans le cluster, sous deux identités.
 		Frames: []string{
 			"01_01", "01_05", "01_07",
 			"02_01", "02_03", "02_05", "02_12",
+			"04_01", "04_03", "04_05", "04_07",
 		},
 	},
 	{

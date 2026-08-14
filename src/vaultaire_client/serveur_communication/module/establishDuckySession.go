@@ -1,6 +1,7 @@
 package module
 
 import (
+	"duckynetworkclient/V1/duckynetwork/decouverte"
 	"duckynetworkclient/V1/duckynetwork/logs"
 	serveur "duckynetworkclient/V1/duckynetwork/serveurauth"
 	"duckynetworkclient/V1/duckynetwork/storage"
@@ -14,13 +15,27 @@ import (
 )
 
 func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
-	servers := config.GetServers()
-	if len(servers) == 0 {
-		return nil, fmt.Errorf("aucun serveur configuré")
+	// Les adresses à essayer : celles APPRISES du core d'abord, dans l'ordre
+	// qu'il a servi, puis celles du fichier de configuration.
+	//
+	// # Pourquoi les statiques restent en queue et ne sont jamais écrasées
+	//
+	// Elles sont le dernier recours. Un agent qui remplacerait ses serveurs
+	// statiques par ceux reçus n'aurait plus rien à joindre le jour où la liste
+	// distribuée est vide, fausse, ou pointe sur des nœuds tous éteints — et il
+	// faudrait repasser à la main sur les machines, c'est-à-dire exactement ce
+	// que la découverte existe pour éviter.
+	statiques := make([]string, 0, len(config.GetServers()))
+	for _, s := range config.GetServers() {
+		statiques = append(statiques, s.IP+":"+strconv.Itoa(s.Port))
 	}
+	adresses := decouverte.FusionnerAdresses(statiques)
+	if len(adresses) == 0 {
+		return nil, fmt.Errorf("aucun serveur configuré ni découvert")
+	}
+
 	var lastErr error
-	for _, server := range servers {
-		serverAddr := server.IP + ":" + strconv.Itoa(server.Port)
+	for _, serverAddr := range adresses {
 		logs.Write_log("INFO", "Tentative connexion serveur "+serverAddr)
 		conn, err := net.DialTimeout("tcp", serverAddr, 10*time.Second)
 		if err != nil {

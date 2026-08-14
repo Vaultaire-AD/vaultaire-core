@@ -26,15 +26,21 @@ func applyDirectory(ctx Context, m Module) (string, error) {
 	}
 
 	if m.Param("state") == "absent" {
-		// os.Remove et non RemoveAll : un répertoire non vide n'est pas
-		// supprimé. Effacer récursivement depuis une politique transformerait
-		// une faute de frappe dans un chemin en perte de données, sur toutes
-		// les machines à la fois et sans confirmation possible.
-		if err := os.Remove(path); err != nil {
-			if os.IsNotExist(err) {
-				return "deja absent : " + path, nil
-			}
+		// removeSystemFile s'appuie sur os.Remove et non RemoveAll : un
+		// répertoire non vide n'est pas supprimé. Effacer récursivement depuis
+		// une politique transformerait une faute de frappe dans un chemin en
+		// perte de données, sur toutes les machines à la fois et sans
+		// confirmation possible.
+		//
+		// L'absence est notée dans les deux cas — déjà absent ou retiré à
+		// l'instant : la politique dit que ce chemin ne doit pas exister, et
+		// c'est ce que le scan doit surveiller.
+		existait, err := removeSystemFile(path)
+		if err != nil {
 			return "", fmt.Errorf("suppression de %s impossible (non vide ?) : %v", path, err)
+		}
+		if !existait {
+			return "deja absent : " + path, nil
 		}
 		return "supprime : " + path, nil
 	}
@@ -153,7 +159,7 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 	path := store.dir + "/vaultaire-" + name + store.suffix
 
 	if m.Param("state") == "absent" {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(path); err != nil {
 			return "", fmt.Errorf("retrait de %s impossible : %v", path, err)
 		}
 		if _, err := runCommand(store.refresh[0], store.refresh[1:]...); err != nil {
@@ -215,7 +221,7 @@ const resolvedDropIn = "/etc/systemd/resolved.conf.d/99-vaultaire-gpo.conf"
 // applyDNSResolver fixe les serveurs DNS et le domaine de recherche.
 func applyDNSResolver(ctx Context, m Module) (string, error) {
 	if m.Param("state") == "absent" {
-		if err := os.Remove(resolvedDropIn); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(resolvedDropIn); err != nil {
 			return "", fmt.Errorf("retrait de %s impossible : %v", resolvedDropIn, err)
 		}
 		_, _ = runCommand("systemctl", "restart", "systemd-resolved")
@@ -285,7 +291,7 @@ func applyPackageRepo(ctx Context, m Module) (string, error) {
 	}
 
 	if m.Param("state") == "absent" {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(path); err != nil {
 			return "", fmt.Errorf("retrait de %s impossible : %v", path, err)
 		}
 		refreshRepoIndex(manager)
@@ -343,7 +349,7 @@ func applyPackageRepo(ctx Context, m Module) (string, error) {
 	if apt && m.Param("enabled") == "false" {
 		// apt n'a pas de drapeau « désactivé » : un dépôt inactif est un dépôt
 		// absent du répertoire. Le commenter laisserait un fichier trompeur.
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(path); err != nil {
 			return "", fmt.Errorf("desactivation de %s impossible : %v", path, err)
 		}
 		refreshRepoIndex(manager)

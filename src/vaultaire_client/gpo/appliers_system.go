@@ -53,7 +53,7 @@ func applyBootParams(ctx Context, m Module) (string, error) {
 	}
 
 	if len(kept) == 0 {
-		if err := os.Remove(grubDropIn); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(grubDropIn); err != nil {
 			return "", err
 		}
 		if err := regenerateGrub(); err != nil {
@@ -136,7 +136,7 @@ const timesyncdDropIn = "/etc/systemd/timesyncd.conf.d/99-vaultaire-gpo.conf"
 // applyNTPConfig fixe les serveurs de temps.
 func applyNTPConfig(ctx Context, m Module) (string, error) {
 	if m.Param("state") == "absent" {
-		if err := os.Remove(timesyncdDropIn); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(timesyncdDropIn); err != nil {
 			return "", err
 		}
 		_, _ = runCommand("systemctl", "restart", "systemd-timesyncd")
@@ -176,7 +176,7 @@ const journaldDropIn = "/etc/systemd/journald.conf.d/99-vaultaire-gpo.conf"
 // applyLogPolicy règle la taille et la durée de conservation des journaux.
 func applyLogPolicy(ctx Context, m Module) (string, error) {
 	if m.Param("state") == "absent" {
-		if err := os.Remove(journaldDropIn); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(journaldDropIn); err != nil {
 			return "", err
 		}
 		_, _ = runCommand("systemctl", "restart", "systemd-journald")
@@ -396,7 +396,7 @@ func applyResourceLimits(ctx Context, m Module) (string, error) {
 	path := fmt.Sprintf("/etc/security/limits.d/99-vaultaire-%s-%s-%s.conf", safeDomain, limitType, item)
 
 	if m.Param("state") == "absent" {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(path); err != nil {
 			return "", err
 		}
 		return "limite " + item + " retiree pour " + domain, nil

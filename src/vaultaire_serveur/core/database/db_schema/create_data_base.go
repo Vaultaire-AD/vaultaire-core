@@ -177,6 +177,16 @@ func Create_DataBase(db *sql.DB) {
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
 		// ----- Clusterisation intelligente -----
+		//
+		// Les quatre dernières colonnes servent la DÉCOUVERTE DE SERVICE : ce
+		// que le core annonce aux agents dans la trame 04_04. Voir
+		// « Découverte de service et proxies » dans Protocole_Ducky.md.
+		//
+		// `capabilities` reste un JSON libre pour ce qu'on affiche sans
+		// l'interpréter. Le port, la priorité et l'exposition sont des colonnes
+		// parce qu'on TRIE et qu'on FILTRE dessus — les laisser dans le JSON
+		// reviendrait à trier en Go ce que la base sait faire, et à découvrir
+		// les entrées malformées une par une, à la lecture.
 		`CREATE TABLE IF NOT EXISTS cluster_nodes (
     		id_node INT AUTO_INCREMENT PRIMARY KEY,
     		hostname VARCHAR(255) NOT NULL UNIQUE,
@@ -185,9 +195,36 @@ func Create_DataBase(db *sql.DB) {
     		role VARCHAR(50) NOT NULL,            -- ex: 'proxy', 'api', 'core', 'dashboard'
     		status VARCHAR(20) DEFAULT 'offline',  -- 'online', 'offline', 'maintenance'
     		version_code VARCHAR(50) NOT NULL,     -- Pour le versionning / hot-patching
-    		capabilities JSON,                     -- Pour les spécificités (ex: {"port": 8080, "protocol": "https"})
+    		capabilities JSON,                     -- Pour les spécificités (ex: {"protocol": "https"})
     		last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
-    		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    		-- Port d'écoute Ducky. 0 vaut « non déclaré » et non « port zéro » :
+    		-- un nœud sans port est OMIS de la liste servie aux agents, plutôt
+    		-- que d'y figurer avec une adresse qu'ils composeraient au hasard.
+    		ducky_port INT NOT NULL DEFAULT 0,
+
+    		-- Ordonne les nœuds de même rôle. Plus petit = servi plus tôt.
+    		-- Zéro vaut « sans préférence » et se range APRÈS les valeurs
+    		-- explicites : sinon, donner une priorité à un seul nœud le
+    		-- reléguerait derrière tous les autres.
+    		priorite INT NOT NULL DEFAULT 0,
+
+    		-- Retire ce nœud de la liste distribuée. VRAI par défaut, et ce
+    		-- n'est PAS un contrôle d'accès : le drapeau retire une adresse
+    		-- d'une liste, il n'empêche personne de se connecter. Le pare-feu
+    		-- reste ce qui protège un core.
+    		expose_aux_agents BOOLEAN NOT NULL DEFAULT TRUE,
+
+    		-- Empreinte de la clé publique que CE nœud sert aux agents, écrite
+    		-- par lui-même : personne d'autre ne détient sa clé privée, donc
+    		-- personne d'autre ne saurait dire si elle correspond.
+    		--
+    		-- Un nœud sans empreinte est OMIS de la liste. Un agent qui
+    		-- apprendrait son adresse sans elle devrait accepter sa clé en
+    		-- aveugle — c'est-à-dire faire exactement ce que le fichier
+    		-- d'empreintes existe pour empêcher.
+    		key_fingerprint VARCHAR(80) NOT NULL DEFAULT ''
 		);`,
 
 		// ----- Métriques proxy (exposées pour l'interface Web) -----

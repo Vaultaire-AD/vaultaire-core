@@ -1,9 +1,12 @@
 package main
 
 import (
+	"duckynetworkclient/V1/duckynetwork/decouverte"
 	duckytool "duckynetworkclient/V1/duckynetwork/ducky_tool"
 	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
 	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/storage/stosession"
 	tramesmanager "duckynetworkclient/V1/duckynetwork/trames_manager"
 	"flag"
 	"fmt"
@@ -68,8 +71,39 @@ func brancherSocleDucky() {
 	// 01 est lue de façon synchrone avant que la boucle ne démarre, 02 est
 	// branchée par le socle lui-même.
 	tramesmanager.RegisterHandler("03", sshauth.HandleTrameSSH)
+	// 04 : découverte des nœuds joignables. Branchée ici et non dans le socle —
+	// c'est l'agent qui décide de l'émettre, et un service du cluster n'a pas
+	// les mêmes besoins.
+	tramesmanager.RegisterHandler("04", decouverte.HandleTrame)
 	tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
 	tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
+}
+
+// bootstrapDecouverte arme la demande périodique de la liste de nœuds.
+//
+// Après gpo.Bootstrap et pour la même raison : la boucle attend elle-même une
+// session utilisable, donc l'appel n'a pas à être ordonné avec l'ouverture du
+// tunnel.
+func bootstrapDecouverte() {
+	decouverte.Configure(func(trame string) {
+		// WaitForVaultaireSession plutôt qu'un simple Get : au moment de l'envoi
+		// le tunnel peut être en cours de rétablissement après une coupure, et
+		// abandonner ferait perdre un cycle entier.
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "découverte : aucune session vaultaire valide, trame non envoyée")
+			return
+		}
+		sendmessage.SendMessage(trame, session.DuckySession)
+	}, storage.Computeur_ID)
+
+	decouverte.Demarrer(func() string {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			return ""
+		}
+		return string(session.DuckySession.SessionKey)
+	})
 }
 
 // purgerGroupesOrphelins affiche, et n'efface que sur confirmation explicite.
@@ -181,6 +215,11 @@ func main() {
 		// n'existent pas sur la machine — le mécanisme du point 14 tourne à vide
 		// tant que son référentiel n'est pas là.
 		sshauth.BootstrapGroupes()
+
+		// Découverte des nœuds joignables. Sans elle, l'agent ne connaît que
+		// les serveurs de son fichier de configuration — et ajouter un core au
+		// cluster demanderait de repasser sur chaque machine du parc.
+		bootstrapDecouverte()
 
 		// Le service d'allocation d'identifiants AVANT le canal PAM.
 		//

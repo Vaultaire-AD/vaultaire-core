@@ -47,6 +47,15 @@ type ScopeState struct {
 	// n'a pas cette clé, se relit sans erreur, et le premier cycle la
 	// renseigne. Aucune migration, aucune réapplication forcée.
 	Files map[string]FileState `json:"files,omitempty"`
+
+	// Checks associe chaque attente d'état système à ce qui doit être constaté
+	// et au module qui l'a déclarée. C'est le pendant de Files pour les effets
+	// NON-fichier — un service actif, une règle nftables, une appartenance de
+	// groupe — que le scan ne voyait pas du tout.
+	//
+	// CHAMP AJOUTÉ, avec omitempty : un état écrit par une version antérieure
+	// n'a pas cette clé, se relit sans erreur, et le premier cycle la renseigne.
+	Checks map[string]SystemCheck `json:"checks,omitempty"`
 }
 
 // ModuleFingerprint retourne l'empreinte appliquée d'un module, si connue.

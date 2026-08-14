@@ -47,7 +47,27 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 }
 
 // handleRegisterHost : 04_01 -> 04_02
-// Content: hostname\nfqdn\nip\nrole\ndomain (ex: proxy1\nproxy1.vaultaire.fr\n10.0.0.2\nproxy\nproxy.vaultaire.fr)
+//
+//	Content : hostname\nfqdn\nip\nrole\ndomain[\nport[\nempreinte]]
+//	ex.     : proxy1\nproxy1.vaultaire.fr\n10.0.0.2\nproxy\nproxy.vaultaire.fr\n7070\nSHA256:…
+//
+// # Le port et l'empreinte sont en QUEUE, et facultatifs
+//
+// En queue plutôt qu'insérés : un nœud resté à l'ancienne version envoie cinq
+// lignes, et les insérer au milieu aurait fait lire son domaine comme un port.
+// Facultatifs pour la même raison — leur absence vaut « non déclaré », et le
+// nœud est alors omis de la liste distribuée plutôt que d'y figurer avec un port
+// deviné ou sans de quoi le reconnaître.
+//
+// L'empreinte est celle que le nœud sert lui-même aux agents. LUI SEUL peut la
+// déclarer : personne d'autre ne détient sa clé privée, donc personne d'autre ne
+// saurait dire si elle correspond. Le core ne la vérifie pas — il ne le peut
+// pas — il vérifie sa FORME, ce qui suffit à écarter une valeur qui ne
+// correspondra jamais à rien.
+//
+// Un port hors de 1-65535 est REFUSÉ et non corrigé : une valeur aberrante vient
+// d'une configuration fausse, et l'accepter en la ramenant à une borne
+// produirait un nœud enregistré sur une adresse que personne n'écoute.
 func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, content string) (string, error) {
 	lines := strings.Split(content, "\n")
 	if len(lines) < 5 {
@@ -63,6 +83,34 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	}
 	if fqdn == "" {
 		fqdn = hostname
+	}
+
+	port := 0
+	if len(lines) > 5 {
+		if texte := strings.TrimSpace(lines[5]); texte != "" {
+			p, err := strconv.Atoi(texte)
+			if err != nil || p < 1 || p > 65535 {
+				return "", fmt.Errorf("register_host: port invalide (%q)", texte)
+			}
+			port = p
+		}
+	}
+	if port == 0 {
+		logs.Write_Log("WARNING", "register_host: "+hostname+
+			" ne déclare aucun port — il ne sera pas annoncé aux agents")
+	}
+
+	empreinte := ""
+	if len(lines) > 6 {
+		empreinte = strings.TrimSpace(lines[6])
+		if empreinte != "" && !strings.HasPrefix(empreinte, "SHA256:") {
+			return "", fmt.Errorf("register_host: empreinte de forme inattendue (%q)", empreinte)
+		}
+	}
+	if empreinte == "" {
+		logs.Write_Log("WARNING", "register_host: "+hostname+
+			" ne déclare aucune empreinte — il ne sera pas annoncé aux agents, "+
+			"qui n'auraient pas de quoi reconnaître sa clé")
 	}
 
 	// Créer le groupe/domaine si inexistant (ex: proxy.vaultaire.fr)
@@ -89,11 +137,14 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		Status:       "online",
 		VersionCode:  "vaultaire_proxy",
 		Capabilities: "{}",
+		Port:         port,
+		Empreinte:    empreinte,
 	}
 	if err := clusterdatabase.RegisterNode(db, node); err != nil {
 		return "", fmt.Errorf("register_host: %w", err)
 	}
-	logs.Write_Log("INFO", "host registered: "+hostname+" role="+role+" ip="+ip)
+	logs.Write_Log("INFO", "host registered: "+hostname+" role="+role+" ip="+ip+
+		" port="+strconv.Itoa(port))
 	return "04_02\nserver_central\n" + tramesContent.SessionIntegritykey + "\n" + tramesContent.Username + "\n" + tramesContent.ClientSoftwareID + "\nok\n" + hostname, nil
 }
 
@@ -102,17 +153,67 @@ func getTramesFromRequest(t storage.Trames_struct_client) (sessionKey, username,
 	return t.SessionIntegritykey, t.Username, t.ClientSoftwareID
 }
 
-// handleListCores : 04_03 -> 04_04 (liste des Cores en ligne)
+// handleListCores : 04_03 -> 04_04 (nœuds joignables, dans l'ordre)
+//
+// # Ce qui a changé
+//
+// La version antérieure rendait `GetActiveNodesByRole(db, "core")` — les cores
+// seuls, sans port, dans l'ordre du plan d'exécution. Trois manques :
+//
+//   - PAS DE PORT. Une liste d'adresses sans port n'est pas une liste de nœuds
+//     joignables : l'agent devait supposer que tout le parc écoute au même
+//     endroit ;
+//   - PAS DE PROXY. Un proxy déployé n'apparaissait nulle part, donc aucun agent
+//     n'y passait, donc il ne servait à rien ;
+//   - PAS D'ORDRE. Deux requêtes successives pouvaient rendre deux ordres, et
+//     tout le parc basculait ensemble sur un nœud que rien n'avait désigné.
+//
+// # Le format de ligne
+//
+//	<hostname>|<ip>|<port>|<role>|<priorite>|<empreinte>
+//
+// `version_code` et `capabilities` en sont RETIRÉS. Le premier vaut
+// « vaultaire_proxy » ou « vaultaire_serveur » — c'est le rôle, déjà présent. Le
+// second est un JSON libre que personne ne lit, et qui décrirait l'infrastructure
+// à toutes les machines du parc.
+//
+// L'EMPREINTE, elle, est ce qui rend la découverte utilisable. Sans elle,
+// l'agent apprendrait une adresse et devrait accepter la clé de ce nœud en
+// aveugle à la première connexion. C'est l'arbitrage 3 : la confiance s'étend
+// depuis une confiance existante — cette réponse arrive sur une session dont la
+// clé du core a déjà été vérifiée, et ce core atteste ses pairs.
+//
+// La limite est assumée et écrite : TOUT CORE DE CONFIANCE PEUT AJOUTER DE LA
+// CONFIANCE. Un core compromis fait apprendre au parc l'empreinte de son choix
+// — mais un core compromis détient déjà les clés du domaine, et l'empreinte
+// n'est pas ce qui le retient.
+//
+// La ligne se lit par position et non par préfixe, contrairement à `03_09` :
+// chaque champ est obligatoire et le nombre est fixe, donc rien à reconnaître.
 func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duckysession *storage.DuckySession) (string, error) {
-	nodes, err := clusterdatabase.GetActiveNodesByRole(db, "core")
+	nodes, err := clusterdatabase.NoeudsPourAgents(db)
 	if err != nil {
 		return "", err
 	}
-	var lines []string
+
+	lines := make([]string, 0, len(nodes))
 	for _, n := range nodes {
-		lines = append(lines, fmt.Sprintf("%s|%s|%s|%s", n.Hostname, n.IPAddress, n.VersionCode, n.Capabilities))
+		lines = append(lines, fmt.Sprintf("%s|%s|%d|%s|%d|%s",
+			n.Hostname, n.IPAddress, n.Port, n.Role, n.Priorite, n.Empreinte))
 	}
 	body := strings.Join(lines, "\n")
+
+	if len(nodes) == 0 {
+		// Une liste vide n'est pas une erreur, mais elle mérite d'être dite : sur
+		// un parc en service, elle signifie qu'aucun nœud n'a déclaré son port —
+		// donc que la migration de schéma est passée sans qu'aucun cœur ne se
+		// soit réenregistré depuis. C'est exactement ce qu'on cherchera quand les
+		// agents ne trouveront personne.
+		logs.Write_Log("WARNING",
+			"04_04 : aucun nœud joignable à annoncer à "+tramesContent.ClientSoftwareID+
+				" (aucun en ligne, exposé, avec un port ET une empreinte déclarés)")
+	}
+
 	sk, un, cid := getTramesFromRequest(tramesContent)
 	return "04_04\nserver_central\n" + sk + "\n" + un + "\n" + cid + "\n" + strconv.Itoa(len(nodes)) + "\n" + body, nil
 }

@@ -171,7 +171,7 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 		_ = runUserSystemctl(ctx, "disable", "--now", timerName)
 		removed := 0
 		for _, path := range []string{servicePath, timerPath} {
-			if err := os.Remove(path); err == nil {
+			if _, err := removeSystemFile(path); err == nil {
 				removed++
 			}
 		}
@@ -308,11 +308,12 @@ func applyFileDeploy(ctx Context, m Module) (string, error) {
 	}
 
 	if state == "absent" {
-		if err := os.Remove(path); err != nil {
-			if os.IsNotExist(err) {
-				return path + " deja absent", nil
-			}
+		existait, err := removeSystemFile(path)
+		if err != nil {
 			return "", fmt.Errorf("suppression de %s impossible : %v", path, err)
+		}
+		if !existait {
+			return path + " deja absent", nil
 		}
 		return path + " supprime", nil
 	}

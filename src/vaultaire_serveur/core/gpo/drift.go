@@ -30,6 +30,30 @@ const (
 	// passé en 0644 est un incident de sécurité alors que son contenu est
 	// intact ; les confondre le rendrait invisible.
 	DriftPermissions DriftKind = "permissions"
+	// DriftReappeared : un fichier que la politique RETIRE a été recréé.
+	//
+	// L'exact opposé de DriftMissing, et il fallait les distinguer : ils ne se
+	// lisent pas de la même façon. « Disparu » se lit comme un effacement par
+	// erreur ; « réapparu » se lit comme une interdiction contournée — un module
+	// noyau réautorisé, un dépôt de paquets remis, un durcissement PAM annulé.
+	//
+	// Cette valeur n'existait pas côté agent avant le point 4 : un module dont
+	// l'effet est « ce fichier ne doit pas exister » ne laissait aucune trace, et
+	// le recréer ne produisait donc aucun écart.
+	DriftReappeared DriftKind = "reappeared"
+	// DriftSystemState : un effet NON-fichier ne tient plus — service réactivé,
+	// règle nftables disparue, compte remis dans sudo. Le fichier qui décrit
+	// l'état voulu peut être intact : c'est l'état lui-même qui a bougé.
+	//
+	// Le champ Path porte alors la CIBLE et non un chemin : un nom d'unité
+	// systemd, un couple utilisateur/groupe. La colonne est réutilisée plutôt
+	// que doublée — les deux répondent à « sur quoi », et une seconde colonne
+	// vide neuf fois sur dix compliquerait toutes les vues pour rien.
+	DriftSystemState DriftKind = "system_state"
+	// DriftUnverifiable : l'état n'a pas pu être constaté — commande absente,
+	// délai dépassé. Le pendant de DriftUnreadable pour les effets non-fichier,
+	// et distinct de DriftSystemState pour la même raison : ici on ne sait pas.
+	DriftUnverifiable DriftKind = "unverifiable"
 )
 
 // IsValidDriftKind indique si un type d'écart est reconnu.
@@ -38,7 +62,8 @@ const (
 // sa ligne écartée, pas enregistrée sous une valeur que rien n'interprète.
 func IsValidDriftKind(k string) bool {
 	switch DriftKind(k) {
-	case DriftModified, DriftMissing, DriftUnreadable, DriftPermissions:
+	case DriftModified, DriftMissing, DriftUnreadable, DriftPermissions,
+		DriftReappeared, DriftSystemState, DriftUnverifiable:
 		return true
 	}
 	return false

@@ -348,6 +348,29 @@ func applySystemdService(ctx Context, m Module) (string, error) {
 		actions = append(actions, "mask")
 	}
 
+	// L'attente à revérifier, déclarée APRÈS les actions réussies.
+	//
+	// Seules les facettes que la politique a réellement fixées y figurent : une
+	// GPO qui active un service au démarrage sans le démarrer ne doit pas faire
+	// signaler une dérive parce que l'administrateur l'a arrêté pour la journée.
+	//
+	// « restarted » n'entre PAS dans l'attente d'exécution : c'est une action,
+	// pas un état. Un service redémarré puis arrêté ensuite ne contredit aucune
+	// politique — celle-ci ne disait pas qu'il devait tourner.
+	var attentes []string
+	if enabled == "enabled" || enabled == "disabled" {
+		attentes = append(attentes, "enabled="+enabled)
+	}
+	switch state {
+	case "started":
+		attentes = append(attentes, "active=started")
+	case "stopped":
+		attentes = append(attentes, "active=stopped")
+	}
+	if len(attentes) > 0 {
+		recordCheck(CheckSystemdUnit, service, strings.Join(attentes, ","))
+	}
+
 	if len(actions) == 0 {
 		return service + " : aucun changement demande", nil
 	}
@@ -405,6 +428,58 @@ func writeSystemFile(path, content string, mode os.FileMode) error {
 	// appliqueur passe par ici, y compris ceux qui seront écrits plus tard.
 	recordWrite(path, content, mode)
 	return nil
+}
+
+// removeSystemFile retire un fichier système et note qu'il doit rester absent.
+//
+// # Pourquoi une fonction plutôt qu'un os.Remove
+//
+// Pour la même raison que writeSystemFile : c'est l'entonnoir qui permet à
+// l'inventaire de suivre les suppressions réelles. Les appliqueurs appelaient
+// os.Remove directement, et le scan de conformité ne voyait donc jamais un
+// fichier qui doit être ABSENT — le recréer ne produisait aucun écart.
+//
+// # Ce qui ne passe PAS par ici, et pourquoi
+//
+// Toutes les suppressions ne sont pas des politiques. Trois familles restent en
+// os.Remove nu, délibérément :
+//
+//   - le NETTOYAGE d'un fichier temporaire (writeSystemFile) : il n'a jamais eu
+//     d'existence visible ;
+//   - le RETOUR EN ARRIÈRE après un échec (restoreOrRemove, le magasin de CA
+//     non régénéré) : le module n'a pas abouti, il ne déclare rien ;
+//   - le BALAYAGE périodique (file_retention) : ces fichiers ont vocation à
+//     réapparaître, c'est même leur raison d'être. Les inscrire ferait signaler
+//     une dérive à chaque rotation de journal.
+//
+// La distinction est celle-ci : « ce fichier ne doit pas exister » se note ;
+// « ce fichier n'a pas à exister maintenant » ne se note pas.
+//
+// # Un absent qui l'était déjà
+//
+// os.IsNotExist n'est pas une erreur, et l'absence est notée quand même : le
+// module a bien déclaré que ce fichier ne doit pas exister, que quelqu'un l'ait
+// devancé ne change rien à la politique.
+//
+// Le booléen dit s'il y avait quelque chose à retirer. Deux appliqueurs s'en
+// servent pour distinguer « supprimé » de « déjà absent » dans leur compte
+// rendu — une distinction qui compte pour qui lit le rapport d'application, et
+// que le seul retour d'erreur ne permettait plus de faire.
+func removeSystemFile(path string) (existait bool, err error) {
+	err = os.Remove(path)
+	switch {
+	case err == nil:
+		existait = true
+	case os.IsNotExist(err):
+		err = nil
+	default:
+		// Échec réel — droits, répertoire non vide. Rien n'est noté : la
+		// politique n'a pas abouti, et l'inscrire ferait surveiller une absence
+		// qui n'a jamais été obtenue.
+		return false, err
+	}
+	recordAbsent(path)
+	return existait, nil
 }
 
 // readFileIfExists lit un fichier s'il existe.

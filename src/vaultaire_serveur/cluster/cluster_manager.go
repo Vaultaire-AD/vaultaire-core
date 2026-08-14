@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"net"
 	"os"
+	"strconv"
+	"strings"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
+	keymanagement "vaultaire/ducky-network/key_management"
 )
 
 // StartManager initialise l'enregistrement du nœud courant et les tâches périodiques
@@ -34,6 +37,44 @@ func StartManager(db *sql.DB) {
 
 	capabilitiesJSON := buildCapabilitiesJSON()
 
+	// Le PORT d'écoute Ducky, déclaré par le core sur lui-même.
+	//
+	// Sans lui, ce core ne figure dans aucune liste servie aux agents : la
+	// requête les écarte, faute de savoir où les joindre. Sur une installation
+	// mono-core, cela reviendrait à ne rien annoncer du tout — et personne ne
+	// verrait le rapport entre « les agents ne trouvent plus de serveur » et une
+	// colonne ajoutée au schéma.
+	//
+	// La valeur vient de la même configuration que l'écoute elle-même, jamais
+	// d'une constante : les deux doivent bouger ensemble, et le seul moyen d'en
+	// être sûr est qu'elles aient une source unique.
+	port, err := strconv.Atoi(strings.TrimSpace(storage.ServeurLisetenPort))
+	if err != nil || port < 1 || port > 65535 {
+		logs.Write_Log("ERROR", "cluster: port d'écoute illisible ("+
+			storage.ServeurLisetenPort+") — ce core ne sera pas annoncé aux agents")
+		port = 0
+	}
+
+	// L'EMPREINTE de la clé publique de ce core, déclarée sur lui-même.
+	//
+	// C'est ce que la liste distribuée transporte, et ce qui permet à un agent
+	// d'apprendre un core sans devoir accepter sa clé en aveugle. Elle est
+	// calculée depuis GetPublicKey() — la MÊME source que celle servie à
+	// `askkey`. En prendre une autre rendrait possible qu'elles divergent, et
+	// l'agent refuserait alors une clé pourtant légitime.
+	//
+	// Vide en cas d'échec plutôt qu'une valeur de repli : la requête écarte les
+	// nœuds sans empreinte, donc ce core n'est pas annoncé. Ne pas être annoncé
+	// est un défaut de disponibilité ; être annoncé avec une empreinte fausse
+	// est un défaut d'authentification, et le second se répare beaucoup moins
+	// bien que le premier.
+	empreinte, err := keymanagement.EmpreinteDuCore()
+	if err != nil {
+		logs.Write_Log("ERROR", "cluster: empreinte du core indisponible ("+err.Error()+
+			") — ce core ne sera pas annoncé aux agents")
+		empreinte = ""
+	}
+
 	node := clusterstorage.Node{
 		Hostname:     hostname,
 		FQDN:         fqdn,
@@ -42,12 +83,15 @@ func StartManager(db *sql.DB) {
 		Status:       "online",
 		VersionCode:  storage.Host_Version,
 		Capabilities: capabilitiesJSON,
+		Port:         port,
+		Empreinte:    empreinte,
 	}
 
 	if err := clusterdatabase.RegisterNode(db, node); err != nil {
 		logs.Write_Log("ERROR", "cluster: failed to register node: "+err.Error())
 	} else {
-		logs.Write_Log("INFO", "cluster: node registered in database as core")
+		logs.Write_Log("INFO", "cluster: node registered in database as core (port "+
+			strconv.Itoa(port)+")")
 	}
 
 	go startHeartbeatLoop(db, hostname)

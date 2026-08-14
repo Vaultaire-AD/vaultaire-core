@@ -950,6 +950,94 @@ redémarrer le service client, ou attendre le rafraîchissement horaire
 
 ---
 
+## Ce que le scan de conformité surveille
+
+Trois inventaires, tenus pendant l'application et relus à chaque scan.
+
+| Inventaire | Ce qu'il contient | Écart détecté |
+|---|---|---|
+| Fichiers **déposés** | chemin, SHA-256, mode | `modified`, `missing`, `unreadable`, `permissions` |
+| Fichiers **retirés** | chemin, drapeau `absent` | `reappeared` |
+| **États système** | type, cible, attendu | `system_state`, `unverifiable` |
+
+Les deux derniers sont récents : le scan ne comparait que des fichiers déposés.
+
+### Ce qui doit être ABSENT
+
+Un module dont l'effet est « ce fichier ne doit pas exister » — `state=absent` —
+ne laissait **aucune trace**. Le recréer ne produisait donc aucun écart : le scan
+ne compare que ce qu'il connaît, et il ne connaissait que des écritures.
+
+Concrètement : une GPO pose `/etc/modprobe.d/vaultaire-usb-storage.conf` pour
+interdire un module noyau, une autre le retire pour lever l'interdiction.
+Quelqu'un défait le geste, et la machine reste conforme indéfiniment.
+
+`removeSystemFile` est l'entonnoir, jumeau de `writeSystemFile`. La dérive s'y
+lit **à l'envers** : ce n'est pas la disparition qui compte, c'est la
+réapparition.
+
+**Toutes les suppressions n'y passent pas**, et c'est délibéré :
+
+| Famille | Exemple | Notée ? |
+|---|---|---|
+| politique | `state=absent` | oui |
+| nettoyage d'un temporaire | `writeSystemFile` | non — il n'a jamais eu d'existence visible |
+| retour arrière après échec | `restoreOrRemove` | non — le module n'a pas abouti, il ne déclare rien |
+| balayage périodique | `file_retention` | non — ces fichiers ont vocation à réapparaître |
+
+La distinction : « ce fichier ne doit pas exister » se note ; « ce fichier n'a
+pas à exister maintenant » ne se note pas.
+
+### Les effets NON-fichier
+
+55 appels de commandes dans les appliqueurs — `systemctl`, `nft`, `chage`,
+`usermod`, `gpasswd`, `setsebool`, `sysctl`. Un service réactivé, une table
+nftables vidée, un compte remis dans `sudo` : invisibles.
+
+Le déséquilibre était complet. Le fichier qui *décrit* l'état voulu était
+surveillé, l'état lui-même ne l'était pas — un `sshd_config.d/99-vaultaire.conf`
+intact au hachage près ne dit rien si sshd a été arrêté.
+
+**On ne devine pas l'état d'un service depuis un fichier.** Chaque module sait ce
+qu'il a fait, et lui seul : c'est donc lui qui déclare ce qu'il faudra
+revérifier, par `recordCheck`, au moment où il l'applique. Un module écrit demain
+sans `recordCheck` n'est simplement pas vérifié — silence, pas fausse conformité.
+
+Cinq vérificateurs, choisis parce que leur dérive **donne un droit** :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `systemd_unit` | nom d'unité | `is-enabled`, `is-active` — seules les facettes que la politique a fixées |
+| `nft_rule` | commentaire de règle | présence dans la table `vaultaire_gpo` |
+| `group_member` | `utilisateur:groupe` | appartenance via NSS, pas `/etc/group` |
+| `selinux` | `mode` ou `bool:<nom>` | mode courant, valeur du booléen |
+| `account_lock` | compte local | verrou dans shadow, `chage -l` |
+
+Les 31 autres modules dérivent aussi, mais leur dérive coûte de la cohérence, pas
+de la sécurité — un fuseau horaire, un alias de shell, une limite de ressources.
+Ils suivront, un par un : **une vérification approximative est pire qu'aucune**,
+parce qu'elle déclare conforme ce qui ne l'est pas et que personne ne va plus
+regarder.
+
+### `system_state` et `unverifiable` ne se confondent pas
+
+Une commande absente, un délai dépassé : on ne sait pas, on ne constate pas.
+C'est `unverifiable`, et rien n'est réappliqué. La distinction est celle
+d'`unreadable` pour les fichiers — confondre les deux ferait relancer un service
+sur une simple incertitude.
+
+Une attente dont le vérificateur est **inconnu** — état écrit par un agent plus
+récent — est ignorée en silence, pour la même raison.
+
+### En enforce
+
+Comme pour les fichiers : l'empreinte du module est oubliée, le cycle suivant le
+réapplique. La correction n'est jamais immédiate — réappliquer peut relancer un
+service, et le faire à l'instant de la détection reviendrait à redémarrer sshd
+pendant qu'un administrateur débogue.
+
+---
+
 ## Où la conformité s'affiche
 
 Deux façades, **un seul code de décision**.

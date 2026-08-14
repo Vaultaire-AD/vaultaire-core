@@ -97,7 +97,11 @@ func applyUserGroupMembership(ctx Context, m Module) (string, error) {
 		return "", fmt.Errorf("groupe local %s inexistant sur cette machine", group)
 	}
 
+	// L'appartenance est l'effet le plus lourd de ce paquet : « sudo » et
+	// « wheel » passent par ici. Remettre quelqu'un dans sudo à la main ne
+	// laissait aucune trace et ne produisait aucun écart.
 	if m.Param("state") == "absent" {
+		recordCheck(CheckGroupMember, ctx.Username+":"+group, "absent")
 		if _, err := runCommand("gpasswd", "-d", ctx.Username, group); err != nil {
 			// gpasswd -d échoue si l'utilisateur n'est pas membre : ce n'est pas
 			// une erreur, l'état voulu est déjà atteint.
@@ -109,6 +113,7 @@ func applyUserGroupMembership(ctx Context, m Module) (string, error) {
 	if _, err := runCommandTimeout(UserCommandTimeout, "usermod", "-aG", group, ctx.Username); err != nil {
 		return "", fmt.Errorf("ajout au groupe %s impossible : %v", group, err)
 	}
+	recordCheck(CheckGroupMember, ctx.Username+":"+group, "member")
 	// L'appartenance ne vaut que pour les sessions OUVERTES ENSUITE : les
 	// identifiants de groupe sont figés à l'ouverture de session. Le dire évite
 	// de chercher pourquoi la commande refuse encore l'accès.
@@ -229,7 +234,7 @@ func applyUserSSHClientConfig(ctx Context, m Module) (string, error) {
 
 	if m.Param("state") == "absent" {
 		if strings.TrimSpace(rebuilt) == "" {
-			if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			if _, err := removeSystemFile(path); err != nil {
 				return "", err
 			}
 			return "alias " + alias + " retire", nil
@@ -367,7 +372,7 @@ func applyUserResourceLimits(ctx Context, m Module) (string, error) {
 	path := fmt.Sprintf("/etc/systemd/system/user-%s.slice.d/99-vaultaire-gpo.conf", target.Uid)
 
 	if m.Param("state") == "absent" {
-		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		if _, err := removeSystemFile(path); err != nil {
 			return "", err
 		}
 		_, _ = runCommand("systemctl", "daemon-reload")

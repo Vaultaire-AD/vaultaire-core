@@ -32,14 +32,34 @@ import (
 // l'inventaire avant et après l'appel, et ce qui est apparu entre les deux
 // appartient au module qu'il vient d'appliquer.
 
-// FileState est l'état attendu d'un fichier déposé.
+// FileState est l'état attendu d'un fichier déposé — ou retiré.
 type FileState struct {
-	// SHA256 du contenu écrit.
+	// SHA256 du contenu écrit. Vide pour une entrée d'absence.
 	SHA256 string `json:"sha256"`
-	// Mode au moment de l'écriture.
+	// Mode au moment de l'écriture. Nul pour une entrée d'absence.
 	Mode uint32 `json:"mode"`
 	// StateKey du module qui l'a déposé, pour savoir quoi réappliquer.
 	StateKey string `json:"state_key,omitempty"`
+
+	// Absent inverse le sens de l'entrée : le module ne demande pas que ce
+	// fichier ait un certain contenu, il demande qu'il N'EXISTE PAS.
+	//
+	// # Pourquoi cela ne pouvait pas être déduit
+	//
+	// Une entrée sans hachage aurait pu servir de marqueur, mais elle se
+	// confondrait avec un fichier écrit vide — cas réel : un `authorized_keys`
+	// dont toutes les clés ont été révoquées. Le drapeau nomme l'intention au
+	// lieu de la faire deviner.
+	//
+	// # Ce que le scan en fait
+	//
+	// L'inverse exactement de ce qu'il fait des autres : la dérive n'est pas la
+	// disparition, c'est la RÉAPPARITION.
+	//
+	// CHAMP AJOUTÉ, avec omitempty : un état écrit par une version antérieure
+	// n'en a pas, se relit sans erreur, et vaut « faux » — donc l'ancien
+	// comportement.
+	Absent bool `json:"absent,omitempty"`
 }
 
 var (
@@ -59,8 +79,13 @@ var (
 // cycle antérieur.
 func ResetManifest() {
 	manifestMu.Lock()
-	defer manifestMu.Unlock()
 	manifest = map[string]FileState{}
+	manifestMu.Unlock()
+
+	// Les attentes d'état système suivent le MÊME cycle de vie. Les vider
+	// ailleurs laisserait l'un des deux inventaires survivre à l'autre, et une
+	// attente serait attribuée au module d'un cycle antérieur.
+	ResetCheckManifest()
 }
 
 // recordWrite note qu'un fichier vient d'être déposé.
@@ -75,6 +100,34 @@ func recordWrite(path, content string, mode os.FileMode) {
 		SHA256: hex.EncodeToString(sum[:]),
 		Mode:   uint32(mode.Perm()),
 	}
+}
+
+// recordAbsent note qu'un fichier ne doit PAS exister.
+//
+// Appelé par removeSystemFile, jamais directement — même discipline que
+// recordWrite : l'inventaire suit les suppressions réelles, pas une liste tenue
+// à la main.
+//
+// # Le trou que cela ferme
+//
+// Un module dont l'effet est « ce fichier ne doit pas exister » ne laissait
+// AUCUNE trace dans l'inventaire. Le recréer ne produisait donc aucun écart : le
+// scan ne compare que ce qu'il connaît, et il ne connaissait que des écritures.
+//
+// Concrètement : une GPO retire /etc/modprobe.d/vaultaire-usb-storage.conf pour
+// lever une interdiction, ou l'inverse — pose un fichier interdisant un module
+// noyau. Quelqu'un le recrée, ou le rétablit, et la machine reste déclarée
+// conforme indéfiniment.
+//
+// # Écraser une entrée d'écriture, et l'inverse
+//
+// Les deux sens sont possibles dans un même cycle : un module peut retirer un
+// fichier qu'un module antérieur avait déposé. La dernière opération gagne,
+// puisque c'est elle qui décrit l'état où le système a été laissé.
+func recordAbsent(path string) {
+	manifestMu.Lock()
+	defer manifestMu.Unlock()
+	manifest[path] = FileState{Absent: true}
 }
 
 // manifestPaths rend les chemins écrits jusqu'ici, triés.
@@ -93,17 +146,32 @@ func manifestPaths() []string {
 	return paths
 }
 
-// manifestSince rend les fichiers apparus depuis un relevé.
+// manifestSince rend les entrées apparues OU MODIFIÉES depuis un relevé.
 //
 // C'est le mécanisme d'attribution : applyModule relève l'inventaire avant
-// d'appeler l'appliqueur, puis demande ce qui s'y est ajouté.
-func manifestSince(avant map[string]struct{}, stateKey string) map[string]FileState {
+// d'appeler l'appliqueur, puis demande ce qui a bougé.
+//
+// # Pourquoi « ou modifiées » et non « apparues »
+//
+// La comparaison portait sur la seule PRÉSENCE du chemin. Deux modules qui
+// touchent au même fichier dans un cycle — le second le réécrit, ou le retire —
+// laissaient donc l'entrée attribuée au PREMIER, avec son hachage d'origine. Le
+// scan signalait ensuite une dérive permanente sur un fichier parfaitement
+// conforme à ce que le second module en a fait, et faisait réappliquer le
+// mauvais module.
+//
+// Le cas devient courant avec les entrées d'absence : « ce fichier ne doit pas
+// exister » vient souvent APRÈS un module qui l'avait déposé.
+func manifestSince(avant map[string]FileState, stateKey string) map[string]FileState {
 	manifestMu.Lock()
 	defer manifestMu.Unlock()
 
 	nouveaux := map[string]FileState{}
 	for path, state := range manifest {
-		if _, existait := avant[path]; existait {
+		if ancien, existait := avant[path]; existait &&
+			ancien.SHA256 == state.SHA256 &&
+			ancien.Mode == state.Mode &&
+			ancien.Absent == state.Absent {
 			continue
 		}
 		state.StateKey = stateKey
@@ -112,13 +180,16 @@ func manifestSince(avant map[string]struct{}, stateKey string) map[string]FileSt
 	return nouveaux
 }
 
-// manifestSnapshot relève les chemins présents, pour comparaison ultérieure.
-func manifestSnapshot() map[string]struct{} {
+// manifestSnapshot relève l'inventaire, pour comparaison ultérieure.
+//
+// Copie les états et pas seulement les clés : c'est ce qui permet à
+// manifestSince de voir qu'un fichier déjà connu a changé.
+func manifestSnapshot() map[string]FileState {
 	manifestMu.Lock()
 	defer manifestMu.Unlock()
-	vue := make(map[string]struct{}, len(manifest))
-	for p := range manifest {
-		vue[p] = struct{}{}
+	vue := make(map[string]FileState, len(manifest))
+	for p, s := range manifest {
+		vue[p] = s
 	}
 	return vue
 }
