@@ -47,7 +47,8 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 			username + "\n" +
 			storage.Computeur_ID + "\n" +
 			getlocalinformation.GetAllLocalInfForServeur() + "\n" +
-			strings.Join(activeSession, ",")
+			strings.Join(activeSession, ",") + "\n" +
+			getlocalinformation.VersionsPourInventaire()
 
 	// Le transport des GPO a quitté la catégorie 02 : il a désormais sa propre
 	// catégorie 05 (voir Protocole_Ducky.md). L'ancien 02_16 recevait
@@ -76,7 +77,8 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 			"vaultaire\n" +
 			storage.Computeur_ID + "\n" +
 			getlocalinformation.GetAllLocalInfForServeur() + "\n" +
-			strings.Join(activeSession, ",")
+			strings.Join(activeSession, ",") + "\n" +
+			getlocalinformation.VersionsPourInventaire()
 
 	}
 

@@ -39,6 +39,8 @@ import (
 	"syscall"
 
 	"duckynetworkclient/V1/ducky"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"vaultaire_proxy/version"
 )
 
 func main() {
@@ -63,6 +65,11 @@ func main() {
 			"  Sans lui, ce proxy ne serait annoncé à personne — ou pire, annoncé\n"+
 			"  sur un port où rien n'écoute.", *listen)
 	}
+
+	// La VERSION de ce binaire, posée AVANT ducky.Start : elle part dans
+	// l'inventaire 02_12 et dans l'enregistrement 04_01, tous deux émis pendant
+	// le démarrage de la session.
+	storage.VersionComposant = version.Info().Complete()
 
 	session, err := ducky.Start(ducky.Options{
 		ConfigPath: *configPath,

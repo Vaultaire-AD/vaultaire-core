@@ -53,6 +53,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
 | [`Reglages_de_duree.md`](./Developement/how%20it%20work/Reglages_de_duree.md) | Comment une période de boucle est déclarée, lue et changée |
 | [`Protocole_Ducky.md`](./Developement/how%20it%20work/Protocole_Ducky.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
+| [`Versions.md`](./Developement/how%20it%20work/Versions.md) | Comment chaque composant déclare sa version, et ce que le core en fait |
 | [`GPO.md`](./Developement/how%20it%20work/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions, **ajouter un module** |
 | [`Base_de_donnees.md`](./Developement/how%20it%20work/Base_de_donnees.md) | Schéma de la base de données |
 | [`MFA_et_Expiration.md`](./Developement/how%20it%20work/MFA_et_Expiration.md) | Second facteur et expiration des mots de passe |

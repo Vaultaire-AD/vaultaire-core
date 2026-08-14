@@ -16,7 +16,15 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 		log.Println("Erreur : données incomplètes dans le contenu GetSoftwareServeurInformation")
 		return
 	}
-	err := dbclients.UpdateHostname(database.GetDatabase(), trames_content.ClientSoftwareID, information[0], information[1], information[2], information[3])
+	// Les VERSIONS sont facultatives : un agent d'une version antérieure
+	// n'envoie que cinq lignes. Elles valent alors la chaîne vide, et la vue
+	// affiche « inconnue » — ce qui est l'information qu'on cherche devant un
+	// déploiement, et non une erreur.
+	versionAgent, versionSDK := VersionsDeLInventaire(information)
+
+	err := dbclients.UpdateHostname(database.GetDatabase(), trames_content.ClientSoftwareID,
+		information[0], information[1], information[2], information[3],
+		versionAgent, versionSDK)
 	if err != nil {
 		logs.Write_Log("ERROR", "Erreur lors de la mise à jour des informations du logiciel serveur : "+err.Error())
 		return

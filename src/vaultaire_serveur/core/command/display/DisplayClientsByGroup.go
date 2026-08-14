@@ -12,7 +12,7 @@ func DisplayClientsByGroup(clients []storage.GetClientsByGroup, groupName string
 		return fmt.Sprintf("Le groupe %s n'a aucune machine.", groupName)
 	}
 
-	t := NouvelleTable("Identifiant machine", "Nom d'hôte", "Type", "Rôle", "OS", "RAM", "CPU")
+	t := NouvelleTable("Identifiant machine", "Nom d'hôte", "Type", "Rôle", "OS", "RAM", "CPU", "VERSION")
 	for _, c := range clients {
 		t.Ajouter(
 			Valeur(c.ComputeurID),
@@ -22,6 +22,7 @@ func DisplayClientsByGroup(clients []storage.GetClientsByGroup, groupName string
 			Valeur(c.OS),
 			Valeur(c.RAM),
 			nombreOuTiret(c.Processeur),
+			Valeur(c.AgentVersion),
 		)
 	}
 	return fmt.Sprintf("Groupe %s — %d machine(s)\n\n%s", groupName, len(clients), t.String())

@@ -162,5 +162,4 @@ la liste de courses.
             politique. Le lire depuis client_software.yaml serait moins cher mais remettrait
             la decision sur la machine — celle qui derive.
 
-
 40.[AGENT-UPDATE] - comment mettre a jour le parc de client (download from repo ordonée par le core ou download directement via le ducky network ou alors via un module vaultaire special vlt-upm [vaultaire-updateManager] qui est un nouveau service vauiltaire qui sert a mettre a jour les client sans acces a internet apres comment il marche je sais pas trop encore si on prend cette solution je pense que le mode repo nexus et le plsu simple sans auth pas un service sensible que de le consulter par l'administration passera par l'interface web admin)

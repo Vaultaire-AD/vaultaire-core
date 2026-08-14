@@ -31,6 +31,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 20. [gpo — Application et conformité](#20-gpo--application-et-conformité)
 21. [cluster — Nœuds du parc](#21-cluster--nœuds-du-parc)
 22. [settings — Durées d'exploitation](#22-settings--durées-dexploitation)
+23. [version — Version du core](#23-version--version-du-core)
 
 ---
 
@@ -177,6 +178,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `mfa`    | Second facteur et politique d’expiration des mots de passe — voir [§18](#18-mfa--second-facteur-et-mots-de-passe) |
 | `enroll` | Clés d’enrôlement des clients **service** — voir [§19](#19-enroll--clés-denrôlement) |
 | `gpo`    | État d’application et de conformité des GPO du parc — voir [§20](#20-gpo--application-et-conformité) |
+| `version` | Version de ce core — voir [§23](#23-version--version-du-core) |
 | `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
 | `settings`| Durées d'exploitation du serveur — voir [§22](#22-settings--durées-dexploitation) |
 | `help`   | Liste les commandes. Chaque commande accepte `-h`. |
@@ -1025,6 +1027,16 @@ cluster purge-delay           # délai avant suppression d'un service parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 ```
 
+La colonne **VERSION** porte ce que le nœud déclare de lui-même. Elle contenait
+auparavant le TYPE du programme, écrit en dur côté serveur — que la colonne
+RÔLE affiche déjà.
+
+La colonne **SDK** est vide pour un core : il n'embarque pas le socle réseau.
+C'est lui qui juge les clients, il ne partage pas leur socle.
+
+Un nœud qui n'a jamais déclaré sa version affiche « — » : il tourne une version
+antérieure à ce dispositif, ou il ne s'est pas réenregistré depuis.
+
 ## 22. settings — Durées d'exploitation
 
 Les périodes des boucles du serveur : vérification des machines, purge des
@@ -1083,3 +1095,42 @@ Les durées de l'**agent** vivent sur la machine du parc et relèvent des GPO.
 ---
 
 *Ce manuel est conçu pour être copié dans un wiki (sections, ancres, table des matières). En cas de désaccord avec `vlt <commande> -h`, c’est l’aide en ligne qui fait foi.*
+
+---
+
+## 23. version — Version du core
+
+```bash
+version    # version de ce core
+```
+
+Rend `2.1.0+g1939a3b (2026-08-14)` : la version **sémantique**, le **commit**
+compilé, et la **date** du build.
+
+**Aucun droit n'est exigé.** La commande ne lit ni la base ni l'annuaire — elle
+rend une constante du binaire. C'est aussi la première chose qu'on demande
+devant un comportement inattendu, et une commande de diagnostic qui exige un
+droit est une commande qu'on ne peut pas taper au moment où on en a besoin.
+
+### Lire la version du reste du parc
+
+| | |
+|---|---|
+| une machine | `get -c <machine>` — agent et SDK |
+| les nœuds du cluster | `cluster list` |
+
+### `(build local)`
+
+Un binaire compilé à la main, hors du script de build, l'affiche. Il ne porte ni
+commit ni date, et **se reconnaît** ainsi dans l'inventaire du parc — c'est le
+premier binaire qu'on cherche devant une machine qui se comporte mal.
+
+### Aucune comparaison
+
+Le core n'annonce ni « à jour » ni « obsolète », et ne refuse aucun agent sur sa
+version. Il ne connaît aucune référence — il ne sait pas ce qui existe ailleurs,
+et l'inventer serait pire que se taire.
+
+Une règle de comparaison de versions se trompe sur les cas limites, et se
+tromper ici voudrait dire fermer la porte à un parc dont le seul outil de
+réparation est l'agent qu'on vient de refuser.

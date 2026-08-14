@@ -24,6 +24,8 @@ SELECT
     l.processeur, 
     l.ram, 
     l.os,
+    l.agent_version,
+    l.sdk_version,
     COALESCE(GROUP_CONCAT(DISTINCT g.group_name SEPARATOR ', '), '') AS groups,
     COALESCE(GROUP_CONCAT(DISTINCT p.name_permission SEPARATOR ', '), '') AS permissions
 FROM 
@@ -56,6 +58,8 @@ GROUP BY
 		&software.Processeur,
 		&software.RAM,
 		&software.OS,
+		&software.AgentVersion,
+		&software.SDKVersion,
 		&groups,
 		&permissions,
 	)

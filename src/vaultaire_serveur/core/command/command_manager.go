@@ -63,6 +63,22 @@ func ExecuteCommand(input, sender string) string {
 		"settings":    commandsettings.Settings_Command,
 	}
 
+	// `version` est traitée AVANT la table des commandes, comme `clear` et
+	// `help`, et sans contrôle RBAC.
+	//
+	// # Pourquoi aucun droit n'est exigé
+	//
+	// Elle ne lit ni la base ni l'annuaire : elle rend une constante du binaire
+	// et ce que le compilateur y a inscrit. Toute personne capable de taper cette
+	// commande est déjà authentifiée sur le portail ou sur le socket
+	// d'administration ; lui cacher le numéro de version ne protège rien.
+	//
+	// Et c'est la première chose qu'on demande devant un comportement inattendu.
+	// Une commande de diagnostic qui exige un droit est une commande qu'on ne
+	// peut pas taper au moment où on en a besoin.
+	if cmd == "version" {
+		return handleVersion()
+	}
 	if cmd == "clear" {
 		return handleClear(sender)
 	}
@@ -82,6 +98,7 @@ func ExecuteCommand(input, sender string) string {
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.
+  version          : Version de ce core.
   help             : Affiche cette aide.`
 	}
 

@@ -22,7 +22,9 @@ func Command_GET_ClientsByGroup(db *sql.DB, groupName string) ([]storage.GetClie
 			l.serveur, 
 			l.processeur, 
 			l.ram, 
-			l.os 
+			l.os,
+			l.agent_version,
+			l.sdk_version 
 		FROM 
 			logiciel_group lg
 		JOIN 
@@ -48,7 +50,8 @@ func Command_GET_ClientsByGroup(db *sql.DB, groupName string) ([]storage.GetClie
 	var clients []storage.GetClientsByGroup
 	for rows.Next() {
 		var client storage.GetClientsByGroup
-		if err := rows.Scan(&client.ID, &client.LogicielType, &client.ComputeurID, &client.Hostname, &client.Serveur, &client.Processeur, &client.RAM, &client.OS); err != nil {
+		if err := rows.Scan(&client.ID, &client.LogicielType, &client.ComputeurID, &client.Hostname, &client.Serveur, &client.Processeur, &client.RAM, &client.OS,
+			&client.AgentVersion, &client.SDKVersion); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}

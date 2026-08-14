@@ -16,7 +16,7 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 		return "Aucune machine."
 	}
 
-	t := NouvelleTable("ID", "Identifiant machine", "Nom d'hôte", "Type", "Rôle", "OS", "RAM", "CPU")
+	t := NouvelleTable("ID", "Identifiant machine", "Nom d'hôte", "Type", "Rôle", "OS", "RAM", "CPU", "VERSION")
 	for _, c := range clients {
 		t.Ajouter(
 			fmt.Sprintf("%d", c.ID),
@@ -27,6 +27,10 @@ func DisplayAllClients(clients []storage.GetClientsByPermission) string {
 			Valeur(c.OS),
 			Valeur(c.RAM),
 			nombreOuTiret(c.Processeur),
+			// La version de l'AGENT seulement. Celle du SDK est sur la fiche :
+			// une colonne de plus ici rendrait la ligne illisible, et les deux
+			// répondent à la même question dans neuf cas sur dix.
+			Valeur(c.AgentVersion),
 		)
 	}
 	return fmt.Sprintf("%d machine(s)\n\n%s", len(clients), t.String())

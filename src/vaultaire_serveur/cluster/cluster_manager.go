@@ -13,6 +13,7 @@ import (
 	"vaultaire/core/logs"
 	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
+	"vaultaire/core/version"
 	keymanagement "vaultaire/ducky-network/key_management"
 )
 
@@ -81,7 +82,14 @@ func StartManager(db *sql.DB) {
 		IPAddress:    ip,
 		Role:         storage.Host_Type,
 		Status:       "online",
-		VersionCode:  storage.Host_Version,
+		// La version COMPLÈTE — sémantique, commit et date — et non la seule
+		// constante. C'est ce qu'un exploitant lit dans `vlt cluster list` pour
+		// savoir ce qui tourne, et « 2.1.0 » seul ne distingue pas deux cores
+		// construits à deux semaines d'écart.
+		VersionCode:  version.Complete(),
+		// Vide, et volontairement : le core n'embarque pas le SDK. C'est lui
+		// qui juge les clients, il ne partage pas leur socle réseau.
+		VersionSDK:   "",
 		Capabilities: capabilitiesJSON,
 		Port:         port,
 		Empreinte:    empreinte,

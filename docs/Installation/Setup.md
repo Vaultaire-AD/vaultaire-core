@@ -153,6 +153,14 @@ mv /mnt/serveur/web_packet /opt/vaultaire/web_packet
 chown -R vaultaire:vaultaire /opt/vaultaire
 chmod -R 700 /opt/vaultaire
 
+# Création du dossier de CONFIGURATION
+#
+# /etc et non /opt : c'est là qu'un administrateur cherche la configuration
+# d'un service, et c'est ce qu'une sauvegarde de /etc emporte.
+mkdir -p /etc/vaultaire
+chown -R vaultaire:vaultaire /etc/vaultaire
+chmod 750 /etc/vaultaire
+
 # Création du dossier pour les logs
 mkdir /var/log/vaultaire
 chown -R vaultaire:vaultaire /var/log/vaultaire
@@ -185,6 +193,10 @@ ExecStart=/opt/vaultaire/vaultaire_serveur
 WorkingDirectory=/opt/vaultaire
 Environment=HOME=/home/vaultaire
 Environment=USER=vaultaire
+# Facultatif : le core trouve /etc/vaultaire/serveur_conf.yaml tout seul.
+# Le nommer ici rend la configuration lue VISIBLE dans l'unité, plutôt que
+# déduite d'un ordre de recherche qu'il faut connaître.
+Environment=VAULTAIRE_CONFIG=/etc/vaultaire/serveur_conf.yaml
 LimitNOFILE=4096
 AmbientCapabilities=CAP_NET_BIND_SERVICE
 NoNewPrivileges=true
@@ -204,7 +216,31 @@ WantedBy=multi-user.target" | sudo tee /etc/systemd/system/vaultaire.service > /
 
 ### 6. Fichier de configuration
 
-vous devez crée un fichier /opt/vaultaire/serveur_conf.yaml
+Le core cherche sa configuration dans cet ordre :
+
+| | |
+|---|---|
+| 1 | `$VAULTAIRE_CONFIG` — s'il est posé, il **l'emporte** |
+| 2 | `/etc/vaultaire/serveur_conf.yaml` — **emplacement recommandé** |
+| 3 | `/opt/vaultaire/serveur_conf.yaml` — installations existantes |
+
+`/etc` est là où un administrateur cherche la configuration d'un service, et
+c'est ce qu'une sauvegarde de `/etc` emporte. `/opt` reste accepté pour ne pas
+casser les déploiements en place.
+
+La variable l'emporte **même si le fichier qu'elle désigne n'existe pas** : la
+poser est une décision, et se rabattre en silence sur un autre fichier ferait
+démarrer le core sur une configuration que personne n'a demandée.
+
+```bash
+sudo mkdir -p /etc/vaultaire
+sudo cp deployments/configs/serveur_conf.yaml /etc/vaultaire/serveur_conf.yaml
+```
+
+Le modèle de référence est
+[`deployments/configs/serveur_conf.yaml`](../../deployments/configs/serveur_conf.yaml).
+Contenu minimal :
+
 ```yaml
 serveurlistenport: "6666"
 file-path:
@@ -376,6 +412,38 @@ Pour vérifier que votre service fonctionne correctement, vous pouvez consulter 
 ```bash
 sudo systemctl status vaultaire.service
 ```
+
+### Ce que le premier démarrage fait tout seul
+
+Aucune clé n'est à générer à la main. Au premier démarrage, le core :
+
+1. crée les tables si elles n'existent pas ;
+2. **génère sa paire de clés** (`server_main`) et la clé SSH de déploiement des
+   agents, puis les range **en base** — pas sur disque ;
+3. journalise son **empreinte**, et s'enregistre dans le cluster.
+
+La ligne à retrouver dans le journal :
+
+```
+keymanagement: empreinte du core SHA256:…
+```
+
+C'est cette empreinte qu'un agent compare à la clé qu'on lui sert. La même
+valeur est disponible à tout moment par `certificate fingerprint`.
+
+> Les clés sont amorcées **avant** tout service qui les lit. Une version
+> antérieure les générait depuis le démarrage du service réseau, en parallèle :
+> sur une base neuve, le gestionnaire de cluster lisait une clé qui n'existait
+> pas encore et le serveur s'arrêtait — au premier démarrage, celui où l'on
+> comprend le moins ce qui se passe.
+
+### Si le démarrage échoue
+
+| Message | Ce qu'il faut faire |
+|---|---|
+| `configuration du core introuvable ou illisible` | le message liste les emplacements consultés et la commande pour y déposer le modèle |
+| `Impossible d'amorcer les clés du core` | la base est inaccessible, ou la table `certificates` manque — vérifiez la section `database` de la configuration |
+| `cluster: empreinte du core indisponible` | **non fatal** : le core tourne, mais ne s'annoncera pas aux agents |
 
 ---
 

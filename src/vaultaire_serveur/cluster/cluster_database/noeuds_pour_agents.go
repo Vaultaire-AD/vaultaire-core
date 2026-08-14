@@ -50,7 +50,7 @@ func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
 	rows, err := db.Query(`
 		SELECT id_node, hostname, fqdn, ip_address, role, status, version_code,
 		       capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents,
-		       key_fingerprint
+		       key_fingerprint, sdk_version
 		  FROM cluster_nodes
 		 WHERE status = 'online'
 		   AND expose_aux_agents = TRUE
@@ -67,7 +67,7 @@ func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
 		var n clusterstorage.Node
 		if err := rows.Scan(&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status,
 			&n.VersionCode, &n.Capabilities, &n.LastHeartbeat, &n.Port, &n.Priorite,
-			&n.ExposeAuxAgents, &n.Empreinte); err != nil {
+			&n.ExposeAuxAgents, &n.Empreinte, &n.VersionSDK); err != nil {
 			return nil, fmt.Errorf("lecture d'un nœud : %w", err)
 		}
 		noeuds = append(noeuds, n)

@@ -53,6 +53,28 @@
         <input name="proc" value="{{ .Client.Processeur }}">
         <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
       </form>
+
+      <!-- Les VERSIONS sont affichées, jamais éditables.
+
+           Elles décrivent ce qui TOURNE sur la machine : c'est elle qui les
+           déclare dans son inventaire, à chaque connexion. Un champ de saisie
+           produirait une vue qui dit ce qu'on aimerait plutôt que ce qui est —
+           et c'est justement dans cette vue qu'on ira chercher qui n'est pas
+           à jour. -->
+      <h3 style="margin-top:1.5rem">Versions déclarées</h3>
+      <p class="muted">
+        Déclarées par la machine à chaque connexion. Non modifiables ici.
+      </p>
+      <table class="table">
+        <tr>
+          <th>Agent</th>
+          <td>{{ if .Client.AgentVersion }}{{ .Client.AgentVersion }}{{ else }}<span class="muted">inconnue</span>{{ end }}</td>
+        </tr>
+        <tr>
+          <th>SDK Ducky</th>
+          <td>{{ if .Client.SDKVersion }}{{ .Client.SDKVersion }}{{ else }}<span class="muted">inconnue</span>{{ end }}</td>
+        </tr>
+      </table>
     </section>
 
     <section class="section">

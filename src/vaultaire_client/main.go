@@ -21,6 +21,7 @@ import (
 	"vaultaire_client/sshauth"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
+	"vaultaire_client/version"
 	yaml_vaultaire "vaultaire_client/yaml"
 )
 
@@ -59,6 +60,16 @@ func brancherSocleDucky() {
 	// où il vaut false pour un poste ordinaire. S'en servir pour décider de la
 	// reconnexion faisait sortir de la boucle à la première coupure.
 	storage.Persistent = true
+
+	// La VERSION de ce binaire, posée AVANT toute ouverture de session.
+	//
+	// Le socle ne peut pas la lire lui-même : l'agent l'importe, l'inverse
+	// serait un cycle. C'est donc au programme de la déclarer, comme il déclare
+	// déjà son Computeur_ID.
+	//
+	// Avant la session, parce qu'elle part dans l'inventaire 02_12, émis dès
+	// l'authentification. Posée après, le premier inventaire l'annoncerait vide.
+	storage.VersionComposant = version.Info().Complete()
 
 	// La boucle de connexion de l'agent, et non celle du socle : elle lit
 	// /etc/vaultaire_client/client_conf.json, au format JSON déjà déployé sur

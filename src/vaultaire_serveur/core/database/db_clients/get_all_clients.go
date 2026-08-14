@@ -18,7 +18,9 @@ func Command_GET_AllClients(db *sql.DB) ([]storage.GetClientsByPermission, error
 			l.serveur, 
 			l.processeur, 
 			l.ram, 
-			l.os 
+			l.os,
+			l.agent_version,
+			l.sdk_version 
 		FROM 
 			id_logiciels l
 	`
@@ -42,7 +44,8 @@ func Command_GET_AllClients(db *sql.DB) ([]storage.GetClientsByPermission, error
 		// Structure pour stocker un client logiciel
 		var client storage.GetClientsByPermission
 		// Scan des résultats de la requête dans la structure
-		if err := rows.Scan(&client.ID, &client.LogicielType, &client.ComputeurID, &client.Hostname, &client.Serveur, &client.Processeur, &client.RAM, &client.OS); err != nil {
+		if err := rows.Scan(&client.ID, &client.LogicielType, &client.ComputeurID, &client.Hostname, &client.Serveur, &client.Processeur, &client.RAM, &client.OS,
+			&client.AgentVersion, &client.SDKVersion); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}

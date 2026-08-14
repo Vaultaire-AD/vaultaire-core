@@ -27,6 +27,7 @@ import (
 	webserveur "vaultaire/core/web_serveur"
 	duckynetwork "vaultaire/ducky-network"
 	hosthandler "vaultaire/ducky-network/host_handler"
+	keymanagement "vaultaire/ducky-network/key_management"
 )
 
 type ClientInfo struct {
@@ -69,10 +70,20 @@ func main() {
 	// évite le cycle — même motif que permission.SetRevokedChecker.
 	commandcertificate.BrancherRegeneration()
 
-	err := configurationfile.LoadConfig("/opt/vaultaire/serveur_conf.yaml")
-	if err != nil {
-		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
+	// Le chemin de la configuration n'est plus écrit en dur.
+	//
+	// $VAULTAIRE_CONFIG l'emporte, sinon /etc/vaultaire/ puis /opt/vaultaire/ —
+	// voir configuration_file.CheminConfig. Un core doit pouvoir tourner
+	// ailleurs qu'à un emplacement unique : sous un autre utilisateur, depuis un
+	// dépôt cloné, dans un conteneur qui range sa configuration autrement.
+	cheminConfig, consultes := configurationfile.CheminConfig()
+	if err := configurationfile.LoadConfig(cheminConfig); err != nil {
+		// Le message dit OÙ l'on a cherché et QUOI faire. L'erreur brute de
+		// os.Open — « no such file or directory » — est vraie et inutile : elle
+		// ne dit ni ce que le fichier doit contenir, ni où en trouver un modèle.
+		log.Fatalf("%v", configurationfile.ErreurConfigIntrouvable(consultes, err))
 	}
+	logs.Write_Log("INFO", "config: chargée depuis "+cheminConfig)
 
 	db.InitDatabase()
 	dbschema.Create_DataBase(db.GetDatabase())
@@ -144,6 +155,22 @@ func main() {
 	// leur création, sans script de migration.
 	if err := dbschema.EnsureSuperadminActions(db.GetDatabase(), permission.AllActionKeys()); err != nil {
 		logs.Write_Log("ERROR", "bootstrap: actions du groupe superadmin non accordées : "+err.Error())
+	}
+
+	// Les CLÉS du core, avant tout ce qui les lit.
+	//
+	// Elles étaient générées par StartDuckyServer, lancé en goroutine juste
+	// après cette ligne : sur une base neuve, StartManager lisait donc une clé
+	// qui n'existait pas encore, et le serveur mourait sur une panique — au
+	// premier démarrage, celui où l'on comprend le moins ce qui se passe.
+	//
+	// Synchroniquement et ICI : un prérequis amorcé dans le démarrage d'un
+	// service crée un ordre implicite entre des composants qui ne se
+	// connaissent pas, et cet ordre se casse au premier réagencement.
+	if err := keymanagement.EnsureServerKeys(); err != nil {
+		log.Fatalf("Impossible d'amorcer les clés du core : %v\n"+
+			"  Le serveur ne peut ni authentifier un client ni s'annoncer au cluster.\n"+
+			"  Vérifiez l'accès à la base et la table `certificates`.", err)
 	}
 
 	cluster.StartManager(db.GetDatabase())

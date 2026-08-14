@@ -5,7 +5,6 @@ import (
 	"vaultaire/core/logs"
 	"vaultaire/core/netguard"
 	"vaultaire/core/storage"
-	keymanagement "vaultaire/ducky-network/key_management"
 	"vaultaire/ducky-network/sessionmgr"
 )
 
@@ -19,19 +18,12 @@ func initializeServer() {
 	go checkServeurOnline()
 }
 
-// --- Gestion des clés ---
-
-func generateKeys() error {
-	if err := keymanagement.Generate_Serveur_Key_Pair(); err != nil {
-		logs.Write_Log("CRITICAL", "Error generating server key pair: "+err.Error())
-		return err
-	}
-	if err := keymanagement.Generate_SSH_Key_For_Login_Client(); err != nil {
-		logs.Write_Log("CRITICAL", "Error generating SSH key for login client: "+err.Error())
-		return err
-	}
-	return nil
-}
+// La génération des clés a QUITTÉ ce fichier.
+//
+// Elle vit dans keymanagement.EnsureServerKeys, appelé par main avant tout ce
+// qui lit ces clés. La laisser ici en faisait un prérequis amorcé depuis une
+// goroutine de démarrage de service — donc un ordre implicite entre des
+// composants qui ne se connaissent pas.
 
 // --- Mise en place du listener ---
 
@@ -110,10 +102,15 @@ func acceptConnections(listener net.Listener) {
 func StartDuckyServer() {
 	initializeServer()
 
-	if err := generateKeys(); err != nil {
-		logs.Write_LogCode("CRITICAL", logs.CodeNetKey, "ducky: key generation failed")
-		return
-	}
+	// Les clés ne sont PLUS générées ici.
+	//
+	// Elles le sont dans main, synchroniquement, avant tout ce qui les lit —
+	// voir keymanagement.EnsureServerKeys. Les générer depuis une goroutine de
+	// démarrage de service créait un ordre implicite : le gestionnaire de
+	// cluster, appelé juste avant, lisait une clé qui n'existait pas encore.
+	//
+	// Ce démarrage-ci les SUPPOSE donc présentes. C'est main qui a arrêté le
+	// programme si elles manquaient.
 
 	listener, err := createListener()
 	if err != nil {

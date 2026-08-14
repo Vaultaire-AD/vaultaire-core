@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Empreinte de la clé publique du core, à destination des machines clientes.
@@ -68,13 +69,31 @@ func EmpreinteClePublique(pemContent string) (string, error) {
 
 // EmpreinteDuCore rend l'empreinte de la clé que le core sert aux agents.
 //
-// Elle est calculée à partir de GetPublicKey() — la MÊME source que celle
-// employée pour répondre à `askkey`. Passer par une autre source rendrait
-// possible qu'elles divergent, et l'agent refuserait alors une clé légitime.
+// Elle lit la MÊME entrée de base que celle servie à `askkey` — le certificat
+// nommé ServerMainKeyName. Passer par une autre source rendrait possible
+// qu'elles divergent, et l'agent refuserait alors une clé légitime.
+//
+// # Pourquoi elle N'APPELLE PAS GetPublicKey
+//
+// `GetPublicKey` PANIQUE quand la clé n'est pas en base. C'est tenable pour
+// l'émetteur de `askkey` — répondre à un client sans clé n'a aucun sens, et le
+// serveur ne doit pas continuer dans cet état — mais pas ici.
+//
+// Cette fonction est appelée au DÉMARRAGE, par le gestionnaire de cluster, et
+// son appelant sait déjà quoi faire d'un échec : ce core ne s'annonce pas aux
+// agents, ce qui est un défaut de disponibilité et non une raison de refuser de
+// démarrer. Une panique lui retirait cette décision.
+//
+// Le cas s'est produit : sur une base neuve, StartManager passait avant que les
+// clés ne soient générées, et le serveur mourait sur une panique au lieu de
+// journaliser puis de poursuivre.
 func EmpreinteDuCore() (string, error) {
-	cle := GetPublicKey()
-	if cle == "" || cle == "err" {
-		return "", fmt.Errorf("clé publique du core indisponible")
+	cle, err := GetPublicKeyPEMFromDB(ServerMainKeyName)
+	if err != nil {
+		return "", fmt.Errorf("clé publique du core indisponible : %w", err)
+	}
+	if strings.TrimSpace(cle) == "" {
+		return "", fmt.Errorf("clé publique du core vide en base")
 	}
 	return EmpreinteClePublique(cle)
 }

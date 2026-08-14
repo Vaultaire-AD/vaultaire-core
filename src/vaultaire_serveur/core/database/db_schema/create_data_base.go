@@ -102,7 +102,23 @@ func Create_DataBase(db *sql.DB) {
 			serveur BOOLEAN NOT NULL DEFAULT FALSE,
 			processeur INT NOT NULL,
 			ram VARCHAR(255) NOT NULL,
-			os VARCHAR(255) NOT NULL
+			os VARCHAR(255) NOT NULL,
+
+			-- Versions déclarées par le programme lui-même, dans l'inventaire
+			-- 02_12. Le core les STOCKE et les AFFICHE ; il ne les interprète
+			-- jamais — aucun refus, aucun seuil, aucune comparaison.
+			--
+			-- Deux colonnes et non une : l'agent et le socle réseau ne bougent
+			-- pas ensemble. Une correction du provisionnement des groupes ne
+			-- touche pas au protocole, et l'inverse est vrai aussi. Un seul
+			-- numéro pour les deux obligerait à monter l'un pour une raison qui
+			-- ne le concerne pas.
+			--
+			-- Vide = jamais déclaré. Un agent d'une version antérieure n'envoie
+			-- pas ces lignes ; il apparaît « inconnue » dans les vues, ce qui est
+			-- exactement l'information utile pour un déploiement.
+			agent_version VARCHAR(64) NOT NULL DEFAULT '',
+			sdk_version VARCHAR(64) NOT NULL DEFAULT ''
 		);`,
 
 		// Logiciels ↔ groupes
@@ -224,7 +240,16 @@ func Create_DataBase(db *sql.DB) {
     		-- apprendrait son adresse sans elle devrait accepter sa clé en
     		-- aveugle — c'est-à-dire faire exactement ce que le fichier
     		-- d'empreintes existe pour empêcher.
-    		key_fingerprint VARCHAR(80) NOT NULL DEFAULT ''
+    		key_fingerprint VARCHAR(80) NOT NULL DEFAULT '',
+
+    		-- Version du socle réseau lié à ce nœud.
+    		--
+    		-- La colonne version_code porte déjà la version du programme. Celle-ci
+    		-- répond à l'autre question du point 39 : « quel SDK a servi à
+    		-- construire cette image ». Vide pour le core, qui n'embarque pas
+    		-- le SDK — c'est lui qui juge les clients, il ne partage pas leur
+    		-- socle.
+    		sdk_version VARCHAR(64) NOT NULL DEFAULT ''
 		);`,
 
 		// ----- Métriques proxy (exposées pour l'interface Web) -----

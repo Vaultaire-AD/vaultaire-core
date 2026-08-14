@@ -163,6 +163,49 @@ if [ -n "$REPLACE_FAUTIFS" ]; then
     exit 1
 fi
 
+# -------------------------
+# Identité de la construction
+# -------------------------
+#
+# Le commit et la date sont INJECTÉS dans les binaires (-ldflags -X). La version
+# sémantique, elle, reste une constante du code : elle dit ce que le composant
+# PROMET, et c'est une décision humaine. Les deux ensemble donnent
+# « 2.1.0+g1939a3b (2026-08-14) ».
+#
+# Pourquoi injecter plutôt que se fier à la seule constante : une constante se
+# monte à la main, donc un jour elle ne le sera pas. Le commit, lui, ne peut pas
+# être oublié.
+#
+# `-buildvcs=false` est posé plus bas et interdit à Go de le faire tout seul :
+# il refuse de construire quand l'arbre git n'est pas lisible, ce qui casse la
+# compilation en conteneur. On fournit donc l'information nous-mêmes, et son
+# absence n'empêche rien.
+if VCS_COMMIT="$(git -C "$ROOT_DIR" describe --always --dirty --tags 2>/dev/null)" && [ -n "$VCS_COMMIT" ]; then
+    VCS_COMMIT="g${VCS_COMMIT}"
+else
+    # Pas de dépôt git — archive, conteneur de build. La valeur de repli est
+    # AFFICHÉE telle quelle dans l'inventaire du parc, jamais masquée : un
+    # binaire dont on ne sait pas d'où il vient est justement ce qu'on veut
+    # repérer.
+    VCS_COMMIT="dev"
+    echo "⚠️  git indisponible — les binaires porteront « dev » comme commit"
+fi
+VCS_DATE="$(date +%Y-%m-%d)"
+echo "🏷  Version de build : $VCS_COMMIT ($VCS_DATE)"
+
+# ldflags_pour compose les -X d'un module.
+#
+# Le chemin d'un -X est « module/paquet.Variable » : il DIFFÈRE par module, et
+# une valeur posée sur un chemin inexistant est silencieusement ignorée par
+# l'éditeur de liens. C'est le piège de ce mécanisme — on croit avoir injecté,
+# le binaire dit « dev », et rien ne le signale.
+#
+# D'où le contrôle après build : voir verifier_version.
+ldflags_pour() {
+    local chemin="$1"
+    printf -- '-X %s.Commit=%s -X %s.Date=%s' "$chemin" "$VCS_COMMIT" "$chemin" "$VCS_DATE"
+}
+
 # build_go compile une cible et ARRÊTE le script si elle échoue.
 #
 # Sans cela, un `go build` en échec laissait le script continuer et afficher
@@ -173,10 +216,10 @@ fi
 # Le quatrième argument, facultatif, porte des variables d'environnement à
 # passer au compilateur (voir le proxy et CGO_ENABLED=0).
 build_go() {
-    local libelle="$1" repertoire="$2" sortie="$3" env_build="${4:-}"
+    local libelle="$1" repertoire="$2" sortie="$3" env_build="${4:-}" ldflags="${5:-}"
     echo "🛠 Build $libelle..."
     mkdir -p "$(dirname "$sortie")"
-    if ! (cd "$repertoire" && env $env_build go build -buildvcs=false -o "$sortie"); then
+    if ! (cd "$repertoire" && env $env_build go build -buildvcs=false -ldflags "$ldflags" -o "$sortie"); then
         echo "❌ Build $libelle échoué — arrêt."
         exit 1
     fi
@@ -196,7 +239,8 @@ build_go() {
 # -------------------------
 # Build serveur
 # -------------------------
-build_go "du serveur" "$ROOT_DIR/src/vaultaire_serveur/main" "$SERVER_BIN"
+build_go "du serveur" "$ROOT_DIR/src/vaultaire_serveur/main" "$SERVER_BIN" "" \
+    "$(ldflags_pour vaultaire/core/version)"
 
 # web_packet n'est PLUS recopié dans cmd/.
 #
@@ -212,7 +256,14 @@ build_go "du serveur" "$ROOT_DIR/src/vaultaire_serveur/main" "$SERVER_BIN"
 # travail ; VAULTAIRE_WEB_PACKET permet de le désigner autrement.
 
 build_go "du CLI"    "$ROOT_DIR/src/vaultaire_cli"    "$CLI_BIN"
-build_go "du client" "$ROOT_DIR/src/vaultaire_client" "$CLIENT_BIN"
+# Le client reçoit DEUX jeux de -X : le sien, et celui du SDK qu'il embarque.
+#
+# Le second répond à « quelle version du socle réseau a servi à construire cette
+# image », que le point 39 demande explicitement. Le commit est le même — c'est
+# un dépôt unique — mais la version SÉMANTIQUE du SDK est sa propre constante,
+# et c'est elle qui porte la promesse de compatibilité du protocole.
+build_go "du client" "$ROOT_DIR/src/vaultaire_client" "$CLIENT_BIN" "" \
+    "$(ldflags_pour vaultaire_client/version) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
 build_go "du ctl"    "$ROOT_DIR/src/vaultaire_ctl"    "$CTL_BIN"
 
 # -------------------------
@@ -230,7 +281,8 @@ build_go "du ctl"    "$ROOT_DIR/src/vaultaire_ctl"    "$CTL_BIN"
 # de Linux.
 #
 # Statique, le même binaire tourne partout : debian, alpine, ou à même l'hôte.
-build_go "du proxy" "$ROOT_DIR/src/vaultaire_proxy" "$PROXY_BIN" "CGO_ENABLED=0"
+build_go "du proxy" "$ROOT_DIR/src/vaultaire_proxy" "$PROXY_BIN" "CGO_ENABLED=0" \
+    "$(ldflags_pour vaultaire_proxy/version) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
 
 # La configuration d'exemple accompagne le binaire : un proxy déployé sans
 # fichier de configuration ne démarre pas, et le modèle n'est utile que là où on
@@ -254,6 +306,38 @@ cp ./libnss_vaultaire.so.2 "$BUILD_DIR/vaultaire_client/"
 # titre « Copier les binaires dans release » qui ne copiait rien. Le transfert
 # vers l'hôte de préproduction se fait par deployments/pre-prod/deploy.sh, en
 # rsync.
+
+# -------------------------
+# Contrôle de l'injection de version
+# -------------------------
+#
+# `-ldflags -X` sur un chemin de paquet INEXISTANT est ignoré SANS ERREUR par
+# l'éditeur de liens. C'est le piège du mécanisme : on croit avoir injecté, le
+# binaire annonce « dev », et rien ne le signale — jusqu'au jour où l'inventaire
+# du parc affiche « dev » partout et où plus personne ne sait ce qui tourne.
+#
+# Renommer un paquet `version`, déplacer un module, changer un chemin d'import :
+# chacun de ces gestes casse l'injection en silence. Le contrôle coûte trois
+# commandes et ferme le cas.
+if [ "$VCS_COMMIT" != "dev" ]; then
+    VERSION_MUETTE=""
+    for binaire in "$SERVER_BIN" "$CLIENT_BIN" "$PROXY_BIN"; do
+        [ -f "$binaire" ] || continue
+        # La chaîne injectée doit se retrouver telle quelle dans le binaire.
+        # `strings` n'est pas partout ; grep -a suffit et ne dépend de rien.
+        if ! grep -aq -- "$VCS_COMMIT" "$binaire"; then
+            VERSION_MUETTE="$VERSION_MUETTE  $binaire\n"
+        fi
+    done
+    if [ -n "$VERSION_MUETTE" ]; then
+        echo "❌ Version NON injectée dans :"
+        printf "$VERSION_MUETTE"
+        echo "   Le chemin passé à -ldflags -X ne correspond à aucun paquet."
+        echo "   Vérifiez ldflags_pour et les chemins de module dans ce script."
+        exit 1
+    fi
+    echo "🏷  Version injectée et vérifiée dans les binaires"
+fi
 
 echo "✅ Build terminé — binaires dans $BUILD_DIR"
 

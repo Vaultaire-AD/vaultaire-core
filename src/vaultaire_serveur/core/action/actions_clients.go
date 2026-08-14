@@ -116,7 +116,19 @@ func modifierClient(_ Appelant, p Params) (Resultat, error) {
 	// un nombre de cœurs.
 	proc := valeurOuCourante(p, "proc", strconv.Itoa(courant.Processeur))
 
-	if err := dbclients.UpdateHostname(db, cible, hostname, systeme, ram, proc); err != nil {
+	// Les VERSIONS sont repassées telles quelles, jamais éditables.
+	//
+	// Elles décrivent ce qui TOURNE sur la machine — c'est elle qui les déclare
+	// dans son inventaire. Laisser un administrateur les corriger produirait une
+	// vue qui dit ce qu'on aimerait plutôt que ce qui est, et c'est justement
+	// dans cette vue qu'on ira chercher qui n'est pas à jour.
+	//
+	// Les repasser est indispensable : UpdateHostname écrit systématiquement
+	// toutes les colonnes, donc les omettre les effacerait à chaque correction
+	// de nom d'hôte. C'est le défaut que `valeurOuCourante` corrige déjà pour
+	// les champs matériels.
+	if err := dbclients.UpdateHostname(db, cible, hostname, systeme, ram, proc,
+		courant.AgentVersion, courant.SDKVersion); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la mise à jour de la machine %q : %w", cible, err)
 	}
 

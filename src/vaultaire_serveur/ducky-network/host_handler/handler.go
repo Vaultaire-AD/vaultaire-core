@@ -113,6 +113,23 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 			"qui n'auraient pas de quoi reconnaître sa clé")
 	}
 
+	// Les VERSIONS, en huitième et neuvième ligne, facultatives.
+	//
+	// `version_code` recevait jusqu'ici la chaîne « vaultaire_proxy » écrite en
+	// dur ici même : la colonne annonçait une version et portait un type, que
+	// `role` porte déjà. Elle reçoit maintenant ce que le nœud déclare de
+	// lui-même.
+	//
+	// Vide = non déclaré, et c'est affiché tel quel. Un nœud dont on ne connaît
+	// pas la version est exactement ce qu'on veut repérer avant un déploiement.
+	versionNoeud, versionSDK := "", ""
+	if len(lines) > 7 {
+		versionNoeud = strings.TrimSpace(lines[7])
+	}
+	if len(lines) > 8 {
+		versionSDK = strings.TrimSpace(lines[8])
+	}
+
 	// Créer le groupe/domaine si inexistant (ex: proxy.vaultaire.fr)
 	groupName := role
 	if domain != "" {
@@ -135,10 +152,11 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		IPAddress:    ip,
 		Role:         role,
 		Status:       "online",
-		VersionCode:  "vaultaire_proxy",
+		VersionCode:  versionNoeud,
 		Capabilities: "{}",
 		Port:         port,
 		Empreinte:    empreinte,
+		VersionSDK:   versionSDK,
 	}
 	if err := clusterdatabase.RegisterNode(db, node); err != nil {
 		return "", fmt.Errorf("register_host: %w", err)

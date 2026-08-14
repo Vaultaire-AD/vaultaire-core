@@ -19,14 +19,21 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 		return "Aucun nœud dans le cluster.\n"
 	}
 
-	tb := NouvelleTable("ÉTAT", "HÔTE", "ADRESSE", "RÔLE", "VERSION", "DERNIER BATTEMENT")
+	tb := NouvelleTable("ÉTAT", "HÔTE", "ADRESSE", "RÔLE", "VERSION", "SDK", "DERNIER BATTEMENT")
 	for _, n := range noeuds {
 		tb.Ajouter(
 			Valeur(n.Status),
 			Valeur(n.Hostname),
 			Valeur(n.IPAddress),
 			Valeur(n.Role),
+			// VERSION porte désormais ce que le nœud DÉCLARE de lui-même. Elle
+			// contenait la chaîne « vaultaire_proxy » écrite en dur côté core,
+			// c'est-à-dire le type — que la colonne RÔLE affiche déjà.
 			Valeur(n.VersionCode),
+			// SDK est vide pour un core : il n'embarque pas le socle réseau.
+			// Une colonne vide sur cette ligne-là est donc juste, et non un
+			// manque.
+			Valeur(n.VersionSDK),
 			// Heure seule et non date complète : les battements se comptent en
 			// secondes, et une date entière noierait l'information utile.
 			n.LastHeartbeat.Format("15:04:05"),

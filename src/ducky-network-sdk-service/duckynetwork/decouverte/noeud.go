@@ -10,6 +10,8 @@ import (
 
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/serveurauth"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/version"
 )
 
 // L'enregistrement d'un nœud dans le cluster (04_01, 04_07, 04_05).
@@ -87,10 +89,20 @@ func ConstruireEnregistrement(sessionKey, clientID string, n InfosNoeud) (string
 		return "", err
 	}
 
+	// La VERSION du programme et celle du socle, en queue.
+	//
+	// `version_code` portait jusqu'ici la chaîne « vaultaire_proxy » — c'est-à-dire
+	// le TYPE, écrit en dur côté core, dans une colonne dont le nom annonce une
+	// version. La table disait donc le type deux fois et la version jamais.
+	//
+	// En queue, comme le port et l'empreinte : un core resté à l'ancienne version
+	// lit les cinq premières lignes et ignore le reste, plutôt que de décaler ses
+	// champs.
 	return strings.Join([]string{
 		"04_01", "serveur_central", sessionKey, "vaultaire", clientID,
 		n.Hostname, n.FQDN, n.IP, n.Role, n.Domaine,
 		strconv.Itoa(n.Port), empreinte,
+		storage.VersionComposant, version.SDK().Complete(),
 	}, "\n"), nil
 }
 

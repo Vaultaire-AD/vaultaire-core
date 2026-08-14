@@ -45,4 +45,15 @@ type Node struct {
 	// liste distribuée aux agents : sans elle, un agent qui apprend l'adresse
 	// d'un core devrait accepter sa clé en aveugle à la première connexion.
 	Empreinte string
+
+	// VersionSDK est celle du socle réseau lié à ce nœud.
+	//
+	// `VersionCode` porte déjà la version du PROGRAMME. Celle-ci répond à
+	// l'autre question : avec quel SDK l'image a-t-elle été construite. Les deux
+	// ne bougent pas ensemble, et un seul numéro pour les deux mentirait sur
+	// l'un ou sur l'autre.
+	//
+	// Vide pour un core : il n'embarque pas le SDK — c'est lui qui juge les
+	// clients, il ne partage pas leur socle.
+	VersionSDK string
 }
