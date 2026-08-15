@@ -405,15 +405,14 @@ alias vlt=vaultaire
 
 ### Rotation des journaux
 
-```bash
-sudo cp deployments/logrotate/vaultaire-core /etc/logrotate.d/
-sudo logrotate --debug /etc/logrotate.d/vaultaire-core   # simulation
-```
+**Rien à installer, rien à configurer.** Le core fait tourner ses journaux
+lui-même. Pas de `logrotate`, pas de fichier dans `/etc/logrotate.d/`, pas de
+minuteur à régler.
 
-Le journal **principal** du core n'est pas concerné : il part sur la sortie
-standard, et c'est systemd ou le moteur de conteneurs qui le collecte, avec sa
-propre rétention. Le faire tourner ici en tiendrait deux, et « où sont les
-journaux » aurait deux réponses.
+Le journal **principal** n'est pas concerné : il part sur la sortie standard, et
+c'est systemd ou le moteur de conteneurs qui le collecte, avec sa propre
+rétention. Le faire tourner aussi en tiendrait deux, et « où sont les journaux »
+aurait deux réponses.
 
 Deux familles passent par un fichier, parce qu'on veut pouvoir les lire à part :
 
@@ -423,16 +422,27 @@ Deux familles passent par un fichier, parce qu'on veut pouvoir les lire à part 
 | `/var/log/vaultaire/SQL_Injection.log` | identifiants écartés par l'assainissement des requêtes |
 
 Politique : **un fichier par jour, 30 archives, compressées sauf la plus
-récente**, et une taille maximale de 50 Mo pour qu'un incident bavard ne
+récente**, et une rotation anticipée à 50 Mo pour qu'un incident bavard ne
 remplisse pas la partition avant minuit.
 
-> ⚠️ La borne de taille ne joue que si logrotate est invoqué **plus souvent
-> qu'une fois par jour**. Le minuteur systemd standard est quotidien — dans ce
-> cas la seule borne réelle est la cadence. Voir
-> `deployments/logrotate/README.md` pour le passer à l'heure.
+```
+SQL_Injection.log                  courant
+SQL_Injection.log.2026-08-14       la veille, en clair
+SQL_Injection.log.2026-08-13.gz    au-delà, compressé
+```
 
-Ces deux fichiers sont créés en `0600 root:root`, dans un répertoire en `0700` :
-ils nomment des comptes et des tentatives d'injection.
+Le déclencheur du changement de jour est la **date du fichier**, pas un
+minuteur : un core arrêté trois jours archive ses lignes à *leur* date, et non à
+celle du redémarrage.
+
+Ces fichiers sont créés en `0600 root:root`, dans un répertoire en `0700` : ils
+nomment des comptes et des tentatives d'injection.
+
+Pour changer la politique sur une installation particulière, ce sont des
+variables du paquet `core/logs` — `ArchivesConservees`, `TailleMaxJournal`,
+`CompresserArchives` — posées au démarrage. Volontairement pas un fichier de
+configuration : une politique de journaux qui peut manquer sur une machine est
+une machine dont le disque se remplit sans que rien ne le signale.
 
 ---
 

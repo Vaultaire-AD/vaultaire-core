@@ -1,6 +1,9 @@
 package gpo
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Suivi de dérive — ce que l'agent constate entre deux applications.
 //
@@ -13,6 +16,81 @@ import "fmt"
 // bord n'est pas d'être vide, c'est d'être rassurant à tort.
 //
 // 05_15 répond à l'autre question : est-ce ENCORE vrai ?
+
+// DriftMode décide de ce que l'agent FAIT d'un écart constaté.
+//
+// # Pourquoi la décision vient d'ici et non de l'agent
+//
+// Le mode a longtemps été une variable du binaire client, avec le commentaire
+// « destinée à être relue depuis la configuration de l'agent ». Personne ne la
+// relisait : le mode audit était inatteignable en production, donc du code mort.
+//
+// Le remettre dans un fichier de l'agent aurait déplacé le problème sans le
+// résoudre. La machine est justement celle qui dérive : lui confier le réglage
+// qui décide si sa dérive est corrigée revient à laisser la question à la partie
+// qui a un intérêt dans la réponse. Un poste dont quelqu'un a édité
+// /etc/vaultaire/client_software.yaml aurait pu se déclarer en audit et n'être
+// plus jamais corrigé, sans que rien ne le signale côté serveur.
+//
+// # Pourquoi le mode est porté par la GPO
+//
+// Un parc n'est pas homogène. Un groupe « laboratoire » où les interventions
+// manuelles sont légitimes veut du signalement ; le reste du parc veut de la
+// correction. Deux binaires pour ça n'était pas tenable. Le mode est donc un
+// attribut de la GPO, et un module hérite du mode de la GPO qui le porte : une
+// machine qui reçoit les deux applique la règle de chacun, module par module,
+// au lieu d'un compromis qui trahirait l'une ou l'autre.
+type DriftMode string
+
+const (
+	// DriftEnforce : l'écart est signalé ET corrigé au cycle suivant. C'est ce
+	// qu'on attend d'une politique — un annuaire qui constate sans reprendre la
+	// main n'est plus une source de vérité.
+	DriftEnforce DriftMode = "enforce"
+	// DriftAudit : l'écart est signalé, rien n'est corrigé.
+	//
+	// À réserver aux parcs où des interventions manuelles légitimes existent.
+	// Une GPO qui n'est plus appliquée et reste affichée comme conforme est pire
+	// que pas de GPO du tout : c'est pourquoi ce mode signale toujours, et
+	// pourquoi il n'est pas le défaut.
+	DriftAudit DriftMode = "audit"
+)
+
+// DefaultDriftMode est le mode d'une GPO qui n'en déclare pas.
+//
+// Enforce, et non audit : le défaut d'un mécanisme de conformité doit être de
+// faire respecter la configuration. Un défaut permissif transformerait chaque
+// oubli de réglage en machine silencieusement non corrigée.
+const DefaultDriftMode = DriftEnforce
+
+// IsValidDriftMode indique si un mode est reconnu.
+func IsValidDriftMode(m string) bool {
+	switch DriftMode(m) {
+	case DriftEnforce, DriftAudit:
+		return true
+	}
+	return false
+}
+
+// NormalizeDriftMode interprète une valeur saisie et rend le mode correspondant.
+//
+// Une valeur VIDE rend le défaut sans erreur : c'est le cas d'une GPO créée
+// avant l'existence de la colonne, et d'une base dont la migration vient de
+// poser la colonne. Une valeur non vide et inconnue est en revanche refusée
+// plutôt que ramenée au défaut — « enfrce » deviendrait sinon silencieusement
+// enforce aujourd'hui, et personne ne verrait la faute de frappe le jour où le
+// même geste voudra dire audit.
+func NormalizeDriftMode(raw string) (DriftMode, error) {
+	clean := strings.ToLower(strings.TrimSpace(raw))
+	if clean == "" {
+		return DefaultDriftMode, nil
+	}
+	if !IsValidDriftMode(clean) {
+		return "", fmt.Errorf("mode de dérive %q invalide (attendu : %s ou %s)",
+			raw, DriftEnforce, DriftAudit)
+	}
+	return DriftMode(clean), nil
+}
 
 // DriftKind qualifie un écart constaté sur un fichier déployé.
 type DriftKind string

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/storage"
@@ -14,24 +15,21 @@ import (
 //
 // # Le fichier est rouvert PAR SON CHEMIN à chaque ligne
 //
-// C'est ce qui rend `logrotate` suffisant sans la moindre ligne de code de
-// rotation, et cette propriété est trop facile à détruire pour rester implicite.
-//
-// logrotate, dans sa configuration par défaut, RENOMME le fichier puis en crée
-// un neuf. Un programme qui garderait un descripteur ouvert continuerait
-// d'écrire dans le fichier renommé — donc dans l'archive — et le fichier courant
-// resterait vide indéfiniment. C'est le défaut classique, celui qui oblige à
-// `copytruncate` (qui perd les lignes écrites pendant la copie) ou à un signal
-// de réouverture (qu'il faut alors implémenter et tester).
+// C'est ce qui permet à la rotation d'être un simple renommage, sans aucune
+// gestion de descripteur. Un programme qui garderait le fichier ouvert
+// continuerait d'écrire dans le fichier RENOMMÉ — donc dans l'archive — et le
+// fichier courant resterait vide indéfiniment.
 //
 // Ici, chaque ligne fait un `OpenFile` sur le CHEMIN : après un renommage, la
-// ligne suivante recrée le fichier. La rotation est suivie toute seule.
+// ligne suivante recrée le fichier. Cela vaut pour la rotation que fait ce
+// paquet (voir rotation.go), et aussi pour un administrateur qui déplacerait le
+// fichier à la main.
 //
-// Le coût est réel — deux appels système par ligne — et il est assumé. Le volume
-// d'un agent se compte en dizaines de lignes par minute, pas en milliers par
-// seconde. Un jour où ce ne sera plus vrai, garder le descripteur exigera
-// d'ajouter la réouverture sur SIGHUP dans le même geste, sans quoi le journal
-// disparaîtra silencieusement à la première rotation.
+// Le coût est réel — quelques appels système par ligne — et il est assumé. Le
+// volume d'un agent se compte en dizaines de lignes par minute, pas en milliers
+// par seconde. Le jour où ce ne sera plus vrai, garder le descripteur exigera de
+// rendre la rotation consciente de ce descripteur DANS LE MÊME GESTE, sans quoi
+// le journal disparaîtra silencieusement à la première rotation.
 
 // # Un second répertoire, que personne ne surveillait
 //
@@ -103,15 +101,33 @@ func Write_log(level string, content string) {
 	ecrireLigne(storage.LogPathResolu()+storage.NomJournalResolu(), logLine)
 }
 
+// verrouEcriture sérialise l'écriture ET la rotation.
+//
+// Sans lui, deux goroutines pourraient décider de faire tourner le même fichier
+// au même instant : la seconde renommerait le fichier neuf que la première vient
+// de créer, et les lignes de la première partiraient en archive.
+//
+// Il sérialise aussi les écritures ordinaires, ce qui n'est pas gênant à ces
+// volumes et évite de dépendre de l'atomicité de O_APPEND.
+var verrouEcriture sync.Mutex
+
 // ecrireLigne ajoute une ligne à un fichier, en le créant au besoin.
 //
 // Les erreurs vont sur la sortie standard et NON dans le journal : écrire dans
 // le journal l'échec d'écriture du journal se rappellerait indéfiniment.
 func ecrireLigne(chemin string, ligne string) {
+	verrouEcriture.Lock()
+	defer verrouEcriture.Unlock()
+
 	if err := os.MkdirAll(filepath.Dir(chemin), modeRepertoireJournal); err != nil {
 		fmt.Printf("erreur lors de la création du répertoire de journal: %v\n", err)
 		return
 	}
+
+	// La rotation AVANT l'ouverture, jamais après : décidée sur un fichier
+	// qu'on vient d'agrandir, elle archiverait un fichier contenant déjà la
+	// ligne du jour suivant.
+	rotationSiNecessaire(chemin)
 
 	// 0600 : un journal d'agent nomme des comptes, des machines et des motifs de
 	// refus. Il était en 0644, donc lisible par tout utilisateur de la machine —

@@ -39,6 +39,7 @@ import (
 	"syscall"
 
 	"duckynetworkclient/V1/ducky"
+	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"vaultaire_proxy/version"
 )
@@ -77,6 +78,17 @@ func main() {
 	// dans le fichier de l'agent — sous un nom qui annonce autre chose que son
 	// contenu, et sans qu'une rotation puisse lui appliquer sa propre politique.
 	storage.NomJournal = "vaultaire_proxy.log"
+
+	// Le seuil de rotation de CE binaire.
+	//
+	// Le socle en pose un de poste — 20 Mo. Un proxy voit passer le trafic de
+	// plusieurs machines : à ce seuil, il tournerait plusieurs fois par jour en
+	// fonctionnement sain, et ses 30 archives ne couvriraient plus un mois mais
+	// quelques jours. La protection contre l'emballement mangerait la rétention.
+	//
+	// Une ligne ici, et non un réglage : c'est une propriété de ce programme,
+	// pas une décision d'exploitation à reprendre sur chaque machine.
+	logs.TailleMaxJournal = 100 << 20
 
 	session, err := ducky.Start(ducky.Options{
 		ConfigPath: *configPath,

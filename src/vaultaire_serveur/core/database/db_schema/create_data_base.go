@@ -270,6 +270,37 @@ func Create_DataBase(db *sql.DB) {
     		-- UNIQUE : un client possède au plus une ligne. Deux lignes pour un
     		-- même propriétaire rendraient « la ligne du demandeur » ambiguë.
     		owner_client_id VARCHAR(191) NOT NULL DEFAULT '',
+
+    		-- Adresse par laquelle les AGENTS joignent ce nœud, déclarée par un
+    		-- administrateur.
+    		--
+    		-- ip_address est un FAIT : l'adresse que le nœud voit de lui-même.
+    		-- Derrière une redirection NAT, dans un conteneur, ou sur un hôte à
+    		-- plusieurs interfaces, ce n'est pas celle par laquelle le parc
+    		-- l'atteint. Le nœud ne peut pas la connaître — il ne voit pas sa
+    		-- propre infrastructure de l'extérieur.
+    		--
+    		-- Colonne SÉPARÉE plutôt qu'un écrasement d'ip_address : le fait et
+    		-- la décision ne se réécrivent pas au même rythme. Le nœud réécrit
+    		-- ip_address à chaque enregistrement, et emporterait la déclaration
+    		-- de l'administrateur avec elle au premier redémarrage.
+    		--
+    		-- Vide vaut « aucune déclaration » : c'est ip_address qui est servie,
+    		-- donc le comportement d'avant cette colonne.
+    		--
+    		-- IP ou nom DNS. Un nom permet de faire porter une bascule d'adresse
+    		-- par le DNS ; l'authentification du nœud tient à son empreinte de
+    		-- clé, pas à son adresse.
+    		adresse_publique VARCHAR(255) NOT NULL DEFAULT '',
+
+    		-- Port par lequel les agents joignent ce nœud.
+    		--
+    		-- Zéro vaut « aucune déclaration », et c'est ducky_port qui est
+    		-- servi. Séparé de l'adresse parce qu'une redirection NAT translate
+    		-- souvent le port sans changer l'hôte : 203.0.113.5:16666 vers un
+    		-- proxy qui écoute bien sur 6666.
+    		port_public INT NOT NULL DEFAULT 0,
+
     		UNIQUE KEY uk_owner (owner_client_id)
 		);`,
 

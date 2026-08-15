@@ -49,6 +49,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 
 | Fichier | Contenu |
 | --- | --- |
+| [`README.md`](./Developement/how%20it%20work/README.md) | **Point d'entrée pour un agent IA ou un nouveau développeur** : quel module, quel chemin, quelle page — et les pièges avant d'écrire |
 | [`Actions.md`](./Developement/how%20it%20work/Actions.md) | Le registre `core/action` : chemin d'une requête, portées, filtrage, **comment ajouter une action** |
 | [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
 | [`Reglages_de_duree.md`](./Developement/how%20it%20work/Reglages_de_duree.md) | Comment une période de boucle est déclarée, lue et changée |

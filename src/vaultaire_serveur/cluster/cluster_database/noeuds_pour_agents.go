@@ -33,6 +33,16 @@ import (
 // l'agent composerait avec un port deviné — donc une tentative qui échoue, un
 // délai d'attente, et un basculement retardé d'autant.
 //
+// « Sans port » veut dire sans port DÉCLARÉ NI par le nœud ni par un
+// administrateur. Un port public suffit donc à rendre joignable un nœud
+// enregistré par une version antérieure : c'est même la seule façon de le
+// remettre dans la liste sans attendre qu'il se réenregistre.
+//
+// L'ADRESSE et le PORT servis sont ceux d'AdresseEffective et PortEffectif : la
+// déclaration de l'administrateur l'emporte sur ce que le nœud voit de lui-même.
+// Un nœud derrière une redirection annonce une adresse privée que personne dans
+// le parc ne peut joindre, et il n'a aucun moyen de s'en rendre compte.
+//
 // Un nœud sans EMPREINTE est omis, et c'est le filtre le plus important. Un
 // agent qui apprend une adresse sans l'empreinte qui va avec devrait accepter la
 // clé de ce nœud en aveugle à sa première connexion — c'est-à-dire faire
@@ -50,11 +60,11 @@ func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
 	rows, err := db.Query(`
 		SELECT id_node, hostname, fqdn, ip_address, role, status, version_code,
 		       capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents,
-		       key_fingerprint, sdk_version
+		       key_fingerprint, sdk_version, adresse_publique, port_public
 		  FROM cluster_nodes
 		 WHERE status = 'online'
 		   AND expose_aux_agents = TRUE
-		   AND ducky_port > 0
+		   AND (ducky_port > 0 OR port_public > 0)
 		   AND key_fingerprint <> ''
 		   AND role IN ('core', 'proxy')`)
 	if err != nil {
@@ -67,7 +77,8 @@ func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
 		var n clusterstorage.Node
 		if err := rows.Scan(&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status,
 			&n.VersionCode, &n.Capabilities, &n.LastHeartbeat, &n.Port, &n.Priorite,
-			&n.ExposeAuxAgents, &n.Empreinte, &n.VersionSDK); err != nil {
+			&n.ExposeAuxAgents, &n.Empreinte, &n.VersionSDK,
+			&n.AdressePublique, &n.PortPublic); err != nil {
 			return nil, fmt.Errorf("lecture d'un nœud : %w", err)
 		}
 		noeuds = append(noeuds, n)

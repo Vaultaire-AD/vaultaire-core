@@ -37,7 +37,8 @@
                   <th>ID</th>
                   <th>Hostname</th>
                   <th>FQDN</th>
-                  <th>IP</th>
+                  <th>Accès des agents</th>
+                  <th>Vu par le nœud</th>
                   <th>Rôle</th>
                   <th>Statut</th>
                   <th>Version</th>
@@ -50,7 +51,12 @@
                   <td>{{ .ID }}</td>
                   <td>{{ .Hostname }}</td>
                   <td>{{ .FQDN }}</td>
-                  <td>{{ .IPAddress }}</td>
+                  <td>
+                    {{ if .ExpositionDeclaree }}<strong>{{ .AdresseEffective }}:{{ .PortEffectif }}</strong> <span class="muted small">déclaré</span>
+                    {{ else }}{{ .AdresseEffective }}:{{ .PortEffectif }}{{ end }}
+                    {{ if not .ExposeAuxAgents }}<br><span class="muted small">hors rotation — annoncé à aucun agent</span>{{ end }}
+                  </td>
+                  <td class="muted small">{{ if .ExpositionDeclaree }}{{ .IPAddress }}:{{ .Port }}{{ end }}</td>
                   <td>{{ .Role }}</td>
                   <td>{{ .Status }}</td>
                   <td>{{ .VersionCode }}</td>
@@ -60,6 +66,57 @@
               </tbody>
             </table>
           </div>
+
+          <h2 class="h2">Par où les agents joignent un nœud</h2>
+          <p class="muted small">
+            Un nœud déclare l'adresse qu'il voit de <em>lui-même</em>. Derrière une redirection NAT,
+            dans un conteneur ou sur un hôte à plusieurs interfaces, ce n'est pas celle par laquelle
+            le parc l'atteint — et il n'a aucun moyen de le savoir. La déclaration ci-dessous
+            l'emporte, et c'est elle que reçoivent les agents.
+          </p>
+
+          {{ range .Nodes }}
+          <form method="post" class="card" style="margin-bottom:0.8rem">
+            <input type="hidden" name="action" value="set_node_exposure">
+            <input type="hidden" name="node" value="{{ .Hostname }}">
+
+            <h3>{{ .Hostname }} <span class="muted small">({{ .Role }})</span></h3>
+
+            <label>Adresse publique</label>
+            <input name="address" value="{{ .AdressePublique }}"
+                   placeholder="{{ .IPAddress }} — vide : on garde ce que le nœud annonce">
+            <p class="muted small">IP ou nom DNS. Vide retire la déclaration.</p>
+
+            <label>Port public</label>
+            <input name="port" type="number" min="0" max="65535"
+                   value="{{ if .PortPublic }}{{ .PortPublic }}{{ end }}"
+                   placeholder="{{ .Port }} — vide : on garde le port d'écoute du nœud">
+            <p class="muted small">À renseigner seulement si une redirection translate le port.</p>
+
+            <label>Priorité</label>
+            <input name="priority" type="number" min="0" value="{{ .Priorite }}">
+            <p class="muted small">Plus petit = servi plus tôt. 0 vaut « sans préférence » et se range <em>après</em> les valeurs explicites.</p>
+
+            <!--
+              Une LISTE et non une case à cocher : une case décochée n'est pas
+              envoyée par le navigateur. Sur un formulaire qui ne modifie QUE les
+              champs qu'il transmet, décocher ne dirait donc rien du tout, et
+              retirer un nœud de la rotation serait impossible depuis cette page.
+            -->
+            <label>Rotation</label>
+            <select name="exposed">
+              <option value="true"{{ if .ExposeAuxAgents }} selected{{ end }}>Annoncé aux agents</option>
+              <option value="false"{{ if not .ExposeAuxAgents }} selected{{ end }}>Retiré de la liste</option>
+            </select>
+            <p class="muted small">
+              Retiré, le nœud sort de la liste distribuée sans être désenregistré — il reste visible ici
+              pendant une maintenance. Ce n'est <strong>pas</strong> un contrôle d'accès : il demeure joignable
+              pour qui connaît son adresse. C'est le pare-feu qui protège un core.
+            </p>
+
+            <div class="gpo-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div>
+          </form>
+          {{ end }}
         </div>
       </div>
     </main>

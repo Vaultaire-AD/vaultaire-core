@@ -106,6 +106,10 @@ DATABASE: DUCKY
 │   ├─ gpo_name VARCHAR(64) UNIQUE
 │   ├─ scope VARCHAR(16)  -- 'machine' ou 'user' (jamais 'both' : réservé aux schémas de module)
 │   ├─ description TEXT, version INT, enabled BOOLEAN
+│   ├─ drift_mode VARCHAR(16) DEFAULT 'enforce'  -- 'enforce' ou 'audit' : ce que les
+│   │                              -- agents font d'un écart. Les modules en héritent à
+│   │                              -- la résolution. Colonne ajoutée après coup, posée
+│   │                              -- par schematools.EnsureColumn au démarrage.
 │   ├─ created_at / updated_at DATETIME
 │   └─ Relations:
 │       ├─ gpo_module.d_id_gpo ← FK -> gpo.id_gpo (ON DELETE CASCADE)

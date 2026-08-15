@@ -84,7 +84,22 @@ func Resolve(policies []Policy) ResolveResult {
 			res.Skipped[p.Name] = "GPO sans module"
 			continue
 		}
+		// Le mode de dérive descend de la GPO vers chacun de ses modules.
+		//
+		// C'est le seul endroit où la provenance est encore connue : après la
+		// fusion, un module effectif n'est plus rattaché à sa GPO d'origine, et
+		// une machine qui reçoit une GPO en audit et une autre en enforce ne
+		// pourrait plus appliquer la règle de chacune.
+		//
+		// Écrit UNIQUEMENT quand il s'écarte du défaut : voir le commentaire de
+		// Module.DriftMode — un parc entièrement en enforce garde ainsi les
+		// empreintes qu'il avait déjà, et ne retélécharge rien.
+		mode := p.EffectiveDriftMode()
+
 		for _, m := range p.Modules {
+			if mode != DefaultDriftMode {
+				m.DriftMode = mode
+			}
 			eff := EffectiveModule{Module: m, PolicyName: p.Name, PolicyID: p.ID}
 
 			// Filet de sécurité : même si la base contenait une incohérence

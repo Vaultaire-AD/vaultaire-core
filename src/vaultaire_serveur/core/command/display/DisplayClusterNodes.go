@@ -19,12 +19,39 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 		return "Aucun nœud dans le cluster.\n"
 	}
 
-	tb := NouvelleTable("ÉTAT", "HÔTE", "ADRESSE", "RÔLE", "VERSION", "SDK", "DERNIER BATTEMENT")
+	tb := NouvelleTable("ÉTAT", "HÔTE", "ACCÈS AGENTS", "VU PAR LE NŒUD", "ROT.",
+		"RÔLE", "VERSION", "SDK", "DERNIER BATTEMENT")
 	for _, n := range noeuds {
+		// Deux colonnes d'adresse, et c'est le point de la vue.
+		//
+		// ACCÈS AGENTS est ce que le parc reçoit ; VU PAR LE NŒUD est ce que la
+		// machine croit être. N'en montrer qu'une obligerait à choisir entre
+		// « ce qui est distribué » et « ce que la machine rapporte », alors que
+		// c'est précisément leur ÉCART qu'on cherche quand une connexion ne
+		// passe pas.
+		//
+		// La seconde colonne n'est remplie que lorsqu'elle diffère : la répéter
+		// sur tous les nœuds correctement adressés — le cas courant — noierait
+		// les quelques lignes où elle dit quelque chose.
+		acces := clusterstorage.AdresseAffichee(n.AdresseEffective(), n.PortEffectif())
+		if n.ExpositionDeclaree() {
+			acces += " *"
+		}
+		interne := ""
+		if n.ExpositionDeclaree() {
+			interne = clusterstorage.AdresseAffichee(n.IPAddress, n.Port)
+		}
+
 		tb.Ajouter(
 			Valeur(n.Status),
 			Valeur(n.Hostname),
-			Valeur(n.IPAddress),
+			Valeur(acces),
+			Valeur(interne),
+			// Un nœud hors rotation reste EN LIGNE et n'est annoncé à personne.
+			// Sans cette colonne, il se lit comme parfaitement sain dans la
+			// vue, et on cherche ailleurs pourquoi les agents ne l'atteignent
+			// jamais.
+			Valeur(rotationLisible(n.ExposeAuxAgents)),
 			Valeur(n.Role),
 			// VERSION porte désormais ce que le nœud DÉCLARE de lui-même. Elle
 			// contenait la chaîne « vaultaire_proxy » écrite en dur côté core,
@@ -44,5 +71,22 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 	if role != "" {
 		titre = "Nœuds actifs pour le rôle " + strings.TrimSpace(role)
 	}
-	return titre + "\n\n" + tb.String()
+
+	legende := "\n* adresse déclarée par un administrateur — c'est elle que reçoivent les agents.\n" +
+		"  « VU PAR LE NŒUD » n'est renseigné que lorsqu'il diffère.\n" +
+		"  ROT. « out » : le nœud n'est annoncé à aucun agent (vlt cluster rotation <nœud> in).\n"
+
+	return titre + "\n\n" + tb.String() + legende
+}
+
+// rotationLisible rend l'appartenance à la rotation en deux caractères.
+//
+// « in » / « out » plutôt que « oui » / « non » : la colonne répond à « est-il
+// dans la liste servie », pas à « est-il exposé sur le réseau ». Le second sens
+// ferait croire à un contrôle d'accès, ce que ce drapeau n'est pas.
+func rotationLisible(expose bool) string {
+	if expose {
+		return "in"
+	}
+	return "out"
 }

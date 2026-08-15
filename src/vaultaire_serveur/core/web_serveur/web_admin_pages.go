@@ -979,8 +979,17 @@ func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// AdminClusterHandler affiche l'état des nœuds du cluster (lecture seule).
-// Accès: web_admin + read:get:client (même clé que pour la visibilité des clients).
+// AdminClusterHandler affiche l'état des nœuds du cluster et règle leur accès.
+//
+// # Lecture et écriture n'exigent pas la même clé
+//
+// La lecture reste sur `read:get:client`, comme avant. L'ÉCRITURE passe par
+// l'action `cluster.set_node_exposure`, qui porte `write:cluster` — et c'est
+// elle qui contrôle, pas cette fonction.
+//
+// La distinction compte : l'adresse déclarée ici est distribuée à toutes les
+// machines du parc par la trame 04_04. Voir l'état du cluster et décider par où
+// le parc entier se connecte ne se délèguent pas de la même façon.
 func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
@@ -991,8 +1000,22 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	db := database.GetDatabase()
-	nodes, err := clusterdatabase.GetAllNodes(db)
 	message := ""
+
+	// Le POST est traité AVANT la lecture, pour que la page rendue montre l'état
+	// d'après. L'ordre inverse afficherait l'ancienne adresse à côté du message
+	// annonçant la nouvelle, et on croirait l'écriture perdue.
+	if r.Method == http.MethodPost {
+		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs, act.Params{})
+		switch {
+		case err != nil:
+			message = err.Error()
+		case traite:
+			message = res.Message
+		}
+	}
+
+	nodes, err := clusterdatabase.GetAllNodes(db)
 	if err != nil {
 		message = "Erreur récupération nœuds: " + err.Error()
 	}

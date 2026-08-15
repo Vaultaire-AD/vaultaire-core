@@ -110,17 +110,98 @@ func TestScanSansInventaireNeSignaleRien(t *testing.T) {
 }
 
 // TestModeAuditNeCorrigePas : le mode décide de l'effet, pas de la détection.
+//
+// L'ancienne version de ce test posait une variable globale du paquet et
+// vérifiait qu'EnforceDrift rendait zéro. Elle passait pour une raison qui
+// n'avait rien à voir avec le mode : EnforceDrift lit /var/lib/vaultaire,
+// absent en test, donc l'état était nil et la fonction sortait avant même
+// d'examiner le mode. Le test aurait continué de passer si la règle avait été
+// inversée.
 func TestModeAuditNeCorrigePas(t *testing.T) {
-	original := CurrentDriftMode
-	defer func() { CurrentDriftMode = original }()
-
-	rapport := DriftReport{
-		Scope: "machine",
-		Items: []DriftItem{{Path: "/etc/x.conf", StateKey: "ssh", Kind: DriftModified}},
+	état := &ScopeState{
+		Modules: map[string]string{"ssh": "fp1", "fichiers": "fp2"},
+		Modes:   map[string]string{"ssh": string(DriftAudit)},
 	}
 
-	CurrentDriftMode = DriftAudit
-	if n := EnforceDrift("machine", "", rapport); n != 0 {
-		t.Errorf("mode audit : %d module(s) marque(s), attendu 0", n)
+	corriges, audites := partitionByMode(état, []string{"fichiers", "ssh"})
+
+	if len(audites) != 1 || audites[0] != "ssh" {
+		t.Errorf("modules audites = %v, attendu [ssh]", audites)
+	}
+	if len(corriges) != 1 || corriges[0] != "fichiers" {
+		t.Errorf("modules corriges = %v, attendu [fichiers]", corriges)
+	}
+}
+
+// TestModeInconnuVautEnforce.
+//
+// Le défaut d'un mécanisme de conformité doit être de faire respecter la
+// configuration. Un core plus récent peut introduire un troisième mode, un état
+// peut avoir été écrit par une version antérieure, une valeur peut être
+// tronquée : aucun de ces trous d'information ne doit désarmer la correction en
+// silence.
+func TestModeInconnuVautEnforce(t *testing.T) {
+	cas := map[string]*ScopeState{
+		"etat sans modes":  {Modules: map[string]string{"ssh": "fp"}},
+		"cle absente":      {Modes: map[string]string{"autre": string(DriftAudit)}},
+		"valeur inconnue":  {Modes: map[string]string{"ssh": "observe"}},
+		"valeur vide":      {Modes: map[string]string{"ssh": ""}},
+		"enforce explicit": {Modes: map[string]string{"ssh": string(DriftEnforce)}},
+	}
+
+	for nom, état := range cas {
+		t.Run(nom, func(t *testing.T) {
+			if mode := état.ModuleMode("ssh"); mode != DriftEnforce {
+				t.Errorf("mode = %q, attendu %q", mode, DriftEnforce)
+			}
+			corriges, audites := partitionByMode(état, []string{"ssh"})
+			if len(corriges) != 1 || len(audites) != 0 {
+				t.Errorf("corriges = %v, audites = %v, attendu [ssh] et []", corriges, audites)
+			}
+		})
+	}
+}
+
+// TestModeVientDeLaPolitiqueCourante.
+//
+// Le mode enregistré doit refléter la politique qui vient d'être appliquée, et
+// non celle de l'état précédent. Hériter de l'ancien laisserait une machine en
+// audit après un retour en enforce — c'est-à-dire exactement au moment où
+// l'administrateur vient de décider le contraire.
+func TestModeVientDeLaPolitiqueCourante(t *testing.T) {
+	précédent := &ScopeState{
+		Modules: map[string]string{"ssh": "fp1"},
+		Modes:   map[string]string{"ssh": string(DriftAudit)},
+	}
+	politique := &Policy{
+		Scope:       ScopeMachine,
+		Fingerprint: "fp-politique",
+		Modules: []Module{
+			{Type: "ssh_server_config", StateKey: "ssh", Fingerprint: "fp1"},
+			{Type: "sysctl", StateKey: "sysctl", Fingerprint: "fp2", DriftMode: string(DriftAudit)},
+		},
+	}
+	rapport := Report{
+		Scope:  ScopeMachine,
+		Status: StatusApplied,
+		Modules: []ModuleOutcome{
+			{StateKey: "ssh", Result: ResultUnchanged},
+			{StateKey: "sysctl", Result: ResultApplied},
+		},
+	}
+
+	état := BuildScopeState(politique, précédent, rapport)
+
+	if mode := état.ModuleMode("ssh"); mode != DriftEnforce {
+		t.Errorf("ssh repasse en %q, attendu %q — l'ancien mode a ete herite", mode, DriftEnforce)
+	}
+	if mode := état.ModuleMode("sysctl"); mode != DriftAudit {
+		t.Errorf("sysctl = %q, attendu %q", mode, DriftAudit)
+	}
+	// Enforce n'est pas écrit : seules les entrées qui s'écartent du défaut le
+	// sont, sinon le fichier d'état de tous les parcs grossirait d'une ligne par
+	// module pour ne rien dire.
+	if _, écrit := état.Modes["ssh"]; écrit {
+		t.Error("le mode enforce a ete ecrit dans l'etat, il doit rester implicite")
 	}
 }

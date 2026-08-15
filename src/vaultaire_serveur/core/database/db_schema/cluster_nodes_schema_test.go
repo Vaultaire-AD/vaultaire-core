@@ -37,15 +37,24 @@ func lireSchema(t *testing.T) string {
 //
 // LE test de ce fichier. Une base neuve et une base complétée doivent porter la
 // MÊME colonne — même type, même contrainte, même valeur par défaut.
+// La table parcourue est celle du CODE, `colonnesAjoutees`, et non une liste
+// recopiée ici : une liste de test écrite à la main cesse de couvrir la
+// dernière colonne ajoutée, et ne le dit pas.
 func TestLaColonneEstDefinieALIdentiqueDesDeuxCotes(t *testing.T) {
 	schema := lireSchema(t)
 
-	attendu := ColonneProprietaire + " " + DefinitionProprietaire
-	if !strings.Contains(schema, attendu) {
-		t.Errorf("le CREATE TABLE ne contient pas %q.\n"+
-			"  Une base NEUVE prend le texte du CREATE, une base EXISTANTE prend\n"+
-			"  DefinitionProprietaire. Les faire diverger donnerait deux schémas\n"+
-			"  selon l'âge de l'installation.", attendu)
+	if len(colonnesAjoutees) == 0 {
+		t.Fatal("colonnesAjoutees est vide : ce test ne vérifierait rien")
+	}
+
+	for _, c := range colonnesAjoutees {
+		attendu := c.Nom + " " + c.Definition
+		if !strings.Contains(schema, attendu) {
+			t.Errorf("le CREATE TABLE ne contient pas %q.\n"+
+				"  Une base NEUVE prend le texte du CREATE, une base EXISTANTE prend\n"+
+				"  la définition du complément de schéma. Les faire diverger donnerait\n"+
+				"  deux schémas selon l'âge de l'installation.", attendu)
+		}
 	}
 }
 
@@ -81,7 +90,12 @@ func TestLaTableEstBienCelleDuSchema(t *testing.T) {
 // en paramètre lié. Un nom qui ne passe pas ferait échouer le complément de
 // schéma AU DÉMARRAGE, et le core s'arrêterait.
 func TestLesIdentifiantsPassentLeMotifDeSchematools(t *testing.T) {
-	for _, id := range []string{TableNoeuds, ColonneProprietaire, IndexProprietaire} {
+	identifiants := []string{TableNoeuds, IndexProprietaire}
+	for _, c := range colonnesAjoutees {
+		identifiants = append(identifiants, c.Nom)
+	}
+
+	for _, id := range identifiants {
 		if id == "" {
 			t.Error("identifiant vide")
 			continue

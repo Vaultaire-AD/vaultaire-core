@@ -121,7 +121,7 @@ un seul point de vérité pour la portée.
 
 | Table | Contenu |
 |-------|---------|
-| `gpo` | Métadonnées : nom, scope, version, activation |
+| `gpo` | Métadonnées : nom, scope, version, activation, **mode de dérive** |
 | `gpo_module` | Un module par ligne, paramètres en JSON |
 | `gpo_group` | Liaison GPO ↔ groupes |
 | `gpo_restriction` | Valeurs autorisées, préfixes de chemins, variables interdites |
@@ -1022,6 +1022,51 @@ Second lot — les modules dont la dérive coûte de la **cohérence** :
 | `user_shell` | compte | septième champ de `getent passwd`, pas `/etc/passwd` |
 | `file_acl` | `<chemin>\|<u\|g>:<bénéficiaire>` | entrée `getfacl` **et droits effectifs** |
 
+Troisième lot — les modules dont la dérive coûte la **capacité à savoir** :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `ntp_servers` | `system` | serveurs réellement chargés par timesyncd, ordre indifférent |
+| `audit_rule` | étiquette | règle réellement chargée dans le noyau, par son `-k` |
+
+Ces deux-là ne rendent rien de plus permissif. Mais une horloge qui suit d'autres
+serveurs que ceux de la politique rend tous les horodatages du parc
+incomparables ; une règle d'audit qui n'est plus chargée ne produit plus la trace
+qu'on ira chercher après coup. `auditctl -D` vide toutes les règles du noyau
+**sans toucher à un seul fichier** — une commande d'une ligne, aucune trace, et
+le scan des fichiers déclare la machine conforme.
+
+Quatrième lot — les modules dont l'effet est un état **compilé** :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `ca_trust` | nom de la CA | empreinte SHA-256 dans le bundle compilé, pas dans le fichier déposé |
+| `dns_servers` | `global` | serveurs globaux de `resolvectl`, ordre indifférent |
+
+L'appliqueur dépose une **source**, puis un outil en tire un état compilé — et
+c'est celui-ci qui sert. Le scan des fichiers surveille la source ; ce lot
+surveille le résultat.
+
+Trois écarts échappaient au fichier pour `trusted_ca` : une CA mise en **liste
+noire**, une CA retirée de `/etc/ca-certificates.conf` sur Debian, ou un magasin
+régénéré avant que le fichier n'arrive puis plus jamais. Dans les trois cas la
+source est intacte et **aucune connexion TLS ne fait confiance à cette autorité**.
+
+L'empreinte porte sur le **DER**, pas sur le texte : `update-ca-trust` réécrit ce
+qu'il agrège — longueur de ligne, ordre, en-têtes — et chercher le texte déposé
+échouerait sur une machine parfaitement conforme.
+
+Deux précautions, dans les deux cas :
+
+- **L'ordre des serveurs NTP ne compte pas.** timesyncd bascule d'un serveur à
+  l'autre selon leur disponibilité et peut réordonner ce qu'il rend. Le *nombre*
+  compte : un serveur en trop est un serveur de temps que personne n'a demandé.
+- **Une règle d'audit se retrouve par son étiquette, jamais par sa ligne.**
+  `auditctl -l` normalise ce qu'il rend. Et la comparaison porte sur le champ qui
+  suit `-k`, pas sur une sous-chaîne : une étiquette « vaultaire » se retrouve
+  dans le chemin surveillé `/opt/vaultaire/config`, et une recherche naïve
+  conclurait qu'une règle est chargée en lisant celle d'un autre.
+
 #### Trois choses que ce lot refuse d'affirmer
 
 **La version d'un paquet.** Chaque gestionnaire écrit ses versions à sa façon —
@@ -1043,7 +1088,51 @@ l'appliqueur le dit lui-même, « effectif au redemarrage ». Constater
 redémarrage : une alerte permanente que personne ne peut lever. Ils deviendront
 vérifiables le jour où l'état saura porter « en attente de redémarrage ».
 
-Restent 27 modules sans vérificateur. Ils suivront, un par un : **une
+**Ce qui dépend d'une session.** `system_env` et `resource_limits` étaient
+candidats, et paraissaient faciles.
+
+Ce que `system_env` fixe, c'est ce qu'un *shell de connexion* recevra. L'agent
+est un service : son environnement est celui de systemd au démarrage de la
+machine. Lire `os.Getenv` constaterait quelque chose de vrai et de sans rapport.
+Lancer un shell de connexion ne marche pas davantage — il faudrait le lancer
+**pour chaque utilisateur**, puisque `~/.profile` et `/etc/profile.d/` peuvent
+redéfinir la variable selon le compte.
+
+`resource_limits` : l'appliqueur le dit dans son propre message, « nouvelles
+sessions ». PAM lit `/etc/security/limits.d/` à l'*ouverture* d'une session.
+Constater les limites du processus de l'agent, c'est constater celles de la
+session sous laquelle il a été lancé — au démarrage de la machine, avant que la
+politique n'ait été appliquée. Ce n'est pas une approximation, c'est une autre
+mesure.
+
+**Ce que le scan des fichiers couvre déjà.** `package_repo` paraissait un bon
+candidat — « un dépôt désactivé à la main n'est vu par rien ». C'est faux :
+`dnf config-manager --set-disabled` écrit `enabled=0` **dans le fichier `.repo`
+de la GPO**, que le hachage voit ; côté apt, désactiver revient à retirer le
+fichier, que le scan voit disparaître. Un vérificateur n'ajouterait qu'un cas
+marginal, au prix d'une analyse de `dnf repolist` dont le format diffère entre
+dnf4 et dnf5.
+
+`ssh_known_hosts` est plus court encore : pas d'état compilé, pas de service à
+recharger, pas de second fichier qui prendrait le dessus. L'idée d'un « fichier
+qui le masque » venait d'une analogie avec les fragments de configuration, et
+elle ne s'applique pas.
+
+**Un vérificateur n'est pas déclaré quand rien n'a été chargé.** Quand le
+redémarrage de timesyncd échoue, la machine utilise probablement chrony ou ntpd :
+`applyNTPConfig` ne déclare alors aucune attente, sans quoi le vérificateur
+lirait les serveurs d'un autre démon. Un test garde l'ordre des deux gestes, et
+un autre garde celui de `trusted_ca` — déclarer l'attente avant la régénération
+du magasin ferait signaler une dérive sur une machine que l'appliqueur vient de
+mettre en conformité.
+
+**Ce que `dns_servers` ne constate pas.** Qu'un DNS posé sur une **interface** —
+par DHCP — prime sur le global pour les requêtes de cette interface. Ce n'est pas
+une dérive de ce module : il fixe le global, et le global est bien celui qu'il a
+fixé. Le couvrir demanderait un module qui décide par interface, ce qui n'existe
+pas.
+
+Restent 23 modules sans vérificateur. Ils suivront, un par un : **une
 vérification approximative est pire qu'aucune**, parce qu'elle déclare conforme
 ce qui ne l'est pas et que personne ne va plus regarder.
 
@@ -1079,6 +1168,131 @@ Comme pour les fichiers : l'empreinte du module est oubliée, le cycle suivant l
 réapplique. La correction n'est jamais immédiate — réappliquer peut relancer un
 service, et le faire à l'instant de la détection reviendrait à redémarrer sshd
 pendant qu'un administrateur débogue.
+
+---
+
+## Le mode de dérive — enforce ou audit
+
+> **La détection ne change jamais. Seul change ce qu'on fait de ce qu'on a
+> détecté.**
+
+Un écart est constaté, journalisé et remonté au core dans les deux modes. Ce que
+le mode décide, c'est la suite :
+
+| Mode | Ce que l'agent fait de l'écart |
+|---|---|
+| `enforce` | oublie l'empreinte du module — le cycle suivant le réapplique |
+| `audit` | rien. L'écart reste, et reste visible |
+
+### Où il est réglé
+
+Sur la **GPO**, colonne `gpo.drift_mode`. Les modules en héritent à la
+résolution.
+
+```bash
+vlt gpo mode <nom_gpo> audit      # ou enforce
+```
+
+Également dans **Admin → GPO → une GPO → Réglages**. Les deux passent par
+l'action `gpo.set_drift_mode`, qui exige `write:update:gpo` sur **chaque**
+domaine couvert par la GPO — comme toute écriture de ce fichier.
+
+### Pourquoi sur la GPO, et pas ailleurs
+
+**Pas dans le binaire de l'agent.** C'est d'où le mode vient : une variable
+`CurrentDriftMode` que personne ne renseignait. Le mode audit était donc
+inatteignable en production, et un parc qui l'aurait voulu aurait eu besoin d'un
+second binaire.
+
+**Pas dans `client_software.yaml`.** Moins cher, et faux : cela remet la décision
+sur la machine, c'est-à-dire sur la partie qui dérive. Un poste dont quelqu'un
+édite le fichier se déclarerait en audit et ne serait plus jamais corrigé, sans
+que rien ne le signale côté serveur.
+
+**Pas un réglage global du parc.** Un parc n'est pas homogène : un groupe
+« laboratoire » où les interventions manuelles sont légitimes veut du
+signalement, le reste veut de la correction.
+
+**Pas un mode effectif par scope non plus.** Une machine reçoit les GPO de tous
+ses groupes. Si la fusion devait trancher, la machine du laboratoire qui reçoit
+aussi une GPO du parc repasserait entièrement en enforce — ou, dans l'autre sens,
+une seule GPO en audit désarmerait la correction de toutes les autres. Le mode
+suit donc le **module**, hérité de sa GPO d'origine, et chaque règle s'applique à
+ses propres modules.
+
+### Comment il atteint le parc
+
+C'est le point qui a décidé de l'implémentation. Le serveur ne livre une
+politique que si son empreinte diffère de celle que l'agent annonce ; sinon il
+répond `05_03` / `05_07`, qui ne transportent rien. Un mode livré uniquement dans
+le document JSON n'aurait donc atteint que les machines dont la politique change
+**par ailleurs** — c'est-à-dire peut-être jamais.
+
+Deux empreintes, deux traitements opposés, et c'est délibéré :
+
+| Empreinte | Le mode y entre ? | Conséquence |
+|---|---|---|
+| **politique** (`CanonicalJSON`) | oui | changer le mode fait retélécharger le document |
+| **module** (`ModuleFingerprint`) | non | aucun module n'est réappliqué pour autant |
+
+Le changement de mode coûte donc un transfert de politique et zéro
+réapplication : tous les modules ressortent `unchanged`. Aucun service relancé,
+aucun paquet réinstallé.
+
+### Le défaut est silencieux
+
+`enforce` n'est écrit **nulle part** — ni dans le champ `drift_mode` du module
+livré, ni dans `applied_policies.json`. C'est ce qui rend la migration gratuite :
+
+- une GPO dont la colonne vaut `enforce` produit exactement l'empreinte qu'elle
+  produisait avant l'existence de la colonne. Aucun parc ne retélécharge quoi que
+  ce soit à la mise à jour ;
+- un état local écrit par un agent antérieur n'a pas de clé `modes`, se relit
+  sans erreur, et vaut « tout en enforce » — l'ancien comportement à l'identique ;
+- un agent récent parlant à un core ancien ne reçoit aucun mode, et applique
+  enforce.
+
+Le défaut ne peut pas être `audit`. Chaque trou d'information — core plus ancien,
+état tronqué, valeur inconnue, faute de frappe en base — deviendrait sinon une
+machine qui cesse d'être corrigée sans que personne ne le sache.
+
+### Ce que l'agent mémorise, et pourquoi
+
+`applied_policies.json` porte une carte `modes` : clé d'état → mode, pour les
+seuls modules qui s'écartent du défaut.
+
+Le scan tourne **avant** le cycle et sans avoir parlé au serveur : il n'a aucune
+politique fraîche sous la main, donc la seule façon pour lui de connaître le mode
+d'un module est de le trouver écrit là où l'application l'a laissé. C'est aussi
+ce qui fait tenir le mode quand le core est injoignable — sinon une machine
+coupée du serveur se rabattrait sur enforce et corrigerait des écarts
+délibérément placés sur un poste déclaré en audit.
+
+Le mode enregistré vient toujours de la politique **courante**, jamais de l'état
+précédent : hériter de l'ancien laisserait la machine en audit après un retour en
+enforce, c'est-à-dire exactement au moment où l'administrateur vient de décider
+le contraire.
+
+`ForgetModule` efface l'empreinte du module, **pas** son mode : le mode décrit ce
+qu'il faut faire du module, pas le fait qu'il soit appliqué.
+
+### Ce qu'audit ne fait pas
+
+Une GPO en audit reste **appliquée** normalement à chaque cycle. Le mode ne
+touche qu'à la correction d'un écart constaté entre deux cycles.
+
+Une machine durablement dérivée en audit n'écrit rien dans son état local, et
+n'efface donc pas son empreinte de politique. Sans cela elle retéléchargerait et
+recomparerait toute sa politique à chaque tour, une fois par heure, pour aboutir
+à « rien à faire » à tous les coups.
+
+### Où le voir
+
+| Question | Où |
+|---|---|
+| Quel mode porte cette GPO ? | Admin → GPO → Réglages |
+| Qui l'a changé, et quand ? | journal `SECURITY` — la trace est écrite au même titre que l'activation |
+| Cette machine est-elle dérivée ? | `vlt gpo drift` — indépendant du mode, un écart est un écart |
 
 ---
 

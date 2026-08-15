@@ -16,52 +16,6 @@ Les trois gestes, dans le même passage que le code :
 Le fichier DO est l'archive, l'historique de version est le compte rendu, celui-ci est
 la liste de courses.
 
-41.[GPO] - Verification des effets non-fichier : les 27 modules restants
-            Suite des points 4 et 37. Neuf modules declarent maintenant une
-            attente (voir DO/2.1/2.1.md) : cinq dont la derive donne un DROIT,
-            quatre dont la derive coute de la COHERENCE.
-
-            Le socle n'a pas bouge et n'a pas besoin de bouger : recordCheck a
-            cote de l'appliqueur, registre de verificateurs, deux types d'ecart
-            (system_state, unverifiable), et le scan les parcourt. Les garde-fous
-            lisent desormais les constantes DANS les sources, donc ils resteront
-            justes a trente-six verificateurs.
-
-            A faire, module par module : un recordCheck dans l'appliqueur, un
-            verificateur enregistre, un test de son ANALYSE (pas de la commande —
-            la sortie depend de la machine).
-
-            Candidats restants, par ordre d'interet :
-              - ntp_config : « timedatectl show -p NTPSynchronized » dit si
-                l'horloge est reellement synchronisee, ce que le fichier ne dit
-                pas ;
-              - user_env / system_env : une variable exportee ailleurs masque
-                celle de la GPO sans toucher au fichier ;
-              - resource_limits / user_resource_limits : « ulimit -a » dans un
-                shell de connexion, mais la valeur depend de la session, donc le
-                constat ne vaut pas pour l'utilisateur connecte ;
-              - auditd_rule : « auditctl -l » — les regles chargees, pas le
-                fichier.
-
-            NE PAS les ecrire toutes d'affilee. Une verification approximative est
-            PIRE qu'aucune : elle declare conforme ce qui ne l'est pas, et personne
-            ne va plus regarder.
-
-            Trois refus a NE PAS defaire sans traiter leur cause :
-              - la VERSION d'un paquet n'est pas verifiee (formats rpm/dpkg
-                incomparables de facon fiable) ;
-              - une ACL RECURSIVE ne declare aucune attente (getfacl ne constate
-                que le chemin de tete) ;
-              - boot_params et kernel_module_policy ne sont pas verifiables tant
-                que l'etat ne sait pas porter « en attente de redemarrage » : les
-                constater signalerait une derive permanente sur toute machine qui
-                n'a pas encore redemarre.
-
-            Reste ouvert aussi : « expire » de local_account_policy n'est pas
-            verifie. chage -E 1 fixe une date passee, et la relire supposerait de
-            comparer des dates dans une sortie localisee. Mieux vaut ne rien
-            affirmer sur cette facette que de l'affirmer de travers.
-
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
@@ -114,18 +68,6 @@ la liste de courses.
             sans aucun journal Vaultaire, alors que getent lance a la main REUSSIT.
             deployments/selinux/ : collect.sh, vaultaire.te, vaultaire.fc, install.sh
             Reste a faire : un domaine dedie pour l'agent (aujourd'hui unconfined_service_t).
-
-31.[TEST] [ACTION] - Les tests d'ACTION restent tributaires de la base
-            Suite du point 30, dont les PORTEES ont ete traitees (voir DO/2.1/2.1.md).
-
-            Restent les quelques tests qui appellent une action en attendant un SUCCES et
-            dont l'ecriture n'est pas encore substituee — hors permissions, machines et
-            certificats, qui le sont. Aucun n'est connu comme cassant aujourd'hui : le
-            balayage n'a trouve que des tests de REFUS, qui s'arretent a la validation.
-
-            A faire : etendre baseSimulee au coup par coup, quand un nouveau test de
-            message en aura besoin. Ne PAS poser une variable sur les 76 points d'entree
-            du paquet — le critere reste ce qu'un test traverse reellement.
 
 33.[GPO] - Le scope UTILISATEUR n'est jamais scanne
             scanMachineDrift n'existe que pour le scope machine. RunUserCycle applique les

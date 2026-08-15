@@ -18,10 +18,13 @@ import (
 // peu d'attention, donc exactement le genre d'endroit où une régression passe
 // des mois sans être vue.
 //
-// Le fichier est rouvert PAR SON CHEMIN à chaque ligne. C'est ce qui rend
-// logrotate suffisant sans code de rotation : il renomme, la ligne suivante
-// recrée. Un descripteur gardé ouvert ferait écrire dans l'archive, et le
-// fichier courant resterait vide — sans erreur.
+// Le fichier est rouvert PAR SON CHEMIN à chaque ligne. C'est ce qui permet à la
+// rotation (voir rotation.go) de n'être qu'un renommage : elle renomme, la ligne
+// suivante recrée. Un descripteur gardé ouvert ferait écrire dans l'archive, et
+// le fichier courant resterait vide — sans erreur.
+//
+// La propriété vaut aussi pour un renommage venu de l'EXTÉRIEUR : un
+// administrateur qui déplace le fichier, un outil de collecte.
 
 func avecJournalTemporaire(t *testing.T) string {
 	t.Helper()
@@ -34,8 +37,9 @@ func avecJournalTemporaire(t *testing.T) string {
 	return dir
 }
 
-// TestUneRotationEstSuivieSansRedemarrage rejoue ce que fait logrotate.
-func TestUneRotationEstSuivieSansRedemarrage(t *testing.T) {
+// TestUnRenommageExterneEstSuiviSansRedemarrage éprouve un geste extérieur au
+// programme : le suffixe « .1 » ne ressemble à aucune archive datée.
+func TestUnRenommageExterneEstSuiviSansRedemarrage(t *testing.T) {
 	dir := avecJournalTemporaire(t)
 	chemin := filepath.Join(dir, "SQL_Injection.log")
 

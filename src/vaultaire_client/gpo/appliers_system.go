@@ -162,8 +162,19 @@ func applyNTPConfig(ctx Context, m Module) (string, error) {
 		// Un timesyncd absent n'est pas une erreur : la machine utilise peut-être
 		// chrony ou ntpd. Le fichier reste en place et servira si timesyncd est
 		// installé plus tard.
+		//
+		// AUCUNE attente déclarée dans ce cas : rien n'a été chargé, et le
+		// vérificateur lirait les serveurs d'un autre démon — donc une dérive
+		// permanente sur une machine dont la configuration est pourtant écrite.
 		return "serveurs NTP ecrits (" + servers + "), systemd-timesyncd non redemarre", nil
 	}
+
+	// Le FICHIER dit ce que timesyncd devrait lire ; l'attente dit ce qu'il a
+	// réellement chargé. Un second fichier de configuration, un « timedatectl
+	// set-ntp » local, ou un service jamais redémarré depuis l'écriture : dans
+	// les trois cas la machine suit d'autres serveurs, et le fichier est intact
+	// au caractère près.
+	recordCheck(CheckNTPServers, "system", servers)
 	return "serveurs NTP : " + servers, nil
 }
 

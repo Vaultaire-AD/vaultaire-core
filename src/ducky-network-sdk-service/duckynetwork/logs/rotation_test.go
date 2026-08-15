@@ -9,13 +9,13 @@ import (
 	"duckynetworkclient/V1/duckynetwork/storage"
 )
 
-// La propriété qui rend logrotate suffisant.
+// La propriété sur laquelle repose toute la rotation.
 //
 // # Ce que ces tests gardent
 //
 // Le fichier est rouvert PAR SON CHEMIN à chaque ligne. C'est ce qui permet à
-// logrotate de faire son travail sans une ligne de code de rotation : il renomme
-// le fichier, et la ligne suivante en recrée un neuf.
+// la rotation (voir rotation.go) de n'être qu'un renommage, sans aucune gestion
+// de descripteur : elle renomme, et la ligne suivante recrée le fichier.
 //
 // Un programme qui garderait un descripteur ouvert continuerait d'écrire dans
 // le fichier RENOMMÉ — donc dans l'archive — et le fichier courant resterait
@@ -24,9 +24,13 @@ import (
 // avoir besoin.
 //
 // La propriété tient à une seule ligne de code et se détruirait en la
-// déplaçant. D'où ce test, qui la vérifie sur le comportement et non sur le
-// texte : il RENOMME réellement le fichier, comme logrotate, et regarde où
-// atterrit la ligne suivante.
+// déplaçant, pour économiser deux appels système. D'où ce test, qui la vérifie
+// sur le comportement et non sur le texte : il RENOMME réellement le fichier et
+// regarde où atterrit la ligne suivante.
+//
+// Elle vaut aussi pour un renommage VENU DE L'EXTÉRIEUR — un administrateur qui
+// déplace le fichier, un outil de collecte. Rien ne casse, et la ligne suivante
+// repart d'un fichier neuf.
 
 // avecJournalTemporaire déplace le journal dans un répertoire jetable.
 func avecJournalTemporaire(t *testing.T) string {
@@ -56,17 +60,17 @@ func avecJournalTemporaire(t *testing.T) string {
 	return filepath.Join(dir, "test.log")
 }
 
-// TestUneRotationEstSuivieSansRedemarrage.
+// TestUnRenommageExterneEstSuiviSansRedemarrage.
 //
-// LE test. Il rejoue exactement ce que fait logrotate : renommer le fichier
-// courant. La ligne suivante doit atterrir dans un fichier NEUF, pas dans
-// l'archive.
-func TestUneRotationEstSuivieSansRedemarrage(t *testing.T) {
+// Un renommage venu de l'extérieur du programme. La ligne suivante doit
+// atterrir dans un fichier NEUF, pas dans l'archive.
+func TestUnRenommageExterneEstSuiviSansRedemarrage(t *testing.T) {
 	chemin := avecJournalTemporaire(t)
 
 	Write_log("INFO", "avant la rotation")
 
-	// Ce que fait logrotate, sans copytruncate ni signal.
+	// Le suffixe « .1 » ne ressemble à aucune archive datée : c'est bien un
+	// geste extérieur qu'on éprouve, pas la rotation du paquet.
 	archive := chemin + ".1"
 	if err := os.Rename(chemin, archive); err != nil {
 		t.Fatalf("renommage : %v", err)

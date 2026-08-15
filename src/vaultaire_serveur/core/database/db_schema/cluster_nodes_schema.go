@@ -30,11 +30,39 @@ import (
 // divergence produirait deux schémas selon l'âge de l'installation. Un test le
 // vérifie.
 const (
-	TableNoeuds        = "cluster_nodes"
-	ColonneProprietaire = "owner_client_id"
+	TableNoeuds            = "cluster_nodes"
+	ColonneProprietaire    = "owner_client_id"
 	DefinitionProprietaire = "VARCHAR(191) NOT NULL DEFAULT ''"
-	IndexProprietaire  = "uk_owner"
+	IndexProprietaire      = "uk_owner"
 )
+
+// Colonnes d'EXPOSITION : par où les agents joignent le nœud.
+//
+// Distinctes d'`ip_address` et de `ducky_port`, qui sont ce que le nœud voit de
+// lui-même. Un nœud derrière une redirection NAT ne peut pas connaître l'adresse
+// par laquelle le parc l'atteint : il ne voit pas son infrastructure de
+// l'extérieur. C'est une décision d'exploitation, au même titre que `priorite`.
+//
+// Vide et zéro valent « aucune déclaration » : ce sont alors l'adresse et le
+// port du nœud qui sont servis, donc le comportement d'avant ces colonnes.
+const (
+	ColonneAdressePublique    = "adresse_publique"
+	DefinitionAdressePublique = "VARCHAR(255) NOT NULL DEFAULT ''"
+	ColonnePortPublic         = "port_public"
+	DefinitionPortPublic      = "INT NOT NULL DEFAULT 0"
+)
+
+// colonnesAjoutees liste les colonnes posées après coup sur cluster_nodes.
+//
+// Une table, et non trois appels recopiés : c'est elle que parcourt le test qui
+// vérifie que chaque colonne est définie à l'identique dans le CREATE TABLE.
+// Écrite à la main, la liste du test finirait par ne plus couvrir la dernière
+// colonne ajoutée — et ne le dirait pas.
+var colonnesAjoutees = []struct{ Nom, Definition string }{
+	{ColonneProprietaire, DefinitionProprietaire},
+	{ColonneAdressePublique, DefinitionAdressePublique},
+	{ColonnePortPublic, DefinitionPortPublic},
+}
 
 // EnsureClusterNodesSchema complète cluster_nodes sur une base existante.
 //
@@ -67,6 +95,10 @@ func EnsureClusterNodesSchema(db *sql.DB) error {
 		return fmt.Errorf("connexion base indisponible")
 	}
 
+	// Le propriétaire D'ABORD, et seul : la purge et l'index qui suivent ne
+	// portent que sur lui. Les colonnes d'exposition viennent après, une fois la
+	// table dans son état définitif — les poser avant ferait les écrire sur des
+	// lignes que la purge s'apprête à supprimer.
 	if err := schematools.EnsureColumn(db, "cluster",
 		TableNoeuds, ColonneProprietaire, DefinitionProprietaire); err != nil {
 		return err
@@ -85,6 +117,19 @@ func EnsureClusterNodesSchema(db *sql.DB) error {
 				"à refaire.", n))
 	}
 
-	return schematools.EnsureUniqueIndex(db, "cluster",
-		TableNoeuds, IndexProprietaire, ColonneProprietaire)
+	if err := schematools.EnsureUniqueIndex(db, "cluster",
+		TableNoeuds, IndexProprietaire, ColonneProprietaire); err != nil {
+		return err
+	}
+
+	// Adresse et port d'exposition. Aucun index, aucune purge : deux nœuds
+	// peuvent parfaitement partager une adresse publique — c'est même le cas
+	// courant de deux services derrière la même redirection, distingués par le
+	// port.
+	if err := schematools.EnsureColumn(db, "cluster",
+		TableNoeuds, ColonneAdressePublique, DefinitionAdressePublique); err != nil {
+		return err
+	}
+	return schematools.EnsureColumn(db, "cluster",
+		TableNoeuds, ColonnePortPublic, DefinitionPortPublic)
 }

@@ -232,6 +232,7 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 	modules := map[string]string{}
 	files := map[string]FileState{}
 	checks := map[string]SystemCheck{}
+	modes := map[string]string{}
 	if previous != nil {
 		for key, fp := range previous.Modules {
 			modules[key] = fp
@@ -247,6 +248,23 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 	byKey := map[string]Module{}
 	for _, m := range policy.Modules {
 		byKey[m.StateKey] = m
+	}
+
+	// Le mode vient de la politique COURANTE, et n'est pas repris du précédent
+	// état.
+	//
+	// C'est ce qui fait qu'un retour d'audit vers enforce reprend effet : hériter
+	// de l'ancien état laisserait la machine en audit tant qu'aucune autre
+	// modification ne serait venue, c'est-à-dire précisément dans le cas où
+	// l'administrateur vient de décider le contraire.
+	//
+	// Enforce n'est pas écrit : c'est le défaut que ModuleMode rend sur une clé
+	// absente, et l'écrire mettrait une ligne par module dans le fichier d'état
+	// de tous les parcs pour n'y rien dire.
+	for key, m := range byKey {
+		if m.Mode() != DefaultDriftMode {
+			modes[key] = string(m.Mode())
+		}
 	}
 
 	// Les clés absentes de la politique courante sont retirées de l'état : le
@@ -306,6 +324,7 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 		Modules: modules,
 		Files:   files,
 		Checks:  checks,
+		Modes:   modes,
 	}
 	// L'empreinte de politique n'est enregistrée que si TOUT est en place.
 	// Sinon le prochain cycle croirait la machine à jour et n'y reviendrait pas.

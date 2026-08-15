@@ -1,6 +1,9 @@
 package clusterstorage
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 type Node struct {
 	ID            int
@@ -57,6 +60,40 @@ type Node struct {
 	// clients, il ne partage pas leur socle.
 	VersionSDK string
 
+	// AdressePublique est l'adresse par laquelle les AGENTS joignent ce nœud.
+	//
+	// # Pourquoi elle ne peut pas venir du nœud
+	//
+	// `IPAddress` est un FAIT, et le nœud est bien placé pour le déclarer : c'est
+	// l'adresse qu'il voit de lui-même. Mais derrière une redirection NAT, dans
+	// un conteneur, ou sur un hôte à plusieurs interfaces, ce n'est pas celle par
+	// laquelle le parc l'atteint — et le nœud ne peut pas la connaître, puisqu'il
+	// ne voit pas son infrastructure de l'extérieur.
+	//
+	// C'est donc une décision d'EXPLOITATION, déclarée par un administrateur, au
+	// même titre que `Priorite` et `ExposeAuxAgents`. Comme elles, elle est
+	// absente des requêtes d'enregistrement : sinon le nœud l'écraserait avec sa
+	// propre vue à son prochain démarrage.
+	//
+	// # Champ séparé, et non un écrasement d'IPAddress
+	//
+	// Les deux répondent à des questions différentes — « où se croit-il » et « où
+	// le joint-on » — et se réécrivent à des rythmes opposés. Garder le fait
+	// permet aussi de voir l'écart, qui est souvent l'information utile quand une
+	// connexion ne passe pas.
+	//
+	// Vide vaut « aucune déclaration » : c'est `IPAddress` qui est servie, donc
+	// le comportement d'avant ce champ. IP ou nom DNS.
+	AdressePublique string
+
+	// PortPublic est le port par lequel les agents joignent ce nœud.
+	//
+	// Zéro vaut « aucune déclaration », et c'est `Port` qui est servi. Séparé de
+	// l'adresse parce qu'une redirection translate souvent le port sans changer
+	// l'hôte : les agents joignent 203.0.113.5:16666 un proxy qui écoute bien
+	// sur 6666.
+	PortPublic int
+
 	// Proprietaire est le SEUL client autorisé à modifier cette ligne.
 	//
 	// # Le défaut que ce champ ferme
@@ -82,4 +119,37 @@ type Node struct {
 	// à plusieurs cores, un propriétaire commun laisserait chacun écrire la
 	// ligne des autres — le défaut corrigé, sous une autre forme.
 	Proprietaire string
+}
+
+// AdresseEffective rend l'adresse à annoncer aux agents.
+//
+// La déclaration de l'administrateur l'emporte sur ce que le nœud voit de
+// lui-même. C'est tout l'objet du champ : le nœud se trompe forcément dès qu'il
+// est derrière une redirection, et il n'a aucun moyen de le savoir.
+func (n Node) AdresseEffective() string {
+	if strings.TrimSpace(n.AdressePublique) != "" {
+		return strings.TrimSpace(n.AdressePublique)
+	}
+	return n.IPAddress
+}
+
+// PortEffectif rend le port à annoncer aux agents.
+//
+// Indépendant de l'adresse, et c'est voulu : déclarer un port sans adresse est
+// un cas réel — une redirection qui translate le port sur l'hôte que le nœud
+// voit déjà correctement.
+func (n Node) PortEffectif() int {
+	if n.PortPublic > 0 {
+		return n.PortPublic
+	}
+	return n.Port
+}
+
+// ExpositionDeclaree indique qu'un administrateur a redéclaré l'accès.
+//
+// Sert aux vues : afficher « 203.0.113.5:16666 » sans dire que l'adresse est
+// déclarée ferait chercher longtemps pourquoi elle ne correspond pas à ce que la
+// machine rapporte.
+func (n Node) ExpositionDeclaree() bool {
+	return strings.TrimSpace(n.AdressePublique) != "" || n.PortPublic > 0
 }

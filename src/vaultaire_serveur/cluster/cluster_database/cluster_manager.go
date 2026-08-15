@@ -194,8 +194,8 @@ func HostnameDuProprietaire(db *sql.DB, proprietaire string) (string, error) {
 }
 
 func GetActiveNodesByRole(db *sql.DB, role string) ([]clusterstorage.Node, error) {
-	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version 
-                            FROM cluster_nodes 
+	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version, adresse_publique, port_public
+                            FROM cluster_nodes
                             WHERE role=? AND status='online'`, role)
 	if err != nil {
 		return nil, err
@@ -208,7 +208,7 @@ func GetActiveNodesByRole(db *sql.DB, role string) ([]clusterstorage.Node, error
 		var lastHeartbeat time.Time
 		if err := rows.Scan(&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status, &n.VersionCode,
 			&n.Capabilities, &lastHeartbeat, &n.Port, &n.Priorite, &n.ExposeAuxAgents,
-			&n.Empreinte, &n.VersionSDK); err != nil {
+			&n.Empreinte, &n.VersionSDK, &n.AdressePublique, &n.PortPublic); err != nil {
 			return nil, err
 		}
 		n.LastHeartbeat = lastHeartbeat
@@ -222,8 +222,8 @@ func GetActiveNodesByRole(db *sql.DB, role string) ([]clusterstorage.Node, error
 
 // GetAllNodes retourne tous les nœuds, quelque soit leur état.
 func GetAllNodes(db *sql.DB) ([]clusterstorage.Node, error) {
-	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version 
-                            FROM cluster_nodes 
+	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version, adresse_publique, port_public
+                            FROM cluster_nodes
                             ORDER BY role, hostname`)
 	if err != nil {
 		return nil, err
@@ -236,7 +236,7 @@ func GetAllNodes(db *sql.DB) ([]clusterstorage.Node, error) {
 		var lastHeartbeat time.Time
 		if err := rows.Scan(&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status, &n.VersionCode,
 			&n.Capabilities, &lastHeartbeat, &n.Port, &n.Priorite, &n.ExposeAuxAgents,
-			&n.Empreinte, &n.VersionSDK); err != nil {
+			&n.Empreinte, &n.VersionSDK, &n.AdressePublique, &n.PortPublic); err != nil {
 			return nil, err
 		}
 		n.LastHeartbeat = lastHeartbeat

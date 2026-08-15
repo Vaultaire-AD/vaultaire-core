@@ -258,8 +258,17 @@ func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 
 	lines := make([]string, 0, len(nodes))
 	for _, n := range nodes {
+		// AdresseEffective et PortEffectif, et non IPAddress et Port.
+		//
+		// Ce que le nœud voit de lui-même n'est pas forcément ce par quoi le parc
+		// l'atteint : derrière une redirection NAT ou dans un conteneur, il
+		// annonce une adresse privée que personne ne peut joindre. La déclaration
+		// d'un administrateur l'emporte donc ici — c'est le seul endroit où la
+		// distinction compte, puisque c'est la seule adresse qui sorte vers les
+		// agents.
 		lines = append(lines, fmt.Sprintf("%s|%s|%d|%s|%d|%s",
-			n.Hostname, n.IPAddress, n.Port, n.Role, n.Priorite, n.Empreinte))
+			n.Hostname, n.AdresseEffective(), n.PortEffectif(),
+			n.Role, n.Priorite, n.Empreinte))
 	}
 	body := strings.Join(lines, "\n")
 

@@ -99,6 +99,22 @@ func EnregistrerActionsServeur(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
+		Nom: "cluster.set_node_exposure",
+		// Même clé d'écriture que les autres réglages du cluster.
+		//
+		// Elle en vaut la peine : l'adresse déclarée ici est distribuée à TOUT
+		// le parc par la trame 04_04, et chaque agent l'ajoute à sa liste de
+		// serveurs joignables. Pointer un nœud vers une adresse qu'on contrôle
+		// ne suffit pas à détourner une authentification — l'empreinte de clé
+		// reste vérifiée, et elle n'est pas modifiable ici — mais suffit
+		// largement à couper le parc.
+		CleRBAC:  permission.ActionWriteCluster,
+		Portee:   PorteeGlobale,
+		Resume:   "déclare par où les agents joignent un nœud, sa priorité et son exposition",
+		Executer: reglerExpositionNoeud,
+	})
+
+	r.MustEnregistrer(Definition{
 		Nom:     "cluster.get_metrics_retention",
 		CleRBAC: permission.ActionReadCluster,
 		Portee:  PorteeGlobale,
@@ -212,6 +228,145 @@ func listerNoeuds(_ Appelant, p Params) (Resultat, error) {
 		message = fmt.Sprintf("%d nœud(s) actif(s) pour le rôle %s.", len(noeuds), role)
 	}
 	return Resultat{Message: message, Donnees: NoeudsCluster{Role: role, Noeuds: noeuds}}, nil
+}
+
+// reglerExpositionNoeud déclare par où les agents joignent un nœud.
+//
+// # Le problème auquel cette action répond
+//
+// `ip_address` est ce que le nœud voit de LUI-MÊME. Derrière une redirection
+// NAT, dans un conteneur, ou sur un hôte à plusieurs interfaces, ce n'est pas
+// l'adresse par laquelle le parc l'atteint — et le nœud n'a aucun moyen de le
+// savoir, puisqu'il ne voit pas son infrastructure de l'extérieur.
+//
+// Il annonçait donc une adresse privée, que la trame 04_04 distribuait à tout
+// le parc, et que personne ne pouvait joindre.
+//
+// # Mise à jour partielle
+//
+// Un champ ABSENT n'est pas touché ; un champ présent et VIDE efface la
+// déclaration. La distinction est ce qui permet à `vlt cluster priority` de ne
+// pas remettre en rotation un nœud sorti pour maintenance, tout en laissant le
+// formulaire web envoyer les quatre champs d'un coup.
+func reglerExpositionNoeud(a Appelant, p Params) (Resultat, error) {
+	hostname := p.Get("node")
+	if hostname == "" {
+		hostname = p.Get("hostname")
+	}
+	if hostname == "" {
+		return Resultat{}, fmt.Errorf("nom du nœud requis")
+	}
+
+	db := database.GetDatabase()
+	avant, err := clusterdatabase.NoeudParHostname(db, hostname)
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	var champs clusterdatabase.ExpositionNoeud
+
+	if p.Presente("address") {
+		adresse, err := clusterstorage.ValiderAdressePublique(p.Get("address"))
+		if err != nil {
+			return Resultat{}, err
+		}
+		champs.AdressePublique = &adresse
+	}
+	if p.Presente("port") {
+		port, err := clusterstorage.ValiderPortPublic(p.Get("port"))
+		if err != nil {
+			return Resultat{}, err
+		}
+		champs.PortPublic = &port
+	}
+	if p.Presente("priority") {
+		brut := p.Get("priority")
+		priorite := 0
+		if brut != "" {
+			priorite, err = strconv.Atoi(brut)
+			if err != nil {
+				return Resultat{}, fmt.Errorf("priorité invalide : %q n'est pas un nombre", brut)
+			}
+		}
+		champs.Priorite = &priorite
+	}
+	if p.Presente("exposed") {
+		// Présent vaut décision explicite, absent vaut « n'y touche pas ».
+		//
+		// C'est pourquoi le formulaire web emploie une LISTE et non une case à
+		// cocher : une case décochée n'est pas envoyée par le navigateur, donc
+		// elle se lirait ici comme « ne rien changer », et retirer un nœud de la
+		// rotation depuis le web serait impossible.
+		expose := estVrai(p.Get("exposed"))
+		champs.ExposeAuxAgents = &expose
+	}
+
+	if champs.Vide() {
+		return Resultat{}, fmt.Errorf(
+			"rien à modifier : indiquez une adresse, un port, une priorité ou une exposition")
+	}
+
+	if err := clusterdatabase.MettreAJourExposition(db, hostname, champs); err != nil {
+		return Resultat{}, err
+	}
+
+	apres, err := clusterdatabase.NoeudParHostname(db, hostname)
+	if err != nil {
+		return Resultat{Message: "Nœud " + hostname + " mis à jour."}, nil
+	}
+
+	// Trace SECURITY, et l'état AVANT y figure.
+	//
+	// « le nœud vaut X » ne dit pas ce qui a changé ; six mois plus tard, quand
+	// une partie du parc n'arrive plus à s'authentifier, c'est l'écart qu'on
+	// cherche. L'adresse d'un nœud est distribuée à toutes les machines : la
+	// modifier a la portée d'un changement d'infrastructure, pas d'un réglage
+	// d'affichage.
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"%s a modifié l'exposition du nœud %s : accès %s → %s, priorité %d → %d, exposé %t → %t",
+		a.Username, hostname,
+		descriptionAcces(avant), descriptionAcces(apres),
+		avant.Priorite, apres.Priorite,
+		avant.ExposeAuxAgents, apres.ExposeAuxAgents))
+
+	return Resultat{Message: messageExposition(apres), Donnees: apres}, nil
+}
+
+// descriptionAcces rend l'accès d'un nœud sous une forme comparable.
+func descriptionAcces(n clusterstorage.Node) string {
+	acces := clusterstorage.AdresseAffichee(n.AdresseEffective(), n.PortEffectif())
+	if acces == "" {
+		acces = "aucun"
+	}
+	if n.ExpositionDeclaree() {
+		return acces + " (déclaré)"
+	}
+	return acces + " (vu par le nœud)"
+}
+
+// messageExposition dit ce que les agents recevront désormais.
+//
+// Répéter l'adresse effective plutôt que « mise à jour » : c'est la seule façon
+// de voir tout de suite qu'on a effacé une déclaration et qu'on est retombé sur
+// l'adresse interne du nœud, qui est l'erreur que cette action existe pour
+// corriger.
+func messageExposition(n clusterstorage.Node) string {
+	acces := clusterstorage.AdresseAffichee(n.AdresseEffective(), n.PortEffectif())
+
+	var quoi string
+	if n.ExpositionDeclaree() {
+		quoi = fmt.Sprintf("Les agents joindront %s à %s (adresse déclarée).", n.Hostname, acces)
+	} else {
+		quoi = fmt.Sprintf(
+			"Aucune adresse déclarée pour %s : les agents recevront %s, "+
+				"c'est-à-dire ce que le nœud voit de lui-même.", n.Hostname, acces)
+	}
+
+	if !n.ExposeAuxAgents {
+		return quoi + " Le nœud est HORS ROTATION : il n'est annoncé à aucun agent " +
+			"tant qu'il n'y est pas remis."
+	}
+	return quoi
 }
 
 // DelaiDePurge porte la valeur courante.

@@ -58,6 +58,13 @@ type DeliveryModule struct {
 	Params      map[string]string `json:"params"`
 	StateKey    string            `json:"state_key"`
 	Fingerprint string            `json:"fingerprint"`
+	// DriftMode dit à l'agent ce qu'il doit faire d'un écart sur CE module :
+	// le corriger au cycle suivant, ou seulement le signaler.
+	//
+	// Absent quand il vaut le défaut (enforce), que l'agent applique de
+	// lui-même : c'est ce qui garde les empreintes des parcs existants
+	// inchangées. Voir Module.DriftMode.
+	DriftMode DriftMode `json:"drift_mode,omitempty"`
 	// Definitions porte le contenu des valeurs nommées référencées par les
 	// paramètres, indexé par nom de champ.
 	Definitions map[string]DeliveryDefinition `json:"definitions,omitempty"`
@@ -222,6 +229,11 @@ func ModuleStateKey(m Module) string {
 // L'ordre d'application n'entre PAS dans l'empreinte. Réordonner le catalogue ne
 // change rien à ce qui est appliqué sur la machine ; l'inclure provoquerait une
 // réapplication inutile de tous les modules après une simple modification de code.
+//
+// Le mode de dérive n'y entre pas non plus, pour exactement la même raison : il
+// décide de ce qu'on fait d'un écart, pas de ce qu'on pose sur la machine. Il
+// entre en revanche dans l'empreinte de POLITIQUE, sans quoi un passage en audit
+// n'atteindrait jamais le parc — voir CanonicalJSON.
 func ModuleFingerprint(m Module) (string, error) {
 	type canonical struct {
 		Type        string            `json:"type"`
@@ -272,6 +284,7 @@ func BuildDeliveryPolicy(p Policy, username string) (DeliveryPolicy, error) {
 			Params:      m.Params,
 			StateKey:    ModuleStateKey(m),
 			Fingerprint: moduleFP,
+			DriftMode:   m.DriftMode,
 			Definitions: ResolveModuleDefinitions(m),
 		})
 	}

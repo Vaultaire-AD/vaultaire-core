@@ -31,6 +31,19 @@ import (
 // service, et le faire à l'instant de la détection reviendrait à redémarrer sshd
 // pendant qu'un administrateur débogue. Le cycle suivant s'en charge, à un
 // moment prévisible.
+//
+// # D'où vient le mode
+//
+// Du CORE, module par module. Il était auparavant une variable de ce paquet, que
+// personne ne renseignait : le mode audit était donc inatteignable en
+// production. Le lire dans la configuration de l'agent aurait remis la décision
+// sur la machine — celle qui dérive, et donc la dernière à qui la confier.
+//
+// Il est désormais un attribut de la GPO, hérité par ses modules, transmis dans
+// la politique et mémorisé dans l'état local (ScopeState.Modes). Une machine qui
+// reçoit une GPO en audit et une autre en enforce applique la règle de chacune
+// sur SES modules : c'est ce qui permet un groupe « laboratoire » en audit sans
+// désarmer le reste du parc.
 
 // DriftMode décide de ce que le scan fait d'un écart.
 type DriftMode string
@@ -42,11 +55,16 @@ const (
 	DriftAudit DriftMode = "audit"
 )
 
-// CurrentDriftMode est le mode actif.
+// DefaultDriftMode s'applique à un module dont le mode n'est pas connu.
 //
-// Variable et non constante : destinée à être relue depuis la configuration de
-// l'agent. Enforce par défaut — c'est ce qu'on attend d'une politique.
-var CurrentDriftMode = DriftEnforce
+// Le cas est courant et normal : le core n'écrit le mode que lorsqu'il s'écarte
+// du défaut, et un état écrit par une version antérieure n'en contient aucun.
+//
+// Enforce, et jamais audit. Le défaut d'un mécanisme de conformité doit être de
+// faire respecter la configuration : un défaut permissif transformerait chaque
+// trou d'information — core plus ancien, état tronqué, mode inconnu — en machine
+// silencieusement plus corrigée.
+const DefaultDriftMode = DriftEnforce
 
 // DriftKind qualifie l'écart constaté.
 type DriftKind string
@@ -245,10 +263,36 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 	return report
 }
 
-// EnforceDrift applique la politique de correction.
+// partitionByMode répartit les modules dérivés selon leur mode.
 //
-// En enforce, retire l'empreinte des modules concernés : ils seront réappliqués
-// au cycle suivant. Retourne le nombre de modules marqués.
+// Séparé d'EnforceDrift pour être testable : EnforceDrift lit et écrit
+// /var/lib/vaultaire, que seul root peut toucher. Un test qui exigerait ce droit
+// ne serait jamais lancé, et c'est précisément la décision qu'il faut vérifier.
+func partitionByMode(scopeState *ScopeState, modules []string) (corriges, audites []string) {
+	for _, key := range modules {
+		if scopeState.ModuleMode(key) == DriftAudit {
+			audites = append(audites, key)
+			continue
+		}
+		corriges = append(corriges, key)
+	}
+	return corriges, audites
+}
+
+// EnforceDrift applique la politique de correction, module par module.
+//
+// Le mode est lu dans l'état local, pour chaque module concerné : ceux en
+// enforce perdent leur empreinte et seront réappliqués au cycle suivant, ceux en
+// audit sont signalés et laissés en place. Retourne le nombre de modules marqués
+// pour réapplication.
+//
+// # Pourquoi le tri se fait ici et pas dans le scan
+//
+// Le scan ne modifie rien : c'est une lecture, et il doit rester utilisable pour
+// répondre à « qu'est-ce qui a bougé sur cette machine ? » sans effet de bord.
+// Le rapport 05_15 part donc COMPLET vers le core, écarts en audit compris — un
+// écart non corrigé reste un écart à afficher, et le masquer ferait de l'audit
+// un mode qui ne sert à rien.
 func EnforceDrift(scope, username string, report DriftReport) int {
 	if report.Conforming() {
 		return 0
@@ -257,12 +301,6 @@ func EnforceDrift(scope, username string, report DriftReport) int {
 	for _, item := range report.Items {
 		logs.Write_log("WARNING", fmt.Sprintf(
 			"GPO: derive detectee sur %s (%s) — %s", item.Path, item.Kind, item.Detail))
-	}
-
-	if CurrentDriftMode != DriftEnforce {
-		logs.Write_log("INFO", fmt.Sprintf(
-			"GPO: mode audit, %d ecart(s) signale(s) sans correction", len(report.Items)))
-		return 0
 	}
 
 	modules := report.ModulesConcerned()
@@ -280,7 +318,26 @@ func EnforceDrift(scope, username string, report DriftReport) int {
 	if scopeState == nil {
 		return 0
 	}
-	for _, key := range modules {
+
+	corriges, audites := partitionByMode(scopeState, modules)
+
+	if len(audites) > 0 {
+		logs.Write_log("INFO", fmt.Sprintf(
+			"GPO: mode audit, %d module(s) en ecart signale(s) sans correction : %v",
+			len(audites), audites))
+	}
+
+	// Aucun module à corriger : rien n'est écrit.
+	//
+	// Effacer l'empreinte de politique ici ferait retélécharger et recomparer la
+	// politique entière à chaque cycle sur une machine en audit durablement
+	// dérivée — un cycle de travail par heure et par machine, pour aboutir à
+	// « rien à faire » à tous les coups.
+	if len(corriges) == 0 {
+		return 0
+	}
+
+	for _, key := range corriges {
 		scopeState.ForgetModule(key)
 	}
 
@@ -298,6 +355,6 @@ func EnforceDrift(scope, username string, report DriftReport) int {
 
 	logs.Write_log("INFO", fmt.Sprintf(
 		"GPO: %d module(s) marque(s) pour reapplication au prochain cycle : %v",
-		len(modules), modules))
-	return len(modules)
+		len(corriges), corriges))
+	return len(corriges)
 }

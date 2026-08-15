@@ -124,45 +124,23 @@ cat > /etc/vaultaire_client/client_conf.json <<'EOF'
 }
 EOF
 
-# 4bis. Rotation du journal
+# 4bis. Ancien repertoire de journaux
 #
-# Sans ce fichier, /var/log/vaultaire/vaultaire_client.log grossit
-# indéfiniment. Sur une machine isolée on s'en apercevrait ; sur un parc,
-# personne ne voit grossir un fichier — jusqu'au jour où /var est plein sur des
-# dizaines de postes à la fois.
+# Une version anterieure du socle ecrivait certaines familles dans
+# /var/log/vaultaire_client/, en dur, alors que le journal principal va dans
+# /var/log/vaultaire/. Ce second repertoire naissait au vol en 0755 et rien ne
+# le faisait tourner.
 #
-# Aucune ligne de code de rotation n'est nécessaire : l'agent rouvre son journal
-# PAR SON CHEMIN à chaque ligne, donc le renommage que fait logrotate est suivi
-# tout seul. Pas de copytruncate, pas de signal, pas de redémarrage du service.
+# Retire s'il est VIDE ; signale sinon plutot que supprime — il peut contenir la
+# trace d'un incident qu'on cherche encore.
 #
-# ⚠ COPIE. L'original est deployments/logrotate/vaultaire-client, avec les
-# commentaires complets. Ce script est autonome — il tourne sur une machine qui
-# n'a pas le dépôt — d'où la duplication, comme pour l'unité systemd ci-dessus.
-log_info "Installation de la rotation des journaux..."
-cat > /etc/logrotate.d/vaultaire-client <<'EOF'
-/var/log/vaultaire/vaultaire_client.log {
-    daily
-    rotate 30
-    compress
-    delaycompress
-    maxsize 20M
-    missingok
-    notifempty
-    create 0600 root root
-    sharedscripts
-}
-EOF
-chmod 644 /etc/logrotate.d/vaultaire-client
-
-# Un ancien répertoire, écrit en dur par une version antérieure du socle et
-# couvert par aucune rotation. Retiré s'il est vide ; signalé sinon, plutôt que
-# supprimé — il peut contenir la trace d'un incident qu'on cherche encore.
+# La rotation, elle, est faite par l'agent lui-meme : rien a installer ici.
 if [[ -d /var/log/vaultaire_client ]]; then
     if rmdir /var/log/vaultaire_client 2>/dev/null; then
-        log_info "Ancien répertoire /var/log/vaultaire_client retiré (vide)."
+        log_info "Ancien repertoire /var/log/vaultaire_client retire (vide)."
     else
         log_info "ATTENTION : /var/log/vaultaire_client contient des fichiers d'une"
-        log_info "            version antérieure. Aucune rotation ne les couvre."
+        log_info "            version anterieure, que rien ne fait tourner."
     fi
 fi
 

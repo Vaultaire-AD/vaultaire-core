@@ -3,6 +3,7 @@
 //	vlt gpo status                 vue d'ensemble
 //	vlt gpo status <computeur_id>  détail d'une machine
 //	vlt gpo drift                  uniquement ce qui a dérivé
+//	vlt gpo mode <gpo> <valeur>    enforce ou audit — ce qu'on fait d'un écart
 //
 // # Pourquoi cette commande existe
 //
@@ -38,9 +39,16 @@ import (
 //
 // # Contrôle d'accès
 //
-// Lecture seule, donc `read:get:gpo`, porté par les actions gpo.list_compliance
-// et gpo.get_compliance. La vue d'ensemble est RÉDUITE aux machines du
-// périmètre de l'appelant, et le nombre d'entrées masquées est annoncé.
+// Porté par les actions, jamais re-vérifié ici.
+//
+// Les sous-commandes de lecture exigent `read:get:gpo` (gpo.list_compliance,
+// gpo.get_compliance) ; la vue d'ensemble est RÉDUITE aux machines du périmètre
+// de l'appelant, et le nombre d'entrées masquées est annoncé.
+//
+// `mode` est la seule ÉCRITURE de ce paquet et exige `write:update:gpo` sur
+// chaque domaine couvert par la GPO, via gpo.set_drift_mode. Elle vit ici et non
+// dans `update` parce qu'elle porte sur la conformité, c'est-à-dire sur le sujet
+// de cette commande — pas sur le contenu de la GPO.
 func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername string) string {
 	if len(commandList) == 0 {
 		return helpText()
@@ -70,9 +78,44 @@ func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 		return conformiteParc(appelant, false)
 	case "drift":
 		return conformiteParc(appelant, true)
+	case "mode":
+		return reglerMode(appelant, commandList[1:])
 	default:
 		return "Requête invalide. Essayez « gpo -h »."
 	}
+}
+
+// reglerMode traite `vlt gpo mode <nom> <enforce|audit>`.
+//
+// # Pourquoi la valeur est obligatoire et positionnelle
+//
+// Une commande qui accepterait `vlt gpo mode <nom>` seul devrait choisir entre
+// afficher le mode et le régler. La lecture existe déjà — `vlt gpo status` et la
+// page d'administration — donc cette forme ne servirait qu'à faire hésiter.
+//
+// Le contrôle de droits n'est pas ici : il est porté par l'action
+// gpo.set_drift_mode, donc partagé avec le portail web. C'est la règle du
+// fichier actions_gpo.go, et la raison pour laquelle les commandes ne
+// re-vérifient plus rien.
+func reglerMode(appelant action.Appelant, args []string) string {
+	if len(args) < 2 {
+		return "Usage : vlt gpo mode <nom_gpo> <enforce|audit>\n\n" +
+			"  enforce  un écart est signalé PUIS corrigé au cycle suivant\n" +
+			"  audit    un écart est signalé, et rien n'est corrigé\n\n" +
+			"Le mode ne change pas ce que la GPO décrit, mais ce qu'elle garantit."
+	}
+
+	nom := strings.TrimSpace(args[0])
+	mode := strings.TrimSpace(args[1])
+
+	res, err := action.Executer("gpo.set_drift_mode", appelant, action.Params{
+		"gpo":        nom,
+		"drift_mode": mode,
+	})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
 }
 
 // conformiteParc rend la vue d'ensemble, filtrée au périmètre.
@@ -301,6 +344,11 @@ func helpText() string {
   status                 état d'application et de conformité du parc
   status <computeur_id>  détail d'une machine : modules en échec, écarts
   drift                  machines en écart, et machines muettes
+  mode <gpo> <valeur>    enforce | audit — ce qui est fait d'un écart
+
+Le mode est porté par la GPO et hérité par ses modules : une machine qui reçoit
+une GPO en audit et une autre en enforce applique la règle de chacune. Un écart
+est signalé dans les deux cas ; seul le fait de le corriger change.
 
 Trois informations distinctes :
   SUIVI        la machine parle-t-elle encore ? à jour / en retard / jamais

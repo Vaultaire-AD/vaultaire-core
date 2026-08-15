@@ -382,6 +382,7 @@ func applyAuditdRule(ctx Context, m Module) (string, error) {
 			return "", fmt.Errorf("retrait de %s impossible : %v", file, err)
 		}
 		reloadAuditRules()
+		recordCheck(CheckAuditRule, key, "absent")
 		return "regle d'audit " + key + " retiree", nil
 	}
 
@@ -401,6 +402,13 @@ func applyAuditdRule(ctx Context, m Module) (string, error) {
 		_ = reloadAuditRules()
 		return "", fmt.Errorf("regle refusee par auditd, etat precedent restaure : %v", err)
 	}
+
+	// Le FICHIER dit ce qui sera chargé au prochain démarrage d'auditd ;
+	// l'attente dit ce qui est chargé MAINTENANT. Un « auditctl -D » vide toutes
+	// les règles du noyau sans toucher à un seul fichier : une commande d'une
+	// ligne, aucune trace, et la machine n'enregistre plus rien alors que le
+	// scan la déclare conforme.
+	recordCheck(CheckAuditRule, key, "present")
 	return "audit de " + path + " (" + m.Param("permissions") + ", cle " + key + ")", nil
 }
 

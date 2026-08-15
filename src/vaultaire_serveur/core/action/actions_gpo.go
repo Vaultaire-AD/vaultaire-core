@@ -62,6 +62,20 @@ func EnregistrerActionsGPO(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
+		Nom:     "gpo.set_drift_mode",
+		CleRBAC: "write:update:gpo",
+		Portee:  porteeGPO,
+		Resume:  "règle le mode de dérive d'une GPO (enforce ou audit)",
+		// write:update:gpo, comme toute modification de ce que la GPO fait.
+		//
+		// Le mode décide si les écarts sont corrigés sur le parc visé : le
+		// passer en audit revient à cesser de faire respecter cette GPO. Ce
+		// n'est pas un réglage d'affichage, et il exige le même droit que le
+		// contenu — sur CHAQUE domaine couvert, comme le reste du fichier.
+		Executer: reglerModeDeriveGPO,
+	})
+
+	r.MustEnregistrer(Definition{
 		Nom:      "gpo.delete",
 		CleRBAC:  "write:delete:gpo",
 		Portee:   porteeGPO,
@@ -221,6 +235,91 @@ func modifierGPO(a Appelant, p Params) (Resultat, error) {
 		return Resultat{Message: "GPO " + nom + " mise à jour."}, nil
 	}
 	return Resultat{Message: "GPO " + nom + " mise à jour.", Donnees: relue}, nil
+}
+
+// reglerModeDeriveGPO change le mode de dérive d'une GPO.
+//
+// # Pourquoi une action distincte de gpo.update
+//
+// gpo.update écrit la description ET l'activation d'un coup, parce qu'il sert un
+// formulaire qui envoie les deux et qu'une case décochée doit valoir « faux ».
+// Y greffer le mode ferait qu'un appel qui ne veut changer que lui — la ligne de
+// commande — désactiverait la GPO et effacerait sa description au passage.
+//
+// # La valeur est obligatoire
+//
+// Aucune valeur par défaut : « régler le mode » sans dire lequel n'a pas de
+// sens, et choisir enforce en silence ferait, d'une commande mal tapée, une
+// remise en correction de tout un parc de laboratoire.
+func reglerModeDeriveGPO(a Appelant, p Params) (Resultat, error) {
+	nom := p.Get("gpo")
+	if nom == "" {
+		return Resultat{}, fmt.Errorf("nom de GPO requis")
+	}
+
+	brut := p.Get("drift_mode")
+	if brut == "" {
+		brut = p.Get("mode")
+	}
+	if strings.TrimSpace(brut) == "" {
+		return Resultat{}, fmt.Errorf(
+			"mode requis : « %s » corrige les écarts au cycle suivant, « %s » les "+
+				"signale sans rien corriger", gpo.DriftEnforce, gpo.DriftAudit)
+	}
+	mode, err := gpo.NormalizeDriftMode(brut)
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	db := database.GetDatabase()
+	policy, err := dbgpo.GetPolicyByName(db, nom)
+	if err != nil {
+		return Resultat{}, fmt.Errorf("GPO %q introuvable : %w", nom, err)
+	}
+
+	if policy.EffectiveDriftMode() == mode {
+		return Resultat{
+			Message: fmt.Sprintf("GPO %s déjà en mode %s, rien à changer.", nom, mode),
+			Donnees: policy,
+		}, nil
+	}
+
+	if err := dbgpo.SetPolicyDriftMode(db, policy.ID, mode); err != nil {
+		return Resultat{}, fmt.Errorf("mode de dérive de la GPO %q : %w", nom, err)
+	}
+
+	// Trace SECURITY, au même titre que l'activation.
+	//
+	// Passer une GPO en audit ne change rien à ce qu'elle décrit et tout à ce
+	// qu'elle garantit : les machines visées cessent d'être corrigées. C'est le
+	// genre de geste qu'on doit pouvoir retrouver six mois plus tard, quand une
+	// machine s'avère dérivée depuis longtemps.
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"%s a réglé la GPO %s en mode %s (auparavant %s)",
+		a.Username, nom, mode, policy.EffectiveDriftMode()))
+
+	relue, err := dbgpo.GetPolicyByName(db, nom)
+	if err != nil {
+		return Resultat{Message: messageModeDerive(nom, mode)}, nil
+	}
+	return Resultat{Message: messageModeDerive(nom, mode), Donnees: relue}, nil
+}
+
+// messageModeDerive dit ce que le réglage change réellement sur le parc.
+//
+// Le mode n'a aucun effet visible sur la page de la GPO : ce qu'il change se
+// passe sur les machines, au prochain scan. Un simple « mode mis à jour »
+// laisserait l'administrateur sans moyen de savoir ce qu'il vient de faire.
+func messageModeDerive(nom string, mode gpo.DriftMode) string {
+	if mode == gpo.DriftAudit {
+		return fmt.Sprintf(
+			"GPO %s en mode audit : les écarts sur ses modules seront signalés "+
+				"et NON corrigés. Ses machines resteront dérivées jusqu'à un retour en %s.",
+			nom, gpo.DriftEnforce)
+	}
+	return fmt.Sprintf(
+		"GPO %s en mode enforce : les écarts sur ses modules seront corrigés "+
+			"au cycle suivant de chaque machine.", nom)
 }
 
 func supprimerGPO(a Appelant, p Params) (Resultat, error) {

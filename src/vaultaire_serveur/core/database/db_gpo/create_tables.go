@@ -3,6 +3,8 @@ package dbgpo
 import (
 	"database/sql"
 	"fmt"
+
+	"vaultaire/core/database/schematools"
 	"vaultaire/core/logs"
 )
 
@@ -22,6 +24,20 @@ func CreateTables(db *sql.DB) error {
 			logs.Write_LogCode("ERROR", logs.CodeDBGeneric, "gpo: création du schéma échouée : "+err.Error())
 			return fmt.Errorf("gpo: création du schéma échouée : %v", err)
 		}
+	}
+
+	// Colonnes ajoutées après coup.
+	//
+	// Le CREATE ci-dessus ne fait rien sur une base où la table gpo existe déjà :
+	// sans cette migration, le serveur démarrerait normalement et échouerait à la
+	// première résolution de politique, en pleine exploitation, sur un chemin qui
+	// marchait la veille.
+	//
+	// Le DEFAULT vaut pour les lignes existantes : toutes les GPO déjà en base
+	// passent en 'enforce', c'est-à-dire le comportement qu'elles avaient déjà.
+	if err := schematools.EnsureColumn(db, "gpo", "gpo", "drift_mode",
+		"VARCHAR(16) NOT NULL DEFAULT 'enforce'"); err != nil {
+		return err
 	}
 
 	if err := DropLegacyTables(db); err != nil {

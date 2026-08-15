@@ -165,6 +165,7 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 		if _, err := runCommand(store.refresh[0], store.refresh[1:]...); err != nil {
 			return "", err
 		}
+		recordCheck(CheckCADansMagasin, name, "absent")
 		return "CA " + name + " retiree du magasin", nil
 	}
 
@@ -188,6 +189,20 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 		// croire à un succès partiel.
 		os.Remove(path)
 		return "", fmt.Errorf("regeneration du magasin de confiance impossible : %v", err)
+	}
+
+	// L'attente porte sur le magasin COMPILÉ, pas sur le fichier déposé — que le
+	// scan des fichiers surveille déjà.
+	//
+	// Ce qui lui échappe : une CA mise en liste noire, ou retirée de
+	// /etc/ca-certificates.conf sur Debian. Dans les deux cas la source est
+	// intacte et plus aucune connexion TLS ne fait confiance à cette autorité.
+	//
+	// L'empreinte porte sur le DER : update-ca-trust réécrit les certificats
+	// qu'il agrège — longueur de ligne, ordre, en-têtes — et chercher le texte
+	// déposé échouerait sur une machine parfaitement conforme.
+	if empreinte := EmpreintePEM(cert); empreinte != "" {
+		recordCheck(CheckCADansMagasin, name, empreinte)
 	}
 	return "CA " + name + " installee (" + store.dir + ")", nil
 }
@@ -253,6 +268,16 @@ func applyDNSResolver(ctx Context, m Module) (string, error) {
 		_, _ = runCommand("systemctl", "restart", "systemd-resolved")
 		return "", fmt.Errorf("redemarrage de systemd-resolved impossible, configuration restauree : %v", err)
 	}
+
+	// L'attente porte sur les serveurs GLOBAUX réellement chargés par resolved.
+	// Le fichier dit ce qu'il devrait lire ; un « resolvectl dns » posé à la
+	// main, ou un service jamais redémarré depuis, laisse le fichier intact et
+	// la machine interroge d'autres serveurs.
+	//
+	// Un DNS posé sur une INTERFACE — par DHCP — prime sur le global pour les
+	// requêtes de cette interface. Ce n'est pas une dérive de ce module : il fixe
+	// le global, et le global sera bien celui qu'il a fixé.
+	recordCheck(CheckDNSServers, "global", servers)
 	return "DNS = " + servers, nil
 }
 

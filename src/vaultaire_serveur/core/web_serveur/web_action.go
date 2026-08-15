@@ -120,6 +120,9 @@ var actionsFormulaire = map[string]string{
 	"delete_module": "gpo.delete_module",
 	"link_group":    "group.add_gpo",
 	"unlink_group":  "group.remove_gpo",
+	// Formulaire séparé de « update_gpo » : le mode se règle seul, sans
+	// réécrire au passage la description et l'activation.
+	"set_gpo_mode": "gpo.set_drift_mode",
 
 	// certificats
 	"delete_certificate": "certificate.delete",
@@ -135,6 +138,9 @@ var actionsFormulaire = map[string]string{
 
 	// politique de mot de passe
 	"save_password_policy": "authpolicy.set_password_policy",
+
+	// cluster
+	"set_node_exposure": "cluster.set_node_exposure",
 }
 
 // aliasParametres traduit les noms de champs des formulaires vers ceux

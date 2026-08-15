@@ -134,6 +134,34 @@ type Module struct {
 	Scope      Scope             `json:"scope"`
 	ApplyOrder int               `json:"apply_order"`
 	Params     map[string]string `json:"params"`
+
+	// DriftMode est le mode hérité de la GPO qui porte ce module.
+	//
+	// # Il n'est PAS stocké sur gpo_module
+	//
+	// Le mode est un attribut de la GPO, colonne gpo.drift_mode. Ce champ est
+	// rempli par Resolve, au moment où le module quitte sa GPO d'origine pour
+	// entrer dans la politique effective — c'est-à-dire au seul endroit où la
+	// provenance est encore connue. Un module relu depuis la base l'a vide.
+	//
+	// # Pourquoi il est vide quand le mode est « enforce »
+	//
+	// Le défaut est SILENCIEUX, et c'est délibéré : le champ entre dans
+	// l'empreinte de politique (voir CanonicalJSON), donc le renseigner
+	// systématiquement changerait l'empreinte de toutes les GPO existantes au
+	// premier démarrage après mise à jour. Tout le parc retéléchargerait sa
+	// politique pour n'y trouver aucun module modifié. En ne l'écrivant que
+	// lorsqu'il s'écarte du défaut, un parc entièrement en enforce — c'est-à-dire
+	// tous les parcs d'aujourd'hui — garde exactement les mêmes empreintes.
+	DriftMode DriftMode `json:"drift_mode,omitempty"`
+}
+
+// EffectiveDriftMode rend le mode du module, défaut compris.
+func (m Module) EffectiveDriftMode() DriftMode {
+	if m.DriftMode == "" {
+		return DefaultDriftMode
+	}
+	return m.DriftMode
 }
 
 // Policy est une GPO complète.
@@ -144,8 +172,26 @@ type Policy struct {
 	Scope       Scope     `json:"scope"`
 	Version     int       `json:"version"`
 	Enabled     bool      `json:"enabled"`
-	Modules     []Module  `json:"modules"`
-	Groups      []string  `json:"groups,omitempty"`
-	CreatedAt   time.Time `json:"created_at,omitempty"`
-	UpdatedAt   time.Time `json:"updated_at,omitempty"`
+
+	// DriftMode décide de ce que les agents font d'un écart sur les modules de
+	// cette GPO : le corriger au cycle suivant (enforce) ou seulement le
+	// signaler (audit). Vide vaut DefaultDriftMode — voir EffectiveDriftMode.
+	DriftMode DriftMode `json:"drift_mode,omitempty"`
+
+	Modules []Module `json:"modules"`
+
+	Groups    []string  `json:"groups,omitempty"`
+	CreatedAt time.Time `json:"created_at,omitempty"`
+	UpdatedAt time.Time `json:"updated_at,omitempty"`
+}
+
+// EffectiveDriftMode rend le mode de la GPO, défaut compris.
+//
+// Une GPO lue dans une base migrée depuis une version antérieure a la colonne à
+// vide : elle vaut enforce, c'est-à-dire le comportement qu'elle avait déjà.
+func (p Policy) EffectiveDriftMode() DriftMode {
+	if p.DriftMode == "" {
+		return DefaultDriftMode
+	}
+	return p.DriftMode
 }

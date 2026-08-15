@@ -512,6 +512,20 @@ func CanonicalJSON(p Policy) ([]byte, error) {
 		Scope      Scope             `json:"scope"`
 		ApplyOrder int               `json:"apply_order"`
 		Params     map[string]string `json:"params"`
+		// Le mode de dérive entre dans l'empreinte de POLITIQUE, et volontairement
+		// pas dans celle du MODULE (voir ModuleFingerprint).
+		//
+		// Dans l'empreinte de politique, parce que sans cela un passage en audit
+		// n'atteindrait jamais le parc : le serveur répondrait « rien à faire »
+		// aux agents dont la politique est par ailleurs identique, et le réglage
+		// resterait lettre morte jusqu'à la prochaine modification de contenu.
+		//
+		// Hors de l'empreinte de module, parce que changer le mode ne change pas
+		// ce qui doit être posé sur la machine. L'agent retéléchargera le
+		// document et trouvera tous ses modules « unchanged » : aucun service
+		// relancé, aucun paquet réinstallé, pour un simple changement de
+		// politique de correction.
+		DriftMode DriftMode `json:"drift_mode,omitempty"`
 		// Le contenu des définitions référencées entre dans l'empreinte : modifier
 		// la liste de commandes d'un jeu sudo ne change aucun paramètre de module,
 		// mais change bel et bien ce qui sera appliqué. Sans cela le serveur
@@ -530,6 +544,7 @@ func CanonicalJSON(p Policy) ([]byte, error) {
 	for _, m := range modules {
 		cp.Modules = append(cp.Modules, canonicalModule{
 			Type: m.Type, Scope: m.Scope, ApplyOrder: m.ApplyOrder, Params: m.Params,
+			DriftMode:   m.DriftMode,
 			Definitions: definitionsForHash(m),
 		})
 	}

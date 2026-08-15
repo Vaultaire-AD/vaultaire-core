@@ -56,6 +56,46 @@ type ScopeState struct {
 	// CHAMP AJOUTÉ, avec omitempty : un état écrit par une version antérieure
 	// n'a pas cette clé, se relit sans erreur, et le premier cycle la renseigne.
 	Checks map[string]SystemCheck `json:"checks,omitempty"`
+
+	// Modes associe une clé d'état au mode de dérive de son module.
+	//
+	// # Pourquoi le mode est mémorisé et non relu à chaque scan
+	//
+	// Le scan de conformité tourne AVANT le cycle, sur l'état local, et sans
+	// avoir parlé au serveur. Il ne dispose donc d'aucune politique fraîche : la
+	// seule façon pour lui de connaître le mode d'un module est de le trouver
+	// écrit là où l'application l'a laissé.
+	//
+	// C'est aussi ce qui fait tenir le mode quand le core est injoignable. Une
+	// machine coupée du serveur continue de scanner ; sans mémoire du mode, elle
+	// se rabattrait sur enforce et corrigerait des écarts qu'un administrateur a
+	// délibérément placés sur un poste déclaré en audit.
+	//
+	// Seules les entrées qui S'ÉCARTENT du défaut sont écrites : un parc
+	// entièrement en enforce ne grossit pas son fichier d'état d'une ligne par
+	// module.
+	//
+	// CHAMP AJOUTÉ, avec omitempty : un état écrit par une version antérieure
+	// n'a pas cette clé, se relit sans erreur, et vaut « tout en enforce » —
+	// donc l'ancien comportement, à l'identique.
+	Modes map[string]string `json:"modes,omitempty"`
+}
+
+// ModuleMode rend le mode de dérive enregistré pour un module.
+//
+// Une clé absente vaut le défaut : c'est le cas courant, puisque seules les
+// entrées non-enforce sont écrites.
+func (s *ScopeState) ModuleMode(stateKey string) DriftMode {
+	if s == nil || s.Modes == nil {
+		return DefaultDriftMode
+	}
+	switch DriftMode(s.Modes[stateKey]) {
+	case DriftAudit:
+		return DriftAudit
+	case DriftEnforce:
+		return DriftEnforce
+	}
+	return DefaultDriftMode
 }
 
 // ModuleFingerprint retourne l'empreinte appliquée d'un module, si connue.
@@ -91,6 +131,10 @@ func (s *ScopeState) ForgetModule(stateKey string) {
 		return
 	}
 	delete(s.Modules, stateKey)
+	// Le mode, lui, RESTE. Il décrit ce qu'il faut faire du module, pas le fait
+	// qu'il soit appliqué : l'effacer ferait repasser en enforce, entre le
+	// moment où la dérive est constatée et celui où le cycle réapplique, un
+	// module que la politique veut en audit.
 }
 
 // State est le contenu complet du fichier d'état.

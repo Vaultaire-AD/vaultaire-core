@@ -7,6 +7,16 @@ package dbgpo
 // schéma déclaratif de core/gpo, qui est la source de vérité. En revanche les
 // modules eux-mêmes sont des lignes distinctes, ce qui permet de répondre à
 // « quelles GPO touchent sshd ? » et de diffuser un diff module par module.
+//
+// `drift_mode` est sur la GPO et non sur le module : le mode répond à « fait-on
+// respecter cette politique ? », qui est une décision d'exploitation prise sur
+// un ensemble cohérent de réglages, pas brique par brique. Les modules en
+// héritent à la résolution (core/gpo.Resolve), ce qui suffit à faire cohabiter
+// un groupe en audit et le reste du parc en enforce sur une même machine.
+//
+// Ce texte ne suffit PAS à faire apparaître la colonne sur une base déjà en
+// service : `CREATE TABLE IF NOT EXISTS` ne compare pas les colonnes. La
+// migration est faite par CreateTables, via schematools.EnsureColumn.
 var tablesDDL = []string{
 	`CREATE TABLE IF NOT EXISTS gpo (
 		id_gpo INT AUTO_INCREMENT PRIMARY KEY,
@@ -15,6 +25,7 @@ var tablesDDL = []string{
 		description TEXT,
 		version INT NOT NULL DEFAULT 1,
 		enabled BOOLEAN NOT NULL DEFAULT TRUE,
+		drift_mode VARCHAR(16) NOT NULL DEFAULT 'enforce',
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 		INDEX idx_gpo_scope (scope),

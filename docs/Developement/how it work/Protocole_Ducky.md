@@ -45,7 +45,7 @@ dans la colone 1 serveur ou client c'est le partie qui recoit la tramme pas qui 
 | serveur                     |             | 01            | register_host                    | un nœud se déclare : hostname, fqdn, ip, rôle, domaine, port, empreinte                   |
 | client                      |             | 02            | register_host_ack                | accusé d'enregistrement                                                                   |
 | serveur                     |             | 03            | list_cores                       | demande les nœuds joignables — contenu VIDE, l'ID est lu dans l'en-tête                   |
-| client                      |             | 04            | list_cores_response              | `<nombre>` puis `<host>\|<ip>\|<port>\|<rôle>\|<priorité>\|<empreinte>`, ORDONNÉE par le core |
+| client                      |             | 04            | list_cores_response              | `<nombre>` puis `<host>\|<ip>\|<port>\|<rôle>\|<priorité>\|<empreinte>`, ORDONNÉE par le core. `<ip>` et `<port>` sont les valeurs EFFECTIVES : l'adresse déclarée par un administrateur prime sur celle que le nœud voit de lui-même |
 | serveur                     |             | 05            | proxy_metrics                    | envoi des métriques du proxy vers le Core (pour table proxy_metrics)                      |
 | client                      |             | 06            | proxy_metrics_ack                | accusé de réception                                                                       |
 | serveur                     |             | 07            | host_heartbeat                   | heartbeat du host pour rester dans cluster_nodes (online)                                 |
@@ -686,6 +686,7 @@ par `gpo.CanonicalJSON` :
       "params": { "group": "ops", "command_set": "nginx_restart", "nopasswd": "false" },
       "state_key": "sudoers_rule:ops",
       "fingerprint": "a91c0e4471bd…",
+      "drift_mode": "audit",
       "definitions": {
         "command_set": {
           "name": "nginx_restart",
@@ -697,7 +698,7 @@ par `gpo.CanonicalJSON` :
 }
 ```
 
-Trois champs méritent d'être détaillés, parce qu'ils portent des garanties :
+Quatre champs méritent d'être détaillés, parce qu'ils portent des garanties :
 
 - **`state_key`** et **`fingerprint`** par module sont calculés par le serveur et
   transmis, jamais recalculés par l'agent. Le client est un module Go séparé :
@@ -715,6 +716,23 @@ Trois champs méritent d'être détaillés, parce qu'ils portent des garanties :
   de commandes d'un jeu ne change aucun paramètre de module, mais change bel et
   bien ce qui sera appliqué — sans cela le serveur répondrait « rien à faire » et
   le parc conserverait indéfiniment l'ancienne règle.
+
+- **`drift_mode`** dit ce que l'agent doit faire d'un écart constaté sur CE
+  module : `enforce` le fait réappliquer au cycle suivant, `audit` se contente de
+  le signaler. Il est hérité de la GPO qui porte le module, côté serveur.
+
+  Le champ est **absent quand il vaut `enforce`**, et l'agent applique alors ce
+  défaut de lui-même. Ce n'est pas de l'économie de place : le mode entre dans
+  l'empreinte de POLITIQUE — sans quoi un passage en audit n'atteindrait jamais
+  un parc dont la politique ne change pas par ailleurs, le serveur répondant
+  `05_03`. L'écrire systématiquement changerait donc l'empreinte de toutes les
+  GPO existantes, et le parc entier retéléchargerait sa politique le jour de la
+  mise à jour.
+
+  Il n'entre en revanche **pas** dans l'empreinte du MODULE : changer le mode ne
+  change pas ce qu'il faut poser sur la machine. L'agent retélécharge le document
+  et trouve tous ses modules `unchanged` — aucun service relancé, aucun paquet
+  réinstallé. Détail dans [GPO.md](./GPO.md), section « Le mode de dérive ».
 
 Les modules sont triés par ordre d'application et les clés de paramètres sont
 ordonnées : le document est reproductible, et son empreinte stable d'un envoi à
@@ -737,7 +755,8 @@ GPO ne puisse pas réécrire l'état qui décide de son application.
     "fingerprint": "a1b2…",
     "version": 7,
     "applied_at": "2026-07-30T14:22:03Z",
-    "modules": { "sysctl:net.ipv4.ip_forward": "e3f4…" }
+    "modules": { "sysctl:net.ipv4.ip_forward": "e3f4…" },
+    "modes":   { "sudoers_rule:ops": "audit" }
   },
   "users": {
     "alice": { "fingerprint": "c5d6…", "version": 3, "applied_at": "…", "modules": {} }
@@ -750,6 +769,12 @@ L'empreinte **par module** est ce qui permet de ne réappliquer que ce qui a cha
 tranquille ceux dont les paramètres sont identiques. Réappliquer l'ensemble à chaque
 changement serait plus simple, mais relancerait des services et réinstallerait des
 paquets sans raison.
+
+`modes` ne porte que les modules qui s'écartent du mode par défaut. Une clé
+absente — comme la totalité d'un état écrit par un agent antérieur — vaut
+`enforce`. Le scan de conformité tourne avant le cycle et sans avoir parlé au
+serveur : sans cette mémoire, une machine coupée du core se rabattrait sur
+enforce et corrigerait des écarts délibérément tolérés sur un poste en audit.
 
 ## Moment d'application en scope user
 
@@ -1264,6 +1289,37 @@ rien.
 > **Ce qui est en place** : les lots 0 à 3 — un agent apprend ses nœuds
 > joignables, un proxy existe dans le cluster et bat. **Le relais TCP et le
 > relais LDAP/S ne sont pas écrits** ; ils restent spécifiés plus bas.
+
+### L'adresse annoncée en `04_04` n'est pas toujours celle du nœud
+
+Le champ `<ip>` de `04_04` porte l'adresse **EFFECTIVE**, pas `ip_address`.
+
+Un nœud déclare en `04_01` l'adresse qu'il voit de lui-même. C'est un fait, et il
+est bien placé pour le donner — mais derrière une redirection NAT, dans un
+conteneur, ou sur un hôte à plusieurs interfaces, ce n'est pas celle par laquelle
+le parc l'atteint. Il ne peut pas le savoir : il ne voit pas son infrastructure
+de l'extérieur. Le core distribuait donc à toutes les machines une adresse privée
+que personne ne pouvait joindre.
+
+Deux colonnes portent la déclaration d'un administrateur, et priment ici :
+
+| Colonne | Prime sur | Vide / zéro |
+|---|---|---|
+| `adresse_publique` | `ip_address` | on sert `ip_address` |
+| `port_public` | `ducky_port` | on sert `ducky_port` |
+
+Elles sont **indépendantes** : une redirection translate souvent le port sans
+changer l'hôte, et l'inverse existe aussi.
+
+Comme `priorite` et `expose_aux_agents`, ce sont des décisions d'EXPLOITATION :
+`RegisterNode` ne les touche pas, sinon un nœud écraserait la déclaration avec sa
+propre vue à son prochain démarrage.
+
+Un nœud sans port déclaré **ni par lui-même ni par un administrateur** reste omis
+de la liste. Un port public suffit donc à remettre dans la rotation un nœud
+enregistré par une version antérieure, sans attendre qu'il se réenregistre.
+
+Réglage : `vlt cluster expose <nœud> <adresse> [port]`, ou **Admin → Cluster**.
 
 ## Ce qui bloquait
 

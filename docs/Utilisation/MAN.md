@@ -973,6 +973,7 @@ enroll types                     # catalogue des types de clients
 gpo status                 # état d'application et de conformité du parc
 gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
 gpo drift                  # uniquement les machines en écart
+gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
 ```
 
 **Trois informations distinctes, à ne pas confondre :**
@@ -992,6 +993,35 @@ silence se lisait comme une absence de problème.
 
 `en retard` se déclenche après **trois** cycles manqués, soit trois heures. Un
 redémarrage ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
+
+### Corriger ou seulement constater — `gpo mode`
+
+```bash
+gpo mode durcissement_ssh audit     # les écarts sont signalés, rien n'est corrigé
+gpo mode durcissement_ssh enforce   # les écarts sont corrigés au cycle suivant
+```
+
+**La détection ne change jamais.** Un écart est constaté, journalisé et remonté
+dans les deux modes ; il apparaît dans `gpo drift` de la même façon. Seule change
+la suite : en `enforce`, le module dérivé est réappliqué au cycle suivant de la
+machine — jamais immédiatement, pour ne pas relancer un service pendant qu'on le
+débogue. En `audit`, rien n'est corrigé.
+
+Le mode est porté par la **GPO** et hérité par ses modules. Une machine qui reçoit
+une GPO en audit et une autre en enforce applique la règle de chacune sur les
+modules qui lui appartiennent : mettre un groupe « laboratoire » en audit ne
+désarme donc pas la correction sur le reste du parc.
+
+> `audit` laisse durablement des machines dans un état qui n'est plus celui de la
+> politique, tout en les affichant comme telles. À réserver aux parcs où des
+> interventions manuelles sont légitimes, et à rendre à `enforce` ensuite.
+
+Le réglage exige `write:update:gpo` sur **chaque** domaine couvert par la GPO, et
+laisse une trace `SECURITY`. Il est également accessible depuis **Admin → GPO →
+une GPO → Réglages**.
+
+Le défaut est `enforce`, y compris pour toute GPO créée avant l'existence du
+réglage.
 
 ### La même vue sur le portail
 
@@ -1025,7 +1055,62 @@ cluster list                  # tous les nœuds enregistrés
 cluster list <role>           # nœuds actifs d'un rôle
 cluster purge-delay           # délai avant suppression d'un service parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
+
+cluster expose <noeud> <adresse> [port]   # par où les AGENTS joignent ce nœud
+cluster expose <noeud> --clear            # retire la déclaration
+cluster priority <noeud> <valeur>         # ordre de service
+cluster rotation <noeud> <in|out>         # annoncer ce nœud aux agents, ou non
 ```
+
+### Dire à un nœud par où on le joint
+
+Un nœud déclare l'adresse qu'il voit de **lui-même**. Derrière une redirection
+NAT, dans un conteneur ou sur un hôte à plusieurs interfaces, ce n'est pas celle
+par laquelle le parc l'atteint — et il n'a aucun moyen de le savoir, puisqu'il ne
+voit pas son infrastructure de l'extérieur. Il annonce alors une adresse privée,
+que le serveur distribue à toutes les machines, et que personne ne peut joindre.
+
+```bash
+cluster expose proxy-paris 203.0.113.5 16666
+cluster expose proxy-paris 203.0.113.5        # adresse seule : le port ne change pas
+cluster expose proxy-paris --clear            # retour à ce que le nœud annonce
+```
+
+L'adresse accepte une **IP ou un nom DNS**. Un nom permet de faire porter une
+bascule d'adresse par le DNS sans repasser sur le nœud ; l'authentification du
+nœud tient à son empreinte de clé, pas à son adresse.
+
+Le **port est facultatif et indépendant** : ne pas le donner ne l'efface pas.
+Sans cela, corriger une adresse remettrait à zéro le port réglé la semaine
+précédente. Seul `--clear` retire les deux.
+
+La déclaration l'emporte sur ce que le nœud annonce, et c'est elle que reçoivent
+les agents. `cluster list` montre les deux : **ACCÈS AGENTS** est ce qui est
+distribué, **VU PAR LE NŒUD** ce que la machine rapporte — renseigné seulement
+quand il diffère, parce que c'est leur écart qu'on cherche quand une connexion ne
+passe pas.
+
+### Ordre et rotation
+
+```bash
+cluster priority proxy-paris 10     # plus petit = servi plus tôt
+cluster rotation proxy-paris out    # retiré de la liste distribuée
+cluster rotation proxy-paris in     # remis
+```
+
+`0` en priorité vaut « sans préférence » et se range **après** les valeurs
+explicites : sinon, donner une priorité à un seul nœud le reléguerait derrière
+tous les autres.
+
+> `rotation out` n'est **pas** un contrôle d'accès. Le nœud disparaît de la liste
+> distribuée ; il reste joignable pour qui connaît son adresse. C'est le pare-feu
+> qui protège un core. Ce drapeau sert à sortir un nœud pour maintenance sans le
+> désenregistrer — ce qui le ferait disparaître des vues de supervision au moment
+> précis où on le surveille.
+
+Ces trois réglages sont des **décisions d'administrateur** : un nœud qui
+redémarre ne les écrase pas. Ils exigent `write:cluster` et laissent une trace
+`SECURITY`. Les mêmes champs sont éditables depuis **Admin → Cluster**.
 
 La colonne **VERSION** porte ce que le nœud déclare de lui-même. Elle contenait
 auparavant le TYPE du programme, écrit en dur côté serveur — que la colonne

@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"time"
 
 	"vaultaire/core/storage"
 )
+
+// verrouEcriture sérialise l'écriture fichier et la rotation.
+var verrouEcriture sync.Mutex
 
 // Logging uses RFC 5424 severity levels and writes to stdout (Twelve-Factor App).
 // Logs are also kept in memory for the web UI (size-limited). See rfc5424.go.
@@ -31,18 +35,14 @@ import (
 //
 // # Le fichier est rouvert PAR SON CHEMIN à chaque ligne
 //
-// C'est ce qui rend `logrotate` suffisant sans une ligne de code de rotation, et
-// la propriété est trop facile à détruire pour rester implicite.
-//
-// logrotate RENOMME le fichier puis en crée un neuf. Un programme qui garderait
-// un descripteur ouvert continuerait d'écrire dans le fichier renommé — donc
-// dans l'archive — et le fichier courant resterait vide indéfiniment. C'est le
-// défaut classique, celui qui oblige à `copytruncate` (qui perd les lignes
-// écrites pendant la copie) ou à un signal de réouverture.
+// C'est ce qui permet à la rotation d'être un simple renommage, sans aucune
+// gestion de descripteur. Un programme qui garderait le fichier ouvert
+// continuerait d'écrire dans le fichier RENOMMÉ — donc dans l'archive — et le
+// fichier courant resterait vide indéfiniment.
 //
 // Ici, chaque ligne fait un `OpenFile` sur le CHEMIN : après un renommage, la
 // ligne suivante recrée le fichier. Le volume de ces deux familles se compte en
-// quelques lignes par jour ; le coût des deux appels système est sans objet.
+// quelques lignes par jour ; le coût des appels système est sans objet.
 func WriteLog(famille string, content string) {
 	content = strings.TrimSpace(content)
 
@@ -53,6 +53,12 @@ func WriteLog(famille string, content string) {
 		return
 	}
 
+	// Verrou sur l'écriture ET la rotation : sans lui, deux goroutines
+	// pourraient faire tourner le même fichier au même instant, et la seconde
+	// renommerait le fichier neuf que la première vient de créer.
+	verrouEcriture.Lock()
+	defer verrouEcriture.Unlock()
+
 	dirPath := storage.LogPath
 	// 0700 : ces fichiers nomment des comptes et des tentatives d'injection. Ils
 	// étaient créés en 0755, donc lisibles par tout utilisateur de la machine.
@@ -60,6 +66,11 @@ func WriteLog(famille string, content string) {
 		Write_LogCode("ERROR", CodeFileConfig, "logs: mkdir failed: "+err.Error())
 		return
 	}
+	// La rotation AVANT l'ouverture, jamais après : décidée sur un fichier qu'on
+	// vient d'agrandir, elle archiverait un fichier contenant déjà la ligne du
+	// jour suivant.
+	rotationSiNecessaire(dirPath + nom)
+
 	file, err := os.OpenFile(dirPath+nom, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		Write_LogCode("ERROR", CodeFileConfig, "logs: open file failed: "+err.Error())

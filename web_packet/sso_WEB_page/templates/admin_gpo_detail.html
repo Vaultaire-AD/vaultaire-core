@@ -296,6 +296,34 @@
       </form>
 
       <hr>
+      <h3>Écarts constatés sur le parc</h3>
+      <p class="muted small">
+        Les agents vérifient périodiquement que ce que la GPO a posé est encore en place.
+        Ce réglage décide de ce qu'ils <em>font</em> d'un écart — jamais de sa détection :
+        un écart est signalé et remonté dans les deux modes.
+      </p>
+      <form method="post">
+        <input type="hidden" name="action" value="set_gpo_mode">
+        <input type="hidden" name="active_tab" value="settings">
+        <label>Mode de dérive</label>
+        <select name="drift_mode">
+          <option value="enforce"{{ if eq .Policy.EffectiveDriftMode "enforce" }} selected{{ end }}>Enforce — corriger au cycle suivant</option>
+          <option value="audit"{{ if eq .Policy.EffectiveDriftMode "audit" }} selected{{ end }}>Audit — signaler sans corriger</option>
+        </select>
+        <p class="muted small">
+          En <strong>enforce</strong>, un module dérivé est réappliqué au cycle suivant de la machine —
+          jamais immédiatement, pour ne pas relancer un service pendant qu'on le débogue.
+          En <strong>audit</strong>, rien n'est corrigé : à réserver aux parcs où des interventions
+          manuelles sont légitimes. Une machine y reste dérivée tant que le mode n'est pas rendu à enforce.
+        </p>
+        <p class="muted small">
+          Le mode suit les modules de <em>cette</em> GPO. Une machine qui reçoit aussi une GPO en enforce
+          continue d'être corrigée sur les modules de celle-là.
+        </p>
+        <div class="gpo-actions"><button type="submit" class="btn btn-secondary">Appliquer le mode</button></div>
+      </form>
+
+      <hr>
       <h3>Supprimer la GPO</h3>
       <p class="muted small">Supprime la GPO, ses modules et ses liaisons de groupe. Irréversible.</p>
       <form method="post" onsubmit="return confirm('Supprimer définitivement la GPO {{ .Policy.Name }} ?');">

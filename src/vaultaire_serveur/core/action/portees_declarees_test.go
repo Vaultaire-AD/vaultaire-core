@@ -112,12 +112,13 @@ var porteesAttendues = map[string]string{
 	"client_permission.delete": "porteePermissionClient",
 
 	// GPO : les domaines des groupes auxquels elle est liée.
-	"gpo.get":           "porteeGPO",
-	"gpo.update":        "porteeGPO",
-	"gpo.delete":        "porteeGPO",
-	"gpo.add_module":    "porteeGPO",
-	"gpo.update_module": "porteeGPO",
-	"gpo.delete_module": "porteeGPO",
+	"gpo.get":            "porteeGPO",
+	"gpo.update":         "porteeGPO",
+	"gpo.set_drift_mode": "porteeGPO",
+	"gpo.delete":         "porteeGPO",
+	"gpo.add_module":     "porteeGPO",
+	"gpo.update_module":  "porteeGPO",
+	"gpo.delete_module":  "porteeGPO",
 
 	// Listes : globales, réduites ensuite par leur filtre de périmètre.
 	"user.list":              "PorteeGlobale",
@@ -138,12 +139,15 @@ var porteesAttendues = map[string]string{
 	"session.list_clients_by_type":  "PorteeGlobale",
 
 	// Serveur : cluster et certificats. Sans domaine, donc sans portée souple.
-	"cluster.list_nodes":      "PorteeGlobale",
-	"cluster.get_purge_delay": "PorteeGlobale",
-	"cluster.set_purge_delay": "PorteeGlobale",
-	"certificate.list":        "PorteeGlobale",
-	"certificate.get":         "PorteeGlobale",
-	"certificate.regenerate":  "PorteeGlobale",
+	"cluster.list_nodes":            "PorteeGlobale",
+	"cluster.get_purge_delay":       "PorteeGlobale",
+	"cluster.set_purge_delay":       "PorteeGlobale",
+	"cluster.get_metrics_retention": "PorteeGlobale",
+	"cluster.set_metrics_retention": "PorteeGlobale",
+	"cluster.set_node_exposure":     "PorteeGlobale",
+	"certificate.list":              "PorteeGlobale",
+	"certificate.get":               "PorteeGlobale",
+	"certificate.regenerate":        "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
 	"gpo.list_compliance": "PorteeGlobale",
@@ -251,6 +255,7 @@ var clesAttendues = map[string]string{
 	"gpo.get":             "read:get:gpo",
 	"gpo.list":            "read:get:gpo",
 	"gpo.update":          "write:update:gpo",
+	"gpo.set_drift_mode":  "write:update:gpo",
 	"gpo.delete":          "write:delete:gpo",
 	"gpo.add_module":      "write:update:gpo",
 	"gpo.update_module":   "write:update:gpo",
@@ -274,17 +279,20 @@ var clesAttendues = map[string]string{
 	"domain.list_groups": "read:get:group",
 
 	// Objets sans domaine : actions spéciales dédiées.
-	"cluster.list_nodes":      "read:cluster",
-	"cluster.get_purge_delay": "read:cluster",
-	"cluster.set_purge_delay": "write:cluster",
-	"certificate.list":        "read:certificate",
-	"certificate.get":         "read:certificate",
-	"certificate.regenerate":  "write:certificate",
-	"dns.list_zones":          "read:dns",
-	"dns.list_records":        "read:dns",
-	"enroll.list_keys":        "read:enrollment",
-	"server.set_debug":        "write:server",
-	"server.clear_sessions":   "write:server",
+	"cluster.list_nodes":            "read:cluster",
+	"cluster.get_purge_delay":       "read:cluster",
+	"cluster.set_purge_delay":       "write:cluster",
+	"cluster.get_metrics_retention": "read:cluster",
+	"cluster.set_metrics_retention": "write:cluster",
+	"cluster.set_node_exposure":     "write:cluster",
+	"certificate.list":              "read:certificate",
+	"certificate.get":               "read:certificate",
+	"certificate.regenerate":        "write:certificate",
+	"dns.list_zones":                "read:dns",
+	"dns.list_records":              "read:dns",
+	"enroll.list_keys":              "read:enrollment",
+	"server.set_debug":              "write:server",
+	"server.clear_sessions":         "write:server",
 
 	// Enrôlement, écriture : reste sur write:create:client, et délibérément.
 	// Émettre une clé, c'est accorder le droit d'ajouter un programme au
