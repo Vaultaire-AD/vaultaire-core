@@ -129,6 +129,7 @@
         <thead>
           <tr>
             <th>ID</th><th>Type</th><th>Libellé</th><th>État</th>
+            <th>Groupes de naissance</th>
             <th>Usages</th><th>Expire</th><th>Émise par</th><th></th>
           </tr>
         </thead>
@@ -139,6 +140,12 @@
             <td>{{ .ClientType }}</td>
             <td>{{ if .Label }}{{ .Label }}{{ else }}—{{ end }}</td>
             <td>{{ .Status }}</td>
+            <!-- Vide = le service naîtra sans groupe, donc sans affinité : il
+                 joindra les nœuds du parc sans préférence de site. -->
+            <td>
+              {{ if .Groupes }}{{ range $i, $g := .Groupes }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
+              {{ else }}<span class="muted small">aucun</span>{{ end }}
+            </td>
             <td>{{ .Uses }}</td>
             <td>{{ .ExpiresText }}</td>
             <td>{{ .CreatedBy }}</td>

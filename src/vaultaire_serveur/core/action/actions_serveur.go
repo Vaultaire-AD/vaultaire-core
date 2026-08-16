@@ -71,6 +71,7 @@ func EnregistrerActionsServeur(r *Registre) {
 		// que nuancé. Une règle sans exception se relit sans réfléchir ; une
 		// règle avec « sauf les objets sans domaine » demande de savoir
 		// lesquels, et se contourne le jour où l'on se trompe de catégorie.
+		UnDomaineSuffit: true,
 		FiltreInutile: "un nœud de cluster n'appartient à aucun domaine ; il n'y a " +
 			"pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les nœuds du cluster",
@@ -78,9 +79,17 @@ func EnregistrerActionsServeur(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
-		Nom:             "cluster.get_purge_delay",
-		CleRBAC:         permission.ActionReadCluster,
-		Portee:          PorteeGlobale,
+		Nom:     "cluster.get_purge_delay",
+		CleRBAC: permission.ActionReadCluster,
+		Portee:  PorteeGlobale,
+		// UnDomaineSuffit est INERTE ici — PorteeGlobale rend « * », où « au
+		// moins un » et « tous » sont la même question. Il est déclaré quand
+		// même parce que l'invariant qui le vérifie vaut mieux net que nuancé :
+		// « toute lecture le déclare, aucune écriture ne le déclare » se relit
+		// sans réfléchir, là où « sauf les objets sans domaine » demande de
+		// savoir lesquels, et se contourne le jour où l'on se trompe de
+		// catégorie.
+		UnDomaineSuffit: true,
 		Resume:          "lit le délai avant suppression d'un service parti",
 		Executer: func(_ Appelant, _ Params) (Resultat, error) {
 			return lireDelaiDePurge()
@@ -150,7 +159,10 @@ func EnregistrerActionsServeur(r *Registre) {
 		Nom:     "cluster.get_metrics_retention",
 		CleRBAC: permission.ActionReadCluster,
 		Portee:  PorteeGlobale,
-		Resume:  "lit la durée de conservation des métriques de nœuds",
+		// Inerte sous PorteeGlobale, déclaré pour l'invariant — voir
+		// cluster.get_purge_delay.
+		UnDomaineSuffit: true,
+		Resume:          "lit la durée de conservation des métriques de nœuds",
 		Executer: func(_ Appelant, _ Params) (Resultat, error) {
 			return lireRetentionMetriques()
 		},
@@ -173,6 +185,7 @@ func EnregistrerActionsServeur(r *Registre) {
 		Nom:             "certificate.list",
 		CleRBAC:         permission.ActionReadCertificate,
 		Portee:          PorteeGlobale,
+		UnDomaineSuffit: true,
 		FiltreInutile: "un certificat TLS n'appartient à aucun domaine ; il n'y a " +
 			"pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les certificats du serveur",
@@ -183,6 +196,7 @@ func EnregistrerActionsServeur(r *Registre) {
 		Nom:             "certificate.get",
 		CleRBAC:         permission.ActionReadCertificate,
 		Portee:          PorteeGlobale,
+		UnDomaineSuffit: true,
 		Resume:          "affiche un certificat public et son audit",
 		Executer:        ficheCertificatParNom,
 	})

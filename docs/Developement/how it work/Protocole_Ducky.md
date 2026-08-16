@@ -1657,6 +1657,32 @@ renommé un groupe » ne sauterait aux yeux de personne.
 Émission : `vlt enroll create --type … --groups paris,lyon`, ou **Admin →
 Enrôlement**.
 
+### Le semis d'affinité, en `04_01`
+
+La clé fait du service un **membre** de ses groupes. Mais l'affinité vit sur la
+ligne de NŒUD, qui n'existe pas encore à l'enrôlement : elle est écrite plus
+tard, quand le proxy envoie sa `04_01`.
+
+`RegisterNode` reporte donc les groupes du client propriétaire dans
+`cluster_node_group` — **une seule fois**, si le nœud n'a aucune affinité. Sans
+ce geste, un proxy enrôlé avec la clé de Lyon naissait dans le groupe lyon et ne
+servait pourtant personne en priorité : il fallait encore taper `vlt cluster
+affinity` à la main, ce qui vide la clé de son intérêt pour une chaîne de
+déploiement.
+
+La condition « aucune affinité » est ce qui protège un réglage manuel : sans
+elle, l'affinité reviendrait à celle de la clé au prochain redémarrage du proxy —
+le défaut que `RegisterNode` évite déjà pour la priorité et la rotation.
+
+Conséquence assumée : retirer TOUTES les affinités d'un nœud est un état qui se
+re-sème au redémarrage suivant. « Aucune affinité » et « jamais réglé » ne se
+distinguent pas sans une colonne de plus, et cette colonne existerait pour un
+seul cas — vouloir qu'un proxy de Lyon ne serve pas Lyon — qui se traite en
+retirant le client du groupe.
+
+Un CORE n'est pas concerné : il n'a pas de ligne client, ne naît d'aucune clé, et
+son affinité se règle à la main.
+
 ## Le relais *(non implémenté)*
 
 Relais TCP Ducky, puis relais LDAP/S avec le SAN du core couvrant les proxies.

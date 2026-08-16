@@ -34,6 +34,13 @@ func DisplayGPOByName(policy *gpo.Policy) string {
 	f.Ajouter("Portée", scopeLabel(policy.Scope))
 	f.Ajouter("Version", fmt.Sprintf("v%d", policy.Version))
 	f.Ajouter("État", etatGPO(policy.Enabled))
+	// Le mode de dérive se réglait en ligne de commande et ne se relisait qu'en
+	// web : un réglage qu'on pose sans pouvoir le vérifier là où on l'a posé.
+	//
+	// La phrase dit l'EFFET et pas seulement la valeur. « audit » seul ne dit
+	// pas qu'une machine restera durablement dérivée — c'est pourtant toute la
+	// portée du réglage.
+	f.Ajouter("Dérive", modeDeriveLisible(policy.EffectiveDriftMode()))
 	f.Ajouter("Description", policy.Description)
 	if hash, err := gpo.PolicyHash(*policy); err == nil && len(hash) >= 16 {
 		f.Ajouter("Empreinte", hash[:16]+"…")
@@ -132,6 +139,18 @@ func formatModuleParams(schema gpo.ModuleSchema, known bool, params map[string]s
 }
 
 // scopeLabel traduit un scope pour l'affichage.
+// modeDeriveLisible dit ce que le mode fait, pas seulement son nom.
+//
+// « audit » seul se lit comme une nuance de réglage. Ce qu'il veut dire, c'est
+// que les machines visées resteront dérivées jusqu'à un retour en enforce — et
+// c'est cela qu'on veut voir en ouvrant la fiche.
+func modeDeriveLisible(m gpo.DriftMode) string {
+	if m == gpo.DriftAudit {
+		return "audit — les écarts sont signalés, JAMAIS corrigés"
+	}
+	return "enforce — les écarts sont corrigés au cycle suivant"
+}
+
 func scopeLabel(s gpo.Scope) string {
 	switch s {
 	case gpo.ScopeMachine:

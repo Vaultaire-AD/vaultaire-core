@@ -968,7 +968,7 @@ L’exigence se pose sur un **groupe**, pas sur un compte : elle s’applique à
 Un client **service** ne se crée pas avec `create -c` : il s’enrôle lui-même, avec sa propre paire de clés, dont la partie privée ne doit jamais quitter l’hôte qui l’utilisera. Ces clés d’enrôlement sont ce qui l’autorise à le faire.
 
 ```bash
-enroll create --type <type> [--uses N] [--expires 30m] [--label texte]
+enroll create --type <type> [--uses N] [--expires 30m] [--label texte] [--groups a,b]
 enroll list                      # les clés émises et leur état
 enroll show <id>                 # détail d'une clé et services entrés avec
 enroll revoke <id>               # neutralise une clé sans effacer sa trace
@@ -976,6 +976,30 @@ enroll types                     # catalogue des types de clients
 ```
 
 `--uses` borne le nombre d’enrôlements, `--expires` la durée de validité. Les deux limitent ce qu’une clé divulguée permet.
+
+### `--groups` — les groupes de naissance
+
+```bash
+enroll create --type vaultaire_proxy --groups lyon
+```
+
+Le service enrôlé avec cette clé est ajouté à ces groupes **une seule fois**, à
+son enrôlement, et sa ligne de nœud reçoit l'affinité correspondante quand il
+s'enregistre. Autrement dit : la clé de Lyon produit un proxy qui **sert** Lyon,
+sans aucun geste manuel — ce qui est le seul moyen pour une chaîne de
+déploiement, qui n'a que la clé.
+
+Le rattachement n'est **jamais relu** ensuite : une clé modifiée ne change pas
+les groupes d'un service déjà en production. Après l'enrôlement, ils se
+modifient comme ceux de n'importe quelle machine, avec `add -c` et `remove -c`.
+
+> Une clé porte une **affinité, pas un droit**. Ce que ces groupes permettent se
+> décide ailleurs. Un groupe disparu au moment où la clé sert n'empêche pas
+> l'enrôlement : le service entre avec ce qui existe encore, et l'absence part
+> en `SECURITY`.
+
+Les groupes d'une clé se relisent dans `enroll list` (colonne « groupes de
+naissance ») et `enroll show <id>`, comme sur la page web.
 
 > `revoke` **neutralise sans effacer** : la trace de ce qui s’est enrôlé avec cette clé reste consultable, ce qui est précisément ce qu’on cherche après une fuite.
 
@@ -1036,6 +1060,9 @@ une GPO → Réglages**.
 
 Le défaut est `enforce`, y compris pour toute GPO créée avant l'existence du
 réglage.
+
+Le mode se **relit** dans `get -gpo` (colonne « Dérive ») et sur la fiche
+`get -gpo "nom"`, comme dans l'onglet Réglages de la page web.
 
 ### La même vue sur le portail
 

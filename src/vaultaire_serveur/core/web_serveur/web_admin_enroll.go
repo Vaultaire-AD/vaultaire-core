@@ -32,6 +32,14 @@ type enrollKeyView struct {
 	ExpiresText string
 	CreatedText string
 	Consumers   []dbenrollment.Use
+
+	// Groupes de naissance : les groupes où entrera le service enrôlé.
+	//
+	// Affichés parce qu'ils étaient réglables sans être visibles nulle part —
+	// ni ici, ni en ligne de commande. Un réglage qu'on pose sans pouvoir le
+	// relire est un réglage qu'on repose « au cas où », et dont personne ne sait
+	// dire l'état.
+	Groupes []string
 }
 
 type enrollView struct {
@@ -122,9 +130,19 @@ func AdminEnrollHandler(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		data.Error = "Lecture des clés impossible : " + err.Error()
 	}
+	// Une seule requête pour toutes les clés : une par ligne affichée
+	// transformerait un tableau de vingt clés en vingt-et-un allers-retours.
+	groupesParCle, errG := dbenrollment.KeyGroupsByKey(db)
+	if errG != nil {
+		logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+			"webadmin: groupes de naissance illisibles : "+errG.Error())
+	}
+
 	now := time.Now()
 	for _, k := range keys {
-		data.Keys = append(data.Keys, decorateKey(k, now))
+		vue := decorateKey(k, now)
+		vue.Groupes = groupesParCle[k.ID]
+		data.Keys = append(data.Keys, vue)
 	}
 
 	// Détail : les services entrés par une clé. Sans cette vue, la question

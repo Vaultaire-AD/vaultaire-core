@@ -249,13 +249,24 @@ func listKeys() string {
 	// OCTETS, et « É » en occupe deux pour un seul caractère à l'écran. Chaque
 	// accent décalait donc la colonne suivante d'un cran. Le module d'affichage
 	// mesure en runes.
+	// Les groupes de naissance en UNE requête : une par ligne affichée
+	// transformerait un tableau de vingt clés en vingt-et-un allers-retours.
+	//
+	// Un échec n'interrompt pas la liste — une colonne vide vaut mieux qu'un
+	// refus d'afficher les clés.
+	groupesParCle, _ := dbenrollment.KeyGroupsByKey(database.GetDatabase())
+
 	now := time.Now()
-	tb := display.NouvelleTable("ID", "TYPE", "ÉTAT", "USAGES", "EXPIRE", "ÉMISE PAR")
+	tb := display.NouvelleTable("ID", "TYPE", "ÉTAT", "GROUPES DE NAISSANCE",
+		"USAGES", "EXPIRE", "ÉMISE PAR")
 	for _, k := range keys {
 		tb.Ajouter(
 			strconv.Itoa(k.ID),
 			k.ClientType,
 			k.Status(now),
+			// Vide = le service naîtra sans groupe, donc sans affinité : il
+			// joindra les nœuds du parc sans préférence de site.
+			display.Valeur(strings.Join(groupesParCle[k.ID], ", ")),
 			usesText(k),
 			expiryText(k),
 			display.Valeur(k.CreatedBy),
@@ -292,6 +303,22 @@ func showKey(args []string) string {
 		if k.RevokedAt.Valid {
 			fmt.Fprintf(&b, "  Révoquée: %s par %s\n",
 				k.RevokedAt.Time.Format("2006-01-02 15:04:05"), k.RevokedBy.String)
+		}
+
+		// Groupes de naissance : où entrera le service enrôlé avec cette clé.
+		//
+		// La ligne est écrite même quand il n'y en a aucun. « aucun » répond à
+		// la question ; une ligne absente laisse croire que le détail ne la
+		// couvre pas, et on va la chercher ailleurs.
+		groupes, errG := dbenrollment.KeyGroups(db, k.ID)
+		switch {
+		case errG != nil:
+			fmt.Fprintf(&b, "  Groupes : illisibles (%v)\n", errG)
+		case len(groupes) == 0:
+			b.WriteString("  Groupes : aucun — le service naîtra sans affinité de site\n")
+		default:
+			fmt.Fprintf(&b, "  Groupes : %s (appliqués UNE FOIS, à l'enrôlement)\n",
+				strings.Join(groupes, ", "))
 		}
 	}
 	if !found {

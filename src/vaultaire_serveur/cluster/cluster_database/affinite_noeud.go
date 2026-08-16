@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"vaultaire/core/logs"
 )
 
 // Affinité nœud ↔ groupe — lot 6 du point 38.
@@ -173,6 +175,66 @@ func NomsDesGroupesDuNoeud(db *sql.DB, idNode int) ([]string, error) {
 		noms = append(noms, nom)
 	}
 	return noms, rows.Err()
+}
+
+// SemerAffiniteDepuisLeClient dote un nœud neuf de l'affinité correspondant aux
+// groupes de son client propriétaire.
+//
+// # Le trou que cela ferme
+//
+// Une clé d'enrôlement porte des groupes de naissance (lot 7) : le service créé
+// devient MEMBRE de ces groupes. Mais l'affinité vit sur la ligne de NŒUD, qui
+// n'existe pas encore à l'enrôlement — elle est écrite plus tard, quand le proxy
+// envoie sa trame 04_01.
+//
+// Sans ce semis, un proxy enrôlé avec la clé de Lyon naissait bien dans le
+// groupe lyon, et ne servait pourtant personne en priorité : il fallait encore
+// taper « vlt cluster affinity » à la main. Ce qui vide la clé de son intérêt
+// pour une chaîne de déploiement — laquelle n'a justement que la clé.
+//
+// # UNE SEULE FOIS, et jamais par-dessus un réglage existant
+//
+// Le semis n'a lieu que si le nœud n'a AUCUNE affinité. Un administrateur qui a
+// réglé l'affinité à la main ne doit pas la voir revenir à celle de la clé au
+// prochain redémarrage du proxy — c'est exactement le défaut que `RegisterNode`
+// évite déjà pour la priorité et la rotation.
+//
+// Retirer TOUTES les affinités d'un nœud est donc un état qui se re-sème au
+// redémarrage suivant. C'est assumé : « aucune affinité » et « jamais réglé » ne
+// se distinguent pas sans une colonne de plus, et cette colonne existerait pour
+// un cas — vouloir qu'un proxy de Lyon ne serve pas Lyon — qui se traite en
+// retirant le client du groupe.
+//
+// # Ne rend aucune erreur
+//
+// Elle est appelée depuis l'enregistrement d'un nœud, qui doit aboutir. Un semis
+// raté laisse un nœud sans préférence : il sert le parc dans l'ordre ordinaire,
+// et fonctionne. Un enregistrement raté laisse un proxy absent de la liste,
+// c'est-à-dire inutile.
+func SemerAffiniteDepuisLeClient(db *sql.DB, idNode int, groupesDuClient []int) {
+	if db == nil || idNode <= 0 || len(groupesDuClient) == 0 {
+		return
+	}
+
+	existantes, err := GroupesDuNoeud(db, idNode)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"cluster: affinités du nœud %d illisibles, semis abandonné : %v", idNode, err))
+		return
+	}
+	if len(existantes) > 0 {
+		return
+	}
+
+	if err := RemplacerGroupesDuNoeud(db, idNode, groupesDuClient); err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"cluster: affinité initiale du nœud %d non posée : %v", idNode, err))
+		return
+	}
+
+	logs.Write_Log("INFO", fmt.Sprintf(
+		"cluster: nœud %d doté de l'affinité de son client (%d groupe(s)) — "+
+			"il servira ces groupes en priorité", idNode, len(groupesDuClient)))
 }
 
 // IDsDeGroupesParNoms résout des noms de groupes en identifiants.

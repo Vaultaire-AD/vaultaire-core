@@ -21,7 +21,7 @@ func DisplayAllGPOs(policies []dbgpo.PolicySummary) string {
 		return "Aucune GPO."
 	}
 
-	t := NouvelleTable("ID", "Nom", "Portée", "Version", "État", "Modules", "Groupes")
+	t := NouvelleTable("ID", "Nom", "Portée", "Version", "État", "Dérive", "Modules", "Groupes")
 	actives := 0
 	for _, p := range policies {
 		if p.Enabled {
@@ -33,6 +33,10 @@ func DisplayAllGPOs(policies []dbgpo.PolicySummary) string {
 			Valeur(string(p.Scope)),
 			fmt.Sprintf("v%d", p.Version),
 			etatGPO(p.Enabled),
+			// La valeur nue suffit dans un tableau : la phrase complète est sur
+			// la fiche. Une GPO en « audit » se repère ici d'un coup d'œil, ce
+			// qui est la question qu'on se pose en balayant la liste.
+			Valeur(string(p.EffectiveDriftMode())),
 			fmt.Sprintf("%d", p.ModuleCount),
 			Liste(p.Groups),
 		)

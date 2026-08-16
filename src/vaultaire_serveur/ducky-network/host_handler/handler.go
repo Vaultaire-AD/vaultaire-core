@@ -210,6 +210,23 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	}
 	logs.Write_Log("INFO", "host registered: "+hostname+" role="+role+" ip="+ip+
 		" port="+strconv.Itoa(port))
+
+	// Affinité de naissance — la seconde moitié du lot 7.
+	//
+	// La clé d'enrôlement a fait du service un MEMBRE de ses groupes. Mais
+	// l'affinité vit sur la ligne de NŒUD, qui n'existait pas encore à
+	// l'enrôlement : elle vient d'être écrite, à l'instant. C'est donc ici, et
+	// nulle part ailleurs, que les deux se rejoignent.
+	//
+	// Sans ce geste, un proxy enrôlé avec la clé de Lyon naissait dans le groupe
+	// lyon et ne servait pourtant personne en priorité — il fallait encore taper
+	// « vlt cluster affinity » à la main, ce qui vide la clé de son intérêt pour
+	// une chaîne de déploiement.
+	//
+	// Le semis n'a lieu que si le nœud n'a AUCUNE affinité : un réglage manuel
+	// ne doit pas revenir à celui de la clé au prochain redémarrage du proxy.
+	semerAffiniteDuNoeud(db, proprietaire, hostname)
+
 	return trame.ReponseClient("04_02",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
 		"ok", hostname), nil
@@ -311,6 +328,34 @@ func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 	return trame.ReponseClient("04_04",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
 		contenu...), nil
+}
+
+// semerAffiniteDuNoeud reporte les groupes du client sur sa ligne de nœud.
+//
+// Le propriétaire est l'identifiant du CLIENT — sauf pour un core, qui porte le
+// préfixe réservé « @core: » et n'a aucune ligne client. La résolution échoue
+// alors, sans conséquence : un core ne naît d'aucune clé d'enrôlement, et son
+// affinité se règle à la main.
+//
+// Ne rend aucune erreur : l'enregistrement du nœud est déjà acquis. Un semis
+// raté laisse un nœud sans préférence — il sert le parc dans l'ordre ordinaire
+// et fonctionne. Faire échouer la trame laisserait un proxy absent de la liste,
+// donc inutile.
+func semerAffiniteDuNoeud(db *sql.DB, proprietaire, hostname string) {
+	groupes, err := groupesDuClient(db, proprietaire)
+	if err != nil || len(groupes) == 0 {
+		return
+	}
+
+	noeud, err := clusterdatabase.NoeudParHostname(db, hostname)
+	if err != nil {
+		logs.Write_Log("WARNING",
+			"cluster: nœud "+hostname+" relu sans succès après enregistrement, "+
+				"affinité de naissance non posée : "+err.Error())
+		return
+	}
+
+	clusterdatabase.SemerAffiniteDepuisLeClient(db, noeud.ID, groupes)
 }
 
 // groupesDuClient rend les identifiants de groupes d'une machine.
