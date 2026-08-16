@@ -115,6 +115,38 @@ func EnregistrerActionsServeur(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
+		Nom: "cluster.client_targets",
+		// LECTURE, donc read:cluster : la vue décrit les nœuds, pas la machine.
+		//
+		// On aurait pu exiger read:get:client, puisqu'on désigne une machine.
+		// Ce serait le mauvais critère : ce qui est révélé ici est la topologie
+		// du cluster — quels nœuds existent, lesquels servent quels sites — et
+		// non l'inventaire de la machine. Le nom du client ne fait que choisir
+		// le point de vue.
+		CleRBAC: permission.ActionReadCluster,
+		Portee:  PorteeGlobale,
+		FiltreInutile: "la réponse décrit les nœuds du cluster, qui n'appartiennent " +
+			"à aucun domaine ; il n'y a pas de périmètre selon lequel la réduire",
+		UnDomaineSuffit: true,
+		Resume:          "liste, dans l'ordre, les nœuds qu'une machine joindra",
+		Executer:        ciblesDuClient,
+	})
+
+	r.MustEnregistrer(Definition{
+		Nom: "cluster.set_node_groups",
+		// write:cluster, comme les autres décisions sur un nœud.
+		//
+		// L'affinité ne donne AUCUN droit — elle décide d'un rang dans une
+		// liste. Elle mérite quand même une clé d'écriture : rattacher tous les
+		// proxies à un groupe vide reviendrait à défaire la répartition d'un
+		// parc entier sans qu'aucune erreur ne soit levée nulle part.
+		CleRBAC:  permission.ActionWriteCluster,
+		Portee:   PorteeGlobale,
+		Resume:   "fixe les groupes qu'un nœud sert en priorité",
+		Executer: reglerGroupesDuNoeud,
+	})
+
+	r.MustEnregistrer(Definition{
 		Nom:     "cluster.get_metrics_retention",
 		CleRBAC: permission.ActionReadCluster,
 		Portee:  PorteeGlobale,
@@ -221,6 +253,24 @@ func listerNoeuds(_ Appelant, p Params) (Resultat, error) {
 	}
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des nœuds du cluster : %w", err)
+	}
+
+	// Les groupes affins sont renseignés pour l'AFFICHAGE seulement.
+	//
+	// Le champ Affin, lui, reste faux : cette liste n'a pas de demandeur, et
+	// « affin ? » n'a pas de réponse hors d'une demande. Ce qu'on montre ici est
+	// « quels groupes ce nœud sert », pas « ce nœud me sert-il ».
+	//
+	// Un échec de lecture n'interrompt pas la liste : une colonne vide vaut
+	// mieux qu'un refus d'afficher l'état du cluster.
+	for i := range noeuds {
+		groupes, errG := clusterdatabase.NomsDesGroupesDuNoeud(db, noeuds[i].ID)
+		if errG != nil {
+			logs.Write_Log("WARNING",
+				"cluster: affinités du nœud "+noeuds[i].Hostname+" illisibles : "+errG.Error())
+			continue
+		}
+		noeuds[i].GroupesAffins = groupes
 	}
 
 	message := fmt.Sprintf("%d nœud(s).", len(noeuds))
@@ -330,6 +380,177 @@ func reglerExpositionNoeud(a Appelant, p Params) (Resultat, error) {
 		avant.ExposeAuxAgents, apres.ExposeAuxAgents))
 
 	return Resultat{Message: messageExposition(apres), Donnees: apres}, nil
+}
+
+// CiblesClient porte la réponse de cluster.client_targets.
+type CiblesClient struct {
+	ComputeurID string
+	Cibles      []clusterdatabase.CibleClient
+	// GroupesClient sert à expliquer une liste sans aucun nœud affin : la cause
+	// ordinaire n'est pas que les affinités ne marchent pas, c'est que la
+	// machine n'est dans aucun groupe.
+	GroupesClient []int
+	// Ecartes liste les nœuds qu'AUCUN agent ne reçoit, et pourquoi. Un nœud
+	// absent ne laisse aucune trace côté agent : quand un proxy fraîchement
+	// déployé ne sert personne, la question n'est pas « dans quel ordre » mais
+	// « pourquoi pas du tout ».
+	Ecartes []string
+}
+
+// ciblesDuClient rend, dans l'ordre, les nœuds qu'une machine joindra.
+//
+// La liste n'est pas recalculée pour l'occasion : c'est la MÊME fonction que
+// celle qui répond à la trame 04_04. Une seconde implémentation finirait par
+// diverger, et la vue affirmerait un ordre que le parc ne suit pas — pire que
+// pas de vue du tout, puisqu'on cesserait de chercher ailleurs.
+func ciblesDuClient(_ Appelant, p Params) (Resultat, error) {
+	computeurID := p.Get("computeur_id")
+	if computeurID == "" {
+		computeurID = p.Get("client")
+	}
+	if computeurID == "" {
+		return Resultat{}, fmt.Errorf("identifiant de machine requis")
+	}
+
+	db := database.GetDatabase()
+	cibles, groupes, err := clusterdatabase.CiblesDuClient(db, computeurID)
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	// Les écartés sont une aide au diagnostic : leur lecture ne doit pas faire
+	// échouer la réponse principale.
+	ecartes, errE := clusterdatabase.NoeudsEcartes(db)
+	if errE != nil {
+		logs.Write_Log("WARNING", "cluster: nœuds écartés illisibles : "+errE.Error())
+	}
+
+	message := fmt.Sprintf("%d nœud(s) joignable(s) pour %s, dans l'ordre.", len(cibles), computeurID)
+	if len(cibles) == 0 {
+		message = "Aucun nœud joignable pour " + computeurID +
+			" : cette machine ne peut s'authentifier que par ses serveurs statiques."
+	}
+
+	return Resultat{
+		Message: message,
+		Donnees: CiblesClient{
+			ComputeurID:   computeurID,
+			Cibles:        cibles,
+			GroupesClient: groupes,
+			Ecartes:       ecartes,
+		},
+	}, nil
+}
+
+// reglerGroupesDuNoeud fixe les groupes qu'un nœud sert en priorité.
+//
+// # Ce que l'affinité fait, et ce qu'elle ne fait pas
+//
+// Un agent membre d'un groupe affin à un nœud reçoit ce nœud AVANT les autres de
+// même rôle. C'est une préférence, jamais une exclusivité : tous les nœuds
+// exposés restent dans sa liste, en queue. Sans cette règle, la panne du proxy
+// d'un site deviendrait une panne d'authentification pour ce site.
+//
+// # Remplacement, et non ajout
+//
+// Le paramètre décrit l'état voulu. Une liste vide retire toutes les affinités —
+// c'est le geste qui remet un nœud au service de tout le monde, et il doit
+// exister.
+func reglerGroupesDuNoeud(a Appelant, p Params) (Resultat, error) {
+	hostname := p.Get("node")
+	if hostname == "" {
+		return Resultat{}, fmt.Errorf("nom du nœud requis")
+	}
+	if !p.Presente("groups") {
+		return Resultat{}, fmt.Errorf(
+			"groupes requis : donnez la liste voulue, ou une liste vide pour " +
+				"que ce nœud serve tout le parc sans préférence")
+	}
+
+	db := database.GetDatabase()
+	noeud, err := clusterdatabase.NoeudParHostname(db, hostname)
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	noms := champsSepares(p.Get("groups"))
+	ids, introuvables, err := clusterdatabase.IDsDeGroupesParNoms(db, noms)
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	// Réglage MANUEL : un groupe inconnu est refusé.
+	//
+	// C'est l'inverse du choix fait pour une clé d'enrôlement, et les deux sont
+	// justes. Ici quelqu'un tape un nom : accepter silencieusement une faute de
+	// frappe poserait une préférence qui n'existe pas, et on chercherait plus
+	// tard pourquoi le site n'est pas servi. Une clé d'enrôlement, elle, sert
+	// des mois après son émission, et un groupe renommé entre-temps ne doit pas
+	// bloquer un déploiement.
+	if len(introuvables) > 0 {
+		return Resultat{}, fmt.Errorf("groupe(s) inconnu(s) : %s",
+			strings.Join(introuvables, ", "))
+	}
+
+	avant, _ := clusterdatabase.NomsDesGroupesDuNoeud(db, noeud.ID)
+
+	if err := clusterdatabase.RemplacerGroupesDuNoeud(db, noeud.ID, ids); err != nil {
+		return Resultat{}, err
+	}
+
+	apres, err := clusterdatabase.NomsDesGroupesDuNoeud(db, noeud.ID)
+	if err != nil {
+		apres = noms
+	}
+
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"%s a réglé l'affinité du nœud %s : %s → %s",
+		a.Username, noeud.Hostname, listeLisible(avant), listeLisible(apres)))
+
+	return Resultat{Message: messageAffinite(noeud.Hostname, noeud.Role, apres), Donnees: apres}, nil
+}
+
+// champsSepares découpe une saisie « a,b c » en éléments.
+//
+// Virgule ET espace : le formulaire web envoie une sélection jointe par des
+// virgules, la ligne de commande reçoit des arguments séparés par des espaces.
+// Accepter les deux évite d'imposer une syntaxe au mauvais endroit.
+func champsSepares(brut string) []string {
+	remplacé := strings.ReplaceAll(brut, ",", " ")
+	return strings.Fields(remplacé)
+}
+
+// listeLisible rend une liste de noms, ou « aucun » si elle est vide.
+//
+// « affinité de proxy1 :  →  » ne se lit pas. Le journal doit rester
+// compréhensible six mois plus tard, quand on cherche qui a défait quoi.
+func listeLisible(noms []string) string {
+	if len(noms) == 0 {
+		return "aucun"
+	}
+	return strings.Join(noms, ", ")
+}
+
+// messageAffinite dit ce que le réglage change réellement pour les agents.
+func messageAffinite(hostname, role string, groupes []string) string {
+	if len(groupes) == 0 {
+		return fmt.Sprintf(
+			"Le nœud %s n'a plus d'affinité : il est servi à tout le parc "+
+				"selon son rôle et sa priorité, sans préférence de site.", hostname)
+	}
+	return fmt.Sprintf(
+		"Le nœud %s (%s) sert en priorité : %s. Les agents de ces groupes le "+
+			"recevront avant les autres %s ; les autres nœuds restent dans leur "+
+			"liste, en queue.",
+		hostname, role, strings.Join(groupes, ", "), pluriel(role))
+}
+
+// pluriel rend le rôle au pluriel pour la phrase ci-dessus.
+func pluriel(role string) string {
+	if role == "proxy" {
+		return "proxies"
+	}
+	return role + "s"
 }
 
 // descriptionAcces rend l'accès d'un nœud sous une forme comparable.

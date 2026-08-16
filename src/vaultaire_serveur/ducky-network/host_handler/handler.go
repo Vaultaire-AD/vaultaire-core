@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+
+	dbclients "vaultaire/core/database/db_clients"
 	dbgroups "vaultaire/core/database/db_groups"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
@@ -251,7 +253,24 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 // La ligne se lit par position et non par préfixe, contrairement à `03_09` :
 // chaque champ est obligatoire et le nombre est fixe, donc rien à reconnaître.
 func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duckysession *storage.DuckySession) (string, error) {
-	nodes, err := clusterdatabase.NoeudsPourAgents(db)
+	// Les groupes du DEMANDEUR décident du rang, jamais du contenu.
+	//
+	// L'identifiant est celui de l'en-tête, où la couche de session l'a posé —
+	// donc authentifié. Le lire dans le contenu laisserait n'importe quel agent
+	// réclamer l'ordre d'un autre, c'est-à-dire apprendre à quel site appartient
+	// une machine qu'il ne connaît pas.
+	//
+	// Un échec ici n'interrompt PAS la réponse : sans groupes, la liste part
+	// dans l'ordre d'avant le lot 6. Un agent mal trié se connecte par un chemin
+	// plus long ; un agent sans liste ne se connecte plus du tout.
+	groupes, err := groupesDuClient(db, tramesContent.ClientSoftwareID)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"04_03 : groupes de %s illisibles, liste servie sans préférence de site : %v",
+			tramesContent.ClientSoftwareID, err))
+	}
+
+	nodes, err := clusterdatabase.NoeudsPourAgents(db, groupes)
 	if err != nil {
 		return "", err
 	}
@@ -292,6 +311,24 @@ func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 	return trame.ReponseClient("04_04",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
 		contenu...), nil
+}
+
+// groupesDuClient rend les identifiants de groupes d'une machine.
+//
+// Deux résolutions successives — l'identifiant logiciel vers l'identifiant de
+// ligne, puis les groupes — parce que c'est ainsi que la table de liaison est
+// bâtie. Un client inconnu rend une liste vide sans erreur : c'est le cas d'un
+// service qui interroge avant que sa ligne soit écrite, et il doit recevoir la
+// liste ordinaire plutôt qu'un refus.
+func groupesDuClient(db *sql.DB, computeurID string) ([]int, error) {
+	if db == nil || strings.TrimSpace(computeurID) == "" {
+		return nil, nil
+	}
+	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, computeurID)
+	if err != nil {
+		return nil, err
+	}
+	return dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 }
 
 // handleProxyMetrics : 04_05 -> 04_06 (enregistrement en BDD proxy_metrics)

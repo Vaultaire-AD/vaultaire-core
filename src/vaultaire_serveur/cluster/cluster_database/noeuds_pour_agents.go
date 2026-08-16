@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	clusterstorage "vaultaire/cluster/cluster_storage"
+	"vaultaire/core/logs"
 )
 
 // La liste des nœuds joignables, telle qu'un agent la reçoit.
@@ -52,9 +53,39 @@ import (
 // Un nœud non exposé est omis aussi. Ce n'est PAS un contrôle d'accès : le
 // drapeau retire une adresse d'une liste, il n'empêche personne de se
 // connecter. Le pare-feu reste ce qui protège un core.
-func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
+//
+// # groupesDuDemandeur
+//
+// Les identifiants de groupes de l'agent qui demande. Ils ne FILTRENT rien : ils
+// décident du rang. Un nœud affin passe devant les autres de son rôle, et les
+// autres restent dans la liste — c'est ce qui fait qu'un site dont le proxy est
+// tombé se rabat sur un core au lieu de n'avoir plus personne à joindre.
+//
+// Une liste vide — agent sans groupe, ou appelant qui ne sait pas qui demande —
+// rend l'ordre d'avant le lot 6 : rôle, puis priorité, puis nom.
+func NoeudsPourAgents(db *sql.DB, groupesDuDemandeur []int) ([]clusterstorage.Node, error) {
 	if db == nil {
 		return nil, fmt.Errorf("connexion base indisponible")
+	}
+
+	// Les affinités sont lues en UNE requête, avant la boucle.
+	//
+	// Une par nœud ferait, sur un cluster de dix nœuds, dix requêtes à chaque
+	// démarrage d'agent et à chaque reconnexion de tunnel — pour une table qui
+	// tient entièrement en mémoire.
+	//
+	// L'échec n'est PAS bloquant : mieux vaut servir la liste dans l'ordre
+	// d'avant le lot 6 que ne rien servir. Sans nœud à joindre, un agent ne
+	// s'authentifie plus ; mal trié, il s'authentifie par un chemin plus long.
+	var affinites map[int][]int
+	if len(groupesDuDemandeur) > 0 {
+		var errAff error
+		affinites, errAff = AffinitesParNoeud(db)
+		if errAff != nil {
+			logs.Write_Log("WARNING",
+				"cluster: affinités illisibles, liste servie sans préférence de site : "+errAff.Error())
+			affinites = nil
+		}
 	}
 
 	rows, err := db.Query(`
@@ -81,6 +112,7 @@ func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
 			&n.AdressePublique, &n.PortPublic); err != nil {
 			return nil, fmt.Errorf("lecture d'un nœud : %w", err)
 		}
+		n.Affin = partageUnGroupe(affinites[n.ID], groupesDuDemandeur)
 		noeuds = append(noeuds, n)
 	}
 	if err := rows.Err(); err != nil {
@@ -91,13 +123,48 @@ func NoeudsPourAgents(db *sql.DB) ([]clusterstorage.Node, error) {
 	return noeuds, nil
 }
 
+// partageUnGroupe dit si les deux ensembles se croisent.
+//
+// Deux boucles imbriquées, et non une map : ces listes comptent quelques
+// entrées — les groupes d'un nœud et ceux d'une machine —, et construire une map
+// par nœud coûterait plus que le parcours qu'elle éviterait.
+func partageUnGroupe(a, b []int) bool {
+	for _, x := range a {
+		for _, y := range b {
+			if x == y {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TrierNoeudsPourAgents ordonne la liste servie à un agent.
 //
 // # L'ordre, et ce qu'il coûte
 //
 //	1. les PROXIES avant les cores ;
-//	2. à rôle égal, la priorité la plus BASSE d'abord ;
-//	3. à priorité égale, le nom — pour que l'ordre soit reproductible.
+//	2. à rôle égal, les nœuds AFFINS d'abord ;
+//	3. à affinité égale, la priorité la plus BASSE d'abord ;
+//	4. à priorité égale, le nom — pour que l'ordre soit reproductible.
+//
+// # L'affinité vient APRÈS le rôle, et avant la priorité
+//
+// Après le rôle : un core affin ne doit pas passer devant un proxy quelconque.
+// Le rôle décide de la NATURE du chemin — passer par un relais ou aller au
+// serveur — et l'affinité seulement du choix entre pairs. L'ordre servi est donc
+// bien celui de la spécification : proxies affins, autres proxies, cores affins,
+// autres cores.
+//
+// Avant la priorité : la priorité est un réglage GLOBAL, l'affinité est locale
+// au demandeur. Si la priorité l'emportait, un proxy mis en tête pour un site
+// passerait devant le proxy local de tous les autres sites — c'est-à-dire que
+// régler un site déréglerait les autres, ce qui est exactement ce que
+// l'affinité existe pour éviter.
+//
+// L'affinité reste une PRÉFÉRENCE. Tous les nœuds exposés restent dans la
+// liste, en queue : la panne du proxy d'un site ne doit pas devenir une panne
+// d'authentification pour ce site.
 //
 // Les proxies d'abord : c'est leur raison d'être. Un parc qui en déploie veut
 // que les agents y passent, sinon ils ne servent à rien. Les cores restent
@@ -123,6 +190,11 @@ func TrierNoeudsPourAgents(noeuds []clusterstorage.Node) {
 
 		if (a.Role == "proxy") != (b.Role == "proxy") {
 			return a.Role == "proxy"
+		}
+
+		// À rôle égal, l'affinité départage avant tout le reste.
+		if a.Affin != b.Affin {
+			return a.Affin
 		}
 
 		pa, pb := prioriteEffective(a.Priorite), prioriteEffective(b.Priorite)

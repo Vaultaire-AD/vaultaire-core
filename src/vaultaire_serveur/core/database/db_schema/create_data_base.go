@@ -304,6 +304,42 @@ func Create_DataBase(db *sql.DB) {
     		UNIQUE KEY uk_owner (owner_client_id)
 		);`,
 
+		// Affinité nœud ↔ groupe.
+		//
+		// Répond à « ce nœud sert-il ce groupe en priorité ». Un agent membre
+		// d'un groupe affin à un nœud reçoit ce nœud AVANT les autres de même
+		// rôle — c'est une préférence, jamais une exclusivité : tous les nœuds
+		// exposés restent dans la liste, sans quoi la panne du proxy d'un site
+		// deviendrait une panne d'authentification pour ce site.
+		//
+		// Table dédiée, et non les groupes du client propriétaire : un CORE n'a
+		// pas de ligne client. Il se déclare lui-même, avec le propriétaire
+		// réservé « @core:<hostname> », et ne peut donc pas figurer dans
+		// logiciel_group. Une table par rôle donnerait deux endroits à lire, à
+		// éditer et à tenir d'accord.
+		//
+		// Pas de colonne de priorité, contrairement à la spécification initiale
+		// du point 38 : l'ordre voulu — proxies affins, autres proxies, cores
+		// affins, autres cores — ne demande qu'un OUI/NON. Un second nombre
+		// d'ordre devrait être concilié avec cluster_nodes.priorite, et deux
+		// réglages qui se contredisent ne se tranchent qu'en lisant le code.
+		//
+		// ON DELETE CASCADE des deux côtés : l'affinité ne survit ni au nœud ni
+		// au groupe. Une ligne orpheline ferait taire le tri sans rien dire.
+		//
+		// L'affinité d'un PROXY disparaît donc avec sa ligne de nœud, purgée
+		// quand le service part. C'est cohérent : un proxy purgé doit se
+		// réenrôler, et sa clé d'enrôlement lui rend ses groupes de naissance.
+		// Celle d'un CORE persiste, sa ligne n'étant jamais purgée.
+		`CREATE TABLE IF NOT EXISTS cluster_node_group (
+			d_id_node  INT NOT NULL,
+			d_id_group INT NOT NULL,
+			PRIMARY KEY (d_id_node, d_id_group),
+			FOREIGN KEY (d_id_node)  REFERENCES cluster_nodes(id_node) ON DELETE CASCADE,
+			FOREIGN KEY (d_id_group) REFERENCES groups(id_group)       ON DELETE CASCADE,
+			INDEX idx_node_group_group (d_id_group)
+		);`,
+
 		// ----- Métriques proxy (exposées pour l'interface Web) -----
 		`CREATE TABLE IF NOT EXISTS proxy_metrics (
     		id_metric INT AUTO_INCREMENT PRIMARY KEY,

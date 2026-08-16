@@ -10,6 +10,7 @@ import (
 	"vaultaire/core/clienttype"
 	"vaultaire/core/database"
 	dbenrollment "vaultaire/core/database/db_enrollment"
+	"vaultaire/core/logs"
 )
 
 // Actions sur les clés d'enrôlement.
@@ -121,14 +122,45 @@ func creerCleEnrolement(a Appelant, p Params) (Resultat, error) {
 		}
 	}
 
-	if _, err := dbenrollment.CreateKey(database.GetDatabase(), secret,
-		p.Get("label"), typeClient, utilisations, expiration, a.Username); err != nil {
+	db := database.GetDatabase()
+
+	keyID, err := dbenrollment.CreateKey(db, secret,
+		p.Get("label"), typeClient, utilisations, expiration, a.Username)
+	if err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de l'émission de la clé : %w", err)
+	}
+
+	// Groupes de NAISSANCE — lot 7 du point 38.
+	//
+	// Le service enrôlé par cette clé y sera ajouté, une fois, à son enrôlement.
+	// C'est ce qui permet à une chaîne de déploiement de produire des proxies
+	// déjà rattachés à leur site : elle n'a que la clé, elle ne peut pas faire
+	// le geste après coup.
+	//
+	// Les noms ne sont PAS vérifiés ici. La clé sera consommée des mois plus
+	// tard, et c'est à ce moment que le groupe doit exister : contrôler à
+	// l'émission donnerait une garantie que le temps défait. Ceux qui manquent
+	// à la consommation sont journalisés, et le service entre quand même — la
+	// clé porte une affinité, pas un droit.
+	groupes := champsSepares(p.Get("groups"))
+	if len(groupes) > 0 {
+		if err := dbenrollment.SetKeyGroups(db, keyID, groupes); err != nil {
+			// La clé EXISTE déjà et son secret vient d'être tiré. Échouer
+			// maintenant obligerait à la révoquer pour recommencer, alors que le
+			// défaut ne porte que sur l'affinité. On le dit, on n'annule pas.
+			logs.Write_Log("WARNING", fmt.Sprintf(
+				"enrôlement: groupes de naissance non enregistrés sur la clé %d : %v", keyID, err))
+			groupes = nil
+		}
 	}
 
 	message := "Clé émise. Elle ne sera plus jamais affichée : copiez-la maintenant."
 	if utilisations == 0 || !expiration.Valid {
 		message += " Cette clé est sans limite : seule une révocation l'arrêtera."
+	}
+	if len(groupes) > 0 {
+		message += fmt.Sprintf(
+			" Les services enrôlés avec elle naîtront dans : %s.", strings.Join(groupes, ", "))
 	}
 
 	return Resultat{

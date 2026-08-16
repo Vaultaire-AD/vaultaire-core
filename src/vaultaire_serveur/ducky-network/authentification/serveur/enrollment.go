@@ -150,6 +150,18 @@ func HandleEnrollRequest(trames storage.Trames_struct_client, duckysession *stor
 		return ""
 	}
 
+	// Groupes de NAISSANCE — lot 7 du point 38.
+	//
+	// Appliqués ICI, une seule fois, et jamais relus. Les relire à chaque
+	// connexion ferait qu'une clé modifiée changerait les groupes d'un service
+	// déjà en production, et le lien entre la cause et l'effet serait
+	// introuvable des mois plus tard.
+	//
+	// APRÈS la création du client et AVANT la confirmation : le client doit
+	// exister pour être rattaché, et l'échec du rattachement ne doit pas défaire
+	// un enrôlement par ailleurs valide.
+	appliquerGroupesDeNaissance(db, reservation.KeyID, computeurID, source)
+
 	// Le client existe : l'utilisation est définitivement consommée.
 	if err := dbenrollment.Confirm(db, reservation, computeurID, source); err != nil {
 		// La trace est perdue, le service est créé. On ne défait rien : annuler
@@ -308,6 +320,65 @@ func replyDenied(duckysession *storage.DuckySession, code string) {
 	duckysession.SessionKey = nil
 	if err := duckysession.Conn.Close(); err != nil {
 		logs.Write_Log("DEBUG", "enrôlement: fermeture après refus : "+err.Error())
+	}
+}
+
+// appliquerGroupesDeNaissance rattache le service fraîchement créé aux groupes
+// que porte sa clé d'enrôlement.
+//
+// # Un groupe manquant n'empêche PAS l'enrôlement
+//
+// La clé porte une affinité, pas un droit — c'est l'arbitrage 6 du point 38. Un
+// groupe renommé ou supprimé depuis l'émission de la clé n'est pas un problème
+// de privilège : le service entre, avec les groupes qui existent encore, et
+// l'absence est journalisée en SECURITY.
+//
+// Refuser serait le mauvais arbitrage : une chaîne de déploiement s'arrêterait
+// pour une question de rangement, et le rapport entre « ce proxy ne démarre
+// plus » et « quelqu'un a renommé un groupe » ne sauterait aux yeux de personne.
+//
+// # Ne rend aucune erreur
+//
+// L'enrôlement est déjà acquis quand on arrive ici : le client existe, la clé est
+// consommée. Faire échouer la trame laisserait un service créé sans pouvoir se
+// connecter, ce qui est pire que le même service sans affinité — celui-ci joint
+// les nœuds dans l'ordre ordinaire et fonctionne.
+func appliquerGroupesDeNaissance(db *sql.DB, keyID int, computeurID, source string) {
+	groupes, err := dbenrollment.KeyGroups(db, keyID)
+	if err != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"enrôlement: groupes de naissance de la clé %d illisibles pour %s : %v",
+			keyID, computeurID, err))
+		return
+	}
+	if len(groupes) == 0 {
+		return
+	}
+
+	var poses, manquants []string
+	for _, nom := range groupes {
+		if err := dbclients.Command_ADD_SoftwareToGroup(db, computeurID, nom); err != nil {
+			manquants = append(manquants, nom+" ("+err.Error()+")")
+			continue
+		}
+		poses = append(poses, nom)
+	}
+
+	if len(poses) > 0 {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"enrôlement: %s rattaché aux groupes de naissance de sa clé : %s (depuis %s)",
+			computeurID, strings.Join(poses, ", "), source))
+	}
+	if len(manquants) > 0 {
+		// SECURITY et non WARNING : un service qui n'entre pas dans le groupe
+		// prévu joindra les nœuds de tout le parc au lieu de ceux de son site.
+		// Ce n'est pas une faille, c'est une décision d'exploitation qui n'a pas
+		// pris effet — et elle doit se retrouver.
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"enrôlement: %s N'A PAS pu être rattaché à %s — la clé %d les nomme, "+
+				"ils sont introuvables ou déjà posés. Le service est enrôlé et joindra "+
+				"les nœuds sans préférence de site.",
+			computeurID, strings.Join(manquants, ", "), keyID))
 	}
 }
 

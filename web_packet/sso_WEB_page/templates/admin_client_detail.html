@@ -77,6 +77,73 @@
       </table>
     </section>
 
+    {{ if .CiblesLisibles }}
+    <section class="section">
+      <h3>Nœuds que cette machine joindra, dans l'ordre</h3>
+      <p class="muted">
+        Exactement la liste que le serveur lui répond quand elle la demande. L'agent la
+        parcourt de haut en bas et s'arrête au premier qui répond.
+      </p>
+
+      {{ if .Cibles }}
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Hôte</th>
+              <th>Adresse</th>
+              <th>Rôle</th>
+              <th>Affin</th>
+              <th>Priorité</th>
+              <th>Pourquoi ce rang</th>
+            </tr>
+          </thead>
+          <tbody>
+          {{ range .Cibles }}
+            <tr>
+              <td>{{ .Rang }}</td>
+              <td>{{ .Noeud.Hostname }}</td>
+              <td>{{ .Noeud.AdresseEffective }}:{{ .Noeud.PortEffectif }}</td>
+              <td>{{ .Noeud.Role }}</td>
+              <td>{{ if .Noeud.Affin }}oui{{ end }}</td>
+              <!-- 0 s'affiche « — » : il vaut « sans préférence » et se range APRÈS
+                   les valeurs explicites. Écrit « 0 », il se lit comme la priorité
+                   la plus haute, ce qui est l'inverse. -->
+              <td>{{ if .Noeud.Priorite }}{{ .Noeud.Priorite }}{{ else }}—{{ end }}</td>
+              <td class="muted small">{{ .Motif }}</td>
+            </tr>
+          {{ end }}
+          </tbody>
+        </table>
+      </div>
+      {{ else }}
+      <div class="alert alert-info">
+        Aucun nœud joignable : cette machine ne peut s'authentifier que par les serveurs
+        inscrits dans sa configuration locale.
+      </div>
+      {{ end }}
+
+      {{ if .SansGroupe }}
+      <p class="muted small">
+        Cette machine n'appartient à <strong>aucun groupe</strong> : aucune affinité ne peut jouer
+        pour elle, et l'ordre ne tient qu'au rôle et à la priorité.
+      </p>
+      {{ end }}
+
+      {{ if .NoeudsEcartes }}
+      <h4 style="margin-top:1.2rem">Nœuds annoncés à personne</h4>
+      <p class="muted small">
+        Un nœud écarté ne laisse aucune trace côté agent : il n'apparaît simplement pas.
+        Quand un proxy déployé ne sert personne, c'est ici que la raison se lit.
+      </p>
+      <ul class="muted small">
+        {{ range .NoeudsEcartes }}<li>{{ . }}</li>{{ end }}
+      </ul>
+      {{ end }}
+    </section>
+    {{ end }}
+
     <section class="section">
       <form method="post" action="/admin/clients?client={{ .Client.ComputeurID }}" onsubmit="return confirm('Supprimer ce client ?');">
         <input type="hidden" name="action" value="delete_client">

@@ -20,6 +20,7 @@ import (
 //	cluster expose <noeud> <adr> [port]  déclare par où les agents le joignent
 //	cluster priority <noeud> <valeur>    ordre de service
 //	cluster rotation <noeud> <in|out>    annonce ce nœud aux agents, ou non
+//	cluster affinity <noeud> <groupe...> groupes servis en priorité
 //
 // # Deux droits nouveaux, et pourquoi
 //
@@ -68,6 +69,9 @@ func Cluster_Command(args []string, sender_groupsIDs []int, sender_Username stri
 
 	case "rotation":
 		return rotation(args[1:], appelant)
+
+	case "affinity":
+		return affinite(args[1:], appelant)
 
 	default:
 		return "Commande cluster invalide. Utilisez « cluster -h »."
@@ -235,6 +239,51 @@ func retentionMetriques(args []string, appelant action.Appelant) string {
 	return res.Message
 }
 
+// affinite fixe les groupes qu'un nœud sert en priorité.
+//
+//	cluster affinity <noeud> <groupe> [groupe...]
+//	cluster affinity <noeud> --none
+//
+// # Ce que l'affinité fait
+//
+// Un agent membre d'un de ces groupes reçoit ce nœud AVANT les autres de même
+// rôle. Préférence et non exclusivité : tous les nœuds exposés restent dans sa
+// liste, en queue — sans quoi la panne du proxy d'un site deviendrait une panne
+// d'authentification pour ce site.
+//
+// # Remplacement, jamais ajout
+//
+// Les groupes donnés deviennent la liste complète. Une commande qui ajouterait
+// obligerait à en écrire une seconde pour retirer, et à lire l'état courant pour
+// savoir laquelle employer.
+func affinite(args []string, appelant action.Appelant) string {
+	if len(args) < 2 {
+		return "Usage : vlt cluster affinity <noeud> <groupe> [groupe...]\n" +
+			"        vlt cluster affinity <noeud> --none\n\n" +
+			"  Les agents de ces groupes reçoivent ce nœud en tête de leur liste.\n" +
+			"  Les groupes donnés REMPLACENT les précédents ; --none les retire tous.\n\n" +
+			"  Ce n'est pas une exclusivité : les autres nœuds restent joignables,\n" +
+			"  en queue de liste. C'est ce qui fait qu'un site dont le proxy est\n" +
+			"  tombé se rabat sur un core au lieu de n'avoir plus personne."
+	}
+
+	groupes := ""
+	if strings.TrimSpace(args[1]) != "--none" {
+		groupes = strings.Join(args[1:], ",")
+	}
+
+	// « groups » est posé même vide : présent vaut décision, absent vaudrait
+	// « n'y touche pas », et --none n'aurait alors aucun effet.
+	res, err := action.Executer("cluster.set_node_groups", appelant, action.Params{
+		"node":   strings.TrimSpace(args[0]),
+		"groups": groupes,
+	})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
+}
+
 func aide() string {
 	return fmt.Sprintf(`cluster — supervision du cluster.
 
@@ -249,6 +298,15 @@ func aide() string {
   cluster expose <noeud> --clear            retire la déclaration
   cluster priority <noeud> <valeur>         ordre de service (petit = tôt, 0 = sans préférence)
   cluster rotation <noeud> <in|out>         annoncer ce nœud aux agents, ou l'en retirer
+  cluster affinity <noeud> <groupe...>      groupes que ce nœud sert en priorité
+  cluster affinity <noeud> --none           retire toute affinité
+
+L'affinité range un nœud devant les autres de son rôle pour les agents des
+groupes visés. PRÉFÉRENCE et non exclusivité : les autres nœuds restent dans la
+liste, en queue. C'est ce qui fait qu'un site dont le proxy est tombé se rabat
+sur un core au lieu de n'avoir plus personne à joindre.
+
+Ordre servi : proxies affins, autres proxies, cores affins, autres cores.
 
 Un nœud déclare l'adresse qu'il voit de LUI-MÊME. Derrière une redirection NAT
 ou dans un conteneur, ce n'est pas celle par laquelle le parc l'atteint, et il

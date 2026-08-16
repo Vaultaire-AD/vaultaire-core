@@ -119,6 +119,30 @@ type Node struct {
 	// à plusieurs cores, un propriétaire commun laisserait chacun écrire la
 	// ligne des autres — le défaut corrigé, sous une autre forme.
 	Proprietaire string
+
+	// Affin dit que ce nœud partage un groupe avec l'agent qui demande la liste.
+	//
+	// # Ce n'est PAS une colonne, et ce n'est pas une propriété du nœud
+	//
+	// L'affinité est une relation entre un nœud et un DEMANDEUR : le même nœud
+	// est affin pour l'agent de Paris et ne l'est pas pour celui de Lyon. La
+	// valeur est donc calculée au moment de servir la liste, et posée ici pour
+	// que le tri et les vues n'aient pas à refaire l'intersection.
+	//
+	// Faux par défaut, ce qui donne exactement le comportement d'avant le lot 6 :
+	// un tri sans affinité ordonne par rôle puis par priorité, comme auparavant.
+	// Les chemins qui listent les nœuds SANS demandeur — la page cluster, `vlt
+	// cluster list` — le laissent donc à faux, et c'est juste : hors d'une
+	// demande, la question « affin ? » n'a pas de réponse.
+	Affin bool
+
+	// GroupesAffins porte les NOMS des groupes servis en priorité par ce nœud.
+	//
+	// Renseigné pour les vues seulement, et jamais sur le chemin de 04_04 : la
+	// liste distribuée aux agents ne doit pas décrire l'organisation du parc à
+	// toutes les machines. Un agent a besoin de savoir QUI joindre, pas
+	// pourquoi ce nœud est là.
+	GroupesAffins []string
 }
 
 // AdresseEffective rend l'adresse à annoncer aux agents.

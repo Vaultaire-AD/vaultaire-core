@@ -60,6 +60,43 @@ func CreateTables(db *sql.DB) error {
 			INDEX idx_enrollment_use_key (d_id_key),
 			FOREIGN KEY (d_id_key) REFERENCES service_enrollment_key(id_key) ON DELETE CASCADE
 		);`,
+
+		// service_enrollment_key_group : les groupes de NAISSANCE d'une clé.
+		//
+		// Le service enrôlé par cette clé est ajouté à ces groupes, UNE FOIS, à
+		// son enrôlement. C'est le lot 7 du point 38.
+		//
+		// # Le rattachement est appliqué une fois, jamais relu
+		//
+		// Le relire à chaque connexion ferait qu'une clé modifiée changerait les
+		// groupes d'un service déjà en production. Le lien entre la cause — une
+		// clé éditée — et l'effet — un service qui joint d'autres nœuds — serait
+		// introuvable des mois plus tard. Après l'enrôlement, les groupes du
+		// service se modifient comme ceux de n'importe quelle machine.
+		//
+		// # Une affinité, pas un droit
+		//
+		// Ce que ces groupes portent est décidé ailleurs et reste modifiable.
+		// Une clé qui accorderait des droits deviendrait un second système de
+		// permissions, à tenir d'accord avec le premier.
+		//
+		// # Le NOM du groupe, et non son identifiant
+		//
+		// Pas de clé étrangère vers groups, délibérément. Une clé sert des mois
+		// après son émission : si le groupe est supprimé entre-temps, une clé
+		// étrangère effacerait la ligne en silence, et l'enrôlement se ferait
+		// sans affinité sans que rien ne puisse dire laquelle manquait.
+		//
+		// Le nom subsiste, la résolution échoue à la consommation, et le refus
+		// NOMME le groupe absent dans le journal. Contrepartie assumée : un
+		// groupe RENOMMÉ n'est plus retrouvé — le nom est ce que
+		// l'administrateur a écrit, pas une référence.
+		`CREATE TABLE IF NOT EXISTS service_enrollment_key_group (
+			d_id_key   INT          NOT NULL,
+			group_name VARCHAR(255) NOT NULL,
+			PRIMARY KEY (d_id_key, group_name),
+			FOREIGN KEY (d_id_key) REFERENCES service_enrollment_key(id_key) ON DELETE CASCADE
+		);`,
 	}
 
 	// Bases existantes : expires_at était NOT NULL avant que « sans expiration »

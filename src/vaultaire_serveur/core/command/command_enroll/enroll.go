@@ -1,6 +1,6 @@
 // Package commandenroll gère les clés d'enrôlement des clients service.
 //
-//	vlt enroll create --type <type> [--uses N] [--expires 30m] [--label ...]
+//	vlt enroll create --type <type> [--uses N] [--expires 30m] [--label ...] [--groups a,b]
 //	vlt enroll list
 //	vlt enroll show <id>
 //	vlt enroll revoke <id>
@@ -154,13 +154,13 @@ func Enroll_Command(commandList []string, senderGroupIDs []int, senderUsername s
 // parce que c'est ce que l'action attend — et que l'interface web l'exprimait
 // déjà ainsi.
 func creerCle(args []string, groupIDs []int, senderUsername string) string {
-	var clientType, label string
+	var clientType, label, groupes string
 	uses := 1
 	ttl := 24 * time.Hour
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
-		case "--type", "--uses", "--expires", "--label":
+		case "--type", "--uses", "--expires", "--label", "--groups":
 			if i+1 >= len(args) {
 				return fmt.Sprintf("L'option %s attend une valeur.", args[i])
 			}
@@ -171,6 +171,13 @@ func creerCle(args []string, groupIDs []int, senderUsername string) string {
 				clientType = strings.TrimSpace(valeur)
 			case "--label":
 				label = strings.TrimSpace(valeur)
+			case "--groups":
+				// Les groupes de NAISSANCE du service enrôlé par cette clé.
+				//
+				// Transmis tels quels : c'est l'action qui découpe, parce que
+				// le formulaire web envoie la même chaîne. Deux découpages
+				// finiraient par ne pas accepter les mêmes séparateurs.
+				groupes = strings.TrimSpace(valeur)
 			case "--uses":
 				n, err := strconv.Atoi(strings.TrimSpace(valeur))
 				if err != nil {
@@ -206,6 +213,7 @@ func creerCle(args []string, groupIDs []int, senderUsername string) string {
 		"label":           label,
 		"uses":            strconv.Itoa(uses),
 		"expires_minutes": strconv.Itoa(int(ttl.Minutes())),
+		"groups":          groupes,
 	}
 
 	res, err := action.Executer("enroll.create_key",
@@ -363,7 +371,7 @@ func orDash(s string) string {
 func helpText() string {
 	return `Clés d'enrôlement des clients service.
 
-  enroll create --type <type> [--uses N] [--expires 30m] [--label texte]
+  enroll create --type <type> [--uses N] [--expires 30m] [--label texte] [--groups a,b]
   enroll list                      les clés émises et leur état
   enroll show <id>                 le détail d'une clé et les services entrés avec
   enroll revoke <id>               neutralise une clé sans effacer sa trace

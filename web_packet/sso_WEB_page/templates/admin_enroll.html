@@ -89,6 +89,24 @@
         <label for="label">Libellé (facultatif)</label>
         <input type="text" id="label" name="label" placeholder="web-preprod">
 
+        <label for="groups">Groupes de naissance (facultatif)</label>
+        <input type="text" id="groups" name="groups" placeholder="paris, lyon">
+        <p class="muted small">
+          Le service enrôlé avec cette clé sera ajouté à ces groupes, <strong>une seule fois</strong>,
+          à son enrôlement. C'est ce qui permet à une chaîne de déploiement de produire des proxies
+          déjà rattachés à leur site : elle n'a que la clé, elle ne peut pas faire le geste après coup.
+        </p>
+        <p class="muted small">
+          Les groupes décident de l'<em>affinité</em> — quels agents recevront ce nœud en tête de
+          leur liste. Une clé ne porte <strong>aucun droit</strong> : ce que ces groupes permettent se
+          décide ailleurs, et reste modifiable après l'enrôlement.
+        </p>
+        <p class="muted small">
+          Les noms ne sont pas vérifiés maintenant : la clé servira peut-être dans plusieurs mois,
+          et c'est <em>à ce moment</em> que le groupe doit exister. Un groupe manquant à la
+          consommation n'empêche pas l'enrôlement, il est journalisé.
+        </p>
+
         <p class="muted small">
           Émettre une clé pour un type capable d'agir au nom d'un utilisateur est
           réservé au groupe d'amorçage.

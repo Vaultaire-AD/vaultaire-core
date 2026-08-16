@@ -467,7 +467,39 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			Username  string
 			DnsEnable bool
 			Section   string
+
+			// Cibles : les nœuds que cette machine joindra, dans l'ordre.
+			//
+			// C'est la même liste que celle de la trame 04_04, calculée par la
+			// même fonction. Sans elle, un administrateur qui constate qu'un
+			// poste ne joint pas le bon proxy doit lire l'état du cluster, les
+			// groupes du poste et les affinités de chaque nœud, puis refaire le
+			// tri de tête — refaire à la main le calcul dont il cherche l'erreur.
+			Cibles          []clusterdatabase.CibleClient
+			SansGroupe      bool
+			NoeudsEcartes   []string
+			CiblesLisibles  bool
 		}{Client: client, Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
+
+		// La vue des cibles exige read:cluster, la fiche read:get:client.
+		//
+		// Deux droits distincts, parce que deux sujets distincts : la fiche
+		// décrit la MACHINE, les cibles décrivent la TOPOLOGIE du cluster. Un
+		// délégué qui peut lire ses machines ne reçoit donc pas d'office la
+		// carte des nœuds — la section est simplement absente pour lui, plutôt
+		// que de rendre la fiche entière inaccessible.
+		if permission.HasActionAnywhere(groupIDs, permission.ActionReadCluster) {
+			cibles, groupes, errC := clusterdatabase.CiblesDuClient(db, detailClient)
+			if errC != nil {
+				logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+					"webadmin: cibles de "+detailClient+" illisibles : "+errC.Error())
+			} else {
+				detailData.Cibles = cibles
+				detailData.SansGroupe = len(groupes) == 0
+				detailData.CiblesLisibles = true
+				detailData.NoeudsEcartes, _ = clusterdatabase.NoeudsEcartes(db)
+			}
+		}
 		if r.Method == http.MethodPost {
 			// Le contrôle des droits et l'effet vivent dans les actions
 			// client.update et client.delete. La table « action → clé RBAC »
@@ -979,6 +1011,38 @@ func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// joindreValeursMultiples réunit les valeurs d'un champ multi-valué en une
+// seule, séparées par des virgules.
+//
+// # Le défaut que cela ferme
+//
+// Un `<select multiple>` envoie une valeur par option choisie, sous le même nom.
+// Le pont vers les actions ne garde que la PREMIÈRE — délibérément : prendre la
+// dernière ferait dépendre le résultat de l'ordre du navigateur.
+//
+// Le mécanisme prévu pour les champs multi-valués, `bulk_field`, exécute l'action
+// UNE FOIS PAR VALEUR. C'est juste pour lier une GPO à plusieurs groupes, où
+// chaque exécution ajoute un lien. Ce serait faux ici : l'affinité se REMPLACE,
+// donc la dernière exécution effacerait les précédentes et il ne resterait qu'un
+// seul groupe — le dernier — sans qu'aucune erreur ne soit levée.
+//
+// L'action attend donc la liste complète en une valeur, et c'est ici qu'on la
+// compose. Modifier `r.Form` avant l'appel fonctionne parce que `ParseForm` ne
+// relit le corps de la requête qu'une fois : les appels suivants rendent la carte
+// déjà construite.
+//
+// Un champ absent ou à valeur unique n'est pas touché.
+func joindreValeursMultiples(r *http.Request, champ string) {
+	if err := r.ParseForm(); err != nil {
+		return
+	}
+	valeurs := r.Form[champ]
+	if len(valeurs) <= 1 {
+		return
+	}
+	r.Form.Set(champ, strings.Join(valeurs, ","))
+}
+
 // AdminClusterHandler affiche l'état des nœuds du cluster et règle leur accès.
 //
 // # Lecture et écriture n'exigent pas la même clé
@@ -1006,6 +1070,8 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	// d'après. L'ordre inverse afficherait l'ancienne adresse à côté du message
 	// annonçant la nouvelle, et on croirait l'écriture perdue.
 	if r.Method == http.MethodPost {
+		joindreValeursMultiples(r, "groups")
+
 		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs, act.Params{})
 		switch {
 		case err != nil:
@@ -1020,15 +1086,41 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		message = "Erreur récupération nœuds: " + err.Error()
 	}
 
+	// Les groupes affins, pour l'affichage et pour cocher le formulaire.
+	//
+	// Un échec de lecture ne fait pas échouer la page : une affinité non affichée
+	// est un manque, une page d'état de cluster indisponible est un incident.
+	for i := range nodes {
+		groupes, errG := clusterdatabase.NomsDesGroupesDuNoeud(db, nodes[i].ID)
+		if errG != nil {
+			logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+				"webadmin: affinités du nœud "+nodes[i].Hostname+" illisibles : "+errG.Error())
+			continue
+		}
+		nodes[i].GroupesAffins = groupes
+	}
+
+	// La liste complète des groupes garnit le sélecteur du formulaire. Sans
+	// elle, l'administrateur devrait taper les noms de mémoire — et une faute de
+	// frappe est refusée par l'action, ce qui est juste mais pénible.
+	var tousGroupes []string
+	if groupesDomaines, errG := dbdomains.GetAllGroupsWithDomains(db); errG == nil {
+		for _, g := range groupesDomaines {
+			tousGroupes = append(tousGroupes, g.GroupName)
+		}
+	}
+
 	data := struct {
 		Username  string
 		Nodes     interface{}
+		AllGroups []string
 		Message   string
 		DnsEnable bool
 		Section   string
 	}{
 		Username:  username,
 		Nodes:     nodes,
+		AllGroups: tousGroupes,
 		Message:   message,
 		DnsEnable: storage.Dns_Enable,
 		Section:   "cluster",

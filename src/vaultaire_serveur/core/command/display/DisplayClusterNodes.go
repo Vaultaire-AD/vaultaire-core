@@ -20,7 +20,7 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 	}
 
 	tb := NouvelleTable("ÉTAT", "HÔTE", "ACCÈS AGENTS", "VU PAR LE NŒUD", "ROT.",
-		"RÔLE", "VERSION", "SDK", "DERNIER BATTEMENT")
+		"SERT EN PRIORITÉ", "RÔLE", "VERSION", "SDK", "DERNIER BATTEMENT")
 	for _, n := range noeuds {
 		// Deux colonnes d'adresse, et c'est le point de la vue.
 		//
@@ -52,6 +52,10 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 			// vue, et on cherche ailleurs pourquoi les agents ne l'atteignent
 			// jamais.
 			Valeur(rotationLisible(n.ExposeAuxAgents)),
+			// Vide vaut « tout le parc, sans préférence » : c'est le cas d'un
+			// nœud sans affinité, et l'écrire sur chaque ligne d'un cluster
+			// mono-site remplirait la colonne de bruit.
+			Valeur(strings.Join(n.GroupesAffins, ", ")),
 			Valeur(n.Role),
 			// VERSION porte désormais ce que le nœud DÉCLARE de lui-même. Elle
 			// contenait la chaîne « vaultaire_proxy » écrite en dur côté core,
@@ -74,7 +78,9 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 
 	legende := "\n* adresse déclarée par un administrateur — c'est elle que reçoivent les agents.\n" +
 		"  « VU PAR LE NŒUD » n'est renseigné que lorsqu'il diffère.\n" +
-		"  ROT. « out » : le nœud n'est annoncé à aucun agent (vlt cluster rotation <nœud> in).\n"
+		"  ROT. « out » : le nœud n'est annoncé à aucun agent (vlt cluster rotation <nœud> in).\n" +
+		"  « SERT EN PRIORITÉ » vide = tout le parc, sans préférence. C'est une préférence\n" +
+		"  et non une exclusivité : les agents des autres groupes gardent ce nœud, en queue.\n"
 
 	return titre + "\n\n" + tb.String() + legende
 }

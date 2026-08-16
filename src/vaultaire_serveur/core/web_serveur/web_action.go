@@ -141,6 +141,7 @@ var actionsFormulaire = map[string]string{
 
 	// cluster
 	"set_node_exposure": "cluster.set_node_exposure",
+	"set_node_groups":   "cluster.set_node_groups",
 }
 
 // aliasParametres traduit les noms de champs des formulaires vers ceux

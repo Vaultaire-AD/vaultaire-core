@@ -19,10 +19,15 @@ la liste de courses.
 
 8.[LDAP] - un mode synchro sur un anuaire existant qui permet de beneficier des fonctionalite de vaultaire mais en le lians a un AD deja existant 
 
-38.[DUCKY] [PROXY] - Le relais, et l'affinite noeud <-> groupe
-            Ce qui reste des points 9 et 10, dont les lots 0 a 3 sont traites : un
-            agent apprend ses noeuds joignables, un proxy existe dans le cluster et
-            bat. Voir DO/2.1/2.1.md.
+38.[DUCKY] [PROXY] - Le RELAIS. Il ne reste que lui.
+            Ce qui reste des points 9 et 10. Les lots 0 a 3 etaient traites ; les
+            lots 6 et 7 le sont depuis (voir DO/2.1/2.1.md, entree 47) : l'affinite
+            noeud <-> groupe trie la liste servie, et une cle d'enrolement porte
+            les groupes de naissance d'un service.
+
+            RESTENT les lots 4 et 5, le relais lui-meme. Ils ne dependent pas de
+            ce qui vient d'etre fait : le tri decide de QUI on joint, le relais de
+            ce qui se passe une fois joint.
 
             Le proxy est VISIBLE et connait ses cores. Il ne transporte aucun octet.
 
@@ -47,20 +52,6 @@ la liste de courses.
             Lot 5 — RELAIS LDAP/S. Depend du lot 4. Demande que le SAN du
               certificat du core couvre les proxies, sinon le client TLS refuse.
 
-            Lot 6 — AFFINITE noeud <-> groupe. Table (noeud, groupe, priorite), la
-              MEME que celle des proxies. Priorite et non exclusivite. Ordre servi :
-              proxies affins, autres proxies, cores affins exposes, autres cores
-              exposes. Le tri existe deja (TrierNoeudsPourAgents) : c'est un
-              quatrieme critere a y inserer, pas un tri neuf.
-
-            Lot 7 — GROUPES DE NAISSANCE d'une cle d'enrolement. APRES le lot 6, et
-              non avant : rattacher un service a des groupes n'a aucun effet
-              observable tant que l'affinite ne trie rien. Applique une fois, a
-              l'enrolement — le relire a chaque connexion ferait qu'une cle modifiee
-              change les groupes d'un service deja en production, et le lien entre
-              la cause et l'effet serait introuvable des mois plus tard.
-
-            Reste ouvert : rien. Les six arbitrages sont rendus.
 
 22.[EN COURS] [SELINUX] Politique pour les clients -> voir docs/exploitation/selinux.md
             Le module NSS ne faisait aucun appel systeme ; il lit desormais un fichier

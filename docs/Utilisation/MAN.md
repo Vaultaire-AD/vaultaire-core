@@ -506,7 +506,21 @@ get -g -u "group_name"
 ```bash
 get -c
 get -c "computeur_id"
+get -c "computeur_id" --targets   # les nœuds qu'elle joindra, dans l'ordre
 ```
+
+`--targets` rend **exactement** la liste que le serveur répond à cette machine
+quand elle la demande : rang, adresse, rôle, affinité, priorité, et la raison de
+chaque rang. L'agent la parcourt de haut en bas et s'arrête au premier qui répond.
+
+Elle liste aussi les nœuds **annoncés à personne**, avec le motif — hors ligne,
+hors rotation, sans port, sans empreinte. Un nœud écarté ne laisse aucune trace
+côté agent : il n'apparaît simplement pas. Quand un proxy fraîchement déployé ne
+sert personne, c'est ici que la raison se lit.
+
+> Cette vue exige `read:cluster` et non `read:get:client` : ce qu'elle montre est
+> la topologie du cluster, pas l'inventaire de la machine. La même liste figure
+> sur la fiche de la machine dans **Admin → Machines**.
 
 ### 8.5 GPO
 
@@ -1089,6 +1103,32 @@ les agents. `cluster list` montre les deux : **ACCÈS AGENTS** est ce qui est
 distribué, **VU PAR LE NŒUD** ce que la machine rapporte — renseigné seulement
 quand il diffère, parce que c'est leur écart qu'on cherche quand une connexion ne
 passe pas.
+
+### Affinité — quel nœud sert quel site
+
+```bash
+cluster affinity proxy-paris paris          # les agents du groupe paris le reçoivent en tête
+cluster affinity proxy-paris paris lyon     # remplace la liste précédente
+cluster affinity proxy-paris --none         # retire toute affinité
+```
+
+Sans affinité, tous les agents reçoivent la même liste : rien ne dit qu'un proxy
+appartient à un site, et les agents de Lyon peuvent être servis par le proxy de
+Paris.
+
+**Ordre servi** : proxies affins, autres proxies, cores affins, autres cores —
+puis la priorité, puis le nom.
+
+> **Préférence, pas exclusivité.** Les autres nœuds restent dans la liste, en
+> queue. C'est ce qui fait qu'un site dont le proxy est tombé se rabat sur un core
+> au lieu de n'avoir plus personne à joindre.
+
+L'affinité passe **avant** la priorité, et c'est voulu : la priorité est un
+réglage global. Si elle l'emportait, un proxy mis en tête pour un site passerait
+devant le proxy local de tous les autres.
+
+Pour vérifier ce qu'une machine reçoit réellement : `get -c <computeur_id>
+--targets`, ou la fiche de la machine dans **Admin → Machines**.
 
 ### Ordre et rotation
 
