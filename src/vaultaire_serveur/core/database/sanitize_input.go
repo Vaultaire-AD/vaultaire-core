@@ -16,7 +16,7 @@ func SanitizeInput(inputs ...string) error {
 	for _, input := range inputs {
 		if unsafeChars.MatchString(input) {
 			logs.WriteLog("SQL_Injection", fmt.Sprintf("Appel depuis %s", functionSource))
-			return fmt.Errorf("injection SQL détectée : caractères dangereux trouvés dans l'entrée : %s", input)
+			return fmt.Errorf("injection SQL détectée : caractères dangereux trouvés dans l'entrée")
 		}
 	}
 	return nil
