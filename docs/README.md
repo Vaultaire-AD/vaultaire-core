@@ -5,6 +5,14 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 ---
 
+## 🎓 Formation
+
+| Fichier | Contenu |
+| --- | --- |
+| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 10 chapitres, 30 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster |
+
+---
+
 ## 🛠 Installation
 
 | Fichier | Contenu |
@@ -29,6 +37,7 @@ intégrateurs. Elle répond à « que taper » et « quel droit accorder », jam
 | [`Utilisation/Actions_et_Permissions.md`](./Utilisation/Actions_et_Permissions.md) | **Quel droit pour quelle opération** — la référence à consulter avant de déléguer |
 | [`Utilisation/vaultairectl.md`](./Utilisation/vaultairectl.md) | `vaultaire_ctl` — administration distante via l'API REST signée |
 | [`Utilisation/vaultaireLDAP.md`](./Utilisation/vaultaireLDAP.md) | Module LDAP : arborescence, filtres, intégrations |
+| [`Utilisation/DNS.md`](./Utilisation/DNS.md) | Commandes DNS : zones, enregistrements, PTR |
 
 ---
 
