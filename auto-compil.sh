@@ -1,4 +1,21 @@
 #!/bin/bash
+# ====================================================================
+# Compilation de tous les composants Vaultaire
+# ====================================================================
+#
+# Deux usages, un seul script :
+#
+#   - poste de développement : `./auto-compil.sh` compile dans cmd/, que le
+#     compose de dev monte. cmd/ n'est PLUS versionné (voir .gitignore) ;
+#   - CI de release (.github/workflows/release.yaml) : la même compilation,
+#     avec un numéro de version et un répertoire de sortie imposés.
+#
+# Variables d'environnement, toutes facultatives :
+#     VAULTAIRE_ROOT        racine du dépôt (défaut : emplacement du script)
+#     VAULTAIRE_BUILD_DIR   répertoire de sortie (défaut : <racine>/cmd)
+#     VAULTAIRE_VERSION     version sémantique à injecter, ex. 2.1.4
+#                           (défaut : la valeur écrite dans le code)
+#
 # Arrêt à la première erreur.
 #
 #   -e            une commande qui échoue interrompt le script
@@ -55,7 +72,9 @@ if [ ! -d "$ROOT_DIR/src/vaultaire_serveur" ]; then
 fi
 echo "📁 Racine : $ROOT_DIR"
 
-BUILD_DIR="$ROOT_DIR/cmd"
+BUILD_DIR="${VAULTAIRE_BUILD_DIR:-$ROOT_DIR/cmd}"
+mkdir -p "$BUILD_DIR"
+BUILD_DIR="$(cd "$BUILD_DIR" && pwd -P)"
 SERVER_BIN="$BUILD_DIR/vaultaire_server/vaultaire_serveur"
 CLI_BIN="$BUILD_DIR/vaultaire_server/vaultaire_cli"
 CLIENT_BIN="$BUILD_DIR/vaultaire_client/vaultaire_client"
@@ -193,6 +212,20 @@ fi
 VCS_DATE="$(date +%Y-%m-%d)"
 echo "🏷  Version de build : $VCS_COMMIT ($VCS_DATE)"
 
+# Version sémantique imposée — c'est la CI de release qui la fournit.
+#
+# Elle ne s'applique qu'aux composants Vaultaire (core, agent, proxy), pas au SDK
+# Ducky : la version du SDK porte la compatibilité du PROTOCOLE, et une release
+# de l'application ne la change pas.
+VAULTAIRE_VERSION="${VAULTAIRE_VERSION:-}"
+if [ -n "$VAULTAIRE_VERSION" ]; then
+    if ! [[ "$VAULTAIRE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        echo "❌ VAULTAIRE_VERSION doit être de la forme X.Y.Z (reçu : $VAULTAIRE_VERSION)"
+        exit 1
+    fi
+    echo "🏷  Version sémantique imposée : $VAULTAIRE_VERSION"
+fi
+
 # ldflags_pour compose les -X d'un module.
 #
 # Le chemin d'un -X est « module/paquet.Variable » : il DIFFÈRE par module, et
@@ -201,9 +234,14 @@ echo "🏷  Version de build : $VCS_COMMIT ($VCS_DATE)"
 # le binaire dit « dev », et rien ne le signale.
 #
 # D'où le contrôle après build : voir verifier_version.
+# Le second argument, « app », ajoute la version sémantique imposée : il ne
+# vaut que pour les paquets version de Vaultaire, jamais pour celui du SDK.
 ldflags_pour() {
-    local chemin="$1"
+    local chemin="$1" genre="${2:-}"
     printf -- '-X %s.Commit=%s -X %s.Date=%s' "$chemin" "$VCS_COMMIT" "$chemin" "$VCS_DATE"
+    if [ "$genre" = "app" ] && [ -n "$VAULTAIRE_VERSION" ]; then
+        printf -- ' -X %s.Version=%s' "$chemin" "$VAULTAIRE_VERSION"
+    fi
 }
 
 # build_go compile une cible et ARRÊTE le script si elle échoue.
@@ -240,7 +278,7 @@ build_go() {
 # Build serveur
 # -------------------------
 build_go "du serveur" "$ROOT_DIR/src/vaultaire_serveur/main" "$SERVER_BIN" "" \
-    "$(ldflags_pour vaultaire/core/version)"
+    "$(ldflags_pour vaultaire/core/version app)"
 
 # web_packet n'est PLUS recopié dans cmd/.
 #
@@ -263,7 +301,7 @@ build_go "du CLI"    "$ROOT_DIR/src/vaultaire_cli"    "$CLI_BIN"
 # un dépôt unique — mais la version SÉMANTIQUE du SDK est sa propre constante,
 # et c'est elle qui porte la promesse de compatibilité du protocole.
 build_go "du client" "$ROOT_DIR/src/vaultaire_client" "$CLIENT_BIN" "" \
-    "$(ldflags_pour vaultaire_client/version) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
+    "$(ldflags_pour vaultaire_client/version app) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
 build_go "du ctl"    "$ROOT_DIR/src/vaultaire_ctl"    "$CTL_BIN"
 
 # -------------------------
@@ -282,7 +320,7 @@ build_go "du ctl"    "$ROOT_DIR/src/vaultaire_ctl"    "$CTL_BIN"
 #
 # Statique, le même binaire tourne partout : debian, alpine, ou à même l'hôte.
 build_go "du proxy" "$ROOT_DIR/src/vaultaire_proxy" "$PROXY_BIN" "CGO_ENABLED=0" \
-    "$(ldflags_pour vaultaire_proxy/version) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
+    "$(ldflags_pour vaultaire_proxy/version app) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
 
 # La configuration d'exemple accompagne le binaire : un proxy déployé sans
 # fichier de configuration ne démarre pas, et le modèle n'est utile que là où on
@@ -295,17 +333,16 @@ cp "$ROOT_DIR/src/vaultaire_proxy/config.example.yaml" "$BUILD_DIR/vaultaire_pro
 echo "🛠 Build modules PAM..."
 cd "$ROOT_DIR/src/vaultaire_client/pam_module"
 
-gcc -fPIC -shared -o pam_login_custom_module.so pam_login_custom_module.c pam_common.c -lcurl -lpam -lcrypt
-gcc -fPIC -shared -o pam_logout_custom_module.so pam_logout_custom_module.c pam_common.c -lcurl -lpam -lcrypt
-gcc -fPIC -shared -o pam_ssh_auth_module.so pam_ssh_auth_module.c pam_common.c -lcurl -lpam -lcrypt
-gcc -fPIC -shared -o libnss_vaultaire.so.2 nss_vaultaire.c
-
-cp ./pam*.so "$BUILD_DIR/vaultaire_client/"
-cp ./libnss_vaultaire.so.2 "$BUILD_DIR/vaultaire_client/"
-# RELEASE_DIR a été retiré : la variable était assignée et jamais lue, sous un
-# titre « Copier les binaires dans release » qui ne copiait rien. Le transfert
-# vers l'hôte de préproduction se fait par deployments/pre-prod/deploy.sh, en
-# rsync.
+# Sortie directement dans BUILD_DIR : compiler dans src/ laissait des .so au
+# milieu des sources, qui finissaient versionnés.
+PAM_OUT="$BUILD_DIR/vaultaire_client"
+gcc -fPIC -shared -o "$PAM_OUT/pam_login_custom_module.so"  pam_login_custom_module.c  pam_common.c -lcurl -lpam -lcrypt
+gcc -fPIC -shared -o "$PAM_OUT/pam_logout_custom_module.so" pam_logout_custom_module.c pam_common.c -lcurl -lpam -lcrypt
+gcc -fPIC -shared -o "$PAM_OUT/pam_ssh_auth_module.so"      pam_ssh_auth_module.c      pam_common.c -lcurl -lpam -lcrypt
+gcc -fPIC -shared -o "$PAM_OUT/libnss_vaultaire.so.2"       nss_vaultaire.c
+chmod 755 "$PAM_OUT"/*.so "$PAM_OUT/libnss_vaultaire.so.2"
+# Le transfert vers la préproduction ne passe plus par ce script : la CI publie
+# une release, et l'hôte la télécharge (deployments/pre-prod/docker-update.sh).
 
 # -------------------------
 # Contrôle de l'injection de version
@@ -337,6 +374,18 @@ if [ "$VCS_COMMIT" != "dev" ]; then
         exit 1
     fi
     echo "🏷  Version injectée et vérifiée dans les binaires"
+fi
+
+# Même piège pour la version sémantique imposée : une release qui annoncerait
+# « 2.1.0 » alors qu'elle s'appelle v2.1.4 mentirait à tout l'inventaire du parc.
+if [ -n "$VAULTAIRE_VERSION" ]; then
+    for binaire in "$SERVER_BIN" "$CLIENT_BIN" "$PROXY_BIN"; do
+        if ! grep -aq -- "$VAULTAIRE_VERSION" "$binaire"; then
+            echo "❌ Version $VAULTAIRE_VERSION NON injectée dans $binaire"
+            exit 1
+        fi
+    done
+    echo "🏷  Version $VAULTAIRE_VERSION vérifiée dans les binaires"
 fi
 
 echo "✅ Build terminé — binaires dans $BUILD_DIR"

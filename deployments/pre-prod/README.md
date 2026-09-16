@@ -2,49 +2,54 @@
 
 Environnement de **test / staging**, pas de production.
 
-Les binaires sont **compilés sur le poste de développement**, transférés par
-rsync, puis **montés en volume** dans le conteneur. L'image ne contient aucun
-binaire applicatif et ne se reconstruit que si le `Dockerfile` change.
+Les binaires ne sont **ni compilés ici ni versionnés dans git**. Chaque fusion
+`preprod` → `main` publie une **release GitHub** (`.github/workflows/release.yaml`) ;
+l'hôte pre-prod la télécharge, vérifie ses sommes SHA-256, place le dépôt sur le
+tag correspondant et redémarre le conteneur. L'image ne se reconstruit que si
+le `Dockerfile`, l'entrypoint ou le compose changent entre les deux versions.
 
-## Boucle de travail
+## Mettre à jour
 
-```bash
-# Depuis le poste de developpement, a la racine du depot
-PREPROD_HOST=root@192.168.30.3 ./deployments/pre-prod/deploy.sh
-```
-
-Ce que fait le script : compilation, `git push` du code, `rsync` des binaires,
-puis `docker-update.sh` sur l'hôte, qui fait un `git pull` et redémarre le
-conteneur. **Aucune reconstruction d'image.**
-
-Variantes :
+Sur l'hôte, à la racine du dépôt :
 
 ```bash
-./deployments/pre-prod/deploy.sh --no-compile   # binaires deja a jour
-./deployments/pre-prod/deploy.sh --no-push      # ne pas pousser le code
+./deployments/pre-prod/docker-update.sh                    # dernière release
+./deployments/pre-prod/docker-update.sh --version 2.1.3    # version précise (retour arrière compris)
+./deployments/pre-prod/docker-update.sh --list             # releases disponibles + version installée
+./deployments/pre-prod/docker-update.sh --build            # force la reconstruction de l'image
+./deployments/pre-prod/docker-update.sh --force            # réinstalle la même version
+./deployments/pre-prod/docker-update.sh --no-download      # redémarrage seul
 ```
 
-Directement sur l'hôte, sans passer par le poste de développement :
+Depuis le poste de développement, la même chose par SSH :
 
 ```bash
-./deployments/pre-prod/docker-update.sh             # git pull + restart
-./deployments/pre-prod/docker-update.sh --build     # force la reconstruction
-./deployments/pre-prod/docker-update.sh --no-pull   # restart seul
+PREPROD_HOST=root@192.168.30.3 ./deployments/pre-prod/deploy.sh --version 2.1.3
 ```
 
-## Pourquoi ce fonctionnement
+| Variable | Rôle | Défaut |
+|---|---|---|
+| `PREPROD_HOST` | cible SSH de `deploy.sh` | — (obligatoire) |
+| `PREPROD_PATH` | dépôt sur l'hôte | `/srv/vaultaire-core` |
+| `VAULTAIRE_REPO` | dépôt GitHub des releases | `Vaultaire-AD/vaultaire-core` |
+| `GITHUB_TOKEN` | jeton, si le dépôt devient privé ou si l'API limite | — |
 
-L'ancienne boucle supprimait l'image (`podman rmi`) puis la reconstruisait avec
-`--no-cache`. Deux conséquences :
+**Seules les 5 dernières releases sont conservées** : un retour arrière plus
+ancien n'est pas possible.
 
-- la couche `dnf install sudo openssh-server openssh-clients`, qui ne change
-  jamais, était réinstallée à chaque itération ;
-- la reconstruction ne servait qu'à recopier des binaires **déjà compilés** —
-  le `Dockerfile` ne compile rien.
+Le script refuse de tourner si le dépôt de l'hôte a des modifications locales
+(hors binaires) : le checkout du tag les écraserait.
 
-Les binaires étaient par ailleurs versionnés dans git, soit environ 32 Mo
-d'artefacts et ~17 Mo ajoutés à l'historique à chaque itération. Un historique
-git ne se dégonfle pas : supprimer les fichiers plus tard n'y change rien.
+## Ce qui se passe à chaque mise à jour
+
+1. choix de la release (`--version`, sinon la dernière) ;
+2. téléchargement des quatre archives et contrôle `SHA256SUMS` — **rien n'est
+   touché** si une archive manque ou ne correspond pas ;
+3. `git checkout --detach vX.Y.Z` : templates, compose et configuration
+   correspondent exactement aux binaires ;
+4. installation dans `cmd/` (fichiers remplacés dans les répertoires montés,
+   mode 0755) et écriture de `cmd/.release` ;
+5. redémarrage de `vaultaire-ad`, et de `vlt-proxy` s'il tourne sur l'hôte.
 
 ## Volumes montés
 
@@ -64,35 +69,34 @@ chaque requête.
 ## Première installation sur un hôte
 
 ```bash
-git clone <depot> /srv/vaultaire-core
+git clone https://github.com/Vaultaire-AD/vaultaire-core /srv/vaultaire-core
 cd /srv/vaultaire-core
-git checkout feature/pre-prod
-# depuis le poste de developpement :
-PREPROD_HOST=root@<hote> ./deployments/pre-prod/deploy.sh
+./deployments/pre-prod/docker-update.sh
 ```
 
-Le premier passage construit l'image (l'absence d'image est détectée), les
-suivants se contentent d'un redémarrage.
+Le premier passage construit l'image (l'absence d'image est détectée).
 
-## Détacher les binaires déjà suivis par git
+### Hôte déjà installé avec l'ancienne méthode (rsync)
 
-Le `.gitignore` n'a aucun effet sur des fichiers **déjà suivis**. Après avoir
-récupéré ces changements, à faire une fois :
+L'ancien `docker-update.sh` ne sait pas télécharger de release. Une seule fois,
+récupérer le nouveau script puis le lancer :
 
 ```bash
-git rm --cached -r cmd/
-git rm --cached src/vaultaire_client/pam_module/*.so \
-                src/vaultaire_client/pam_module/*.so.2
-git commit -m "build: sortir les artefacts de compilation du suivi git"
+cd /srv/vaultaire-core
+git fetch origin --tags
+git checkout --force --detach origin/main   # les binaires suivis disparaissent, c'est attendu
+./deployments/pre-prod/docker-update.sh
 ```
 
-`--cached` retire du suivi **sans supprimer les fichiers du disque** : les
-binaires restent en place et le déploiement continue de fonctionner.
+Le conteneur ne trouve plus ses binaires entre le checkout et la fin du script :
+compter une coupure de quelques secondes.
 
-Attention : les révisions passées gardent les binaires, le dépôt reste donc
-lourd à cloner. Seul un `git filter-repo` réécrirait l'historique — opération
-destructive qui invalide tous les clones existants, à ne pas lancer sans
-sauvegarde et sans prévenir les autres utilisateurs du dépôt.
+## Dépôt allégé
+
+Les binaires ont été versionnés jusqu'en 2.1 : le dépôt approche 800 Mo.
+Ils ne sont plus suivis (`.gitignore`), mais l'historique garde leur poids.
+`automatisation/purge-binaires-historique.sh` le réécrit — opération
+destructive, voir `docs/exploitation/Releases.md` avant de la lancer.
 
 ## Tests
 

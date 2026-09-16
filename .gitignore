@@ -17,18 +17,17 @@ build/
 *.o
 
 # ------------------------------------------------------------------
-# Binaires de cmd/ : VOLONTAIREMENT versionnés
+# Binaires : plus JAMAIS dans git
 # ------------------------------------------------------------------
-# Les règles qui les ignoraient ont été retirées. Elles ne produisaient aucun
-# effet — les fichiers étaient déjà suivis, et un fichier suivi le reste malgré
-# .gitignore — mais elles affirmaient le contraire de ce que fait le dépôt.
+# cmd/ est la sortie de ./auto-compil.sh pour le poste de développement (le
+# compose de dev la monte). Les binaires distribués sont les assets des
+# releases GitHub, produits par .github/workflows/release.yaml, et la
+# préproduction les télécharge.
 #
-# Un .gitignore qui décrit une intention non appliquée est pire que pas de
-# règle : il fait croire que les binaires ne sont pas là, et fait chercher
-# ailleurs quand le dépôt grossit.
-#
-# cmd/web_packet n'y figure plus non plus : la copie a disparu. Les gabarits
-# sont servis depuis web_packet/ à la racine, seule arborescence.
+# Ils ont été versionnés jusqu'en 2.1 : ~18 Mo par commit pour le seul serveur,
+# un dépôt de près de 800 Mo. Pour dégonfler l'historique :
+# automatisation/purge-binaires-historique.sh
+/cmd/
 
 # Modules PAM compilés à côté de leurs sources
 /src/vaultaire_client/pam_module/*.so

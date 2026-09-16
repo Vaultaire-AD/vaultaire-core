@@ -8,7 +8,7 @@
 #
 # Une mise à jour se réduit donc à :
 #
-#     ./auto-compil.sh && docker compose restart vlt-proxy
+#     ./deployments/pre-prod/docker-update.sh   (redémarre aussi le proxy)
 #
 # L'image ne se reconstruit que lorsque ce fichier change.
 #
@@ -69,8 +69,8 @@ WORKDIR /var/lib/vaultaire_proxy
 # antérieure resterait inaccessible — sans autre issue que de le détruire, donc
 # de réenrôler et de consommer un jeton d'enrôlement.
 #
-# Le binaire monté doit rester lisible et exécutable par 10001 : auto-compil.sh
-# le produit en 0755, et le mode est enregistré dans git.
+# Le binaire monté doit rester lisible et exécutable par 10001 : docker-update.sh
+# l'installe en 0755 depuis la release.
 
 # 389 et 8443 pour la répartition de charge à venir. Cette version n'écoute rien :
 # elle ne fait que se connecter au core.

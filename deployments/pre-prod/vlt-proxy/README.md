@@ -1,8 +1,8 @@
 # Déploiement du proxy Vaultaire
 
 Pile autonome. **Rien n'est compilé ici** : le binaire vient de
-`cmd/vaultaire_proxy/`, produit par `auto-compil.sh` — même principe que l'image
-du serveur.
+`cmd/vaultaire_proxy/`, installé depuis la **dernière release GitHub** par
+`../docker-update.sh` — même principe que l'image du serveur.
 
 ## Ce que fait ce proxy
 
@@ -23,8 +23,8 @@ pas dans `vlt cluster list`.
 # 1. Sur le CORE : créer une clé d'enrôlement typée
 vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
 
-# 2. Sur l'hôte : compiler
-./auto-compil.sh
+# 2. Sur l'hôte, à la racine du dépôt : installer la release
+./deployments/pre-prod/docker-update.sh            # ou --version 2.1.3
 
 # 3. Ici : deux valeurs dans docker-compose.yml
 #      VAULTAIRE_IP_CORE=vaultaire-ad:6666
@@ -59,8 +59,10 @@ volume alors que l'environnement est ce qu'on ajuste au déploiement.
 ## Mise à jour
 
 ```bash
-./auto-compil.sh && docker compose restart vlt-proxy
+./deployments/pre-prod/docker-update.sh            # ou --version 2.1.3
 ```
+
+Le script redémarre `vlt-proxy` s'il tourne sur le même hôte.
 
 L'image ne se reconstruit que si le `Dockerfile` ou l'`entrypoint.sh` change. Le
 binaire étant monté, un `docker compose build` ne sert à rien après une
@@ -85,15 +87,14 @@ de consommer un jeton.
 Reprendre le volume au démarrage rend le conteneur remplaçable : l'identité du
 proxy survit aux reconstructions d'image.
 
-**Le binaire monté doit rester en 0755.** `auto-compil.sh` le pose, et le mode est
-enregistré dans git. Symptôme sinon :
+**Le binaire monté doit rester en 0755.** `docker-update.sh` le pose à
+l'installation. Symptôme sinon :
 
 ```
 exec: "/opt/vaultaire/bin/vaultaire_proxy": permission denied
 ```
 
-Correction : `chmod 755 cmd/vaultaire_proxy/vaultaire_proxy` sur l'hôte, et
-`git update-index --chmod=+x` pour que ça ne revienne pas au prochain `pull`.
+Correction : `./deployments/pre-prod/docker-update.sh --force` sur l'hôte.
 
 ## Le volume `vlt_proxy_keys`
 
@@ -128,8 +129,8 @@ docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 
 | Message | Cause |
 |---------|-------|
-| `binaire absent de /opt/vaultaire/bin/…` | `./auto-compil.sh` n'a pas tourné |
-| `binaire non exécutable` | `chmod 755 cmd/vaultaire_proxy/vaultaire_proxy` |
+| `binaire absent de /opt/vaultaire/bin/…` | aucune release installée : `docker-update.sh` |
+| `binaire non exécutable` | `docker-update.sh --force` |
 | `aucune configuration` | ni `VAULTAIRE_IP_CORE` ni `config.yaml` |
 | `aucun serveur déclaré` | `VAULTAIRE_IP_CORE` vide ou mal formé |
 | `VAULTAIRE_IP_CORE : port invalide dans …` | port hors 1-65535, ou non numérique |

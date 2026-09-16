@@ -4,12 +4,12 @@
 # d'enrôlement. Les deux se donnent ici, en variables. Aucun fichier à créer.
 #
 #   1. sur le core :  vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
-#   2. sur l'hôte  :  ./auto-compil.sh
+#   2. sur l'hôte  :  ./deployments/pre-prod/docker-update.sh   (binaire de la release)
 #   3. ici         :  renseigner VAULTAIRE_IP_CORE et VAULTAIRE_ENROLL_KEY ci-dessous
 #   4.                docker compose up -d
 #   5. sur le core :  vlt client list   -> le proxy doit apparaître
 #
-# Mise à jour :  ./auto-compil.sh && docker compose restart vlt-proxy
+# Mise à jour :  ./deployments/pre-prod/docker-update.sh — il redémarre aussi le proxy
 
 networks:
   # externe: true suppose que le core tourne sur la même machine et que son
@@ -71,8 +71,8 @@ services:
       # source de l'hôte : un binaire modifié depuis l'intérieur serait ensuite
       # committé sans qu'on comprenne d'où il vient.
       #
-      # Il doit être exécutable par l'UID 10001 — auto-compil.sh le produit en
-      # 0755 et le mode est enregistré dans git. L'entrypoint le vérifie.
+      # Il doit être exécutable par l'UID 10001 — docker-update.sh l'installe
+      # en 0755 depuis la release. L'entrypoint le vérifie.
       - ../../../cmd/vaultaire_proxy:/opt/vaultaire/bin:ro
       # Identité, en écriture. Seul endroit où le proxy écrit.
       - vlt_proxy_keys:/var/lib/vaultaire_proxy/keys

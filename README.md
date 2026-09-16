@@ -11,10 +11,10 @@ la solution.
 ---
 
 
-> ⚠️ `cmd/` est un **répertoire de sortie**, pas du code. Il est produit par
-> `auto-compil.sh`
-> pour des raisons historiques : la procédure de détachement est dans
-> [`deployments/pre-prod/README.md`](./deployments/pre-prod/README.md).
+> ⚠️ `cmd/` est un **répertoire de sortie**, pas du code, et il n'est **pas
+> versionné**. `auto-compil.sh` le remplit en local ; les binaires distribués
+> sont ceux des [releases GitHub](https://github.com/Vaultaire-AD/vaultaire-core/releases),
+> voir [`docs/exploitation/Releases.md`](./docs/exploitation/Releases.md).
 
 > ℹ️ Il n'y a **pas de `go.mod` à la racine** : chaque répertoire de `src/` est un
 > module Go autonome, avec sa propre directive `go`. `auto-compil.sh` les compile
@@ -76,14 +76,20 @@ sur zéro module et annoncer une compilation réussie sans avoir rien construit.
 
 Le script vérifie les directives `go` des sept `go.mod`, refuse les `replace`
 vers un chemin absolu, compile les binaires dans `cmd/` et construit les modules
-PAM/NSS.
+PAM/NSS. La CI de release utilise le **même script**, avec `VAULTAIRE_VERSION`
+et `VAULTAIRE_BUILD_DIR`.
+
+### Publier une version
+
+Fusionner une PR `preprod` → `main` : la CI publie `vX.Y.Z` (patch
+incrémenté automatiquement, série lue dans le fichier `VERSION`). Détail dans
+[`docs/exploitation/Releases.md`](./docs/exploitation/Releases.md).
 
 ### Lancer la pile préprod (serveur + MariaDB + Keycloak)
 
 ```bash
-./deployments/pre-prod/docker-build-and-up.sh
-# ou, depuis PowerShell
-.\deployments\pre-prod\docker-build-and-up.ps1
+./deployments/pre-prod/docker-update.sh                  # installe la dernière release et démarre
+./deployments/pre-prod/docker-update.sh --version 2.1.3  # ou une version précise
 ```
 
 ### Environnement de développement
@@ -145,15 +151,17 @@ git status          # ne doit lister que de vraies modifications
 
 ## 📝 Conventions
 
-- ❌ **Pas de binaires dans Git.** Ils sont produits par `auto-compil.sh` et
-  transférés par `rsync` (`deployments/pre-prod/deploy.sh`).
+- ❌ **Pas de binaires dans Git.** En local, `auto-compil.sh` les produit dans
+  `cmd/` (ignoré) ; pour la préprod, ils viennent des releases GitHub.
 - 📂 **Respecter la structure** : toute nouvelle fonctionnalité vit dans `src/`,
   avec ses tests.
 - 🗒️ **Documenter les changements** : consigner dans le fichier de la version en
   cours, `docs/Version/<majeure>/<mineure>.md`. Les nouvelles entrées vont **en
   haut**.
-- 🔁 **Modifier le portail web dans `web_packet/`**, jamais dans `cmd/web_packet/`,
-  qui est écrasé à chaque compilation.
+- 🔁 **Modifier le portail web dans `web_packet/`**, seule arborescence des
+  gabarits.
+- 🏷️ **Changer de série** (2.1 → 2.2) : modifier `VERSION` et la valeur de repli
+  `var Version` des trois paquets `version`, dans la PR qui part vers `main`.
 - ✅ Une tâche terminée se déplace de `docs/Developement/TO-DO.md` vers
   `docs/Developement/DO/<version>/`.
 

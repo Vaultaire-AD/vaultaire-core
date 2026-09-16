@@ -85,6 +85,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 
 | Fichier | Contenu |
 | --- | --- |
+| [`exploitation/Releases.md`](./exploitation/Releases.md) | Releases automatiques, numérotation, rétention, mise à jour de la préprod, purge de l'historique |
 | [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
 | [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |
 

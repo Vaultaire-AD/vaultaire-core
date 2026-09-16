@@ -6,8 +6,13 @@ package version
 
 import sdkversion "duckynetworkclient/V1/duckynetwork/version"
 
-// Version du proxy Vaultaire. Constante, décidée par un humain.
-const Version = "2.1.0"
+// Version du proxy Vaultaire.
+//
+// Une release la remplace à la compilation (-ldflags -X, voir
+// .github/workflows/release.yaml et le fichier VERSION à la racine) : une
+// constante ne pourrait pas l'être. La valeur écrite ici ne sert qu'aux
+// builds locaux ; majeure et mineure doivent suivre le fichier VERSION.
+var Version = "2.1.0"
 
 // Commit et Date sont posés à la compilation par auto-compil.sh.
 var (

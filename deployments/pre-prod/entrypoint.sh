@@ -22,11 +22,11 @@ fail() {
 }
 
 # --- Binaire serveur -------------------------------------------------
-[ -f "$SERVER_BIN" ] || fail "binaire serveur absent ($SERVER_BIN). Compilez d'abord avec ./auto-compil.sh"
+[ -f "$SERVER_BIN" ] || fail "binaire serveur absent ($SERVER_BIN). Sur l'hote : ./deployments/pre-prod/docker-update.sh (installe la derniere release)"
 
 # Le volume est monte en lecture seule : chmod +x echouerait. On verifie donc le
 # bit d'execution au lieu de tenter de le poser, et on explique quoi faire.
-[ -x "$SERVER_BIN" ] || fail "binaire serveur non executable. Sur l'hote : chmod +x cmd/vaultaire_server/vaultaire_serveur"
+[ -x "$SERVER_BIN" ] || fail "binaire serveur non executable. Sur l'hote : ./deployments/pre-prod/docker-update.sh --force"
 
 # --- Ressources web --------------------------------------------------
 # Le serveur lit ./web_packet/sso_WEB_page/templates relativement a son

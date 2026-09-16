@@ -25,7 +25,8 @@ fail() {
 }
 
 [ -f "$BIN" ] || fail "binaire absent de $BIN.
-  Il vient de cmd/vaultaire_proxy/, produit par ./auto-compil.sh sur l'hôte."
+  Il vient de cmd/vaultaire_proxy/, installé depuis la release par
+  ./deployments/pre-prod/docker-update.sh sur l'hôte."
 
 # Le proxy tournera en utilisateur NON PRIVILÉGIÉ. Un binaire en 0600 ou 0700
 # appartenant à un autre compte lui serait inaccessible.
@@ -33,8 +34,7 @@ fail() {
 # Le volume du binaire est monté en lecture seule : un chmod ici échouerait de
 # toute façon. On vérifie et on explique.
 [ -r "$BIN" ] && [ -x "$BIN" ] || fail "binaire non exécutable par le compte du conteneur.
-  Sur l'hôte : chmod 755 cmd/vaultaire_proxy/vaultaire_proxy
-  Durablement : git update-index --chmod=+x cmd/vaultaire_proxy/vaultaire_proxy"
+  Sur l'hôte : ./deployments/pre-prod/docker-update.sh --force (pose le 0755)"
 
 # La configuration est FACULTATIVE : deux variables suffisent.
 #
