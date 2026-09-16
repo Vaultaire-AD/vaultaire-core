@@ -929,23 +929,26 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 
 ### Forcer un cycle
 
-Il n'existe pas encore d'équivalent de `gpupdate /force`. Pour l'instant :
-redémarrer le service client, ou attendre le rafraîchissement horaire
-(`MachineRefreshInterval` dans `client/gpo/cycle.go`).
+Il n'existe pas encore d'équivalent de `gpupdate /force` (TO-DO 50). Pour
+l'instant : redémarrer le service client, ou attendre le rafraîchissement horaire
+(`MachineRefreshInterval` dans `vaultaire_client/gpo/cycle.go`).
 
 ---
 
 ## Points ouverts
 
-| Sujet | État |
-|-------|------|
-| Signature des politiques par le serveur central | Champ prévu, non implémenté |
-| Forçage d'un cycle depuis le serveur | Non implémenté |
-| Cycle déclenché à la reconnexion du tunnel | Non implémenté — attend le tour horaire |
-| Retentative rapprochée après un cycle en échec | Non implémenté — attend le tour horaire |
-| Intervalle de rafraîchissement configurable | En dur dans le code |
-| `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent |
-| Persistance des rapports d'application en base | Journalisés seulement |
+Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
+
+| Sujet | État | TO-DO |
+|-------|------|-------|
+| **Scan de dérive du scope utilisateur** | Non implémenté — seul le scope machine est scanné | 33 |
+| Signature des politiques par le serveur central | Champ prévu, non rempli ni vérifié | 52 |
+| Forçage d'un cycle depuis le serveur | Non implémenté | 50 |
+| Cycle déclenché à la reconnexion du tunnel | Non implémenté — attend le tour horaire | 50 |
+| Retentative rapprochée après un cycle en échec | Non implémenté — attend le tour horaire | 50 |
+| Intervalle de rafraîchissement configurable | Constante d'une heure dans le code | 51 |
+| Persistance des rapports d'application en base | Journalisés seulement | 53 |
+| `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent | — |
 
 
 ---
@@ -954,13 +957,17 @@ redémarrer le service client, ou attendre le rafraîchissement horaire
 
 Trois inventaires, tenus pendant l'application et relus à chaque scan.
 
+> ⚠️ **Scope machine uniquement.** Le scan tourne avant chaque cycle machine
+> (`scanMachineDrift`). Les GPO du scope utilisateur sont appliquées à
+> l'ouverture de session mais leur dérive n'est **pas** vérifiée (TO-DO 33).
+
 | Inventaire | Ce qu'il contient | Écart détecté |
 |---|---|---|
 | Fichiers **déposés** | chemin, SHA-256, mode | `modified`, `missing`, `unreadable`, `permissions` |
 | Fichiers **retirés** | chemin, drapeau `absent` | `reappeared` |
 | **États système** | type, cible, attendu | `system_state`, `unverifiable` |
 
-Les deux derniers sont récents : le scan ne comparait que des fichiers déposés.
+Les deux derniers sont arrivés en 2.1 (TO-DO 4, 37, 41, 44) : avant, le scan ne comparait que des fichiers déposés.
 
 ### Ce qui doit être ABSENT
 

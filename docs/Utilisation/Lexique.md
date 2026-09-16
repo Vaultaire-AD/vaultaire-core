@@ -215,8 +215,16 @@ bouge, et elle est stable quel que soit l'ordre de lecture en base.
 
 ### Dérive *(drift)*
 L'écart entre l'état voulu par une GPO et l'état réel de la machine. Le scan de
-conformité la détecte — **pour les fichiers**. Les effets non-fichier — un service
-réactivé, une règle de pare-feu supprimée — ne sont pas encore vérifiés.
+conformité la détecte pour les fichiers déposés, les fichiers retirés qui
+réapparaissent, et les **états système** (services, pare-feu, temps, audit,
+magasin de confiance, DNS…). Un effet que l'agent ne sait pas relire est signalé
+`unverifiable`, pas conforme.
+
+Selon le **mode** de la GPO, un écart est corrigé au cycle suivant (`enforce`)
+ou seulement signalé (`audit`).
+
+Limite actuelle : seul le scope **machine** est scanné ; le scope utilisateur ne
+l'est pas encore (TO-DO 33).
 
 > « Non vérifié » ne veut pas dire conforme : cela veut dire que l'agent n'a pas
 > encore rapporté de scan.
