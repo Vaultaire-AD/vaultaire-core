@@ -1,28 +1,33 @@
 package main
 
 import (
+	"duckynetworkclient/V1/duckynetwork/decouverte"
+	duckytool "duckynetworkclient/V1/duckynetwork/ducky_tool"
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	"duckynetworkclient/V1/duckynetwork/storage/stosession"
+	tramesmanager "duckynetworkclient/V1/duckynetwork/trames_manager"
 	"flag"
 	"fmt"
 	"log"
 	"os"
 	"time"
-	"vaultaire_client/logs"
+	"vaultaire_client/config"
+	"vaultaire_client/gpo"
 	pamcommunication "vaultaire_client/pam_communication"
+	"vaultaire_client/revocation"
 	serveurcommunication "vaultaire_client/serveur_communication"
-	"vaultaire_client/storage"
+	"vaultaire_client/sshauth"
+	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
+	"vaultaire_client/version"
 	yaml_vaultaire "vaultaire_client/yaml"
-
-	"gopkg.in/yaml.v2"
 )
-
-type config struct {
-	ServerListenPort string `yaml:"serveurlistenport"`
-	ServerIP         string `yaml:"serveur_ip"`
-}
 
 func StartDailyUserCleanup() {
 	go func() {
+		defer logs.Recover("tache de fond")
 		for {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day(), 6, 0, 0, 0, now.Location())
@@ -43,56 +48,200 @@ func StartDailyUserCleanup() {
 	}()
 }
 
-func loadConfig(filePath string) error {
-	// Ouvrir le fichier
-	file, err := os.Open(filePath)
-	if err != nil {
-		return err
+// brancherSocleDucky raccorde l'agent au socle partagé.
+//
+// À appeler EN PREMIER dans main, avant toute ouverture de session : la boucle
+// de réception consulte le registre des gestionnaires dès la connexion établie,
+// et une catégorie branchée après coup laisserait passer sans traitement les
+// trames arrivées entre-temps.
+func brancherSocleDucky() {
+	// L'agent reste connecté. Persistent et non IsServeur : ce dernier décrit
+	// la MACHINE — serveur membre du domaine — et vient de client_software.yaml,
+	// où il vaut false pour un poste ordinaire. S'en servir pour décider de la
+	// reconnexion faisait sortir de la boucle à la première coupure.
+	storage.Persistent = true
+
+	// La VERSION de ce binaire, posée AVANT toute ouverture de session.
+	//
+	// Le socle ne peut pas la lire lui-même : l'agent l'importe, l'inverse
+	// serait un cycle. C'est donc au programme de la déclarer, comme il déclare
+	// déjà son Computeur_ID.
+	//
+	// Avant la session, parce qu'elle part dans l'inventaire 02_12, émis dès
+	// l'authentification. Posée après, le premier inventaire l'annoncerait vide.
+	storage.VersionComposant = version.Info().Complete()
+
+	// La boucle de connexion de l'agent, et non celle du socle : elle lit
+	// /etc/vaultaire_client/client_conf.json, au format JSON déjà déployé sur
+	// le parc, là où le socle attend du YAML.
+	duckytool.DemarrerSessionMachine = func() {
+		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// Handle or log the error
-			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la fermeture du fichier de configuration: %v", err))
+
+	// Les catégories propres à l'agent. 01 et 02 sont fournies par le socle :
+	// 01 est lue de façon synchrone avant que la boucle ne démarre, 02 est
+	// branchée par le socle lui-même.
+	tramesmanager.RegisterHandler("03", sshauth.HandleTrameSSH)
+	// 04 : découverte des nœuds joignables. Branchée ici et non dans le socle —
+	// c'est l'agent qui décide de l'émettre, et un service du cluster n'a pas
+	// les mêmes besoins.
+	tramesmanager.RegisterHandler("04", decouverte.HandleTrame)
+	tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
+	tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
+}
+
+// bootstrapDecouverte arme la demande périodique de la liste de nœuds.
+//
+// Après gpo.Bootstrap et pour la même raison : la boucle attend elle-même une
+// session utilisable, donc l'appel n'a pas à être ordonné avec l'ouverture du
+// tunnel.
+func bootstrapDecouverte() {
+	decouverte.Configure(func(trame string) {
+		// WaitForVaultaireSession plutôt qu'un simple Get : au moment de l'envoi
+		// le tunnel peut être en cours de rétablissement après une coupure, et
+		// abandonner ferait perdre un cycle entier.
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "découverte : aucune session vaultaire valide, trame non envoyée")
+			return
 		}
-	}()
+		sendmessage.SendMessage(trame, session.DuckySession)
+	}, storage.Computeur_ID)
 
-	// Initialiser une variable pour stocker les données du fichier
-	var config config
+	decouverte.Demarrer(func() string {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			return ""
+		}
+		return string(session.DuckySession.SessionKey)
+	})
+}
 
-	// Décoder le fichier YAML dans la structure Config
-	decoder := yaml.NewDecoder(file)
-	err = decoder.Decode(&config)
+// purgerGroupesOrphelins affiche, et n'efface que sur confirmation explicite.
+//
+// # Pourquoi l'affichage est le comportement par défaut
+//
+// La commande retire des lignes d'un fichier système. Un opérateur qui se
+// trompe de machine doit s'en apercevoir AVANT, pas en lisant le compte rendu.
+//
+// Le vidage a déjà coupé les droits : l'effacement ne gagne que de la propreté.
+// Rien ne presse assez pour justifier d'agir sans montrer.
+func purgerGroupesOrphelins(confirmer bool) {
+	orphelins, err := localusermanagement.GroupesOrphelins()
 	if err != nil {
-		return err
+		fmt.Fprintln(os.Stderr, "Erreur :", err)
+		os.Exit(1)
 	}
-	storage.C_serveurIP = config.ServerIP
-	storage.C_serveurListenPort = config.ServerListenPort
-	// Retourner la configuration lue
-	return nil
+
+	if len(orphelins) == 0 {
+		fmt.Println("Aucun groupe du domaine à effacer.")
+		return
+	}
+
+	fmt.Printf("%d groupe(s) créé(s) par Vaultaire, sans membre, absent(s) du domaine :\n\n", len(orphelins))
+	for _, o := range orphelins {
+		fmt.Printf("  %-32s GID %d\n", o.Nom, o.GID)
+	}
+
+	if !confirmer {
+		fmt.Println("\nAucun effacement. Relancer avec --confirm pour effacer ces lignes.")
+		fmt.Println("Les fichiers qui portent encore ces GID deviendront orphelins :")
+		fmt.Println("`ls -l` n'affichera plus qu'un nombre à la place du nom du groupe.")
+		return
+	}
+
+	effaces, err := localusermanagement.PurgerGroupesOrphelins()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Erreur :", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\n%d groupe(s) effacé(s) : %v\n", len(effaces), effaces)
 }
 
 func main() {
+	brancherSocleDucky()
+
 	// ... chargement config ...
-	err := loadConfig("/opt/vaultaire_client/client_conf.yaml")
+	err := config.LoadConfig("/etc/vaultaire_client/client_conf.json")
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
 	}
-	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePath)
+	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu())
 
 	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
+	purgeGroupes := flag.Bool("purge-groups", false,
+		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
+	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
 	flag.Parse()
+
+	if *purgeGroupes {
+		purgerGroupesOrphelins(*confirmer)
+		os.Exit(0)
+	}
+
 	if *fetchKey != "" {
+		sshUser := *fetchKey
+		_, domain := tools.ExctractDomainFromUsername(sshUser)
+		if domain == "" { // fonction équivalente à vaultaire_is_allowed_domain côté C
+			logs.Write_log("DEBUG", "Fetch-key ignoré (user local, pas de domaine Vaultaire): "+sshUser)
+			return
+		}
 		storage.SilentConsole = true
 		// Mode One-Shot pour SSH
-		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", *fetchKey, nil, true)
-		return
+		logs.Go("communication serveur", func() {
+			serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+		})
+		serveurcommunication.WaitForSSHFetch("vaultaire", sshUser)
+		// 🔥 AJOUTE CECI :
+		logs.Write_log("INFO", "Fin du mode Fetch, fermeture du programme.")
+		os.Exit(0) // On force l'arrêt propre du binaire
 	} else {
 		StartDailyUserCleanup()
 		// Lancer le serveur de socket Unix
 		if storage.IsServeur {
-			go serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire", "", nil, false)
+			// 3. Appel vers le serveur backend Vaultaire
+			if tools.IsDuckySessionActive() {
+
+			} else {
+				logs.Go("communication serveur", func() {
+					serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
+				})
+			}
 		}
+
+		// Transport des GPO. Le comportement est identique pour un client
+		// serveur et un client poste : seule la liste des groupes diffère côté
+		// serveur. Le premier cycle attend qu'une session mère soit disponible,
+		// donc l'appel n'a pas à être ordonné avec l'ouverture du tunnel.
+		gpo.Bootstrap()
+
+		// Synchronisation des groupes du domaine.
+		//
+		// Après gpo.Bootstrap et pour la même raison : la boucle attend
+		// elle-même une session utilisable, donc l'appel n'a pas à être
+		// ordonné avec l'ouverture du tunnel.
+		//
+		// Sans elle, l'agent poserait des appartenances dans des groupes qui
+		// n'existent pas sur la machine — le mécanisme du point 14 tourne à vide
+		// tant que son référentiel n'est pas là.
+		sshauth.BootstrapGroupes()
+
+		// Découverte des nœuds joignables. Sans elle, l'agent ne connaît que
+		// les serveurs de son fichier de configuration — et ajouter un core au
+		// cluster demanderait de repasser sur chaque machine du parc.
+		bootstrapDecouverte()
+
+		// Le service d'allocation d'identifiants AVANT le canal PAM.
+		//
+		// UnixSocketServer bloque : tout ce qui doit vivre à côté se lance avant.
+		//
+		// Ce service répond au module NSS pour un utilisateur du domaine encore
+		// inconnu. Sans lui, sshd refuse le compte avant même d'exécuter
+		// AuthorizedKeysCommand, et aucune première connexion n'est possible —
+		// sans la moindre trace, puisque rien de Vaultaire n'est exécuté.
+		pamcommunication.StartUIDAllocationServer()
+
 		pamcommunication.UnixSocketServer()
 	}
 

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Conformité GPO — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+    <h1>Conformité du parc</h1>
+
+    <p class="muted">
+      <strong>Deux questions distinctes.</strong>
+      L'<em>application</em> est le dernier rapport de l'agent : la politique
+      a-t-elle pu être posée ? La <em>conformité</em> est son dernier scan :
+      est-elle encore en place aujourd'hui ?
+      Une machine peut être « applied » et en dérive — elle a bien reçu la
+      politique, et quelqu'un a édité les fichiers depuis.
+    </p>
+
+    {{ if .Message }}<div class="alert alert-info">{{ .Message }}</div>{{ end }}
+
+    {{ if .Vide }}
+      <div class="alert alert-info">
+        Aucune machine à l'inventaire. Créez-en une avec <code>vlt create -c</code>,
+        puis installez l'agent : la conformité apparaîtra dès son premier rapport.
+      </div>
+    {{ else }}
+
+    {{ if .Resume }}<p><strong>{{ .Resume }}</strong></p>{{ end }}
+
+    <p>
+      {{ if .EcartsSeuls }}
+        <a class="btn btn-ghost" href="/admin/gpo/compliance">Tout le parc</a>
+        <span class="badge">écarts et machines muettes seulement</span>
+      {{ else }}
+        <a class="btn btn-ghost" href="/admin/gpo/compliance?ecarts=1">Écarts seulement</a>
+      {{ end }}
+    </p>
+
+    {{ if not .Lignes }}
+      <div class="alert alert-success">
+        Aucun écart de conformité, et aucune machine muette, sur les
+        {{ .Total }} ligne(s) suivie(s).
+      </div>
+    {{ else }}
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Machine</th>
+            <th>Portée</th>
+            <th>Utilisateur</th>
+            <th>Suivi</th>
+            <th>Application</th>
+            <th>Modules</th>
+            <th>Conformité</th>
+            <th>Vu</th>
+          </tr>
+        </thead>
+        <tbody>
+        {{ range .Lignes }}
+          <tr class="row-context"
+              data-href="/admin/gpo/compliance?machine={{ .ComputeurID }}"
+              data-label="Machine {{ .ComputeurID }}">
+            <td><a href="/admin/gpo/compliance?machine={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
+            <td>{{ .Scope }}</td>
+            <td>{{ if .TargetUser }}{{ .TargetUser }}{{ else }}—{{ end }}</td>
+            <td>
+              {{ if eq .Etat "à jour" }}<span class="badge">{{ .Etat }}</span>
+              {{ else }}<span class="badge badge-danger">{{ .Etat }}</span>{{ end }}
+            </td>
+            <td>{{ if .Status }}{{ .Status }}{{ else }}—{{ end }}</td>
+            <td>{{ .Modules }}</td>
+            <td>{{ .Conformite }}</td>
+            <td class="muted small">{{ .VuIlYA }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted small">
+      {{ len .Lignes }} ligne(s) sur {{ .Total }} suivie(s).
+      Le total est rappelé même en vue filtrée : « 3 machines en dérive » ne veut
+      rien dire sans savoir si le parc en compte 4 ou 4000.
+    </p>
+    {{ end }}
+    {{ end }}
+
+    <hr>
+    <p class="muted small">
+      <strong>« non vérifié » n'est pas « conforme ».</strong> Une machine que
+      personne n'a scannée affiche zéro écart parce que rien n'a été regardé.
+      De même, une machine muette figure dans la vue des écarts : ne pas savoir
+      est le cas qu'on veut le moins cacher.
+    </p>
+    <p class="muted small">
+      Le même état en ligne de commande : <code>vlt gpo status</code>,
+      <code>vlt gpo drift</code>, <code>vlt gpo status &lt;computeur_id&gt;</code>.
+    </p>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

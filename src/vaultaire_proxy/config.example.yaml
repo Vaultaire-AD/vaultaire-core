@@ -1,0 +1,26 @@
+# Configuration du proxy Vaultaire.
+#
+# Ce fichier est DÉPLOYABLE TEL QUEL sur plusieurs hôtes : il ne contient aucune
+# identité. Chaque proxy s'enrôle au premier démarrage et écrit la sienne dans
+# <keys>/client_software.yaml.
+
+# Cores à joindre, essayés dans l'ordre. Le premier qui répond gagne.
+servers:
+  - ip: "10.0.0.1"
+    port: 6666
+
+enrollment:
+  # Clé d'enrôlement de type vaultaire_proxy, créée sur le core :
+  #   vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
+  #
+  # Elle porte le TYPE du client : c'est elle qui décide de ce que le core
+  # laissera ce proxy émettre. Le proxy ne peut pas déclarer son type lui-même —
+  # sinon il suffirait de s'enrôler pour se donner les privilèges qu'on veut.
+  #
+  # Lue au PREMIER démarrage seulement. Une fois l'identité écrite, elle ne sert
+  # plus et peut être retirée du fichier.
+  key: "CHANGEZ-MOI"
+
+  # Nom lisible côté core, pour les journaux et l'affichage. Aucune valeur de
+  # sécurité : il n'entre dans aucune décision.
+  label: "proxy-preprod-01"

@@ -1,0 +1,426 @@
+/* ====================================================================
+ * vlt_picker — habillage du sélecteur d'entités
+ * ====================================================================
+ *
+ * Aucune couleur en dur : tout passe par les variables de app.css, qui sont
+ * redéfinies sous `body.dark`. Le thème sombre est donc obtenu sans une seule
+ * règle supplémentaire — et un futur thème le sera aussi.
+ *
+ * Règle à ne pas casser : le <select> natif n'est masqué que par
+ * `.vlt-picker-native`, une classe posée PAR LE JAVASCRIPT. Si le script ne
+ * s'exécute pas, la liste native reste visible et la page reste utilisable.
+ * Ne jamais masquer un select sur la seule foi de `[data-vlt-picker]`.
+ * ==================================================================== */
+
+.vlt-picker {
+  position: relative;
+  display: block;
+  width: 100%;
+  max-width: 400px;
+}
+
+/* --------------------------------------------------------------------
+ * Le <select> d'origine
+ * --------------------------------------------------------------------
+ * Transparent et haut d'un pixel, mais TOUJOURS AFFICHÉ (ni display:none,
+ * ni visibility:hidden). Chrome refuse de focaliser un contrôle invalide
+ * non affiché : un <select required> masqué ferait échouer la soumission
+ * en silence, avec pour seule trace une ligne de console. Ancré en bas du
+ * contrôle, la bulle de validation sort au bon endroit.
+ */
+.vlt-picker-native {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 100%;
+  height: 1px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* --------------------------------------------------------------------
+ * Le bouton
+ * -------------------------------------------------------------------- */
+
+.vlt-picker-control {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: 2.375rem;
+  padding: 0.4rem 0.6rem 0.4rem 0.75rem;
+  font-family: inherit;
+  font-size: 0.9375rem;
+  text-align: left;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: border-color var(--transition), box-shadow var(--transition);
+}
+
+.vlt-picker-control:hover:not(:disabled) { border-color: var(--border-strong); }
+
+.vlt-picker-control:focus-visible,
+.vlt-picker.is-open .vlt-picker-control {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+
+.vlt-picker-control:disabled {
+  cursor: not-allowed;
+  color: var(--text-tertiary);
+  background: var(--bg-subtle);
+}
+
+.vlt-picker-value {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.vlt-picker-single {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vlt-picker-placeholder { color: var(--text-tertiary); }
+
+.vlt-picker-caret {
+  flex: none;
+  font-size: 0.75rem;
+  line-height: 1;
+  color: var(--text-tertiary);
+  transition: transform var(--transition);
+}
+
+.vlt-picker.is-open .vlt-picker-caret { transform: rotate(180deg); }
+
+/* Jetons de la sélection multiple */
+.vlt-picker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  max-width: 100%;
+  padding: 0.1rem 0.2rem 0.1rem 0.45rem;
+  font-size: 0.8125rem;
+  line-height: 1.4;
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.vlt-picker-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vlt-picker-pill-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  font-size: 0.875rem;
+  line-height: 1;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.vlt-picker-pill-x:hover { background: rgba(127, 127, 127, 0.25); }
+
+.vlt-picker-more {
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+}
+
+/* --------------------------------------------------------------------
+ * Le panneau
+ * -------------------------------------------------------------------- */
+
+.vlt-picker-panel {
+  position: absolute;
+  z-index: 1500;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  max-height: 20rem;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+}
+
+/* Retourné vers le haut quand il n'y a pas la place en dessous ; la classe
+   est posée à l'ouverture, après mesure. */
+.vlt-picker.is-above .vlt-picker-panel {
+  top: auto;
+  bottom: calc(100% + 4px);
+}
+
+.vlt-picker-panel[hidden] { display: none; }
+
+.vlt-picker-search {
+  flex: none;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.vlt-picker-search[hidden] { display: none; }
+
+/* !important : app.css impose `width:100%; max-width:400px` à tout <input>.
+   Dans un panneau étroit la largeur maximale n'a pas de sens, et sans cette
+   surcharge le champ déborderait sur les panneaux larges. */
+.vlt-picker-input {
+  width: 100% !important;
+  max-width: none !important;
+  padding: 0.4rem 0.6rem !important;
+  font-size: 0.875rem !important;
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.vlt-picker-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: none !important;
+}
+
+/* Filtres */
+.vlt-picker-filters {
+  display: flex;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.vlt-picker-filters[hidden] { display: none; }
+
+.vlt-picker-chip {
+  padding: 0.15rem 0.5rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.vlt-picker-chip:hover { color: var(--text-primary); border-color: var(--border-strong); }
+
+.vlt-picker-chip.is-on {
+  color: var(--accent);
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+}
+
+/* Barre de sélection groupée */
+.vlt-picker-bulk {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.vlt-picker-bulk[hidden] { display: none; }
+
+.vlt-picker-count {
+  flex: 1;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.vlt-picker-bulk-btn {
+  padding: 0.15rem 0.45rem;
+  font-family: inherit;
+  font-size: 0.75rem;
+  color: var(--accent);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.vlt-picker-bulk-btn:hover { background: var(--accent-subtle); }
+
+/* --------------------------------------------------------------------
+ * La liste
+ * -------------------------------------------------------------------- */
+
+.vlt-picker-list {
+  flex: 1;
+  min-height: 0;
+  margin: 0;
+  padding: 0.25rem;
+  overflow-y: auto;
+  list-style: none;
+  overscroll-behavior: contain;
+}
+
+.vlt-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-primary);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+/* `is-active` suit le clavier, `:hover` la souris. Deux repères distincts :
+   la souris ne doit pas déplacer le curseur clavier, sinon un mouvement
+   involontaire change la cible d'un Entrée. */
+.vlt-picker-option:hover { background: var(--bg-subtle); }
+
+.vlt-picker-option.is-active {
+  background: var(--accent-subtle);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.vlt-picker-option.is-selected { font-weight: 500; }
+
+.vlt-picker-option.is-disabled {
+  color: var(--text-tertiary);
+  cursor: not-allowed;
+}
+
+.vlt-picker-option.is-disabled:hover { background: transparent; }
+
+/* Coche : carré en mode multiple, pastille en mode simple. Le mode est porté
+   par l'enveloppe, pas par la ligne. */
+.vlt-picker-check {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: 3px;
+  transition: background var(--transition), border-color var(--transition);
+}
+
+.vlt-picker:not(.vlt-picker--multiple) .vlt-picker-check { border-radius: 50%; }
+
+.vlt-picker-option.is-selected .vlt-picker-check {
+  background: var(--accent);
+  border-color: var(--accent);
+  /* Le chevron est dessiné en CSS : pas de police d'icônes à charger, et il
+     reste net à toute taille. */
+  background-image: linear-gradient(45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%),
+                    linear-gradient(-45deg, transparent 45%, #fff 45%, #fff 55%, transparent 55%);
+  background-size: 60% 2px, 60% 2px;
+  background-position: 12% 60%, 42% 60%;
+  background-repeat: no-repeat;
+}
+
+.vlt-picker:not(.vlt-picker--multiple) .vlt-picker-option.is-selected .vlt-picker-check {
+  background-image: none;
+  box-shadow: inset 0 0 0 3px var(--bg-elevated);
+}
+
+.vlt-picker-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vlt-picker-label mark {
+  padding: 0;
+  color: inherit;
+  font-weight: 600;
+  background: transparent;
+  border-bottom: 2px solid var(--accent);
+}
+
+.vlt-picker-hint {
+  flex: none;
+  font-size: 0.75rem;
+  color: var(--text-tertiary);
+}
+
+.vlt-picker-tags {
+  display: flex;
+  flex: none;
+  gap: 0.2rem;
+}
+
+.vlt-picker-tag {
+  padding: 0.05rem 0.35rem;
+  font-size: 0.6875rem;
+  color: var(--text-secondary);
+  background: var(--bg-subtle);
+  border-radius: 999px;
+}
+
+.vlt-picker-empty,
+.vlt-picker-foot {
+  padding: 0.6rem 0.5rem;
+  font-size: 0.8125rem;
+  color: var(--text-secondary);
+  text-align: center;
+}
+
+.vlt-picker-foot {
+  flex: none;
+  border-top: 1px solid var(--border);
+}
+
+.vlt-picker-foot[hidden] { display: none; }
+
+/* --------------------------------------------------------------------
+ * Écrans étroits
+ * -------------------------------------------------------------------- */
+
+@media (max-width: 640px) {
+  .vlt-picker { max-width: none; }
+  .vlt-picker-panel { max-height: 60vh; }
+  /* Cible tactile : 0.35rem de padding donne une ligne de 28px, sous le
+     minimum recommandé de 44px. */
+  .vlt-picker-option { padding: 0.6rem 0.5rem; }
+}
+
+/* --------------------------------------------------------------------
+ * Animations
+ * -------------------------------------------------------------------- */
+
+@media (prefers-reduced-motion: no-preference) {
+  .vlt-picker.is-open .vlt-picker-panel {
+    animation: vlt-picker-in 0.12s ease-out;
+  }
+  @keyframes vlt-picker-in {
+    from { opacity: 0; transform: translateY(-4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .vlt-picker.is-open.is-above .vlt-picker-panel {
+    animation-name: vlt-picker-in-up;
+  }
+  @keyframes vlt-picker-in-up {
+    from { opacity: 0; transform: translateY(4px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+}

@@ -6,6 +6,11 @@ $RepoRoot = Resolve-Path (Join-Path $PSScriptRoot "../..")
 
 Push-Location $RepoRoot
 try {
+    # Les binaires ne sont plus dans git : ils viennent d'une release.
+    if (-not (Test-Path "cmd/vaultaire_server/vaultaire_serveur")) {
+        throw "Aucun binaire dans cmd/. Sur l'hote Linux : ./deployments/pre-prod/docker-update.sh [--version X.Y.Z]"
+    }
+
     Write-Host "Building image (context: $RepoRoot)..."
     docker compose -f deployments/pre-prod/docker-compose.yml build --no-cache
 

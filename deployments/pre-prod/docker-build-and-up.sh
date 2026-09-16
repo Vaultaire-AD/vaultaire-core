@@ -6,6 +6,14 @@ set -e
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Les binaires ne sont plus dans git : sans release installée, le conteneur
+# démarrerait en boucle sur « binaire absent ».
+if [ ! -x cmd/vaultaire_server/vaultaire_serveur ]; then
+    echo "ERREUR : aucun binaire dans cmd/. Installez d'abord une release :" >&2
+    echo "         ./deployments/pre-prod/docker-update.sh [--version X.Y.Z]" >&2
+    exit 1
+fi
+
 echo "Building image (context: $REPO_ROOT)..."
 docker compose -f deployments/pre-prod/docker-compose.yml build --no-cache
 

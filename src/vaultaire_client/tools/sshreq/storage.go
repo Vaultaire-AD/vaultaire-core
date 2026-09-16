@@ -2,11 +2,12 @@ package sshreq
 
 import (
 	"sync"
-	"vaultaire_client/storage"
+	"vaultaire_client/pamstate"
 )
 
 var (
-	// On change chan string en chan storage.AuthResult
-	requests = map[string]chan storage.AuthResult{}
-	mu       sync.Mutex
+	// requests stocke les channels de réponse en attente, clés par nom d'utilisateur.
+	requests = make(map[string]chan pamstate.AuthResult)
+	// mu protège l'accès concurrent au dictionnaire requests.
+	mu sync.RWMutex
 )

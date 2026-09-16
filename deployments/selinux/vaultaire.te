@@ -1,0 +1,193 @@
+policy_module(vaultaire, 1.0.0)
+
+########################################################################
+#
+# Politique SELinux pour l'agent Vaultaire, son module NSS et ses modules PAM.
+#
+# ======================================================================
+# POURQUOI CETTE POLITIQUE EXISTE
+# ======================================================================
+#
+# Le module NSS ne faisait au depart aucun appel systeme : il calculait un UID
+# en memoire et rendait la main. SELinux n'avait donc rien a autoriser, et sa
+# presence passait inapercue.
+#
+# Il fait desormais trois choses :
+#
+#     fopen("/etc/vaultaire/uid.map")
+#     socket(AF_UNIX)
+#     connect("/run/vaultaire/public/uid.sock")
+#
+# Or un module NSS s'execute dans le contexte du processus qui le charge. Depuis
+# un shell root — unconfined_t — tout passe. Depuis sshd — sshd_t — SELinux
+# refuse, et sshd rend « Invalid user » sans qu'aucun journal Vaultaire
+# n'apparaisse, puisque rien de Vaultaire n'a pu s'executer.
+#
+# C'est precisement ce qui rend ce cas difficile : la commande de diagnostic
+# lancee a la main REUSSIT, pendant que le service ECHOUE.
+#
+# ======================================================================
+# POURQUOI ECRITE A LA MAIN PLUTOT QUE PAR audit2allow
+# ======================================================================
+#
+# audit2allow transcrit les refus observes en regles. Il ne sait rien de
+# l'intention, et cela produit deux defauts :
+#
+#   - il autorise ce qui a ete OBSERVE, donc rate ce qui n'a pas ete exerce
+#     pendant la collecte — le refus ressurgit plus tard, en production ;
+#
+#   - il propose parfois des regles bien plus larges que necessaire, du genre
+#     « allow sshd_t self:capability sys_admin », qui accordent beaucoup pour
+#     resoudre peu.
+#
+# Cette politique part de ce que le code FAIT, verifiable dans les sources.
+# La sortie d'audit2allow sert de comparaison : si elle demande quelque chose
+# qui n'est pas ici, c'est qu'un chemin a ete oublie — ou qu'elle exagere.
+#
+########################################################################
+
+require {
+	# nsswitch_domain est un ATTRIBUT de la politique de reference : il
+	# regroupe tous les domaines susceptibles de faire une resolution de nom —
+	# sshd_t, local_login_t, systemd_t, crond_t et bien d'autres.
+	#
+	# C'est le bon niveau de granularite. Un module NSS est charge dans
+	# n'importe quel processus qui appelle getpwnam ; enumerer les domaines un
+	# par un garantirait d'en oublier, et chaque oubli se manifesterait par une
+	# panne inexplicable dans un contexte particulier.
+	#
+	# C'est exactement le mecanisme qu'utilisent sssd et nslcd.
+	attribute nsswitch_domain;
+
+	type unconfined_service_t;
+	type sshd_t;
+	type local_login_t;
+
+	class sock_file { write getattr };
+	class unix_stream_socket connectto;
+	class dir { search getattr open read write add_name };
+	class file { read open getattr append create };
+}
+
+########################################################################
+# Types de fichiers
+########################################################################
+#
+# Des types DEDIES plutot que les types generiques du systeme.
+#
+# Etiqueter /etc/vaultaire en etc_t ferait passer nos fichiers pour de la
+# configuration systeme ordinaire : tout domaine autorise a lire etc_t y
+# accederait, y compris pour des raisons sans rapport. Un type propre limite
+# l'acces a ce que cette politique accorde explicitement, et rend l'intention
+# lisible dans les journaux.
+
+# /etc/vaultaire — la carte des identifiants.
+type vaultaire_conf_t;
+files_config_file(vaultaire_conf_t)
+
+# /run/vaultaire — les sockets. Contenu volatil, efface au redemarrage.
+type vaultaire_var_run_t;
+files_pid_file(vaultaire_var_run_t)
+
+# /var/log/vaultaire — journaux de l'agent ET des modules PAM.
+type vaultaire_log_t;
+logging_log_file(vaultaire_log_t)
+
+########################################################################
+# Ce dont tout domaine faisant du NSS a besoin
+########################################################################
+#
+# Ces regles couvrent la resolution des comptes du domaine, depuis n'importe
+# quel processus. C'est le coeur de la politique.
+
+# Lire la carte. En lecture SEULE : aucun domaine NSS n'a de raison d'y ecrire,
+# et l'ecriture est reservee a l'agent. Une entree forgee dans la carte serait
+# une identite forgee.
+allow nsswitch_domain vaultaire_conf_t:dir { search getattr open read };
+allow nsswitch_domain vaultaire_conf_t:file { read open getattr };
+
+# Traverser /run/vaultaire et /run/vaultaire/public pour atteindre le socket.
+allow nsswitch_domain vaultaire_var_run_t:dir { search getattr open read };
+
+# Ecrire dans le socket. « write » sur un sock_file est la permission qui
+# autorise a s'y connecter — le nom est trompeur, il ne s'agit pas d'ecrire
+# dans un fichier.
+#
+# getattr en plus : releve sur une machine reelle. Le module appelle lstat()
+# AVANT de se connecter, pour verifier que le socket appartient bien a root et
+# n'est pas un lien symbolique. Ce controle de securite a donc lui-meme besoin
+# d'une permission — il aurait echoue en silence sans cette ligne, et le module
+# aurait renonce a se connecter en croyant le socket suspect.
+allow nsswitch_domain vaultaire_var_run_t:sock_file { write getattr };
+
+# Et la permission d'aboutir jusqu'au processus qui ecoute.
+#
+# connectto cible le DOMAINE du serveur, pas le fichier. Les deux sont
+# necessaires : write sur le sock_file, connectto sur le domaine.
+#
+# unconfined_service_t est le domaine d'un service systemd dont le binaire n'a
+# pas d'etiquette dediee — le cas de l'agent aujourd'hui. Si vous lui donnez un
+# jour son propre domaine, c'est cette ligne qu'il faudra changer, et
+# contextes.txt (produit par collect.sh) vous dira lequel.
+allow nsswitch_domain unconfined_service_t:unix_stream_socket connectto;
+
+########################################################################
+# Ce dont les modules PAM ont besoin
+########################################################################
+#
+# Les modules PAM sont charges par sshd et par login. Ils font davantage que le
+# module NSS : ils parlent au canal d'authentification et journalisent.
+
+# Le canal PAM, dans le meme repertoire mais en 0600 root.
+allow sshd_t vaultaire_var_run_t:sock_file { write getattr };
+allow local_login_t vaultaire_var_run_t:sock_file { write getattr };
+allow sshd_t unconfined_service_t:unix_stream_socket connectto;
+allow local_login_t unconfined_service_t:unix_stream_socket connectto;
+
+# Le journal des modules PAM : /var/log/vaultaire/vaultaire_pam.log.
+#
+# append et non write : le module n'ecrit qu'a la fin du fichier. Accorder
+# l'ecriture pleine permettrait d'en reecrire le debut, donc d'effacer des
+# traces — ce qu'un module d'authentification n'a aucune raison de faire.
+allow sshd_t vaultaire_log_t:dir { search getattr open read add_name write };
+allow sshd_t vaultaire_log_t:file { append open getattr create };
+allow local_login_t vaultaire_log_t:dir { search getattr open read add_name write };
+allow local_login_t vaultaire_log_t:file { append open getattr create };
+
+########################################################################
+# Ce qui n'est PAS accorde ici, deliberement
+########################################################################
+#
+# - Aucune ecriture de nsswitch_domain vers vaultaire_conf_t. L'agent seul
+#   ecrit la carte.
+#
+# - Aucune permission de creation de compte local depuis les modules PAM
+#   (useradd, chpasswd, usermod). Ces appels partent depuis sshd_t et SELinux
+#   les encadre deja par la politique de reference, qui autorise sshd a gerer
+#   des comptes. S'ils apparaissent dans vos refus, ne les ajoutez pas ici sans
+#   reflechir : c'est le signe qu'une operation privilegiee se fait depuis un
+#   endroit inattendu.
+#
+# - AUCUNE regle pour /home/<user>/.ssh/authorized_keys, alors que des refus
+#   y ont ete releves :
+#
+#     denied { open } ... path="/home/admin@vaultaire.fr/.ssh/authorized_keys"
+#     tcontext=system_u:object_r:home_root_t
+#
+#   C'est un probleme d'ETIQUETAGE, pas de politique. Le fichier porte
+#   home_root_t — le type de /home lui-meme — parce que l'agent et les modules
+#   PAM le creent sans poser de contexte : il herite de son parent au lieu de
+#   recevoir ssh_home_t.
+#
+#   Ecrire « allow sshd_t home_root_t:file read » corrigerait le symptome et
+#   autoriserait du meme coup sshd a lire N'IMPORTE QUEL fichier depose
+#   directement dans /home, par n'importe qui. C'est exactement le genre de
+#   regle trop large qu'on reproche a audit2allow.
+#
+#   La correction est dans le code : restorecon apres creation. Voir
+#   install.sh, qui repare aussi les repertoires existants.
+#
+# - Aucun domaine dedie pour l'agent. Il en meriterait un — il tourne en root,
+#   ouvre le reseau, ecrit dans /etc et execute des commandes systeme — mais
+#   cela demande une transition de domaine et un jeu de regles nettement plus
+#   large. C'est une etape ulterieure, pas un prealable a la remise en service.
