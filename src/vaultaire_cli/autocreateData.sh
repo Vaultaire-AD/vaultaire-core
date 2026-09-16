@@ -1,3 +1,14 @@
+#!/usr/bin/env bash
+# Jeu de données de démonstration : groupes, utilisateurs, machines, permissions.
+#
+# VOLONTAIREMENT SANS `set -e`. Chaque ligne crée une entité, et rejouer le
+# script sur un annuaire déjà peuplé fait échouer les créations existantes —
+# « existe déjà » n'est pas une raison d'interrompre le peuplement des
+# suivantes. C'est le seul script du dépôt dans ce cas, et c'est pourquoi il
+# est dit ici.
+#
+# À n'exécuter que sur une base de test.
+
 #Create group
 
 vaultaire create -g "Finance_Group" finance.company.com

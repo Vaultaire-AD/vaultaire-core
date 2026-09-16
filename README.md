@@ -1,99 +1,174 @@
-# Vaultaire Core – Dépôt Développement / Préprod / Prod
+# Vaultaire Core
 
-Ce dépôt contient **le code source, les configurations et les outils de déploiement** de Vaultaire pour les environnements de développement, préproduction et production.  
-Il est destiné **aux développeurs, testeurs et partenaires techniques** connaissant déjà la solution.
+Annuaire et contrôleur de domaine pour parcs Linux : authentification centralisée,
+RBAC multi-domaines, LDAP(S), DNS, GPO, portail web et API REST.
 
----
-
-## 📂 Structure du dépôt
-
-```plaintext
-vaultaire-core/
-│
-├── cmd/                      # Binaries compilés du serveur et du client
-│   ├── vaultaire_server/      # Serveur principal Vaultaire
-│   └── vaultaire_client/      # CLI / client Vaultaire
-│
-├── src/                  # Code source Go principal
-│   ├── vaultaire_cli/        # Application CLI
-│   ├── vaultaire_client/     # Client réseau
-│   └── vaultaire_serveur/    # Serveur principal
-│
-├── web/                      # Interface web
-│   ├── templates/             # Templates HTML
-│   └── static/                # Fichiers statiques (CSS, JS, images)
-│
-├── deployments/              # Fichiers de déploiement
-│   ├── docker-compose.yml
-│   ├── dockerfile
-│   ├── dockerfile_debian
-│   └── config/                # Configs YAML, JSON...
-│
-├── docs/                     # Documentation technique interne
-│   ├── Group-Permission.md
-│   ├── SECURITY.md
-│   ├── Setup.md
-│   ├── Tableau_Protocole_Réseau.md
-│   ├── Version_History.md
-│   ├── bug.md
-│   ├── vaultaireLDAP.md
-│   └── legacy/                # Ancienne documentation (archivée)
-│
-├── images/                   # Logos et illustrations
-│
-├── LICENSE
-├── README.md
-└── go.mod / go.sum
-```
-
-## 🔗 Points d’entrée importants
-
-- **Configuration & Installation** : `docs/Setup.md`
-- **Commandes Serveur** : `docs/MAN.md`
-- **Historique des versions** : `docs/Version_History.md`
-- **Sécurité** : `docs/SECURITY.md`
-- **Protocoles Réseau** : `docs/Tableau_Protocole_Réseau.md`
+Ce dépôt contient **le code source, la documentation et les outils de déploiement**
+pour les environnements de développement, préproduction et production.
+Il s'adresse aux développeurs, testeurs et partenaires techniques connaissant déjà
+la solution.
 
 ---
 
-## 🛠 Branches & Workflow Git
 
-Le développement suit un modèle inspiré de **Gitflow** :
+> ⚠️ `cmd/` est un **répertoire de sortie**, pas du code, et il n'est **pas
+> versionné**. `auto-compil.sh` le remplit en local ; les binaires distribués
+> sont ceux des [releases GitHub](https://github.com/Vaultaire-AD/vaultaire-core/releases),
+> voir [`docs/exploitation/Releases.md`](./docs/exploitation/Releases.md).
 
-- `main` → **Production** (code stable uniquement)
-- `preprod` → **Préproduction** (tests finaux avant mise en prod)
-- `dev` → **Développement** (intégration continue des nouvelles fonctionnalités)
-- Branches de fonctionnalités : `feature/<nom>`
-- Branches de correctifs : `hotfix/<nom>`
-
----
-
-## ⚙️ Prérequis pour le développement
-
-- Go >= 1.20
-- Docker / Docker Compose
-- Accès à la base de données de test (MariaDB)
-- Clés API ou certificats internes si requis
+> ℹ️ Il n'y a **pas de `go.mod` à la racine** : chaque répertoire de `src/` est un
+> module Go autonome, avec sa propre directive `go`. `auto-compil.sh` les compile
+> l'un après l'autre.
 
 ---
 
-## 🚀 Lancer le projet en local
+## 🔗 Points d'entrée de la documentation
+
+| Sujet | Fichier |
+| --- | --- |
+| Index de la documentation | [`docs/README.md`](./docs/README.md) |
+| Installation & configuration | [`docs/Installation/Setup.md`](./docs/Installation/Setup.md) |
+| Prérequis | [`docs/Installation/Requirements.md`](./docs/Installation/Requirements.md) |
+| Manuel des commandes (`vlt`) | [`docs/Utilisation/MAN.md`](./docs/Utilisation/MAN.md) |
+| CLI distante par API | [`docs/Utilisation/vaultairectl.md`](./docs/Utilisation/vaultairectl.md) |
+| Groupes & permissions | [`docs/Utilisation/Group-Permission.md`](./docs/Utilisation/Group-Permission.md) |
+| Module LDAP | [`docs/Utilisation/vaultaireLDAP.md`](./docs/Utilisation/vaultaireLDAP.md) |
+| Protocole Ducky Network | [`docs/Developement/how it work/Protocole_Ducky.md`](./docs/Developement/how%20it%20work/Protocole_Ducky.md) |
+| GPO | [`docs/Developement/how it work/GPO.md`](./docs/Developement/how%20it%20work/GPO.md) |
+| Modèle de permissions | [`docs/Developement/how it work/Permissions_RBAC.md`](./docs/Developement/how%20it%20work/Permissions_RBAC.md) · [`Utilisation/Actions_et_Permissions.md`](./docs/Utilisation/Actions_et_Permissions.md) |
+| Schéma de base de données | [`docs/Developement/how it work/Base_de_donnees.md`](./docs/Developement/how%20it%20work/Base_de_donnees.md) |
+| Sécurité | [`docs/Securite/SECURITY.md`](./docs/Securite/SECURITY.md) |
+| SELinux, LDAPS/Keycloak | [`docs/exploitation/`](./docs/exploitation/) |
+| Historique des versions | [`docs/Version_History.md`](./docs/Version_History.md) — index ; détail dans [`docs/Version/`](./docs/Version/) |
+| Reste à faire | [`docs/Developement/TO-DO.md`](./docs/Developement/TO-DO.md) |
+
+---
+
+## ⚙️ Prérequis de développement
+
+| | |
+| --- | --- |
+| **Go** | **1.26** pour les sept modules, avec `toolchain go1.26.5`. Un Go local plus ancien suffit : `GOTOOLCHAIN=auto` — le défaut — télécharge le toolchain réclamé. La CI compile avec 1.26.5. |
+| **GCC + `libpam0g-dev`** | Pour les modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) |
+| **Docker / Docker Compose** | ≥ 24.x, pour les environnements dev et préprod |
+| **MariaDB** | Fournie par le compose ; sinon instance accessible |
+| **Git** | ≥ 2.30 |
+
+Cibles de déploiement : **Linux** (Debian 11+, Ubuntu 20.04+, Rocky/CentOS 8+).
+Le développement depuis Windows se fait via **WSL** — `auto-compil.sh` pointe sur
+le dépôt monté sous `/mnt/c/...`.
+
+---
+
+## 🚀 Démarrage
+
+### Compiler
 
 ```bash
-# Cloner le dépôt
-git clone git@github.com:Vaultaire-AD/vaultaire-core.git
-cd vaultaire-core
+./auto-compil.sh
+```
 
-# Lancer en mode développement
-.\deployments\pre-prod\docker-build-and-up.ps1
-## ou pour linux
-./deployments/pre-prod/docker-build-and-up.sh 
+La racine du dépôt est **déduite de l'emplacement du script** : il fonctionne
+depuis n'importe quel répertoire et sur n'importe quelle machine. `VAULTAIRE_ROOT`
+permet de la désigner autrement, et le script refuse une racine qui ne contient
+pas `src/vaultaire_serveur` — sans ce contrôle, une valeur erronée ferait boucler
+sur zéro module et annoncer une compilation réussie sans avoir rien construit.
+
+Le script vérifie les directives `go` des sept `go.mod`, refuse les `replace`
+vers un chemin absolu, compile les binaires dans `cmd/` et construit les modules
+PAM/NSS. La CI de release utilise le **même script**, avec `VAULTAIRE_VERSION`
+et `VAULTAIRE_BUILD_DIR`.
+
+### Publier une version
+
+Fusionner une PR `preprod` → `main` : la CI publie `vX.Y.Z` (patch
+incrémenté automatiquement, série lue dans le fichier `VERSION`). Détail dans
+[`docs/exploitation/Releases.md`](./docs/exploitation/Releases.md).
+
+### Lancer la pile préprod (serveur + MariaDB + Keycloak)
+
+```bash
+./deployments/pre-prod/docker-update.sh                  # installe la dernière release et démarre
+./deployments/pre-prod/docker-update.sh --version 2.1.3  # ou une version précise
+```
+
+### Environnement de développement
+
+```bash
+./deployments/dev/up.sh
+```
+
+### Ports exposés par le serveur central
+
+| Port | Service |
+| --- | --- |
+| 6666 | Ducky Network (clients, proxies) |
+| 4443 | Portail web (HTTPS) |
+| 6643 | API REST (HTTPS) |
+| 389 / 636 | LDAP / LDAPS |
+| 3306 | MariaDB (compose) |
+| 8080 | Keycloak (compose, optionnel) |
+
+Configuration de référence : [`deployments/configs/serveur_conf.yaml`](./deployments/configs/serveur_conf.yaml).
+
+---
+
+## 🛠 Branches & workflow Git
+
+Modèle inspiré de **Gitflow** :
+
+- `main` → production, code stable uniquement
+- `preprod` → tests finaux avant mise en production
+- `dev` → intégration continue
+- `feature/<description>-<numéro-issue>` → nouvelles fonctionnalités
+- `hotfix/<description>-<numéro-issue>` → correctifs
+
+`./repo_manage.sh` crée et fusionne les branches en respectant cette convention
+et refuse d'écrire directement sur les branches protégées.
+
+La CI ([`.github/workflows/dev.yaml`](./.github/workflows/dev.yaml)) exécute lint,
+format et audit de sécurité sur `dev`, à chaque push et pull request, plus un
+passage hebdomadaire.
+
+---
+
+## ↩️ Fins de ligne
+
+Le dépôt est normalisé en **LF**, dans l'historique comme dans la copie de
+travail, y compris sous Windows : tout ce qui est produit ici s'exécute sous
+Linux, et un `\r` en fin de shebang suffit à casser un script shell ou un
+entrypoint Docker. Les règles sont dans [`.gitattributes`](./.gitattributes) ;
+seul `*.ps1` reste en CRLF.
+
+Après un `git pull` qui apporte ce fichier, une fois pour toutes :
+
+```bash
+git add --renormalize .
+git status          # ne doit lister que de vraies modifications
 ```
 
 ---
 
-## 📝 Notes
+## 📝 Conventions
 
-- ❌ Pas de binaires dans Git : compiler via go build ou CI/CD.
-- 📂 Respecter la structure : toute nouvelle fonctionnalité doit être intégrée dans src/ avec tests.
-- 🗒️ Documenter vos changements : mise à jour de docs/Version_History.md obligatoire.
+- ❌ **Pas de binaires dans Git.** En local, `auto-compil.sh` les produit dans
+  `cmd/` (ignoré) ; pour la préprod, ils viennent des releases GitHub.
+- 📂 **Respecter la structure** : toute nouvelle fonctionnalité vit dans `src/`,
+  avec ses tests.
+- 🗒️ **Documenter les changements** : consigner dans le fichier de la version en
+  cours, `docs/Version/<majeure>/<mineure>.md`. Les nouvelles entrées vont **en
+  haut**.
+- 🔁 **Modifier le portail web dans `web_packet/`**, seule arborescence des
+  gabarits.
+- 🏷️ **Changer de série** (2.1 → 2.2) : modifier `VERSION` et la valeur de repli
+  `var Version` des trois paquets `version`, dans la PR qui part vers `main`.
+- ✅ Une tâche terminée se déplace de `docs/Developement/TO-DO.md` vers
+  `docs/Developement/DO/<version>/`.
+
+Détail dans [`CONTRIBUTING.MD`](./CONTRIBUTING.MD).
+
+---
+
+## 📬 Contact
+
+**contact@vaultaire.fr**

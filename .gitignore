@@ -4,7 +4,8 @@
 /vaultaire_serveur/*
 /vaultaire_client
 /vaultaire_client/*
-
+/cowork
+/cowork/*
 # Site vitrine (optionnel : retirer cette ligne pour versionner publicweb)
 /src/publicweb
 
@@ -14,6 +15,23 @@ build/
 *.exe
 *.out
 *.o
+
+# ------------------------------------------------------------------
+# Binaires : plus JAMAIS dans git
+# ------------------------------------------------------------------
+# cmd/ est la sortie de ./auto-compil.sh pour le poste de développement (le
+# compose de dev la monte). Les binaires distribués sont les assets des
+# releases GitHub, produits par .github/workflows/release.yaml, et la
+# préproduction les télécharge.
+#
+# Ils ont été versionnés jusqu'en 2.1 : ~18 Mo par commit pour le seul serveur,
+# un dépôt de près de 800 Mo. Pour dégonfler l'historique :
+# automatisation/purge-binaires-historique.sh
+/cmd/
+
+# Modules PAM compilés à côté de leurs sources
+/src/vaultaire_client/pam_module/*.so
+/src/vaultaire_client/pam_module/*.so.*
 
 # Logs
 *.log

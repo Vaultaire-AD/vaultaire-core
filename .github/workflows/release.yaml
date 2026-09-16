@@ -1,0 +1,225 @@
+name: "🚀 Release - preprod → main"
+
+# ====================================================================
+# Publication d'une release à chaque passage de preprod vers main
+# ====================================================================
+#
+# Déclencheur : une PR preprod → main FUSIONNÉE. Une PR fermée sans fusion, ou
+# venant d'une autre branche, ne publie rien. workflow_dispatch permet de
+# relancer à la main, depuis main uniquement (par exemple après l'échec d'une
+# étape).
+#
+# Numérotation : incrémentale, pilotée par le fichier VERSION à la racine.
+#   VERSION contient « MAJEURE.MINEURE » (ex. 2.1)
+#   la CI cherche le plus grand tag v2.1.N et publie v2.1.(N+1) — v2.1.0 s'il
+#   n'y en a aucun. Passer en 2.2 = modifier VERSION dans la PR.
+#
+# Rétention : seules les KEEP_RELEASES dernières releases (et leurs tags) sont
+# gardées. Les binaires ne vivent plus dans git (voir .gitignore).
+#
+# Ce workflow ne touche pas à dev.yaml : les audits restent là-bas.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Deux fusions rapprochées ne doivent pas calculer le même numéro.
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26.5"
+  KEEP_RELEASES: "5"
+
+jobs:
+
+  # --------------------------------------------------------------------
+  # 1. Numéro de version
+  # --------------------------------------------------------------------
+  version:
+    name: "🏷️ Calcul de la version"
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.pull_request.merged == true &&
+       github.event.pull_request.head.ref == 'preprod')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.calc.outputs.version }}
+      tag: ${{ steps.calc.outputs.tag }}
+      sha: ${{ steps.calc.outputs.sha }}
+    steps:
+      # Sur une PR fermée, GITHUB_SHA désigne la ref de merge de la PR, pas le
+      # commit réellement arrivé sur main : on prend merge_commit_sha.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Calcul
+        id: calc
+        run: |
+          set -euo pipefail
+          SERIE="$(tr -d ' \r\n' < VERSION)"
+          if ! [[ "$SERIE" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "::error file=VERSION::VERSION doit contenir MAJEURE.MINEURE (ex. 2.1), reçu « $SERIE »"
+            exit 1
+          fi
+
+          git fetch --tags --force --quiet
+          DERNIER="$(git tag --list "v${SERIE}.*" \
+            | sed -nE "s/^v${SERIE//./\\.}\.([0-9]+)$/\1/p" \
+            | sort -n | tail -1)"
+          if [ -z "$DERNIER" ]; then PATCH=0; else PATCH=$((DERNIER + 1)); fi
+
+          VERSION="${SERIE}.${PATCH}"
+          echo "version=$VERSION"                 >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION"                    >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)"        >> "$GITHUB_OUTPUT"
+          echo "### 🏷️ Release v$VERSION" >> "$GITHUB_STEP_SUMMARY"
+
+          # Garde-fou : la valeur de repli écrite dans le code doit suivre la
+          # série. Sinon un build local annoncerait une autre version.
+          for f in src/vaultaire_serveur/core/version/version.go \
+                   src/vaultaire_client/version/version.go \
+                   src/vaultaire_proxy/version/version.go; do
+            CODE="$(sed -nE 's/^var Version = "([0-9]+\.[0-9]+)\.[0-9]+"/\1/p' "$f")"
+            if [ "$CODE" != "$SERIE" ]; then
+              echo "::warning file=$f::Version du code ($CODE) ≠ VERSION ($SERIE) — les builds locaux annonceront l'ancienne série"
+            fi
+          done
+
+  # --------------------------------------------------------------------
+  # 2. Compilation — sur Rocky Linux 9, la cible
+  # --------------------------------------------------------------------
+  # Compiler sur ubuntu-latest lierait les binaires et les modules PAM à une
+  # glibc plus récente que celle de Rocky 9 : ils refuseraient de se charger
+  # sur les machines du parc.
+  build:
+    name: "🛠️ Compilation (Rocky 9)"
+    needs: version
+    runs-on: ubuntu-latest
+    container: rockylinux:9
+    env:
+      VAULTAIRE_VERSION: ${{ needs.version.outputs.version }}
+      TAG: ${{ needs.version.outputs.tag }}
+    steps:
+      - name: Dépendances de compilation
+        run: |
+          dnf install -y --setopt=install_weak_deps=False \
+            git gcc tar gzip findutils which \
+            pam-devel libcurl-devel libxcrypt-devel
+          dnf clean all
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+          fetch-depth: 0
+
+      # Le conteneur tourne en root, le dépôt appartient à un autre UID :
+      # sans cela, git refuse de lire le dépôt et le commit injecté vaut « dev ».
+      - name: git safe.directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - name: Compilation
+        env:
+          VAULTAIRE_BUILD_DIR: ${{ github.workspace }}/dist/build
+          GOTOOLCHAIN: local
+        run: ./auto-compil.sh
+
+      # Une archive par composant : on ne déploie pas un proxy avec le serveur.
+      - name: Paquets
+        run: |
+          set -euo pipefail
+          B=dist/build
+          O=dist/release
+          mkdir -p "$O"
+          paquet() {
+            local nom="$1"; shift
+            local tmp="dist/pkg/${nom}"
+            mkdir -p "$tmp"
+            cp -a "$@" "$tmp/"
+            printf '%s\n' "$VAULTAIRE_VERSION" > "$tmp/VERSION"
+            tar -C dist/pkg -czf "$O/${nom}-${TAG}-linux-amd64.tar.gz" "$nom"
+          }
+          paquet vaultaire_server "$B/vaultaire_server/vaultaire_serveur" "$B/vaultaire_server/vaultaire_cli"
+          paquet vaultaire_client "$B"/vaultaire_client/*
+          paquet vaultaire_ctl    "$B/vaultaire_ctl/vaultaire_ctl"
+          paquet vaultaire_proxy  "$B"/vaultaire_proxy/*
+          (cd "$O" && sha256sum *.tar.gz > SHA256SUMS)
+          cat "$O/SHA256SUMS"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ needs.version.outputs.tag }}
+          path: dist/release/*
+          retention-days: 3
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------
+  # 3. Publication et ménage
+  # --------------------------------------------------------------------
+  publish:
+    name: "📦 Publication"
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: ${{ needs.version.outputs.tag }}
+      SHA: ${{ needs.version.outputs.sha }}
+      # Passés par l'environnement, jamais interpolés dans le script : un titre
+      # de PR contenant « $(...) » serait sinon exécuté.
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-${{ needs.version.outputs.tag }}
+          path: release
+
+      - name: Création de la release
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::La release $TAG existe déjà — rien n'est écrasé."
+            exit 1
+          fi
+          if [ -n "${PR_NUMBER:-}" ]; then
+            NOTES="Fusion preprod → main : PR #${PR_NUMBER} — ${PR_TITLE}"
+          else
+            NOTES="Publication manuelle"
+          fi
+          gh release create "$TAG" release/* \
+            --target "$SHA" \
+            --title "Vaultaire $TAG" \
+            --notes "$NOTES" \
+            --generate-notes \
+            --latest
+
+      # Garde les KEEP_RELEASES plus récentes, supprime les autres ET leur tag.
+      # Seuls les tags vX.Y.Z sont concernés : une release nommée autrement,
+      # créée à la main, n'est jamais touchée.
+      - name: Suppression des anciennes releases
+        run: |
+          set -euo pipefail
+          gh release list --limit 200 --json tagName,createdAt \
+            --jq '[.[] | select(.tagName | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$"))]
+                  | sort_by(.createdAt) | reverse
+                  | .['"$KEEP_RELEASES"':] | .[].tagName' \
+          | while read -r ancien; do
+              echo "🗑️  $ancien"
+              gh release delete "$ancien" --cleanup-tag --yes
+            done

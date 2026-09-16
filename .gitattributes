@@ -1,0 +1,100 @@
+# ------------------------------------------------------------------
+# Fins de ligne — Linux d'abord
+# ------------------------------------------------------------------
+# Tout ce que ce dépôt produit s'exécute sous Linux : le serveur, l'agent, les
+# modules PAM/NSS chargés par sshd, les entrypoints Docker, les politiques
+# SELinux. Le dépôt et la copie de travail sont donc en LF, y compris sur
+# Windows — auto-compil.sh est lancé depuis WSL et lit les fichiers du disque
+# Windows tels quels.
+#
+# Sans ce fichier, un Git for Windows avec core.autocrlf=true (le défaut de
+# l'installateur) réécrit tout en CRLF au checkout. Conséquences observées :
+#
+#   - `git diff` annonce 609 fichiers modifiés là où 38 le sont réellement,
+#     ce qui rend une relecture impossible ;
+#   - un script shell en CRLF échoue à l'exécution sur « \r » collé à la fin du
+#     shebang : /bin/bash^M: bad interpreter: No such file or directory ;
+#   - un Dockerfile ou un entrypoint en CRLF produit la même erreur dans
+#     l'image, à l'exécution seulement.
+#
+# `eol=lf` s'applique au checkout, `text=auto` au commit. Les deux sont
+# nécessaires : text=auto seul laisse core.autocrlf décider de la copie locale.
+* text=auto eol=lf
+
+# ------------------------------------------------------------------
+# Exécutable par un interpréteur Unix — le LF n'est pas négociable
+# ------------------------------------------------------------------
+*.sh            text eol=lf
+*.go            text eol=lf
+*.c             text eol=lf
+*.h             text eol=lf
+*.sql           text eol=lf
+*.yaml          text eol=lf
+*.yml           text eol=lf
+*.te            text eol=lf
+*.fc            text eol=lf
+*.pem           text eol=lf
+Dockerfile      text eol=lf
+dockerfile      text eol=lf
+Dockerfile.*    text eol=lf
+entrypoint.sh   text eol=lf
+
+# Clés SSH de démonstration : un CRLF dans un fichier de clé le rend illisible
+# par OpenSSH, sans message explicite.
+deployments/configs/demo_admin_key      text eol=lf
+deployments/configs/demo_admin_key.pub  text eol=lf
+
+# Documentation et interface web : LF par cohérence, aucune contrainte technique.
+*.md            text eol=lf
+*.MD            text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+*.json          text eol=lf
+*.svg           text eol=lf
+LICENSE         text eol=lf
+
+# ------------------------------------------------------------------
+# Seule exception : PowerShell
+# ------------------------------------------------------------------
+# Windows PowerShell 5.1 tolère mal les scripts en LF sur les blocs multilignes.
+# Un seul fichier est concerné dans tout le dépôt.
+*.ps1           text eol=crlf
+
+# ------------------------------------------------------------------
+# Binaires — ne jamais convertir, ne jamais diffuser en diff
+# ------------------------------------------------------------------
+# `text=auto` détecte la plupart des binaires par heuristique, mais une
+# heuristique se trompe : un .so dont les premiers kilo-octets ne contiennent
+# aucun octet nul serait converti, donc corrompu. Les artefacts suivis sont
+# déclarés explicitement.
+#
+# (cmd/ et les .so sont désormais dans .gitignore ; les fichiers déjà suivis le
+# restent — voir deployments/pre-prod/README.md pour les détacher.)
+*.so                                        binary
+*.so.*                                      binary
+*.odt                                       binary
+*.png                                       binary
+*.jpg                                       binary
+*.jpeg                                      binary
+*.gif                                       binary
+*.ico                                       binary
+*.pdf                                       binary
+cmd/vaultaire_server/vaultaire_serveur      binary
+cmd/vaultaire_server/vaultaire_cli          binary
+cmd/vaultaire_client/vaultaire_client       binary
+cmd/vaultaire_ctl/vaultaire_ctl             binary
+cmd/vaultaire_proxy/vaultaire_proxy         binary
+
+# ------------------------------------------------------------------
+# Lisibilité des diffs
+# ------------------------------------------------------------------
+*.go            diff=golang
+*.c             diff=cpp
+*.h             diff=cpp
+*.html          diff=html
+*.md            diff=markdown
+
+# Le fichier .odt de docs/legacy/ est archivé : l'exclure des recherches évite
+# de polluer les résultats de `git grep` avec du XML compressé.
+docs/legacy/*.odt   -diff

@@ -1,0 +1,99 @@
+# Proxy Vaultaire — pile autonome.
+#
+# Le proxy n'a besoin que de DEUX choses : l'adresse du core, et une clé
+# d'enrôlement. Les deux se donnent ici, en variables. Aucun fichier à créer.
+#
+#   1. sur le core :  vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
+#   2. sur l'hôte  :  ./deployments/pre-prod/docker-update.sh   (binaire de la release)
+#   3. ici         :  renseigner VAULTAIRE_IP_CORE et VAULTAIRE_ENROLL_KEY ci-dessous
+#   4.                docker compose up -d
+#   5. sur le core :  vlt client list   -> le proxy doit apparaître
+#
+# Mise à jour :  ./deployments/pre-prod/docker-update.sh — il redémarre aussi le proxy
+
+networks:
+  # externe: true suppose que le core tourne sur la même machine et que son
+  # réseau existe déjà. Sur une machine distincte — le cas normal pour un
+  # proxy —, commentez ce bloc, décommentez celui du dessous, et mettez
+  # l'adresse routable du core dans VAULTAIRE_IP_CORE.
+  Ducky-network:
+    external: true
+    name: pre-prod_Ducky-network
+
+  # proxy-network:
+  #   driver: bridge
+
+volumes:
+  # Ce volume porte l'IDENTITÉ du proxy : client_software.yaml, sa clé privée,
+  # sa clé publique et celle du core.
+  #
+  # `docker compose down -v` force un réenrôlement complet et consomme une
+  # utilisation de la clé d'enrôlement. Répété, il épuise le quota et laisse le
+  # proxy dehors, avec un message qui ne dit pas que la cause est là.
+  # Préférez `down` seul.
+  vlt_proxy_keys:
+
+services:
+  vlt-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vlt-proxy:latest
+    container_name: vlt-proxy
+    restart: unless-stopped
+
+    environment:
+      - TZ=Europe/Paris
+
+      # Adresse du core. Le port vaut 6666 par défaut, on peut donc écrire
+      # simplement « vaultaire-ad ». Plusieurs cores : séparés par des virgules,
+      # essayés dans l'ordre.
+      - VAULTAIRE_IP_CORE=vaultaire-ad:6666
+
+      # Clé d'enrôlement, créée sur le core :
+      #   vlt enroll create --type vaultaire_proxy --uses 5 --expires 24h
+      #
+      # Elle porte le TYPE du client : c'est elle qui décide de ce que le core
+      # laissera ce proxy émettre. Le proxy ne peut pas déclarer son type
+      # lui-même — sinon il suffirait de s'enrôler pour se donner les
+      # privilèges qu'on veut.
+      #
+      # Lue au PREMIER démarrage seulement. Une fois l'identité écrite dans le
+      # volume, elle ne sert plus.
+      - VAULTAIRE_ENROLL_KEY=VLT-ENR-4a8954a08cf53bc79b246fa710eadf5f
+
+      # Nom lisible côté core, pour les journaux et l'affichage. Aucune valeur
+      # de sécurité : il n'entre dans aucune décision.
+      - VAULTAIRE_ENROLL_LABEL=proxy-preprod-01
+
+    volumes:
+      # Binaire, en lecture seule. Le conteneur ne doit pas pouvoir réécrire une
+      # source de l'hôte : un binaire modifié depuis l'intérieur serait ensuite
+      # committé sans qu'on comprenne d'où il vient.
+      #
+      # Il doit être exécutable par l'UID 10001 — docker-update.sh l'installe
+      # en 0755 depuis la release. L'entrypoint le vérifie.
+      - ../../../cmd/vaultaire_proxy:/opt/vaultaire/bin:ro
+      # Identité, en écriture. Seul endroit où le proxy écrit.
+      - vlt_proxy_keys:/var/lib/vaultaire_proxy/keys
+      # Configuration par fichier, si vous préférez aux variables. Les variables
+      # l'emportent quand les deux sont présentes.
+      # - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
+
+    # Cette version n'ouvre que des connexions SORTANTES vers le core. Les ports
+    # d'écoute seront à publier quand la répartition de charge arrivera.
+    # ports:
+    #   - "389:389"
+    #   - "8443:8443"
+
+    networks:
+      - Ducky-network
+
+    stop_signal: SIGTERM
+    stop_grace_period: 15s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

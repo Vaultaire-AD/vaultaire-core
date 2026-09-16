@@ -1,0 +1,317 @@
+// Package clienttype déclare les types de programmes qui peuvent se connecter au
+// core, et ce que chacun a le droit d'émettre sur le réseau Ducky.
+//
+// # Deux familles
+//
+// Un client BASIC est un agent : il représente une machine du parc. Il est créé
+// d'abord sur le core (`vlt create`), qui génère sa paire de clés, puis installé
+// sur la machine avec sa configuration.
+//
+// Un client SERVICE est une extension : il ajoute une fonction au cluster. Il
+// s'enrôle seul à sa première connexion, avec une clé d'enrôlement, et génère sa
+// propre paire — la clé privée ne quitte jamais son hôte.
+//
+// # Pourquoi ce catalogue est du code et pas de la donnée
+//
+// Un type détermine quelles trames un programme peut émettre : c'est une
+// frontière de privilège. Éditable depuis une interface d'administration, elle
+// permettrait à un administrateur d'accorder à un type des catégories que le
+// code n'a jamais prévu de lui voir utiliser.
+//
+// C'est le même partage que pour les GPO : la structure est du code, les valeurs
+// sont en base.
+//
+// # Granularité à la sous-trame
+//
+// Les droits ne portent pas sur la catégorie mais sur la trame complète, en
+// « CC_SS ». L'interface web utilise la catégorie 02 pour s'authentifier, mais
+// n'a rien à faire de 02_11, 02_12 et 02_13, qui sont l'inventaire matériel
+// d'une machine — elle n'a ni processeur ni mémoire à déclarer.
+//
+// La liste est donc exhaustive, et c'est volontaire : une sous-trame ajoutée au
+// protocole n'est émissible par personne tant qu'elle n'a pas été déclarée ici.
+// Un oubli de mise à jour produit un refus visible, jamais une ouverture
+// silencieuse.
+package clienttype
+
+import (
+	"fmt"
+	"sort"
+	"strings"
+)
+
+// Family distingue un agent de machine d'un service du cluster.
+type Family string
+
+const (
+	// FamilyAgent : créé sur le core, représente une machine du parc.
+	FamilyAgent Family = "agent"
+	// FamilyService : s'enrôle seul, ajoute une fonction au cluster.
+	FamilyService Family = "service"
+)
+
+// Definition décrit un type de programme.
+type Definition struct {
+	Name        string
+	Label       string
+	Description string
+	Family      Family
+
+	// Frames énumère les trames que ce type peut ÉMETTRE, en « CC_SS ».
+	Frames []string
+
+	// AssertsUser autorise le programme à déclarer agir au nom d'un utilisateur
+	// qu'il a lui-même authentifié.
+	//
+	// C'est le privilège le plus lourd du catalogue. Un programme qui le porte
+	// peut agir au nom de n'importe quel compte : le RBAC est évalué sur
+	// l'identité déclarée, donc il ne peut rien faire qu'aucun utilisateur ne
+	// pourrait faire, mais il choisit lequel. Sa compromission est de la même
+	// gravité que celle d'un portail d'authentification.
+	AssertsUser bool
+}
+
+// Noms des types. Ils sont écrits tels quels dans id_logiciels.logiciel_type.
+//
+// LE CORE N'EST PAS DANS CE CATALOGUE, et ne peut pas y être. C'est lui qui juge
+// la légitimité des trames qu'il reçoit en fonction du type de leur émetteur :
+// il ne peut pas se juger lui-même. Il n'est d'ailleurs jamais enregistré comme
+// client — GenerateClientSoftware n'est appelé que pour créer un agent, et
+// l'enrôlement que pour créer un service.
+const (
+	Client = "vaultaire_client"
+	Proxy  = "vaultaire_proxy"
+	Web    = "vaultaire_web"
+)
+
+var catalogue = []Definition{
+	{
+		Name:   Client,
+		Label:  "Agent Vaultaire",
+		Family: FamilyAgent,
+		Description: "Agent installé sur une machine du parc. Authentifie les " +
+			"utilisateurs, tire ses GPO et applique les révocations.",
+
+		// Liste relevée sur ce que l'agent ÉMET RÉELLEMENT
+		// (src/vaultaire_client), et non sur la table du protocole, qui décrit
+		// aussi des trames restées à l'état d'intention.
+		//
+		// Le drapeau `isServeur` d'un client ne change rien ici : c'est le même
+		// binaire, qui émet les mêmes trames et se contente d'ouvrir en plus un
+		// tunnel machine. Une machine serveur n'est pas plus digne de confiance
+		// qu'un poste, elle a seulement plus de tâches — ce n'est donc pas une
+		// frontière de privilège et ça n'a rien à faire dans ce catalogue.
+		Frames: []string{
+			"01_01",
+			"02_01", "02_03", "02_05", "02_12",
+			// 03_08 : demande de synchronisation des groupes du domaine.
+			// N'est accordée qu'à l'agent — un service du cluster n'a pas de
+			// /etc/group à tenir, et la liste des groupes d'un domaine est une
+			// information de structure.
+			"03_01", "03_04", "03_06", "03_08",
+			// 04_03 : demander la liste des nœuds joignables.
+			//
+			// C'est une LECTURE, et elle ne révèle que ce que l'agent doit
+			// pouvoir joindre — un nœud retiré de la rotation n'y figure pas.
+			// 04_01 et 04_07 ne sont PAS accordées : un agent est une machine du
+			// parc, pas un nœud du cluster, et lui laisser s'enregistrer comme
+			// tel le ferait apparaître dans la liste servie aux autres.
+			"04_03",
+			"05_01", "05_05", "05_09", "05_12", "05_15",
+			"06_02", "06_03", "06_04",
+		},
+	},
+	{
+		Name:   Proxy,
+		Label:  "Proxy",
+		Family: FamilyService,
+		Description: "Répartition de charge et découverte de service. " +
+			"N'authentifie personne et ne reçoit aucune politique.",
+
+		// Relevé sur ce que le proxy ÉMET RÉELLEMENT — c'est-à-dire sur le
+		// paquet ducky-network-sdk-service, dont il tire tout son réseau.
+		//
+		// La séquence de connexion 01 puis 02 est COMMUNE à tous les
+		// programmes, services compris. La version antérieure de cette liste
+		// n'accordait que 01 et 04 : le proxy s'enrôlait, authentifiait le
+		// serveur, puis se faisait fermer la connexion sur son 02_01. Il ne
+		// pouvait donc jamais ouvrir de session.
+		//
+		// 02_12 est indispensable : le core répond 02_11 à tout programme qui
+		// s'authentifie sous le compte de service, et attend l'inventaire en
+		// retour. Le refuser ferme la connexion juste après l'authentification.
+		//
+		// La catégorie 04 est désormais ÉMISE — c'est ce qui débloque le
+		// proxy, qui s'enrôlait puis attendait un signal que personne
+		// n'envoyait. Quatre trames, et pas une de plus :
+		//
+		//   04_01  s'enregistrer dans cluster_nodes au démarrage ;
+		//   04_07  battre, pour ne pas être marqué hors ligne ;
+		//   04_05  remonter ses métriques, pour que le tri en tienne compte ;
+		//   04_03  trouver les cores vers qui relayer.
+		//
+		// 04_09/04_12/04_14 restent à l'interface web : ce sont les trames des
+		// clients SERVICE, qui déclarent une fonction. Le proxy déclare une
+		// machine — c'est 04_01, qu'il a. Lui donner les deux jeux le ferait
+		// exister deux fois dans le cluster, sous deux identités.
+		Frames: []string{
+			"01_01", "01_05", "01_07",
+			"02_01", "02_03", "02_05", "02_12",
+			"04_01", "04_03", "04_05", "04_07",
+		},
+	},
+	{
+		Name:   Web,
+		Label:  "Interface web",
+		Family: FamilyService,
+		Description: "Interface d'administration. Authentifie les " +
+			"administrateurs et relaie leurs commandes au core.",
+		// Même socle de connexion que le proxy : 01 puis 02, 02_12 compris.
+		//
+		// L'interface web n'a ni processeur ni mémoire à déclarer, et l'idée
+		// première était de lui refuser l'inventaire. Mais le core répond 02_11
+		// à tout programme qui s'authentifie sous le compte de service, et
+		// ferme la connexion s'il n'obtient pas son 02_12. Lui interdire cette
+		// trame reviendrait à lui interdire de se connecter.
+		Frames: []string{
+			"01_01", "01_05", "01_07",
+			"02_01", "02_03", "02_05", "02_12",
+			"04_09", "04_12", "04_14",
+			"07_01", "07_04",
+		},
+		AssertsUser: true,
+	},
+}
+
+// index accélère les recherches et fige la forme d'ensemble au démarrage.
+var index = func() map[string]definitionIndex {
+	m := make(map[string]definitionIndex, len(catalogue))
+	for _, d := range catalogue {
+		frames := make(map[string]struct{}, len(d.Frames))
+		for _, f := range d.Frames {
+			frames[f] = struct{}{}
+		}
+		m[d.Name] = definitionIndex{Definition: d, frames: frames}
+	}
+	return m
+}()
+
+type definitionIndex struct {
+	Definition
+	frames map[string]struct{}
+}
+
+// Lookup retourne la définition d'un type.
+func Lookup(name string) (Definition, bool) {
+	d, ok := index[strings.TrimSpace(name)]
+	return d.Definition, ok
+}
+
+// Validate refuse un type absent du catalogue.
+//
+// Appelée à la création d'un client. Sans elle, logiciel_type reste le
+// VARCHAR libre qu'il a toujours été, et une faute de frappe crée un client qui
+// ne pourra plus jamais rien émettre une fois MayEmit en service.
+func Validate(name string) error {
+	if _, ok := Lookup(name); !ok {
+		return fmt.Errorf("type de client inconnu : %q (types connus : %s)",
+			name, strings.Join(Names(), ", "))
+	}
+	return nil
+}
+
+// MayEmit indique si un type a le droit d'émettre une trame donnée.
+//
+// FAIL-CLOSED : un type inconnu n'émet rien, et une trame non déclarée n'est
+// émise par personne.
+//
+// Les trames d'enrôlement 01_05 et 01_07 ne passent pas par ici : elles
+// précèdent l'existence du client, donc de son type. C'est la clé d'enrôlement
+// qui les autorise, et le type qu'elle porte qui décide de la suite. Elles
+// figurent tout de même dans les listes ci-dessus, pour que le catalogue se lise
+// comme la description complète de ce qu'un programme fait sur le réseau.
+func MayEmit(clientType, frame string) bool {
+	d, ok := index[strings.TrimSpace(clientType)]
+	if !ok {
+		return false
+	}
+	_, allowed := d.frames[strings.TrimSpace(frame)]
+	return allowed
+}
+
+// MayAssertUser indique si un type peut déclarer agir au nom d'un utilisateur.
+func MayAssertUser(clientType string) bool {
+	d, ok := Lookup(clientType)
+	return ok && d.AssertsUser
+}
+
+// RoleCluster est le rôle qu'un type de programme prend dans cluster_nodes.
+//
+// # Le rôle ne se DÉCLARE pas, il se DÉDUIT
+//
+// `handleRegisterHost` lisait le rôle dans le contenu de la trame 04_01. Un
+// proxy pouvait donc s'annoncer « core » — et `NoeudsPourAgents` sert les rôles
+// « core » et « proxy » aux agents, avec leur empreinte. Le parc apprenait alors
+// l'empreinte d'un proxy comme étant celle d'un serveur d'authentification.
+//
+// Le rôle est donc rendu ici, à partir du type figé à la poignée de main. Un
+// champ que le client remplit et que le serveur croit n'est pas une donnée, c'est
+// une permission.
+//
+// # « core » n'est le rôle d'AUCUN type, et ne peut pas l'être
+//
+// Un core n'est pas dans ce catalogue — il ne peut pas se juger lui-même — et il
+// ne s'enregistre pas par le réseau : il écrit sa propre ligne au démarrage,
+// depuis son propre processus. Aucune trame ne peut donc produire ce rôle, ce
+// qui est exactement la propriété recherchée.
+//
+// Rend « » pour un type qui n'a rien à faire dans le cluster en tant que
+// MACHINE. Un client SERVICE s'enregistre par 04_09, qui porte son type tel quel
+// — un service déclare une fonction, pas un nœud joignable.
+func RoleCluster(clientType string) string {
+	switch strings.TrimSpace(clientType) {
+	case Proxy:
+		return "proxy"
+	default:
+		return ""
+	}
+}
+
+// IsService indique si un type s'enrôle seul plutôt que d'être créé sur le core.
+func IsService(clientType string) bool {
+	d, ok := Lookup(clientType)
+	return ok && d.Family == FamilyService
+}
+
+// Names retourne les types connus, triés.
+func Names() []string {
+	out := make([]string, 0, len(catalogue))
+	for _, d := range catalogue {
+		out = append(out, d.Name)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// ServiceNames retourne les seuls types de la famille service, triés.
+//
+// Utilisé à l'émission d'une clé d'enrôlement : une clé ne peut viser qu'un
+// service. Un agent se crée sur le core, il n'a rien à enrôler.
+func ServiceNames() []string {
+	var out []string
+	for _, d := range catalogue {
+		if d.Family == FamilyService {
+			out = append(out, d.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// All retourne le catalogue complet, pour l'affichage.
+func All() []Definition {
+	out := make([]Definition, len(catalogue))
+	copy(out, catalogue)
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+	return out
+}

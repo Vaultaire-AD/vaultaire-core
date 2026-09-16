@@ -1,11 +1,14 @@
-# Pre-prod: test/staging deployment. App is compiled in the image (no local mount).
+version: '3.8'
+
 networks:
   Ducky-network:
     driver: bridge
+
 volumes:
   vaultaire_db_data:
 
 services:
+  # --- BASE DE DONNÉES (Partagée entre l'App et Keycloak) ---
   vaultaire-db:
     image: mariadb:latest
     container_name: vaultaire-db
@@ -16,11 +19,31 @@ services:
       - TZ=Europe/Paris
     volumes:
       - vaultaire_db_data:/var/lib/mysql
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      # Compte base dedie a l'interface web, en lecture plus quatre colonnes
+      # MFA. Ne s'execute qu'a l'initialisation d'un volume vide : voir
+      # l'en-tete du script pour une base deja en service.
+      - ./scripts/init-web-user.sh:/docker-entrypoint-initdb.d/init-web-user.sh:ro
     ports:
       - "3306:3306"
     networks:
       - Ducky-network
 
+  # --- APPLICATION VAULTAIRE ---
+  #
+  # Les binaires et les fichiers statiques sont MONTÉS, pas embarqués dans
+  # l'image. Une mise à jour se réduit donc à :
+  #
+  #     ./deployments/pre-prod/docker-update.sh
+  #     (git pull + docker compose restart vaultaire-ad)
+  #
+  # L'image ne se reconstruit que lorsque le Dockerfile change. Reconstruire à
+  # chaque itération rejouait la couche dnf, qui ne change jamais, pour ne
+  # déplacer que des binaires déjà compilés.
+  #
+  # Montages en lecture seule : le conteneur ne doit pas pouvoir modifier les
+  # sources de l'hôte. Un binaire réécrit depuis l'intérieur du conteneur serait
+  # ensuite committé sans qu'on comprenne d'où il vient.
   vaultaire-ad:
     build:
       context: ../..
@@ -30,14 +53,55 @@ services:
     restart: unless-stopped
     depends_on:
       - vaultaire-db
+      - vaultaire-keycloak
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=preprod
+    volumes:
+      # Binaires serveur et CLI
+      - ../../cmd/vaultaire_server:/opt/vaultaire/bin:ro
+      # Binaire client et modules PAM, distribués aux postes depuis le serveur
+      - ../../cmd/vaultaire_client:/opt/vaultaire/vaultaire_client:ro
+      # Templates et fichiers statiques de l'interface d'administration.
+      # Montés séparément : modifier un template ne demande alors ni
+      # recompilation ni reconstruction, seulement un rechargement de page.
+      - ../../web_packet:/opt/vaultaire/web_packet:ro
+      # Scripts d'exploitation et de test (jeu d'essai RBAC).
+      #
+      # Monté et non embarqué, pour la même raison que les binaires : corriger
+      # un scénario de test ne doit pas demander de reconstruire l'image.
+      # En lecture seule — le script écrit son rapport dans /opt/vaultaire,
+      # jamais dans son propre répertoire.
+      - ./scripts:/opt/vaultaire/scripts:ro
     ports:
       - "6666:6666"
-      - "443:443"
+      - "4443:4443"
       - "389:389"
       - "636:636"
       - "6643:6643"
+    networks:
+      - Ducky-network
+
+  # --- KEYCLOAK ---
+  vaultaire-keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: vaultaire-keycloak
+    command: start-dev
+    restart: unless-stopped
+    environment:
+      - KC_DB=mariadb
+      - KC_DB_URL=jdbc:mariadb://vaultaire-db:3306/keycloak
+      - KC_DB_USERNAME=keycloak
+      - KC_DB_PASSWORD=root
+      - KEYCLOAK_ADMIN=admin
+      - KEYCLOAK_ADMIN_PASSWORD=&adZaeD429bqf@B%QHYg
+      - KC_HTTP_RELATIVE_PATH=/auth
+      - TZ=Europe/Paris
+    volumes:
+      - ./vaultaire-ldaps.pem:/opt/keycloak/conf/truststores/vaultaire.pem:ro
+    ports:
+      - "8080:8080"
+    depends_on:
+      - vaultaire-db
     networks:
       - Ducky-network

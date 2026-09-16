@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cluster — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+          <h1>Cluster</h1>
+          {{ if .Message }}<div class="alert alert-info">{{ .Message }}</div>{{ end }}
+
+          <h2 class="h2">Nœuds enregistrés</h2>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Hostname</th>
+                  <th>FQDN</th>
+                  <th>Accès des agents</th>
+                  <th>Vu par le nœud</th>
+                  <th>Sert en priorité</th>
+                  <th>Rôle</th>
+                  <th>Statut</th>
+                  <th>Version</th>
+                  <th>Dernier heartbeat</th>
+                </tr>
+              </thead>
+              <tbody>
+              {{ range .Nodes }}
+                <tr>
+                  <td>{{ .ID }}</td>
+                  <td>{{ .Hostname }}</td>
+                  <td>{{ .FQDN }}</td>
+                  <td>
+                    {{ if .ExpositionDeclaree }}<strong>{{ .AdresseEffective }}:{{ .PortEffectif }}</strong> <span class="muted small">déclaré</span>
+                    {{ else }}{{ .AdresseEffective }}:{{ .PortEffectif }}{{ end }}
+                    {{ if not .ExposeAuxAgents }}<br><span class="muted small">hors rotation — annoncé à aucun agent</span>{{ end }}
+                  </td>
+                  <td class="muted small">{{ if .ExpositionDeclaree }}{{ .IPAddress }}:{{ .Port }}{{ end }}</td>
+                  <td>
+                    {{ if .GroupesAffins }}{{ range $i, $g := .GroupesAffins }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
+                    {{ else }}<span class="muted small">tout le parc</span>{{ end }}
+                  </td>
+                  <td>{{ .Role }}</td>
+                  <td>{{ .Status }}</td>
+                  <td>{{ .VersionCode }}</td>
+                  <td>{{ .LastHeartbeat }}</td>
+                </tr>
+              {{ end }}
+              </tbody>
+            </table>
+          </div>
+
+          <h2 class="h2">Par où les agents joignent un nœud</h2>
+          <p class="muted small">
+            Un nœud déclare l'adresse qu'il voit de <em>lui-même</em>. Derrière une redirection NAT,
+            dans un conteneur ou sur un hôte à plusieurs interfaces, ce n'est pas celle par laquelle
+            le parc l'atteint — et il n'a aucun moyen de le savoir. La déclaration ci-dessous
+            l'emporte, et c'est elle que reçoivent les agents.
+          </p>
+
+          {{ range .Nodes }}
+          <form method="post" class="card" style="margin-bottom:0.8rem">
+            <input type="hidden" name="action" value="set_node_exposure">
+            <input type="hidden" name="node" value="{{ .Hostname }}">
+
+            <h3>{{ .Hostname }} <span class="muted small">({{ .Role }})</span></h3>
+
+            <label>Adresse publique</label>
+            <input name="address" value="{{ .AdressePublique }}"
+                   placeholder="{{ .IPAddress }} — vide : on garde ce que le nœud annonce">
+            <p class="muted small">IP ou nom DNS. Vide retire la déclaration.</p>
+
+            <label>Port public</label>
+            <input name="port" type="number" min="0" max="65535"
+                   value="{{ if .PortPublic }}{{ .PortPublic }}{{ end }}"
+                   placeholder="{{ .Port }} — vide : on garde le port d'écoute du nœud">
+            <p class="muted small">À renseigner seulement si une redirection translate le port.</p>
+
+            <label>Priorité</label>
+            <input name="priority" type="number" min="0" value="{{ .Priorite }}">
+            <p class="muted small">Plus petit = servi plus tôt. 0 vaut « sans préférence » et se range <em>après</em> les valeurs explicites.</p>
+
+            <!--
+              Une LISTE et non une case à cocher : une case décochée n'est pas
+              envoyée par le navigateur. Sur un formulaire qui ne modifie QUE les
+              champs qu'il transmet, décocher ne dirait donc rien du tout, et
+              retirer un nœud de la rotation serait impossible depuis cette page.
+            -->
+            <label>Rotation</label>
+            <select name="exposed">
+              <option value="true"{{ if .ExposeAuxAgents }} selected{{ end }}>Annoncé aux agents</option>
+              <option value="false"{{ if not .ExposeAuxAgents }} selected{{ end }}>Retiré de la liste</option>
+            </select>
+            <p class="muted small">
+              Retiré, le nœud sort de la liste distribuée sans être désenregistré — il reste visible ici
+              pendant une maintenance. Ce n'est <strong>pas</strong> un contrôle d'accès : il demeure joignable
+              pour qui connaît son adresse. C'est le pare-feu qui protège un core.
+            </p>
+
+            <div class="gpo-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div>
+          </form>
+
+          <form method="post" class="card" style="margin-bottom:1.6rem">
+            <input type="hidden" name="action" value="set_node_groups">
+            <input type="hidden" name="node" value="{{ .Hostname }}">
+
+            <label>Groupes servis en priorité par {{ .Hostname }}</label>
+            <!--
+              Sélection multiple : les groupes choisis REMPLACENT les précédents.
+              Ne rien sélectionner retire toute affinité — c'est le geste qui
+              remet le nœud au service de tout le parc, et il doit exister.
+
+              D'où le champ caché ci-dessous, et il n'est pas décoratif : un
+              select dont aucune option n'est choisie n'envoie RIEN. Sans lui,
+              « groups » serait absent de la requête, donc lu comme « n'y touche
+              pas », et retirer la dernière affinité serait impossible depuis
+              cette page — sans message d'erreur. Le champ vide est ignoré au
+              découpage, il ne s'ajoute donc pas à la sélection.
+            -->
+            <input type="hidden" name="groups" value="">
+            <select name="groups" multiple data-vlt-picker
+                    data-placeholder="Aucun — ce nœud sert tout le parc"
+                    data-search-placeholder="Rechercher un groupe…"
+                    data-empty="Aucun groupe ne correspond">
+              {{ $affins := .GroupesAffins }}
+              {{ range $g := $.AllGroups }}
+                <option value="{{ $g }}"{{ range $a := $affins }}{{ if eq $a $g }} selected{{ end }}{{ end }}>{{ $g }}</option>
+              {{ end }}
+            </select>
+            <p class="muted small">
+              Les agents membres de ces groupes reçoivent ce nœud <strong>avant</strong> les autres de même rôle.
+              C'est une <strong>préférence, pas une exclusivité</strong> : les autres nœuds restent dans leur liste,
+              en queue — c'est ce qui fait qu'un site dont le proxy est tombé se rabat sur un core au lieu
+              de n'avoir plus personne à joindre.
+            </p>
+            <p class="muted small">
+              Ordre servi : proxies affins, autres proxies, cores affins, autres cores.
+            </p>
+
+            <div class="gpo-actions"><button type="submit" class="btn btn-secondary">Appliquer l'affinité</button></div>
+          </form>
+          {{ end }}
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>
+
