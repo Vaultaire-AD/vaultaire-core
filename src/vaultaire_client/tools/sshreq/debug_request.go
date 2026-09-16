@@ -1,8 +1,8 @@
 package sshreq
 
-// Count donne le nombre de requêtes en cours
+// Count retourne le nombre actuel de requêtes en attente de réponse.
 func Count() int {
-	mu.Lock()
-	defer mu.Unlock()
+	mu.RLock()
+	defer mu.RUnlock()
 	return len(requests)
 }

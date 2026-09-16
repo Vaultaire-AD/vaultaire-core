@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Enrôlement — Vaultaire</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="stylesheet" href="/static/vlt_picker.css">
+</head>
+<body>
+  <div class="app-layout">
+    <aside class="app-sidebar">
+      <div class="brand"><img src="/static/image/vaultaire_logo.svg" alt="Vaultaire"> <span>Vaultaire</span></div>
+      {{template "admin_sidebar" .}}
+    </aside>
+    <main class="app-main">
+      <header class="app-topbar">
+        <div class="search-wrap">
+          <input type="search" class="search-input" id="global-search" placeholder="Rechercher…" autocomplete="off">
+          <div class="search-results" id="search-results" aria-hidden="true"></div>
+        </div>
+        <div class="app-toolbar">
+          <span class="muted small">{{ .Username }}</span>
+          <button type="button" id="theme-toggle" class="btn btn-ghost">Thème</button>
+        </div>
+      </header>
+      <div class="app-content">
+        <div class="app-container animate-in">
+<h1>Enrôlement des clients service</h1>
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+
+    {{ if .Secret }}
+    <section class="section">
+      <h2>Clé émise pour {{ .SecretType }}</h2>
+      <p><code class="secret">{{ .Secret }}</code></p>
+      <div class="alert alert-warning">
+        Copiez-la maintenant. Seul son condensat est enregistré : elle ne sera
+        plus jamais affichée, ni ici ni ailleurs. Si elle est perdue, révoquez-la
+        et émettez-en une autre.
+      </div>
+    </section>
+    {{ end }}
+
+    <section class="section">
+      <h2>Émettre une clé</h2>
+      <p class="muted">
+        Un client <strong>service</strong> — interface web, proxy, extension —
+        génère sa paire de clés sur son propre hôte et présente une clé
+        d'enrôlement pour faire enregistrer sa clé publique. Sa clé privée ne
+        voyage jamais.
+      </p>
+      <p class="muted small">
+        <strong>Le type est porté par la clé, pas déclaré par le service.</strong>
+        Sans cela, il suffirait de s'enrôler pour se donner les privilèges qu'on
+        veut.
+      </p>
+      {{ if .CanCreate }}
+      <form method="post" action="/admin/enroll">
+        <input type="hidden" name="action" value="create_key">
+
+        <label for="client_type">Type de service</label>
+        {{/* Le libellé humain passe en data-hint plutôt que dans le texte de
+             l'option : la recherche porte alors sur le nom technique, qui est
+             ce qu'on tape, et le libellé reste affiché en gris à droite. */}}
+        <select id="client_type" name="client_type" data-vlt-picker
+                data-placeholder="Choisir un type de service"
+                data-search-placeholder="Rechercher un type…"
+                data-empty="Aucun type ne correspond">
+          {{ range .Types }}{{ if eq .Family "service" }}
+          <option value="{{ .Name }}" data-hint="{{ .Label }}">{{ .Name }}</option>
+          {{ end }}{{ end }}
+        </select>
+
+        <label for="uses">Nombre d'enrôlements autorisés</label>
+        <input type="number" id="uses" name="uses" value="1" min="0" max="50">
+        <p class="muted small">0 = illimité.</p>
+
+        <label for="expires_minutes">Validité (minutes)</label>
+        <input type="number" id="expires_minutes" name="expires_minutes" value="30" min="0" max="10080">
+        <p class="muted small">0 = sans expiration.</p>
+
+        <p class="muted small">
+          ⚠ Une clé sans limite ne s'éteint que par révocation. À réserver aux
+          chaînes de déploiement qui recréent des services sans intervention
+          humaine.
+        </p>
+
+        <label for="label">Libellé (facultatif)</label>
+        <input type="text" id="label" name="label" placeholder="web-preprod">
+
+        <label for="groups">Groupes de naissance (facultatif)</label>
+        <input type="text" id="groups" name="groups" placeholder="paris, lyon">
+        <p class="muted small">
+          Le service enrôlé avec cette clé sera ajouté à ces groupes, <strong>une seule fois</strong>,
+          à son enrôlement. C'est ce qui permet à une chaîne de déploiement de produire des proxies
+          déjà rattachés à leur site : elle n'a que la clé, elle ne peut pas faire le geste après coup.
+        </p>
+        <p class="muted small">
+          Les groupes décident de l'<em>affinité</em> — quels agents recevront ce nœud en tête de
+          leur liste. Une clé ne porte <strong>aucun droit</strong> : ce que ces groupes permettent se
+          décide ailleurs, et reste modifiable après l'enrôlement.
+        </p>
+        <p class="muted small">
+          Les noms ne sont pas vérifiés maintenant : la clé servira peut-être dans plusieurs mois,
+          et c'est <em>à ce moment</em> que le groupe doit exister. Un groupe manquant à la
+          consommation n'empêche pas l'enrôlement, il est journalisé.
+        </p>
+
+        <p class="muted small">
+          Émettre une clé pour un type capable d'agir au nom d'un utilisateur est
+          réservé au groupe d'amorçage.
+          {{ if not .IsSuperadmin }}<strong>Vous n'en faites pas partie.</strong>{{ end }}
+        </p>
+        <button type="submit" class="btn btn-primary">Émettre</button>
+      </form>
+      {{ else }}
+      <p class="muted">Émettre une clé demande le droit <code>write:create:client</code> sur tous les domaines.</p>
+      {{ end }}
+    </section>
+
+    <section class="section">
+      <h2>Clés émises</h2>
+      {{ if not .Keys }}
+      <p class="muted">Aucune clé d'enrôlement.</p>
+      {{ else }}
+      <div class="table-wrap">
+        <table>
+        <thead>
+          <tr>
+            <th>ID</th><th>Type</th><th>Libellé</th><th>État</th>
+            <th>Groupes de naissance</th>
+            <th>Usages</th><th>Expire</th><th>Émise par</th><th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{ range .Keys }}
+          <tr>
+            <td><a href="/admin/enroll?key={{ .ID }}">{{ .ID }}</a></td>
+            <td>{{ .ClientType }}</td>
+            <td>{{ if .Label }}{{ .Label }}{{ else }}—{{ end }}</td>
+            <td>{{ .Status }}</td>
+            <!-- Vide = le service naîtra sans groupe, donc sans affinité : il
+                 joindra les nœuds du parc sans préférence de site. -->
+            <td>
+              {{ if .Groupes }}{{ range $i, $g := .Groupes }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
+              {{ else }}<span class="muted small">aucun</span>{{ end }}
+            </td>
+            <td>{{ .Uses }}</td>
+            <td>{{ .ExpiresText }}</td>
+            <td>{{ .CreatedBy }}</td>
+            <td>
+              {{ if and $.CanCreate (eq .Status "active") }}
+              <form method="post" action="/admin/enroll" style="display:inline">
+                <input type="hidden" name="action" value="revoke_key">
+                <input type="hidden" name="key_id" value="{{ .ID }}">
+                <button type="submit" class="btn btn-danger">Révoquer</button>
+              </form>
+              {{ end }}
+            </td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+      </div>
+      {{ end }}
+    </section>
+
+    {{ if .Detail }}
+    <section class="section">
+      <h2>Services entrés avec la clé {{ .Detail.ID }}</h2>
+      <p class="muted small">
+        Révoquer la clé ne retire aucun de ces services : ils ont leur propre
+        paire. Pour en retirer un, supprimez le client correspondant.
+      </p>
+      {{ if not .Detail.Consumers }}
+      <p class="muted">Aucun service enrôlé avec cette clé.</p>
+      {{ else }}
+      <div class="table-wrap">
+        <table>
+        <thead><tr><th>Identifiant machine</th><th>Type</th><th>Origine</th><th>Date</th></tr></thead>
+        <tbody>
+          {{ range .Detail.Consumers }}
+          <tr>
+            <td><a href="/admin/clients?client={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
+            <td>{{ .ClientType }}</td>
+            <td>{{ if .SourceIP.Valid }}{{ .SourceIP.String }}{{ else }}—{{ end }}</td>
+            <td>{{ .UsedAt.Format "2006-01-02 15:04:05" }}</td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+      </div>
+      {{ end }}
+    </section>
+    {{ end }}
+
+    <section class="section">
+      <h2>Catalogue des types</h2>
+      <p class="muted small">
+        Le catalogue vit dans le code et non en base : un type détermine quelles
+        trames un programme peut émettre, c'est une frontière de privilège.
+        L'ouvrir à l'édition depuis cette page permettrait d'accorder des droits
+        que le code n'a pas prévus.
+      </p>
+      <div class="table-wrap">
+        <table>
+        <thead><tr><th>Type</th><th>Famille</th><th>Description</th><th>Trames émises</th></tr></thead>
+        <tbody>
+          {{ range .Types }}
+          <tr>
+            <td>{{ .Name }}{{ if .AssertsUser }} ⚠{{ end }}</td>
+            <td>{{ if eq .Family "service" }}service{{ else }}agent{{ end }}</td>
+            <td>{{ .Description }}{{ if .AssertsUser }} <strong>Peut agir au nom d'un utilisateur qu'il authentifie.</strong>{{ end }}</td>
+            <td><code class="small">{{ range .Frames }}{{ . }} {{ end }}</code></td>
+          </tr>
+          {{ end }}
+        </tbody>
+      </table>
+      </div>
+    </section>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <ul id="context-menu" class="context-menu">
+    <li><button type="button" data-action="open-panel">Ouvrir dans un panneau</button></li>
+    <li><a href="#" data-action="open-page" class="context-menu-item">Ouvrir dans l'onglet</a></li>
+  </ul>
+  <div id="drawer-backdrop" class="drawer-backdrop">
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span id="drawer-title" class="drawer-title">Détail</span>
+        <button type="button" id="drawer-close" class="drawer-close" aria-label="Fermer">✕</button>
+      </div>
+      <div class="drawer-body">
+        <iframe id="drawer-frame" title="Détail"></iframe>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js"></script>
+  <script src="/static/vlt_picker.js"></script>
+  <script src="/static/admin_sidebar.js"></script>
+</body>
+</html>

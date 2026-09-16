@@ -1,0 +1,125 @@
+package dbenrollment
+
+import (
+	"database/sql"
+	"fmt"
+
+	"vaultaire/core/logs"
+)
+
+// CreateTables crée le schéma d'enrôlement s'il n'existe pas.
+//
+// Appelée à chaque démarrage, idempotente.
+func CreateTables(db *sql.DB) error {
+	statements := []string{
+		// service_enrollment_key : une clé émise par un administrateur.
+		//
+		// key_hash et non la clé : le secret est affiché une seule fois à
+		// l'émission. Le stocker permettrait à quiconque lit la base de
+		// s'enrôler comme n'importe quel type de service, y compris celui qui
+		// porte le droit d'agir au nom d'un tiers.
+		//
+		// client_type est en TEXTE et sans contrainte vers un catalogue : le
+		// catalogue est du code (core/clienttype), pas une table. La validité
+		// du type est vérifiée à l'émission et re-vérifiée à la consommation —
+		// un type retiré du code entre les deux doit invalider la clé, pas
+		// enrôler un service que plus rien ne décrit.
+		`CREATE TABLE IF NOT EXISTS service_enrollment_key (
+			id_key      INT AUTO_INCREMENT PRIMARY KEY,
+			key_hash    CHAR(64)     NOT NULL UNIQUE,
+			label       VARCHAR(128) NOT NULL DEFAULT '',
+			client_type VARCHAR(64)  NOT NULL,
+			max_uses    INT          NOT NULL,
+			used_count  INT          NOT NULL DEFAULT 0,
+			expires_at  DATETIME     NULL,
+			created_by  VARCHAR(255) NOT NULL,
+			created_at  DATETIME     DEFAULT CURRENT_TIMESTAMP,
+			revoked_by  VARCHAR(255) NULL,
+			revoked_at  DATETIME     NULL,
+			INDEX idx_enrollment_type (client_type),
+			INDEX idx_enrollment_live (revoked_at, expires_at)
+		);`,
+
+		// service_enrollment_use : une ligne par consommation.
+		//
+		// Sans cette table, on ne peut pas répondre à « quels services sont
+		// entrés par cette clé ? » le jour où l'on découvre qu'elle a fuité —
+		// et c'est précisément le jour où la question se pose.
+		//
+		// ON DELETE CASCADE est acceptable ici, contrairement à la révocation :
+		// supprimer une clé d'enrôlement est une décision d'administration, pas
+		// la disparition du sujet d'une trace d'audit. Le client créé, lui,
+		// survit dans id_logiciels.
+		`CREATE TABLE IF NOT EXISTS service_enrollment_use (
+			id_use       INT AUTO_INCREMENT PRIMARY KEY,
+			d_id_key     INT          NOT NULL,
+			computeur_id VARCHAR(255) NOT NULL,
+			client_type  VARCHAR(64)  NOT NULL,
+			source_ip    VARCHAR(45)  NULL,
+			used_at      DATETIME     DEFAULT CURRENT_TIMESTAMP,
+			INDEX idx_enrollment_use_key (d_id_key),
+			FOREIGN KEY (d_id_key) REFERENCES service_enrollment_key(id_key) ON DELETE CASCADE
+		);`,
+
+		// service_enrollment_key_group : les groupes de NAISSANCE d'une clé.
+		//
+		// Le service enrôlé par cette clé est ajouté à ces groupes, UNE FOIS, à
+		// son enrôlement. C'est le lot 7 du point 38.
+		//
+		// # Le rattachement est appliqué une fois, jamais relu
+		//
+		// Le relire à chaque connexion ferait qu'une clé modifiée changerait les
+		// groupes d'un service déjà en production. Le lien entre la cause — une
+		// clé éditée — et l'effet — un service qui joint d'autres nœuds — serait
+		// introuvable des mois plus tard. Après l'enrôlement, les groupes du
+		// service se modifient comme ceux de n'importe quelle machine.
+		//
+		// # Une affinité, pas un droit
+		//
+		// Ce que ces groupes portent est décidé ailleurs et reste modifiable.
+		// Une clé qui accorderait des droits deviendrait un second système de
+		// permissions, à tenir d'accord avec le premier.
+		//
+		// # Le NOM du groupe, et non son identifiant
+		//
+		// Pas de clé étrangère vers groups, délibérément. Une clé sert des mois
+		// après son émission : si le groupe est supprimé entre-temps, une clé
+		// étrangère effacerait la ligne en silence, et l'enrôlement se ferait
+		// sans affinité sans que rien ne puisse dire laquelle manquait.
+		//
+		// Le nom subsiste, la résolution échoue à la consommation, et le refus
+		// NOMME le groupe absent dans le journal. Contrepartie assumée : un
+		// groupe RENOMMÉ n'est plus retrouvé — le nom est ce que
+		// l'administrateur a écrit, pas une référence.
+		`CREATE TABLE IF NOT EXISTS service_enrollment_key_group (
+			d_id_key   INT          NOT NULL,
+			group_name VARCHAR(255) NOT NULL,
+			PRIMARY KEY (d_id_key, group_name),
+			FOREIGN KEY (d_id_key) REFERENCES service_enrollment_key(id_key) ON DELETE CASCADE
+		);`,
+	}
+
+	// Bases existantes : expires_at était NOT NULL avant que « sans expiration »
+	// devienne possible. MODIFY est idempotent, il peut passer à chaque
+	// démarrage sans script de migration.
+	migrations := []string{
+		`ALTER TABLE service_enrollment_key MODIFY expires_at DATETIME NULL`,
+	}
+
+	for _, stmt := range statements {
+		if _, err := db.Exec(stmt); err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+				"dbenrollment: création de table échouée : "+err.Error())
+			return fmt.Errorf("création du schéma d'enrôlement : %w", err)
+		}
+	}
+
+	for _, stmt := range migrations {
+		if _, err := db.Exec(stmt); err != nil {
+			// Une base neuve a déjà la bonne définition : l'échec n'est pas
+			// bloquant, il est seulement journalisé.
+			logs.Write_Log("DEBUG", "dbenrollment: migration ignorée : "+err.Error())
+		}
+	}
+	return nil
+}

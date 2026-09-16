@@ -1,0 +1,4 @@
+# jsdom, installé à la demande par run_tests.sh
+node_modules/
+package.json
+package-lock.json

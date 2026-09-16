@@ -19,20 +19,36 @@ func DeleteUser_Vaultaire_Past_4Days_withoutconnection() {
 	if err != nil {
 		log.Fatalf("Erreur d'ouverture de %s: %v", passwdFile, err)
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			// Handle or log the error
-			fmt.Printf("erreur lors de la fermeture du fichier: %v", err)
-		}
-	}()
+	defer file.Close()
+
+	// On lit toutes les lignes une seule fois.
+	var lines []string
+	vaultaireUsers := 0
 
 	scanner := bufio.NewScanner(file)
-	now := time.Now()
-
 	for scanner.Scan() {
 		line := scanner.Text()
+		lines = append(lines, line)
+
 		fields := strings.Split(line, ":")
-		if len(fields) < 5 {
+		if len(fields) < 7 {
+			continue
+		}
+
+		comment := fields[4]
+		shell := fields[6]
+
+		if strings.Contains(comment, "vaultaire_user_account") &&
+			(strings.HasSuffix(shell, "bash") || strings.HasSuffix(shell, "sh")) {
+			vaultaireUsers++
+		}
+	}
+
+	now := time.Now()
+
+	for _, line := range lines {
+		fields := strings.Split(line, ":")
+		if len(fields) < 7 {
 			continue
 		}
 
@@ -40,17 +56,14 @@ func DeleteUser_Vaultaire_Past_4Days_withoutconnection() {
 		comment := fields[4]
 		shell := fields[6]
 
-		// Ne traite que les comptes ayant le commentaire "vaultaire_user_account"
 		if !strings.Contains(comment, "vaultaire_user_account") {
 			continue
 		}
 
-		// Ignore les comptes sans shell "interactif"
 		if !strings.HasSuffix(shell, "bash") && !strings.HasSuffix(shell, "sh") {
 			continue
 		}
 
-		// Vérifie la dernière connexion via la commande `lastlog`
 		out, err := exec.Command("lastlog", "-u", username).Output()
 		if err != nil {
 			log.Printf("Erreur avec lastlog pour %s: %v", username, err)
@@ -58,35 +71,38 @@ func DeleteUser_Vaultaire_Past_4Days_withoutconnection() {
 		}
 
 		output := string(out)
-		lines := strings.Split(output, "\n")
-		if len(lines) < 2 {
+		lastlogLines := strings.Split(output, "\n")
+		if len(lastlogLines) < 2 {
 			continue
 		}
 
-		if strings.Contains(lines[1], "**Never logged in**") {
-			deleteUser(username)
-			continue
+		expired := false
+
+		if strings.Contains(lastlogLines[1], "**Never logged in**") {
+			expired = true
+		} else {
+			fields = strings.Fields(lastlogLines[1])
+			if len(fields) >= 5 {
+				dateStr := strings.Join(fields[len(fields)-5:], " ")
+				lastLoginTime, err := time.Parse("Mon Jan 2 15:04:05 2006", dateStr)
+				if err == nil && now.Sub(lastLoginTime).Hours() > 96 {
+					expired = true
+				}
+			}
 		}
 
-		// Exemple de ligne: username  pts/0  192.168.1.10  Mon Apr 29 15:04:05 2024
-		fields = strings.Fields(lines[1])
-		if len(fields) < 5 {
-			continue
-		}
-
-		dateStr := strings.Join(fields[len(fields)-5:], " ")
-		lastLoginTime, err := time.Parse("Mon Jan 2 15:04:05 2006", dateStr)
-		if err != nil {
-			log.Printf("Erreur parsing date pour %s: %v", username, err)
-			continue
-		}
-
-		if now.Sub(lastLoginTime).Hours() > 96 {
-			deleteUser(username)
+		if expired {
+			// On ne supprime que s'il restera au moins 3 comptes Vaultaire.
+			if vaultaireUsers-1 >= 3 {
+				deleteUser(username)
+				vaultaireUsers--
+			} else {
+				log.Printf("Compte %s expiré mais conservé : il ne resterait plus que %d comptes Vaultaire.",
+					username, vaultaireUsers-1)
+			}
 		}
 	}
 }
-
 func deleteUser(username string) {
 	fmt.Printf("Suppression de l'utilisateur : %s\n", username)
 	cmd := exec.Command("userdel", "-r", username)

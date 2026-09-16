@@ -6,13 +6,46 @@ file-path:
   # ne sont plus nécessaires - toutes les clés et certificats sont maintenant stockés en base de données
   clientconfpath: "/opt/vaultaire/"
   logpath: "/var/log/vaultaire/"
-  servercheckonlinetimer: 2
+  # servercheckonlinetimer : RETIRÉ — n'est plus lu.
+  #
+  # La cadence de vérification des machines en ligne est un réglage
+  # d'exploitation, pas une propriété d'installation. Elle vit en base :
+  #
+  #   vlt settings list
+  #   vlt settings set check_online_minutes 2
+  #
+  # Un changement y prend effet au tour suivant, sans redémarrer le core —
+  # c'est-à-dire sans couper le parc pour ajuster une période.
+  #
+  # Une ligne laissée ici produit un avertissement au démarrage plutôt que
+  # d'être ignorée en silence.
 
 ldap:
   ldap_enable: true
   ldaps_enable: true
   ldap_port: 389
   ldaps_port: 636
+
+  # Noms et adresses que le certificat LDAPS doit couvrir.
+  #
+  # Le nom de la machine et ses adresses sont détectés automatiquement. Ne
+  # déclarez ici que ce qui ne peut PAS l'être : nom de service DNS, nom de
+  # conteneur, alias derrière un répartiteur.
+  #
+  # Les clients Java — Keycloak, connecteurs JNDI — ignorent le CommonName
+  # depuis JDK 9 et exigent un SAN correspondant au nom de l'URL. Un nom absent
+  # d'ici échoue avec « SSLHandshakeFailed », sans autre indice.
+  #
+  # Mettez le nom court ET le nom qualifié : un SAN ne se compare pas par
+  # suffixe. « vaultaire-ad » ne couvre pas « vaultaire-ad.interne.lan ».
+  #
+  # Après modification : vlt certificate regenerate ldaps, puis redémarrage.
+  # Voir docs/exploitation/ldaps_keycloak.md
+  ldaps_tls_dns_names: []
+  #  - vaultaire-ad
+  #  - vaultaire-ad.interne.lan
+  ldaps_tls_ip_addresses: []
+  #  - 10.0.0.10
 
 dns:
   dns_enable: true
@@ -26,7 +59,43 @@ database:
 
 website:
   website_enable: true
-  website_port: 443
+  website_port: 4443
+  # Noms et adresses que le certificat du portail web et de l'API REST doit
+  # couvrir, en plus du nom de la machine et de ses adresses, détectés seuls.
+  #
+  # Un certificat qui ne porte pas le nom saisi dans le navigateur est rejeté
+  # (ERR_CERT_COMMON_NAME_INVALID), et le CommonName n'y change rien : il est
+  # ignoré depuis Chrome 58 et le JDK 9. Seuls ces SAN comptent.
+  #
+  # Distincts de ceux du LDAPS : ces services ne sont pas joints par les mêmes
+  # noms — le portail par une URL en signet, l'annuaire par un alias de service.
+  #
+  # Après modification, régénérer le certificat et redémarrer.
+  web_tls_dns_names: []
+  #  - sso.interne.lan
+  #  - vaultaire.exemple.fr
+  web_tls_ip_addresses: []
+  #  - 10.0.0.10
+
+  # Relais autorisés à déclarer l'adresse réelle du client, en adresses simples
+  # ou en préfixes CIDR.
+  #
+  # VIDE = l'en-tête X-Forwarded-For est IGNORÉ, et c'est l'adresse du pair TCP
+  # qui identifie la source pour la limitation des tentatives d'authentification.
+  # C'est le bon réglage quand le portail est joint directement.
+  #
+  # Le croire sans l'avoir demandé serait pire que de ne rien limiter : cet
+  # en-tête est écrit par le client, donc une valeur différente à chaque
+  # tentative lui donnerait un compteur neuf à chaque coup — et lui permettrait
+  # d'y mettre l'adresse d'un collègue pour la faire pénaliser à sa place.
+  #
+  # À renseigner SI le portail est publié derrière un reverse proxy ou un
+  # répartiteur de charge : sans cela toutes les requêtes portent l'adresse du
+  # relais, la limitation par source devient globale, et le premier balayage venu
+  # freine tout le monde.
+  web_trusted_proxies: []
+  #  - 10.0.0.5
+  #  - 192.168.10.0/24
 
 automatisation:
   sh_folder_path: "/opt/vaultaire/automatisation/"
@@ -36,7 +105,7 @@ api:
   api_port: 6643
 
 debug:
-  debug: false
+  debug: true
 
 administreur:
   enable: true

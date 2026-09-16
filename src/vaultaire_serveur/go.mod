@@ -1,6 +1,7 @@
 module vaultaire
 
-go 1.23.0
+go 1.26.1
+toolchain go1.26.5
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -10,6 +11,11 @@ require (
 )
 
 require (
+	// Dépendance DIRECTE depuis le passage à argon2id : core/global/security
+	// importe golang.org/x/crypto/argon2. Elle était marquée « indirect »,
+	// tirée par go-ldap et sftp.
+	golang.org/x/crypto v0.52.0
+
 	github.com/fatih/color v1.18.0
 	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667
 	github.com/go-ldap/ldap/v3 v3.4.12
@@ -17,7 +23,6 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pkg/sftp v1.13.10
-	golang.org/x/crypto v0.41.0
-	golang.org/x/sys v0.35.0 // indirect
+	golang.org/x/sys v0.45.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )

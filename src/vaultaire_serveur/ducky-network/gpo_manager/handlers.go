@@ -1,0 +1,483 @@
+package gpomanager
+
+import (
+	"fmt"
+	"strconv"
+	"strings"
+	dbgpo "vaultaire/core/database/db_gpo"
+	dbusers "vaultaire/core/database/db_users"
+
+	"vaultaire/core/database"
+	"vaultaire/core/domain"
+	"vaultaire/core/gpo"
+	"vaultaire/core/logs"
+	"vaultaire/core/storage"
+)
+
+// Handlers des trames entrantes de la catégorie 05.
+
+// handleAskMachine traite 05_01 et répond 05_02, 05_03 ou 05_04.
+func handleAskMachine(trames storage.Trames_struct_client) string {
+	clientID := trames.ClientSoftwareID
+	appliedFingerprint := normalizeFingerprint(lineAt(contentLines(trames.Content), 0))
+
+	logs.Write_LogCode("DEBUG", logs.CodeGPOTransport, fmt.Sprintf(
+		"gpo: 05_01 du client %s, empreinte appliquée %s", clientID, shortFingerprint(appliedFingerprint)))
+
+	db := database.GetDatabase()
+	if db == nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOResolve, "gpo: base indisponible pour la résolution machine")
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeMachine, "", errInternal, "base indisponible")
+	}
+
+	// Les restrictions sont fail-closed : sans elles, la politique résolue serait
+	// vide et le client effacerait sa configuration. On refuse explicitement.
+	if !gpo.RestrictionsAreLoaded() {
+		reason := gpo.LastRestrictionError()
+		logs.Write_LogCode("ERROR", logs.CodeGPORestrictions, fmt.Sprintf(
+			"gpo: restrictions non chargées, refus de livrer une politique machine à %s — %s", clientID, reason))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeMachine, "",
+			errRestrictionsUnavailable, reason)
+	}
+
+	policy, err := resolveMachinePolicy(db, clientID)
+	if err != nil {
+		code, message := classifyResolveError(err)
+		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
+			"gpo: résolution machine échouée pour %s (%s) : %s", clientID, code, message))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeMachine, "", code, message)
+	}
+
+	return serveScope(trames, gpo.ScopeMachine, "", policy, appliedFingerprint)
+}
+
+// handleAskUser traite 05_05 et répond 05_06, 05_07 ou 05_08.
+func handleAskUser(trames storage.Trames_struct_client) string {
+	clientID := trames.ClientSoftwareID
+	lines := contentLines(trames.Content)
+
+	// Deux formes du même utilisateur, et les confondre casse le protocole :
+	//
+	//   - requestedUser est la chaîne exacte envoyée par le client, domaine
+	//     compris (admin@vaultaire.fr). C'est son jeton de corrélation : il
+	//     attend les réponses sur cette clé, et c'est aussi le nom du compte
+	//     local que l'agent doit configurer. Toutes les réponses la reprennent
+	//     telle quelle ;
+	//   - directoryUser est la forme sans domaine (admin), seule connue de
+	//     l'annuaire. Elle ne sert qu'aux recherches en base.
+	requestedUser := strings.TrimSpace(lineAt(lines, 0))
+	directoryUser, _ := domain.ExctractDomainFromUsername(requestedUser)
+	appliedFingerprint := normalizeFingerprint(lineAt(lines, 1))
+
+	logs.Write_LogCode("DEBUG", logs.CodeGPOTransport, fmt.Sprintf(
+		"gpo: 05_05 du client %s pour l'utilisateur %q (annuaire : %q), empreinte appliquée %s",
+		clientID, requestedUser, directoryUser, shortFingerprint(appliedFingerprint)))
+
+	if requestedUser == "" || directoryUser == "" {
+		logs.Write_LogCode("WARNING", logs.CodeGPOTransport,
+			"gpo: 05_05 sans utilisateur cible reçue du client "+clientID)
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
+			errMalformedRequest, "utilisateur cible manquant")
+	}
+
+	db := database.GetDatabase()
+	if db == nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOResolve, "gpo: base indisponible pour la résolution user")
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser, errInternal, "base indisponible")
+	}
+
+	if !gpo.RestrictionsAreLoaded() {
+		reason := gpo.LastRestrictionError()
+		logs.Write_LogCode("ERROR", logs.CodeGPORestrictions, fmt.Sprintf(
+			"gpo: restrictions non chargées, refus de livrer une politique user à %s/%s — %s",
+			clientID, requestedUser, reason))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
+			errRestrictionsUnavailable, reason)
+	}
+
+	if _, err := dbusers.Get_User_ID_By_Username(db, directoryUser); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
+			"gpo: utilisateur %s inconnu, demandé par le client %s", directoryUser, clientID))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
+			errUnknownUser, "utilisateur inconnu de l'annuaire")
+	}
+
+	// Aucun groupe commun n'est pas une erreur de configuration : c'est le cas
+	// normal d'un utilisateur qui se connecte à une machine hors de ses groupes.
+	// On le distingue quand même d'une politique vide, pour que le client puisse
+	// le journaliser correctement plutôt que de croire à une GPO sans module.
+	if !HasSharedGroup(db, directoryUser, clientID) {
+		logs.Write_LogCode("DEBUG", logs.CodeGPOResolve, fmt.Sprintf(
+			"gpo: aucun groupe commun entre %s et %s", directoryUser, clientID))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser,
+			errNoSharedGroup, "aucun groupe commun entre l'utilisateur et la machine")
+	}
+
+	policy, err := resolveUserPolicy(db, directoryUser, clientID)
+	if err != nil {
+		code, message := classifyResolveError(err)
+		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
+			"gpo: résolution user échouée pour %s sur %s (%s) : %s", directoryUser, clientID, code, message))
+		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeUser, requestedUser, code, message)
+	}
+
+	// requestedUser et non directoryUser : c'est la clé de corrélation du client,
+	// et c'est aussi le nom du compte local que l'agent doit configurer.
+	return serveScope(trames, gpo.ScopeUser, requestedUser, policy, appliedFingerprint)
+}
+
+// serveScope compare l'empreinte annoncée par le client à celle de la politique
+// résolue, et répond soit « rien à faire », soit un manifeste.
+func serveScope(trames storage.Trames_struct_client, scope gpo.Scope, targetUser string,
+	policy gpo.Policy, appliedFingerprint string) string {
+
+	clientID := trames.ClientSoftwareID
+
+	transfer, err := gpo.PrepareTransfer(policy, targetUser)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOTransport, fmt.Sprintf(
+			"gpo: préparation du transfert %s échouée pour %s : %v", scope, clientID, err))
+		return replyScopeError(trames.SessionIntegritykey, scope, targetUser, errInternal, err.Error())
+	}
+	manifest := transfer.Manifest
+
+	if appliedFingerprint == manifest.Fingerprint {
+		logs.Write_LogCode("DEBUG", logs.CodeGPOTransport, fmt.Sprintf(
+			"gpo: politique %s à jour pour %s%s (empreinte %s), rien à envoyer",
+			scope, clientID, userSuffix(targetUser), shortFingerprint(manifest.Fingerprint)))
+		// Un transfert éventuellement en cours pour ce scope n'a plus lieu d'être.
+		dropTransfer(transferKey{ClientID: clientID, Scope: scope, Username: targetUser})
+		return replyUnchanged(trames.SessionIntegritykey, scope, targetUser, manifest.Fingerprint)
+	}
+
+	storeTransfer(transferKey{ClientID: clientID, Scope: scope, Username: targetUser}, transfer)
+
+	logs.Write_Log("INFO", fmt.Sprintf(
+		"gpo: politique %s v%d proposée à %s%s — %d module(s), %d fragment(s), empreinte %s (le client appliquait %s)",
+		scope, manifest.Version, clientID, userSuffix(targetUser), manifest.ModuleCount,
+		manifest.ChunkCount, shortFingerprint(manifest.Fingerprint), shortFingerprint(appliedFingerprint)))
+
+	return replyManifest(trames.SessionIntegritykey, manifest)
+}
+
+// handleAskChunk traite 05_09 et répond 05_10 ou 05_11.
+func handleAskChunk(trames storage.Trames_struct_client) string {
+	lines := contentLines(trames.Content)
+	scope := gpo.Scope(strings.TrimSpace(lineAt(lines, 0)))
+	targetUser := strings.TrimSpace(lineAt(lines, 1))
+	fingerprint := strings.TrimSpace(lineAt(lines, 2))
+	indexRaw := strings.TrimSpace(lineAt(lines, 3))
+	clientID := trames.ClientSoftwareID
+
+	if !gpo.IsValidPolicyScope(scope) {
+		logs.Write_LogCode("WARNING", logs.CodeGPOTransfer, fmt.Sprintf(
+			"gpo: 05_09 avec un scope invalide %q du client %s", scope, clientID))
+		return replyChunkError(trames.SessionIntegritykey, scope, targetUser,
+			errMalformedRequest, "scope invalide")
+	}
+	index, err := strconv.Atoi(indexRaw)
+	if err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeGPOTransfer, fmt.Sprintf(
+			"gpo: 05_09 avec un index illisible %q du client %s", indexRaw, clientID))
+		return replyChunkError(trames.SessionIntegritykey, scope, targetUser,
+			errBadIndex, "index de fragment illisible")
+	}
+
+	key := transferKey{ClientID: clientID, Scope: scope, Username: targetUser}
+	transfer, failure := getTransfer(key, fingerprint)
+	if failure != "" {
+		message := "transfert inconnu ou expiré ; recommencez par une demande 05_01 ou 05_05"
+		if failure == errStaleFingerprint {
+			message = "la politique a changé depuis le manifeste ; recommencez par une demande 05_01 ou 05_05"
+		}
+		logs.Write_LogCode("WARNING", logs.CodeGPOTransfer, fmt.Sprintf(
+			"gpo: fragment %d refusé pour %s (%s), empreinte demandée %s",
+			index, key, failure, shortFingerprint(fingerprint)))
+		return replyChunkError(trames.SessionIntegritykey, scope, targetUser, failure, message)
+	}
+
+	chunk, err := transfer.Chunk(index)
+	if err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeGPOTransfer, fmt.Sprintf(
+			"gpo: fragment %d hors bornes pour %s : %v", index, key, err))
+		return replyChunkError(trames.SessionIntegritykey, scope, targetUser, errBadIndex, err.Error())
+	}
+
+	logs.Write_LogCode("DEBUG", logs.CodeGPOTransfer, fmt.Sprintf(
+		"gpo: fragment %d/%d envoyé pour %s (%d octets)",
+		index+1, transfer.Manifest.ChunkCount, key, len(chunk)))
+
+	// Le dernier fragment livré libère le transfert : le garder n'apporterait rien
+	// et retiendrait la charge en mémoire jusqu'à expiration.
+	if index == transfer.Manifest.ChunkCount-1 {
+		dropTransfer(key)
+	}
+
+	return reply("05_10", trames.SessionIntegritykey,
+		string(scope), targetUser, fingerprint,
+		strconv.Itoa(index), strconv.Itoa(transfer.Manifest.ChunkCount),
+		string(chunk))
+}
+
+// handleApplyReport traite 05_12 et répond 05_13 ou 05_14.
+//
+// Le rapport est la seule source d'information du serveur sur ce qui a
+// réellement été appliqué : sans lui, l'interface présenterait la configuration
+// voulue comme si c'était la configuration réelle.
+func handleApplyReport(trames storage.Trames_struct_client) string {
+	lines := contentLines(trames.Content)
+	scope := gpo.Scope(strings.TrimSpace(lineAt(lines, 0)))
+	targetUser := strings.TrimSpace(lineAt(lines, 1))
+	fingerprint := strings.TrimSpace(lineAt(lines, 2))
+	status := strings.TrimSpace(lineAt(lines, 3))
+	clientID := trames.ClientSoftwareID
+
+	if !gpo.IsValidPolicyScope(scope) || fingerprint == "" || !gpo.IsValidApplyStatus(status) {
+		logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: rapport malformé du client %s (scope=%q empreinte=%q statut=%q)",
+			clientID, scope, shortFingerprint(fingerprint), status))
+		return replyReportError(trames.SessionIntegritykey, scope, targetUser,
+			errMalformedReport, "scope, empreinte ou statut invalide")
+	}
+
+	report := gpo.ApplyReport{
+		Scope:       scope,
+		Username:    targetUser,
+		Fingerprint: fingerprint,
+		Status:      gpo.ApplyStatus(status),
+	}
+
+	for i := 4; i < len(lines); i++ {
+		raw := strings.TrimSpace(lines[i])
+		if raw == "" {
+			continue
+		}
+		parts := strings.SplitN(raw, "|", 4)
+		if len(parts) < 3 {
+			logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+				"gpo: ligne de rapport ignorée (format attendu type|clé|résultat|détail) : %q", raw))
+			continue
+		}
+		result := parts[2]
+		if !gpo.IsValidApplyResult(result) {
+			logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+				"gpo: résultat de module inconnu %q dans le rapport de %s", result, clientID))
+			continue
+		}
+		detail := ""
+		if len(parts) == 4 {
+			detail = parts[3]
+		}
+		report.Modules = append(report.Modules, gpo.ModuleReport{
+			ModuleType: parts[0],
+			StateKey:   parts[1],
+			Result:     gpo.ApplyResult(result),
+			Detail:     detail,
+		})
+	}
+
+	logApplyReport(clientID, report)
+	persistApplyReport(clientID, report)
+
+	return reply("05_13", trames.SessionIntegritykey, string(scope), targetUser, fingerprint)
+}
+
+// persistApplyReport écrit le rapport en base.
+//
+// # Pourquoi l'échec d'écriture n'est pas renvoyé à l'agent
+//
+// L'agent a déjà appliqué la politique : sa part du travail est faite et rien
+// de ce qu'il pourrait refaire n'améliorerait la situation. Lui répondre 05_14
+// le ferait retenter une application inutile à chaque cycle, transformant une
+// panne de base en charge sur tout le parc. On accuse réception et on
+// journalise en ERROR — la perte est côté serveur, elle se traite côté serveur.
+func persistApplyReport(clientID string, report gpo.ApplyReport) {
+	db := database.GetDatabase()
+	if db == nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: rapport non persisté, base indisponible (client "+clientID+")")
+		return
+	}
+
+	modules := make([]dbgpo.ModuleReport, 0, len(report.Modules))
+	for _, m := range report.Modules {
+		modules = append(modules, dbgpo.ModuleReport{
+			ModuleType: m.ModuleType,
+			StateKey:   m.StateKey,
+			Result:     string(m.Result),
+			Detail:     m.Detail,
+		})
+	}
+
+	if err := dbgpo.SaveApplyReport(db, clientID, string(report.Scope), report.Username,
+		report.Fingerprint, string(report.Status), 0, modules); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: rapport non persisté : "+err.Error())
+	}
+}
+
+// handleDriftReport traite 05_15 et répond 05_16 ou 05_17.
+//
+// # Ce qu'un rapport de conformité ajoute
+//
+// Le rapport d'application dit ce qui s'est passé lors de la dernière
+// application. Celui-ci dit ce qui est vrai maintenant. Une machine peut avoir
+// appliqué parfaitement il y a trois semaines et avoir été modifiée à la main
+// depuis : sans 05_15, elle reste verte au tableau de bord.
+//
+// # Ce qui est validé, et pourquoi
+//
+// Le contenu vient d'un agent, c'est-à-dire d'une machine que l'administrateur
+// ne contrôle plus complètement — c'est justement la prémisse de la détection de
+// dérive. Le scope, le type d'écart et le nombre de fichiers vérifiés sont donc
+// vérifiés avant écriture ; les chemins sont stockés tels quels mais jamais
+// interprétés côté serveur, seulement affichés.
+func handleDriftReport(trames storage.Trames_struct_client) string {
+	lines := contentLines(trames.Content)
+	scope := gpo.Scope(strings.TrimSpace(lineAt(lines, 0)))
+	targetUser := strings.TrimSpace(lineAt(lines, 1))
+	clientID := trames.ClientSoftwareID
+
+	checked, errChecked := strconv.Atoi(strings.TrimSpace(lineAt(lines, 2)))
+	if !gpo.IsValidPolicyScope(scope) || errChecked != nil || checked < 0 {
+		logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: rapport de conformité malformé du client %s (scope=%q vérifiés=%q)",
+			clientID, scope, lineAt(lines, 2)))
+		return replyDriftError(trames.SessionIntegritykey, scope, targetUser,
+			errMalformedReport, "scope ou compteur invalide")
+	}
+
+	entries := parseDriftLines(lines, clientID)
+
+	logDriftReport(clientID, scope, targetUser, checked, entries)
+
+	db := database.GetDatabase()
+	if db == nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: conformité non persistée, base indisponible (client "+clientID+")")
+		return replyDriftError(trames.SessionIntegritykey, scope, targetUser,
+			errStorage, "base indisponible")
+	}
+	if err := dbgpo.SaveDriftReport(db, clientID, string(scope), targetUser, checked, entries); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport,
+			"gpo: conformité non persistée : "+err.Error())
+		return replyDriftError(trames.SessionIntegritykey, scope, targetUser,
+			errStorage, "enregistrement impossible")
+	}
+
+	return reply("05_16", trames.SessionIntegritykey, string(scope), targetUser, strconv.Itoa(len(entries)))
+}
+
+// parseDriftLines extrait les écarts d'un rapport 05_15.
+//
+// Extraite du handler pour être testable sans base : c'est la partie qui lit
+// une entrée non fiable, donc celle qui mérite des tests.
+//
+// Une ligne invalide est IGNORÉE, pas fatale au rapport. Un agent d'une version
+// plus récente peut connaître un type d'écart que ce serveur ignore ; rejeter
+// le rapport entier ferait perdre les quarante écarts valides pour un seul
+// inconnu.
+func parseDriftLines(lines []string, clientID string) []dbgpo.DriftEntry {
+	var entries []dbgpo.DriftEntry
+	for i := 4; i < len(lines); i++ {
+		raw := strings.TrimSpace(lines[i])
+		if raw == "" {
+			continue
+		}
+		// SplitN à 4 : le détail est le dernier champ et peut contenir des
+		// séparateurs sans que la ligne devienne ambiguë.
+		parts := strings.SplitN(raw, "|", 4)
+		if len(parts) < 3 {
+			logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+				"gpo: ligne de conformité ignorée (attendu clé|type|chemin|détail) : %q", raw))
+			continue
+		}
+		if !gpo.IsValidDriftKind(parts[1]) {
+			logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+				"gpo: type d'écart inconnu %q dans le rapport de %s", parts[1], clientID))
+			continue
+		}
+		detail := ""
+		if len(parts) == 4 {
+			detail = parts[3]
+		}
+		entries = append(entries, dbgpo.DriftEntry{
+			StateKey: parts[0],
+			Kind:     parts[1],
+			Path:     parts[2],
+			Detail:   detail,
+		})
+	}
+	return entries
+}
+
+// logDriftReport journalise au niveau que mérite le constat.
+//
+// Un écart n'est PAS une erreur du système : c'est un fait de terrain, souvent
+// une intervention manuelle légitime. WARNING et non ERROR — mais WARNING et non
+// INFO, parce qu'une machine qui dérive régulièrement mérite qu'on aille voir
+// pourquoi plutôt que de la laisser se faire recorriger indéfiniment.
+func logDriftReport(clientID string, scope gpo.Scope, username string, checked int, entries []dbgpo.DriftEntry) {
+	target := clientID + userSuffix(username)
+	if len(entries) == 0 {
+		logs.Write_LogCode("DEBUG", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: conformité %s de %s — %d fichier(s) vérifié(s), conforme", scope, target, checked))
+		return
+	}
+
+	// Trois exemples et pas la liste entière : un parc en dérive massive rendrait
+	// le journal illisible au moment précis où il faut le lire. Le détail complet
+	// est en base, qui est faite pour ça.
+	var exemples []string
+	for i, e := range entries {
+		if i == 3 {
+			break
+		}
+		exemples = append(exemples, fmt.Sprintf("%s (%s)", e.Path, e.Kind))
+	}
+	suite := ""
+	if len(entries) > len(exemples) {
+		suite = fmt.Sprintf(" et %d autre(s)", len(entries)-len(exemples))
+	}
+
+	logs.Write_LogCode("WARNING", logs.CodeGPOApplyReport, fmt.Sprintf(
+		"gpo: dérive %s sur %s — %d écart(s) sur %d fichier(s) : %s%s",
+		scope, target, len(entries), checked, strings.Join(exemples, ", "), suite))
+}
+
+// logApplyReport journalise un rapport d'application au bon niveau.
+//
+// Le niveau dépend du résultat : un échec d'application sur un parc doit
+// remonter au même titre qu'un incident de sécurité, parce que la machine
+// concernée n'est plus dans l'état que l'administrateur croit.
+func logApplyReport(clientID string, report gpo.ApplyReport) {
+	target := clientID + userSuffix(report.Username)
+	base := fmt.Sprintf("gpo: rapport %s de %s — empreinte %s, %s",
+		report.Scope, target, shortFingerprint(report.Fingerprint), report.Summary())
+
+	switch report.Status {
+	case gpo.ApplyStatusApplied:
+		logs.Write_Log("INFO", base)
+	case gpo.ApplyStatusPartial:
+		logs.Write_Log("WARNING", base)
+	default:
+		logs.Write_Log("ERROR", base)
+	}
+
+	for _, m := range report.FailedModules() {
+		logs.Write_LogCode("ERROR", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: module %s (%s) en échec sur %s — %s", m.ModuleType, m.StateKey, target, m.Detail))
+	}
+	for _, m := range report.Modules {
+		logs.Write_LogCode("DEBUG", logs.CodeGPOApplyReport, fmt.Sprintf(
+			"gpo: %s · %s · %s · %s", target, m.StateKey, m.Result, m.Detail))
+	}
+}
+
+// userSuffix formate l'utilisateur cible pour les messages de journal.
+func userSuffix(username string) string {
+	if username == "" {
+		return ""
+	}
+	return "/" + username
+}

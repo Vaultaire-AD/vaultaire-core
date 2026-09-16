@@ -1,0 +1,169 @@
+package configuration_file
+
+import (
+	"os"
+	"vaultaire/core/auth/ratelimit"
+	"vaultaire/core/logs"
+	"vaultaire/core/storage"
+
+	yaml "gopkg.in/yaml.v3"
+)
+
+func ReadConfigUser[T any](filePath string) (*T, error) {
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeFileConfig, "config: read file failed: "+err.Error())
+		return nil, err
+	}
+
+	var config T
+	err = yaml.Unmarshal(data, &config)
+	if err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeFileConfig, "config: YAML decode failed: "+err.Error())
+		return nil, err
+	}
+
+	return &config, nil
+}
+
+func LoadConfig(filePath string) error {
+	// Ouvrir le fichier
+	file, err := os.Open(filePath)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := file.Close(); err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeFileConfig, "config: file close failed: "+err.Error())
+		}
+	}()
+
+	// Initialiser une variable pour stocker les données du fichier
+	var config storage.Config
+
+	// Décoder le fichier YAML dans la structure Config
+	decoder := yaml.NewDecoder(file)
+	err = decoder.Decode(&config)
+	if err != nil {
+		return err
+	}
+
+	// Load configuration with env overrides for sensitive data
+	if val := os.Getenv("VAULTAIRE_DB_USERNAME"); val != "" {
+		storage.Database_username = val
+	} else if config.Database.Database_username != nil {
+		storage.Database_username = *config.Database.Database_username
+	}
+
+	if val := os.Getenv("VAULTAIRE_DB_PASSWORD"); val != "" {
+		storage.Database_password = val
+	} else if config.Database.Database_password != nil {
+		storage.Database_password = *config.Database.Database_password
+	}
+
+	if config.Database.Database_iPDatabase != nil {
+		storage.Database_iPDatabase = *config.Database.Database_iPDatabase
+	}
+	if config.Database.Database_portDatabase != nil {
+		storage.Database_portDatabase = *config.Database.Database_portDatabase
+	}
+	if config.Database.Database_databaseName != nil {
+		storage.Database_databaseName = *config.Database.Database_databaseName
+	}
+
+	if config.Path.SocketPath != nil {
+		storage.SocketPath = *config.Path.SocketPath
+	}
+	if config.Path.Client_Conf_path != nil {
+		storage.Client_Conf_path = *config.Path.Client_Conf_path
+	}
+	if config.Path.LogPath != nil {
+		storage.LogPath = *config.Path.LogPath
+	}
+	if config.ServerListenPort != nil {
+		storage.ServeurLisetenPort = *config.ServerListenPort
+	}
+	// Les chemins de clés ne sont plus configurés via YAML - toutes les clés sont en BDD
+	// Les variables PrivateKeyPath, PublicKeyPath, PrivateKeyforlogintoclient, PublicKeyforlogintoclient
+	// restent pour compatibilité avec EnsureLoginClientKeyFiles qui écrit temporairement les fichiers SSH
+
+	if config.Ldap.Ldap_Enable != nil {
+		storage.Ldap_Enable = *config.Ldap.Ldap_Enable
+	}
+	if config.Dns.Dns_Enable != nil {
+		storage.Dns_Enable = *config.Dns.Dns_Enable
+	}
+	if config.Ldap.Ldaps_Enable != nil {
+		storage.Ldaps_Enable = *config.Ldap.Ldaps_Enable
+	}
+	if config.Ldap.Ldap_Port != nil {
+		storage.Ldap_Port = *config.Ldap.Ldap_Port
+	}
+	if config.Ldap.Ldaps_Port != nil {
+		storage.Ldaps_Port = *config.Ldap.Ldaps_Port
+	}
+	// Les SAN sont recopiés même vides : une liste vidée dans le fichier doit
+	// pouvoir revenir à la seule détection automatique.
+	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
+	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
+	if config.Website.Website_Enable != nil {
+		storage.Website_Enable = *config.Website.Website_Enable
+	}
+	if config.Website.Website_Port != nil {
+		storage.Website_Port = *config.Website.Website_Port
+	}
+	// Mêmes règles que pour les SAN LDAPS : recopiés même vides.
+	storage.Web_TLS_DNSNames = config.Website.Web_TLS_DNSNames
+	storage.Web_TLS_IPs = config.Website.Web_TLS_IPs
+	// Recopié même vide, et pour une raison de sécurité : vider la liste dans le
+	// fichier doit ramener à « on ne croit personne ». Ne recopier que les
+	// valeurs non vides laisserait un relais de confiance en place après qu'on
+	// l'a retiré de la configuration.
+	storage.Web_Trusted_Proxies = config.Website.Web_Trusted_Proxies
+	ratelimit.ProxiesDeConfiance = config.Website.Web_Trusted_Proxies
+	if config.Api.API_Enable != nil {
+		storage.API_Enable = *config.Api.API_Enable
+	}
+	if config.Api.API_Port != nil {
+		storage.API_Port = *config.Api.API_Port
+	}
+	if config.Debug.Debug != nil {
+		storage.Debug = *config.Debug.Debug
+	}
+	// servercheckonlinetimer a quitté le fichier pour la base.
+	//
+	// Le champ n'est plus lu. Il n'est pas non plus ignoré en silence : une
+	// installation qui le porte encore verrait sinon sa valeur sans effet, et
+	// chercherait la panne du côté de la boucle. Le message nomme le
+	// remplacement.
+	if config.Path.ServerCheckOnlineTimerObsolete != nil {
+		logs.Write_Log("WARNING",
+			"config: « servercheckonlinetimer » n'est plus lu. La cadence de "+
+				"vérification des machines vit en base : « vlt settings set "+
+				"check_online_minutes <valeur> ». Retirez la ligne du fichier.")
+	}
+
+	// Administrateur settings
+	if config.Administrateur.Enable != nil {
+		storage.Administrateur_Enable = *config.Administrateur.Enable
+	}
+
+	if val := os.Getenv("VAULTAIRE_ADMIN_USERNAME"); val != "" {
+		storage.Administrateur_Username = val
+	} else if config.Administrateur.Username != nil {
+		storage.Administrateur_Username = *config.Administrateur.Username
+	}
+
+	if val := os.Getenv("VAULTAIRE_ADMIN_PASSWORD"); val != "" {
+		storage.Administrateur_Password = val
+	} else if config.Administrateur.Password != nil {
+		storage.Administrateur_Password = *config.Administrateur.Password
+	}
+
+	if config.Administrateur.PublicKey != nil {
+		storage.Administrateur_PublicKey = *config.Administrateur.PublicKey
+	}
+
+	// Retourner la configuration lue
+	return nil
+}
