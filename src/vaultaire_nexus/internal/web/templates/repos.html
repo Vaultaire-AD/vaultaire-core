@@ -1,0 +1,45 @@
+{{define "content"}}
+<h1>Dépôts</h1>
+<section class="card">
+  {{if .Data.Repos}}
+  <table>
+    <thead><tr><th>Nom</th><th>Type</th><th>Accès</th><th class="num">Éléments</th><th class="num">Versions</th><th class="num">Taille</th><th>Adresse</th></tr></thead>
+    <tbody>
+    {{range .Data.Repos}}
+    <tr>
+      <td><a href="/ui/repos/{{.Repo.Name}}"><b>{{.Repo.Name}}</b></a><br><small class="muted">{{.Repo.Description}}</small></td>
+      <td><span class="type t-{{.Repo.Type}}">{{typeLabel .Repo.Type}}</span></td>
+      <td>{{if .Repo.Public}}<span class="tag">public</span>{{else}}<span class="tag lock">authentifié</span>{{end}}{{if .CanWrite}} <span class="tag ok">publication</span>{{end}}</td>
+      <td class="num">{{.Stats.Packages}}</td><td class="num">{{.Stats.Versions}}</td><td class="num">{{bytes .Stats.Size}}</td>
+      <td><code class="copy" data-copy="{{.URL}}">{{.URL}}</code></td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">Aucun dépôt visible avec vos droits.</p>{{end}}
+</section>
+
+{{if .IsAdmin}}
+<section class="card">
+  <h2>Nouveau dépôt</h2>
+  <form method="post" action="/ui/repos" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Nom <input name="name" required pattern="[a-z0-9][a-z0-9._\-]{0,62}" placeholder="rocky9"></label>
+    <label>Type
+      <select name="type" id="repo-type">
+        {{range .Data.Types}}<option value="{{.Value}}">{{.Label}}</option>{{end}}
+      </select>
+    </label>
+    <label class="wide">Description <input name="description" placeholder="Paquets internes Rocky Linux 9"></label>
+    <label>Versions conservées par paquet <input name="keep_versions" type="number" min="0" value="0"><small>0 = toutes</small></label>
+    <label class="check"><input type="checkbox" name="public"> Lecture anonyme (clients sans compte)</label>
+    <label data-for-type="deb">Distribution (apt) <input name="distribution" placeholder="stable"></label>
+    <label data-for-type="deb">Composant (apt) <input name="component" placeholder="main"></label>
+    <label>Groupes lecteurs en plus <input name="readers" placeholder="Infra, Dev"></label>
+    <label>Groupes publieurs en plus <input name="publishers" placeholder="Dev-Web"></label>
+    <div class="wide"><button class="primary">Créer</button></div>
+  </form>
+  <p class="hint">Un dépôt Docker s'adresse ainsi : <code>{{.Host}}/&lt;dépôt&gt;/&lt;image&gt;:&lt;tag&gt;</code>.</p>
+</section>
+{{end}}
+{{end}}

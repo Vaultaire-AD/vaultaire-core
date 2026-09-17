@@ -1,0 +1,51 @@
+{{define "content"}}
+<h1>Jetons d'accès</h1>
+<p class="muted">Pour ce qui ne tape pas de mot de passe : <code>docker login</code>, <code>dnf</code>, <code>apt</code>, la CI.
+Un jeton ne dépasse jamais vos droits, et un jeton « lecture » ne publie jamais.</p>
+
+{{if .Data.New}}
+<section class="card highlight">
+  <h2>Jeton créé : {{.Data.NewInfo.Label}}</h2>
+  <p><b>Copiez-le maintenant, il ne sera plus affiché.</b></p>
+  <pre class="copyable"><code>{{.Data.New}}</code></pre>
+  <h3>Exemples</h3>
+  <pre class="copyable"><code>docker login {{.Host}} -u {{.User.Username}} --password-stdin &lt;&lt;&lt; '{{.Data.New}}'
+curl -H 'Authorization: Bearer {{.Data.New}}' {{.BaseURL}}/api/v1/whoami</code></pre>
+</section>
+{{end}}
+
+<section class="card">
+  <h2>Nouveau jeton</h2>
+  <form method="post" action="/ui/tokens" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Libellé <input name="label" required maxlength="64" placeholder="ci-gitlab, serveur-web01…"></label>
+    <label>Portée
+      <select name="scope">
+        <option value="reader">lecture (télécharger)</option>
+        <option value="publisher">publication (envoyer, supprimer)</option>
+      </select>
+    </label>
+    <label>Validité (jours) <input name="days" type="number" min="0" value="90"><small>0 = sans échéance</small></label>
+    <div class="wide"><button class="primary">Créer</button></div>
+  </form>
+</section>
+
+<section class="card">
+  <h2>{{if .Data.All}}Tous les jetons{{else}}Mes jetons{{end}}</h2>
+  {{if .IsAdmin}}<p>{{if .Data.All}}<a href="/ui/tokens">Voir seulement les miens</a>{{else}}<a href="/ui/tokens?all=1">Voir tous les jetons</a>{{end}}</p>{{end}}
+  {{if .Data.Tokens}}
+  <table>
+    <thead><tr><th>Libellé</th><th>Identifiant</th>{{if .Data.All}}<th>Titulaire</th>{{end}}<th>Portée</th><th>Créé</th><th>Échéance</th><th>Dernier usage</th><th></th></tr></thead>
+    <tbody>{{range .Data.Tokens}}
+    <tr class="{{if .Expired}}bad{{end}}"><td>{{.Label}}</td><td><code>nxs_{{.ID}}_…</code></td>{{if $.Data.All}}<td>{{.Owner}}</td>{{end}}
+      <td>{{roleLabel .Scope}}</td><td>{{ago .CreatedAt}}</td>
+      <td>{{if .ExpiresAt.IsZero}}jamais{{else}}{{date .ExpiresAt}}{{end}}{{if .Expired}} <span class="tag err">échu</span>{{end}}</td>
+      <td>{{ago .LastUsed}}{{if .LastIP}}<br><small class="muted">{{.LastIP}}</small>{{end}}</td>
+      <td><form method="post" action="/ui/tokens/revoke" data-confirm="Révoquer le jeton {{.Label}} ?">
+        <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}">
+        <button class="danger small">Révoquer</button></form></td></tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="empty">Aucun jeton.</p>{{end}}
+</section>
+{{end}}

@@ -1,0 +1,140 @@
+{{define "content"}}
+{{$r := .Data.Repo}}
+<p class="crumbs"><a href="/ui/repos">Dépôts</a> ›</p>
+<h1>{{$r.Name}} <span class="type t-{{$r.Type}}">{{typeLabel $r.Type}}</span> {{if $r.Public}}<span class="tag">public</span>{{else}}<span class="tag lock">authentifié</span>{{end}}</h1>
+{{if $r.Description}}<p class="muted">{{$r.Description}}</p>{{end}}
+
+<div class="kpis">
+  <div class="kpi"><span>{{if isType $r "docker"}}Images{{else}}Paquets{{end}}</span><b>{{.Data.Stats.Packages}}</b></div>
+  <div class="kpi"><span>{{if isType $r "docker"}}Manifestes{{else}}Versions{{end}}</span><b>{{.Data.Stats.Versions}}</b></div>
+  <div class="kpi"><span>Taille</span><b>{{bytes .Data.Stats.Size}}</b></div>
+  <div class="kpi"><span>Rétention</span><b>{{if $r.KeepVersions}}{{$r.KeepVersions}}{{else}}∞{{end}}</b><small>versions par paquet</small></div>
+</div>
+
+<section class="card">
+  <h2>Utiliser ce dépôt</h2>
+  {{range .Data.Snippets}}
+  <h3>{{.Title}}</h3>
+  <pre class="copyable"><code>{{.Code}}</code></pre>
+  {{end}}
+  {{if not $r.Public}}<p class="hint">Dépôt authentifié : utilisez un <a href="/ui/tokens">jeton d'accès</a> plutôt que votre mot de passe dans les fichiers de configuration.</p>{{end}}
+</section>
+
+{{if .Data.Images}}
+<section class="card">
+  <h2>Images</h2>
+  <table>
+    <thead><tr><th>Image</th><th>Tags</th><th class="num">Pulls</th><th>Mise à jour</th></tr></thead>
+    <tbody>{{range .Data.Images}}
+    <tr><td><a href="/ui/repos/{{$r.Name}}/image?name={{queryEscape .Image.Name}}"><b>{{.Image.Name}}</b></a></td>
+      <td>{{range .Tags}}<span class="tag">{{.}}</span> {{end}}</td>
+      <td class="num">{{.Pulls}}</td><td title="{{date .Image.UpdatedAt}}">{{ago .Image.UpdatedAt}}</td></tr>
+    {{end}}</tbody>
+  </table>
+</section>
+{{else if isType $r "docker"}}
+<section class="card"><p class="empty">Aucune image. Poussez-en une avec <code>docker push</code>.</p></section>
+{{end}}
+
+{{if .Data.Releases}}
+<section class="card">
+  <h2>Releases</h2>
+  <table>
+    <thead><tr><th>Tag</th><th>Publiée</th><th>Fichiers</th></tr></thead>
+    <tbody>{{range .Data.Releases}}
+    <tr><td><b>{{.Tag}}</b></td><td title="{{date .Published}}">{{ago .Published}}</td>
+      <td>{{range .Assets}}<a href="/repo/vaultaire/{{$r.Name}}/download/v{{.Version}}/{{.Filename}}?download=1">{{.Filename}}</a> <small class="muted">{{bytes .Size}}</small><br>{{end}}
+      <a href="/repo/vaultaire/{{$r.Name}}/download/{{.Tag}}/SHA256SUMS">SHA256SUMS</a></td></tr>
+    {{end}}</tbody>
+  </table>
+</section>
+{{end}}
+
+{{if not (isType $r "docker")}}
+<section class="card">
+  <h2>{{if isType $r "vaultaire"}}Composants{{else}}Paquets{{end}}</h2>
+  {{if .Data.Packages}}
+  <table>
+    <thead><tr><th>Nom</th><th>Dernière version</th><th>Arch.</th><th class="num">Versions</th><th class="num">Taille</th><th class="num">Téléch.</th><th>Mise à jour</th></tr></thead>
+    <tbody>{{range .Data.Packages}}
+    <tr><td><a href="/ui/repos/{{$r.Name}}/package?name={{queryEscape .Name}}"><b>{{.Name}}</b></a><br><small class="muted">{{.Summary}}</small></td>
+      <td><code>{{.Latest}}</code></td><td>{{join .Arches ", "}}</td>
+      <td class="num">{{.Versions}}</td><td class="num">{{bytes .Size}}</td><td class="num">{{.Downloads}}</td>
+      <td title="{{date .Updated}}">{{ago .Updated}}</td></tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="empty">Aucun paquet publié.</p>{{end}}
+</section>
+{{end}}
+
+{{if and .Data.CanWrite (not (isType $r "docker"))}}
+<section class="card">
+  <h2>Publier</h2>
+  <form method="post" action="/ui/repos/{{$r.Name}}/upload" enctype="multipart/form-data" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    {{if or (isType $r "generic") (isType $r "vaultaire")}}
+    <label>Nom <input name="name" {{if isType $r "generic"}}required{{end}} placeholder="{{if isType $r "vaultaire"}}déduit du nom d'archive{{else}}outil{{end}}"></label>
+    <label>Version <input name="version" {{if isType $r "generic"}}required{{end}} placeholder="1.0.0"></label>
+    <label>Architecture <input name="arch" placeholder="linux-amd64"></label>
+    <label>Résumé <input name="summary"></label>
+    {{end}}
+    <label class="wide">Fichier <input type="file" name="file" required
+      {{if isType $r "rpm"}}accept=".rpm"{{else if isType $r "deb"}}accept=".deb"{{end}}></label>
+    <div class="wide"><button class="primary">Envoyer</button>
+    {{if isType $r "rpm"}}<small class="muted">Nom, version et architecture sont lus dans l'en-tête RPM.</small>{{end}}
+    {{if isType $r "deb"}}<small class="muted">Nom, version et architecture sont lus dans le fichier control.</small>{{end}}
+    </div>
+  </form>
+  <p class="hint">Une version publiée est immuable : pour la remplacer, supprimez-la puis publiez-la à nouveau.</p>
+</section>
+{{end}}
+
+{{if and .IsAdmin (isType $r "vaultaire")}}
+<section class="card">
+  <h2>Importer une release GitHub</h2>
+  <p class="muted">Nexus télécharge les archives, les vérifie contre SHA256SUMS, puis les publie ici. Utile pour un parc sans accès Internet.</p>
+  <form method="post" action="/ui/repos/{{$r.Name}}/import" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label>Dépôt GitHub <input name="repository" placeholder="Vaultaire-AD/vaultaire-core"></label>
+    <label>Tag <input name="tag" placeholder="latest"></label>
+    <div class="wide"><button>Importer</button></div>
+  </form>
+</section>
+{{end}}
+
+{{if .Data.Top}}
+<section class="card">
+  <h2>Les plus téléchargés ici</h2>
+  <table class="compact"><tbody>{{range .Data.Top}}
+    <tr><td>{{.Name}}</td><td class="num">{{.Downloads}} téléch.</td><td class="num">{{len .Users}} compte(s)</td><td>{{ago .Last}}</td></tr>
+  {{end}}</tbody></table>
+  <p><a href="/ui/usage?repo={{$r.Name}}">Toute l'utilisation de ce dépôt →</a></p>
+</section>
+{{end}}
+
+{{if .IsAdmin}}
+<section class="card danger-zone">
+  <h2>Réglages</h2>
+  <form method="post" action="/ui/repos/{{$r.Name}}/settings" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="wide">Description <input name="description" value="{{$r.Description}}"></label>
+    <label>Versions conservées par paquet <input name="keep_versions" type="number" min="0" value="{{$r.KeepVersions}}"></label>
+    <label class="check"><input type="checkbox" name="public" {{if $r.Public}}checked{{end}}> Lecture anonyme</label>
+    <label>Groupes lecteurs en plus <input name="readers" value="{{join $r.Readers ", "}}"></label>
+    <label>Groupes publieurs en plus <input name="publishers" value="{{join $r.Publishers ", "}}"></label>
+    <div class="wide"><button>Enregistrer</button></div>
+  </form>
+  <p class="muted">Créé {{ago $r.CreatedAt}} par {{$r.CreatedBy}}.</p>
+  <div class="actions">
+    {{if or (isType $r "rpm") (isType $r "deb")}}
+    <form method="post" action="/ui/repos/{{$r.Name}}/reindex"><input type="hidden" name="csrf" value="{{.CSRF}}"><button>Régénérer l'index</button></form>
+    {{end}}
+    <form method="post" action="/ui/repos/{{$r.Name}}/delete" class="inline">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input name="confirm" placeholder="tapez {{$r.Name}}" aria-label="Confirmation" required>
+      <button class="danger">Supprimer le dépôt</button>
+    </form>
+  </div>
+</section>
+{{end}}
+{{end}}

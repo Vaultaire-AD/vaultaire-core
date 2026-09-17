@@ -1,0 +1,59 @@
+{{define "content"}}
+<h1>Utilisation</h1>
+<form method="get" action="/ui/usage" class="inline filter">
+  <label>Dépôt
+    <select name="repo" data-autosubmit>
+      <option value="">tous</option>
+      {{range .Data.Repos}}<option value="{{.Name}}" {{if eq .Name $.Data.RepoFilter}}selected{{end}}>{{.Name}}</option>{{end}}
+    </select>
+  </label>
+  <noscript><button>Filtrer</button></noscript>
+</form>
+
+<div class="kpis">
+  <div class="kpi"><span>Téléchargements 30 j</span><b>{{.Data.Totals.Downloads}}</b></div>
+  <div class="kpi"><span>Volume servi 30 j</span><b>{{bytes .Data.Totals.Bytes}}</b></div>
+  <div class="kpi"><span>Publications 30 j</span><b>{{.Data.Totals.Uploads}}</b></div>
+  <div class="kpi"><span>Accès refusés 30 j</span><b>{{.Data.Totals.Denied}}</b></div>
+</div>
+
+<section class="card">
+  <h2>Téléchargements — 30 jours <small class="muted">(tous dépôts)</small></h2>
+  {{template "chart" .Data}}
+</section>
+
+<section class="card">
+  <h2>Paquets et images les plus récupérés</h2>
+  {{if .Data.Top}}
+  <table>
+    <thead><tr><th>Nom</th><th>Dépôt</th><th class="num">Téléch.</th><th class="num">Volume</th><th class="num">Comptes</th><th>Par version</th><th>Dernier</th></tr></thead>
+    <tbody>{{range .Data.Top}}
+    <tr><td>{{.Name}}</td><td><a href="/ui/repos/{{.Repo}}">{{.Repo}}</a></td><td class="num">{{.Downloads}}</td><td class="num">{{bytes .Bytes}}</td>
+      <td class="num">{{len .Users}}</td>
+      <td>{{range $v, $n := .ByVersion}}<span class="tag">{{$v}} : {{$n}}</span> {{end}}</td>
+      <td>{{ago .Last}}</td></tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="empty">Aucun téléchargement.</p>{{end}}
+</section>
+
+{{if .Data.Clients}}
+<section class="card">
+  <h2>Clients</h2>
+  <table>
+    <thead><tr><th>Adresse</th><th>Comptes</th><th>Outil</th><th class="num">Téléch.</th><th class="num">Volume</th><th>Dernière activité</th></tr></thead>
+    <tbody>{{range .Data.Clients}}
+    <tr><td><code>{{.IP}}</code></td><td>{{range $u, $_ := .Users}}{{$u}} {{end}}</td><td><small>{{.Agent}}</small></td>
+      <td class="num">{{.Downloads}}</td><td class="num">{{bytes .Bytes}}</td><td>{{ago .Last}}</td></tr>
+    {{end}}</tbody>
+  </table>
+  {{if .Data.Dropped}}<p class="flash err">{{.Data.Dropped}} évènement(s) non écrit(s) dans le journal (disque saturé ou bloqué).</p>{{end}}
+</section>
+{{end}}
+
+<section class="card">
+  <h2>Journal</h2>
+  {{template "events" .Data.Recent}}
+  {{if .IsAdmin}}<p><a href="/api/v1/usage/export?repo={{.Data.RepoFilter}}">Exporter 7 jours (JSON Lines)</a></p>{{end}}
+</section>
+{{end}}

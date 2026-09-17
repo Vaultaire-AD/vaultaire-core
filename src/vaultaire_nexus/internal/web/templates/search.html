@@ -1,0 +1,24 @@
+{{define "content"}}
+<h1>Recherche</h1>
+<form action="/ui/search" method="get" class="card inline">
+  <input type="search" name="q" value="{{.Data.Q}}" placeholder="nom de paquet ou d'image" autofocus>
+  <button class="primary">Rechercher</button>
+</form>
+{{if .Data.Q}}
+<section class="card">
+  {{if .Data.Hits}}
+  <table>
+    <thead><tr><th>Nom</th><th>Dépôt</th><th>Type</th><th>Dernière version</th></tr></thead>
+    <tbody>{{range .Data.Hits}}
+    <tr><td>
+      {{if eq .RepoType "docker"}}<a href="/ui/repos/{{.Repo}}/image?name={{queryEscape .Name}}">{{.Name}}</a>
+      {{else}}<a href="/ui/repos/{{.Repo}}/package?name={{queryEscape .Name}}">{{.Name}}</a>{{end}}
+      <br><small class="muted">{{.Summary}}</small></td>
+      <td><a href="/ui/repos/{{.Repo}}">{{.Repo}}</a></td><td><span class="type t-{{.RepoType}}">{{typeLabel .RepoType}}</span></td>
+      <td><code>{{.Latest}}</code></td></tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="empty">Aucun résultat pour « {{.Data.Q}} ».</p>{{end}}
+</section>
+{{end}}
+{{end}}

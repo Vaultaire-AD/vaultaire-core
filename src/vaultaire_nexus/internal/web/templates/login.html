@@ -1,0 +1,21 @@
+{{define "content"}}
+<section class="login">
+  <div class="brand big"><span class="logo" aria-hidden="true"></span>Vaultaire <b>Nexus</b></div>
+  <p class="muted">Dépôt de paquets, d'images et de releases du parc Vaultaire.</p>
+  <form method="post" action="/login" class="card">
+    <input type="hidden" name="next" value="{{.Data.Next}}">
+    <label>Identifiant
+      <input name="username" autocomplete="username" required autofocus value="{{.Data.Username}}">
+    </label>
+    <label>Mot de passe
+      <input name="password" type="password" autocomplete="current-password" required>
+    </label>
+    <button class="primary">Se connecter</button>
+    {{if .Data.LocalOnly}}
+    <p class="hint">Mode local : seul le compte <code>{{.Data.LocalName}}</code> est ouvert.</p>
+    {{else}}
+    <p class="hint">Compte Vaultaire, ou compte local <code>{{.Data.LocalName}}</code> en secours.</p>
+    {{end}}
+  </form>
+</section>
+{{end}}

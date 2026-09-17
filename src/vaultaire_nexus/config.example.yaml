@@ -1,0 +1,134 @@
+# =====================================================================
+# Vaultaire Nexus — configuration
+# =====================================================================
+#
+# Lecture STRICTE : une clé inconnue empêche le démarrage.
+# Valider sans démarrer :  vaultaire_nexus -config <fichier> -check
+#
+# Les valeurs commentées sont les défauts.
+# Secrets : préférez l'environnement (NEXUS_ADMIN_PASSWORD,
+# NEXUS_LDAP_BIND_PASSWORD) à ce fichier.
+
+# Adresse d'écoute. 8843 évite les ports du parc (6666, 4443, 6643, 389, 636, 8443).
+listen: ":8843"
+
+# Adresse que les CLIENTS utilisent. Apparaît dans les instructions de
+# l'interface, l'API releases et l'enregistrement au cluster.
+# Obligatoire derrière un mandataire, et si ducky.enable est vrai.
+public_url: "https://nexus.acme.lan:8843"
+
+data_dir: /var/lib/vaultaire_nexus
+log_path: /var/log/vaultaire/
+# debug: false
+
+# Taille maximale d'un envoi (paquet, couche Docker), en Mo.
+# max_upload_mb: 4096
+
+# --- TLS -------------------------------------------------------------
+# Docker exige HTTPS. self_signed crée un certificat au premier démarrage
+# dans <data_dir>/tls/ ; les clients le récupèrent sur /repo/keys/nexus.crt.
+tls:
+  enable: true
+  self_signed: true
+  # cert_file: /etc/vaultaire_nexus/tls/nexus.crt
+  # key_file:  /etc/vaultaire_nexus/tls/nexus.key
+  dns_names: [nexus.acme.lan]       # ajoutés au certificat auto-signé
+  # ip_addresses: [10.0.0.20]
+
+# Mandataires dont on croit X-Forwarded-For (sinon ignoré).
+# trusted_proxies:
+#   cidrs: [10.0.0.5/32]
+
+# --- Authentification ------------------------------------------------
+auth:
+  # local : compte local seul
+  # ldap  : compte local + comptes Vaultaire par l'annuaire du core
+  # ducky : pas encore disponible (DUCKY_AUTH.md)
+  mode: local
+  # session_minutes: 30
+
+  # Compte de secours, indépendant de Vaultaire. Toujours actif si enable.
+  # Mot de passe vide : généré au premier démarrage dans <data_dir>/admin.initial.
+  local_admin:
+    enable: true
+    username: admin
+    # password: ""            # ou NEXUS_ADMIN_PASSWORD
+
+  ldap:
+    url: ldaps://vaultaire.acme.lan:636
+    base_dn: dc=acme,dc=lan
+    # Compte de service pour lire les groupes (facultatif : sinon la recherche
+    # se fait avec la session de l'utilisateur).
+    # bind_dn: uid=svc_nexus,dc=acme,dc=lan
+    # bind_password: ""       # ou NEXUS_LDAP_BIND_PASSWORD
+    # user_filter: "(uid=%s)"
+    ca_file: /etc/vaultaire_nexus/core-ca.crt
+    # insecure_skip_verify: false
+    # timeout_seconds: 10
+
+  # Groupes Vaultaire → rôle Nexus. « * » = tout compte authentifié.
+  # Un compte sans rôle est refusé.
+  roles:
+    admin:     [vaultaire]
+    publisher: []
+    reader:    ["*"]
+
+  # lockout:
+  #   max_failures: 5         # par compte ; ×4 par adresse
+  #   window_minutes: 15
+
+# --- Suivi d'utilisation ---------------------------------------------
+usage:
+  retention_days: 90
+  anonymize_ip: false
+
+# --- Signature des index APT / YUM -----------------------------------
+# Clé sans phrase de passe dans gpg_home. Clé publique : /repo/keys/nexus.asc
+signing:
+  enable: false
+  # gpg_home: /var/lib/vaultaire_nexus/gnupg
+  # key_id: nexus@acme.lan
+  # gpg_binary: gpg
+
+# --- Dépôts créés au démarrage s'ils n'existent pas ------------------
+# Types : rpm, deb, docker, vaultaire, generic
+# Modifier ce bloc ne modifie PAS un dépôt existant (interface ou API).
+repositories:
+  - name: rocky9
+    type: rpm
+    description: Paquets internes pour Rocky Linux 9
+    public: true
+    keep_versions: 5
+
+  - name: debian
+    type: deb
+    description: Paquets internes pour Debian 12
+    public: true
+    distribution: bookworm
+    component: main
+    keep_versions: 5
+
+  - name: docker
+    type: docker
+    description: Images du parc
+
+  - name: releases
+    type: vaultaire
+    description: Binaires Vaultaire (agents, services hors conteneur)
+    public: true
+    keep_versions: 10
+
+  - name: outils
+    type: generic
+    description: Scripts et outils d'exploitation
+    # readers: [Infra]          # groupes en plus du rôle global
+    # publishers: [Infra]
+
+# --- Raccordement au cluster (réseau Ducky) --------------------------
+# DÉSACTIVÉ tant que le core ne connaît pas le type « vaultaire_nexus »
+# (CORE_CHANGEMENTS.md § 1).
+ducky:
+  enable: false
+  # config: /etc/vaultaire_nexus/ducky.yaml   # serveurs du core, clé d'enrôlement
+  # keys: <data_dir>/ducky                    # identité du service (écrite à l'enrôlement)
+  # enroll: true

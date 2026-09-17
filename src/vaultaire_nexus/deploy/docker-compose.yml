@@ -1,0 +1,37 @@
+# Vaultaire Nexus — déploiement autonome
+#
+#   docker compose -f src/vaultaire_nexus/deploy/docker-compose.yml up -d --build
+#   docker compose -f src/vaultaire_nexus/deploy/docker-compose.yml exec nexus cat /var/lib/vaultaire_nexus/admin.initial
+#
+# Configuration : copier ../config.example.yaml en ./config.yaml, puis
+# décommenter le montage ci-dessous. Sans montage, l'image fournit une
+# configuration minimale (mode local, dépôts à créer depuis l'interface).
+
+name: vaultaire-nexus
+
+services:
+  nexus:
+    build:
+      context: ../..                      # src/ : le SDK Ducky est une dépendance locale
+      dockerfile: vaultaire_nexus/deploy/Dockerfile
+      args:
+        VERSION: ${NEXUS_VERSION:-}
+        COMMIT: ${NEXUS_COMMIT:-dev}
+    image: vaultaire/nexus:${NEXUS_VERSION:-local}
+    restart: unless-stopped
+    ports:
+      - "8843:8843"
+    environment:
+      # Adresse que les clients utiliseront (instructions, API releases).
+      NEXUS_PUBLIC_URL: ${NEXUS_PUBLIC_URL:-https://localhost:8843}
+      # Mot de passe du compte local ; vide → généré dans admin.initial.
+      NEXUS_ADMIN_PASSWORD: ${NEXUS_ADMIN_PASSWORD:-}
+      NEXUS_LDAP_BIND_PASSWORD: ${NEXUS_LDAP_BIND_PASSWORD:-}
+      NEXUS_GITHUB_TOKEN: ${NEXUS_GITHUB_TOKEN:-}
+    volumes:
+      - nexus-data:/var/lib/vaultaire_nexus
+      # - ./config.yaml:/etc/vaultaire_nexus/config.yaml:ro
+      # - ./ducky.yaml:/etc/vaultaire_nexus/ducky.yaml:ro     # si ducky.enable
+
+volumes:
+  nexus-data:

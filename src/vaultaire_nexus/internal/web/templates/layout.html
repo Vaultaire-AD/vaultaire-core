@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · Vaultaire Nexus</title>
+<link rel="stylesheet" href="/static/nexus.css">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<script src="/static/nexus.js" defer></script>
+</head>
+<body{{if not .User}} class="bare"{{end}}>
+{{if .User}}
+<header class="top">
+  <a class="brand" href="/"><span class="logo" aria-hidden="true"></span>Vaultaire <b>Nexus</b></a>
+  <nav>
+    <a href="/" {{if eq .Nav "home"}}class="on"{{end}}>Tableau de bord</a>
+    <a href="/ui/repos" {{if eq .Nav "repos"}}class="on"{{end}}>Dépôts</a>
+    <a href="/ui/usage" {{if eq .Nav "usage"}}class="on"{{end}}>Utilisation</a>
+    <a href="/ui/tokens" {{if eq .Nav "tokens"}}class="on"{{end}}>Jetons</a>
+    {{if .IsAdmin}}<a href="/ui/admin" {{if eq .Nav "admin"}}class="on"{{end}}>Administration</a>{{end}}
+  </nav>
+  <form class="search" action="/ui/search" method="get" role="search">
+    <input type="search" name="q" placeholder="Paquet, image…" aria-label="Rechercher">
+  </form>
+  <div class="me">
+    <span title="Source : {{.User.Source}} — groupes : {{join .User.Groups ", "}}">{{.User.Display}} · <em>{{roleLabel .User.Role}}</em></span>
+    <form action="/logout" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">Déconnexion</button></form>
+  </div>
+</header>
+{{end}}
+<main>
+{{range .Flash}}<div class="flash {{.Kind}}" role="status">{{.Text}}</div>{{end}}
+{{template "content" .}}
+</main>
+<footer>Vaultaire Nexus {{.Version}}</footer>
+</body>
+</html>

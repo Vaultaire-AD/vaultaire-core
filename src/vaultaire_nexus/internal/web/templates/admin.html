@@ -1,0 +1,56 @@
+{{define "content"}}
+<h1>Administration</h1>
+{{$c := .Data.Cfg}}
+<div class="kpis">
+  <div class="kpi"><span>Blobs stockés</span><b>{{.Data.Blobs}}</b><small>{{bytes .Data.BlobSize}}</small></div>
+  <div class="kpi"><span>Sessions ouvertes</span><b>{{.Data.Sessions}}</b></div>
+  <div class="kpi"><span>En service depuis</span><b>{{.Data.Uptime}}</b></div>
+  <div class="kpi"><span>Évènements perdus</span><b>{{.Data.Dropped}}</b></div>
+</div>
+
+<div class="grid2">
+<section class="card">
+  <h2>Configuration</h2>
+  <dl class="fields">
+    <dt>Écoute</dt><dd><code>{{$c.Listen}}</code>{{if $c.TLS.Enable}} (TLS{{if $c.TLS.SelfSigned}}, auto-signé{{end}}){{else}} (HTTP — derrière un mandataire TLS){{end}}</dd>
+    <dt>URL publique</dt><dd><code>{{.BaseURL}}</code></dd>
+    <dt>Données</dt><dd><code>{{$c.DataDir}}</code></dd>
+    <dt>Authentification</dt><dd>{{.AuthMode}}{{if eq .AuthMode "ldap"}} — <code>{{$c.Auth.LDAP.URL}}</code>, base <code>{{$c.Auth.LDAP.BaseDN}}</code>{{end}}</dd>
+    <dt>Rôle administrateur</dt><dd>{{join $c.Auth.Roles.Admin ", "}}</dd>
+    <dt>Rôle publieur</dt><dd>{{join $c.Auth.Roles.Publisher ", "}}</dd>
+    <dt>Rôle lecteur</dt><dd>{{join $c.Auth.Roles.Reader ", "}}</dd>
+    <dt>Compte local</dt><dd>{{if .Data.LocalEnabled}}actif ({{$c.Auth.LocalAdmin.Username}}){{else}}désactivé{{end}}</dd>
+    <dt>Signature GPG</dt><dd>{{if .Data.Signed}}active — clé <code>{{$c.Signing.KeyID}}</code>{{else}}désactivée (apt : <code>[trusted=yes]</code>){{end}}</dd>
+    <dt>Envoi maximal</dt><dd>{{$c.MaxUploadMB}} Mo</dd>
+    <dt>Rétention du suivi</dt><dd>{{$c.Usage.RetentionDays}} jours{{if $c.Usage.Anonymize}}, adresses tronquées{{end}}</dd>
+    <dt>Cluster Vaultaire</dt><dd>{{if .Data.Cluster.Enabled}}{{.Data.Cluster.State}} — {{.Data.Cluster.Detail}}{{else}}non raccordé (<code>ducky.enable: false</code>){{end}}</dd>
+  </dl>
+  <p class="hint">Ces réglages viennent du fichier de configuration et se modifient à son niveau.</p>
+</section>
+
+<section class="card">
+  <h2>Ramasse-miettes</h2>
+  <p class="muted">Supprime les fichiers qu'aucune version ni image ne référence plus (versions supprimées, couches Docker orphelines). Les fichiers de moins d'une heure sont épargnés.</p>
+  <form method="post" action="/ui/admin/gc" class="inline">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="check"><input type="checkbox" name="dry_run" checked> simulation</label>
+    <button>Lancer</button>
+  </form>
+
+  {{if .Data.IsLocal}}
+  <h2>Mot de passe du compte local</h2>
+  {{if .Data.LocalFixed}}
+  <p class="muted">Fixé par la configuration (<code>local_admin.password</code> ou <code>NEXUS_ADMIN_PASSWORD</code>) : il se change à cet endroit.</p>
+  {{else}}
+  <form method="post" action="/ui/admin/password" class="form-grid">
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <label class="wide">Actuel <input type="password" name="current" required autocomplete="current-password"></label>
+    <label>Nouveau (12 caractères min.) <input type="password" name="new" required minlength="12" autocomplete="new-password"></label>
+    <label>Confirmation <input type="password" name="confirm" required minlength="12" autocomplete="new-password"></label>
+    <div class="wide"><button class="primary">Changer</button></div>
+  </form>
+  {{end}}
+  {{end}}
+</section>
+</div>
+{{end}}

@@ -1,0 +1,23 @@
+{{define "chart"}}
+{{if .Max}}
+<svg class="chart" viewBox="0 0 {{mul (len .Days) 24}} 110" preserveAspectRatio="none" role="img" aria-label="Téléchargements par jour">
+{{range $i, $d := .Days}}
+  <g transform="translate({{mul $i 24}},100) scale(1,-1)"><rect x="0" y="0" width="18" height="{{pct $d.Downloads $.Max}}" class="bar"><title>{{$d.Date}} : {{$d.Downloads}} téléchargement(s), {{bytes $d.Bytes}}</title></rect></g>
+{{end}}
+</svg>
+<div class="chart-axis"><span>{{(index .Days 0).Date}}</span><span>aujourd'hui</span></div>
+{{else}}<p class="empty">Aucun téléchargement sur la période.</p>{{end}}
+{{end}}
+
+{{define "events"}}
+{{if .}}
+<table class="compact">
+  <thead><tr><th>Quand</th><th>Qui</th><th>Quoi</th></tr></thead>
+  <tbody>{{range .}}
+  <tr class="{{if ge .Status 400}}bad{{end}}"><td title="{{date .Time}}">{{ago .Time}}</td>
+    <td>{{.User}} <small class="muted">{{.IP}}</small></td>
+    <td><span class="act act-{{.Action}}">{{.Action}}</span> <a href="/ui/repos/{{.Repo}}">{{.Repo}}</a>{{if .Name}} / {{.Name}}{{end}}{{if .Version}} <code>{{.Version}}</code>{{end}}{{if ge .Status 400}} <span class="tag err">{{.Status}}</span>{{end}}</td></tr>
+  {{end}}</tbody>
+</table>
+{{else}}<p class="empty">Rien pour l'instant.</p>{{end}}
+{{end}}

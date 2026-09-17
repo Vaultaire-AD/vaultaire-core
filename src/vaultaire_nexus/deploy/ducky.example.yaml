@@ -1,0 +1,21 @@
+# Raccordement de Nexus au cluster Vaultaire — lu seulement si ducky.enable: true
+# dans config.yaml (chemin : ducky.config).
+#
+# Même format que la configuration du proxy : aucune identité ici. Nexus
+# s'enrôle au premier démarrage et écrit la sienne dans <ducky.keys>.
+#
+# PRÉREQUIS : le core doit connaître le type « vaultaire_nexus »
+# (CORE_CHANGEMENTS.md § 1). Sans lui, l'enrôlement est refusé et Nexus
+# continue seul.
+
+# Cores à joindre, essayés dans l'ordre.
+servers:
+  - ip: "10.0.0.1"
+    port: 6666
+
+enrollment:
+  # Clé d'enrôlement de type vaultaire_nexus, créée sur le core :
+  #   vlt enroll create --type vaultaire_nexus --uses 1 --expires 1h
+  # Lue au premier démarrage seulement.
+  key: "CHANGEZ-MOI"
+  label: "nexus-01"
