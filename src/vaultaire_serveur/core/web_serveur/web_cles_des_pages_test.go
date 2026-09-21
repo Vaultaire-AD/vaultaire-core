@@ -16,7 +16,7 @@ import (
 // seul endroit. Il ne protège que les chemins qui l'empruntent — et une page qui
 // lit la base directement n'en emprunte aucun.
 //
-// C'est arrivé deux fois, et les deux fois de la même façon : la page a été
+// C'est arrivé trois fois, et chaque fois de la même façon : la page a été
 // écrite avant que la clé n'existe, puis la clé a été créée sans que la page
 // soit reprise. Le commentaire d'origine, lui, est resté et affirmait le
 // contraire de ce que le code faisait.
@@ -31,7 +31,12 @@ import (
 //	                           read:get:client, c'est-à-dire le droit de lire
 //	                           les MACHINES, délégué par domaine.
 //
-// Dans les deux cas la ligne de commande refusait correctement : les deux
+//	AdminClusterHandler        « la lecture reste sur read:get:client, comme
+//	                           avant » — alors que read:cluster existait et que
+//	                           le CLI l'exigeait. Qui lisait une seule machine
+//	                           ouvrait la carte des nœuds du cluster.
+//
+// Dans chaque cas la ligne de commande refusait correctement : les deux
 // façades répondaient l'inverse l'une de l'autre à la même question.
 //
 // # Pourquoi une inspection du TEXTE
@@ -44,6 +49,7 @@ import (
 // gardeAttendue associe un gestionnaire à la clé qu'il DOIT nommer.
 var gardeAttendue = map[string]string{
 	"AdminCertificatesHandler": "ActionReadCertificate",
+	"AdminClusterHandler":      "ActionReadCluster",
 	"AdminEnrollHandler":       "ActionReadEnrollment",
 	"AdminLogsHandler":         "ActionReadLog",
 	"AdminLogsAPIHandler":      "ActionReadLog",

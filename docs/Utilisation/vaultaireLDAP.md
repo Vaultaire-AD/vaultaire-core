@@ -8,6 +8,11 @@ Pour utiliser Vaultaire LDAP sur un de vos outils externes, vous devez **configu
 
 Commencez par créer le compte LDAP **qui sera utilisé par votre applicatif** pour interroger l'annuaire.
 
+> ⚠️ Ce compte ne doit appartenir à **aucun groupe soumis au second facteur** :
+> au bind, un compte MFA doit fournir son mot de passe suivi du code à 6
+> chiffres, ce qu'une application ne sait pas faire. Le réglage
+> `ldap.mfa_bypass: true` du core lève cette exigence, mais pour tout le parc.
+
 ---
 
 ## 🌲 Étape 2 : Définir le domaine de recherche
@@ -109,3 +114,38 @@ dc=infra,dc=it,dc=company,dc=com
 | **Member-Of LDAP Attribute**      | `memberOf`                         |
 
 ---
+
+# 🔑 Droits de service : l'attribut `vaultaireServiceRights`
+
+Une application qui a ses propres niveaux d'accès — le dépôt **Nexus**, par
+exemple — peut lire dans l'annuaire les **droits de service** accordés à un
+compte dans Vaultaire, au lieu de les déduire des noms de groupe.
+
+```bash
+ldapsearch -H ldaps://vaultaire.acme.lan -D 'uid=bob.durand,dc=acme,dc=lan' -W \
+  -b 'dc=acme,dc=lan' '(uid=bob.durand)' uid memberOf vaultaireServiceRights
+```
+
+```
+dn: uid=bob.durand,ou=users,dc=acme,dc=lan
+uid: bob.durand
+memberof: cn=Dev,ou=groups,dc=acme,dc=lan
+vaultaireservicerights: write:nexus
+```
+
+| Règle | Détail |
+|---|---|
+| Attribut **opérationnel** | il n'est renvoyé que s'il est **demandé par son nom** — ni `*` ni `+` ne le déclenchent |
+| Valeurs | les clés de service accordées au compte : aujourd'hui `read:nexus`, `write:nexus`, `write:nexus_admin` |
+| Absent | le compte n'a aucune de ces clés (un attribut LDAP ne peut pas être vide) |
+| Qui peut le lire | le **compte lui-même**, ou un compte qui porte `read:get:user` sur le domaine de l'entrée ; pour les autres il est simplement absent |
+| Révocation | un compte révoqué n'a plus aucune clé |
+
+Les droits s'accordent dans l'interface d'administration (**Permissions →
+Actions hors matrice**) ou avec `vlt update -pu <permission> read:nexus all`.
+Voir [`Actions_et_Permissions.md`](./Actions_et_Permissions.md) § « Droits de
+service ».
+
+> **Second facteur.** LDAP ne sait pas porter de code TOTP. Pour les comptes
+> soumis au second facteur, préférez l'authentification par le réseau Ducky
+> (trame `08_01`), que Nexus sait utiliser.

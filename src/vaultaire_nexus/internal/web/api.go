@@ -132,7 +132,7 @@ func (s *Server) apiWhoami(w http.ResponseWriter, r *http.Request, p *auth.Princ
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"username": p.Username, "display": p.Display, "source": p.Source,
-		"groups": p.Groups, "role": p.EffectiveRole(), "token": p.TokenID,
+		"groups": p.Groups, "rights": p.Rights, "role": p.EffectiveRole(), "token": p.TokenID,
 	})
 }
 

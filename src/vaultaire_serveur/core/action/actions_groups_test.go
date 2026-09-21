@@ -27,15 +27,15 @@ func TestActionsGroupeToutesEnregistrees(t *testing.T) {
 		"group.create":                   "write:create:group",
 		"group.delete":                   "write:delete:group",
 		"group.add_user":                 "write:add:user",
-		"group.remove_user":              "write:delete:user",
+		"group.remove_user":              "write:remove:user",
 		"group.add_client":               "write:add:client",
-		"group.remove_client":            "write:delete:client",
+		"group.remove_client":            "write:remove:client",
 		"group.add_permission":           "write:add:permission",
-		"group.remove_permission":        "write:delete:permission",
+		"group.remove_permission":        "write:remove:permission",
 		"group.add_client_permission":    "write:add:permission",
-		"group.remove_client_permission": "write:delete:permission",
+		"group.remove_client_permission": "write:remove:permission",
 		"group.add_gpo":                  "write:add:gpo",
-		"group.remove_gpo":               "write:delete:gpo",
+		"group.remove_gpo":               "write:remove:gpo",
 		"group.set_mfa_required":         "write:mfa",
 	}
 
@@ -81,8 +81,8 @@ func TestRetraitDePermissionNexigePlusLaSuppressionDuGroupe(t *testing.T) {
 		t.Fatal("retirer une permission exige encore le droit de supprimer le groupe : " +
 			"deux opérations de poids très différents partagent la même clé")
 	}
-	if d.CleRBAC != "write:delete:permission" {
-		t.Fatalf("clé %q, attendu write:delete:permission", d.CleRBAC)
+	if d.CleRBAC != "write:remove:permission" {
+		t.Fatalf("clé %q, attendu write:remove:permission", d.CleRBAC)
 	}
 }
 
@@ -457,6 +457,27 @@ func TestAccordDesMessages(t *testing.T) {
 	for libelle, attendu := range cas {
 		if got := accord(libelle); got != attendu {
 			t.Errorf("accord(%q) = %q, attendu %q", libelle, got, attendu)
+		}
+	}
+}
+
+// TestDetacherNExigeJamaisLeDroitDeSupprimer.
+//
+// Retirer un compte d'un groupe exigeait write:delete:user : pour sortir
+// quelqu'un d'un groupe, il fallait le droit de le SUPPRIMER. Tout retrait
+// (« remove_* ») doit désormais porter le verbe « remove », jamais « delete ».
+func TestDetacherNExigeJamaisLeDroitDeSupprimer(t *testing.T) {
+	r := NouveauRegistre()
+	EnregistrerActionsGroupe(r)
+	for _, nom := range []string{"group.remove_user", "group.remove_client",
+		"group.remove_permission", "group.remove_client_permission", "group.remove_gpo"} {
+		d, ok := r.Definition(nom)
+		if !ok {
+			t.Fatalf("%s absente", nom)
+		}
+		if !strings.HasPrefix(d.CleRBAC, "write:remove:") {
+			t.Errorf("%s exige %q : un retrait doit porter le verbe « remove » (Détacher), "+
+				"pas le droit de supprimer l'objet", nom, d.CleRBAC)
 		}
 	}
 }

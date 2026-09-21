@@ -1,6 +1,6 @@
 # Versions des composants Vaultaire
 
-Quatre binaires, un socle partagé, et une question : **qu'est-ce qui tourne
+Cinq binaires, un socle partagé, et une question : **qu'est-ce qui tourne
 réellement sur ce parc ?**
 
 ---
@@ -37,6 +37,7 @@ donner au commit : informatif, jamais décisionnel.
 | `duckynetworkclient/V1` | `duckynetwork/version` | version du **SDK**, et le type `Info` partagé |
 | `vaultaire_client` | `vaultaire_client/version` | version de l'agent |
 | `vaultaire_proxy` | `vaultaire_proxy/version` | version du proxy |
+| `vaultaire_nexus` | `vaultaire_nexus/version` | version du dépôt Nexus (annoncée en `02_12` et `04_09`) |
 
 **Pourquoi une version par composant.** L'agent et le SDK ne bougent pas
 ensemble : une correction du provisionnement des groupes ne touche pas au socle
@@ -207,6 +208,6 @@ jamais connectée. C'est une information, pas une absence d'information.
 
 | | |
 |---|---|
-| Le protocole et ses trames | [`Protocole_Ducky.md`](./Protocole_Ducky.md) |
-| Le catalogue de types de clients | [`Protocole_Ducky.md`](./Protocole_Ducky.md) |
+| Le protocole et ses trames | [`ducky-network/`](./ducky-network/README.md) |
+| Le catalogue de types de clients | [1.3 — Types, ordre et contrôles](./ducky-network/01-socle/03-types-ordre-et-controles.md) |
 | La commande `version` | [`MAN.md`](../../Utilisation/MAN.md) |

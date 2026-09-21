@@ -80,6 +80,7 @@ CLI_BIN="$BUILD_DIR/vaultaire_server/vaultaire_cli"
 CLIENT_BIN="$BUILD_DIR/vaultaire_client/vaultaire_client"
 CTL_BIN="$BUILD_DIR/vaultaire_ctl/vaultaire_ctl"
 PROXY_BIN="$BUILD_DIR/vaultaire_proxy/vaultaire_proxy"
+NEXUS_BIN="$BUILD_DIR/vaultaire_nexus/vaultaire_nexus"
 
 # Créer les dossiers de sortie si nécessaire.
 #
@@ -90,7 +91,8 @@ mkdir -p "$BUILD_DIR" \
          "$BUILD_DIR/vaultaire_server" \
          "$BUILD_DIR/vaultaire_client" \
          "$BUILD_DIR/vaultaire_ctl" \
-         "$BUILD_DIR/vaultaire_proxy"
+         "$BUILD_DIR/vaultaire_proxy" \
+         "$BUILD_DIR/vaultaire_nexus"
 
 cd "$ROOT_DIR"
 #git pull
@@ -214,7 +216,7 @@ echo "🏷  Version de build : $VCS_COMMIT ($VCS_DATE)"
 
 # Version sémantique imposée — c'est la CI de release qui la fournit.
 #
-# Elle ne s'applique qu'aux composants Vaultaire (core, agent, proxy), pas au SDK
+# Elle ne s'applique qu'aux composants Vaultaire (core, agent, proxy, Nexus), pas au SDK
 # Ducky : la version du SDK porte la compatibilité du PROTOCOLE, et une release
 # de l'application ne la change pas.
 VAULTAIRE_VERSION="${VAULTAIRE_VERSION:-}"
@@ -328,6 +330,17 @@ build_go "du proxy" "$ROOT_DIR/src/vaultaire_proxy" "$PROXY_BIN" "CGO_ENABLED=0"
 cp "$ROOT_DIR/src/vaultaire_proxy/config.example.yaml" "$BUILD_DIR/vaultaire_proxy/"
 
 # -------------------------
+# Build Nexus (dépôt de paquets)
+# -------------------------
+# Statique pour la même raison que le proxy : il tourne dans une image debian,
+# à même l'hôte ou sous systemd. Nexus n'utilise ni cgo ni NSS.
+build_go "de Nexus" "$ROOT_DIR/src/vaultaire_nexus" "$NEXUS_BIN" "CGO_ENABLED=0" \
+    "$(ldflags_pour vaultaire_nexus/version app) $(ldflags_pour duckynetworkclient/V1/duckynetwork/version)"
+cp "$ROOT_DIR/src/vaultaire_nexus/config.example.yaml" "$BUILD_DIR/vaultaire_nexus/"
+cp "$ROOT_DIR/src/vaultaire_nexus/deploy/ducky.example.yaml" "$BUILD_DIR/vaultaire_nexus/"
+cp "$ROOT_DIR/src/vaultaire_nexus/deploy/vaultaire_nexus.service" "$BUILD_DIR/vaultaire_nexus/"
+
+# -------------------------
 # Build modules PAM
 # -------------------------
 echo "🛠 Build modules PAM..."
@@ -358,7 +371,7 @@ chmod 755 "$PAM_OUT"/*.so "$PAM_OUT/libnss_vaultaire.so.2"
 # commandes et ferme le cas.
 if [ "$VCS_COMMIT" != "dev" ]; then
     VERSION_MUETTE=""
-    for binaire in "$SERVER_BIN" "$CLIENT_BIN" "$PROXY_BIN"; do
+    for binaire in "$SERVER_BIN" "$CLIENT_BIN" "$PROXY_BIN" "$NEXUS_BIN"; do
         [ -f "$binaire" ] || continue
         # La chaîne injectée doit se retrouver telle quelle dans le binaire.
         # `strings` n'est pas partout ; grep -a suffit et ne dépend de rien.
@@ -379,7 +392,7 @@ fi
 # Même piège pour la version sémantique imposée : une release qui annoncerait
 # « 2.1.0 » alors qu'elle s'appelle v2.1.4 mentirait à tout l'inventaire du parc.
 if [ -n "$VAULTAIRE_VERSION" ]; then
-    for binaire in "$SERVER_BIN" "$CLIENT_BIN" "$PROXY_BIN"; do
+    for binaire in "$SERVER_BIN" "$CLIENT_BIN" "$PROXY_BIN" "$NEXUS_BIN"; do
         if ! grep -aq -- "$VAULTAIRE_VERSION" "$binaire"; then
             echo "❌ Version $VAULTAIRE_VERSION NON injectée dans $binaire"
             exit 1

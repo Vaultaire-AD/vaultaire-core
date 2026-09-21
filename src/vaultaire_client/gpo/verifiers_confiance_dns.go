@@ -206,6 +206,17 @@ func EmpreintePEM(texte string) string {
 // Couvrir ce cas demanderait un module qui décide de la politique par interface,
 // ce qui n'existe pas. Le jour où il existera, il aura son propre vérificateur.
 func verifierServeursDNS(c SystemCheck) (bool, string, error) {
+	// NetworkManager et resolv.conf seul : ce que la machine interroge est
+	// écrit dans /etc/resolv.conf — par NetworkManager lui-même dans le premier
+	// cas, qui y reporte son DNS global. resolvectl n'y existe souvent pas.
+	if c.Target == moteurNetworkManager || c.Target == moteurResolvConf {
+		contenu, ok := readFileIfExists(resolvConf)
+		if !ok {
+			return false, "", fmt.Errorf("%s illisible", resolvConf)
+		}
+		return comparerServeursDNS(c.Expect, serveursDeResolvConf(contenu), "serveurs DNS de "+resolvConf)
+	}
+
 	if !commandExists("resolvectl") {
 		// systemd-resolved absent. L'appliqueur ne peut pas avoir abouti — il
 		// échoue quand le redémarrage du service échoue — donc cette attente
@@ -218,21 +229,37 @@ func verifierServeursDNS(c SystemCheck) (bool, string, error) {
 		return false, "", fmt.Errorf("serveurs DNS illisibles : %v", err)
 	}
 
-	constates := serveursDNSGlobaux(sortie)
-	attendus := serveursNTP(c.Expect) // même découpage : virgules ou espaces
+	return comparerServeursDNS(c.Expect, serveursDNSGlobaux(sortie), "serveurs DNS globaux")
+}
+
+// comparerServeursDNS compare l'attendu au constaté, sans tenir compte de l'ordre.
+func comparerServeursDNS(expect string, constates []string, libelle string) (bool, string, error) {
+	attendus := serveursNTP(expect) // même découpage : virgules ou espaces
 
 	if len(attendus) == 0 {
 		return true, "", nil
 	}
 	if len(constates) == 0 {
-		return false, "aucun serveur DNS global configure — la politique en demande " +
+		return false, "aucun serveur DNS configure — la politique en demande " +
 			strings.Join(attendus, ", "), nil
 	}
 	if egalesIgnorantLOrdre(attendus, constates) {
 		return true, "", nil
 	}
-	return false, ecartConstate("serveurs DNS globaux",
+	return false, ecartConstate(libelle,
 		strings.Join(attendus, ","), strings.Join(constates, ",")), nil
+}
+
+// serveursDeResolvConf extrait les lignes « nameserver » d'un resolv.conf.
+func serveursDeResolvConf(contenu string) []string {
+	var out []string
+	for _, ligne := range strings.Split(contenu, "\n") {
+		champs := strings.Fields(ligne)
+		if len(champs) >= 2 && champs[0] == "nameserver" {
+			out = append(out, champs[1])
+		}
+	}
+	return out
 }
 
 // serveursDNSGlobaux extrait la ligne « Global: » de la sortie de resolvectl.

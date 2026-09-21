@@ -270,12 +270,43 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "formulaire invalide", http.StatusBadRequest)
 		return
 	}
-	next := safeNext(r.PostForm.Get("next"))
 	ip := s.clientIP(r)
-	p, err := s.Auth.Login(r.PostForm.Get("username"), r.PostForm.Get("password"), ip)
+	next := safeNext(r.PostForm.Get("next"))
+	user, password, otp := r.PostForm.Get("username"), r.PostForm.Get("password"), ""
+	var pending pendingLogin
+	if id := r.PostForm.Get("pending"); id != "" {
+		// Seconde étape : le code seul.
+		var ok bool
+		if pending, ok = s.mfa.take(id, ip); !ok {
+			s.renderLogin(w, r, next, "", "", flash{"err", "Étape expirée : reconnectez-vous."})
+			return
+		}
+		user, password, next = pending.user, pending.password, pending.next
+		otp = strings.TrimSpace(r.PostForm.Get("otp"))
+	}
+	p, err := s.Auth.Login(user, password, otp, ip)
 	if err != nil {
 		msg := "Identifiant ou mot de passe incorrect."
 		switch {
+		case errors.Is(err, auth.ErrMFARequired):
+			if id := s.mfa.put(user, password, ip, next); id != "" {
+				s.renderLogin(w, r, next, user, id, flash{"info", "Saisissez le code de votre application d'authentification."})
+				return
+			}
+			msg = "Trop de connexions en cours, réessayez dans un instant."
+		case errors.Is(err, auth.ErrMFAInvalid):
+			if id := s.mfa.again(pending); id != "" {
+				w.WriteHeader(http.StatusUnauthorized)
+				s.renderLogin(w, r, next, user, id, flash{"err", "Code invalide ou déjà utilisé."})
+				return
+			}
+			msg = "Code invalide. Reconnectez-vous."
+		case errors.Is(err, auth.ErrMFAEnroll):
+			msg = "Votre compte doit d'abord enrôler un second facteur sur le portail Vaultaire."
+		case errors.Is(err, auth.ErrExpired):
+			msg = "Mot de passe expiré : changez-le sur le portail Vaultaire."
+		case errors.Is(err, auth.ErrNoRole), errors.Is(err, auth.ErrDenied), errors.Is(err, auth.ErrRevoked):
+			msg = "Accès refusé : ce compte n'a aucun droit sur Nexus."
 		case errors.Is(err, auth.ErrLocked):
 			msg = "Trop d'échecs : réessayez dans quelques minutes."
 		case errors.Is(err, auth.ErrUnavailable):
@@ -283,8 +314,7 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 			s.Log.Error("login: annuaire injoignable", "err", err)
 		}
 		w.WriteHeader(http.StatusUnauthorized)
-		s.render(w, r, "login", "Connexion", "", map[string]any{"Next": next, "Username": r.PostForm.Get("username"),
-			"LocalOnly": s.Auth.Mode() == config.AuthLocal, "LocalName": s.Auth.Local.Username()}, flash{"err", msg})
+		s.renderLogin(w, r, next, user, "", flash{"err", msg})
 		return
 	}
 	sess := s.Auth.Sessions.Create(p, ip)
@@ -294,6 +324,14 @@ func (s *Server) loginPost(w http.ResponseWriter, r *http.Request) {
 	})
 	s.Log.Info("connexion", "user", p.Username, "source", p.Source, "rôle", p.Role, "ip", ip)
 	http.Redirect(w, r, next, http.StatusSeeOther)
+}
+
+// renderLogin affiche le formulaire ; pending non vide affiche l'étape du code.
+func (s *Server) renderLogin(w http.ResponseWriter, r *http.Request, next, user, pending string, f flash) {
+	s.render(w, r, "login", "Connexion", "", map[string]any{
+		"Next": next, "Username": user, "Pending": pending,
+		"LocalOnly": s.Auth.Mode() == config.AuthLocal, "LocalName": s.Auth.Local.Username(),
+	}, f)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {

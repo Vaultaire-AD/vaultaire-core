@@ -36,7 +36,20 @@ La **clé publique** correspondante doit être enregistrée sur le serveur, par 
 portail web (page Profil) ou par un administrateur :
 
 ```sh
-vlt add -u alice -k "ssh-ed25519 AAAA…"
+vlt add -u alice -k "poste-alice" "ssh-ed25519 AAAA…"
+```
+
+Le libellé (`poste-alice`) nomme la clé ; tout le reste de la ligne est la clé
+publique.
+
+Le certificat de l'API doit couvrir l'adresse ou le nom écrit dans `server` :
+`vaultaire_ctl` vérifie le nom. Produit au premier démarrage avec les noms que le
+core détecte (dans Docker, ceux du conteneur), il se régénère ainsi, suivi d'un
+redémarrage du core :
+
+```sh
+vlt certificate regenerate api --ip 192.168.10.57   # --dns nom pour un nom
+vlt certificate show api                             # PEM à copier dans ca_certificate
 ```
 
 > Le fichier référencé par `private_key` doit être lisible par le seul

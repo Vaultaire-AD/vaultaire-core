@@ -5,6 +5,7 @@
 /vaultaire_client
 /vaultaire_client/*
 /cowork
+/test
 /cowork/*
 # Site vitrine (optionnel : retirer cette ligne pour versionner publicweb)
 /src/publicweb

@@ -20,7 +20,7 @@ import (
 const (
 	AuthLocal = "local" // seul le compte administrateur local
 	AuthLDAP  = "ldap"  // comptes Vaultaire par LDAP(S), plus le compte local s'il est activé
-	AuthDucky = "ducky" // réservé : authentification par le réseau Ducky (voir DUCKY_AUTH.md)
+	AuthDucky = "ducky" // comptes Vaultaire par le réseau Ducky (trame 08_01, second facteur compris)
 )
 
 // Rôles côté Nexus. Du moins au plus privilégié.
@@ -76,6 +76,21 @@ type AuthConfig struct {
 	LDAP           LDAPConfig      `yaml:"ldap"`
 	Roles          RoleMapping     `yaml:"roles"`
 	Lockout        LockoutSettings `yaml:"lockout"`
+	Ducky          DuckyAuthConfig `yaml:"ducky"`
+}
+
+// DuckyAuthConfig règle l'authentification par le réseau Ducky.
+type DuckyAuthConfig struct {
+	// FallbackLDAP : si le core ne répond pas par Ducky, essayer LDAP (la
+	// section auth.ldap doit alors être renseignée). Le repli ne porte pas le
+	// second facteur.
+	FallbackLDAP bool `yaml:"fallback_ldap"`
+	// RequireRight : seules les clés RBAC du core (read:nexus, write:nexus,
+	// write:nexus_admin) donnent un rôle ; auth.roles est ignorée. Vaut aussi
+	// pour le repli LDAP.
+	RequireRight bool `yaml:"require_right"`
+	// TimeoutSeconds : attente d'une réponse 08_02 / 08_03.
+	TimeoutSeconds int `yaml:"timeout_seconds"`
 }
 
 // LocalAdmin est le compte de secours, indépendant de Vaultaire.
@@ -278,9 +293,17 @@ func (c *Config) Validate() error {
 			errs = append(errs, "auth.ldap.user_filter doit contenir %s")
 		}
 	case AuthDucky:
-		errs = append(errs, "auth.mode ducky n'est pas encore disponible : il attend les trames 08 du core (DUCKY_AUTH.md)")
+		if !c.Ducky.Enable {
+			errs = append(errs, "auth.mode ducky exige ducky.enable: true (la vérification passe par le cluster)")
+		}
+		if c.Auth.Ducky.FallbackLDAP && (c.Auth.LDAP.URL == "" || c.Auth.LDAP.BaseDN == "") {
+			errs = append(errs, "auth.ducky.fallback_ldap : ldap.url et ldap.base_dn sont obligatoires")
+		}
 	default:
-		errs = append(errs, fmt.Sprintf("auth.mode inconnu : %q (local, ldap)", c.Auth.Mode))
+		errs = append(errs, fmt.Sprintf("auth.mode inconnu : %q (local, ldap, ducky)", c.Auth.Mode))
+	}
+	if c.Auth.Ducky.TimeoutSeconds <= 0 {
+		c.Auth.Ducky.TimeoutSeconds = 7
 	}
 	if c.Auth.LocalAdmin.Enable && c.Auth.LocalAdmin.Username == "" {
 		errs = append(errs, "auth.local_admin.username est vide")

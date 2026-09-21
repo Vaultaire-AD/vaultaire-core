@@ -23,7 +23,7 @@
     <input type="search" name="q" placeholder="Paquet, image…" aria-label="Rechercher">
   </form>
   <div class="me">
-    <span title="Source : {{.User.Source}} — groupes : {{join .User.Groups ", "}}">{{.User.Display}} · <em>{{roleLabel .User.Role}}</em></span>
+    <span title="Source : {{.User.Source}} — groupes : {{join .User.Groups ", "}}{{if .User.Rights}} — droits du core : {{join .User.Rights ", "}}{{end}}">{{.User.Display}} · <em>{{roleLabel .User.Role}}</em></span>
     <form action="/logout" method="post"><input type="hidden" name="csrf" value="{{.CSRF}}"><button class="link">Déconnexion</button></form>
   </div>
 </header>

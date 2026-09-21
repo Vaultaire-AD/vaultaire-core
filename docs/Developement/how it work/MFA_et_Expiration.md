@@ -14,7 +14,8 @@ sont interrogées par les mêmes chemins.
 | Sujet | Décision |
 |-------|----------|
 | Exigence du second facteur | **Par groupe** (`groups.mfa_required`) |
-| Portée de l'expiration | **Tous les chemins** : LDAP, Ducky/PAM, web |
+| Portée de l'expiration | **Tous les chemins** : LDAP, Ducky/PAM, service (`08_01`), web |
+| Second facteur hors du portail | **Service du cluster** (`08_01`) : obligatoire dès qu'il est posé ; **bind LDAP** : mot de passe **suivi** du code, sauf `ldap.mfa_bypass: true` |
 | Recours à l'expiration | Le web laisse entrer, mais **uniquement** sur la page de changement |
 | Préavis | Bandeau sur le profil pendant les N derniers jours |
 | TOTP | **Implémentation maison**, RFC 6238, aucune dépendance ajoutée |
@@ -158,6 +159,50 @@ l'incident.
 
 ---
 
+### Hors du portail : les services du cluster
+
+Un service qui vérifie ses utilisateurs par la trame `08_01` (Nexus) porte le
+second facteur **sans réglage** : le code voyage sur une ligne `otp:`, le core le
+valide avec `totp.Validate` et le **consomme** avec `ConsumeMFACounter` — le même
+compteur que le portail, donc un code utilisé sur l'un ne sert plus sur l'autre.
+
+| État du compte | Réponse du core |
+|---|---|
+| second facteur posé, pas de code | `mfa_required` (le service affiche le champ) |
+| code faux ou rejoué | `mfa_invalid` (compté comme un échec) |
+| exigé par un groupe, pas encore posé | `mfa_enroll_required` — l'enrôlement se fait sur le portail |
+
+Les clients sans saisie (docker, dnf, apt) utilisent les **jetons** du service.
+Détail : [protocole, chapitre 8](./ducky-network/08-authentification-service/README.md).
+
+### Hors du portail : le bind LDAP
+
+LDAP n'a pas de champ pour un code. Un compte **lié** au second facteur — posé
+par lui, ou imposé par un de ses groupes — fournit donc au bind son mot de
+passe **suivi** du code à 6 chiffres : `MonMotDePasse123456`. C'est la
+convention des annuaires qui portent un second facteur (FreeIPA, par exemple).
+
+| État du compte | Bind LDAP (défaut) |
+|---|---|
+| sans second facteur | mot de passe seul |
+| second facteur posé | mot de passe + code ; code validé puis **consommé** (même compteur que le portail et `08_01`) |
+| imposé par un groupe, pas encore posé | refusé — l'enrôlement se fait sur le portail |
+| état illisible (panne de base) | **refusé** |
+
+Le réglage `ldap.mfa_bypass: true` (`serveur_conf.yaml`, lu au démarrage) laisse
+ces comptes se lier avec le **seul** mot de passe, pour des applications
+incapables de transmettre le code. Chaque bind concerné est journalisé
+(`SECURITY`, « second facteur … contourné »). Préférez des comptes de service
+hors des groupes soumis au second facteur.
+
+**Ce qui a changé.** LDAP contournait le second facteur par défaut ; le seul
+réglage — `RefuseBindWhenMFARequired`, jamais relié à la configuration —
+refusait le bind sans offrir de moyen de le passer. La contrainte posée dans le
+portail se contournait donc par LDAP. À la mise à jour, une application qui se
+lie avec un compte soumis au second facteur est **refusée** : sortez ce compte
+des groupes concernés, ou posez `ldap.mfa_bypass: true` le temps de la
+migration.
+
 ## 4. L'expiration des mots de passe
 
 ### Ce que ça change, par chemin
@@ -166,6 +211,7 @@ l'incident.
 |--------|---------------------|
 | Bind LDAP | refusé, `invalidCredentials` |
 | Ducky / PAM | refusé, **avec un message explicite** |
+| Service du cluster (`08_01`, Nexus…) | refusé, code **`expired`** — le service affiche « changez-le sur le portail » |
 | Interface web | connexion acceptée, **seule** la page de changement accessible |
 | CLI (`vlt`) | non concerné — l'authentification y est par clé, pas par mot de passe |
 

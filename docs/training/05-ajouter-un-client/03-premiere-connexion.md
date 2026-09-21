@@ -18,22 +18,30 @@ droits d'administration.
   placée dans le groupe d'administration local (`wheel` sur Rocky).
 - Le compte local est **créé à la première connexion**, avec son répertoire
   personnel.
+- On se connecte sous `compte@domaine`, où le domaine est le **domaine
+  principal** d'un groupe du compte — les deux derniers labels : Alice, membre
+  de `infra.acme.lan`, se connecte comme `alice.martin@acme.lan`. Un nom sans
+  domaine désigne un compte **local** de la machine, et
+  `alice.martin@infra.acme.lan` est refusé.
 
 ## Étapes
 
 1. Depuis votre poste :
 
    ```bash
-   ssh alice.martin@<IP-web01>
+   ssh -l alice.martin@acme.lan <IP-web01>
    id
    sudo -l
    ```
 
-2. Pendant la session, côté serveur :
+2. Pendant la session, côté serveur, vérifiez que la machine est en ligne :
 
    ```bash
-   vlt status -u
+   vlt status -c
    ```
+
+   `status -u` ne liste pas encore les sessions ouvertes par PAM : elles passent
+   dans le tunnel de la machine (TO-DO 68).
 
 3. Essayez avec `chloe.petit`, qui n'est pas dans `Infra` : la connexion est
    refusée.
@@ -42,7 +50,8 @@ droits d'administration.
 
 - Alice obtient un shell, `id` montre `wheel` ;
 - Chloé est refusée ;
-- `status -u` montre la session d'Alice.
+- `alice.martin@infra.acme.lan` est refusée : ce n'est pas un domaine principal ;
+- `web01` figure dans `status -c`, et y reste après la déconnexion d'Alice.
 
 ## 🧪 Exercice
 

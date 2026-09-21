@@ -74,7 +74,7 @@ l'enregistrement.
 
 [`MAN.md` §19 et §21](../../Utilisation/MAN.md) ·
 [`vlt-proxy/README.md`](../../../deployments/pre-prod/vlt-proxy/README.md) ·
-[`Protocole_Ducky.md`](../../Developement/how%20it%20work/Protocole_Ducky.md)
+[protocole, chapitre 4](../../Developement/how%20it%20work/ducky-network/04-cluster/README.md)
 
 ---
 

@@ -26,6 +26,19 @@ ldap:
   ldap_port: 389
   ldaps_port: 636
 
+  # Second facteur au bind LDAP.
+  #
+  # Par défaut (false), un compte dont le second facteur est posé — ou imposé
+  # par un de ses groupes — se lie avec son mot de passe SUIVI du code à 6
+  # chiffres : « MonMotDePasse123456 ». Un compte imposé mais pas encore enrôlé
+  # est refusé.
+  #
+  # true laisse ces comptes se lier avec le seul mot de passe, pour des
+  # applications incapables de transmettre le code. Chaque bind concerné est
+  # journalisé (SECURITY). Préférez des comptes de service hors des groupes
+  # soumis au second facteur.
+  mfa_bypass: false
+
   # Noms et adresses que le certificat LDAPS doit couvrir.
   #
   # Le nom de la machine et ses adresses sont détectés automatiquement. Ne

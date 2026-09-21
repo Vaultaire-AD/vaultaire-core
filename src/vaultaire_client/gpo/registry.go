@@ -158,7 +158,11 @@ const (
 // Les commandes exécutées ici ne viennent JAMAIS de la politique : elles sont
 // écrites en dur dans les appliqueurs. La politique ne fournit que des valeurs,
 // passées en arguments distincts — jamais interprétées par un shell.
-func runCommand(name string, args ...string) (string, error) {
+//
+// Variable et non fonction : les tests des appliqueurs qui pilotent des
+// services (dns_resolver) la remplacent pour observer les commandes sans les
+// exécuter.
+var runCommand = func(name string, args ...string) (string, error) {
 	return runCommandTimeout(DefaultCommandTimeout, name, args...)
 }
 
@@ -184,7 +188,9 @@ func runCommandTimeout(timeout time.Duration, name string, args ...string) (stri
 }
 
 // commandExists indique si un binaire est disponible dans le PATH.
-func commandExists(name string) bool {
+//
+// Variable pour la même raison que runCommand.
+var commandExists = func(name string) bool {
 	_, err := exec.LookPath(name)
 	return err == nil
 }

@@ -17,7 +17,16 @@ type UserEntry struct {
 	Sn          string   // Lastname
 	Uid         string   // Username
 	MemberOf    []string // Groupes
+
+	// ServiceRights : clés RBAC de service (read:nexus…) accordées au compte.
+	// Renseigné par la recherche UNIQUEMENT quand l'attribut est demandé nommément et
+	// que le compte lié a le droit de le lire — voir newmodule/service_rights.go.
+	ServiceRights []string
 }
+
+// AttrServiceRights est le nom (en minuscules) de l'attribut opérationnel qui
+// porte les droits de service d'un compte.
+const AttrServiceRights = "vaultaireservicerights"
 
 func (u UserEntry) DN() string {
 	return fmt.Sprintf("uid=%s,ou=users,%s", u.User.Username, ldaptools.ToRootDN(u.BaseDN))
@@ -46,6 +55,11 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 		"objectguid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"guid":        {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"ipauniqueid": {fmt.Sprintf("vaultaire-%s", u.User.Username)},
+	}
+	// Un attribut sans valeur n'existe pas en LDAP (RFC 4512 §2.5) : absent
+	// plutôt que vide.
+	if len(u.ServiceRights) > 0 {
+		all[AttrServiceRights] = u.ServiceRights
 	}
 
 	result := make(map[string][]string)
@@ -101,7 +115,7 @@ func contains(list []string, s string) bool {
 
 func isOperational(attr string) bool {
 	switch strings.ToLower(attr) {
-	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid":
+	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights:
 		return true
 	default:
 		return false

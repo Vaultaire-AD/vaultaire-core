@@ -37,6 +37,7 @@ type Token struct {
 	Owner     string    `json:"owner"`
 	Source    string    `json:"source"`
 	Groups    []string  `json:"groups"`
+	Rights    []string  `json:"rights,omitempty"`
 	Scope     string    `json:"scope"`
 	Hash      string    `json:"hash,omitempty"`
 	CreatedAt time.Time `json:"created_at"`
@@ -105,7 +106,7 @@ func (t *Tokens) Create(owner *Principal, label, scope string, ttl time.Duration
 	secret := RandomSecret(24)
 	tk := Token{
 		ID: id, Label: label, Owner: owner.Username, Source: owner.Source,
-		Groups: owner.Groups, Scope: scope, Hash: hashSecret(secret), CreatedAt: time.Now().UTC(),
+		Groups: owner.Groups, Rights: owner.Rights, Scope: scope, Hash: hashSecret(secret), CreatedAt: time.Now().UTC(),
 	}
 	if ttl > 0 {
 		tk.ExpiresAt = tk.CreatedAt.Add(ttl)
@@ -152,14 +153,15 @@ func (t *Tokens) Verify(raw, ip string) (Token, bool) {
 	return *tk, true
 }
 
-// UpdateGroups met à jour les groupes connus d'un titulaire.
-func (t *Tokens) UpdateGroups(owner string, groups []string) {
+// UpdateIdentity met à jour les groupes et les clés connus d'un titulaire.
+func (t *Tokens) UpdateIdentity(owner string, groups, rights []string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	changed := false
 	for _, tk := range t.tokens {
-		if tk.Owner == owner && strings.Join(tk.Groups, ",") != strings.Join(groups, ",") {
-			tk.Groups = groups
+		if tk.Owner == owner && (strings.Join(tk.Groups, ",") != strings.Join(groups, ",") ||
+			strings.Join(tk.Rights, ",") != strings.Join(rights, ",")) {
+			tk.Groups, tk.Rights = groups, rights
 			changed = true
 		}
 	}

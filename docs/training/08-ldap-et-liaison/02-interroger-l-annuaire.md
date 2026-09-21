@@ -55,9 +55,12 @@ ldapsearch -x -H ldap://<IP-serveur>:389 \
 ```
 </details>
 
-> LDAP n'a pas de second facteur. Quand le réglage `RefuseBindWhenMFARequired`
-> est activé (il ne l'est pas par défaut), le bind d'un compte soumis au **MFA**
-> est refusé. Gardez les comptes de service hors des groupes à MFA obligatoire.
+> LDAP n'a pas de champ pour un second facteur. Un compte soumis au **MFA** se
+> lie avec son mot de passe **suivi** du code à 6 chiffres
+> (`MonMotDePasse123456`) ; un mot de passe seul est refusé, sauf si
+> `ldap.mfa_bypass: true` est posé dans `serveur_conf.yaml`. Une application ne
+> sait pas fournir de code : gardez les comptes de service hors des groupes à
+> MFA obligatoire.
 
 ---
 

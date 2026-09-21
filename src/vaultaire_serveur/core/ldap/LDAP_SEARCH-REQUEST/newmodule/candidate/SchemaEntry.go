@@ -99,6 +99,10 @@ func NewSchemaEntry() SchemaEntry {
 			"( 1.2.840.113556.1.4.221 NAME 'sAMAccountName' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )",
 			"( 1.2.840.113556.1.4.8 NAME 'memberOf' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
 			"( 2.5.4.31 NAME 'member' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )",
+			// Droits de service (Nexus…) accordés au compte. Opérationnel : ne sort
+			// que demandé nommément ou par « + ». OID descriptif, faute de numéro
+			// d'entreprise enregistré.
+			"( vaultaireServiceRights-oid NAME 'vaultaireServiceRights' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 NO-USER-MODIFICATION USAGE directoryOperation )",
 		},
 
 		CreateTimestamp: []string{"20260314210522Z"},

@@ -43,7 +43,8 @@ tls:
 auth:
   # local : compte local seul
   # ldap  : compte local + comptes Vaultaire par l'annuaire du core
-  # ducky : pas encore disponible (DUCKY_AUTH.md)
+  # ducky : compte local + comptes Vaultaire vérifiés par le core (trame 08),
+  #         second facteur compris — exige ducky.enable: true
   mode: local
   # session_minutes: 30
 
@@ -66,7 +67,17 @@ auth:
     # insecure_skip_verify: false
     # timeout_seconds: 10
 
-  # Groupes Vaultaire → rôle Nexus. « * » = tout compte authentifié.
+  # Mode ducky.
+  # ducky:
+  #   fallback_ldap: false    # repli LDAP si le core ne répond pas (section ldap requise)
+  #   require_right: false    # true : seuls les droits du core donnent un rôle
+  #   timeout_seconds: 7
+
+  # Rôle Nexus = le plus élevé entre
+  #   - les droits du core : read:nexus → reader, write:nexus → publisher,
+  #     write:nexus_admin → admin (accordés dans l'interface Vaultaire) ;
+  #   - cette table, par groupes Vaultaire. « * » = tout compte authentifié.
+  #     « Infra » = ce groupe dans tout domaine ; « Infra@infra.acme.lan » = ce domaine.
   # Un compte sans rôle est refusé.
   roles:
     admin:     [vaultaire]
@@ -125,8 +136,8 @@ repositories:
     # publishers: [Infra]
 
 # --- Raccordement au cluster (réseau Ducky) --------------------------
-# DÉSACTIVÉ tant que le core ne connaît pas le type « vaultaire_nexus »
-# (CORE_CHANGEMENTS.md § 1).
+# Enrôlement : vlt enroll create --type vaultaire_nexus --uses 1 --expires 1h
+# puis la clé dans ducky.yaml (deploy/ducky.example.yaml).
 ducky:
   enable: false
   # config: /etc/vaultaire_nexus/ducky.yaml   # serveurs du core, clé d'enrôlement

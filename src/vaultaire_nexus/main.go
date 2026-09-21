@@ -140,7 +140,20 @@ func run(cfg config.Config) error {
 	}
 	mgr.RebuildAll()
 
-	authSvc, initial, err := auth.NewService(cfg.Auth, cfg.DataDir, logger)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	// Le raccordement au cluster précède l'authentification : en mode ducky,
+	// c'est lui qui vérifie les comptes.
+	var link *clusterlink.Link
+	var verifier auth.DuckyVerifier
+	if cfg.Ducky.Enable {
+		link = clusterlink.Start(ctx, cfg.Ducky, cfg.PublicURL, version.Complete(),
+			time.Duration(cfg.Auth.Ducky.TimeoutSeconds)*time.Second, logger)
+		verifier = link
+	}
+
+	authSvc, initial, err := auth.NewService(cfg.Auth, cfg.DataDir, logger, verifier)
 	if err != nil {
 		return err
 	}
@@ -154,15 +167,8 @@ func run(cfg config.Config) error {
 		return err
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	go tracker.Run(ctx)
 	go authSvc.RefreshLoop(ctx)
-
-	var link *clusterlink.Link
-	if cfg.Ducky.Enable {
-		link = clusterlink.Start(ctx, cfg.Ducky, cfg.PublicURL, version.Complete(), logger)
-	}
 
 	srv, err := web.New(&web.Server{
 		Cfg: &cfg, Auth: authSvc, Cat: cat, Mgr: mgr, Usage: tracker, Log: logger,

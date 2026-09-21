@@ -14,14 +14,15 @@ Un seul service pour stocker, versionner et distribuer :
 
 Avec :
 
-- une **interface web** authentifiée par les **comptes Vaultaire** (LDAP du core) ou par un **compte local** ;
+- une **interface web** authentifiée par les **comptes Vaultaire** (réseau Ducky avec second facteur, ou LDAP) ou par un **compte local** ;
 - des **jetons** pour les machines et la CI ;
 - le **suivi de chaque téléchargement** (qui, quoi, quelle version, d'où) ;
 - des **versions immuables** et une **rétention** par paquet.
 
-> Aucun fichier du core ni des autres services n'est modifié par ce service.
-> Ce qu'il faudra changer côté core est décrit dans [CORE_CHANGEMENTS.md](CORE_CHANGEMENTS.md),
-> l'authentification par le réseau Ducky (version suivante) dans [DUCKY_AUTH.md](DUCKY_AUTH.md).
+> Le core connaît Nexus : type de client `vaultaire_nexus`, droits `read:nexus` /
+> `write:nexus` / `write:nexus_admin`, trame générique `08` pour vérifier les comptes.
+> Historique de ces ajouts : [CORE_CHANGEMENTS.md](CORE_CHANGEMENTS.md) ;
+> authentification par le réseau Ducky : [DUCKY_AUTH.md](DUCKY_AUTH.md).
 
 ---
 
@@ -91,17 +92,17 @@ src/vaultaire_nexus/
 │   ├── repos/                 publication, rétention, régénération des index, GC
 │   ├── registry/              Docker Registry HTTP API v2
 │   ├── files/                 releases Vaultaire (API GitHub), import depuis GitHub
-│   ├── auth/                  compte local, LDAP, jetons, sessions, verrouillage
+│   ├── auth/                  compte local, LDAP, Ducky, jetons, sessions, verrouillage
 │   ├── ldapclient/            client LDAP minimal (bind + search)
 │   ├── usage/                 journal d'utilisation + agrégats
-│   ├── clusterlink/           raccordement au cluster (Ducky) — désactivé par défaut
+│   ├── clusterlink/           raccordement au cluster (Ducky), vérification des comptes (08)
 │   ├── tlsutil/               certificat fourni ou auto-signé
 │   └── web/                   interface, API, points de distribution
 ├── deploy/                    Dockerfile, compose, unité systemd
 ├── test/e2e.sh                test de bout en bout (dnf, apt, docker, releases…)
 ├── config.example.yaml
-├── CORE_CHANGEMENTS.md        ce que le core doit ajouter (non appliqué)
-└── DUCKY_AUTH.md              authentification par le réseau Ducky (proposition)
+├── CORE_CHANGEMENTS.md        ce qui a été ajouté au core pour Nexus
+└── DUCKY_AUTH.md              authentification par le réseau Ducky (côté Nexus)
 ```
 
 ### Stockage
@@ -200,22 +201,58 @@ repositories:
 |---|---|
 | `local` (défaut) | le compte local seul |
 | `ldap` | le compte local **et** les comptes Vaultaire, par l'annuaire LDAP du core |
-| `ducky` | *pas encore disponible* — voir [DUCKY_AUTH.md](DUCKY_AUTH.md) |
+| `ducky` | le compte local **et** les comptes Vaultaire, **vérifiés par le core** par le réseau Ducky (trame `08_01`) — **second facteur compris** ; repli LDAP facultatif |
 
-**Le compte local reste actif en mode LDAP** : c'est le compte de secours quand le core
-est injoignable. Son nom n'est **jamais** transmis à l'annuaire (un compte Vaultaire
+**Le compte local reste actif dans tous les modes** : c'est le compte de secours quand
+le core est injoignable. Son nom n'est **jamais** transmis au core (un compte Vaultaire
 `admin` ne peut pas le masquer). Il se désactive avec `local_admin.enable: false`.
 
-#### Mode LDAP — comment ça marche
+#### Mode ducky — recommandé
+
+1. Nexus est enrôlé dans le cluster (`ducky.enable: true`, [§ 8](#raccordement-au-cluster)).
+2. À la connexion, il envoie au core l'identifiant, le mot de passe et, si le core le
+   demande, le **code TOTP** (`08_01`). Le core vérifie : limitation des tentatives,
+   mot de passe, révocation, expiration, second facteur (avec anti-rejeu), permission
+   **`auth`**.
+3. Le core répond avec les groupes du compte (`Dev@dev.acme.lan`) et ses **droits
+   Nexus** : `read:nexus`, `write:nexus`, `write:nexus_admin`.
+4. Toutes les 5 minutes, les comptes ayant une session sont relus (`08_04`) : un droit
+   retiré se voit sans reconnexion, une révocation ferme les sessions et suspend les
+   jetons.
+
+La page de connexion passe en deux étapes quand le compte a un second facteur :
+mot de passe, puis code. Entre les deux, les identifiants restent **en mémoire** côté
+Nexus (2 minutes, 3 essais), jamais dans la page.
+
+```yaml
+auth:
+  mode: ducky
+  ducky:
+    fallback_ldap: true     # si le core ne répond pas par Ducky (pas de second facteur par LDAP)
+    require_right: false    # true : seuls les droits du core donnent un rôle
+    timeout_seconds: 7
+  ldap:                     # utilisé seulement pour le repli
+    url: ldaps://vaultaire.acme.lan:636
+    base_dn: dc=acme,dc=lan
+ducky:
+  enable: true
+```
+
+Protocole : `docs/Developement/how it work/ducky-network/08-authentification-service/`.
+
+#### Mode LDAP
 
 1. Nexus ouvre une connexion `ldap://` ou `ldaps://` vers le core.
 2. **Bind** avec `uid=<compte>,<base_dn>` et le mot de passe saisi. C'est le core qui
    vérifie : mot de passe, expiration, et la permission **`auth`** sur le domaine du DN.
-3. **Recherche** de l'entrée (`(uid=<compte>)`, attributs `memberOf` et `displayName`),
-   avec la session de l'utilisateur, ou avec `bind_dn` si un compte de service est configuré.
-4. Les groupes (`cn=<groupe>,ou=groups,…`) donnent le **rôle Nexus**.
-5. Toutes les 5 minutes, les groupes des sessions ouvertes sont relus : un compte retiré
-   d'un groupe perd ses droits sans se déconnecter.
+3. **Recherche** de l'entrée (`(uid=<compte>)`, attributs `memberOf`, `displayName` et
+   **`vaultaireServiceRights`**), avec la session de l'utilisateur — qui doit alors
+   porter la permission `search` —, ou avec `bind_dn` si un compte de service est
+   configuré — qui doit alors porter `read:get:user` pour voir les droits des autres.
+4. Les droits Nexus du core et les groupes (`cn=<groupe>,ou=groups,…`) donnent le
+   **rôle Nexus**.
+5. Toutes les 5 minutes, avec un compte de service, les groupes et droits des sessions
+   ouvertes sont relus.
 
 ```yaml
 auth:
@@ -228,22 +265,34 @@ auth:
 
 Un identifiant de la forme `alice@infra.acme.lan` est transmis tel quel au bind.
 Les caractères spéciaux sont échappés (DN et filtre) : `*`, `(`, `)`, `\`, `,`…
+LDAP ne porte pas le second facteur.
 
 ### Rôles
 
-| Rôle | Peut |
-|---|---|
-| `reader` | parcourir, rechercher, télécharger, `docker pull` |
-| `publisher` | + publier, supprimer une version, `docker push`, régénérer un index |
-| `admin` | + créer / régler / supprimer des dépôts, importer une release GitHub, voir tous les jetons et les clients, GC |
+| Rôle | Peut | Droit du core |
+|---|---|---|
+| `reader` | parcourir les dépôts privés, rechercher, télécharger, `docker pull` | `read:nexus` |
+| `publisher` | + publier, supprimer une version, `docker push`, régénérer un index | `write:nexus` |
+| `admin` | + créer / régler / supprimer des dépôts, importer une release GitHub, voir tous les jetons et les clients, GC | `write:nexus_admin` |
+
+Le rôle vient de **deux sources**, et le plus élevé l'emporte :
+
+1. **les droits du core**, accordés dans l'interface d'administration Vaultaire
+   (*Permissions → Actions hors matrice*) ou par
+   `vlt update -pu <permission> write:nexus all` ;
+2. **la table `auth.roles`**, par noms de groupe :
 
 ```yaml
 auth:
   roles:
-    admin:     [vaultaire]   # groupe protégé du core
-    publisher: [CI, Infra]
-    reader:    ["*"]         # « * » = tout compte authentifié
+    admin:     [vaultaire]            # groupe protégé du core
+    publisher: [CI, Infra@infra.acme.lan]
+    reader:    ["*"]                  # « * » = tout compte authentifié
 ```
+
+Un nom nu (`Infra`) reconnaît le groupe dans n'importe quel domaine ; un nom qualifié
+(`Infra@infra.acme.lan`) seulement ce domaine (mode ducky). Avec
+`auth.ducky.require_right: true`, la table est ignorée : **seul le core décide**.
 
 Un compte sans aucun rôle est **refusé**, même avec un bon mot de passe.
 Les noms de groupe sont uniques dans tout l'annuaire du core (contrainte `UNIQUE` de la
@@ -494,11 +543,24 @@ Les paquets eux-mêmes ne sont pas re-signés : signez-les à la construction.
 
 ### Raccordement au cluster
 
-`ducky.enable: true` fait enrôler Nexus comme **client service** du core et
-l'enregistre dans `cluster_nodes` (trames 04_09 / 04_12 / 04_14). **Nécessite les
-changements du core** ([CORE_CHANGEMENTS.md](CORE_CHANGEMENTS.md) § 1) : sans eux,
-l'enrôlement est refusé, Nexus le journalise, l'affiche dans Administration et
-continue de fonctionner seul.
+`ducky.enable: true` fait enrôler Nexus comme **client service** du core, l'enregistre
+dans `cluster_nodes` (trames `04_09` / `04_12` / `04_14`) et ouvre le mode
+d'authentification `ducky`.
+
+```bash
+# sur le core
+vlt enroll create --type vaultaire_nexus --uses 1 --expires 1h --label nexus-01
+# sur l'hôte de Nexus : deploy/ducky.example.yaml → /etc/vaultaire_nexus/ducky.yaml, clé collée
+```
+
+Nexus apparaît ensuite dans `vlt cluster list` (rôle `vaultaire_nexus`, point d'accès
+= `public_url`) et dans la page **Cluster** de l'interface, avec un lien. L'identité
+est écrite dans `<data_dir>/ducky` : elle doit persister, sinon Nexus se réenrôle à
+chaque démarrage. Si le core est injoignable, Nexus le journalise, l'affiche dans
+Administration et continue de servir (compte local, jetons, dépôts publics).
+
+Un Nexus arrêté plus longtemps que le délai de purge des services
+(`vlt cluster purge-delay`) est retiré du cluster : il faut une nouvelle clé.
 
 ### Mise à jour, sauvegarde
 
@@ -542,7 +604,8 @@ Ce qui est vérifié par les tests :
 | `vercmp` | ordre des versions (tilde, époques, suffixes) |
 | `rpmrepo` | lecture de vrais RPM construits par `rpmbuild` ; **dnf** lit l'index généré |
 | `debrepo` | `.deb` gzip / xz / zstd / non compressé ; **apt** lit l'index généré |
-| `auth` | mots de passe, rôles, compte local, verrouillage, jetons, **LDAP** contre un faux annuaire qui imite celui du core |
+| `auth` | mots de passe, rôles (groupes et droits du core), compte local, verrouillage, jetons, **LDAP** contre un faux annuaire qui imite celui du core (attribut `vaultaireServiceRights` compris), **mode ducky** (second facteur, repli, relecture, révocation) |
+| `clusterlink` | corrélation des réponses `08` par `ref`, traduction des codes d'erreur |
 | `ldapclient` | filtres et échappements |
 | `registry` | envoi par morceaux et monolithique, condensat faux, manifeste incomplet, tags, pagination, montage, suppression, droits |
 | `test/e2e.sh` | dnf public et privé (jeton), apt, docker push/pull, API releases + `sha256sum -c`, fichiers `latest`, interface, CSRF |
@@ -554,6 +617,9 @@ local, pas de `go.work`.
 
 ## 11. Limites connues
 
+- **Second facteur et clients sans saisie** : docker, dnf, apt et la CI ne peuvent pas
+  saisir de code TOTP — ils utilisent des **jetons**. Un compte à second facteur est
+  refusé en Basic avec son mot de passe.
 - **Pas de mandataire vers l'extérieur** (proxy cache de dépôts publics) : Nexus sert ce
   qu'on y publie. L'import GitHub couvre les releases Vaultaire.
 - **Pas de réplication** entre deux Nexus : un seul nœud, stockage local.
@@ -561,7 +627,8 @@ local, pas de `go.work`.
 - **LDAP** : les groupes sont lus par leur nom (`cn`) ; le core n'expose pas le domaine
   d'un groupe dans `memberOf` au-delà des deux derniers niveaux. Sans conséquence tant
   que les noms de groupe restent uniques (c'est le cas aujourd'hui).
-- **LDAP et MFA** : si le core active `RefuseBindWhenMFARequired`, les comptes soumis au
-  second facteur ne peuvent plus se connecter à Nexus par LDAP. L'authentification par
-  le réseau Ducky ([DUCKY_AUTH.md](DUCKY_AUTH.md)) lève cette limite.
-- Le **mode `ducky`** et le **rôle RBAC natif** attendent les changements du core.
+- **LDAP et MFA** : au bind LDAP, le core exige des comptes soumis au second facteur leur
+  mot de passe **suivi** du code à 6 chiffres (`motdepasse123456`), sauf si
+  `ldap.mfa_bypass: true` est posé dans sa configuration. En mode `ldap`, ces comptes
+  saisissent donc les deux à la suite dans le champ mot de passe. Le mode `ducky` demande
+  le code dans une étape à part.

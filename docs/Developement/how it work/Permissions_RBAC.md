@@ -23,15 +23,45 @@ Une clé RBAC est un triplet `catégorie:action:objet`, par exemple
 |----------|----------------|
 | `RBACObjects` | `user`, `group`, `client`, `permission`, `gpo` |
 | `RBACRead` | `get`, `status` |
-| `RBACWrite` | `create`, `delete`, `update`, `add` |
+| `RBACWrite` | `create`, `delete`, `update`, `add`, `remove` |
 
-Le produit donne aujourd'hui **30 clés**. Deux ensembles s'y ajoutent, hors
+Le produit donne aujourd'hui **35 clés**. Deux ensembles s'y ajoutent, hors
 modèle :
 
 | Variable | Contenu | Pourquoi c'est à part |
 |----------|---------|-----------------------|
 | `legacyActions` | `none`, `web_admin`, `auth`, `compare`, `search` | Héritées du modèle LDAP d'origine. Stockées dans des colonnes de `user_permission`, pas dans `user_permission_action`. |
-| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log`, `write:mfa` | Actions sans objet au sens RBAC. |
+| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log`, `write:mfa`, `read:cluster`, `write:cluster`, `read:certificate`, `write:certificate`, `read:dns`, `read:enrollment`, `write:server`, `read:nexus`, `write:nexus`, `write:nexus_admin` | Actions sans objet au sens RBAC — dont les **droits de service** (§ 5). |
+
+### `add` et `remove` : rattacher, détacher
+
+`add` (**Rattacher**) et `remove` (**Détacher**) portent sur l'entité qu'on
+rattache à un groupe ou qu'on en retire — le compte, la machine, la permission,
+la GPO —, pas sur le groupe :
+
+| Opération | Clé |
+|---|---|
+| `add -u … -g …` / `remove -u … -g …` | `write:add:user` / `write:remove:user` |
+| `add -c … -g …` / `remove -c … -g …` | `write:add:client` / `write:remove:client` |
+| `add -gu/-gc … -p …` / `remove -gu/-gc … -p …` | `write:add:permission` / `write:remove:permission` |
+| `add -gpo … -g …` / `remove -gpo … -g …` | `write:add:gpo` / `write:remove:gpo` |
+
+**`remove` est récent.** Avant lui, chaque retrait empruntait la clé `delete` de
+l'objet : pour sortir un compte d'un groupe, il fallait `write:delete:user` — le
+droit de **supprimer des comptes** —, et le donner à un délégué lui ouvrait
+aussi la suppression. Détacher ne détruit rien ; `delete` reste le droit de
+détruire l'objet lui-même (`delete -u`, `delete -p`, `delete -gpo`…).
+
+À la mise à jour, la migration `rbac_verbe_detacher` recopie **une fois**
+chaque `write:delete:<objet>` en `write:remove:<objet>`, portée comprise : un
+délégué qui détachait hier détache toujours. Ensuite les deux droits sont
+indépendants. La migration est notée dans la table `schema_migrations` et ne se
+rejoue pas — sinon elle recopierait aussi les permissions créées après, et
+rendrait le détachement à qui on vient de le refuser.
+
+`write:add:group` et `write:remove:group` existent (le produit est complet)
+mais **aucune opération ne les vérifie** : on ne rattache pas un groupe à un
+groupe. Les accorder n'ouvre rien.
 
 La couche base masque la différence de stockage : `Command_GET_UserPermissionAction`
 et `Command_SET_UserPermissionAction` routent vers la colonne ou vers la table
@@ -103,7 +133,7 @@ jamais en jeu, l'exigence portant sur `*`.
 Certaines actions sont **toujours** contrôlées contre le domaine `*` :
 
 ```go
-var globalOnlyActions = []string{"web_admin", "write:dns", "read:log"}
+var globalOnlyActions = []string{"web_admin", "write:dns", ActionReadLog, …} // extrait
 ```
 
 Leur donner une liste de domaines ne les restreint pas — cela les **refuse**,
@@ -126,6 +156,7 @@ La liste réelle, dans `core/permission/isValidAction.go` :
 | `read:cluster`, `write:cluster` | un nœud du cluster n'appartient à aucun domaine |
 | `read:certificate`, `write:certificate` | un certificat sert tout le serveur ; le régénérer ou le supprimer coupe le service pour tout le monde |
 | `write:server` | un réglage du serveur — mode debug, purge des sessions — engage l'ensemble |
+| `read:nexus`, `write:nexus`, `write:nexus_admin` | un dépôt Nexus n'appartient à aucun domaine ; c'est le service qui les applique (§ 5) |
 
 Ces clés s'accordent avec **`all`**, ou pas du tout. Leur donner une liste de
 domaines les refuse.
@@ -187,18 +218,21 @@ Détails dans [`MFA_et_Expiration.md`](./MFA_et_Expiration.md).
 
 ### Pourquoi une matrice
 
-Énumérer les clés une par une donnait 37 lignes, chacune portant deux
-formulaires. Deux problèmes : on ne pouvait pas répondre d'un coup d'œil à
+Énumérer les clés une par une donnait 37 lignes (55 aujourd'hui : 35 clés du
+modèle, 5 historiques, 15 spéciales), chacune portant deux formulaires. Deux problèmes : on ne pouvait pas répondre d'un coup d'œil à
 « qu'est-ce que cette permission autorise ? », et le nombre de formulaires
 rendus croissait avec le nombre d'objets.
 
 La page de détail présente donc les clés RBAC en **matrice** : objets en lignes,
 verbes en colonnes, une pastille par case résumant la valeur.
 
-| | get | status | create | delete | update | add |
-|---|---|---|---|---|---|---|
-| Utilisateurs | tous | tous | 2 dom. | — | 2 dom. | — |
-| Groupes | tous | tous | — | — | 1 dom. | — |
+| | get | status | create | delete | update | add | remove |
+|---|---|---|---|---|---|---|---|
+| Utilisateurs | tous | tous | 2 dom. | — | 2 dom. | 1 dom. | 1 dom. |
+| Groupes | tous | tous | — | — | 1 dom. | — | — |
+
+Les colonnes s'intitulent Consulter, État, Créer, Supprimer, Modifier,
+**Rattacher**, **Détacher**.
 
 Ajouter un objet coûte une ligne, ajouter un verbe une colonne.
 
@@ -230,6 +264,23 @@ Après une action, le serveur rouvre l'onglet d'origine via le champ caché
 `active_tab`, validé contre une liste en dur côté Go — une valeur forgée ne peut
 pas atterrir dans un attribut HTML.
 
+### La clé de chaque page
+
+Chaque page d'administration exige la **même clé** que la commande qui lit la
+même donnée ; une page qui lit la base directement n'est protégée que par ce
+contrôle. `web_cles_des_pages_test.go` en vérifie une partie.
+
+| Page | Clé | Remarque |
+|---|---|---|
+| Cluster (`/admin/cluster`) | `read:cluster` | était `read:get:client` : qui lisait une seule machine ouvrait la carte des nœuds |
+| Arborescence (`/admin/tree`, `/admin/api/ldap-tree`) | `read:get:group`, **filtrée** au périmètre | passe par l'action `domain.list_tree`, comme `eyes -g`. Les comptes d'un groupe n'apparaissent qu'avec `read:get:user` sur son domaine |
+| Fiche d'un groupe dans l'arbre (`/admin/api/group-info`) | `read:get:group` sur le domaine du groupe | hors périmètre, répond « introuvable » ; chaque rubrique (membres, machines, permissions, GPO) suit sa propre clé de lecture |
+
+`write:eyes` n'est plus vérifiée nulle part : l'arborescence exigeait ce droit
+d'**écriture** pour une page qui ne fait que lire, et montrait tout l'annuaire
+à qui le détenait. La clé reste dans le vocabulaire — des permissions existantes
+la portent — et la matrice l'affiche comme obsolète.
+
 ---
 
 ## 4. Ajouter un objet RBAC
@@ -244,8 +295,8 @@ RBACObjects = []string{"user", "group", "client", "permission", "gpo", "ticket"}
 ```
 
 C'est tout pour le modèle. `buildValidActions`, `AllRBACActionKeys` et
-`IsRBACActionKey` en dérivent, donc les six clés `read:get:ticket` …
-`write:add:ticket` deviennent valides partout : CLI, base, interface.
+`IsRBACActionKey` en dérivent, donc les sept clés `read:get:ticket` …
+`write:remove:ticket` deviennent valides partout : CLI, base, interface.
 
 ### Étape 2 — Un libellé lisible (facultatif)
 
@@ -285,7 +336,61 @@ apparaît.
 
 ---
 
-## 5. Garde-fous à l'écriture
+## 5. Droits de service
+
+Un service du cluster qui a ses propres niveaux — lire, publier, administrer —
+les reçoit du core sous forme de **clés RBAC dédiées**. Aujourd'hui : Nexus.
+
+| Clé | Rôle Nexus | Accorde |
+|---|---|---|
+| `read:nexus` | lecteur | lire les dépôts **privés**, rechercher, `docker pull` |
+| `write:nexus` | publieur | publier, supprimer une version, `docker push`, réindexer |
+| `write:nexus_admin` | administrateur | créer, régler, supprimer des dépôts ; import GitHub ; jetons de tous ; nettoyage |
+
+### Pourquoi des actions spéciales globales
+
+Même raisonnement que le cluster (`ActionReadCluster`) : un dépôt n'appartient à
+aucun domaine. Un objet RBAC `nexus` engendrerait sept clés dont quatre
+n'accorderaient rien. `write:nexus_admin` et non `admin:nexus` :
+`IsRBACActionKey` et les affichages supposent `read` ou `write`.
+
+Elles s'accordent avec `all` ou `nil`. Le périmètre fin (tel dépôt pour tel
+groupe) reste dans le service : ce sont des réglages du dépôt, pas des droits
+sur l'annuaire.
+
+### Qui les évalue
+
+**Pas le core.** Le core les **transmet** ; le service les **applique**.
+
+| Chemin | Transport | Filtrage |
+|---|---|---|
+| Réseau Ducky | ligne `rights:` de la trame `08_02` / `08_05` | seules les clés de `UserRights` du type du service ([chapitre 8](./ducky-network/08-authentification-service/README.md)) |
+| LDAP | attribut opérationnel `vaultaireServiceRights`, **demandé nommément** | union des `UserRights` du catalogue ; visible par le compte lui-même, ou par un compte qui a `read:get:user` sur son domaine |
+
+Le calcul est le même des deux côtés : `GetGroupIDsForUser` puis
+`HasActionAnywhere` pour chaque clé. Un compte révoqué n'a aucun groupe, donc
+aucune clé.
+
+Côté LDAP, le code est `core/ldap/LDAP_SEARCH-REQUEST/newmodule/service_rights.go`.
+L'attribut n'est pas calculé pour `+` : des navigateurs d'annuaire l'envoient sur
+des sous-arbres entiers, et chaque entrée coûterait plusieurs requêtes.
+
+### Ajouter les clés d'un nouveau service
+
+1. Constantes et commentaire dans `isValidAction.go` ; ajout à `specialActions`
+   **et** `globalOnlyActions`.
+2. Libellé dans `specialActionLabels` (`web_admin_permission_matrix.go`) — la
+   clé seule ne dit pas à quel service elle s'adresse.
+3. `UserRights` dans l'entrée du type (`core/clienttype`).
+4. Tests : `nexus_actions_test.go` sert de modèle ;
+   `TestUserRightsDuCatalogueSontDesClesConnues` vérifie la cohérence
+   catalogue ↔ moteur.
+
+Guide complet : [`Nouveau_service.md`](./Nouveau_service.md).
+
+---
+
+## 6. Garde-fous à l'écriture
 
 `permissionFieldExists` vérifie que la clé postée est réellement administrable
 avant toute écriture. Sans ce contrôle, une clé inventée s'insérerait dans
@@ -298,11 +403,12 @@ la case deviendrait grise au lieu d'exposer une clé que le serveur refuserait.
 
 ---
 
-## 6. Diagnostic
+## 7. Diagnostic
 
 | Symptôme | Piste |
 |----------|-------|
 | Une action reste à `nil` après enregistrement | La clé n'existe pas : `permissionFieldExists` a refusé, un message d'erreur s'affiche en haut de page |
 | Un droit accordé ne s'applique pas | Le domaine ne correspond pas à celui contrôlé par l'appelant — vérifiez si l'appelant passe `"*"` ou un domaine réel |
 | Perte d'accès à `/admin` après édition | `web_admin` est passé à autre chose que `all` ; corriger en base ou via le CLI |
-| Une ligne s'affiche sous un nom technique | Entrée manquante dans `rbacObjectLabels` — cosmétique |
+| Une ligne s'affiche sous un nom technique | Entrée manquante dans `rbacObjectLabels` (objets) ou `specialActionLabels` (actions spéciales) — cosmétique |
+| Un service ne voit pas les droits d'un compte | Clé absente de `UserRights` du type ; en LDAP, attribut non demandé nommément, ou compte de service sans `read:get:user` |

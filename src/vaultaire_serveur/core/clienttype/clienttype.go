@@ -60,6 +60,16 @@ type Definition struct {
 	// Frames énumère les trames que ce type peut ÉMETTRE, en « CC_SS ».
 	Frames []string
 
+	// UserRights énumère les clés RBAC qu'un service peut APPRENDRE sur un
+	// compte qu'il vient de vérifier (trame 08_02, ligne « rights: »).
+	//
+	// Ce n'est PAS un droit du service : c'est un filtre sur ce que le core lui
+	// révèle. Un dépôt de paquets n'a pas à savoir qu'un compte peut
+	// réinitialiser des mots de passe ; il n'apprend que les clés qui le
+	// concernent. Liste vide : le service vérifie des comptes sans rien
+	// apprendre de leurs droits.
+	UserRights []string
+
 	// AssertsUser autorise le programme à déclarer agir au nom d'un utilisateur
 	// qu'il a lui-même authentifié.
 	//
@@ -82,6 +92,7 @@ const (
 	Client = "vaultaire_client"
 	Proxy  = "vaultaire_proxy"
 	Web    = "vaultaire_web"
+	Nexus  = "vaultaire_nexus"
 )
 
 var catalogue = []Definition{
@@ -181,6 +192,39 @@ var catalogue = []Definition{
 		},
 		AssertsUser: true,
 	},
+	{
+		Name:   Nexus,
+		Label:  "Dépôt de paquets",
+		Family: FamilyService,
+		Description: "Dépôt central : paquets RPM et Debian, images Docker, " +
+			"releases Vaultaire. Vérifie des comptes, n'agit au nom de personne.",
+
+		// Même socle de connexion que le proxy et l'interface web : 01 puis 02,
+		// 02_12 compris.
+		//
+		// 04_09/04_12/04_14 : Nexus déclare une FONCTION, pas une machine. Il
+		// n'a rien à faire dans la liste servie aux agents (04_03/04_04), et
+		// 04_01 le ferait exister comme nœud joignable.
+		//
+		// 08_01/08_04 : vérifier un compte (mot de passe, second facteur) et
+		// relire ses droits. C'est la catégorie générique des services qui
+		// authentifient leurs propres utilisateurs — voir
+		// ducky-network/serviceauth.
+		Frames: []string{
+			"01_01", "01_05", "01_07",
+			"02_01", "02_03", "02_05", "02_12",
+			"04_09", "04_12", "04_14",
+			"08_01", "08_04",
+		},
+
+		// Les trois clés du dépôt, et elles seules.
+		UserRights: []string{"read:nexus", "write:nexus", "write:nexus_admin"},
+
+		// FAUX, délibérément. Nexus VÉRIFIE un mot de passe qu'on lui a donné
+		// (08_01) ; il ne DÉCLARE jamais agir au nom d'un compte qu'il n'a pas
+		// prouvé. Ce privilège-là reste à l'interface web seule.
+		AssertsUser: false,
+	},
 }
 
 // index accélère les recherches et fige la forme d'ensemble au démarrage.
@@ -275,6 +319,15 @@ func RoleCluster(clientType string) string {
 	default:
 		return ""
 	}
+}
+
+// UserRightsFor rend les clés RBAC qu'un type peut apprendre sur un compte.
+func UserRightsFor(clientType string) []string {
+	d, ok := Lookup(clientType)
+	if !ok {
+		return nil
+	}
+	return append([]string(nil), d.UserRights...)
 }
 
 // IsService indique si un type s'enrôle seul plutôt que d'être créé sur le core.

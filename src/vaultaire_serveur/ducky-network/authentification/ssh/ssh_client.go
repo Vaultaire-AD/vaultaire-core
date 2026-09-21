@@ -261,6 +261,14 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 		logs.Write_Log("SECURITY", sshUser+" : demande de clés publiques sur un compte révoqué (fetch-key)")
 		return ""
 	}
+	// Droit de se connecter au DOMAINE — le même contrôle que 03_01. Il
+	// manquait ici : le domaine était lu puis seulement journalisé, si bien que
+	// `alice@nimporte.quoi` recevait les clés d'alice, et sshd l'acceptait sous
+	// ce nom.
+	if ok, _ := permission.CanUserConnectToDomain(sshUser + "@" + domaine); !ok {
+		logs.Write_Log("WARNING", sshUser+" : domaine "+domaine+" refusé sur "+trames_content.ClientSoftwareID+" (fetch-key)")
+		return ""
+	}
 	can, err := dbusers.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 	if err != nil || !can || sshUser == "vaultaire" {
 		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID+" (fetch-key)")

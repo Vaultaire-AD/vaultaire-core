@@ -275,6 +275,19 @@ create -g "nom_du_groupe" "domain_name"
 
 Exemple : `create -g "IT_Group" "it.company.com"`
 
+- Le domaine est écrit en **minuscules**, avec au moins deux labels
+  (`acme.lan`, pas `lan`) ; il est normalisé à la création.
+- Les **domaines parents manquants** sont créés avec le groupe, jusqu’au domaine
+  principal (les deux derniers labels) : `create -g Web web.cloud.acme.lan`
+  crée aussi, s’ils n’existent pas, les groupes `acme.lan` et `cloud.acme.lan`,
+  sans membre ni permission. La réponse les nomme.
+- Le **dernier** groupe d’un domaine qui a des sous-domaines ne se supprime pas
+  (`delete -g`) : le domaine disparaîtrait sous ses enfants.
+
+> Le domaine principal d’un groupe est aussi le seul sous lequel ses membres se
+> **connectent** aux machines : un membre de `web.cloud.acme.lan` se connecte
+> comme `compte@acme.lan`. Voir [Lexique — domaine principal](./Lexique.md).
+
 ### 5.4 Utilisateur
 
 ```bash
@@ -592,6 +605,12 @@ Une clé n'appartient qu'à **un seul compte** : la contrainte est globale, parc
 
 ## 10. remove — Retrait
 
+Les retraits d’un groupe (10.1 à 10.5) exigent le droit **Détacher** de l’entité
+retirée — `write:remove:user`, `write:remove:client`, `write:remove:permission`,
+`write:remove:gpo` —, sur les domaines du groupe **et** de l’entité. Ils
+n’exigent plus le droit de la supprimer (`write:delete:*`), qu’ils empruntaient
+auparavant.
+
 ### 10.1 Utilisateur d’un groupe
 
 ```bash
@@ -687,8 +706,8 @@ update -pu <PermissionName> <ActionKey> <Arg> [ChildOrAll] [Domain]
 - **PermissionName** : nom de la permission (ex. LDAP_AdminPanel).
 - **ActionKey** : clé d’action (voir [§5.0](#50-modèle-des-permissions-user)).
   - **Legacy** : `none`, `web_admin`, `auth`, `compare`, `search`.
-  - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (et idem pour `group`, `client`, `permission`, `gpo`).
-  - **Spécial** : `write:dns`, `write:eyes`.
+  - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user`, `write:remove:user` (et idem pour `group`, `client`, `permission`, `gpo`). `add` rattache à un groupe, `remove` en détache.
+  - **Spécial** : voir [Actions et permissions](./Actions_et_Permissions.md) (`write:dns`, `read:cluster`, `write:mfa`…). `write:eyes` n'est plus vérifiée.
 - **Arg** :
   - `nil` — aucun accès.
   - `all` — tous les domaines.
@@ -959,7 +978,7 @@ mfa policy --max-age <j> --warn <j>    # l'écrit          (groupe vaultaire)
 
 L’exigence se pose sur un **groupe**, pas sur un compte : elle s’applique à tous ses membres.
 
-> LDAP n’a aucun mécanisme standard de second facteur. Le bind d’un compte soumis au MFA est refusé, et non challengé — comportement désactivé par défaut (`RefuseBindWhenMFARequired`), pour ne pas couper un parc existant à la mise à jour.
+> LDAP n’a aucun champ pour un second facteur. Au bind, un compte soumis au MFA fournit son mot de passe **suivi** du code à 6 chiffres (`MotDePasse123456`) ; le mot de passe seul est refusé. `ldap.mfa_bypass: true` (dans `serveur_conf.yaml`) lève cette exigence pour tout le parc — chaque bind concerné est journalisé. Voir [MFA et expiration](../Developement/how%20it%20work/MFA_et_Expiration.md).
 
 ---
 
@@ -976,6 +995,16 @@ enroll types                     # catalogue des types de clients
 ```
 
 `--uses` borne le nombre d’enrôlements, `--expires` la durée de validité. Les deux limitent ce qu’une clé divulguée permet.
+
+Types de service : `vaultaire_proxy`, `vaultaire_web`, `vaultaire_nexus`. Exemple
+pour le dépôt de paquets :
+
+```bash
+enroll create --type vaultaire_nexus --uses 1 --expires 1h --label nexus-01
+```
+
+`enroll types` affiche aussi, pour chaque service qui vérifie des comptes, les
+**droits de service** qu'il apprend (`read:nexus`…).
 
 ### `--groups` — les groupes de naissance
 

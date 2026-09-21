@@ -21,6 +21,8 @@
   --danger-subtle: #fef2f2;
   --success: #16a34a;
   --success-subtle: #f0fdf4;
+  --warning: #b45309;
+  --warning-subtle: #fffbeb;
   /* Layout */
   --radius-sm: 6px;
   --radius-md: 8px;
@@ -547,6 +549,25 @@ tr:hover td { background: var(--bg-subtle); }
   color: var(--danger);
 }
 
+/* « danger » est un alias : quelques gabarits l'emploient. Sans règle, le
+   message s'affichait sans couleur, ce qui le faisait passer pour neutre. */
+.alert-danger {
+  background: var(--danger-subtle);
+  color: var(--danger);
+}
+
+/* Information et avertissement : ni succès ni échec. Le vert est réservé
+   à ce qui a réussi — un message d'erreur en vert se lit comme une réussite. */
+.alert-info {
+  background: var(--accent-subtle);
+  color: var(--text-primary);
+}
+
+.alert-warning {
+  background: var(--warning-subtle);
+  color: var(--warning);
+}
+
 /* Sections */
 .section {
   margin-top: 1.5rem;
@@ -802,6 +823,8 @@ body.dark {
   --accent-subtle: rgba(59, 130, 246, 0.15);
   --danger-subtle: #450a0a;
   --success-subtle: #052e16;
+  --warning: #f59e0b;
+  --warning-subtle: #451a03;
 }
 
 /* Context menu (vCenter-style right-click) */

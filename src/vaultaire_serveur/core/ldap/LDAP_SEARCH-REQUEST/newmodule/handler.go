@@ -84,6 +84,8 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	délai := effectiveTimeLimit(op.TimeLimit)
 	début := time.Now()
 
+	avecDroits := droitsServiceDemandes(op.Attributes)
+
 	envoyées := 0
 	for _, entry := range matched {
 		if limite > 0 && envoyées >= limite {
@@ -100,6 +102,13 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultTimeLimitExceeded, "time limit exceeded")
 			return
+		}
+
+		// Droits de service : calculés entrée par entrée, et seulement si
+		// demandés. Voir service_rights.go.
+		if ue, ok := entry.(candidate.UserEntry); ok && avecDroits {
+			ue.ServiceRights = droitsService(username, ue)
+			entry = ue
 		}
 
 		resp := response.BuildLDAPEntryForSend(entry, op.Attributes, op.TypesOnly)

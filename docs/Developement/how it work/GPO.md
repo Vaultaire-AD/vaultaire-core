@@ -5,8 +5,7 @@
 
 Document de développement. Pour l'usage des commandes, voir
 [MAN.md](../../Utilisation/MAN.md) §5.6. Pour le protocole réseau, voir
-[Protocole_Ducky.md](./Protocole_Ducky.md), section
-« Détail du transport GPO ».
+[le chapitre 5 du protocole](./ducky-network/05-gpo/README.md).
 
 ---
 
@@ -184,7 +183,7 @@ Trames `05_01` à `05_14`. Manifeste puis fragments de 32 Kio — la couche de
 transport annonce la taille sur 2 octets, ce qui plafonne une trame à ~48 Kio
 utiles alors qu'un seul `file_deploy` accepte 256 Kio.
 
-Détail complet dans [Protocole_Ducky.md](./Protocole_Ducky.md).
+Détail complet dans [le chapitre 5 du protocole](./ducky-network/05-gpo/README.md).
 
 ### 4.5 Application
 
@@ -229,7 +228,7 @@ Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 | 12 | `templated_file_deploy` | both | Idem, avec `{{hostname}}` `{{fqdn}}` `{{username}}` `{{domain}}` |
 | 13 | `file_acl` | both | ACL POSIX (`setfacl`), avec héritage si récursif |
 | 14 | `trusted_ca` | machine | CA interne dans le magasin de confiance |
-| 20 | `dns_resolver` | machine | Serveurs DNS (`resolved.conf.d/`) |
+| 20 | `dns_resolver` | machine | Serveurs DNS, chez ce qui tient la résolution : `resolved.conf.d/` (systemd-resolved actif), `[global-dns]` de NetworkManager (RHEL/Rocky 9), sinon `/etc/resolv.conf` |
 | 21 | `package_repository` | machine | Dépôt de paquets autorisé |
 | 30 | `package` | machine | Présence, absence, version épinglée |
 | 40 | `sysctl` | machine | Un fichier par clé dans `/etc/sysctl.d/` |

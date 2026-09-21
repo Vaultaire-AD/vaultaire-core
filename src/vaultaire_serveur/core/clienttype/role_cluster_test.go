@@ -94,3 +94,11 @@ func TestSeulUnTypeQuiEmet0401APrendUnRole(t *testing.T) {
 		}
 	}
 }
+
+// TestNexusNEstPasUnNoeud : un service s'enregistre en 04_09, avec son type
+// pour rôle. Lui donner un rôle de machine le ferait servir aux agents.
+func TestNexusNEstPasUnNoeud(t *testing.T) {
+	if r := RoleCluster(Nexus); r != "" {
+		t.Errorf("RoleCluster(%s) = %q, attendu vide", Nexus, r)
+	}
+}

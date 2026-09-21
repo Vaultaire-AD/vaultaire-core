@@ -3,6 +3,7 @@ package configuration_file
 import (
 	"os"
 	"vaultaire/core/auth/ratelimit"
+	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 
@@ -104,6 +105,11 @@ func LoadConfig(filePath string) error {
 	}
 	// Les SAN sont recopiés même vides : une liste vidée dans le fichier doit
 	// pouvoir revenir à la seule détection automatique.
+	// Second facteur au bind LDAP : exigé sauf réglage contraire explicite.
+	ldapstorage.MFABypass = config.Ldap.Ldap_MFA_Bypass != nil && *config.Ldap.Ldap_MFA_Bypass
+	if ldapstorage.MFABypass {
+		logs.Write_Log("WARNING", "ldap.mfa_bypass activé : les comptes soumis au second facteur se lient par LDAP sans code")
+	}
 	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
 	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
 	if config.Website.Website_Enable != nil {

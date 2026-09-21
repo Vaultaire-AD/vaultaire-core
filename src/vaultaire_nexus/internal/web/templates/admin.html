@@ -15,7 +15,7 @@
     <dt>Écoute</dt><dd><code>{{$c.Listen}}</code>{{if $c.TLS.Enable}} (TLS{{if $c.TLS.SelfSigned}}, auto-signé{{end}}){{else}} (HTTP — derrière un mandataire TLS){{end}}</dd>
     <dt>URL publique</dt><dd><code>{{.BaseURL}}</code></dd>
     <dt>Données</dt><dd><code>{{$c.DataDir}}</code></dd>
-    <dt>Authentification</dt><dd>{{.AuthMode}}{{if eq .AuthMode "ldap"}} — <code>{{$c.Auth.LDAP.URL}}</code>, base <code>{{$c.Auth.LDAP.BaseDN}}</code>{{end}}</dd>
+    <dt>Authentification</dt><dd>{{.AuthMode}}{{if eq .AuthMode "ldap"}} — <code>{{$c.Auth.LDAP.URL}}</code>, base <code>{{$c.Auth.LDAP.BaseDN}}</code>{{end}}{{if eq .AuthMode "ducky"}} — trame 08 du core, second facteur compris{{if $c.Auth.Ducky.FallbackLDAP}} ; repli LDAP <code>{{$c.Auth.LDAP.URL}}</code>{{end}}{{if $c.Auth.Ducky.RequireRight}} ; rôles par clés du core uniquement{{end}}{{end}}</dd>
     <dt>Rôle administrateur</dt><dd>{{join $c.Auth.Roles.Admin ", "}}</dd>
     <dt>Rôle publieur</dt><dd>{{join $c.Auth.Roles.Publisher ", "}}</dd>
     <dt>Rôle lecteur</dt><dd>{{join $c.Auth.Roles.Reader ", "}}</dd>

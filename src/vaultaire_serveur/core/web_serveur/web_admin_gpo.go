@@ -24,7 +24,7 @@ import (
 // au catalogue le rend éditable ici sans toucher au HTML.
 //
 // RBAC : mêmes clés que les commandes CLI (read:get:gpo, write:create:gpo,
-// write:update:gpo, write:add:gpo, write:delete:gpo), vérifiées sur les domaines
+// write:update:gpo, write:add:gpo, write:remove:gpo, write:delete:gpo), vérifiées sur les domaines
 // des groupes auxquels la GPO est liée.
 
 // gpoFieldView est un champ de formulaire prêt à rendre.

@@ -50,6 +50,15 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	sshKeys := []string{}
 
 	sess := duckytool.OpenVaultaireDefaultSession()
+	if sess == nil || sess.DuckySession == nil {
+		// Tunnel indisponible (core injoignable, reconnexion en cours) : on le
+		// dit à PAM plutôt que de déréférencer une session absente — ce qui
+		// paniquait la goroutine et laissait PAM attendre jusqu'à son délai.
+		logs.Write_log("ERROR", fmt.Sprintf(
+			"[%s] Aucune session machine disponible, authentification impossible pour %s", reqType, req.User))
+		sendResponse(conn, Response{Status: "timeout", SSHKeys: []string{}})
+		return
+	}
 
 	// --- UN SEUL aller-retour : le mot de passe, dans le tunnel ---
 	//

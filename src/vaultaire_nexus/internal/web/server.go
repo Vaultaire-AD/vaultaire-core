@@ -47,6 +47,7 @@ type Server struct {
 	trusted  []*net.IPNet
 	started  time.Time
 	baseHint string
+	mfa      mfaPending
 }
 
 // ClusterStatus est affiché dans l'administration.

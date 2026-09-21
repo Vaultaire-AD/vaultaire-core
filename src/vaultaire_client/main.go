@@ -74,9 +74,10 @@ func brancherSocleDucky() {
 	// La boucle de connexion de l'agent, et non celle du socle : elle lit
 	// /etc/vaultaire_client/client_conf.json, au format JSON déjà déployé sur
 	// le parc, là où le socle attend du YAML.
-	duckytool.DemarrerSessionMachine = func() {
-		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-	}
+	//
+	// DemarrerTunnelMachine est idempotent : l'authentification PAM qui trouve
+	// le tunnel en cours de rétablissement ne lance plus une seconde boucle.
+	duckytool.DemarrerSessionMachine = serveurcommunication.DemarrerTunnelMachine
 
 	// Les catégories propres à l'agent. 01 et 02 sont fournies par le socle :
 	// 01 est lue de façon synchrone avant que la boucle ne démarre, 02 est
@@ -198,17 +199,14 @@ func main() {
 		os.Exit(0) // On force l'arrêt propre du binaire
 	} else {
 		StartDailyUserCleanup()
-		// Lancer le serveur de socket Unix
-		if storage.IsServeur {
-			// 3. Appel vers le serveur backend Vaultaire
-			if tools.IsDuckySessionActive() {
-
-			} else {
-				logs.Go("communication serveur", func() {
-					serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-				})
-			}
-		}
+		// Le tunnel machine, sur TOUT nœud et dès le démarrage.
+		//
+		// Il n'était ouvert d'office que sur un serveur ; sur un poste, il
+		// attendait la première authentification PAM. Une machine sur laquelle
+		// personne ne se connecte restait donc hors ligne : pas de GPO, pas de
+		// révocation, absente de `status -c`. La supervision le relance après
+		// toute coupure — voir serveur_communication/superviseur.go.
+		serveurcommunication.DemarrerTunnelMachine()
 
 		// Transport des GPO. Le comportement est identique pour un client
 		// serveur et un client poste : seule la liste des groupes diffère côté

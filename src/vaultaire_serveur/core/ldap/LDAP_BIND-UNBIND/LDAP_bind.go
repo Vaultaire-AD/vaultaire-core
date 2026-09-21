@@ -8,7 +8,6 @@ import (
 	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
-	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbusers "vaultaire/core/database/db_users"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	ldapresponse "vaultaire/core/ldap/LDAP_RESPONSE"
@@ -206,13 +205,49 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
+	// 🔑 SECOND FACTEUR — ce que le bind doit exiger, AVANT le mot de passe.
+	//
+	// Un compte soumis au second facteur fournit `motdepasse` suivi du code à
+	// six chiffres : il faut donc savoir où couper avant de vérifier quoi que
+	// ce soit. Voir ldapstorage.MFABypass.
+	//
+	// Un état illisible REFUSE : laisser passer « dans le doute » rouvrirait le
+	// contournement que ce contrôle ferme, sur une simple panne de lecture.
+	motDePasse := string(op.Authentication)
+	code := ""
+	mfa, err := lireEtatMFA(user)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"ldap bind: état du second facteur illisible pour %s (%v) — refusé", user, err))
+		refuser(conn, messageID, source, user)
+		return
+	}
+	if mfa.Lie && !ldapstorage.MFABypass {
+		if mfa.Secret == "" {
+			// Imposé par un groupe, jamais enrôlé : aucun code ne peut être
+			// valide. Le compte doit enrôler sur le portail.
+			logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+				"ldap bind: refusé, second facteur imposé à %s mais non enrôlé", user))
+			refuser(conn, messageID, source, user)
+			return
+		}
+		mdp, c, ok := separerCode(motDePasse)
+		if !ok {
+			logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf(
+				"ldap bind: refusé, %s est soumis au second facteur et le mot de passe ne se termine pas par un code à 6 chiffres", user))
+			refuser(conn, messageID, source, user)
+			return
+		}
+		motDePasse, code = mdp, c
+	}
+
 	// 🔐 Vérification du mot de passe
 	//
 	// VerifierMotDePasse réencode au passage l'empreinte des comptes restés en
 	// SHA-256. Le bind LDAP compte parmi les portes qui doivent le faire : sur
 	// une installation où l'annuaire ne sert qu'à des applications, c'est peut-être
 	// la SEULE par laquelle un compte donné se connecte jamais.
-	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), userID, string(op.Authentication))
+	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), userID, motDePasse)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf("ldap bind: password lookup failed for user=%s: %v", user, err))
 		respondProtocolError(messageID, conn, "password lookup failed")
@@ -254,26 +289,20 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
-	// SECOND FACTEUR — après la vérification du mot de passe.
-	//
-	// LDAP n'a aucun mécanisme standard de second facteur : on ne peut pas le
-	// demander, seulement refuser. Le contrôle vient APRÈS le mot de passe pour la
-	// même raison que l'expiration : qui voit ce refus connaît déjà un mot de
-	// passe valide, l'information ne lui apprend rien.
-	//
-	// Désactivé par défaut — voir ldapstorage.RefuseBindWhenMFARequired.
-	if ldapstorage.RefuseBindWhenMFARequired {
-		if requis, err := dbauthpolicy.IsMFARequired(database.GetDatabase(), user); err != nil {
-			// Illisible : on laisse passer plutôt que de bloquer tout le monde sur
-			// une panne de base. L'incident est journalisé.
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
-				"ldap bind: état MFA illisible pour %s (%v) — connexion autorisée", user, err))
-		} else if requis {
+	// SECOND FACTEUR — le code, APRÈS le mot de passe : qui voit ce refus
+	// connaît déjà un mot de passe valide, l'information ne lui apprend rien.
+	if code != "" {
+		if raison := verifierCode(user, mfa.Secret, code); raison != "" {
 			logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-				"ldap bind: refusé, le second facteur est imposé à %s et LDAP ne sait pas le porter", user))
+				"ldap bind: refusé pour %s depuis %s : %s", user, conn.RemoteAddr().String(), raison))
 			refuser(conn, messageID, source, user)
 			return
 		}
+	} else if mfa.Lie {
+		// ldap.mfa_bypass : le bind passe sans code. Journalisé pour que le
+		// contournement reste visible à l'audit.
+		logs.Write_LogCode("SECURITY", logs.CodeNone, fmt.Sprintf(
+			"ldap bind: second facteur de %s contourné (ldap.mfa_bypass activé)", user))
 	}
 
 	// ✅ Authentification réussie — maintenant vérification de la permission

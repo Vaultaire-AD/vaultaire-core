@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strings"
 
 	dbschema "vaultaire/core/database/db_schema"
 
@@ -15,6 +16,7 @@ import (
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbenrollment "vaultaire/core/database/db_enrollment"
 	dbgpo "vaultaire/core/database/db_gpo"
+	dbgroups "vaultaire/core/database/db_groups"
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/dns"
 	ldap "vaultaire/core/ldap"
@@ -167,6 +169,22 @@ func main() {
 	// leur création, sans script de migration.
 	if err := dbschema.EnsureSuperadminActions(db.GetDatabase(), permission.AllActionKeys()); err != nil {
 		logs.Write_Log("ERROR", "bootstrap: actions du groupe superadmin non accordées : "+err.Error())
+	}
+
+	// Le verbe « remove » (Détacher) sépare le retrait d'un groupe de la
+	// suppression. Les délégués qui détachaient avec « delete » gardent ce
+	// pouvoir : la migration recopie leurs droits, une seule fois.
+	if err := dbschema.MigrerCleDetacher(db.GetDatabase()); err != nil {
+		logs.Write_Log("ERROR", "bootstrap: "+err.Error())
+	}
+
+	// Domaines parents manquants : les bases créées avant que la création d'un
+	// groupe ne crée ses parents peuvent porter `infra.acme.lan` sans
+	// `acme.lan`. Sans effet quand l'arborescence est complète.
+	if crees, err := dbgroups.CreerDomainesParentsManquants(db.GetDatabase()); err != nil {
+		logs.Write_Log("ERROR", "bootstrap: domaines parents : "+err.Error())
+	} else if len(crees) > 0 {
+		logs.Write_Log("INFO", "bootstrap: domaine(s) parent(s) créé(s) : "+strings.Join(crees, ", "))
 	}
 
 	// Les CLÉS du core, avant tout ce qui les lit.

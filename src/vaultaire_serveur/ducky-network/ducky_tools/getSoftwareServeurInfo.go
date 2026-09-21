@@ -34,7 +34,15 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 
 	// ✅ Mise à jour de key_time_validity
 
-	err = dbsessions.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
+	// Le tunnel machine (`vaultaire`) rafraîchit — et recrée au besoin — la
+	// ligne de SA machine : voir RafraichirConnexion. L'identité a été
+	// comparée à celle de la session par Split_Action avant d'arriver ici.
+	if trames_content.Username == "vaultaire" && trames_content.ClientSoftwareID != "" {
+		err = dbsessions.RafraichirConnexion(db, trames_content.Username,
+			trames_content.ClientSoftwareID, []byte(trames_content.SessionIntegritykey))
+	} else {
+		err = dbsessions.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
+	}
 	if err != nil {
 		log.Println(err)
 	}

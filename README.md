@@ -21,7 +21,9 @@ Pour découvrir Vaultaire pas à pas, commencez par la
 | CLI distante par API | [`docs/Utilisation/vaultairectl.md`](./docs/Utilisation/vaultairectl.md) |
 | Groupes & permissions | [`docs/Utilisation/Group-Permission.md`](./docs/Utilisation/Group-Permission.md) |
 | Module LDAP | [`docs/Utilisation/vaultaireLDAP.md`](./docs/Utilisation/vaultaireLDAP.md) |
-| Protocole Ducky Network | [`docs/Developement/how it work/Protocole_Ducky.md`](./docs/Developement/how%20it%20work/Protocole_Ducky.md) |
+| Protocole Ducky Network | [`docs/Developement/how it work/ducky-network/`](./docs/Developement/how%20it%20work/ducky-network/README.md) |
+| Créer un nouveau service | [`docs/Developement/how it work/Nouveau_service.md`](./docs/Developement/how%20it%20work/Nouveau_service.md) |
+| Dépôt de paquets Nexus | [`src/vaultaire_nexus/README.md`](./src/vaultaire_nexus/README.md) |
 | GPO | [`docs/Developement/how it work/GPO.md`](./docs/Developement/how%20it%20work/GPO.md) |
 | Modèle de permissions | [`docs/Developement/how it work/Permissions_RBAC.md`](./docs/Developement/how%20it%20work/Permissions_RBAC.md) · [`Utilisation/Actions_et_Permissions.md`](./docs/Utilisation/Actions_et_Permissions.md) |
 | Schéma de base de données | [`docs/Developement/how it work/Base_de_donnees.md`](./docs/Developement/how%20it%20work/Base_de_donnees.md) |
@@ -61,7 +63,7 @@ docker compose -f deployments/pre-prod/docker-compose.yml logs -f vaultaire-ad |
 
 | Accès | Adresse | Identifiants par défaut |
 | --- | --- | --- |
-| Portail d'administration | `https://<hôte>:4443/login` | `vaultaire` / `password` — ou `admin` / `admin123` |
+| Portail d'administration | `https://<hôte>:4443/login` | `admin` / `admin123` (le compte `vaultaire` n'a pas de mot de passe tant qu'on ne lui en donne pas un — [jalon 1.3](./docs/training/01-installation-serveur/03-premier-acces.md)) |
 | CLI sur le serveur | `docker exec -it vaultaire-ad /opt/vaultaire/bin/vaultaire_cli` | aucun (socket local) |
 | CLI à distance (`vlt`) | `https://<hôte>:6643` | compte `admin` + clé [`deployments/configs/demo_admin_key`](./deployments/configs/demo_admin_key) |
 | MariaDB | `<hôte>:3306` | `root` / `root` |
@@ -120,7 +122,14 @@ Toute commande répond à `-h`. Le manuel complet est
 | 3306 | TCP | MariaDB (compose) | section `database` |
 | 8080 | TCP | Keycloak (compose, optionnel) | — |
 
-Le compose de préprod publie tous ces ports sauf **53/udp**. Pour interroger le
+Services du cluster, sur leur propre hôte :
+
+| Port | Protocole | Service | Réglage |
+| --- | --- | --- | --- |
+| 8843 | TCP | Nexus — interface, dépôts, registre Docker (HTTPS) | `listen` (`src/vaultaire_nexus/config.example.yaml`) |
+| 8443 | TCP | réservé au proxy (répartition de charge à venir) | — |
+
+Le compose de préprod publie tous les ports du serveur central sauf **53/udp**. Pour interroger le
 DNS depuis l'extérieur du conteneur, ajoutez `"53:53/udp"` aux `ports` du service
 `vaultaire-ad`.
 

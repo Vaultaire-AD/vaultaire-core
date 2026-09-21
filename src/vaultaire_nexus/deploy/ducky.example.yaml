@@ -4,9 +4,8 @@
 # Même format que la configuration du proxy : aucune identité ici. Nexus
 # s'enrôle au premier démarrage et écrit la sienne dans <ducky.keys>.
 #
-# PRÉREQUIS : le core doit connaître le type « vaultaire_nexus »
-# (CORE_CHANGEMENTS.md § 1). Sans lui, l'enrôlement est refusé et Nexus
-# continue seul.
+# Un core antérieur au type « vaultaire_nexus » refuse l'enrôlement : Nexus le
+# journalise et continue seul.
 
 # Cores à joindre, essayés dans l'ordre.
 servers:

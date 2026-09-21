@@ -44,7 +44,7 @@ echo "    (vérifiez qu'aucune n'est un service : proxy ou interface web)"
 $SQL -t <<'EOSQL'
 SELECT computeur_id, logiciel_type, hostname, serveur
   FROM id_logiciels
- WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web');
+ WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web', 'vaultaire_nexus');
 EOSQL
 
 if [ "$APPLY" != "1" ]; then
@@ -59,7 +59,7 @@ echo "=== Migration ==="
 $SQL <<'EOSQL'
 UPDATE id_logiciels
    SET logiciel_type = 'vaultaire_client'
- WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web');
+ WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web', 'vaultaire_nexus');
 EOSQL
 
 echo "=== Répartition après migration ==="

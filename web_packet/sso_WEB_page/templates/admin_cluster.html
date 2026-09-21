@@ -27,7 +27,8 @@
       <div class="app-content">
         <div class="app-container animate-in">
           <h1>Cluster</h1>
-          {{ if .Message }}<div class="alert alert-info">{{ .Message }}</div>{{ end }}
+          {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+          {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
           <h2 class="h2">Nœuds enregistrés</h2>
           <div class="table-wrap">
@@ -53,8 +54,9 @@
                   <td>{{ .Hostname }}</td>
                   <td>{{ .FQDN }}</td>
                   <td>
-                    {{ if .ExpositionDeclaree }}<strong>{{ .AdresseEffective }}:{{ .PortEffectif }}</strong> <span class="muted small">déclaré</span>
-                    {{ else }}{{ .AdresseEffective }}:{{ .PortEffectif }}{{ end }}
+                    {{ if .LienService }}<a href="{{ .LienService }}" target="_blank" rel="noopener noreferrer">{{ .LienService }}</a> <span class="muted small">service</span>
+                    {{ else if .ExpositionDeclaree }}<strong>{{ .Acces }}</strong> <span class="muted small">déclaré</span>
+                    {{ else }}{{ .Acces }}{{ end }}
                     {{ if not .ExposeAuxAgents }}<br><span class="muted small">hors rotation — annoncé à aucun agent</span>{{ end }}
                   </td>
                   <td class="muted small">{{ if .ExpositionDeclaree }}{{ .IPAddress }}:{{ .Port }}{{ end }}</td>
@@ -62,7 +64,7 @@
                     {{ if .GroupesAffins }}{{ range $i, $g := .GroupesAffins }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
                     {{ else }}<span class="muted small">tout le parc</span>{{ end }}
                   </td>
-                  <td>{{ .Role }}</td>
+                  <td>{{ if eq .Role "vaultaire_nexus" }}Nexus <span class="muted small">(dépôt de paquets)</span>{{ else if eq .Role "vaultaire_web" }}Interface web{{ else }}{{ .Role }}{{ end }}</td>
                   <td>{{ .Status }}</td>
                   <td>{{ .VersionCode }}</td>
                   <td>{{ .LastHeartbeat }}</td>

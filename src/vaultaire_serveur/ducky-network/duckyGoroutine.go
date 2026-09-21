@@ -200,6 +200,10 @@ func dropStaleSession(stale sessionmgr.StaleSession) {
 		"ducky: session authentifiée de %s fermée après %s d'inactivité",
 		stale.ClientSoftwareID, stale.Idle.Round(time.Second)), meta)
 
+	if sessionmgr.Sessions.AutreSessionAuthentifiee(stale.Username, stale.ClientSoftwareID, stale.SessionID) {
+		// Voir closeSession : un autre tunnel de la machine tient la ligne.
+		return
+	}
 	if err := dbsessions.DeleteDidLogin(db.GetDatabase(), stale.Username, stale.ClientSoftwareID); err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
 			"Error deleting session for "+stale.ClientSoftwareID+": "+err.Error(), meta)

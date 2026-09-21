@@ -17,37 +17,21 @@ import (
 // faisait échouer le nettoyage à chaque tick, en boucle, sans jamais rien
 // supprimer. Laisser MySQL faire la comparaison de dates élimine ce problème
 // de format une fois pour toutes.
+//
+// # Ligne par ligne, pas compte par compte
+//
+// La version précédente relevait les COMPTES dont une ligne avait expiré, puis
+// effaçait toutes les lignes de ces comptes. Or tous les tunnels machine sont
+// connectés sous le même compte, `vaultaire` : il suffisait qu'UNE machine
+// cesse de battre pour que TOUTES disparaissent de `status -c`, jusqu'à leur
+// battement suivant. Seules les lignes expirées sont effacées désormais.
 func CleanUpExpiredSessions(db *sql.DB) error {
-	rows, err := db.Query("SELECT d_id_user FROM did_login WHERE key_time_validity < NOW()")
+	res, err := db.Exec("DELETE FROM did_login WHERE key_time_validity < NOW()")
 	if err != nil {
-		return fmt.Errorf("erreur lors de la lecture des sessions expirées : %v", err)
+		return fmt.Errorf("erreur lors de la suppression des sessions expirées : %v", err)
 	}
-	defer func() {
-		if err := rows.Close(); err != nil {
-			logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
-		}
-	}()
-
-	var expiredUserIDs []int
-	for rows.Next() {
-		var userID int
-		if err := rows.Scan(&userID); err != nil {
-			return fmt.Errorf("erreur lors de l'extraction des données : %v", err)
-		}
-		expiredUserIDs = append(expiredUserIDs, userID)
+	if n, _ := res.RowsAffected(); n > 0 {
+		logs.Write_Log("INFO", fmt.Sprintf("%d session(s) expirée(s) supprimée(s)", n))
 	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("erreur lors de la lecture des sessions expirées : %v", err)
-	}
-
-	// Supprimer les sessions expirées
-	for _, userID := range expiredUserIDs {
-		_, err := db.Exec("DELETE FROM did_login WHERE d_id_user = ?", userID)
-		if err != nil {
-			return fmt.Errorf("erreur lors de la suppression des sessions expirées : %v", err)
-		}
-		logs.Write_Log("INFO", fmt.Sprintf("Session expirée pour user_id %d supprimée", userID))
-	}
-
 	return nil
 }

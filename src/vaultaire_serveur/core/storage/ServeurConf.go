@@ -36,6 +36,9 @@ type Config struct {
 		// répartiteur : ces deux listes servent à les déclarer.
 		Ldaps_TLS_DNSNames []string `yaml:"ldaps_tls_dns_names"`
 		Ldaps_TLS_IPs      []string `yaml:"ldaps_tls_ip_addresses"`
+		// Laisse les comptes soumis au second facteur se lier avec leur seul
+		// mot de passe. Faux par défaut : voir ldapstorage.MFABypass.
+		Ldap_MFA_Bypass *bool `yaml:"mfa_bypass"`
 	} `yaml:"ldap"`
 	Dns struct {
 		Dns_Enable *bool `yaml:"dns_enable"`

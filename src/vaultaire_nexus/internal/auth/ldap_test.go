@@ -17,6 +17,7 @@ type fakeLDAP struct {
 	ln       net.Listener
 	users    map[string]string   // uid -> mot de passe
 	groups   map[string][]string // uid -> groupes
+	rights   map[string][]string // uid -> clés de service
 	svcDN    string
 	svcPass  string
 	mu       sync.Mutex
@@ -33,6 +34,7 @@ func startFake(t *testing.T) *fakeLDAP {
 	f := &fakeLDAP{ln: ln,
 		users:  map[string]string{"alice.martin": "bon-mot-de-passe", "chloe": "autre"},
 		groups: map[string][]string{"alice.martin": {"cn=Infra,ou=groups,dc=infra,dc=acme,dc=lan", "cn=Dev,ou=groups,dc=dev,dc=acme,dc=lan"}},
+		rights: map[string][]string{"alice.martin": {"read:nexus"}, "chloe": {"write:nexus_admin"}},
 		svcDN:  "uid=svc_nexus,dc=acme,dc=lan", svcPass: "svc",
 	}
 	go func() {
@@ -92,13 +94,31 @@ func (f *fakeLDAP) serve(c net.Conn) {
 			f.searches = append(f.searches, bound+":"+uid)
 			f.mu.Unlock()
 			if _, ok := f.users[uid]; ok {
-				c.Write(entry(id, "uid="+uid+",ou=users,dc=acme,dc=lan", map[string][]string{
+				attrs := map[string][]string{
 					"uid": {uid}, "displayName": {"Alice Martin"}, "memberOf": f.groups[uid],
-				}))
+				}
+				// Le core n'émet l'attribut que demandé nommément.
+				if r := f.rights[uid]; len(r) > 0 && requested(op, "vaultaireServiceRights") {
+					attrs["vaultaireServiceRights"] = r
+				}
+				c.Write(entry(id, "uid="+uid+",ou=users,dc=acme,dc=lan", attrs))
 			}
 			c.Write(response(id, 5, 0))
 		}
 	}
+}
+
+// requested dit si la recherche demande un attribut nommément.
+func requested(op *ber.Packet, name string) bool {
+	if len(op.Children) < 8 {
+		return false
+	}
+	for _, a := range op.Children[7].Children {
+		if strings.EqualFold(a.Data.String(), name) {
+			return true
+		}
+	}
+	return false
 }
 
 func envelope(id int64) *ber.Packet {
@@ -174,17 +194,30 @@ func TestLDAPAuthenticate(t *testing.T) {
 	if last := f.searches[len(f.searches)-1]; last != "svc:alice.martin" {
 		t.Errorf("recherche faite par %s", last)
 	}
-	groups, ok, err := l.Refresh("alice.martin")
-	if err != nil || !ok || len(groups) != 2 {
-		t.Errorf("Refresh : %v %v %v", groups, ok, err)
+	id, ok, err := l.Refresh("alice.martin")
+	if err != nil || !ok || len(id.Groups) != 2 || strings.Join(id.Rights, ",") != "read:nexus" {
+		t.Errorf("Refresh : %+v %v %v", id, ok, err)
 	}
 
-	// Sans aucun rôle : refus, même avec un bon mot de passe.
+	// Sans groupe utile mais avec la clé write:nexus_admin du core : admin.
 	roles.Reader = nil
 	l = NewLDAP(cfg, roles)
+	p, err = l.Authenticate("chloe", "autre")
+	if err != nil || p.Role != config.RoleAdmin {
+		t.Fatalf("clé du core ignorée : %v %+v", err, p)
+	}
+	// Ni groupe ni clé : refus, même avec un bon mot de passe.
+	delete(f.rights, "chloe")
 	if _, err := l.Authenticate("chloe", "autre"); err == nil {
 		t.Error("compte sans rôle accepté")
 	}
+	// rightsOnly : les groupes ne comptent plus. Alice a read:nexus → reader
+	// (et non publisher, que son groupe Dev lui donnait).
+	l.rightsOnly = true
+	if p, err := l.Authenticate("alice.martin", "bon-mot-de-passe"); err != nil || p.Role != config.RoleReader {
+		t.Errorf("rightsOnly : %v %+v", err, p)
+	}
+	l.rightsOnly = false
 
 	// Annuaire injoignable : erreur distincte d'un mauvais mot de passe.
 	f.ln.Close()

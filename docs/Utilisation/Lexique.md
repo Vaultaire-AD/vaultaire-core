@@ -48,6 +48,20 @@ administrateurs et relaie leurs commandes.
 Du point de vue du protocole, c'est un **service** comme un autre : elle s'enrôle
 et ouvre une session Ducky.
 
+### Nexus
+`vaultaire_nexus`, le **dépôt de paquets** du parc (`src/vaultaire_nexus`) :
+paquets RPM et Debian, images Docker, releases Vaultaire, fichiers versionnés.
+Port 8843.
+
+C'est un **service** : il s'enrôle, s'enregistre dans le cluster (`04_09`) et
+fait vérifier les comptes de ses utilisateurs par le core (`08_01`), second
+facteur compris. Il n'agit au nom de personne.
+
+### Droits de service
+Clés RBAC que le core **transmet** à un service, qui les **applique** :
+`read:nexus`, `write:nexus`, `write:nexus_admin`. Elles ne correspondent à aucune
+commande `vlt`. Voir [`Actions_et_Permissions.md`](./Actions_et_Permissions.md).
+
 ### CLI locale / CLI distante
 - `vlt` (`vaultaire_cli`) parle au core par un **socket UNIX local**. Elle suppose
   donc un accès à la machine du core.
@@ -74,7 +88,7 @@ et c'est elle qui décide de la façon dont il naît :
 | Famille | Comment il naît | Exemples |
 |---|---|---|
 | **agent** | **créé sur le core**, qui lui fabrique ses clés | `vaultaire_client` |
-| **service** | **s'enrôle seul**, avec ses propres clés | `vaultaire_proxy`, `vaultaire_web` |
+| **service** | **s'enrôle seul**, avec ses propres clés | `vaultaire_proxy`, `vaultaire_web`, `vaultaire_nexus` |
 
 La distinction n'est pas cosmétique. Un **service** génère sa paire de clés sur
 la machine qui l'exécutera : sa clé privée ne quitte jamais cet hôte. Un agent,
@@ -108,6 +122,18 @@ délégation**. Un droit s'accorde sur un domaine, avec ou sans **propagation** 
 sous-domaines.
 
 Ce n'est pas un domaine DNS, même si Vaultaire sait aussi servir du DNS.
+
+Un domaine n'existe que porté par un groupe. Créer un groupe dans
+`infra.cloud.acme.lan` crée donc aussi les domaines parents qui manquent
+(`cloud.acme.lan`, `acme.lan`), chacun avec un groupe du même nom.
+
+### Domaine principal
+Les **deux derniers labels** d'un domaine : `infra.cloud.test.fr` → `test.fr`.
+C'est le seul domaine sous lequel un compte se **connecte** à une machine
+(`alice@test.fr`) : ceux de ses groupes, réduits à leur domaine principal. Un
+compte membre de groupes sous `test.fr` et sous `acme.lan` a deux identités de
+connexion, donc deux comptes locaux distincts sur une même machine. Tout autre
+domaine — un sous-domaine, ou un domaine où il n'a aucun groupe — est refusé.
 
 ### Groupe
 Un rattachement. On y met des **utilisateurs**, des **clients**, des
@@ -242,5 +268,5 @@ l'état.
 | Les commandes | [`MAN.md`](./MAN.md) |
 | Déléguer des droits | [`Group-Permission.md`](./Group-Permission.md) |
 | Quel droit pour quelle opération | [`Actions_et_Permissions.md`](./Actions_et_Permissions.md) |
-| Le protocole en détail | [`../Developement/how it work/Protocole_Ducky.md`](../Developement/how%20it%20work/Protocole_Ducky.md) |
+| Le protocole en détail | [`../Developement/how it work/ducky-network/`](../Developement/how%20it%20work/ducky-network/README.md) |
 | Les GPO en détail | [`../Developement/how it work/GPO.md`](../Developement/how%20it%20work/GPO.md) |

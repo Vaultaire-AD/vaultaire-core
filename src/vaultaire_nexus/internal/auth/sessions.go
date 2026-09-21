@@ -74,6 +74,21 @@ func (s *Sessions) Purge() {
 	}
 }
 
+// DirectoryUsers rend les comptes Vaultaire (LDAP ou Ducky) ayant une session
+// ouverte, avec la source de leur authentification.
+func (s *Sessions) DirectoryUsers() map[string]string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]string{}
+	for _, sess := range s.m {
+		switch sess.Principal.Source {
+		case SourceLDAP, SourceDucky:
+			out[sess.Principal.Username] = sess.Principal.Source
+		}
+	}
+	return out
+}
+
 // LDAPUsers rend les comptes LDAP ayant une session ouverte.
 func (s *Sessions) LDAPUsers() []string {
 	s.mu.Lock()
@@ -89,12 +104,14 @@ func (s *Sessions) LDAPUsers() []string {
 	return out
 }
 
-// UpdateUser applique de nouveaux groupes ; un compte sans rôle est déconnecté.
-func (s *Sessions) UpdateUser(user string, groups []string, role string) {
+// UpdateUser applique une nouvelle identité ; un compte sans rôle est
+// déconnecté.
+func (s *Sessions) UpdateUser(user string, groups, rights []string, role string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for id, sess := range s.m {
-		if sess.Principal.Source != SourceLDAP || sess.Principal.Username != user {
+		src := sess.Principal.Source
+		if (src != SourceLDAP && src != SourceDucky) || sess.Principal.Username != user {
 			continue
 		}
 		if role == "" {
@@ -102,7 +119,7 @@ func (s *Sessions) UpdateUser(user string, groups []string, role string) {
 			continue
 		}
 		cp := *sess.Principal
-		cp.Groups, cp.Role = groups, role
+		cp.Groups, cp.Rights, cp.Role = groups, rights, role
 		sess.Principal = &cp
 	}
 }

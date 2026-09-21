@@ -45,14 +45,16 @@ acme.lan
 
 ## Conventions
 
-- `vlt …` désigne la CLI d'administration. Sur l'hôte :
+- `vlt …` désigne la CLI d'administration. Sur l'hôte du serveur, c'est un
+  alias vers la CLI locale du conteneur :
 
   ```bash
-  alias vlt='docker exec -it vaultaire-ad /opt/vaultaire/bin/vaultaire_cli'
+  alias vlt='docker exec -i vaultaire-ad /opt/vaultaire/bin/vaultaire_cli'
   ```
 
-  À distance, c'est le binaire `vaultaire_ctl` installé sous le nom `vlt`
-  (chapitre 3). Les commandes sont les mêmes.
+  Depuis un autre poste, c'est le binaire `vaultaire_ctl` installé sous le nom
+  `vlt` (jalon 3.2). Les commandes sont les mêmes. Sur une même machine, n'ayez
+  que l'un des deux : un alias passe toujours avant un binaire du même nom.
 - `<IP-serveur>`, `<IP-web01>`, `<computeur_id>` : à remplacer par vos valeurs.
 - Les mots de passe des exemples sont des mots de passe **de labo**.
 

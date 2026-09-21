@@ -169,6 +169,25 @@ func (n Node) PortEffectif() int {
 	return n.Port
 }
 
+// Acces rend l'accès affiché dans les vues : « hôte:port », ou le point
+// d'accès seul quand le nœud n'a pas de port (un service enregistré en 04_09
+// annonce une URL, pas un port Ducky).
+func (n Node) Acces() string {
+	return AdresseAffichee(n.AdresseEffective(), n.PortEffectif())
+}
+
+// LienService rend le point d'accès web d'un service (Nexus…) quand il en
+// annonce un, vide sinon. Seuls http et https sont rendus cliquables : la
+// valeur vient du nœud, un autre schéma n'a rien à faire dans un lien.
+func (n Node) LienService() string {
+	a := strings.TrimSpace(n.IPAddress)
+	l := strings.ToLower(a)
+	if strings.HasPrefix(l, "https://") || strings.HasPrefix(l, "http://") {
+		return a
+	}
+	return ""
+}
+
 // ExpositionDeclaree indique qu'un administrateur a redéclaré l'accès.
 //
 // Sert aux vues : afficher « 203.0.113.5:16666 » sans dire que l'adresse est

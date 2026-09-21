@@ -52,6 +52,7 @@ Les seules valeurs acceptées sont :
 | `vaultaire_client` | agent | `vlt create -c` sur le core |
 | `vaultaire_proxy` | service | enrôlement (01_05 → 01_08) |
 | `vaultaire_web` | service | enrôlement (01_05 → 01_08) |
+| `vaultaire_nexus` | service | enrôlement (01_05 → 01_08) |
 
 Toute autre valeur — `administration`, `client`, une chaîne vide, une faute de
 frappe — désigne un **agent** : avant le catalogue, seuls les agents existaient.
@@ -65,7 +66,7 @@ Regardez ce qui va changer, et confirmez qu'il ne s'agit que d'agents :
 ```sql
 SELECT computeur_id, logiciel_type, hostname, serveur
 FROM id_logiciels
-WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web');
+WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web', 'vaultaire_nexus');
 ```
 
 Si une ligne vous semble être un service, **ne la migrez pas en agent** :
@@ -78,7 +79,7 @@ révocations — qui n'ont aucun sens pour lui.
 ```sql
 UPDATE id_logiciels
    SET logiciel_type = 'vaultaire_client'
- WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web');
+ WHERE logiciel_type NOT IN ('vaultaire_client', 'vaultaire_proxy', 'vaultaire_web', 'vaultaire_nexus');
 ```
 
 ## 4. Contrôle

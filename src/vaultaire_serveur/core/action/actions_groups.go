@@ -10,6 +10,7 @@ import (
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbgroups "vaultaire/core/database/db_groups"
 	dbpermission "vaultaire/core/database/db_permission"
+	"vaultaire/core/domainname"
 )
 
 // Actions sur les groupes.
@@ -93,8 +94,11 @@ func EnregistrerActionsGroupe(r *Registre) {
 		Executer: rattacher("utilisateur", "username", ajouterUtilisateurAuGroupe),
 	})
 	r.MustEnregistrer(Definition{
-		Nom:      "group.remove_user",
-		CleRBAC:  "write:delete:user",
+		Nom: "group.remove_user",
+		// « remove » (Détacher), l'inverse de « add ». C'était
+		// « write:delete:user » : retirer un membre exigeait le droit de
+		// supprimer des comptes, et l'accorder ouvrait la suppression.
+		CleRBAC:  "write:remove:user",
 		Portee:   PorteeGroupeEtUtilisateur,
 		Resume:   "retire un utilisateur d'un groupe",
 		Executer: detacher("utilisateur", "username", retirerUtilisateurDuGroupe),
@@ -109,7 +113,7 @@ func EnregistrerActionsGroupe(r *Registre) {
 	})
 	r.MustEnregistrer(Definition{
 		Nom:      "group.remove_client",
-		CleRBAC:  "write:delete:client",
+		CleRBAC:  "write:remove:client",
 		Portee:   PorteeGroupeEtClient,
 		Resume:   "retire une machine d'un groupe",
 		Executer: detacher("machine", "computeur_id", retirerClientDuGroupe),
@@ -134,7 +138,11 @@ func EnregistrerActionsGroupe(r *Registre) {
 		// Conséquence : un délégué qui pouvait retirer des permissions parce
 		// qu'il détenait write:delete:group ne le pourra plus sans
 		// write:delete:permission. À vérifier sur vos groupes délégués.
-		CleRBAC:  "write:delete:permission",
+		//
+		// Depuis : « write:remove:permission » (Détacher). Retirer une
+		// permission d'un groupe ne la supprime pas ; « delete » reste le droit
+		// de détruire la permission elle-même.
+		CleRBAC:  "write:remove:permission",
 		Portee:   PorteeGroupe,
 		Resume:   "retire une permission utilisateur d'un groupe",
 		Executer: detacher("permission", "permission", retirerPermissionDuGroupe),
@@ -149,7 +157,7 @@ func EnregistrerActionsGroupe(r *Registre) {
 	})
 	r.MustEnregistrer(Definition{
 		Nom:      "group.remove_client_permission",
-		CleRBAC:  "write:delete:permission",
+		CleRBAC:  "write:remove:permission",
 		Portee:   PorteeGroupe,
 		Resume:   "retire une permission client d'un groupe",
 		Executer: detacher("permission client", "client_permission", retirerPermissionClientDuGroupe),
@@ -168,7 +176,7 @@ func EnregistrerActionsGroupe(r *Registre) {
 	})
 	r.MustEnregistrer(Definition{
 		Nom:      "group.remove_gpo",
-		CleRBAC:  "write:delete:gpo",
+		CleRBAC:  "write:remove:gpo",
 		Portee:   PorteeGPOEtGroupe,
 		Resume:   "délie une GPO d'un groupe",
 		Executer: detacher("GPO", "gpo", delierGPODuGroupe),
@@ -349,8 +357,19 @@ func creerGroupe(_ Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("nom de groupe %q invalide : caractères interdits", nom)
 	}
 
-	if _, err := dbgroups.CreateGroup(database.GetDatabase(), nom, domaine); err != nil {
+	// Les domaines parents manquants sont créés avec le groupe (un groupe du
+	// même nom que le domaine) : voir dbgroups.CreateGroupAvecParents.
+	_, parents, err := dbgroups.CreateGroupAvecParents(database.GetDatabase(), nom, domaine)
+	if err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la création du groupe : %w", err)
+	}
+	domaine = domainname.NormaliserDomaine(domaine)
+	message := fmt.Sprintf("Groupe %s créé dans %s.", nom, domaine)
+	if len(parents) > 0 {
+		// Dit, pour que l'administrateur ne découvre pas ces groupes plus tard
+		// en se demandant qui les a créés.
+		message += fmt.Sprintf(" Domaine(s) parent(s) créé(s) : %s (un groupe du même nom chacun).",
+			strings.Join(parents, ", "))
 	}
 
 	info, err := dbgroups.Command_GET_GroupInfo(database.GetDatabase(), nom)
@@ -358,10 +377,10 @@ func creerGroupe(_ Appelant, p Params) (Resultat, error) {
 		// Le groupe est créé ; seule sa relecture échoue. Le signaler comme un
 		// échec de création ferait recommencer l'opération, qui échouerait
 		// alors pour doublon — et l'administrateur conclurait à un bug.
-		return Resultat{Message: fmt.Sprintf("Groupe %s créé dans %s.", nom, domaine)}, nil
+		return Resultat{Message: message}, nil
 	}
 	return Resultat{
-		Message: fmt.Sprintf("Groupe %s créé dans %s.", nom, domaine),
+		Message: message,
 		Donnees: info,
 	}, nil
 }
@@ -370,6 +389,13 @@ func supprimerGroupe(_ Appelant, p Params) (Resultat, error) {
 	nom := p.Get("group")
 	if nom == "" {
 		return Resultat{}, fmt.Errorf("nom de groupe requis")
+	}
+	// Le dernier groupe d'un domaine qui a des sous-domaines ne se supprime
+	// pas : le domaine disparaîtrait sous ses enfants, et l'annuaire
+	// retomberait dans l'état que la création des parents évite — des
+	// connexions refusées sous le domaine principal, un nœud d'arbre fantôme.
+	if err := dbgroups.VerifierSuppressionSansOrphelin(database.GetDatabase(), nom); err != nil {
+		return Resultat{}, err
 	}
 	if err := dbgroups.Command_DELETE_GroupWithGroupName(database.GetDatabase(), nom); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la suppression du groupe %q : %w", nom, err)

@@ -6,16 +6,20 @@
 //	LDAP(S)          les comptes Vaultaire, vérifiés par un bind sur le core
 //	jetons           pour les machines et la CI : docker login, dnf, curl
 //
-// Une quatrième, le réseau Ducky, est décrite dans DUCKY_AUTH.md : elle
-// remplacera LDAP quand le core exposera les trames 08.
+//	réseau Ducky     les comptes Vaultaire, vérifiés par la trame 08_01 (TOTP compris)
 //
 // # Deux niveaux de droits
 //
-// Le rôle global (reader < publisher < admin) vient des groupes Vaultaire, par
-// la table auth.roles de la configuration. Un dépôt peut ouvrir la lecture ou
-// la publication à des groupes supplémentaires. Quand le core portera les clés
-// RBAC « nexus » (CORE_CHANGEMENTS.md), Authorizer sera remplacé sans toucher
-// aux appelants.
+// Le rôle global (reader < publisher < admin) vient de deux sources, et le
+// plus élevé l'emporte :
+//
+//   - les clés RBAC du core — read:nexus, write:nexus, write:nexus_admin —
+//     transmises par la trame 08_02 ou par l'attribut LDAP
+//     vaultaireServiceRights ;
+//   - la table auth.roles de la configuration, par noms de groupe.
+//
+// Un dépôt peut ouvrir la lecture ou la publication à des groupes
+// supplémentaires.
 package auth
 
 import (
@@ -31,12 +35,21 @@ var (
 	ErrBadCredentials = errors.New("identifiant ou mot de passe incorrect")
 	ErrLocked         = errors.New("trop d'échecs, réessayez plus tard")
 	ErrUnavailable    = errors.New("annuaire injoignable")
+
+	// Refus explicites, rendus après un mot de passe correct (mode ducky).
+	ErrMFARequired = errors.New("code du second facteur requis")
+	ErrMFAInvalid  = errors.New("code du second facteur invalide")
+	ErrMFAEnroll   = errors.New("second facteur à enrôler sur le portail Vaultaire")
+	ErrExpired     = errors.New("mot de passe expiré — changez-le sur le portail Vaultaire")
+	ErrDenied      = errors.New("accès refusé")
+	ErrNoRole      = errors.New("aucun rôle Nexus pour ce compte")
 )
 
 // Sources d'identité.
 const (
 	SourceLocal = "local"
 	SourceLDAP  = "ldap"
+	SourceDucky = "ducky"
 	SourceToken = "token"
 )
 
@@ -45,9 +58,10 @@ type Principal struct {
 	Username string
 	Display  string
 	Source   string
-	Groups   []string
-	Role     string // rôle global
-	TokenID  string // si authentifié par jeton
+	Groups   []string // « groupe » (LDAP) ou « groupe@domaine » (Ducky)
+	Rights   []string // clés RBAC de service transmises par le core
+	Role     string   // rôle global
+	TokenID  string   // si authentifié par jeton
 	// Scope d'un jeton : il ne peut jamais dépasser le rôle de son titulaire.
 	TokenScope string
 	AuthAt     time.Time
@@ -95,6 +109,9 @@ func (p *Principal) EffectiveRole() string {
 }
 
 // InGroup dit si l'appelant appartient à l'un des groupes (« * » = tout compte).
+//
+// Un groupe configuré « Infra » reconnaît « Infra » et « Infra@infra.acme.lan » ;
+// un groupe configuré « Infra@infra.acme.lan » ne reconnaît que ce domaine.
 func (p *Principal) InGroup(groups []string) bool {
 	if p.IsAnonymous() {
 		return false
@@ -107,23 +124,70 @@ func (p *Principal) InGroup(groups []string) bool {
 			if strings.EqualFold(g, mine) {
 				return true
 			}
+			if !strings.Contains(g, "@") {
+				if name, _, ok := strings.Cut(mine, "@"); ok && strings.EqualFold(g, name) {
+					return true
+				}
+			}
 		}
 	}
 	return false
 }
 
-// RoleFor calcule le rôle global depuis les groupes.
+// Clés RBAC du core pour Nexus.
+const (
+	RightRead  = "read:nexus"
+	RightWrite = "write:nexus"
+	RightAdmin = "write:nexus_admin"
+)
+
+// roleFromRights traduit les clés du core en rôle.
+func roleFromRights(rights []string) string {
+	best := ""
+	for _, r := range rights {
+		role := ""
+		switch strings.ToLower(strings.TrimSpace(r)) {
+		case RightAdmin:
+			role = config.RoleAdmin
+		case RightWrite:
+			role = config.RolePublisher
+		case RightRead:
+			role = config.RoleReader
+		}
+		if rank(role) > rank(best) {
+			best = role
+		}
+	}
+	return best
+}
+
+// RoleFor calcule le rôle global depuis les groupes seuls.
 func RoleFor(m config.RoleMapping, groups []string) string {
+	return RoleFrom(m, groups, nil, false)
+}
+
+// RoleFrom calcule le rôle global : le plus élevé entre les clés du core et la
+// table des groupes. Avec rightsOnly, la table est ignorée — seul le core
+// décide.
+func RoleFrom(m config.RoleMapping, groups, rights []string, rightsOnly bool) string {
+	best := roleFromRights(rights)
+	if rightsOnly {
+		return best
+	}
 	p := &Principal{Source: SourceLDAP, Groups: groups}
+	byGroup := ""
 	switch {
 	case p.InGroup(m.Admin):
-		return config.RoleAdmin
+		byGroup = config.RoleAdmin
 	case p.InGroup(m.Publisher):
-		return config.RolePublisher
+		byGroup = config.RolePublisher
 	case p.InGroup(m.Reader):
-		return config.RoleReader
+		byGroup = config.RoleReader
 	}
-	return ""
+	if rank(byGroup) > rank(best) {
+		best = byGroup
+	}
+	return best
 }
 
 // RepoView est ce que l'autorisation doit savoir d'un dépôt.

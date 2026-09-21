@@ -225,61 +225,7 @@ func detectCAStore() (struct {
 // Résolution DNS
 // ---------------------------------------------------------------------------
 
-// resolvedDropIn est le fichier de configuration systemd-resolved dédié.
-//
-// Un fichier séparé sous resolved.conf.d/, et surtout PAS /etc/resolv.conf :
-// ce dernier est régénéré par systemd-resolved, NetworkManager ou le client
-// DHCP selon les machines. Une politique qui l'écrirait directement serait
-// effacée au premier renouvellement de bail, sans que rien ne le signale.
-const resolvedDropIn = "/etc/systemd/resolved.conf.d/99-vaultaire-gpo.conf"
-
-// applyDNSResolver fixe les serveurs DNS et le domaine de recherche.
-func applyDNSResolver(ctx Context, m Module) (string, error) {
-	if m.Param("state") == "absent" {
-		if _, err := removeSystemFile(resolvedDropIn); err != nil {
-			return "", fmt.Errorf("retrait de %s impossible : %v", resolvedDropIn, err)
-		}
-		_, _ = runCommand("systemctl", "restart", "systemd-resolved")
-		return "resolution DNS rendue a la configuration locale", nil
-	}
-
-	servers := normalizeList(m.Param("servers"))
-	if servers == "" {
-		return "", fmt.Errorf("aucun serveur DNS fourni")
-	}
-
-	var b strings.Builder
-	b.WriteString("# Genere par Vaultaire (GPO). Ne pas editer a la main.\n")
-	b.WriteString("[Resolve]\n")
-	b.WriteString("DNS=" + servers + "\n")
-	if domains := normalizeList(m.Param("search_domain")); domains != "" {
-		b.WriteString("Domains=" + domains + "\n")
-	}
-
-	previous, had := readFileIfExists(resolvedDropIn)
-	if err := writeSystemFile(resolvedDropIn, b.String(), 0o644); err != nil {
-		return "", err
-	}
-	if _, err := runCommand("systemctl", "restart", "systemd-resolved"); err != nil {
-		// Restauration : une résolution DNS cassée coupe la machine du serveur
-		// Vaultaire lui-même. Sans retour en arrière, plus aucune politique
-		// corrective ne pourrait l'atteindre.
-		restoreOrRemove(resolvedDropIn, previous, had)
-		_, _ = runCommand("systemctl", "restart", "systemd-resolved")
-		return "", fmt.Errorf("redemarrage de systemd-resolved impossible, configuration restauree : %v", err)
-	}
-
-	// L'attente porte sur les serveurs GLOBAUX réellement chargés par resolved.
-	// Le fichier dit ce qu'il devrait lire ; un « resolvectl dns » posé à la
-	// main, ou un service jamais redémarré depuis, laisse le fichier intact et
-	// la machine interroge d'autres serveurs.
-	//
-	// Un DNS posé sur une INTERFACE — par DHCP — prime sur le global pour les
-	// requêtes de cette interface. Ce n'est pas une dérive de ce module : il fixe
-	// le global, et le global sera bien celui qu'il a fixé.
-	recordCheck(CheckDNSServers, "global", servers)
-	return "DNS = " + servers, nil
-}
+// Le module dns_resolver vit dans appliers_dns.go.
 
 // normalizeList nettoie une liste séparée par des virgules et la rend séparée
 // par des espaces, forme attendue par systemd.

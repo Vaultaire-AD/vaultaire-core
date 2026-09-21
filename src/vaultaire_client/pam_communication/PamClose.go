@@ -2,8 +2,6 @@ package pamcommunication
 
 import (
 	"duckynetworkclient/V1/duckynetwork/logs"
-	"duckynetworkclient/V1/duckynetwork/sendmessage"
-	"duckynetworkclient/V1/duckynetwork/storage"
 	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
 	"encoding/json"
 	"fmt"
@@ -15,49 +13,60 @@ type CloseRequest struct {
 	Action string `json:"action"`
 }
 
+// handleCloseRequest traite la fermeture de session PAM d'un utilisateur.
+//
+// # Ce que la fermeture NE fait PAS : toucher au tunnel machine
+//
+// Depuis la suppression du défi (03_04/03_05), l'authentification PAM passe
+// À L'INTÉRIEUR du tunnel machine (`vaultaire`) : aucune session Ducky n'est
+// ouverte au nom de l'utilisateur. Il n'y a donc, côté réseau, rien à fermer
+// quand il se déconnecte.
+//
+// Une version cherchait la session du compte (introuvable, donc sans effet),
+// une autre ciblait « vaultaire » — c'est-à-dire le TUNNEL MACHINE. Chaque
+// déconnexion propre coupait alors le lien de toute la machine :
+//
+//   - la trame 02_05 envoyée était mal formée (la clé de session manquait) :
+//     le core la rejetait comme usurpation et fermait la connexion ;
+//   - le core effaçait la ligne `did_login` de la machine, qui disparaissait
+//     de `status -c` ;
+//   - le tunnel ne revenait qu'au terme de la reconnexion, et plus du tout sur
+//     les agents antérieurs au correctif `Persistent`.
+//
+// La fermeture ne touche donc plus au tunnel. Elle retire seulement une
+// éventuelle session propre au compte (l'ancien mode « client simple »), et
+// jamais une session `vaultaire`.
 func handleCloseRequest(conn net.Conn, payload string) {
-	// Fermeture du socket local (celui qui a envoyé la requête JSON)
 	defer conn.Close()
 
 	var closeReq CloseRequest
-	err := json.Unmarshal([]byte(payload), &closeReq)
-	if err != nil {
+	if err := json.Unmarshal([]byte(payload), &closeReq); err != nil {
 		logs.Write_log("ERROR", fmt.Sprintf("Erreur de décodage JSON close: %v", err))
 		return
 	}
-
 	if closeReq.Action != "S_close" {
 		logs.Write_log("ERROR", fmt.Sprintf("Action invalide dans close: %s", closeReq.Action))
 		return
 	}
 
-	logs.Write_log("INFO", fmt.Sprintf("Demande de fermeture de session reçue pour: %s", closeReq.User))
+	logs.Write_log("INFO", fmt.Sprintf("Fermeture de session PAM pour %s", closeReq.User))
 
-	// Le hook PAM ne connaît que le username, pas le SessionID. ResolveForClose
-	// détermine QUELLE session cibler :
-	//   - username normal : la session correspondante (la plus récente s'il y
-	//     en a plusieurs) ;
-	//   - "vaultaire" : la session machine la plus récente, sauf s'il n'en
-	//     reste qu'une et que ce noeud est un serveur (auquel cas on refuse,
-	//     ok=false, pour ne pas couper le tunnel machine).
-	target, ok := sto_session.SessionsUser.ResolveForClose(closeReq.User)
-	if !ok {
+	if closeReq.User == "" || closeReq.User == "vaultaire" {
+		// Le tunnel machine ne se ferme jamais sur une déconnexion PAM.
 		logs.Write_log("WARNING", fmt.Sprintf(
-			"Tentative de fermeture pour %s : aucune session fermable trouvée (déjà fermée, ou dernière session machine protégée)",
-			closeReq.User))
+			"Fermeture demandée pour %q : le tunnel machine n'est pas fermé par PAM", closeReq.User))
 		return
 	}
-	duckysession := target.DuckySession
 
-	// 1. Préparer et envoyer le message de clôture au serveur central,
-	// sur la connexion de la session ciblée
-	message := fmt.Sprintf("02_05\nserveur_central\n%s\n%s\nclose", closeReq.User, storage.Computeur_ID)
-	sendmessage.SendMessage(message, duckysession)
+	target, ok := sto_session.SessionsUser.ResolveForClose(closeReq.User)
+	if !ok || target == nil || target.Username != closeReq.User {
+		// Cas normal : l'authentification est passée par le tunnel machine,
+		// aucune session propre au compte n'existe.
+		logs.Write_log("DEBUG", fmt.Sprintf(
+			"Aucune session Ducky propre à %s : rien à fermer, le tunnel machine reste ouvert", closeReq.User))
+		return
+	}
 
-	// 2. NETTOYAGE CRITIQUE : on supprime des deux côtés, par SessionID (pas
-	// par username, qui peut correspondre à plusieurs sessions)
 	sto_session.SessionsUser.RemoveSession(target.SessionID)
-
-	logs.Write_log("INFO", fmt.Sprintf(
-		"Session %s (id=%s) proprement fermée et retirée des registres", closeReq.User, target.SessionID))
+	logs.Write_log("INFO", fmt.Sprintf("Session Ducky de %s (id=%s) retirée", closeReq.User, target.SessionID))
 }

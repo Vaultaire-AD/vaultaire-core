@@ -32,17 +32,23 @@ var (
 	// faire du LDAPS sur 636.
 	RequireTLSForBind = false
 
-	// RefuseBindWhenMFARequired refuse le bind LDAP aux comptes dont un groupe
-	// impose le second facteur.
+	// MFABypass laisse un compte soumis au second facteur se lier par LDAP avec
+	// son SEUL mot de passe (`ldap.mfa_bypass` dans serveur_conf.yaml).
 	//
-	// DÉSACTIVÉ par défaut, pour la même raison : un compte MFA qui utilise LDAP
-	// aujourd'hui perdrait l'accès sans préavis.
+	// DÉSACTIVÉ par défaut : un compte dont le second facteur est posé (ou
+	// imposé par un groupe) doit fournir, au bind, son mot de passe SUIVI du
+	// code à 6 chiffres — `motdepasse123456`. C'est la convention des annuaires
+	// qui portent un second facteur (FreeIPA, par exemple) : LDAP n'a pas de
+	// champ pour le code, on l'accole donc au mot de passe.
 	//
-	// # Ce que le réglage ferme
+	// Avant, c'était l'inverse : LDAP contournait le second facteur par défaut,
+	// et le seul réglage possible — `RefuseBindWhenMFARequired`, jamais branché
+	// sur la configuration — refusait le bind sans offrir de moyen de le passer.
+	// La contrainte posée dans l'interface web se contournait donc en passant
+	// par LDAP.
 	//
-	// LDAP n'a aucun mécanisme standard de second facteur. Sans ce contrôle, la
-	// contrainte posée dans l'interface web est contournable en se connectant
-	// par un autre protocole — la politique s'applique alors sur un chemin et
-	// pas sur l'autre.
-	RefuseBindWhenMFARequired = false
+	// À activer seulement pour un parc d'applications qui ne savent pas
+	// transmettre le code ; préférer, quand c'est possible, des comptes de
+	// service hors des groupes soumis au second facteur.
+	MFABypass = false
 )

@@ -21,8 +21,15 @@ func closeSession(trames_content storage.Trames_struct_client, duckysession *sto
 	}
 	meta := logs.WithMeta(sessionID, trames_content.Username)
 
-	// 1. Nettoyage de la base de données
-	if err := dbsessions.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID); err != nil {
+	// 1. Nettoyage de la base de données — sauf si la machine a encore un
+	// autre tunnel authentifié sous la même identité. La ligne did_login est
+	// unique par (compte, machine) : la connexion éphémère du `--fetch-key`
+	// de sshd, en se fermant, effaçait celle du tunnel principal, et la
+	// machine disparaissait de `status -c` jusqu'à sa reconnexion.
+	if sessionmgr.Sessions.AutreSessionAuthentifiee(trames_content.Username, trames_content.ClientSoftwareID, sessionID) {
+		logs.Write_LogCodeMeta("DEBUG", logs.CodeNone,
+			"did_login conservée : un autre tunnel de "+trames_content.ClientSoftwareID+" est authentifié", meta)
+	} else if err := dbsessions.DeleteDidLogin(database.DB, trames_content.Username, trames_content.ClientSoftwareID); err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, "DB cleanup failed: "+err.Error(), meta)
 	}
 

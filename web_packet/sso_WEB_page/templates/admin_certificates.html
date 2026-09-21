@@ -28,6 +28,7 @@
         <div class="app-container animate-in">
     <h1>Certificats et clés</h1>
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
     <hr>
     <h2 class="h2">Liste des certificats</h2>

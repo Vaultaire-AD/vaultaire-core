@@ -21,7 +21,16 @@ func TestFailClosed(t *testing.T) {
 		{Web, "02_13"},    // 02_13 est l'inventaire d'un AUTRE client, jamais émis
 		{Proxy, "07_01"},  // le proxy ne relaie pas de commandes
 		{Proxy, "05_01"},  // et ne reçoit aucune politique
-		{Proxy, "04_01"},  // la catégorie 04 est spécifiée, pas encore émise
+		{Proxy, "04_09"},  // le proxy déclare une machine, pas un service
+		{Proxy, "08_01"},  // et n'authentifie personne
+		{Nexus, "04_01"},  // Nexus déclare une fonction, pas un nœud joignable
+		{Nexus, "04_03"},  // et n'a pas à connaître la topologie
+		{Nexus, "03_01"},  // n'ouvre pas de session sur une machine
+		{Nexus, "05_01"},  // ne reçoit aucune politique
+		{Nexus, "07_01"},  // ne relaie pas de commandes
+		{Nexus, "08_07"},  // sous-trame réservée, non déclarée
+		{Client, "08_01"}, // un agent n'authentifie pas pour son propre usage
+		{Web, "08_01"},    // le web a son propre chemin (07)
 		{Client, "04_01"}, // un agent n'est pas un hôte du cluster
 		{Client, "02_13"}, // l'agent émet 02_12, jamais 02_13
 		{Client, "01_05"}, // un agent ne s'enrôle pas : il est créé sur le core
@@ -41,6 +50,9 @@ func TestMayEmitAllowed(t *testing.T) {
 		{Client, "02_12"},
 		{Proxy, "01_01"}, {Proxy, "02_01"},
 		{Web, "07_01"}, {Web, "02_01"}, {Web, "04_09"},
+		{Proxy, "04_01"}, {Proxy, "04_07"},
+		{Nexus, "01_05"}, {Nexus, "02_12"}, {Nexus, "04_09"}, {Nexus, "04_12"},
+		{Nexus, "04_14"}, {Nexus, "08_01"}, {Nexus, "08_04"},
 	}
 	for _, c := range cases {
 		if !MayEmit(c.clientType, c.frame) {
@@ -174,5 +186,43 @@ func TestValidate(t *testing.T) {
 	}
 	if err := Validate("nimporte_quoi"); err == nil {
 		t.Error("Validate a accepté un type inconnu")
+	}
+}
+
+// TestUserRightsSontFiltres : un service n'apprend que les clés qui le
+// concernent, et un type sans liste n'apprend rien.
+func TestUserRightsSontFiltres(t *testing.T) {
+	got := UserRightsFor(Nexus)
+	want := []string{"read:nexus", "write:nexus", "write:nexus_admin"}
+	if len(got) != len(want) {
+		t.Fatalf("UserRightsFor(Nexus) = %v, attendu %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("UserRightsFor(Nexus) = %v, attendu %v", got, want)
+		}
+	}
+	for _, typ := range []string{Client, Proxy, Web, "inconnu"} {
+		if r := UserRightsFor(typ); len(r) != 0 {
+			t.Errorf("UserRightsFor(%s) = %v, attendu vide", typ, r)
+		}
+	}
+	// La copie rendue ne doit pas permettre de modifier le catalogue.
+	got[0] = "write:user"
+	if UserRightsFor(Nexus)[0] != "read:nexus" {
+		t.Error("UserRightsFor rend une référence au catalogue")
+	}
+}
+
+// TestServiceAuthReserveeAuxServices : la catégorie 08 vérifie des comptes
+// pour le compte d'un SERVICE. Un agent n'a aucune raison de l'émettre.
+func TestServiceAuthReserveeAuxServices(t *testing.T) {
+	for _, d := range All() {
+		if (MayEmit(d.Name, "08_01") || MayEmit(d.Name, "08_04")) && d.Family != FamilyService {
+			t.Errorf("%s (famille %s) peut émettre la catégorie 08", d.Name, d.Family)
+		}
+		if len(d.UserRights) > 0 && !MayEmit(d.Name, "08_01") {
+			t.Errorf("%s déclare des UserRights sans pouvoir émettre 08_01", d.Name)
+		}
 	}
 }

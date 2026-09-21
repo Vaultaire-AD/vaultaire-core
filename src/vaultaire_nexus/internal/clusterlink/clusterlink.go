@@ -7,6 +7,7 @@
 //	enregistrement comme SERVICE      (04_09 → 04_10 | 04_11)
 //	battement de cœur                 (04_12 → 04_13 | 04_11)
 //	sortie propre à l'arrêt           (04_14)
+//	vérification des comptes          (08_01 → 08_02 | 08_03, 08_04 → 08_05 | 08_06)
 //
 // Nexus est un client SERVICE : il déclare une fonction (type, version, point
 // d'accès), pas une machine. Il n'emploie donc pas 04_01/04_07, réservés aux
@@ -15,13 +16,11 @@
 // le rôle écrit dans cluster_nodes est le TYPE figé à la poignée de main,
 // c'est-à-dire « vaultaire_nexus ».
 //
-// # Pourquoi c'est désactivé par défaut
+// # Prérequis côté core
 //
-// Le core n'accepte une trame que si le TYPE du client l'y autorise, et le type
-// « vaultaire_nexus » n'existe pas encore dans son catalogue
-// (core/clienttype). Tant que CORE_CHANGEMENTS.md n'est pas appliqué, un
-// enrôlement est refusé. Nexus fonctionne alors seul, sans apparaître dans
-// « vlt cluster list » — ce qui ne change rien à ce qu'il sert.
+// Le core n'accepte une trame que si le TYPE du client l'y autorise : le type
+// « vaultaire_nexus » (core/clienttype) déclare exactement ces trames. Un core
+// plus ancien refuse l'enrôlement ; Nexus le journalise et fonctionne seul.
 package clusterlink
 
 import (
@@ -59,6 +58,9 @@ type Link struct {
 	log      *slog.Logger
 	// registered passe à vrai sur 04_10, à faux sur 04_11 « unknown_service ».
 	registered bool
+
+	corr    correlateur
+	timeout time.Duration
 }
 
 // Status rend l'état courant.
@@ -81,8 +83,12 @@ func (l *Link) set(state, detail string) {
 // il est journalisé, affiché dans l'administration, et retenté.
 //
 // endpoint est l'adresse publique de Nexus (public_url), annoncée au core.
-func Start(ctx context.Context, cfg config.DuckyConfig, endpoint, componentVersion string, log *slog.Logger) *Link {
-	l := &Link{version: componentVersion, endpoint: endpoint, log: log}
+// timeout borne l'attente d'une réponse 08.
+func Start(ctx context.Context, cfg config.DuckyConfig, endpoint, componentVersion string, timeout time.Duration, log *slog.Logger) *Link {
+	if timeout <= 0 {
+		timeout = 7 * time.Second
+	}
+	l := &Link{version: componentVersion, endpoint: endpoint, log: log, timeout: timeout}
 	l.set("démarrage", "connexion au core")
 	storage.VersionComposant = componentVersion
 	storage.NomJournal = "vaultaire_nexus_ducky.log"
@@ -90,6 +96,9 @@ func Start(ctx context.Context, cfg config.DuckyConfig, endpoint, componentVersi
 	// Branché AVANT toute émission : l'accusé 04_10 peut arriver très vite.
 	if !tramesmanager.Handled("04") {
 		tramesmanager.RegisterHandler("04", l.handle)
+	}
+	if !tramesmanager.Handled("08") {
+		tramesmanager.RegisterHandler("08", l.handle08)
 	}
 
 	go func() {
@@ -153,14 +162,15 @@ func (l *Link) loop(ctx context.Context) {
 // send compose une trame client → core :
 //
 //	action / destination / clé de session / utilisateur / id logiciel / contenu…
-func (l *Link) send(action string, content ...string) {
+func (l *Link) send(action string, content ...string) bool {
 	s, err := stosession.SessionsUser.WaitForVaultaireSession()
 	if err != nil || s == nil || s.DuckySession == nil {
 		l.log.Warn("cluster: aucune session valide, trame non envoyée", "trame", action)
-		return
+		return false
 	}
 	lines := append([]string{action, "serveur_central", string(s.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID}, content...)
 	sendmessage.SendMessage(strings.Join(lines, "\n"), s.DuckySession)
+	return true
 }
 
 // handle traite les réponses de catégorie 04.

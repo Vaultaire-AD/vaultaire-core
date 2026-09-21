@@ -17,6 +17,7 @@ type Service struct {
 	cfg      config.AuthConfig
 	Local    *Local
 	LDAP     *LDAP
+	Ducky    *Ducky
 	Tokens   *Tokens
 	Sessions *Sessions
 	lock     *lockout
@@ -33,8 +34,14 @@ type cached struct {
 	expires time.Time
 }
 
-// NewService assemble l'authentification.
-func NewService(cfg config.AuthConfig, dataDir string, log *slog.Logger) (*Service, string, error) {
+// role applique la politique de rôle configurée.
+func (s *Service) role(groups, rights []string) string {
+	return RoleFrom(s.cfg.Roles, groups, rights, s.cfg.Ducky.RequireRight)
+}
+
+// NewService assemble l'authentification. verifier n'est utilisé qu'en mode
+// ducky ; il peut être nil sinon.
+func NewService(cfg config.AuthConfig, dataDir string, log *slog.Logger, verifier DuckyVerifier) (*Service, string, error) {
 	local, initial, err := OpenLocal(cfg.LocalAdmin, dataDir)
 	if err != nil {
 		return nil, "", err
@@ -52,8 +59,15 @@ func NewService(cfg config.AuthConfig, dataDir string, log *slog.Logger) (*Servi
 		log:      log,
 		cache:    map[string]cached{},
 	}
-	if cfg.Mode == config.AuthLDAP {
+	if cfg.Mode == config.AuthLDAP || (cfg.Mode == config.AuthDucky && cfg.Ducky.FallbackLDAP) {
 		s.LDAP = NewLDAP(cfg.LDAP, cfg.Roles)
+		s.LDAP.rightsOnly = cfg.Ducky.RequireRight
+	}
+	if cfg.Mode == config.AuthDucky {
+		if verifier == nil {
+			return nil, "", errors.New("auth.mode ducky exige le raccordement au cluster (ducky.enable)")
+		}
+		s.Ducky = &Ducky{v: verifier, roles: s}
 	}
 	return s, initial, nil
 }
@@ -62,16 +76,22 @@ func NewService(cfg config.AuthConfig, dataDir string, log *slog.Logger) (*Servi
 func (s *Service) Mode() string { return s.cfg.Mode }
 
 // Login vérifie un couple identifiant / mot de passe (formulaire ou Basic).
-func (s *Service) Login(username, password, ip string) (*Principal, error) {
+// otp est le code du second facteur, vide s'il n'a pas (encore) été demandé.
+func (s *Service) Login(username, password, otp, ip string) (*Principal, error) {
 	username = strings.TrimSpace(username)
 	if s.lock.locked(username, ip) {
 		return nil, ErrLocked
 	}
-	p, err := s.login(username, password)
+	p, err := s.login(username, password, otp, ip)
 	if err != nil {
-		if errors.Is(err, ErrBadCredentials) {
+		switch {
+		case errors.Is(err, ErrBadCredentials), errors.Is(err, ErrMFAInvalid):
 			s.lock.fail(username, ip)
 			s.log.Warn("auth: échec", "user", username, "ip", ip, "raison", err.Error())
+		case errors.Is(err, ErrMFARequired):
+			// Étape normale : le formulaire va demander le code.
+		default:
+			s.log.Warn("auth: refus", "user", username, "ip", ip, "raison", err.Error())
 		}
 		return nil, err
 	}
@@ -79,7 +99,7 @@ func (s *Service) Login(username, password, ip string) (*Principal, error) {
 	return p, nil
 }
 
-func (s *Service) login(username, password string) (*Principal, error) {
+func (s *Service) login(username, password, otp, ip string) (*Principal, error) {
 	if s.Local.IsLocalName(username) {
 		// Le nom est réservé au compte local : jamais d'essai LDAP derrière, un
 		// homonyme dans l'annuaire ne doit pas pouvoir prendre sa place.
@@ -88,14 +108,32 @@ func (s *Service) login(username, password string) (*Principal, error) {
 		}
 		return nil, ErrBadCredentials
 	}
-	if s.LDAP == nil {
+	var (
+		p   *Principal
+		err error
+	)
+	switch {
+	case s.Ducky != nil:
+		p, err = s.Ducky.Authenticate(username, password, otp, ip)
+		if errors.Is(err, ErrUnavailable) && s.LDAP != nil {
+			// Repli : le core ne répond pas par le réseau Ducky. Au bind LDAP,
+			// un compte soumis au second facteur accole son code au mot de
+			// passe (sauf `ldap.mfa_bypass` côté core) : on le fait pour lui
+			// quand le code a été saisi.
+			s.log.Warn("auth: réseau Ducky indisponible, repli LDAP", "user", username, "err", err.Error())
+			p, err = s.LDAP.Authenticate(username, password+otp)
+		}
+	case s.LDAP != nil:
+		// En mode LDAP, un compte soumis au second facteur saisit son mot de
+		// passe suivi du code (« motdepasse123456 ») : c'est le core qui coupe.
+		p, err = s.LDAP.Authenticate(username, password+otp)
+	default:
 		return nil, ErrBadCredentials
 	}
-	p, err := s.LDAP.Authenticate(username, password)
 	if err != nil {
 		return nil, err
 	}
-	s.Tokens.UpdateGroups(p.Username, p.Groups)
+	s.Tokens.UpdateIdentity(p.Username, p.Groups, p.Rights)
 	return p, nil
 }
 
@@ -117,7 +155,8 @@ func (s *Service) FromToken(raw, ip string) (*Principal, bool) {
 		}
 		p.Role = config.RoleAdmin
 	} else {
-		p.Role = RoleFor(s.cfg.Roles, tk.Groups)
+		p.Rights = tk.Rights
+		p.Role = s.role(tk.Groups, tk.Rights)
 		if p.Role == "" {
 			// Le titulaire a perdu tout rôle : le jeton ne vaut plus rien.
 			return nil, false
@@ -142,7 +181,9 @@ func (s *Service) Basic(username, password, ip string) (*Principal, error) {
 		return c.p, nil
 	}
 	s.cacheMu.Unlock()
-	p, err := s.Login(username, password, ip)
+	// Pas de second facteur possible en Basic : docker, dnf et apt n'ont
+	// aucun moyen de le saisir. Un compte qui en porte un utilise un jeton.
+	p, err := s.Login(username, password, "", ip)
 	if err != nil {
 		return nil, err
 	}
@@ -155,8 +196,8 @@ func (s *Service) Basic(username, password, ip string) (*Principal, error) {
 	return p, nil
 }
 
-// RefreshLoop relit périodiquement les groupes des sessions LDAP ouvertes et
-// purge les sessions échues.
+// RefreshLoop relit périodiquement l'identité des comptes Vaultaire ayant une
+// session ouverte, et purge les sessions échues.
 func (s *Service) RefreshLoop(ctx context.Context) {
 	t := time.NewTicker(time.Minute)
 	defer t.Stop()
@@ -169,22 +210,48 @@ func (s *Service) RefreshLoop(ctx context.Context) {
 		}
 		s.Sessions.Purge()
 		n++
-		if s.LDAP == nil || n%5 != 0 {
+		if (s.LDAP == nil && s.Ducky == nil) || n%5 != 0 {
 			continue
 		}
-		for _, u := range s.Sessions.LDAPUsers() {
-			groups, ok, err := s.LDAP.Refresh(u)
-			if err != nil || !ok {
-				continue
-			}
-			role := RoleFor(s.cfg.Roles, groups)
-			s.Sessions.UpdateUser(u, groups, role)
-			s.Tokens.UpdateGroups(u, groups)
+		for u, src := range s.Sessions.DirectoryUsers() {
+			s.refreshUser(u, src)
 		}
 		s.cacheMu.Lock()
 		s.cache = map[string]cached{}
 		s.cacheMu.Unlock()
 	}
+}
+
+// refreshUser relit un compte à sa source et applique le résultat.
+func (s *Service) refreshUser(u, src string) {
+	var (
+		id  Identity
+		err error
+	)
+	switch {
+	case src == SourceDucky && s.Ducky != nil:
+		id, err = s.Ducky.v.RefreshUser(u)
+		if endsRights(err) {
+			s.log.Warn("auth: droits retirés par le core", "user", u, "raison", err.Error())
+			s.Sessions.UpdateUser(u, nil, nil, "")
+			s.Tokens.UpdateIdentity(u, nil, nil)
+			return
+		}
+	case src == SourceLDAP && s.LDAP != nil:
+		var ok bool
+		id, ok, err = s.LDAP.Refresh(u)
+		if err == nil && !ok {
+			return // pas de compte de service : identité du login conservée
+		}
+	default:
+		return
+	}
+	if err != nil {
+		return // indisponible : on garde l'identité précédente
+	}
+	role := s.role(id.Groups, id.Rights)
+	s.Sessions.UpdateUser(u, id.Groups, id.Rights, role)
+	s.Tokens.UpdateIdentity(u, id.Groups, id.Rights)
 }
 
 // lockout : fenêtre glissante d'échecs par compte et par adresse.

@@ -179,7 +179,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 
 			if traite {
 				if errAction != nil {
-					detailData.Message = MessageDActionPourAffichage(res, errAction)
+					detailData.Error = MessageDActionPourAffichage(res, errAction)
 				} else {
 					detailData.Message = res.Message
 
@@ -229,6 +229,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		Username  string
 		Users     []storage.GetUsers
 		Message   string
+		Error     string
 		DnsEnable bool
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
@@ -240,7 +241,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -341,7 +342,8 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			//
 			//   - « remove_permission » exigeait write:delete:group, ce qui
 			//     paraît être une faute de recopie — retirer une permission
-			//     n'est pas supprimer le groupe. C'est write:delete:permission ;
+			//     n'est pas supprimer le groupe. C'est write:remove:permission
+			//     (Détacher) — ni suppression du groupe, ni de la permission ;
 			//   - les rattachements exigent maintenant le droit sur les domaines
 			//     du groupe ET de l'entité rattachée. La ligne de commande ne
 			//     contrôlait que l'un des deux, et pas toujours le même.
@@ -352,7 +354,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 
 			if traite {
 				if errAction != nil {
-					detailData.Message = MessageDActionPourAffichage(res, errAction)
+					detailData.Error = MessageDActionPourAffichage(res, errAction)
 				} else {
 					detailData.Message = res.Message
 
@@ -409,6 +411,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Groups    []storage.GroupDetails
 		Message   string
+		Error     string
 		Username  string
 		DnsEnable bool
 		Section   string
@@ -423,7 +426,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			act.Params{"group": r.FormValue("group_name")})
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -464,6 +467,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		detailData := struct {
 			Client    *storage.Software
 			Message   string
+			Error     string
 			Username  string
 			DnsEnable bool
 			Section   string
@@ -475,10 +479,10 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			// poste ne joint pas le bon proxy doit lire l'état du cluster, les
 			// groupes du poste et les affinités de chaque nœud, puis refaire le
 			// tri de tête — refaire à la main le calcul dont il cherche l'erreur.
-			Cibles          []clusterdatabase.CibleClient
-			SansGroupe      bool
-			NoeudsEcartes   []string
-			CiblesLisibles  bool
+			Cibles         []clusterdatabase.CibleClient
+			SansGroupe     bool
+			NoeudsEcartes  []string
+			CiblesLisibles bool
 		}{Client: client, Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 
 		// La vue des cibles exige read:cluster, la fiche read:get:client.
@@ -513,7 +517,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 
 			if traite {
 				if err != nil {
-					detailData.Message = MessageDActionPourAffichage(res, err)
+					detailData.Error = MessageDActionPourAffichage(res, err)
 				} else {
 					detailData.Message = res.Message
 
@@ -538,6 +542,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Clients   []storage.GetClientsByPermission
 		Message   string
+		Error     string
 		Username  string
 		DnsEnable bool
 		Section   string
@@ -551,7 +556,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -853,6 +858,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		detailData := struct {
 			Certificate *storage.Certificate
 			Message     string
+			Error       string
 			Username    string
 			DnsEnable   bool
 			Section     string
@@ -868,7 +874,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 				act.Params{"certificate_id": strconv.Itoa(certID)})
 			if traite {
 				if err != nil {
-					detailData.Message = MessageDActionPourAffichage(res, err)
+					detailData.Error = MessageDActionPourAffichage(res, err)
 				} else {
 					http.Redirect(w, r, "/admin/certificates", http.StatusSeeOther)
 					return
@@ -882,6 +888,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Certificates []storage.Certificate
 		Message      string
+		Error        string
 		Username     string
 		DnsEnable    bool
 		Section      string
@@ -893,7 +900,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -1047,9 +1054,11 @@ func joindreValeursMultiples(r *http.Request, champ string) {
 //
 // # Lecture et écriture n'exigent pas la même clé
 //
-// La lecture reste sur `read:get:client`, comme avant. L'ÉCRITURE passe par
-// l'action `cluster.set_node_exposure`, qui porte `write:cluster` — et c'est
-// elle qui contrôle, pas cette fonction.
+// La LECTURE exige `read:cluster` — la clé que portent les actions de lecture
+// du cluster (`cluster.list_nodes`…). Elle était restée sur `read:get:client`,
+// l'ancienne clé : quiconque lisait une seule machine ouvrait la carte des
+// nœuds. L'ÉCRITURE passe par les actions `cluster.set_node_*`, qui portent
+// `write:cluster` — et ce sont elles qui contrôlent, pas cette fonction.
 //
 // La distinction compte : l'adresse déclarée ici est distribuée à toutes les
 // machines du parc par la trame 04_04. Voir l'état du cluster et décider par où
@@ -1059,12 +1068,12 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:client") {
+	if !checkWebAdminRBAC(w, r, groupIDs, permission.ActionReadCluster) {
 		return
 	}
 
 	db := database.GetDatabase()
-	message := ""
+	message, errMsg := "", ""
 
 	// Le POST est traité AVANT la lecture, pour que la page rendue montre l'état
 	// d'après. L'ordre inverse afficherait l'ancienne adresse à côté du message
@@ -1075,7 +1084,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs, act.Params{})
 		switch {
 		case err != nil:
-			message = err.Error()
+			errMsg = MessageDActionPourAffichage(res, err)
 		case traite:
 			message = res.Message
 		}
@@ -1083,7 +1092,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 
 	nodes, err := clusterdatabase.GetAllNodes(db)
 	if err != nil {
-		message = "Erreur récupération nœuds: " + err.Error()
+		errMsg = "Erreur récupération nœuds: " + err.Error()
 	}
 
 	// Les groupes affins, pour l'affichage et pour cocher le formulaire.
@@ -1115,6 +1124,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		Nodes     interface{}
 		AllGroups []string
 		Message   string
+		Error     string
 		DnsEnable bool
 		Section   string
 	}{
@@ -1122,6 +1132,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		Nodes:     nodes,
 		AllGroups: tousGroupes,
 		Message:   message,
+		Error:     errMsg,
 		DnsEnable: storage.Dns_Enable,
 		Section:   "cluster",
 	}

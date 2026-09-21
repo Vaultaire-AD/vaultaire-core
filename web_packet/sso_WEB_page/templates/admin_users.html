@@ -28,6 +28,7 @@
         <div class="app-container animate-in">
     <h1>Utilisateurs</h1>
     {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
     <section class="section">
       <h2>Créer un utilisateur</h2>

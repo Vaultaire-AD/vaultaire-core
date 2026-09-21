@@ -61,7 +61,7 @@ jobs:
           set +e
           STATUS=0
           {
-            for mod in vaultaire_serveur vaultaire_client vaultaire_api vaultaire_cli; do
+            for mod in vaultaire_serveur vaultaire_client vaultaire_api vaultaire_cli vaultaire_nexus; do
               echo "### go vet - $mod"
               if [ -d "src/$mod" ]; then
                 (cd "src/$mod" && go vet ./... 2>&1)

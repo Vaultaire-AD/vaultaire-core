@@ -34,7 +34,7 @@ mécanisme ici, les commandes dans `Utilisation/MAN.md`.
 
 ## 2. Le dépôt en une page
 
-Sept modules Go **indépendants** sous `src/`. **Pas de `go.mod` à la racine** :
+Huit modules Go **indépendants** sous `src/`. **Pas de `go.mod` à la racine** :
 chacun a le sien, en `go 1.26.1` / `toolchain go1.26.5`.
 
 | Module | Chemin | Ce que c'est |
@@ -42,6 +42,7 @@ chacun a le sien, en `go 1.26.1` / `toolchain go1.26.5`.
 | `vaultaire` | `src/vaultaire_serveur/` | Le serveur central (core). L'essentiel du code. |
 | `vaultaire_client` | `src/vaultaire_client/` | L'agent installé sur les postes Linux + les modules PAM/NSS en C |
 | `vaultaire_proxy` | `src/vaultaire_proxy/` | Relais Ducky entre un site distant et le core |
+| `vaultaire_nexus` | `src/vaultaire_nexus/` | Dépôt de paquets, d'images et de releases — service du cluster |
 | `vaultairectl` | `src/vaultaire_ctl/` | CLI d'administration distante, via l'API REST signée |
 | `vaultaire_cli` | `src/vaultaire_cli/` | CLI locale du serveur |
 | `duckynetworkclient/V1` | `src/ducky-network-sdk-service/` | SDK Ducky commun aux clients services |
@@ -54,7 +55,7 @@ Ailleurs :
 | `web_packet/sso_WEB_page/` | **Sources** du portail web (templates, JS, CSS) |
 | `cmd/` | **Sortie de compilation.** Produit par `auto-compil.sh`. Ne jamais y éditer. |
 | `deployments/` | Docker dev & préprod, SELinux, configuration de référence |
-| `auto-compil.sh` | Compile les sept modules + les modules PAM/NSS |
+| `auto-compil.sh` | Compile les modules + les modules PAM/NSS |
 | `repo_manage.sh` | Création/fusion de branches selon le modèle Gitflow du dépôt |
 
 ---
@@ -75,14 +76,15 @@ Colonne « doc » = la page à lire **avant** de toucher au code.
 | Journalisation | `core/logs/` | [`Journalisation.md`](./Journalisation.md) |
 | Durées de boucle | `core/reglages/`, `core/database/db_settings/` | [`Reglages_de_duree.md`](./Reglages_de_duree.md) |
 | Versions | `core/version/` | [`Versions.md`](./Versions.md) |
-| Protocole réseau | `ducky-network/` (trames, sessions, clés) | [`Protocole_Ducky.md`](./Protocole_Ducky.md) |
-| Révocation / kill switch | `core/revocation/`, `ducky-network/revocation_manager/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § catégorie 06 |
+| Protocole réseau | `ducky-network/` (trames, sessions, clés) | [`ducky-network/`](./ducky-network/README.md) |
+| Vérification de comptes pour un service (08) | `ducky-network/serviceauth/` | [chapitre 8](./ducky-network/08-authentification-service/README.md) |
+| Révocation / kill switch | `core/revocation/`, `ducky-network/revocation_manager/` | [chapitre 6](./ducky-network/06-revocation/README.md) |
 | Commandes `vlt` | `core/command/command_*/` | [`../../Utilisation/MAN.md`](../../Utilisation/MAN.md) |
 | Portail web | `core/web_serveur/` + `web_packet/sso_WEB_page/` | — *(pas de page ; lire `startWEBserver.go`)* |
 | API REST | `core/api/` | [`../../Utilisation/vaultairectl.md`](../../Utilisation/vaultairectl.md) *(vue client)* |
 | LDAP / LDAPS | `core/ldap/` | [`../../Utilisation/vaultaireLDAP.md`](../../Utilisation/vaultaireLDAP.md), [`../../exploitation/ldaps_keycloak.md`](../../exploitation/ldaps_keycloak.md) |
 | DNS | `core/dns/` | — *(pas de page ; lire `DNS_Parser/`)* |
-| Cluster | `cluster/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § catégorie 04 — *détail dans le tableau ci-dessous* |
+| Cluster | `cluster/` | [chapitre 4](./ducky-network/04-cluster/README.md) — *détail dans le tableau ci-dessous* |
 | Types de client | `core/clienttype/` | [`../../migrations/clienttype_catalogue.md`](../../migrations/clienttype_catalogue.md) |
 | Anti-abus réseau | `core/netguard/`, `core/auth/ratelimit/` | — *(pas de page)* |
 | Tests intégrés | `core/testrunner/` | — *(pas de page ; un `run_*.go` par domaine)* |
@@ -92,9 +94,9 @@ Le **cluster** a sa propre ligne parce qu'il se lit en trois endroits :
 
 | Sujet | Chemin | Doc |
 | --- | --- | --- |
-| Nœuds, enregistrement, battement | `cluster/cluster_database/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § catégorie 04 |
-| Adresse et port **exposés** aux agents | `cluster/cluster_storage/exposition.go`, `cluster_database/exposition_noeud.go` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § « L'adresse annoncée en 04_04 » |
-| **Affinité** nœud ↔ groupe | `cluster/cluster_database/affinite_noeud.go` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § arbitrage 5 |
+| Nœuds, enregistrement, battement | `cluster/cluster_database/` | [4.1](./ducky-network/04-cluster/01-noeuds-et-services.md) |
+| Adresse et port **exposés** aux agents | `cluster/cluster_storage/exposition.go`, `cluster_database/exposition_noeud.go` | [4.2](./ducky-network/04-cluster/02-decouverte-et-proxies.md) § « L'adresse annoncée en 04_04 » |
+| **Affinité** nœud ↔ groupe | `cluster/cluster_database/affinite_noeud.go` | [4.3](./ducky-network/04-cluster/03-arbitrages-et-suite.md) § arbitrage 5 |
 | Ordre servi à un agent | `cluster/cluster_database/noeuds_pour_agents.go` | idem |
 | « Qui cette machine joindra-t-elle ? » | `cluster/cluster_database/cibles_du_client.go` | idem |
 
@@ -111,12 +113,12 @@ Point d'entrée du serveur : `src/vaultaire_serveur/main/main.go`.
 | Paquet | Chemin | Doc |
 | --- | --- | --- |
 | Modules PAM & NSS (C) | `pam_module/` | [`../../exploitation/selinux.md`](../../exploitation/selinux.md) |
-| Dialogue avec PAM | `pam_communication/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § catégorie 03 |
-| Authentification SSH | `sshauth/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § catégorie 03 |
+| Dialogue avec PAM | `pam_communication/` | [chapitre 3](./ducky-network/03-ssh-et-groupes/README.md) |
+| Authentification SSH | `sshauth/` | [chapitre 3](./ducky-network/03-ssh-et-groupes/README.md) |
 | Application des GPO | `gpo/` (`appliers_*.go`, `verifiers*.go`, `drift.go`) | [`GPO.md`](./GPO.md) |
 | Comptes locaux, UID/GID | `tools/local_user_management/` | [`GPO.md`](./GPO.md), [`../../exploitation/selinux.md`](../../exploitation/selinux.md) |
-| Lien avec le serveur | `serveur_communication/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) |
-| Révocation | `revocation/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) § catégorie 06 |
+| Lien avec le serveur | `serveur_communication/` | [`ducky-network/`](./ducky-network/README.md) |
+| Révocation | `revocation/` | [chapitre 6](./ducky-network/06-revocation/README.md) |
 
 Point d'entrée : `src/vaultaire_client/main.go`.
 
@@ -126,13 +128,14 @@ Point d'entrée : `src/vaultaire_client/main.go`.
 | --- | --- | --- |
 | Utilisation du paquet | `ducky/` | `doc/UTILISATION.md` (dans le module) |
 | État d'avancement | — | `doc/RECAP.MD` (dans le module) |
-| Trames, chiffrement | `duckynetwork/` | [`Protocole_Ducky.md`](./Protocole_Ducky.md) |
+| Trames, chiffrement | `duckynetwork/` | [chapitre 1](./ducky-network/01-socle/README.md) |
 
 ### Autres modules
 
 | Module | Doc |
 | --- | --- |
-| `vaultaire_proxy` | `src/vaultaire_proxy/config.example.yaml` ; protocole → [`Protocole_Ducky.md`](./Protocole_Ducky.md) |
+| `vaultaire_proxy` | `src/vaultaire_proxy/config.example.yaml` ; protocole → [`ducky-network/`](./ducky-network/README.md) |
+| `vaultaire_nexus` | `src/vaultaire_nexus/README.md` ; exemple suivi par [`Nouveau_service.md`](./Nouveau_service.md) |
 | `vaultairectl` | `src/vaultaire_ctl/README.md`, [`../../Utilisation/vaultairectl.md`](../../Utilisation/vaultairectl.md) |
 | `api_client_package` | `src/api_client_package/README.md` |
 
@@ -147,7 +150,9 @@ Point d'entrée : `src/vaultaire_client/main.go`.
 | Ajouter / modifier un module GPO | [`GPO.md`](./GPO.md) § 9 à 12 |
 | Régler le comportement d'un nœud | `cluster/cluster_database/exposition_noeud.go` — adresse, port, priorité, rotation |
 | Toucher à l'ordre servi aux agents | `cluster/cluster_database/noeuds_pour_agents.go` — lire les raisons AVANT |
-| Ajouter une trame réseau | [`Protocole_Ducky.md`](./Protocole_Ducky.md) — la numérotation `MM_SS` n'est pas libre |
+| Ajouter une trame réseau | [1.3 — Types, ordre et contrôles](./ducky-network/01-socle/03-types-ordre-et-controles.md) — la numérotation `MM_SS` n'est pas libre |
+| **Créer un nouveau service** | [`Nouveau_service.md`](./Nouveau_service.md) |
+| Donner des droits à un service | [`Permissions_RBAC.md`](./Permissions_RBAC.md) § 5 |
 | Ajouter une colonne SQL | [`Base_de_donnees.md`](./Base_de_donnees.md), puis **§ 6.3 ci-dessous** — le `CREATE` ne suffit jamais |
 | Changer une cadence de boucle | [`Reglages_de_duree.md`](./Reglages_de_duree.md) § 7 |
 | Ajouter un journal | [`Journalisation.md`](./Journalisation.md) — *une consultation n'écrit rien* |
@@ -307,8 +312,8 @@ code — et, une fois compris, **écrire la page ici**.
   qui reste du point 38, lots 4 et 5
 
 Le **cluster** n'est plus dans cette liste : son fonctionnement est décrit dans
-[`Protocole_Ducky.md`](./Protocole_Ducky.md), catégorie 04 et section « Ce qui
-reste du sujet 04 ».
+[chapitre 4 du protocole](./ducky-network/04-cluster/README.md), dont la page
+[4.3 — ce qui reste](./ducky-network/04-cluster/03-arbitrages-et-suite.md).
 
 ---
 

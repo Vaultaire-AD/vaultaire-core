@@ -25,8 +25,9 @@ Créer une permission, lui donner un droit, l'attacher à un groupe.
 | `-a 0 <domaine>` | ce domaine seul |
 
 - Actions RBAC : `read:get:<objet>`, `read:status:<objet>`,
-  `write:create|delete|update|add:<objet>` avec l'objet `user`, `group`,
-  `client`, `permission` ou `gpo`. Actions historiques : `web_admin`, `auth`,
+  `write:create|delete|update|add|remove:<objet>` avec l'objet `user`, `group`,
+  `client`, `permission` ou `gpo`. `add` rattache à un groupe, `remove` en
+  détache — retirer un membre n'exige pas le droit de supprimer des comptes. Actions historiques : `web_admin`, `auth`,
   `search`, `compare`.
 
 ## Étapes

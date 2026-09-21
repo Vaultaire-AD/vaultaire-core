@@ -62,7 +62,8 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Actions.md`](./Developement/how%20it%20work/Actions.md) | Le registre `core/action` : chemin d'une requête, portées, filtrage, **comment ajouter une action** |
 | [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
 | [`Reglages_de_duree.md`](./Developement/how%20it%20work/Reglages_de_duree.md) | Comment une période de boucle est déclarée, lue et changée |
-| [`Protocole_Ducky.md`](./Developement/how%20it%20work/Protocole_Ducky.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
+| [`ducky-network/`](./Developement/how%20it%20work/ducky-network/README.md) | **Référence du protocole Ducky Network**, un chapitre par catégorie de trames (01 à 08) |
+| [`Nouveau_service.md`](./Developement/how%20it%20work/Nouveau_service.md) | **Créer un nouveau service** : module, catalogue, raccordement, authentification, droits, build, déploiement |
 | [`Versions.md`](./Developement/how%20it%20work/Versions.md) | Comment chaque composant déclare sa version, et ce que le core en fait |
 | [`GPO.md`](./Developement/how%20it%20work/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions, **ajouter un module** |
 | [`Base_de_donnees.md`](./Developement/how%20it%20work/Base_de_donnees.md) | Schéma de la base de données |
@@ -94,6 +95,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 
 | Fichier | Contenu |
 | --- | --- |
+| [`../src/vaultaire_nexus/README.md`](../src/vaultaire_nexus/README.md) | Nexus, le dépôt de paquets du parc : installation, dépôts RPM/Debian/Docker, releases, droits |
 | [`exploitation/Releases.md`](./exploitation/Releases.md) | Releases automatiques, numérotation, rétention, mise à jour de la préprod, purge de l'historique |
 | [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
 | [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |

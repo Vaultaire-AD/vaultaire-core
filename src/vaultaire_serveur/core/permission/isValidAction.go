@@ -6,9 +6,17 @@ import (
 
 // Objets et actions RBAC (catégorie:action:objet)
 var (
-	RBACObjects   = []string{"user", "group", "client", "permission", "gpo"}
-	RBACRead      = []string{"get", "status"}
-	RBACWrite     = []string{"create", "delete", "update", "add"}
+	RBACObjects = []string{"user", "group", "client", "permission", "gpo"}
+	RBACRead    = []string{"get", "status"}
+	// « remove » (Détacher) est le verbe inverse de « add » (Rattacher).
+	//
+	// Il n'existait pas : retirer un compte, une machine, une permission ou une
+	// GPO d'un groupe empruntait la clé « delete » de l'objet. Pour sortir
+	// quelqu'un d'un groupe, il fallait donc le droit de SUPPRIMER des comptes
+	// — et l'accorder à un délégué lui ouvrait aussi la suppression. Détacher
+	// ne détruit rien : c'est l'inverse d'un rattachement, pas une suppression.
+	// Voir docs/Developement/how it work/Permissions_RBAC.md § 2.
+	RBACWrite     = []string{"create", "delete", "update", "add", "remove"}
 	legacyActions = []string{"none", "web_admin", "auth", "compare", "search"}
 
 	// specialActions sont les commandes qui ne se rangent pas dans le modèle
@@ -22,6 +30,7 @@ var (
 		ActionReadCluster, ActionWriteCluster,
 		ActionReadCertificate, ActionWriteCertificate,
 		ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
+		ActionReadNexus, ActionWriteNexus, ActionAdminNexus,
 	}
 )
 
@@ -96,6 +105,36 @@ const ActionWriteServer = "write:server"
 const (
 	ActionReadCluster  = "read:cluster"
 	ActionWriteCluster = "write:cluster"
+)
+
+// ActionReadNexus, ActionWriteNexus et ActionAdminNexus : droits sur le dépôt
+// de paquets (src/vaultaire_nexus).
+//
+// # Pourquoi des actions spéciales et non un objet RBAC
+//
+// Même raisonnement que le cluster : un dépôt n'appartient à aucun domaine.
+// Un objet « nexus » engendrerait six clés dont trois n'accorderaient rien ;
+// trois niveaux seulement ont un sens — lire, publier, administrer.
+//
+// `write:nexus_admin` et non `admin:nexus` : IsRBACActionKey et les affichages
+// supposent une catégorie read ou write.
+//
+// # Qui les évalue
+//
+// Pas le core : le SERVICE, à qui le core transmet les clés accordées au compte
+// — par la trame 08_02 (ducky-network/serviceauth), ou par l'attribut LDAP
+// opérationnel `vaultaireServiceRights`. Le core reste la source de vérité ; le
+// service applique. La liste des clés qu'un type de service peut apprendre est
+// déclarée dans son entrée du catalogue (clienttype.UserRights).
+//
+// # Fail-closed
+//
+// Accordées à personne tant qu'on ne les accorde pas, sauf à vaultaire_all
+// (EnsureSuperadminActions les ajoute au démarrage suivant).
+const (
+	ActionReadNexus  = "read:nexus"
+	ActionWriteNexus = "write:nexus"
+	ActionAdminNexus = "write:nexus_admin"
 )
 
 // ActionReadCertificate et ActionWriteCertificate : certificats TLS du serveur.
@@ -189,6 +228,7 @@ var globalOnlyActions = []string{
 	ActionReadCluster, ActionWriteCluster,
 	ActionReadCertificate, ActionWriteCertificate,
 	ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
+	ActionReadNexus, ActionWriteNexus, ActionAdminNexus,
 }
 
 // IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte

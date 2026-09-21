@@ -19,19 +19,32 @@ import (
 //  2. recherche de l'entrée du compte pour lire memberOf et le nom affiché —
 //     avec le compte de service s'il est configuré, sinon avec la session de
 //     l'utilisateur (qui doit alors porter « search ») ;
-//  3. calcul du rôle depuis les groupes.
+//  3. calcul du rôle depuis les clés RBAC du core (attribut opérationnel
+//     vaultaireServiceRights, demandé nommément) et depuis les groupes.
 //
 // Le core accepte comme DN de bind « uid=<compte>,dc=… », « <compte>@<domaine> »
 // ou le seul identifiant. On présente la première forme, construite sur la base
 // DN configurée.
 type LDAP struct {
-	cfg   config.LDAPConfig
-	roles config.RoleMapping
+	cfg        config.LDAPConfig
+	roles      config.RoleMapping
+	rightsOnly bool
 }
+
+// AttrRights est l'attribut opérationnel du core qui porte les clés de service.
+const AttrRights = "vaultaireServiceRights"
 
 // NewLDAP prépare l'authentification LDAP.
 func NewLDAP(cfg config.LDAPConfig, roles config.RoleMapping) *LDAP {
 	return &LDAP{cfg: cfg, roles: roles}
+}
+
+// Identity est ce qu'une relecture rend d'un compte.
+type Identity struct {
+	User   string
+	Name   string
+	Groups []string
+	Rights []string
 }
 
 var validUsername = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$`)
@@ -92,7 +105,7 @@ func (l *LDAP) Authenticate(username, password string) (*Principal, error) {
 		short = short[:i]
 	}
 	filter := fmt.Sprintf(l.cfg.UserFilter, ldapclient.EscapeFilter(short))
-	entries, err := lookup.Search(l.cfg.BaseDN, filter, []string{"uid", "cn", "displayName", "mail", "memberOf"}, 2)
+	entries, err := lookup.Search(l.cfg.BaseDN, filter, []string{"uid", "cn", "displayName", "mail", "memberOf", AttrRights}, 2)
 	if err != nil && len(entries) == 0 {
 		// Bind réussi mais lecture impossible : le compte est valide, sans
 		// groupes connus. Il n'aura que les droits de « * ».
@@ -105,38 +118,48 @@ func (l *LDAP) Authenticate(username, password string) (*Principal, error) {
 			p.Display = d
 		}
 		p.Groups = groupNames(e.Attrs["memberof"])
+		p.Rights = e.Attrs[strings.ToLower(AttrRights)]
 	}
-	p.Role = RoleFor(l.roles, p.Groups)
+	p.Role = RoleFrom(l.roles, p.Groups, p.Rights, l.rightsOnly)
 	if p.Role == "" {
-		return nil, fmt.Errorf("%w : aucun rôle Nexus pour ce compte", ErrBadCredentials)
+		return nil, ErrNoRole
 	}
 	return p, nil
 }
 
-// Refresh relit les groupes d'un compte avec le compte de service, pour
-// qu'une session ou un jeton reflète un retrait de groupe sans attendre.
-// Sans compte de service, les groupes du dernier login restent valables.
-func (l *LDAP) Refresh(username string) (groups []string, ok bool, err error) {
+// Refresh relit les groupes et les clés d'un compte avec le compte de
+// service, pour qu'une session ou un jeton reflète un retrait sans attendre.
+// Sans compte de service, l'identité du dernier login reste valable (ok=false).
+//
+// Le compte de service doit porter read:get:user sur le domaine des comptes
+// pour lire leurs clés : sans ce droit, le core omet l'attribut et seuls les
+// groupes comptent.
+func (l *LDAP) Refresh(username string) (id Identity, ok bool, err error) {
 	if l.cfg.BindDN == "" {
-		return nil, false, nil
+		return Identity{}, false, nil
 	}
 	conn, err := l.dial()
 	if err != nil {
-		return nil, false, err
+		return Identity{}, false, err
 	}
 	defer conn.Close()
 	if err := conn.Bind(l.cfg.BindDN, l.cfg.BindPassword); err != nil {
-		return nil, false, err
+		return Identity{}, false, err
 	}
 	filter := fmt.Sprintf(l.cfg.UserFilter, ldapclient.EscapeFilter(username))
-	entries, err := conn.Search(l.cfg.BaseDN, filter, []string{"memberOf"}, 2)
+	entries, err := conn.Search(l.cfg.BaseDN, filter, []string{"memberOf", AttrRights}, 2)
 	if err != nil {
-		return nil, false, err
+		return Identity{}, false, err
 	}
 	if len(entries) == 0 {
-		return nil, true, nil // compte disparu : aucun groupe
+		return Identity{User: username}, true, nil // compte disparu : ni groupe ni clé
 	}
-	return groupNames(entries[0].Attrs["memberof"]), true, nil
+	e := entries[0]
+	return Identity{
+		User:   username,
+		Groups: groupNames(e.Attrs["memberof"]),
+		Rights: e.Attrs[strings.ToLower(AttrRights)],
+	}, true, nil
 }
 
 // groupNames extrait le nom d'un groupe, qu'il soit donné en DN

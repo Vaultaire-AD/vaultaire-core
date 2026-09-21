@@ -255,3 +255,25 @@ func (m *Manager) Count() int {
 	defer m.mu.RUnlock()
 	return len(m.sessions)
 }
+
+// AutreSessionAuthentifiee dit si une AUTRE session authentifiée que exceptID
+// porte la même identité (username, machine).
+//
+// Sert à la fermeture d'une session machine `vaultaire` : la ligne did_login
+// est unique par (compte, machine). La supprimer parce qu'une connexion
+// secondaire se ferme — le `--fetch-key` de sshd en ouvre une à chaque
+// connexion SSH — faisait disparaître la machine de `status -c` alors que son
+// tunnel principal était toujours là.
+func (m *Manager) AutreSessionAuthentifiee(username, clientSoftwareID, exceptID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for id, s := range m.sessions {
+		if id == exceptID || s.SessionID == exceptID {
+			continue
+		}
+		if s.Status == SessionAuthenticated && s.Username == username && s.ClientSoftwareID == clientSoftwareID {
+			return true
+		}
+	}
+	return false
+}

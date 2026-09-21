@@ -36,6 +36,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 | `read:certificate` / `write:certificate` | certificats TLS du serveur |
 | `read:enrollment` | consultation des clés d'enrôlement |
 | `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées** |
+| `read:nexus` / `write:nexus` / `write:nexus_admin` | dépôt de paquets Nexus : lire les dépôts privés / publier / administrer — voir « Droits de service » |
 
 **Pourquoi des clés spéciales et non des objets RBAC.** Un journal, un nœud de
 cluster, un certificat n'appartiennent à aucun domaine : la délégation par
@@ -99,7 +100,8 @@ engagent dépasse tout périmètre délégué.
 
 **Les droits qui ne se délèguent pas du tout** — `read:log`, `read:dns`,
 `write:dns`, `read:enrollment`, `read:cluster`, `write:cluster`,
-`read:certificate`, `write:certificate`, `write:server`, `web_admin` — sont des
+`read:certificate`, `write:certificate`, `write:server`, `read:nexus`,
+`write:nexus`, `write:nexus_admin`, `web_admin` — sont des
 **booléens** : on les accorde avec `all`, ou pas du tout. Leur donner une liste
 de domaines ne les restreint pas, elle les refuse.
 
@@ -146,15 +148,15 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `group.create` | `write:create:group` | Globale | — | Registre — `create -g` | **Registre** |
 | `group.delete` | `write:delete:group` | Groupe | — | Registre — `delete -g` | **Registre** |
 | `group.add_user` | `write:add:user` | Groupe + utilisateur | — | Registre — `add -u -g` | **Registre** |
-| `group.remove_user` | `write:delete:user` | Groupe + utilisateur | — | Registre — `remove -u -g` | **Registre** |
+| `group.remove_user` | `write:remove:user` | Groupe + utilisateur | — | Registre — `remove -u -g` | **Registre** |
 | `group.add_client` | `write:add:client` | Groupe + machine | — | Registre — `add -c -g` | **Registre** |
-| `group.remove_client` | `write:delete:client` | Groupe + machine | — | Registre — `remove -c -g` | **Registre** |
+| `group.remove_client` | `write:remove:client` | Groupe + machine | — | Registre — `remove -c -g` | **Registre** |
 | `group.add_permission` | `write:add:permission` | Groupe | — | Registre — `add -gu -p` | **Registre** |
-| `group.remove_permission` | `write:delete:permission` | Groupe | — | Registre — `remove -gu -p` | **Registre** |
+| `group.remove_permission` | `write:remove:permission` | Groupe | — | Registre — `remove -gu -p` | **Registre** |
 | `group.add_client_permission` | `write:add:permission` | Groupe | — | Registre — `add -gc -p` | **Registre** |
-| `group.remove_client_permission` | `write:delete:permission` | Groupe | — | Registre — `remove -gc -p` | **Registre** |
+| `group.remove_client_permission` | `write:remove:permission` | Groupe | — | Registre — `remove -gc -p` | **Registre** |
 | `group.add_gpo` | `write:add:gpo` | **Groupe + GPO** | — | **Registre** — `add -gpo` | **Registre** |
-| `group.remove_gpo` | `write:delete:gpo` | **Groupe + GPO** | — | **Registre** — `remove -gpo` | **Registre** |
+| `group.remove_gpo` | `write:remove:gpo` | **Groupe + GPO** | — | **Registre** — `remove -gpo` | **Registre** |
 | `group.set_mfa_required` | `write:mfa` | Groupe | — | Registre — `mfa -g --require/--optional` | **Registre** |
 | **Machines** |
 | `client.create` | `write:create:client` | Globale | — | Registre — `create -c` | **Registre** |
@@ -199,6 +201,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `gpo.add_module` | `write:update:gpo` | GPO | — | — | **Registre** |
 | `gpo.update_module` | `write:update:gpo` | GPO | — | — | **Registre** |
 | `gpo.delete_module` | `write:update:gpo` | GPO | — | — | **Registre** |
+| `gpo.set_drift_mode` | `write:update:gpo` | GPO | — | **Registre** — `gpo mode <gpo> <enforce\|audit>` | **Registre** |
 | **Sessions — qui est connecté** |
 | `session.list_users` ² | `read:status:user` | Globale | — | **Registre** — `status -u` | — |
 | `session.get_user` | `read:status:user` | Utilisateur | — | **Registre** — `status -u <compte>` | — |
@@ -210,14 +213,19 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `cluster.list_nodes` | `read:cluster` | Globale | — | **Registre** — `cluster list` | — |
 | `cluster.get_purge_delay` | `read:cluster` | Globale | — | **Registre** — `cluster purge-delay` | — |
 | `cluster.set_purge_delay` | `write:cluster` | Globale | — | **Registre** — `cluster purge-delay <h>` | — |
+| `cluster.get_metrics_retention` | `read:cluster` | Globale | — | **Registre** — `cluster metrics-retention` | — |
+| `cluster.set_metrics_retention` | `write:cluster` | Globale | — | **Registre** — `cluster metrics-retention <n>` | — |
+| `cluster.set_node_exposure` | `write:cluster` | Globale | — | **Registre** — `cluster expose`, `priority`, `rotation` | **Registre** (page Cluster) |
+| `cluster.set_node_groups` | `write:cluster` | Globale | — | **Registre** — `cluster affinity` | **Registre** (page Cluster) |
+| `cluster.client_targets` | `read:cluster` | Globale | — | **Registre** — `get -c <id> --targets` | fiche machine |
 | `certificate.list` | `read:certificate` | Globale | — | **Registre** — `certificate list` | — |
 | `certificate.get` | `read:certificate` | Globale | — | **Registre** — `certificate show` | — |
 | `certificate.regenerate` | `write:certificate` | Globale | — | **Registre** — `certificate regenerate` | — |
 | **Conformité GPO et arborescence** |
 | `gpo.list_compliance` ² | `read:get:gpo` | Globale | — | **Registre** — `gpo status`, `gpo drift` | — |
 | `gpo.get_compliance` | `read:get:gpo` | Machine | — | **Registre** — `gpo status <machine>` | — |
-| `domain.list_tree` ² | `read:get:group` | Globale | — | **Registre** — `eyes -g` | — |
-| `domain.list_groups` | `read:get:group` | Domaine | — | **Registre** — `eyes -g <domaine>` | — |
+| `domain.list_tree` ² | `read:get:group` | Globale | — | **Registre** — `eyes -g` | **Registre** — page Arborescence |
+| `domain.list_groups` ² | `read:get:group` | Domaine | — | **Registre** — `eyes -g <domaine>` | — |
 | **DNS, enrôlement, réglages** ³ |
 | `dns.list_zones` | `read:dns` | Globale | — | **Registre** — `dns zone list` | — |
 | `dns.list_records` | `read:dns` | Globale | — | **Registre** — `dns zone show` | — |
@@ -238,6 +246,28 @@ ligne de commande.**
 
 ---
 
+### Détacher n'est pas supprimer — `write:remove:*`
+
+Retirer un compte, une machine, une permission ou une GPO d'un groupe
+empruntait la clé **`delete`** de l'objet :
+
+| Commande | Clé empruntée | Clé désormais |
+|---|---|---|
+| `remove -u <compte> -g <groupe>` | `write:delete:user` | `write:remove:user` |
+| `remove -c <machine> -g <groupe>` | `write:delete:client` | `write:remove:client` |
+| `remove -gu/-gc <groupe> -p <perm>` | `write:delete:permission` | `write:remove:permission` |
+| `remove -gpo <gpo> -g <groupe>` | `write:delete:gpo` | `write:remove:gpo` |
+
+Pour sortir quelqu'un d'un groupe, il fallait donc le droit de **supprimer des
+comptes** ; l'accorder à un délégué lui ouvrait `delete -u`. `remove`
+(**Détacher**) est le verbe inverse de `add` (**Rattacher**) ; `delete` reste la
+destruction de l'objet. La matrice web a gagné la colonne « Détacher ».
+
+Aucun délégué ne perd de pouvoir à la mise à jour : la migration
+`rbac_verbe_detacher` recopie une fois chaque `write:delete:<objet>` en
+`write:remove:<objet>`, portée comprise. Retirez ensuite `write:delete:user` aux
+délégués qui n'avaient besoin que de gérer les membres.
+
 ### Sept droits neufs — toutes les clés empruntées sont rendues
 
 Ces objets n'avaient pas de clé qui leur corresponde, et les commandes
@@ -255,6 +285,7 @@ empruntaient donc celle des machines :
 | `clear` (sessions expirées) | `write:update:user` | `write:server` |
 | `settings list` | *(commande neuve)* | `read:log` |
 | `settings set` / `reset` | *(commande neuve)* | `write:server` |
+| page **Cluster** du portail (`/admin/cluster`) | `read:get:client` — oubliée lors du passage à `read:cluster` | `read:cluster` |
 
 Les deux dernières sont les plus parlantes : **régler le mode debug ou vider une
 table de sessions n'a rien d'une modification de compte.** La clé accordait
@@ -376,6 +407,24 @@ liste des groupes ne lui montrait pas.
 `write:eyes` reste dans le vocabulaire mais n'est plus interrogée : l'ôter
 ferait échouer la relecture des permissions qui la portent déjà. Son retrait
 est une modification à part.
+
+**La page web avait été oubliée.** `/admin/tree` et son API
+`/admin/api/ldap-tree` exigeaient encore `write:eyes` et lisaient la base
+directement : un délégué restreint y voyait **tout** l'arbre, groupes et comptes
+compris, alors que `eyes -g` le lui refusait. Elles passent maintenant par
+`domain.list_tree` — même clé, même filtre. Les comptes affichés sous un groupe
+exigent en plus `read:get:user` sur le domaine du groupe, et la fiche d'un
+groupe (`/admin/api/group-info`) répond « introuvable » hors du périmètre.
+
+`eyes -g <domaine>` (`domain.list_groups`) descend dans les sous-domaines : il
+porte désormais le même filtre. Un droit sans propagation (`0:paris.fr`)
+montrait les groupes de `rh.paris.fr`. La commande liste aussi des **groupes**
+(avec leur domaine) — elle listait des noms de domaines.
+
+> Rappel : la CLI **locale** (`docker exec … vaultaire_cli`) agit sous
+> l'identité `vaultaire`, qui voit tout. Pour éprouver une permission
+> restreinte, passez par `vlt` à distance ou par le portail, avec le compte du
+> délégué.
 
 ---
 
@@ -670,6 +719,38 @@ la **recherche globale** du web.
 La recherche est le dernier appelant de `web_admin_scope.go`, qui ne décide
 plus rien — il transmet au périmètre du registre. Elle parcourt quatre genres
 d'entités dans une même réponse et ne se ramène donc pas à une action de liste.
+
+### Droits de service — évalués par le service, pas par le core
+
+`read:nexus`, `write:nexus` et `write:nexus_admin` ne correspondent à **aucune
+action du registre** : aucune commande `vlt` ne les exige. Le core les
+**transmet** au dépôt Nexus, qui les applique.
+
+| Clé | Dans Nexus |
+|---|---|
+| `read:nexus` | lecteur : dépôts privés, recherche, `docker pull` |
+| `write:nexus` | publieur : publier, supprimer une version, `docker push` |
+| `write:nexus_admin` | administrateur : dépôts, import GitHub, jetons de tous, nettoyage |
+
+Elles s'accordent comme toute clé spéciale — `all` ou `nil` :
+
+```bash
+vlt create -p depot-publication non --desc "Publier dans Nexus"
+vlt update -pu depot-publication write:nexus all
+vlt add -gu Dev -p depot-publication
+```
+
+ou, dans l'interface : **Permissions → *permission* → Actions hors matrice**.
+
+Nexus les reçoit par la trame `08_02` (réseau Ducky) ou par l'attribut LDAP
+`vaultaireServiceRights`. Un retrait est vu au plus tard **5 minutes** plus tard,
+sans reconnexion ; une révocation (kill switch) ferme les sessions Nexus du
+compte au même rythme. Le compte doit aussi avoir la permission historique
+**`auth`** sur son domaine pour se connecter.
+
+Nexus peut compléter ces clés par ses propres réglages (rôles par noms de groupe,
+lecteurs et publieurs par dépôt) : voir le `README.md` de
+`src/vaultaire_nexus`.
 
 ### Hors périmètre, définitivement
 
