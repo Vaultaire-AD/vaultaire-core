@@ -150,6 +150,9 @@ func traiterListe(contenu string) {
 
 	ApprendreEmpreintes(noeuds)
 	Enregistrer(noeuds)
+	// Après l'apprentissage des empreintes : un nœud dont l'empreinte vient
+	// d'être retenue est persistable dès cette liste-ci.
+	notifier(noeuds)
 
 	logs.Write_log("INFO", fmt.Sprintf(
 		"découverte : %d nœud(s) joignable(s) — %s", len(noeuds), Resume()))

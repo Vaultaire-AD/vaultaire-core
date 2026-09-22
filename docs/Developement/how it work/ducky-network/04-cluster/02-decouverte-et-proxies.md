@@ -24,9 +24,10 @@ rien.
   04_08  accusé
 ```
 
-> **Ce qui est en place** : les lots 0 à 3 — un agent apprend ses nœuds
-> joignables, un proxy existe dans le cluster et bat. **Le relais TCP et le
-> relais LDAP/S ne sont pas écrits** ; ils restent spécifiés en [4.3](./03-arbitrages-et-suite.md).
+> **Ce qui est en place** : les lots 0 à 4, 6 et 7 — un agent apprend ses nœuds
+> joignables, un proxy existe dans le cluster, bat, et **relaie le Ducky** vers
+> les cores (lot 4, 2.2). **Le relais LDAP/S et HTTPS n'est pas activé** (TO-DO
+> 72) ; voir [4.3](./03-arbitrages-et-suite.md) et [`docs/proxy/`](../../../../proxy/README.md).
 
 ### L'adresse annoncée en `04_04` n'est pas toujours celle du nœud
 
@@ -95,7 +96,18 @@ qu'une preuve HMAC : un proxy qui terminait la session ne voyait rien
 d'utilisable. Depuis, le mot de passe transite dans le tunnel — un proxy qui
 déchiffrerait deviendrait un point de collecte des mots de passe du parc.
 
-*Non implémenté.* C'est ce qui reste du sujet.
+*Fait en 2.2 (lot 4)* : `src/vaultaire_proxy/relais/`, transport TCP sans
+lecture. Deux conséquences écrites en même temps :
+
+- l'agent **n'apprend pas** l'empreinte d'un nœud de rôle `proxy` (c'est la clé
+  de son identité de client, pas une clé de core : l'apprendre laisserait le
+  proxy répondre à la poignée de main à la place d'un core) ; la liste persistée
+  ne garde un proxy que si un core de confiance y figure ;
+- le core accorde 1000 connexions (au lieu de 20) aux adresses des proxies
+  enregistrés et en ligne, puisque tous les agents d'un site arrivent de
+  l'adresse du proxy.
+
+Exploitation : [`docs/proxy/`](../../../../proxy/README.md).
 
 ## Arbitrage 3 — les empreintes s'apprennent depuis une confiance existante
 
@@ -299,6 +311,15 @@ la découverte existe pour éviter.
 **Une liste vide n'en écrase pas une pleine.** Un core qui répond « aucun nœud » a
 peut-être une base indisponible. Effacer sur cette foi couperait l'agent de tout
 ce qu'il avait appris, au moment précis où le core va mal.
+
+**La liste apprise est persistée** (depuis la 2.2, TO-DO 61). L'agent l'écrit
+dans la section `learned` de `client_conf.json` — seulement les nœuds dont
+l'empreinte est de confiance, seulement quand elle change —, et la relit au
+démarrage, entre la mémoire et les serveurs d'installation. Avant, elle ne
+vivait qu'en mémoire : après un redémarrage, l'agent repartait de la seule
+adresse du fichier. Côté SDK, un programme s'abonne avec
+`decouverte.SurNouvelleListe`. Détail :
+[Agent : liste des cores et rapport de debug](../../../../exploitation/Agent_configuration_et_debug.md).
 
 Cadence : 30 minutes, constante côté agent. La liste ne change qu'à l'ajout ou au
 retrait d'un nœud. Une machine qui a besoin de la liste *tout de suite* — parce

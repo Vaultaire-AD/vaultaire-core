@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 	"vaultaire_client/config"
+	"vaultaire_client/debugreport"
 	"vaultaire_client/gpo"
 	pamcommunication "vaultaire_client/pam_communication"
 	"vaultaire_client/revocation"
@@ -109,6 +110,24 @@ func bootstrapDecouverte() {
 		sendmessage.SendMessage(trame, session.DuckySession)
 	}, storage.Computeur_ID)
 
+	// La liste apprise est PERSISTÉE (TO-DO 61) : dans client_conf.json, section
+	// « learned », et dans la configuration en mémoire. Seuls les nœuds de
+	// confiance arrivent ici — voir decouverte.SurNouvelleListe.
+	decouverte.SurNouvelleListe(func(noeuds []decouverte.Noeud) {
+		liste := make([]config.ServerConfig, 0, len(noeuds))
+		for _, n := range noeuds {
+			liste = append(liste, config.ServerConfig{IP: n.IP, Port: n.Port, Hostname: n.Hostname, Role: n.Role})
+		}
+		ecrit, err := config.MettreAJourAppris(liste)
+		switch {
+		case err != nil:
+			logs.Write_log("ERROR", "découverte : liste apprise non persistée : "+err.Error())
+		case ecrit:
+			logs.Write_log("INFO", fmt.Sprintf(
+				"découverte : %d nœud(s) persisté(s) dans %s", len(liste), config.Chemin()))
+		}
+	})
+
 	decouverte.Demarrer(func() string {
 		session, err := stosession.SessionsUser.WaitForVaultaireSession()
 		if err != nil || session == nil || session.DuckySession == nil {
@@ -174,6 +193,12 @@ func main() {
 	purgeGroupes := flag.Bool("purge-groups", false,
 		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
 	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
+	// Rapport de debug périodique (vlt_client-Debug.log). La ligne de commande
+	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
+	debugRapport := flag.Bool("debug", false,
+		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
+	debugIntervalle := flag.Int("debug-interval", 0,
+		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
 	flag.Parse()
 
 	if *purgeGroupes {
@@ -239,6 +264,17 @@ func main() {
 		// AuthorizedKeysCommand, et aucune première connexion n'est possible —
 		// sans la moindre trace, puisque rien de Vaultaire n'est exécuté.
 		pamcommunication.StartUIDAllocationServer()
+
+		// Rapport de debug : dans la branche du démon SEULEMENT. En mode
+		// --fetch-key, la sortie standard est la réponse lue par sshd.
+		reglage := config.GetDebug()
+		if *debugRapport || reglage.Enabled {
+			secondes := reglage.IntervalSeconds
+			if *debugIntervalle > 0 {
+				secondes = *debugIntervalle
+			}
+			debugreport.Demarrer(time.Duration(secondes) * time.Second)
+		}
 
 		pamcommunication.UnixSocketServer()
 	}

@@ -66,6 +66,9 @@ services:
       # de sécurité : il n'entre dans aucune décision.
       - VAULTAIRE_ENROLL_LABEL=proxy-preprod-01
 
+      # Port d'écoute du relais Ducky DANS le conteneur (annoncé au cluster).
+      - VAULTAIRE_LISTEN_PORT=6666
+
     volumes:
       # Binaire, en lecture seule. Le conteneur ne doit pas pouvoir réécrire une
       # source de l'hôte : un binaire modifié depuis l'intérieur serait ensuite
@@ -80,11 +83,19 @@ services:
       # l'emportent quand les deux sont présentes.
       # - ./config.yaml:/etc/vaultaire_proxy/config.yaml:ro
 
-    # Cette version n'ouvre que des connexions SORTANTES vers le core. Les ports
-    # d'écoute seront à publier quand la répartition de charge arrivera.
-    # ports:
-    #   - "389:389"
-    #   - "8443:8443"
+    # RELAIS DUCKY (2.2) : le proxy écoute sur 6666 dans le conteneur et
+    # transporte les connexions des agents vers les cores, sans les lire.
+    #
+    # Publié sur 6667 de l'hôte par défaut : sur une machine qui porte aussi le
+    # core, 6666 est déjà pris. Les agents doivent recevoir CETTE adresse :
+    # déclarez-la sur le core, sinon il annoncerait l'adresse interne du
+    # conteneur, injoignable depuis le parc :
+    #
+    #   vlt cluster expose <nom-du-proxy> <adresse-de-l-hôte> 6667
+    #
+    # HTTPS et LDAP/S sont prévus (docs/proxy/), pas encore activables.
+    ports:
+      - "${VLT_PROXY_PORT:-6667}:6666"
 
     networks:
       - Ducky-network

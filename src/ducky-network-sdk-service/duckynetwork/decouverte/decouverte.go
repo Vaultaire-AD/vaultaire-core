@@ -248,9 +248,21 @@ func Enregistrer(noeuds []Noeud) {
 // confiance à étendre. Ce n'est pas une anomalie — c'est l'état d'un agent
 // installé sans `-join`, et la liste reste utilisable pour le nœud qu'il joint
 // déjà.
+//
+// # Jamais l'empreinte d'un PROXY
+//
+// Un proxy relaie les octets sans les lire (TO-DO 38) : au bout du tunnel,
+// l'agent parle au CORE et reçoit la clé du core. L'empreinte annoncée pour un
+// proxy est celle de sa propre clé de client ; l'apprendre ferait accepter
+// cette clé comme celle d'un core — c'est-à-dire qu'un proxy pourrait se faire
+// passer pour un core et recueillir les mots de passe du parc, ce que
+// l'arbitrage 2 existe pour empêcher. Les proxies sont donc sautés ici.
 func ApprendreEmpreintes(noeuds []Noeud) {
 	var appris int
 	for _, n := range noeuds {
+		if n.Role == "proxy" {
+			continue
+		}
 		ok, err := serveurauth.ApprendreEmpreinte(n.Empreinte)
 		if err != nil {
 			logs.Write_log("WARNING", fmt.Sprintf(

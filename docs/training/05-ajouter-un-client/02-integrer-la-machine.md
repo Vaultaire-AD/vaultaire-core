@@ -39,14 +39,15 @@ en plus un tunnel machine). Le port de `-join` vaut 22 par défaut.
    l'agent, puis démarrez-le :
 
    ```bash
-   cat /etc/vaultaire_client/client_conf.json
-   # remplacez l'IP si ce n'est pas celle de votre serveur
+   cat /etc/vaultaire_client/client_conf.json   # les cores du cluster
    systemctl enable --now vaultaire_client
    journalctl -u vaultaire_client -n 30
    ```
 
-   > ⚠️ Le script d'installation écrit aujourd'hui une adresse de serveur fixe.
-   > Tant que ce n'est pas corrigé, ajustez `client_conf.json` à la main.
+   `client_conf.json` porte la liste des cores exposés du cluster (section
+   `servers`), écrite par le core au moment du `-join`. L'agent y ajoute
+   ensuite lui-même ce qu'il apprend (section `learned`). Détail :
+   [Agent : liste des cores et rapport de debug](../../exploitation/Agent_configuration_et_debug.md).
 
 3. Rattachez la machine au groupe `Infra` :
 

@@ -84,12 +84,22 @@ func RunUserCycle(sessionKey, username string) Report {
 }
 
 // runCycle enchaîne demande, application, enregistrement et rapport.
-func runCycle(sessionKey, scope, username string, timeout time.Duration) Report {
+func runCycle(sessionKey, scope, username string, timeout time.Duration) (rapport Report) {
 	label := scope + userLabel(username)
 	started := time.Now()
 	logs.Write_log("DEBUG", "GPO: debut du cycle "+label)
 
+	motif := ""
+	// Dernier cycle retenu pour le rapport de debug : rien ne le gardait, le
+	// rapport n'était que journalisé puis envoyé.
+	defer func() { noterCycle(scope, username, started, rapport, motif) }()
+
 	outcome := requestPolicy(sessionKey, scope, username, timeout)
+	if outcome.ErrorCode != "" {
+		motif = outcome.ErrorCode + " : " + outcome.ErrorMessage
+	} else if outcome.Unchanged {
+		motif = "politique inchangée"
+	}
 
 	switch {
 	case outcome.Unchanged:

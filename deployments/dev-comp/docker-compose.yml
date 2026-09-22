@@ -1,0 +1,126 @@
+# ====================================================================
+# dev-comp — pile de test COMPILÉE LOCALEMENT
+# ====================================================================
+#
+# Comme la préprod, mais avec les binaires compilés depuis le dépôt local —
+# modifications non commitées comprises — au lieu d'une release GitHub. C'est ce
+# que faisait la préprod avant les releases automatiques : tester une version en
+# cours de développement sans en publier une.
+#
+# Ne pas lancer à la main : ./deployments/dev-comp/dev-comp.sh compile, puis
+# démarre. Détail : README.md.
+#
+# Binaires : ./build/ (sortie de auto-compil.sh, ignorée par git). Ils ne
+# touchent PAS à cmd/, qui reste la sortie de la release installée par la
+# préprod : les deux piles peuvent coexister sur un même dépôt.
+
+name: dev-comp
+
+networks:
+  devcomp:
+    driver: bridge
+
+volumes:
+  devcomp_db:
+  devcomp_gocache:
+  devcomp_proxy_keys:
+
+services:
+  # --- Compilation (lancée par dev-comp.sh, jamais par « up ») ---
+  builder:
+    profiles: ["build"]
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    image: vaultaire-devcomp-builder:latest
+    working_dir: /src
+    environment:
+      - VAULTAIRE_ROOT=/src
+      - VAULTAIRE_BUILD_DIR=/src/deployments/dev-comp/build
+      - VAULTAIRE_VERSION=${VAULTAIRE_VERSION:-}
+      - HOST_UID=${HOST_UID:-0}
+      - HOST_GID=${HOST_GID:-0}
+    volumes:
+      - ../..:/src
+      - devcomp_gocache:/go
+    # La sortie est rendue à l'utilisateur de l'hôte : compilée en root, elle
+    # ne serait plus effaçable sans sudo.
+    command: >
+      bash -c './auto-compil.sh &&
+               chown -R "$${HOST_UID}:$${HOST_GID}" /src/deployments/dev-comp/build'
+
+  # --- Base ---
+  vaultaire-db:
+    image: mariadb:latest
+    container_name: vlt-dev-db
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_DATABASE=vaultaire
+      - TZ=Europe/Paris
+    volumes:
+      - devcomp_db:/var/lib/mysql
+      - ../pre-prod/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ../pre-prod/scripts/init-web-user.sh:/docker-entrypoint-initdb.d/init-web-user.sh:ro
+    ports:
+      - "${DEVCOMP_PORT_DB:-3307}:3306"
+    networks:
+      - devcomp
+
+  # --- Core ---
+  #
+  # Même image d'exécution que la préprod (deployments/pre-prod/Dockerfile) :
+  # ce qui est testé ici est ce qui tournera là-bas, seuls les binaires
+  # diffèrent.
+  vaultaire-ad:
+    build:
+      context: ../..
+      dockerfile: deployments/pre-prod/Dockerfile
+    image: vaultaire-devcomp:latest
+    container_name: vlt-dev-ad
+    restart: unless-stopped
+    depends_on:
+      - vaultaire-db
+    environment:
+      - TZ=Europe/Paris
+      - VAULTAIRE_ENV=dev-comp
+    volumes:
+      - ./build/vaultaire_server:/opt/vaultaire/bin:ro
+      - ./build/vaultaire_client:/opt/vaultaire/vaultaire_client:ro
+      # Templates et statiques du DÉPÔT : une page modifiée se voit au
+      # rechargement, sans recompiler.
+      - ../../web_packet:/opt/vaultaire/web_packet:ro
+      - ../pre-prod/scripts:/opt/vaultaire/scripts:ro
+    ports:
+      - "${DEVCOMP_PORT_DUCKY:-6666}:6666"
+      - "${DEVCOMP_PORT_WEB:-4443}:4443"
+      - "${DEVCOMP_PORT_API:-6643}:6643"
+      - "${DEVCOMP_PORT_LDAP:-389}:389"
+      - "${DEVCOMP_PORT_LDAPS:-636}:636"
+    networks:
+      - devcomp
+
+  # --- Proxy (facultatif : dev-comp.sh --proxy) ---
+  vlt-proxy:
+    profiles: ["proxy"]
+    build:
+      context: ../pre-prod/vlt-proxy
+      dockerfile: Dockerfile
+    image: vlt-proxy-devcomp:latest
+    container_name: vlt-dev-proxy
+    restart: unless-stopped
+    depends_on:
+      - vaultaire-ad
+    environment:
+      - TZ=Europe/Paris
+      - VAULTAIRE_IP_CORE=vaultaire-ad:6666
+      - VAULTAIRE_ENROLL_KEY=${DEVCOMP_PROXY_ENROLL_KEY:-}
+      - VAULTAIRE_ENROLL_LABEL=proxy-dev-comp
+      - VAULTAIRE_LISTEN_PORT=6666
+    volumes:
+      - ./build/vaultaire_proxy:/opt/vaultaire/bin:ro
+      - devcomp_proxy_keys:/var/lib/vaultaire_proxy/keys
+    ports:
+      - "${DEVCOMP_PORT_PROXY:-6667}:6666"
+    networks:
+      - devcomp

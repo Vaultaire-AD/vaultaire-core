@@ -8,6 +8,7 @@ import (
 	"os/user"
 	"path/filepath"
 	"strings"
+	"vaultaire/core/database"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	duckykey "vaultaire/ducky-network/key_management"
@@ -66,6 +67,23 @@ func Manage_Auto_ADD_client(hostuser, hostip, client_softwareID string) string {
 		logs.Write_LogCode("WARNING", logs.CodeCertLoad,
 			"autoadd: empreinte du core non déposée pour "+client_softwareID+" : "+err.Error()+
 				" — l'agent acceptera la première clé reçue")
+	}
+
+	// La liste des CORES à joindre (TO-DO 61), dans le même répertoire.
+	//
+	// Le script d'installation écrivait une adresse fixe, en dur. Elle vient
+	// maintenant du cluster : tous les cores exposés, dans l'ordre de la 04_04.
+	// Même règle que l'empreinte : un échec n'empêche pas l'installation, le
+	// script se rabat sur l'adresse du core qui l'exécute.
+	if n, errConf := EcrireConfClient(database.GetDatabase(), repertoireClient); errConf != nil {
+		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+			"autoadd: liste des cores non écrite pour "+client_softwareID+" : "+errConf.Error()+
+				" — le script d'installation prendra l'adresse de ce core")
+	} else if n == 0 {
+		logs.Write_Log("WARNING", "autoadd: aucun core exposé et en ligne pour "+client_softwareID+
+			" — le script d'installation prendra l'adresse de ce core")
+	} else {
+		logs.Write_Log("INFO", fmt.Sprintf("autoadd: %d core(s) écrit(s) dans %s pour %s", n, NomConfClient, client_softwareID))
 	}
 
 	err = envoyerFichierSCPAvecCleSSH(hostuser, privateKeyPath, client_softwareID, hote, port)

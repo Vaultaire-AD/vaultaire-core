@@ -30,8 +30,9 @@ et sa configuration.
 > générique. Voir ci-dessous.
 
 ### Proxy
-`vaultaire_proxy`. Relais de découverte et de répartition de charge entre les
-postes et les **cores**.
+`vaultaire_proxy`. Nœud du cluster placé près des postes d'un site : il
+**relaie** leurs connexions Ducky vers les **cores** (HTTPS et LDAP/S prévus).
+Voir [`docs/proxy/`](../proxy/README.md).
 
 **Il ne déchiffre rien** : la session Ducky reste de bout en bout entre l'agent
 et le core, et le proxy transporte les octets sans les lire. Ce n'est pas un
@@ -39,7 +40,8 @@ détail d'implémentation mais une décision — depuis que le mot de passe tran
 dans le tunnel, un proxy qui terminerait la session deviendrait un point de
 collecte des mots de passe du parc entier.
 
-Il n'authentifie personne et ne reçoit aucune politique.
+Il n'authentifie personne, ne répartit pas la charge (l'ordre des cibles est
+fixe) et ne reçoit aucune politique.
 
 ### Interface web
 `vaultaire_web`, servie par le core sur le port 4443. Elle authentifie les

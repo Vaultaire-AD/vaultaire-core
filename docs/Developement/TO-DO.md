@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **69**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **75**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -22,10 +22,12 @@ Trois gestes, dans le même passage que le code :
 
 | #  | Domaine | Sujet | État |
 |----|---------|-------|------|
-| 38 | DUCKY / PROXY | Relais TCP Ducky puis LDAP/S (lots 4 et 5) | À faire — spécifié |
+| 72 | PROXY | Relais HTTPS (vers les Nexus) et LDAP/S | À faire — code prêt, verrous à lever |
+| 73 | SDK | « enregistré » journalisé même quand le core refuse | À faire — petit |
 | 67 | CLUSTER | Restreindre les nœuds qu'un client ou un proxy voit | À faire — gros chantier |
-| 61 | CLIENT | Liste des cores écrite à l'installation, tenue à jour par l'agent | À faire |
 | 68 | SESSIONS | `status -u` ne voit pas les sessions ouvertes par PAM | À faire |
+| 70 | CLIENT | Le ménage quotidien des comptes ne trouve aucun compte | À faire |
+| 71 | CLIENT | `-join` ne sait installer que Rocky | À faire |
 | 33 | GPO | La dérive du scope utilisateur n'est jamais scannée | À faire |
 | 22 | SELINUX | Domaine dédié pour l'agent | En cours |
 | 49 | RÉVOCATION | Retenter les révocations poussées en échec | À faire |
@@ -40,19 +42,29 @@ Trois gestes, dans le même passage que le code :
 
 ## Réseau Ducky
 
-### 38. [DUCKY] [PROXY] Le relais — il ne reste que lui
+### 72. [PROXY] Relais HTTPS vers les services du cluster, et relais LDAP/S
 
-**Contexte.** Reste des points 9 et 10 (découverte de service et proxy). Les lots 0 à 3, puis 6 et 7 sont traités (voir `DO/2.1/2.1.md`, entrées 47 et 48) : l'affinité nœud ↔ groupe trie la liste servie, et une clé d'enrôlement porte les groupes de naissance d'un service. Les lots 4 et 5 n'en dépendent pas : le tri décide de **qui** on joint, le relais de ce qui se passe **une fois joint**.
+**Reste du point 38** (lot 4, relais Ducky, fait en 2.2 : `DO/2.2/2.2.md`, entrée 38). Demande de Lorens (22/09) : « le proxy doit pouvoir faire des relais pas que vers du core, il doit aussi pouvoir faire des relais HTTPS vers les Nexus par exemple ».
 
-**Aujourd'hui** le proxy est visible du cluster et connaît ses cores, mais **ne transporte aucun octet**.
+**Aujourd'hui.** `src/vaultaire_proxy/relais/` connaît les types `https`, `ldap`, `ldaps` et la source `service:<type>`, et les **refuse** au démarrage (`ErrTypePrevu`). Le transport est commun à tous les types et déjà testé.
 
-**Spécification :** `how it work/ducky-network/04-cluster/03-arbitrages-et-suite.md`, section « Le relais ». Les arbitrages 2, 5 et 6 y sont rendus et validés.
+**Spécification :** `docs/proxy/prevu-https-ldap.md`.
 
-- **Lot 4 — relais TCP Ducky.**
-  - Le proxy transporte les octets **sans les lire** et ne termine **pas** la session (arbitrage 2) : depuis le point 29, le mot de passe transite dans le tunnel, un proxy qui déchiffrerait deviendrait un point de collecte des mots de passe du parc.
-  - Si tous ses cores sont injoignables, le proxy **refuse franchement**. Le client essaie alors le suivant de sa liste — un core, puisqu'ils y figurent toujours. Un proxy qui ferait attendre deviendrait un trou noir.
-  - Code réseau neuf sur le chemin des mots de passe : même soin que le reste de la catégorie 02.
-- **Lot 5 — relais LDAP/S.** Dépend du lot 4. Le SAN du certificat du core doit couvrir les proxies, sinon le client TLS refuse.
+- **HTTPS (lot 5 bis).**
+  - Découverte des services : la `04_04` n'annonce que cores et proxies. Il faut que le proxy apprenne les Nexus (extension de `04_04` ou trame réservée aux proxies) — à concevoir avec le 67.
+  - Le relais ne termine pas TLS : SAN du certificat du Nexus, ou DNS du site qui résout le nom du Nexus vers le proxy.
+  - 443 est privilégié : port haut publié, ou `CAP_NET_BIND_SERVICE`.
+- **LDAP/S (lot 5).**
+  - SAN du certificat du core couvrant les proxies.
+  - La limitation des échecs de bind est **par IP source** (`ratelimit.SourceConn`) : derrière un proxy, un site entier partage un compteur. Exemption pour les proxies enregistrés (comme `netguard` pour Ducky) ou PROXY protocol v2 cru seulement depuis un proxy enregistré.
+  - `ldap` (389) : bind simple refusé hors TLS, donc utile seulement avec StartTLS — ou ne pas l'activer.
+- Activer = ajouter le type à `actif` dans `relais/config.go`, avec des tests des conditions ci-dessus.
+
+### 73. [SDK] « enregistré » journalisé quand le core refuse l'enregistrement
+
+**Constat** (e2e du relais, 22/09). Un proxy dont le nom d'hôte est déjà celui d'un core voit son `04_01` refusé par le core, et son journal écrit pourtant qu'il est enregistré. L'accusé `04_02` n'est pas lu pour son statut, ou son refus n'est pas remonté. Conséquence : un proxy qui ne figure pas dans `cluster_nodes` (donc ni distribué aux agents, ni exempté du plafond par IP du core) paraît sain.
+
+**À faire.** Lire le statut de l'accusé, journaliser le refus en `ERROR` avec son motif, et retenter au battement suivant.
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
@@ -77,9 +89,10 @@ connaît ses cores par sa configuration.
 - Pour un proxy, la liste de cores doit-elle venir du core (trame dédiée) ou
   rester dans sa configuration, le core ne faisant que la valider ?
 - « Écrite quelque part » : la liste reçue doit-elle être persistée côté agent —
-  voir le point 61, qui en pose le mécanisme.
+  la liste reçue est déjà persistée (point 61, fait en 2.2 : section `learned`
+  de `client_conf.json`) ; un filtre devra s'y appliquer aussi.
 
-**Dépendances.** Le relais (point 38, lots 4 et 5) change ce qu'un proxy fait
+**Dépendances.** Le relais (point 38 fait pour Ducky, reste au 72) change ce qu'un proxy fait
 pour un client ; le filtrage change qui il sert. À concevoir ensemble.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
@@ -87,37 +100,6 @@ pour un client ; le filtrage change qui il sert. À concevoir ensemble.
 ---
 
 ## Agent
-
-### 61. [CLIENT] Liste des cores : écrite à l'installation, tenue à jour par l'agent
-
-**Demande de Lorens** (point 8 de la liste du 21/09) : « lors de la création d'un
-client avec `-join`, le fichier de configuration doit porter une liste d'IP de
-cores dynamique à l'installation, et l'agent doit pouvoir la mettre à jour
-lui-même — son fichier ET sa variable interne ».
-
-**Aujourd'hui.**
-
-- `/etc/vaultaire_client/client_conf.json` porte `servers: [{ip, port}]`. Le
-  script d'installation (`rocky.sh`, lancé par `create -c … -join`) y écrit
-  **une** adresse fixe.
-- La découverte (`04_03`/`04_04`, `duckynetwork/decouverte`) apprend les nœuds
-  exposés et les place **devant** la liste statique — mais **en mémoire** : au
-  redémarrage, l'agent repart de la seule adresse du fichier. Si ce core est
-  retiré, l'agent ne joint plus personne.
-- `config.SaveConfig` existe dans l'agent, sans appelant pour ce besoin.
-
-**À faire.**
-
-1. `create -c … -join` écrit la liste des cores **exposés** (`cluster_nodes`,
-   rôle core, `expose_aux_agents`) avec leur port et leur empreinte, et non plus
-   la seule adresse de l'hôte qui lance la commande.
-2. L'agent **persiste** la liste reçue en `04_04`, dans une section distincte du
-   fichier (`learned`), écrite de façon atomique, et met à jour
-   `config.Configuration` sous verrou. La liste statique n'est jamais écrasée —
-   même règle que la découverte : elle est le dernier recours.
-3. Au démarrage, l'agent lit `learned` puis `servers`.
-4. Les empreintes suivent les adresses : un nœud appris sans empreinte ne doit
-   pas devenir un nœud accepté en aveugle.
 
 ### 68. [SESSIONS] `status -u` ne voit pas les sessions ouvertes par PAM
 
@@ -142,6 +124,33 @@ session utilisateur.
    de la machine prolonge les sessions de ses utilisateurs, ou une validité
    longue.
 4. Autoriser la nouvelle trame dans le catalogue des types (`agent`).
+
+### 70. [CLIENT] Le ménage quotidien des comptes locaux ne trouve aucun compte
+
+**Constat** (relevé en écrivant le rapport de debug, 22/09). `StartDailyUserCleanup`
+lance chaque jour à 6 h `DeleteUser_Vaultaire_Past_4Days_withoutconnection`
+(`tools/local_user_management/deleteUserPast4days.go`), qui cherche les comptes
+dont le GECOS contient `vaultaire_user_account`. Or `ProvisionVaultaireUser`
+(`createuser.go`) écrit `<compte>@vaultaire`. Aucun compte créé aujourd'hui n'est
+donc jamais retiré. De plus, un `/etc/passwd` illisible y déclenche `log.Fatalf`,
+qui arrête l'agent entier.
+
+**À faire.** Reconnaître les comptes par la carte `/etc/vaultaire/uid.map` (la
+source sûre) plutôt que par le GECOS, remplacer `log.Fatalf` par une erreur
+journalisée, et tester sur un `passwd` de fixture. Vérifier au passage le point
+11c de `A_TESTER.md` (comptes `x@sous.domaine` d'avant la 2.2).
+
+### 71. [CLIENT] `create -c … -join` ne sait installer que Rocky
+
+**Constat.** `ExecuterCommandesSSHAvecCle` choisit `debian.sh`, `ubuntu.sh` ou
+`rocky.sh` selon `/etc/os-release`, mais seul `rocky.sh` existe dans
+`automatisation/auto_deployements/` : sur Debian ou Ubuntu, l'installation
+échoue au transfert du script. `rocky.sh` est aussi propre à dnf et aux chemins
+`/usr/lib64`.
+
+**À faire.** Un `debian.sh` (apt, `/lib/x86_64-linux-gnu/security`) commun à
+Debian et Ubuntu, avec la même section 4 (liste des cores déposée par le core,
+repli sur `SSH_CONNECTION`).
 
 ---
 

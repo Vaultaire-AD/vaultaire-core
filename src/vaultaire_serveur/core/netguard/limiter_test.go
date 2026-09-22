@@ -162,3 +162,27 @@ func TestConcurrence(t *testing.T) {
 		t.Errorf("après libération : total=%d sources=%d", total, sources)
 	}
 }
+
+func TestUneExceptionDePlafondParSource(t *testing.T) {
+	l := NewLimiter("t", 100, 1)
+	l.DefinirPlafondPour(func(source string) int {
+		if source == "10.0.0.5" {
+			return 3
+		}
+		return 0
+	})
+	proxy := conn("10.0.0.5")
+	for i := 0; i < 3; i++ {
+		if _, ok, motif := l.Acquire(proxy); !ok {
+			t.Fatalf("proxy refusé à la connexion %d : %s", i+1, motif)
+		}
+	}
+	if _, ok, _ := l.Acquire(proxy); ok {
+		t.Fatal("plafond propre du proxy dépassé")
+	}
+	poste := conn("10.0.0.9")
+	l.Acquire(poste)
+	if _, ok, _ := l.Acquire(poste); ok {
+		t.Fatal("le plafond par défaut ne s'applique plus aux autres sources")
+	}
+}

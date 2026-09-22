@@ -104,6 +104,7 @@ Toute commande répond à `-h`. Le manuel complet est
 | Besoin | Commande | Détail |
 | --- | --- | --- |
 | Une version précise | `./deployments/pre-prod/docker-update.sh --version 2.1.0` | [`deployments/pre-prod/README.md`](./deployments/pre-prod/README.md) |
+| Tester la version en cours de dev (compilée localement, sans release) | `./deployments/dev-comp/dev-comp.sh` | [`deployments/dev-comp/README.md`](./deployments/dev-comp/README.md) |
 | Développer sur le code | `./deployments/dev/up.sh` — sources montées, `go run` | [`deployments/dev/README.md`](./deployments/dev/README.md) |
 | Installation sans Docker (systemd) | — | [`docs/Installation/Setup.md`](./docs/Installation/Setup.md) |
 
@@ -214,8 +215,10 @@ Numérotation et contenu des releases :
 - ✅ **TO-DO** : une tâche terminée **quitte**
   [`docs/Developement/TO-DO.md`](./docs/Developement/TO-DO.md) pour
   `docs/Developement/DO/<version>/` — voir la convention en tête du fichier.
-- 🏷️ **Changer de série** (2.1 → 2.2) : modifier `VERSION` et la valeur de repli
-  `var Version` des trois paquets `version`, dans la PR vers `main`.
+- 🏷️ **Changer de série** (2.1 → 2.2) : `VERSION`, la valeur de repli
+  `var Version` des quatre paquets `version`, et la documentation de version —
+  procédure complète dans
+  [`docs/exploitation/Changement_de_version.md`](./docs/exploitation/Changement_de_version.md).
 - 🔤 **Fins de ligne LF** partout (`.gitattributes`), sauf `*.ps1`.
 - 📚 **Aide des commandes** : `vlt <commande> -h` fait foi ; tenir `MAN.md` à
   jour avec elle.

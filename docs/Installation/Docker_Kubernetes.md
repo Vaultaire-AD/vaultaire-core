@@ -89,3 +89,11 @@ Ou localement :
 Non fourni. Les éléments nécessaires existent — image sans état, configuration
 par fichier YAML et variables d'environnement, sondes possibles sur les ports
 HTTP — mais aucun manifeste, chart ou opérateur n'est maintenu ici.
+
+
+## Pile compilée localement — `deployments/dev-comp/`
+
+Pour tester une version **non publiée** (branche, modifications non commitées) :
+`./deployments/dev-comp/dev-comp.sh` compile le dépôt dans un conteneur Rocky 9
+(même recette que la CI), puis démarre la pile de préprod avec ces binaires.
+Détail : [`deployments/dev-comp/README.md`](../../deployments/dev-comp/README.md).

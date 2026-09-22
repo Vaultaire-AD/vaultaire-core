@@ -12,9 +12,10 @@ Démarrer `vlt-proxy` et le voir apparaître dans le cluster.
 
 ## Ce qu'il faut savoir
 
-Aujourd'hui le proxy est **visible du cluster et connaît ses cores**, mais il
-**ne relaie pas encore** le trafic (TO-DO 38). Ce jalon valide l'enrôlement et
-la topologie.
+Le proxy **relaie le Ducky** : les agents d'un site le joignent, il transporte
+leurs connexions vers les cores sans les lire. Si aucun core ne répond, il
+ferme la connexion tout de suite et l'agent passe au nœud suivant. (HTTPS et
+LDAP/S sont prévus, pas encore actifs.) Référence : [`docs/proxy/`](../../proxy/README.md).
 
 ## Étapes
 
@@ -42,10 +43,22 @@ la topologie.
    vlt enroll show <id>
    ```
 
+4. Dites aux agents par où joindre le proxy (le port **publié** sur l'hôte) :
+
+   ```bash
+   vlt cluster expose <proxy> <IP-de-l-hôte> 6667
+   ```
+
+5. Redémarrez un agent, puis regardez le journal du proxy :
+
+   ```bash
+   docker compose logs vlt-proxy | grep relais
+   ```
+
 ## ✅ Vous avez réussi si
 
-`cluster list` montre un nœud de rôle proxy, en ligne, et la clé n'a plus
-d'usage restant.
+`cluster list` montre un nœud de rôle proxy, en ligne, la clé n'a plus d'usage
+restant, et le bilan du relais compte au moins une connexion vers un core.
 
 ## 🧪 Exercice
 

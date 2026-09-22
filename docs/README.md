@@ -41,6 +41,14 @@ intégrateurs. Elle répond à « que taper » et « quel droit accorder », jam
 
 ---
 
+## 🔀 Proxy
+
+| Fichier | Contenu |
+| --- | --- |
+| [`proxy/README.md`](./proxy/README.md) | **Le proxy** : déploiement, relais (Ducky actif ; HTTPS, LDAP/S prévus), sécurité, dépannage |
+
+---
+
 ## 🔒 Sécurité
 
 | Fichier | Contenu |
@@ -97,6 +105,8 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | --- | --- |
 | [`../src/vaultaire_nexus/README.md`](../src/vaultaire_nexus/README.md) | Nexus, le dépôt de paquets du parc : installation, dépôts RPM/Debian/Docker, releases, droits |
 | [`exploitation/Releases.md`](./exploitation/Releases.md) | Releases automatiques, numérotation, rétention, mise à jour de la préprod, purge de l'historique |
+| [`exploitation/Agent_configuration_et_debug.md`](./exploitation/Agent_configuration_et_debug.md) | Agent : liste des cores (installation, apprise, persistée) et rapport de debug `vlt_client-Debug.log` |
+| [`exploitation/Changement_de_version.md`](./exploitation/Changement_de_version.md) | Passer à la série suivante (2.1 → 2.2) : fichiers à modifier, documentation à clore et à ouvrir |
 | [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
 | [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |
 
@@ -118,7 +128,8 @@ version mineure, **du plus récent au plus ancien**.
 
 | Fichier | Contenu |
 | --- | --- |
-| [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Cycle 2.1 — refactorisation, et travaux non publiés |
+| [`Version/2.0/2.2.md`](./Version/2.0/2.2.md) | Cycle 2.2 — en cours, travaux non publiés |
+| [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Alpha 2.1.0 — refactorisation, releases automatiques |
 | [`Version/2.0/2.0.md`](./Version/2.0/2.0.md) | Alpha 2.0.0 « PIG » — les deux audits de sécurité |
 | [`Version/1.0/1.1.md`](./Version/1.0/1.1.md) | Cycle 1.1 — GPO, LDAP puis LDAPS, portail web, API |
 | [`Version/1.0/1.0.md`](./Version/1.0/1.0.md) | Cycle 1.0 « ROCKET » — premières versions |

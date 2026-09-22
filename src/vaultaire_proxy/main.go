@@ -9,10 +9,15 @@
 //	battement de cœur                 (04_07 → 04_08)
 //	liste des cores vers qui relayer  (04_03 → 04_04)
 //
-// PAS ENCORE DE RELAIS. Le proxy est visible du cluster et connaît ses cores ;
-// il ne transporte aucun octet. C'est un lot à part, délibérément — le relais
-// porte les mots de passe du parc, et il vaut mieux vérifier ce qui le précède
-// avant de l'écrire.
+//	relais Ducky des agents → cores   (TO-DO 38, lot 4 — relais.go)
+//
+// # Le relais
+//
+// Depuis la 2.2, le proxy transporte les connexions Ducky des agents vers les
+// cores, SANS LES LIRE : il ne termine ni la session ni le chiffrement, et
+// l'agent vérifie la clé du core au bout du tunnel. Les relais HTTPS (vers
+// Nexus, par exemple) et LDAP/S sont prévus dans la configuration, pas encore
+// activables. Voir docs/proxy/.
 //
 // # Ce qui bloquait
 //
@@ -121,6 +126,19 @@ func main() {
 			"dans la liste des nœuds joignables")
 	}
 
+	// LES RELAIS (TO-DO 38, lot 4).
+	//
+	// Lancés après le raccordement : la liste des cores vers lesquels relayer
+	// vient de la découverte, que RejoindreCluster démarre. Avant la première
+	// 04_04, le relais Ducky se rabat sur les serveurs du fichier.
+	//
+	// Un relais qui ne peut pas écouter est FATAL : ce proxy est annoncé aux
+	// agents sur ce port, et y laisser un port mort en ferait un trou noir.
+	serveurs, err := demarrerRelais(*configPath, *listen)
+	if err != nil {
+		log.Fatalf("proxy : %v", err)
+	}
+
 	// L'arrêt passe par un signal plutôt qu'un os.Exit immédiat : la boucle de
 	// réception tourne dans sa goroutine, et lui laisser le temps de fermer
 	// proprement évite de laisser une session ouverte côté core jusqu'à
@@ -129,4 +147,8 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	log.Println("arrêt demandé")
+	for _, srv := range serveurs {
+		_ = srv.Fermer()
+		logs.Write_log("INFO", srv.Stats().Resume())
+	}
 }
