@@ -41,7 +41,9 @@ services:
     image: vlt-proxy:latest
     container_name: vlt-proxy
     restart: unless-stopped
-
+    command:
+      - "-listen-port"
+      - "8443"
     environment:
       - TZ=Europe/Paris
 
