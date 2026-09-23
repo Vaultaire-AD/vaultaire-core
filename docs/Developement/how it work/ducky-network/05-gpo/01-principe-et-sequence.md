@@ -2,7 +2,7 @@
 
 # 5.1 — Principe, numérotation et séquence
 
-[← Sommaire du chapitre](./README.md) · [Les trames 05_01 à 05_17 →](./02-trames.md)
+[← Sommaire du chapitre](./README.md) · [Les trames 05_01 à 05_18 →](./02-trames.md)
 
 ---
 
@@ -25,8 +25,9 @@
 | `05_15` | core | gpo_drift_report | résultat d'un scan de conformité |
 | `05_16` | client | gpo_drift_report_ack | accusé |
 | `05_17` | client | gpo_drift_report_error | rapport malformé ou non enregistré |
+| `05_18` | **client** | gpo_refresh_now | « rafraîchis maintenant » — poussée par le core, hors du tour |
 
-Plage utilisée : `05_01` à `05_17`. Le mécanisme côté serveur et client est
+Plage utilisée : `05_01` à `05_18`. Le mécanisme côté serveur et client est
 décrit dans [`GPO.md`](../../GPO.md).
 
 ---
@@ -65,14 +66,21 @@ par diverger.
 05_15  rapport de conformité          (partagé entre les deux scopes)
   05_16  réponse : accusé
   05_17  réponse : erreur
+
+05_18  « rafraîchis maintenant »       (serveur → client, sans réponse)
 ```
+
+`05_18` est la seule trame de la catégorie qui n'ait ni demande ni réponse : le
+core l'émet de lui-même, et l'agent y répond en repartant sur une `05_01`
+ordinaire. Elle n'entre donc pas dans la règle de contiguïté ci-dessus, qui
+ordonne des demandes et leurs réponses.
 
 Les blocs 05_09, 05_12 et 05_15 sont **partagés** entre les deux scopes : la logique de
 transfert de fragment et de rapport est rigoureusement identique, la dédoubler
 donnerait deux fois le même code à maintenir et à tester. Pour ces trames
 uniquement, le scope voyage donc dans le contenu (première ligne).
 
-Slots libres pour la suite : **05_18 et au-delà**.
+Slots libres pour la suite : **05_19 et au-delà**.
 
 ## Principe
 
@@ -149,4 +157,4 @@ La séquence du scope **user** est identique, avec `05_05` → `05_06` / `05_07`
 
 ---
 
-[← Sommaire du chapitre](./README.md) · [Les trames 05_01 à 05_17 →](./02-trames.md)
+[← Sommaire du chapitre](./README.md) · [Les trames 05_01 à 05_18 →](./02-trames.md)

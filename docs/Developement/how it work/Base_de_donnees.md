@@ -84,7 +84,7 @@ DATABASE: DUCKY
 │   ├─ d_id_logiciel FK -> id_logiciels.id_logiciel
 │   └─ d_id_group FK -> groups.id_group
 │
-├─ did_login
+├─ did_login   [* une ligne par (compte, machine) : qui est connecté, et où *]
 │   ├─ PK: id_login
 │   ├─ d_id_user FK -> users.id_user
 │   ├─ session_key BLOB, key_time_validity TIMESTAMP

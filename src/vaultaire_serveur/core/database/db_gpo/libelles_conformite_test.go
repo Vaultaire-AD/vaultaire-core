@@ -20,7 +20,7 @@ import (
 // grandit, on ne sait plus laquelle des deux avait raison — alors que c'est
 // justement la vue qu'on consulte quand quelque chose ne va pas.
 
-func ligne(mod func(*ComplianceRow)) ComplianceRow {
+func ligneLibelle(mod func(*ComplianceRow)) ComplianceRow {
 	r := ComplianceRow{
 		ComputeurID: "PC-01", Scope: "machine",
 		ModulesTotal: 10, ModulesFailed: 0,
@@ -39,8 +39,8 @@ func ligne(mod func(*ComplianceRow)) ComplianceRow {
 // Afficher un zéro rassurant est la seule erreur d'affichage qui puisse faire
 // conclure à tort qu'un parc va bien.
 func TestJamaisVerifieNestPasConforme(t *testing.T) {
-	jamais := ligne(func(r *ComplianceRow) { r.DriftAt = sql.NullTime{} })
-	conforme := ligne(func(r *ComplianceRow) {
+	jamais := ligneLibelle(func(r *ComplianceRow) { r.DriftAt = sql.NullTime{} })
+	conforme := ligneLibelle(func(r *ComplianceRow) {
 		r.DriftAt = sql.NullTime{Time: time.Now(), Valid: true}
 		r.DriftChecked = 12
 	})
@@ -58,7 +58,7 @@ func TestJamaisVerifieNestPasConforme(t *testing.T) {
 }
 
 func TestEtatConformiteCompteLesEcarts(t *testing.T) {
-	avec := ligne(func(r *ComplianceRow) {
+	avec := ligneLibelle(func(r *ComplianceRow) {
 		r.DriftAt = sql.NullTime{Time: time.Now(), Valid: true}
 		r.DriftCount = 3
 	})
@@ -72,7 +72,7 @@ func TestEtatConformiteCompteLesEcarts(t *testing.T) {
 // « 0/0 » se lit comme « aucun module à appliquer », c'est-à-dire comme une
 // réussite. Une machine qui n'a jamais rapporté n'a rien appliqué du tout.
 func TestModulesJamaisRapportesNeDisentPasZeroSurZero(t *testing.T) {
-	muette := ligne(func(r *ComplianceRow) {
+	muette := ligneLibelle(func(r *ComplianceRow) {
 		r.JamaisRapporte = true
 		r.ModulesTotal, r.ModulesFailed = 0, 0
 	})
@@ -83,7 +83,7 @@ func TestModulesJamaisRapportesNeDisentPasZeroSurZero(t *testing.T) {
 		t.Errorf("libellé = %q, attendu « - »", got)
 	}
 
-	normale := ligne(func(r *ComplianceRow) { r.ModulesTotal, r.ModulesFailed = 10, 2 })
+	normale := ligneLibelle(func(r *ComplianceRow) { r.ModulesTotal, r.ModulesFailed = 10, 2 })
 	if got := normale.ModulesAppliques(); got != "8/10" {
 		t.Errorf("libellé = %q, attendu « 8/10 »", got)
 	}
@@ -97,13 +97,13 @@ func TestModulesJamaisRapportesNeDisentPasZeroSurZero(t *testing.T) {
 func TestLaVueDesEcartsGardeLesMachinesMuettes(t *testing.T) {
 	maintenant := time.Now().UTC()
 
-	muette := ligne(func(r *ComplianceRow) { r.JamaisRapporte = true; r.DriftCount = 0 })
-	enRetard := ligne(func(r *ComplianceRow) {
-		r.ReportedAt = maintenant.Add(-ToleranceRapport - time.Hour)
+	muette := ligneLibelle(func(r *ComplianceRow) { r.JamaisRapporte = true; r.DriftCount = 0 })
+	enRetard := ligneLibelle(func(r *ComplianceRow) {
+		r.ReportedAt = maintenant.Add(-ToleranceRapport() - time.Hour)
 		r.DriftCount = 0
 	})
-	saine := ligne(func(r *ComplianceRow) { r.DriftCount = 0 })
-	enEcart := ligne(func(r *ComplianceRow) { r.DriftCount = 2 })
+	saine := ligneLibelle(func(r *ComplianceRow) { r.DriftCount = 0 })
+	enEcart := ligneLibelle(func(r *ComplianceRow) { r.DriftCount = 2 })
 
 	cas := []struct {
 		nom     string

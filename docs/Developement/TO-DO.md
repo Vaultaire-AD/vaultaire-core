@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **75**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **81**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -20,23 +20,21 @@ Trois gestes, dans le même passage que le code :
 
 ## Vue d'ensemble
 
-| #  | Domaine | Sujet | État |
-|----|---------|-------|------|
-| 72 | PROXY | Relais HTTPS (vers les Nexus) et LDAP/S | À faire — code prêt, verrous à lever |
-| 73 | SDK | « enregistré » journalisé même quand le core refuse | À faire — petit |
-| 67 | CLUSTER | Restreindre les nœuds qu'un client ou un proxy voit | À faire — gros chantier |
-| 68 | SESSIONS | `status -u` ne voit pas les sessions ouvertes par PAM | À faire |
-| 70 | CLIENT | Le ménage quotidien des comptes ne trouve aucun compte | À faire |
-| 71 | CLIENT | `-join` ne sait installer que Rocky | À faire |
-| 33 | GPO | La dérive du scope utilisateur n'est jamais scannée | À faire |
-| 22 | SELINUX | Domaine dédié pour l'agent | En cours |
-| 49 | RÉVOCATION | Retenter les révocations poussées en échec | À faire |
-| 50 | GPO | Déclencher un cycle hors du tour horaire | À faire |
-| 51 | GPO | Intervalle de rafraîchissement configurable | À faire |
-| 52 | GPO | Signature des politiques par le core | À faire |
-| 53 | GPO | Persister les rapports d'application en base | À faire |
-| 8  | LDAP | Mode synchro avec un annuaire existant | Idée |
-| 40 | AGENT-UPDATE | Mettre à jour le parc de clients | Idée — à trancher |
+| #   | Domaine      | Sujet                                                  | État                                 |
+| --- | ------------ | ------------------------------------------------------ | ------------------------------------ |
+| 72  | PROXY        | Relais HTTPS (vers les Nexus) et LDAP/S                | À faire — code prêt, verrous à lever |
+| 80  | DEP VERSION  | Gestion des version des dependances                    | A faire - Petit                      |
+| 79  | WINDOWS      | GPO et révocations sur les postes Windows              | À faire — gros chantier              |
+| 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit    | À faire — gros chantier              |
+| 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte | À faire                              |
+| 71  | CLIENT       | `-join` ne sait installer que Rocky                    | À faire                              |
+| 33  | GPO          | La dérive du scope utilisateur n'est jamais scannée    | À faire                              |
+| 22  | SELINUX      | Domaine dédié pour l'agent                             | En cours                             |
+| 49  | RÉVOCATION   | Retenter les révocations poussées en échec             | À faire                              |
+| 52  | GPO          | Signature des politiques par le core                   | À faire                              |
+| 53  | GPO          | Persister les rapports d'application en base           | À faire                              |
+| 8   | LDAP         | Mode synchro avec un annuaire existant                 | Idée                                 |
+| 40  | AGENT-UPDATE | Mettre à jour le parc de clients                       | Idée — à trancher                    |
 
 ---
 
@@ -59,12 +57,6 @@ Trois gestes, dans le même passage que le code :
   - La limitation des échecs de bind est **par IP source** (`ratelimit.SourceConn`) : derrière un proxy, un site entier partage un compteur. Exemption pour les proxies enregistrés (comme `netguard` pour Ducky) ou PROXY protocol v2 cru seulement depuis un proxy enregistré.
   - `ldap` (389) : bind simple refusé hors TLS, donc utile seulement avec StartTLS — ou ne pas l'activer.
 - Activer = ajouter le type à `actif` dans `relais/config.go`, avec des tests des conditions ci-dessus.
-
-### 73. [SDK] « enregistré » journalisé quand le core refuse l'enregistrement
-
-**Constat** (e2e du relais, 22/09). Un proxy dont le nom d'hôte est déjà celui d'un core voit son `04_01` refusé par le core, et son journal écrit pourtant qu'il est enregistré. L'accusé `04_02` n'est pas lu pour son statut, ou son refus n'est pas remonté. Conséquence : un proxy qui ne figure pas dans `cluster_nodes` (donc ni distribué aux agents, ni exempté du plafond par IP du core) paraît sain.
-
-**À faire.** Lire le statut de l'accusé, journaliser le refus en `ERROR` avec son motif, et retenter au battement suivant.
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
@@ -97,33 +89,22 @@ pour un client ; le filtrage change qui il sert. À concevoir ensemble.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
 
+### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
+
+**Contexte.** La V1 Windows (voir `DO/2.2/2.2.md`, entrée 77) reçoit les trames `05` (GPO) et `06` (révocation) et les journalise **sans les appliquer**. C'est assumé : les modules GPO existants posent des fichiers, des unités systemd et des réglages PAM, dont aucun n'a d'équivalent direct.
+
+**Ce qu'il faut trancher avant d'écrire.**
+
+- Quel est l'équivalent Windows d'un module GPO : stratégie locale (`secedit`), clé de registre, script ? Le catalogue doit-il être commun aux deux systèmes, avec des modules marqués par plateforme, ou séparé ?
+- La conformité et la dérive (`05_15` à `05_17`) supposent de pouvoir RELIRE l'état posé. Le registre s'y prête, un réglage d'interface moins.
+- **Révocation** : que fait-on d'une session ouverte ? Fermer une session interactive fait perdre le travail en cours ; ne rien faire laisse un compte révoqué travailler jusqu'à sa déconnexion. Et le mot de passe du compte local reste valable tant qu'il n'est pas changé — la révocation devrait au minimum le rendre inutilisable.
+- Les groupes du domaine n'ont pas d'équivalent local posé par l'agent : faut-il créer des groupes Windows locaux, comme on crée les comptes ?
+
+**Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
+
 ---
 
 ## Agent
-
-### 68. [SESSIONS] `status -u` ne voit pas les sessions ouvertes par PAM
-
-**Constat** (relevé en traitant les points 12 et 16 du 21/09). `status -u` lit la
-table `did_login`. Depuis la suppression du défi, l'authentification PAM passe
-**dans le tunnel machine** (`03_01`) : aucune ligne n'est écrite au nom de
-l'utilisateur. `status -u` ne liste donc que des lignes `vaultaire` — une par
-machine —, et jamais Alice connectée sur `web01`.
-
-La fermeture de session PAM n'envoie plus rien au core (elle coupait le tunnel
-machine, point 64) : il n'existe donc aujourd'hui **aucune** trame de fin de
-session utilisateur.
-
-**À faire.**
-
-1. `03_01` réussie : écrire la ligne `did_login` (compte, machine).
-2. Une trame de fin de session **propre à l'utilisateur** (`03_11`, par
-   exemple), émise par la fermeture PAM, qui efface cette ligne **sans** fermer
-   la connexion — `02_05` signifie « fermer cette connexion ».
-3. Une session jamais close (machine éteinte) doit expirer : sans battement
-   propre, la validité de 10 minutes ne convient pas — prévoir que le battement
-   de la machine prolonge les sessions de ses utilisateurs, ou une validité
-   longue.
-4. Autoriser la nouvelle trame dans le catalogue des types (`agent`).
 
 ### 70. [CLIENT] Le ménage quotidien des comptes locaux ne trouve aucun compte
 
@@ -163,22 +144,6 @@ repli sur `SSH_CONNECTION`).
 **Pourquoi c'est important.** Les fichiers du scope utilisateur vivent dans son `HOME`, le seul endroit où il édite librement sans être root. La dérive la plus probable est donc celle qui n'est pas surveillée.
 
 **À faire.** Ajouter `scanUserDrift` dans `RunUserCycle`, symétrique de l'existant, à l'ouverture de session. Il doit respecter le mode enforce/audit de chaque module (point 34, fait). La correction reste **différée au cycle suivant**, comme côté machine : réappliquer dans le home pendant que l'utilisateur travaille écraserait ce qu'il vient d'éditer.
-
-### 50. [GPO] Déclencher un cycle hors du tour horaire
-
-**Constat.** Un cycle machine ne part qu'au démarrage du service puis toutes les heures. Il n'existe pas d'équivalent de `gpupdate /force`. Trois cas attendent donc jusqu'à une heure :
-
-- l'administrateur veut forcer l'application **depuis le core** ;
-- le tunnel vient de **se reconnecter** après une coupure ;
-- le cycle précédent a **échoué** et devrait être retenté plus tôt.
-
-**À faire.** Une trame du core qui demande un cycle, un cycle lancé à la reconnexion, et une nouvelle tentative rapprochée (avec backoff) après un échec.
-
-### 51. [GPO] Intervalle de rafraîchissement configurable
-
-**Constat.** `MachineRefreshInterval` est une constante (`1 * time.Hour`, `vaultaire_client/gpo/cycle.go`). Le point 13 a sorti les autres durées d'exploitation du code ; celle-ci n'a pas suivi.
-
-**À faire.** La rendre réglable, de préférence depuis le core (`Reglages_de_duree.md`) pour qu'elle suive la même logique que le mode de dérive : la décision ne vient pas de la machine.
 
 ### 52. [GPO] Signature des politiques par le core
 

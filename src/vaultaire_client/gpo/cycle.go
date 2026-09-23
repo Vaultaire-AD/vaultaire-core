@@ -5,6 +5,7 @@ import (
 	"sync"
 	"time"
 
+	"duckynetworkclient/V1/backoff"
 	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
@@ -16,9 +17,14 @@ import (
 //   - RunUserCycle, après authentification PAM et provisionnement du compte,
 //     avant que la connexion ne soit accordée.
 
-// MachineRefreshInterval est l'intervalle de rafraîchissement de la politique
-// machine. Une heure : assez court pour qu'un changement se propage dans la
+// MachineRefreshInterval est l'intervalle de rafraîchissement machine PAR
+// DÉFAUT — celui qu'un agent applique tant qu'aucun core ne lui a dit autre
+// chose. Une heure : assez court pour qu'un changement se propage dans la
 // journée, assez long pour ne pas transformer le parc en générateur de trafic.
+//
+// La valeur en vigueur est CadenceActuelle() : le core l'annonce dans 05_02 et
+// 05_03 (voir cadence.go). Ce défaut ne sert donc qu'entre le démarrage du
+// service et la réponse à son premier cycle.
 const MachineRefreshInterval = 1 * time.Hour
 
 // Attente de la session mère avant un cycle machine.
@@ -43,6 +49,10 @@ const (
 var (
 	cycleMu       sync.Mutex
 	machineActive bool
+	// derniereCleCycle est la clé de session du dernier cycle machine lancé.
+	// Elle sert à reconnaître un tunnel rétabli : une clé différente signifie
+	// une nouvelle session mère, donc une absence de durée inconnue.
+	derniereCleCycle string
 )
 
 // RunMachineCycle exécute un cycle complet de politique machine.
@@ -153,6 +163,15 @@ func runCycle(sessionKey, scope, username string, timeout time.Duration) (rappor
 // sessionKeyProvider est réévalué à chaque cycle : la clé de session change au
 // gré des reconnexions du tunnel, la capturer une fois enverrait des trames
 // avec une clé périmée après la première rupture.
+//
+// # Un minuteur, et non un ticker
+//
+// La boucle attendait sur un time.Ticker d'intervalle fixe. Trois choses lui
+// manquaient, et aucune ne se greffe sur un ticker : une cadence que le core
+// peut changer en cours de route, un cycle déclenché hors tour (trame 05_18,
+// tunnel rétabli, `vlt gpo refresh`), et un nouvel essai rapproché après un
+// cycle en échec plutôt qu'une heure d'attente. Un minuteur réarmé à chaque
+// tour rend les trois possibles.
 func StartMachineRefresh(sessionKeyProvider func() string) {
 	go func() {
 		defer logs.Recover("cycle GPO")
@@ -163,27 +182,126 @@ func StartMachineRefresh(sessionKeyProvider func() string) {
 		// ne soit monté, et la session mère n'est authentifiée que quelques
 		// secondes plus tard. Sans elle, le premier cycle repartait sans rien
 		// faire et le suivant n'arrivait qu'au tour de ticker, une heure après.
-		runMachineCycleWith(sessionKeyProvider, InitialSessionWait)
+		abouti := runMachineCycleWith(sessionKeyProvider, InitialSessionWait)
 
-		ticker := time.NewTicker(MachineRefreshInterval)
-		defer ticker.Stop()
-		for range ticker.C {
-			runMachineCycleWith(sessionKeyProvider, RetrySessionWait)
+		// Une suite de dégressivité par boucle, comme le veut le paquet : elle
+		// n'est avancée que par les échecs, et remise à zéro dès qu'un cycle
+		// aboutit.
+		echecs := backoff.New()
+		minuteur := time.NewTimer(prochainDelai(abouti, echecs))
+		defer minuteur.Stop()
+
+		for {
+			select {
+			case <-minuteur.C:
+			case <-reveilCycle:
+				arreter(minuteur)
+			case <-reveilCadence:
+				// La cadence a changé : on ne fait pas de cycle, on réarme sur
+				// la nouvelle valeur. Lancer un cycle ici ferait rafraîchir tout
+				// le parc à la seconde où l'administrateur touche au réglage —
+				// exactement la rafale que la cadence sert à éviter.
+				arreter(minuteur)
+				minuteur.Reset(CadenceActuelle())
+				continue
+			}
+
+			abouti = runMachineCycleWith(sessionKeyProvider, RetrySessionWait)
+			minuteur.Reset(prochainDelai(abouti, echecs))
 		}
 	}()
+
+	go surveillerReconnexion(sessionKeyProvider)
+
 	logs.Write_log("INFO", fmt.Sprintf(
-		"GPO: rafraichissement machine actif (intervalle %s)", MachineRefreshInterval))
+		"GPO: rafraichissement machine actif (intervalle %s par defaut)", MachineRefreshInterval))
+}
+
+// prochainDelai rend l'attente avant le prochain cycle.
+//
+// Un cycle en échec — pas de session, serveur muet, politique refusée — ne doit
+// pas coûter une cadence entière : la machine resterait non conforme pendant
+// une heure pour une coupure de trente secondes. La dégressivité plafonne à
+// cinq minutes, soit la cadence minimale : un nouvel essai ne peut donc jamais
+// être plus espacé que le tour normal.
+func prochainDelai(abouti bool, echecs *backoff.Backoff) time.Duration {
+	if abouti {
+		echecs.Reset()
+		return CadenceActuelle()
+	}
+	attente := echecs.Prochain()
+	if cadence := CadenceActuelle(); attente > cadence {
+		return cadence
+	}
+	return attente
+}
+
+// arreter vide un minuteur déjà armé pour pouvoir le réarmer sans fuite.
+//
+// Le Stop d'un minuteur qui vient de se déclencher rend false et laisse sa
+// valeur dans le canal : la relire est ce qui évite que le tour suivant ne
+// parte immédiatement.
+func arreter(minuteur *time.Timer) {
+	if !minuteur.Stop() {
+		select {
+		case <-minuteur.C:
+		default:
+		}
+	}
+}
+
+// surveillerReconnexion relance un cycle quand le tunnel a été rétabli.
+//
+// # Pourquoi une scrutation plutôt qu'un signal
+//
+// Le tunnel est remonté par le superviseur, dans un paquet qui n'expose aucune
+// notification ; en câbler une pour un seul consommateur ferait dépendre la
+// couche de transport du paquet GPO. La clé de session est en mémoire, la lire
+// ne coûte rien, et la même décision a déjà été prise pour waitForSessionKey.
+//
+// # Ce que cela corrige
+//
+// Une machine qui perd le core pendant deux heures revenait avec sa politique
+// de la veille jusqu'au tour suivant. C'est précisément le moment où elle a le
+// plus de chances d'avoir manqué quelque chose.
+func surveillerReconnexion(sessionKeyProvider func() string) {
+	defer logs.Recover("surveillance du tunnel GPO")
+	for {
+		time.Sleep(SessionPollInterval)
+		cle := sessionKeyProvider()
+		if cle == "" {
+			continue
+		}
+		cycleMu.Lock()
+		change := derniereCleCycle != "" && cle != derniereCleCycle
+		if change {
+			// Notée tout de suite : sans cela, la scrutation redemanderait un
+			// cycle toutes les deux secondes jusqu'à ce que celui-ci ait tourné.
+			derniereCleCycle = cle
+		}
+		cycleMu.Unlock()
+
+		if change {
+			DemanderCycleImmediat("tunnel retabli")
+		}
+	}
 }
 
 // runMachineCycleWith attend une session utilisable puis exécute un cycle.
-func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) {
+//
+// Rend vrai si le cycle a effectivement abouti : c'est ce qui décide si la
+// prochaine attente est la cadence ou un nouvel essai rapproché.
+func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) bool {
 	sessionKey := waitForSessionKey(sessionKeyProvider, wait)
 	if sessionKey == "" {
 		logs.Write_log("WARNING", fmt.Sprintf(
-			"GPO: aucune session vaultaire etablie apres %s, cycle machine abandonne "+
-				"(nouvelle tentative dans %s)", wait, MachineRefreshInterval))
-		return
+			"GPO: aucune session vaultaire etablie apres %s, cycle machine abandonne", wait))
+		return false
 	}
+
+	cycleMu.Lock()
+	derniereCleCycle = sessionKey
+	cycleMu.Unlock()
 
 	// Scan de conformité AVANT le cycle.
 	//
@@ -196,7 +314,7 @@ func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) {
 	// le cycle qui fait le travail, à un moment prévisible.
 	scanMachineDrift(sessionKey)
 
-	RunMachineCycle(sessionKey)
+	return RunMachineCycle(sessionKey).Status != StatusFailed
 }
 
 // waitForSessionKey attend qu'une session mère utilisable soit disponible.

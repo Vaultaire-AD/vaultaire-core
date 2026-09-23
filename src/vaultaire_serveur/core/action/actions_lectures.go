@@ -49,13 +49,13 @@ func EnregistrerActionsLecture(r *Registre) {
 	// --- utilisateurs ---
 
 	r.MustEnregistrer(Definition{
-		Nom:             "user.list",
-		CleRBAC:         "read:get:user",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerUtilisateurs,
-		Resume:          "liste tous les utilisateurs",
-		Executer:        listerUtilisateurs,
+		Nom:           "user.list",
+		CleRBAC:       "read:get:user",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerUtilisateurs,
+		Resume:        "liste tous les utilisateurs",
+		Executer:      listerUtilisateurs,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -85,13 +85,13 @@ func EnregistrerActionsLecture(r *Registre) {
 	// --- groupes ---
 
 	r.MustEnregistrer(Definition{
-		Nom:             "group.list",
-		CleRBAC:         "read:get:group",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerGroupes,
-		Resume:          "liste tous les groupes",
-		Executer:        listerGroupes,
+		Nom:           "group.list",
+		CleRBAC:       "read:get:group",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerGroupes,
+		Resume:        "liste tous les groupes",
+		Executer:      listerGroupes,
 	})
 
 	r.MustEnregistrer(Definition{

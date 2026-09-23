@@ -54,9 +54,9 @@ func EnregistrerActionsReglages(r *Registre) {
 	// --- DNS, lecture ---
 
 	r.MustEnregistrer(Definition{
-		Nom:             "dns.list_zones",
-		CleRBAC:         permission.ActionReadDNS,
-		Portee:          PorteeGlobale,
+		Nom:     "dns.list_zones",
+		CleRBAC: permission.ActionReadDNS,
+		Portee:  PorteeGlobale,
 		FiltreInutile: "une zone DNS n'appartient à aucun domaine de l'annuaire ; " +
 			"il n'y a pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les zones DNS",
@@ -64,9 +64,9 @@ func EnregistrerActionsReglages(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
-		Nom:             "dns.list_records",
-		CleRBAC:         permission.ActionReadDNS,
-		Portee:          PorteeGlobale,
+		Nom:     "dns.list_records",
+		CleRBAC: permission.ActionReadDNS,
+		Portee:  PorteeGlobale,
 		FiltreInutile: "un enregistrement DNS n'appartient à aucun domaine de " +
 			"l'annuaire ; il n'y a pas de périmètre selon lequel réduire la liste",
 		Resume:   "liste les enregistrements d'une zone",

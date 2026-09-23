@@ -309,21 +309,24 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// Le compte attendu couvre les écritures ET les lectures.
 	//
 	// Il valait 37 — le total des seules écritures, à l'époque où le registre ne
-	// portait qu'elles. Les lots de lecture (utilisateur, groupe, client,
-	// permission, GPO, état de session, arborescence, cluster, certificats, DNS,
-	// enrôlement) l'ont porté à 80, et ce chiffre-ci n'avait pas suivi.
-	//
-	// Personne ne l'a vu parce que ce paquet ne compilait pas : le test n'avait
-	// pas tourné depuis. Un compte figé qu'aucune exécution ne confronte au
-	// catalogue ne surveille rien du tout.
+	// portait qu'elles — puis 80 quand les lots de lecture sont arrivés.
+	// Il vaut 89 depuis les lots 2.1/2.2 (conformité GPO, réglages de rétention,
+	// cluster, Nexus).
 	//
 	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
 	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
 	// disparu de EnregistrerTout ne ferait que le faire baisser en silence.
-	const actionsAttendues = 80
+	//
+	// Il se met donc à jour EN MÊME TEMPS que l'ajout d'une action, comme la
+	// documentation du catalogue : c'est le prix du garde-fou, et c'est ce qu'on
+	// veut — ajouter une action sans s'en apercevoir est précisément ce qu'il
+	// empêche. Le laisser rouge des mois, en revanche, le rend inutile : on
+	// cesse de le lire.
+	const actionsAttendues = 90
 	if len(defs) != actionsAttendues {
 		t.Fatalf("%d actions au catalogue, attendu %d — "+
-			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée",
+			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée. "+
+			"Si l'ajout est voulu, mettez ce nombre à jour dans le même passage",
 			len(defs), actionsAttendues)
 	}
 }

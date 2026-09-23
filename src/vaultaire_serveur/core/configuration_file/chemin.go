@@ -64,9 +64,9 @@ const (
 //
 // # L'ordre de recherche
 //
-//	1. $VAULTAIRE_CONFIG        — décision explicite, elle l'emporte
-//	2. /etc/vaultaire/…         — l'emplacement recommandé
-//	3. /opt/vaultaire/…         — les installations existantes
+//  1. $VAULTAIRE_CONFIG        — décision explicite, elle l'emporte
+//  2. /etc/vaultaire/…         — l'emplacement recommandé
+//  3. /opt/vaultaire/…         — les installations existantes
 //
 // La variable l'emporte même si le fichier qu'elle désigne n'existe pas : la
 // poser est une décision, et se rabattre en silence sur un autre fichier

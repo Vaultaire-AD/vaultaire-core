@@ -127,9 +127,50 @@ service, trop courte casse les connexions lentes. Les exposer inviterait à les
 régler sans savoir ce qu'on règle, et le symptôme d'un mauvais choix
 apparaîtrait ailleurs, longtemps après.
 
-Les durées de l'**agent** non plus — `MachineRefreshInterval`, les délais de
-commande GPO. Elles vivent sur la machine du parc et n'ont aucun moyen d'être
-lues depuis le core. Elles relèvent des GPO.
+---
+
+## 6 bis. Une durée qui pilote une boucle de l'AGENT
+
+Ce paragraphe disait, jusqu'au réglage `gpo_refresh_minutes` : « les durées de
+l'agent ne sont pas réglables, elles vivent sur la machine du parc et n'ont
+aucun moyen d'être lues depuis le core ». C'était vrai du mécanisme, pas du
+besoin — un parc dont on ne peut pas resserrer la cadence pendant un
+déploiement se rafraîchit à l'heure, quoi qu'il arrive.
+
+La recette, éprouvée d'abord par `group_sync_minutes` :
+
+1. le réglage est déclaré ici, dans `catalogue`, comme n'importe quelle durée ;
+2. sa valeur est **ajoutée en queue** d'une trame que l'agent reçoit déjà, sur
+   une ligne **préfixée** — `sync:` en `03_09`, `refresh:` en `05_02`/`05_03` ;
+3. l'agent la lit **par son préfixe, jamais par son rang**, la **borne**, et
+   réarme sa boucle.
+
+Chacun de ces trois points paye une dette précise :
+
+- **en queue** : un agent d'une version antérieure lit les champs qu'il connaît
+  et ignore le reste ; un core d'une version antérieure n'envoie rien et l'agent
+  garde son défaut. Aucune des deux moitiés du parc n'a besoin de l'autre ;
+- **par le préfixe** : un champ ajouté plus tard ne déplace pas celui-ci. Lire à
+  un rang fixe, c'est se promettre de ne plus jamais toucher au format ;
+- **bornée côté agent** : la valeur vient du réseau et pilote une boucle
+  infinie. Une cadence à zéro transformerait l'agent en attente active, et une
+  cadence d'un mois le ferait disparaître du parc sans que rien ne le signale.
+
+**La valeur n'est pas persistée sur l'agent.** Il repart de son défaut au
+démarrage, mais son premier cycle est immédiat et la réponse porte la cadence :
+la fenêtre dure un aller-retour. Un fichier de plus à écrire, migrer et protéger
+pour couvrir quelques secondes n'en valait pas le prix.
+
+**Le core doit lire le même réglage que celui qu'il envoie.** `gpo status`
+juge une machine « en retard » après trois cycles manqués : cette tolérance est
+calculée depuis le réglage (`dbgpo.CadenceAgent`, posée au démarrage du core),
+pas depuis une constante. Une constante de plus aurait fait mentir la colonne
+SUIVI dès le premier changement de cadence — le défaut exact que ce dispositif
+existe pour éviter.
+
+Restent hors de portée les durées que l'agent est **seul** à connaître : délais
+d'attente d'une réponse, budget d'un cycle utilisateur sur le chemin de
+connexion. Elles relèvent des GPO.
 
 ---
 

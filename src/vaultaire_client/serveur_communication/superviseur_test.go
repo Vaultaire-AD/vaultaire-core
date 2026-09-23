@@ -4,18 +4,21 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"duckynetworkclient/V1/duckynetwork/storage"
 )
 
 // Une panique dans la boucle ne doit pas arrêter la supervision.
 func TestLaSupervisionRelanceApresPanique(t *testing.T) {
 	var appels atomic.Int32
-	fini := make(chan struct{})
-	ancienneBoucle, anciennePause, ancienPersistent := executerBoucle, pause, storage.Persistent
-	defer func() { executerBoucle, pause, storage.Persistent = ancienneBoucle, anciennePause, ancienPersistent }()
+	// Drapeau ATOMIQUE, et non storage.Persistent : la boucle supervisée le lit
+	// depuis sa propre goroutine pendant que le test l'écrit depuis la sienne.
+	var persistant atomic.Bool
+	persistant.Store(true)
 
-	storage.Persistent = true
+	fini := make(chan struct{})
+	ancienneBoucle, anciennePause, ancienPersistant := executerBoucle, pause, estPersistant
+	defer func() { executerBoucle, pause, estPersistant = ancienneBoucle, anciennePause, ancienPersistant }()
+
+	estPersistant = persistant.Load
 	pause = func(time.Duration) {}
 	executerBoucle = func() {
 		n := appels.Add(1)
@@ -23,16 +26,26 @@ func TestLaSupervisionRelanceApresPanique(t *testing.T) {
 		case n == 1:
 			panic("trame inattendue")
 		case n >= 3:
-			storage.Persistent = false
+			persistant.Store(false)
 			close(fini)
 		}
 	}
 
-	go superviserTunnel()
+	// La fin de la supervision est ATTENDUE avant de rendre la main : les
+	// variables remplacées ci-dessus sont restaurées au retour du test, et la
+	// goroutine les lit encore tant qu'elle n'est pas sortie.
+	termine := make(chan struct{})
+	go func() { superviserTunnel(); close(termine) }()
+
 	select {
 	case <-fini:
 	case <-time.After(2 * time.Second):
 		t.Fatal("la boucle n'a pas été relancée après la panique")
+	}
+	select {
+	case <-termine:
+	case <-time.After(2 * time.Second):
+		t.Fatal("la supervision ne s'arrête pas quand la persistance tombe")
 	}
 	if appels.Load() < 3 {
 		t.Fatalf("%d lancements, au moins 3 attendus", appels.Load())

@@ -24,6 +24,7 @@ volumes:
   devcomp_db:
   devcomp_gocache:
   devcomp_proxy_keys:
+  devcomp_nexus:
 
 services:
   # --- Compilation (lancée par dev-comp.sh, jamais par « up ») ---
@@ -101,6 +102,11 @@ services:
       - devcomp
 
   # --- Proxy (facultatif : dev-comp.sh --proxy) ---
+  #
+  # Son IMAGE est construite à chaque lancement de dev-comp.sh, même sans
+  # --proxy : une image qui ne se construit qu'au moment où l'on en a besoin
+  # casse au pire moment, et rien ne dit alors si c'est le Dockerfile ou le
+  # binaire du jour. Seul le CONTENEUR dépend du profil.
   vlt-proxy:
     profiles: ["proxy"]
     build:
@@ -122,5 +128,33 @@ services:
       - devcomp_proxy_keys:/var/lib/vaultaire_proxy/keys
     ports:
       - "${DEVCOMP_PORT_PROXY:-6667}:6666"
+    networks:
+      - devcomp
+
+  # --- Nexus (facultatif : dev-comp.sh --nexus) ---
+  #
+  # Image construite à chaque lancement, comme le proxy. Elle ne compile RIEN :
+  # le binaire monté est celui du dépôt local (build/vaultaire_nexus), pas une
+  # compilation refaite depuis Docker Hub comme dans
+  # src/vaultaire_nexus/deploy/Dockerfile.
+  vaultaire-nexus:
+    profiles: ["nexus"]
+    build:
+      context: .
+      dockerfile: Dockerfile.nexus
+    image: vlt-nexus-devcomp:latest
+    container_name: vlt-dev-nexus
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Paris
+      # L'adresse que les clients (dnf, docker, navigateur) utiliseront.
+      - NEXUS_PUBLIC_URL=${DEVCOMP_NEXUS_PUBLIC_URL:-https://localhost:8843}
+      - NEXUS_ADMIN_PASSWORD=${DEVCOMP_NEXUS_ADMIN_PASSWORD:-}
+    volumes:
+      - ./build/vaultaire_nexus:/opt/vaultaire/bin:ro
+      - ./nexus:/etc/vaultaire_nexus:ro
+      - devcomp_nexus:/var/lib/vaultaire_nexus
+    ports:
+      - "${DEVCOMP_PORT_NEXUS:-8843}:8843"
     networks:
       - devcomp

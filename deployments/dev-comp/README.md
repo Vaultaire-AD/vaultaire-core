@@ -15,7 +15,7 @@ C'est ce que faisait la préprod avant les releases automatiques.
 | agent + modules PAM + NSS | `build/vaultaire_client/` | `vlt-dev-ad:/opt/vaultaire/vaultaire_client` (servi par `create -c … -join`) |
 | `vaultaire_ctl` (vlt distant) | `build/vaultaire_ctl/` | — à installer sur le poste |
 | proxy | `build/vaultaire_proxy/` | `vlt-dev-proxy` (avec `--proxy`) |
-| Nexus | `build/vaultaire_nexus/` | — |
+| Nexus | `build/vaultaire_nexus/` | `vlt-dev-nexus` (avec `--nexus`) |
 
 `build/` est ignoré par git et **distinct de `cmd/`** : les binaires de la
 release installée par la préprod ne sont pas touchés.
@@ -31,8 +31,9 @@ release installée par la préprod ne sont pas touchés.
 | `--local` | compile sur l'hôte avec `auto-compil.sh` (plus rapide ; hôte Rocky/RHEL 9 seulement, sinon glibc différente) |
 | `--no-build` | redémarre sans recompiler |
 | `--proxy` | démarre aussi un proxy (relais Ducky) |
+| `--nexus` | démarre aussi un Nexus (dépôt de paquets) |
 | `--down` | arrête la pile, garde la base |
-| `--reset` | arrête et **efface** la base, l'identité du proxy et `build/` |
+| `--reset` | arrête et **efface** la base, l'identité du proxy, les données Nexus et `build/` |
 | `--logs` | suit le journal du core |
 | `--status` | conteneurs et date de la dernière compilation |
 
@@ -62,6 +63,21 @@ La sortie est rendue à votre utilisateur (`chown` en fin de compilation).
 | `vlt-dev-db` | MariaDB (volume `devcomp_db`) | 3307 |
 | `vlt-dev-ad` | core — **même image** que la préprod | 6666, 4443, 6643, 389, 636 |
 | `vlt-dev-proxy` | proxy, avec `--proxy` | 6667 → relais Ducky |
+| `vlt-dev-nexus` | Nexus, avec `--nexus` | 8843 |
+
+### Les images sont toujours construites
+
+À chaque lancement, les **trois** images (core, proxy, Nexus) sont
+(re)construites, que leurs conteneurs démarrent ou non. Une image qu'on ne
+construit qu'au moment d'en avoir besoin casse au pire moment, et on ne sait
+plus alors si c'est le `Dockerfile` ou le binaire du jour. Aucune ne contient de
+binaire — tout est monté — donc la construction est courte et le cache Docker
+fait le reste.
+
+L'image du Nexus (`Dockerfile.nexus`) est **propre à dev-comp** : celle de
+`src/vaultaire_nexus/deploy/` recompile le Nexus depuis Docker Hub, ce qui ne
+testerait pas le binaire du dépôt. Ici le binaire est monté, comme pour le core
+et le proxy.
 
 Les ports se changent dans `.env` (copier `.env.example`). Les valeurs par
 défaut sont celles de la préprod : ne lancez pas les deux sur la même machine
@@ -81,3 +97,20 @@ docker exec vlt-dev-ad /opt/vaultaire/bin/vaultaire_cli cluster expose <proxy> <
 ```
 
 Voir [`docs/proxy/`](../../docs/proxy/README.md).
+
+## Le Nexus
+
+```bash
+./deployments/dev-comp/dev-comp.sh --nexus
+docker exec vlt-dev-nexus cat /var/lib/vaultaire_nexus/admin.initial   # mot de passe initial
+```
+
+Portail sur <https://localhost:8843/> (certificat auto-signé), compte `admin`.
+Configuration : `nexus/config.yaml` — volontairement minimale (mode local, trois
+dépôts). L'adresse publique et le mot de passe se règlent dans `.env`
+(`DEVCOMP_NEXUS_PUBLIC_URL`, `DEVCOMP_NEXUS_ADMIN_PASSWORD`). L'état vit dans le
+volume `devcomp_nexus`, effacé par `--reset`.
+
+Le raccordement au cluster (mode `ducky`) n'est pas câblé ici : il demande une
+clé d'enrôlement `vaultaire_nexus` et un `ducky.yaml`, comme en production —
+voir [`src/vaultaire_nexus/README.md`](../../src/vaultaire_nexus/README.md).

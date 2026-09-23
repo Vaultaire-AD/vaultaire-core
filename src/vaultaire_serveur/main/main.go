@@ -1,6 +1,8 @@
 package main
 
 import (
+	"time"
+
 	"log"
 	"net"
 	"os"
@@ -130,6 +132,20 @@ func main() {
 	// sa clé est valide.
 	if err := dbenrollment.CreateTables(db.GetDatabase()); err != nil {
 		log.Fatalf("Erreur lors de la création du schéma d'enrôlement : %v", err)
+	}
+
+	// La cadence de rafraîchissement des GPO, telle que le core la décide.
+	//
+	// db_gpo s'en sert pour dire si une machine est « en retard » : trois cycles
+	// de silence. La valeur était une constante recopiée de l'agent — allonger
+	// la cadence de l'un sans toucher à l'autre faisait apparaître tout le parc
+	// en retard du jour au lendemain. Il n'y a plus qu'une source, et c'est
+	// celle-ci : le même réglage part aux agents dans les trames 05_02 et 05_03.
+	//
+	// Une fonction et non une valeur : « settings set gpo_refresh_minutes »
+	// prend effet sans redémarrage.
+	dbgpo.CadenceAgent = func() time.Duration {
+		return reglages.Duree(reglages.CleRafraichissementGPO)
 	}
 
 	// Balayage des services qui ne battent plus.

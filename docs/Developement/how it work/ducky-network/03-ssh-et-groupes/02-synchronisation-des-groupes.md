@@ -85,11 +85,15 @@ quel agent réclamer les groupes d'un autre.
 pilote tourne sur l'agent. Sa valeur part donc dans `03_09`, sur une ligne
 préfixée `sync:`.
 
-L'alternative — une constante côté agent — aurait reproduit un défaut déjà nommé
-ici : `IntervalleRapportAgent` duplique `gpo.MachineRefreshInterval`, et allonger
-l'un sans l'autre fait apparaître tout le parc en retard du jour au lendemain.
-Surtout, **un réglage qui s'affiche sans agir est plus trompeur que pas de
-réglage du tout**.
+L'alternative — une constante côté agent — aurait reproduit un défaut alors
+présent ici : `IntervalleRapportAgent` dupliquait `gpo.MachineRefreshInterval`,
+et allonger l'un sans l'autre faisait apparaître tout le parc en retard du jour
+au lendemain. Ce défaut est corrigé depuis, par la même recette : le réglage
+`gpo_refresh_minutes` voyage en queue de `05_02`/`05_03` derrière le préfixe
+`refresh:`, et le core calcule sa tolérance « en retard » depuis ce réglage
+plutôt que depuis une seconde constante. L'arbitrage, lui, ne change pas :
+**un réglage qui s'affiche sans agir est plus trompeur que pas de réglage du
+tout**.
 
 La boucle de l'agent reconstruit son `time.After` à chaque tour : un `Ticker`
 lirait sa période une seule fois, et la nouvelle valeur n'aurait d'effet qu'au

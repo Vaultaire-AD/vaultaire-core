@@ -1,0 +1,44 @@
+# ====================================================================
+# vaultaire_nexus — image d'exécution dev-comp
+# ====================================================================
+#
+# Cette image ne contient AUCUN binaire et ne compile rien, contrairement à
+# `src/vaultaire_nexus/deploy/Dockerfile` qui compile le Nexus lui-même depuis
+# Docker Hub. Ici le binaire vient de `./build/vaultaire_nexus/`, compilé par
+# dev-comp.sh et monté en volume — même principe que le core et le proxy.
+#
+# C'est ce qui fait l'intérêt de dev-comp : ce qui tourne est le binaire du
+# dépôt local, pas une compilation refaite ailleurs avec d'autres versions.
+#
+# Points de montage attendus (voir docker-compose.yml) :
+#   /opt/vaultaire/bin             <- ./build/vaultaire_nexus (lecture seule)
+#   /etc/vaultaire_nexus           <- ./nexus/ (configuration, lecture seule)
+#   /var/lib/vaultaire_nexus       <- volume nommé (blobs, catalogue, comptes)
+
+FROM debian:12-slim
+
+LABEL description="Vaultaire Nexus - image dev-comp (binaire monte en volume)"
+LABEL env="dev-comp"
+
+# gnupg : signature facultative des index APT/YUM. curl : healthcheck.
+# UID 10001, comme les autres images du dépôt.
+RUN groupadd --system --gid 10001 vaultaire \
+    && useradd --system --uid 10001 --gid 10001 \
+               --home-dir /var/lib/vaultaire_nexus --shell /usr/sbin/nologin vaultaire \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates tzdata gnupg curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /opt/vaultaire/bin /etc/vaultaire_nexus \
+                /var/lib/vaultaire_nexus /var/log/vaultaire \
+    && chown -R vaultaire:vaultaire /var/lib/vaultaire_nexus /var/log/vaultaire
+
+USER 10001:10001
+WORKDIR /var/lib/vaultaire_nexus
+EXPOSE 8843
+VOLUME ["/var/lib/vaultaire_nexus"]
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
+  CMD curl -fsk "https://127.0.0.1:8843/healthz" || curl -fs "http://127.0.0.1:8843/healthz" || exit 1
+
+ENTRYPOINT ["/opt/vaultaire/bin/vaultaire_nexus"]
+CMD ["-config", "/etc/vaultaire_nexus/config.yaml"]

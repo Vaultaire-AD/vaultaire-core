@@ -154,6 +154,7 @@ var porteesAttendues = map[string]string{
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
 	"gpo.list_compliance": "PorteeGlobale",
 	"gpo.get_compliance":  "PorteeClient",
+	"gpo.refresh":         "PorteeClient",
 
 	// Arborescence : même droit que get -g.
 	"domain.list_tree":   "PorteeGlobale",
@@ -264,6 +265,7 @@ var clesAttendues = map[string]string{
 	"gpo.delete_module":   "write:update:gpo",
 	"gpo.list_compliance": "read:get:gpo",
 	"gpo.get_compliance":  "read:get:gpo",
+	"gpo.refresh":         "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et
 	// savoir qu'il est ouvert sur une machine ne se délèguent pas pareil.
@@ -445,6 +447,7 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsLectureEtat(r)
 	EnregistrerActionsServeur(r)
 	EnregistrerActionsConformiteGPO(r)
+	EnregistrerActionsRafraichissementGPO(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
 }

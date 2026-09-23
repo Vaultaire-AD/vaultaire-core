@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"sync"
 	"time"
 	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
@@ -13,12 +14,45 @@ import (
 	duckykey "vaultaire/ducky-network/key_management"
 )
 
-// Le gabarit de connexion est analysé au chargement du paquet : une erreur ici
-// empêche le démarrage, ce qui est voulu — sans page de connexion, personne
-// n'entre. Le chemin passe par CheminGabarit, seule source de vérité.
-var templates = template.Must(template.ParseFiles(CheminGabarit("sso_login.html")))
+// Le gabarit de connexion, analysé à la PREMIÈRE demande et gardé ensuite.
+//
+// # Pourquoi plus au chargement du paquet
+//
+// Il l'était, par un template.Must en variable de paquet : une page de
+// connexion absente empêchait le démarrage, ce qui est la bonne décision —
+// sans elle, personne n'entre.
+//
+// Mais un Must en variable de paquet s'exécute à l'IMPORT, donc aussi quand
+// `go test` charge ce paquet. Le chemin est relatif au répertoire de travail,
+// qui est alors celui du paquet et non la racine du dépôt : le binaire de test
+// paniquait au chargement, AVANT le premier test, et tous les tests du portail
+// étaient perdus — pour un fichier qui existe bel et bien.
+//
+// L'analyse est donc différée. Le démarrage, lui, contrôle toujours : voir
+// ChargerGabaritConnexion, appelée par StartWebServer.
+var (
+	gabaritConnexionUneFois sync.Once
+	gabaritConnexion        *template.Template
+	gabaritConnexionErr     error
+)
+
+// ChargerGabaritConnexion analyse le gabarit une fois et rend l'erreur telle
+// quelle.
+func ChargerGabaritConnexion() (*template.Template, error) {
+	gabaritConnexionUneFois.Do(func() {
+		gabaritConnexion, gabaritConnexionErr = template.ParseFiles(CheminGabarit("sso_login.html"))
+	})
+	return gabaritConnexion, gabaritConnexionErr
+}
 
 func StartWebServer() {
+	// Sans page de connexion, le portail n'a aucun intérêt : on s'arrête ici,
+	// comme le faisait le chargement du paquet, mais à un moment où le message
+	// est lisible et n'emporte pas les tests avec lui.
+	if _, err := ChargerGabaritConnexion(); err != nil {
+		log.Fatalf("Gabarit de connexion illisible (%s) : %v", CheminGabarit("sso_login.html"), err)
+	}
+
 	certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.WebServerCertName)
 	if err != nil {
 		certPEM, keyPEM, err = security.GenerateSelfSignedCertPEM()

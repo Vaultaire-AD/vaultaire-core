@@ -39,13 +39,13 @@ import (
 // EnregistrerActionsConformiteGPO ajoute les lectures d'état de conformité.
 func EnregistrerActionsConformiteGPO(r *Registre) {
 	r.MustEnregistrer(Definition{
-		Nom:             "gpo.list_compliance",
-		CleRBAC:         "read:get:gpo",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerConformite,
-		Resume:          "état d'application des GPO sur le parc",
-		Executer:        listerConformite,
+		Nom:           "gpo.list_compliance",
+		CleRBAC:       "read:get:gpo",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerConformite,
+		Resume:        "état d'application des GPO sur le parc",
+		Executer:      listerConformite,
 	})
 
 	r.MustEnregistrer(Definition{

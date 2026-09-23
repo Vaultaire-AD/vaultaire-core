@@ -18,8 +18,9 @@
 | `03_08` | core | group_sync_request | liste des groupes des domaines de la machine — contenu vide |
 | `03_09` | client | group_sync_list | `sync:<minutes>` puis une ligne `<nom>:<id_group>` par groupe |
 | `03_10` | client | group_sync_denied | refus : l'agent garde ses groupes |
+| `03_11` | core | user_session_closed | fin d'une session utilisateur — sans réponse |
 
-Plage utilisée : `03_01` à `03_10`.
+Plage utilisée : `03_01` à `03_11`.
 
 ---
 
@@ -58,12 +59,67 @@ l'identique, et l'empreinte serait restée la clé.
   03_09  sync:<minutes>\n<nom>:<id_group>…
   03_10  <raison>
 
+03_11  <utilisateur@domaine>            fin de session — aucune réponse
+
 03_04  OBSOLÈTE — refusée par « obsolete client, update required »
 03_05  OBSOLÈTE — l'agent la journalise en WARNING
 ```
 
 `03_08` à `03_10` ont leur propre page : [3.2 — Synchronisation des
 groupes de la machine](./02-synchronisation-des-groupes.md).
+
+## Le cycle de vie d'une session utilisateur
+
+Depuis la disparition du défi, l'authentification d'une personne passe **dans le
+tunnel de la machine** : aucune session Ducky n'est ouverte à son nom. Il a
+longtemps manqué les deux bouts du cycle de vie qui en découle.
+
+### Ouverture — écrite par `03_01`
+
+Une `03_01` qui franchit tous les contrôles écrit désormais une ligne
+`did_login` (compte, machine). Sans elle, `status -u` ne listait que les lignes
+du compte `vaultaire` — une par machine du parc — et jamais la personne
+réellement connectée : le core savait qui il venait de laisser entrer, et
+l'oubliait dans la même seconde.
+
+La clé enregistrée est celle du **tunnel machine**, faute de mieux : une session
+PAM n'en a pas à elle, et c'est bien sous cette clé que l'authentification a
+voyagé.
+
+### Fermeture — `03_11`
+
+```
+03_11  <utilisateur@domaine>
+```
+
+Émise par la fermeture PAM (`pam_sm_close_session`), elle demande au core
+d'effacer cette ligne. Trois décisions la définissent :
+
+- **ce n'est pas `02_05`.** `02_05` veut dire « ferme cette connexion » ; la
+  fermeture PAM l'avait employée autrefois et coupait le tunnel de toute la
+  machine à chaque déconnexion (point 64). Une trame qui n'efface qu'une ligne
+  ne pouvait pas être celle qui ferme une connexion ;
+- **aucune réponse.** L'agent n'a aucune décision à prendre selon l'issue : la
+  session locale est déjà fermée quand PAM appelle son `close_session`. Un
+  accusé que personne ne lit serait une trame de plus à router et à tester ;
+- **la machine vient de l'en-tête authentifié**, jamais du contenu. Un agent ne
+  peut donc fermer que des sessions ouvertes chez lui — sinon n'importe quel
+  poste effacerait les sessions du parc entier.
+
+Le compte `vaultaire` est refusé explicitement : c'est le tunnel de la machine,
+et l'effacer la ferait disparaître de `status -c` alors qu'elle est bien là.
+
+### Expiration — le battement de la machine
+
+Une ligne `did_login` vaut dix minutes. Une session utilisateur n'a pas de
+battement à elle : c'est celui de la **machine** (`02_12`) qui prolonge toutes
+les lignes du poste, la sienne comme celles de ses utilisateurs.
+
+La contrepartie est voulue : une machine éteinte cesse de battre, et ses
+sessions utilisateur expirent avec elle. Une déconnexion dont la `03_11` se perd
+reste en revanche affichée tant que la machine tourne — un défaut d'affichage,
+assumé, contre l'alternative qui afficherait comme partis des gens toujours
+connectés.
 
 ## La ligne des groupes dans `03_02`
 

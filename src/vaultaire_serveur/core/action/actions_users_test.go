@@ -1,21 +1,12 @@
 package action
 
 import (
-	"crypto/sha256"
 	"encoding/hex"
 	"strings"
 	"testing"
-)
 
-// sha256Hex reproduit le calcul attendu, indépendamment du code testé.
-//
-// Écrit ici plutôt que réutilisé depuis la source : un test qui appellerait la
-// fonction qu'il vérifie ne comparerait rien. Il faut une seconde expression de
-// la même règle pour que la comparaison ait un sens.
-func sha256Hex(donnees []byte) string {
-	somme := sha256.Sum256(donnees)
-	return hex.EncodeToString(somme[:])
-}
+	"vaultaire/core/global/security"
+)
 
 // Tests des règles portées depuis les deux anciennes versions.
 //
@@ -104,51 +95,69 @@ func TestHachageSelAleatoire(t *testing.T) {
 	}
 }
 
-// TestFormeDuSelEtDuHache : longueurs attendues par la base et par le client.
+// TestFormeDuSelEtDuHache : la forme attendue par la base ET par la relecture.
 //
-// Le client recalcule HMAC(SHA256(sel‖mot de passe)) à partir du sel reçu ; une
-// longueur inattendue casserait l'authentification par mot de passe du réseau
-// Ducky, et l'erreur n'apparaîtrait qu'à la première connexion d'un nouveau
-// compte.
+// # Ce test décrivait l'ancien schéma
+//
+// Il exigeait un haché de 32 octets hexadécimaux — SHA-256(sel‖mot de passe),
+// que le client recalculait de son côté. Le stockage est passé à argon2id
+// (`core/global/security`) : l'empreinte est une chaîne PHC qui porte ses
+// propres paramètres, et c'est le CORE qui vérifie, le mot de passe transitant
+// dans le tunnel depuis le point 29.
+//
+// Le test n'avait pas suivi et échouait à chaque exécution. Un test rouge en
+// permanence ne surveille plus rien : on cesse de le lire, et le vrai échec du
+// jour se perd dans le bruit. Il décrit donc désormais le contrat réel.
 func TestFormeDuSelEtDuHache(t *testing.T) {
-	sel, hache, err := hacherMotDePasse("motdepasse")
+	sel, empreinte, err := hacherMotDePasse("motdepasse")
 	if err != nil {
 		t.Fatalf("hachage : %v", err)
 	}
 
+	// Le sel reste écrit en hexadécimal dans la colonne `salt`, NOT NULL et
+	// encore lue pour les comptes hérités.
 	selBrut, err := hex.DecodeString(sel)
 	if err != nil {
 		t.Fatalf("le sel n'est pas de l'hexadécimal : %v", err)
 	}
-	if len(selBrut) != 16 {
-		t.Fatalf("sel de %d octets, attendu 16", len(selBrut))
+	if len(selBrut) != security.ArgonSelOctets {
+		t.Fatalf("sel de %d octets, attendu %d", len(selBrut), security.ArgonSelOctets)
 	}
 
-	hacheBrut, err := hex.DecodeString(hache)
-	if err != nil {
-		t.Fatalf("le haché n'est pas de l'hexadécimal : %v", err)
+	if !strings.HasPrefix(empreinte, "$argon2id$") {
+		t.Fatalf("empreinte %q : attendu une chaîne PHC argon2id — "+
+			"une empreinte sans ses paramètres ne serait plus relisible le jour où ils changent", empreinte)
 	}
-	if len(hacheBrut) != 32 {
-		t.Fatalf("haché de %d octets, attendu 32 (SHA-256)", len(hacheBrut))
+	if champs := strings.Split(empreinte, "$"); len(champs) != 6 {
+		t.Fatalf("empreinte %q : %d champs, attendu 6 ($argon2id$v=…$m=…,t=…,p=…$sel$somme)",
+			empreinte, len(champs))
 	}
 }
 
-// TestHachageNeModifiePasLeMotDePasse vérifie l'ordre sel‖mot de passe.
+// TestLEmpreinteSeRelitParVerifier : le haché produit ici est celui que les
+// quatre portes (web, LDAP, Ducky, PAM) relisent.
 //
-// L'ordre compte : le client calcule SHA256(sel puis mot de passe). L'inverser
-// ici produirait un haché que le client ne retrouverait jamais, et l'échec
-// n'apparaîtrait qu'à la connexion — loin d'ici.
-func TestHachageOrdreSelPuisMotDePasse(t *testing.T) {
-	sel, hache, err := hacherMotDePasse("secret")
+// C'est ce qui remplace l'ancien contrôle de l'ordre « sel‖mot de passe » :
+// cette règle appartenait au schéma SHA-256, où le client refaisait le calcul.
+// Ce qui compte aujourd'hui est qu'une empreinte fraîche soit acceptée par
+// `security.Verifier` — et n'exige AUCUN réencodage, sans quoi chaque connexion
+// réécrirait la base pour rien.
+func TestLEmpreinteSeRelitParVerifier(t *testing.T) {
+	sel, empreinte, err := hacherMotDePasse("secret")
 	if err != nil {
 		t.Fatalf("hachage : %v", err)
 	}
 
-	selBrut, _ := hex.DecodeString(sel)
-	attendu := sha256Hex(append(append([]byte{}, selBrut...), []byte("secret")...))
-	if hache != attendu {
-		t.Fatalf("haché %s, attendu %s — l'ordre sel‖mot de passe n'est pas respecté, "+
-			"le client ne retrouverait jamais cette valeur", hache, attendu)
+	ok, aReencoder := security.Verifier("secret", sel, empreinte)
+	if !ok {
+		t.Fatal("le mot de passe juste haché est refusé : le stockage et la vérification divergent")
+	}
+	if aReencoder {
+		t.Error("une empreinte fraîche est déclarée à réencoder : chaque connexion réécrirait la base")
+	}
+
+	if ok, _ := security.Verifier("mauvais", sel, empreinte); ok {
+		t.Fatal("un mot de passe faux est accepté")
 	}
 }
 

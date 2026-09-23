@@ -8,6 +8,7 @@ import (
 	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
 	dbgroups "vaultaire/core/database/db_groups"
+	dbsessions "vaultaire/core/database/db_sessions"
 	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
@@ -27,6 +28,8 @@ func SSH_Client_Manager(trames_content storage.Trames_struct_client, duckysessio
 		message = SSH_SEND_Fetch_Pubkey(trames_content)
 	case "08":
 		message = SSH_SEND_GroupSync(trames_content)
+	case "11":
+		message = SSH_Fin_De_Session(trames_content)
 	default:
 
 	}
@@ -200,6 +203,24 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	logs.Write_Log("INFO", "SSH access granted for user "+sshUser+" (Admin: "+strconv.FormatBool(isadmin)+
 		", groupes: "+strconv.Itoa(len(groupes))+")"+"| On client :"+trames_content.ClientSoftwareID)
 
+	// La session est ENREGISTRÉE, et c'est ce qui manquait à `status -u`.
+	//
+	// Depuis la disparition du défi, l'authentification d'un utilisateur passe
+	// dans le tunnel de la MACHINE : aucune session Ducky n'est ouverte à son
+	// nom, et rien n'était donc écrit en base. `status -u` ne listait que les
+	// lignes du compte `vaultaire` — une par machine — et jamais la personne
+	// réellement connectée. Le core savait qui il avait laissé entrer, et
+	// l'oubliait dans la même seconde.
+	//
+	// La clé enregistrée est celle du tunnel machine, faute de mieux : une
+	// session PAM n'en a pas à elle. C'est la clé sous laquelle
+	// l'authentification a réellement voyagé, donc la seule vraie.
+	//
+	// Cet enregistrement vient APRÈS tous les contrôles : une ligne écrite plus
+	// tôt ferait apparaître dans `status -u` des gens à qui l'accès a été
+	// refusé.
+	dbsessions.AddLoginEntry(db, userid, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
+
 	// La ligne des groupes porte un PRÉFIXE, et se place avant les clés.
 	//
 	// Les clés occupent « tout le reste » du contenu : il n'existe donc aucune
@@ -286,6 +307,12 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	if err != nil {
 		logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser+" (fetch-key)")
 		return ""
+	}
+	if len(sshkeys) == 0 {
+		// Rien à distribuer, et ce n'est pas un incident : ce compte n'a pas de
+		// clé. En DEBUG, donc — une ligne d'ERROR par connexion pour un état
+		// parfaitement normal finit par cacher les vraies.
+		logs.Write_Log("DEBUG", "aucune clé publique pour "+sshUser+" (fetch-key)")
 	}
 
 	logs.Write_Log("INFO", "Cles publiques transmises pour "+sshUser+"@"+domaine+" (fetch-key)")

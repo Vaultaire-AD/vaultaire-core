@@ -143,10 +143,10 @@ func partageUnGroupe(a, b []int) bool {
 //
 // # L'ordre, et ce qu'il coûte
 //
-//	1. les PROXIES avant les cores ;
-//	2. à rôle égal, les nœuds AFFINS d'abord ;
-//	3. à affinité égale, la priorité la plus BASSE d'abord ;
-//	4. à priorité égale, le nom — pour que l'ordre soit reproductible.
+//  1. les PROXIES avant les cores ;
+//  2. à rôle égal, les nœuds AFFINS d'abord ;
+//  3. à affinité égale, la priorité la plus BASSE d'abord ;
+//  4. à priorité égale, le nom — pour que l'ordre soit reproductible.
 //
 // # L'affinité vient APRÈS le rôle, et avant la priorité
 //

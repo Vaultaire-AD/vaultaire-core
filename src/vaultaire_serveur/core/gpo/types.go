@@ -166,12 +166,12 @@ func (m Module) EffectiveDriftMode() DriftMode {
 
 // Policy est une GPO complète.
 type Policy struct {
-	ID          int       `json:"id,omitempty"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Scope       Scope     `json:"scope"`
-	Version     int       `json:"version"`
-	Enabled     bool      `json:"enabled"`
+	ID          int    `json:"id,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description,omitempty"`
+	Scope       Scope  `json:"scope"`
+	Version     int    `json:"version"`
+	Enabled     bool   `json:"enabled"`
 
 	// DriftMode décide de ce que les agents font d'un écart sur les modules de
 	// cette GPO : le corriger au cycle suivant (enforce) ou seulement le

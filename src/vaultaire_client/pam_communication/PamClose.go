@@ -1,11 +1,14 @@
 package pamcommunication
 
 import (
-	"duckynetworkclient/V1/duckynetwork/logs"
-	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
 	"encoding/json"
 	"fmt"
 	"net"
+
+	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/sendmessage"
+	"duckynetworkclient/V1/duckynetwork/storage"
+	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
 )
 
 type CloseRequest struct {
@@ -36,6 +39,18 @@ type CloseRequest struct {
 // La fermeture ne touche donc plus au tunnel. Elle retire seulement une
 // éventuelle session propre au compte (l'ancien mode « client simple »), et
 // jamais une session `vaultaire`.
+//
+// # Ce qu'elle fait de nouveau : prévenir le core (03_11)
+//
+// Ne plus rien fermer avait un effet de bord : le core n'apprenait JAMAIS
+// qu'une personne s'était déconnectée. Sa ligne de session restait affichée
+// dans `status -u` jusqu'à expiration — et comme le battement de la machine
+// prolonge les sessions de ses utilisateurs, « jusqu'à expiration » voulait
+// dire « tant que la machine est allumée ».
+//
+// 03_11 dit donc au core d'effacer cette ligne, et rien d'autre. Elle passe par
+// le tunnel machine, comme l'authentification, et ne ferme aucune connexion :
+// c'est précisément pourquoi ce n'est pas un 02_05.
 func handleCloseRequest(conn net.Conn, payload string) {
 	defer conn.Close()
 
@@ -58,6 +73,8 @@ func handleCloseRequest(conn net.Conn, payload string) {
 		return
 	}
 
+	signalerFinDeSession(closeReq.User)
+
 	target, ok := sto_session.SessionsUser.ResolveForClose(closeReq.User)
 	if !ok || target == nil || target.Username != closeReq.User {
 		// Cas normal : l'authentification est passée par le tunnel machine,
@@ -69,4 +86,37 @@ func handleCloseRequest(conn net.Conn, payload string) {
 
 	sto_session.SessionsUser.RemoveSession(target.SessionID)
 	logs.Write_log("INFO", fmt.Sprintf("Session Ducky de %s (id=%s) retirée", closeReq.User, target.SessionID))
+}
+
+// signalerFinDeSession émet 03_11 dans le tunnel machine.
+//
+// # Une lecture NON bloquante de la session
+//
+// GetValidVaultaireSession, et non WaitForVaultaireSession : la fermeture PAM
+// est appelée par le système pendant une déconnexion, et l'attente pouvait
+// durer jusqu'à cent secondes. Faire patienter une fermeture de session pour
+// rafraîchir un tableau de bord serait un mauvais échange — d'autant que le
+// tunnel absent signifie généralement que le core est injoignable, auquel cas
+// l'attente ne servirait à rien non plus.
+//
+// # Pourquoi l'échec n'est que journalisé
+//
+// La personne est partie ; il n'y a rien à annuler. Sans cette trame, la ligne
+// de session reste affichée jusqu'à l'extinction de la machine — un défaut
+// d'affichage, pas un défaut de sécurité : un compte révoqué l'est par le kill
+// switch, qui ne passe pas par ici.
+func signalerFinDeSession(utilisateur string) {
+	session := sto_session.SessionsUser.GetValidVaultaireSession()
+	if session == nil || session.DuckySession == nil {
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"Fin de session de %s non signalée au core : aucun tunnel machine établi", utilisateur))
+		return
+	}
+
+	trame := sendmessage.BuildClientTrame("03_11", "serveur_central",
+		string(session.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID,
+		utilisateur)
+	sendmessage.SendMessage(trame, session.DuckySession)
+
+	logs.Write_log("DEBUG", fmt.Sprintf("03_11 envoyée : fin de session de %s", utilisateur))
 }

@@ -191,7 +191,8 @@ Deux moments :
 
 | Moment | Scope | Où |
 |--------|-------|-----|
-| Démarrage du service, puis toutes les heures | machine | `cycle.go`, `StartMachineRefresh` |
+| Démarrage du service, puis à la cadence du core | machine | `cycle.go`, `StartMachineRefresh` |
+| Reconnexion du tunnel, ou demande du core (`05_18`) | machine | `cycle.go`, `cadence.go` |
 | Après authentification PAM, avant octroi de la connexion | user | `PAM_Handler.go`, `applyUserGPO` |
 
 Le cycle user est lancé depuis la goroutine PAM et **non** depuis le
@@ -928,9 +929,27 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 
 ### Forcer un cycle
 
-Il n'existe pas encore d'équivalent de `gpupdate /force` (TO-DO 50). Pour
-l'instant : redémarrer le service client, ou attendre le rafraîchissement horaire
-(`MachineRefreshInterval` dans `vaultaire_client/gpo/cycle.go`).
+```bash
+vlt gpo refresh <computeur_id>
+vlt gpo refresh --all
+```
+
+Le core pousse une trame `05_18` à la machine, qui repart sur son cycle
+**ordinaire** — mêmes calculs, même empreinte, mêmes rapports. Une trame de
+réveil n'est pas un second chemin d'application.
+
+Trois autres déclenchements existent, sans intervention :
+
+| Quand | Ce qui se passe |
+|---|---|
+| Le tunnel est rétabli | un cycle part dans les secondes qui suivent (`surveillerReconnexion`) |
+| Un cycle a échoué | nouvel essai dégressif, plafonné à la cadence (paquet `backoff`) |
+| La cadence change | la boucle se réarme sans faire de cycle — un changement de réglage ne doit pas rafraîchir tout le parc d'un coup |
+
+**La cadence est le réglage `gpo_refresh_minutes` du core** (une heure par
+défaut), envoyé aux agents en queue de `05_02` et `05_03`. `MachineRefreshInterval`
+n'est plus qu'un défaut de démarrage : voir
+[`Reglages_de_duree.md` § 6 bis](./Reglages_de_duree.md).
 
 ---
 
@@ -942,10 +961,6 @@ Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
 |-------|------|-------|
 | **Scan de dérive du scope utilisateur** | Non implémenté — seul le scope machine est scanné | 33 |
 | Signature des politiques par le serveur central | Champ prévu, non rempli ni vérifié | 52 |
-| Forçage d'un cycle depuis le serveur | Non implémenté | 50 |
-| Cycle déclenché à la reconnexion du tunnel | Non implémenté — attend le tour horaire | 50 |
-| Retentative rapprochée après un cycle en échec | Non implémenté — attend le tour horaire | 50 |
-| Intervalle de rafraîchissement configurable | Constante d'une heure dans le code | 51 |
 | Persistance des rapports d'application en base | Journalisés seulement | 53 |
 | `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent | — |
 

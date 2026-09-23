@@ -53,6 +53,16 @@ var executerBoucle = func() { EnableServerCommunication("vaultaire", "vaultaire"
 // pause est une variable pour que les tests n'attendent pas.
 var pause = time.Sleep
 
+// estPersistant dit si la boucle doit être relancée.
+//
+// Variable, comme executerBoucle et pause, pour la même raison : un test qui
+// veut arrêter la supervision écrivait directement dans storage.Persistent
+// depuis SA goroutine, pendant que celle-ci la lisait — une course que -race
+// signale, à juste titre. En production la valeur est posée une fois au
+// démarrage et jamais retouchée ; l'indirection ne coûte rien et rend
+// l'arrêt contrôlable sans écrire dans un global partagé.
+var estPersistant = func() bool { return storage.Persistent }
+
 func superviserTunnel() {
 	attente := backoff.New()
 	for {
@@ -67,7 +77,7 @@ func superviserTunnel() {
 			return true
 		}()
 
-		if !storage.Persistent {
+		if !estPersistant() {
 			// Mode une-passe (fetch-key) : pas de relance.
 			return
 		}

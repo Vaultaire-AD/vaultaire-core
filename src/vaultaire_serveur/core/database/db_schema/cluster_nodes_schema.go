@@ -68,9 +68,9 @@ var colonnesAjoutees = []struct{ Nom, Definition string }{
 //
 // # L'ordre des trois gestes n'est pas indifférent
 //
-//	1. la colonne, sinon rien de ce qui suit n'a de sens ;
-//	2. la PURGE des lignes sans propriétaire ;
-//	3. l'index UNIQUE, qui échouerait sur ces lignes.
+//  1. la colonne, sinon rien de ce qui suit n'a de sens ;
+//  2. la PURGE des lignes sans propriétaire ;
+//  3. l'index UNIQUE, qui échouerait sur ces lignes.
 //
 // # Pourquoi purger, et pourquoi c'est sans danger ICI
 //

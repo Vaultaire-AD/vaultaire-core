@@ -7,6 +7,7 @@ import (
 
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 )
 
@@ -20,6 +21,10 @@ import (
 //	05_09 demande fragment → 05_10 fragment  / 05_11 erreur           (2 scopes)
 //	05_12 rapport          → 05_13 accusé    / 05_14 erreur           (2 scopes)
 //	05_15 conformité       → 05_16 accusé    / 05_17 erreur           (2 scopes)
+//
+//	05_18 « rafraîchis maintenant » — la SEULE trame 05 émise par le serveur de
+//	      lui-même, et elle ne transporte aucune politique : elle fait repartir
+//	      le client sur une 05_01 ordinaire (voir rafraichissement.go).
 //
 // Chaque demande est suivie de ses réponses : le numéro de trame porte le scope
 // pour tout ce qui est spécifique à un scope, le scope ne voyage dans le contenu
@@ -70,8 +75,9 @@ func GPO_Trame_Manager(trames storage.Trames_struct_client, duckysession *storag
 	case "15":
 		return handleDriftReport(trames)
 	default:
-		// 05_02, 03, 04, 06, 07, 08, 10, 11, 13, 14, 16 et 17 sont des trames
-		// serveur → client : les recevoir signale un client mal implémenté.
+		// 05_02, 03, 04, 06, 07, 08, 10, 11, 13, 14, 16, 17 et 18 sont des
+		// trames serveur → client : les recevoir signale un client mal
+		// implémenté.
 		logs.Write_LogCode("WARNING", logs.CodeGPOTransport, fmt.Sprintf(
 			"gpo: sous-ordre 05_%s inattendu en réception serveur (client %s)", sub, trames.ClientSoftwareID))
 		return ""
@@ -87,6 +93,47 @@ func GPO_Trame_Manager(trames storage.Trames_struct_client, duckysession *storag
 func reply(action, sessionKey string, contentLines ...string) string {
 	parts := append([]string{action, "serveur_central", sessionKey}, contentLines...)
 	return strings.Join(parts, "\n")
+}
+
+// PrefixeCadence ouvre la ligne de cadence des réponses machine (05_02, 05_03).
+//
+// # Pourquoi la cadence voyage avec la politique
+//
+// `gpo_refresh_minutes` est un réglage du core, mais la boucle qu'il pilote
+// tourne sur l'AGENT — exactement le cas de `group_sync_minutes` et de la trame
+// 03_09, dont ceci reprend la recette.
+//
+// Une constante côté agent aurait laissé deux valeurs à tenir d'accord, dont
+// une invisible depuis l'interface : un réglage qui s'affiche sans rien changer
+// au comportement est plus trompeur que pas de réglage du tout.
+//
+// La ligne est AJOUTÉE EN QUEUE et reconnue à son PRÉFIXE, jamais à son rang.
+// Un agent resté à l'ancienne version lit les champs qu'il connaît et ignore
+// celui-ci ; un core ancien ne l'envoie pas, et l'agent garde son défaut. Même
+// arbitrage que le port et l'empreinte dans 04_01.
+const PrefixeCadence = "refresh:"
+
+// ligneCadence rend « refresh:<minutes> », ou une chaîne vide si la cadence est
+// aberrante — auquel cas l'agent garde la sienne, ce qui vaut mieux que de lui
+// faire appliquer un zéro.
+func ligneCadence() string {
+	minutes := reglages.Valeur(reglages.CleRafraichissementGPO)
+	if minutes <= 0 {
+		return ""
+	}
+	return PrefixeCadence + strconv.Itoa(minutes)
+}
+
+// avecCadence ajoute la ligne de cadence aux lignes d'une réponse MACHINE.
+//
+// Les réponses de scope USER n'en portent pas : un cycle utilisateur est
+// déclenché par une ouverture de session, pas par une boucle — il n'y a aucune
+// cadence à régler de ce côté.
+func avecCadence(lignes []string) []string {
+	if c := ligneCadence(); c != "" {
+		return append(lignes, c)
+	}
+	return lignes
 }
 
 // replyManifest construit 05_02 (machine) ou 05_06 (user).
@@ -106,7 +153,7 @@ func replyManifest(sessionKey string, m gpo.Manifest) string {
 	if m.Scope == gpo.ScopeUser {
 		return reply("05_06", sessionKey, append([]string{m.Username}, common...)...)
 	}
-	return reply("05_02", sessionKey, common...)
+	return reply("05_02", sessionKey, avecCadence(common)...)
 }
 
 // replyUnchanged construit 05_03 (machine) ou 05_07 (user).
@@ -114,7 +161,10 @@ func replyUnchanged(sessionKey string, scope gpo.Scope, username, fingerprint st
 	if scope == gpo.ScopeUser {
 		return reply("05_07", sessionKey, username, fingerprint)
 	}
-	return reply("05_03", sessionKey, fingerprint)
+	// 05_03 dit « rien à faire » — et c'est justement le cas le plus fréquent,
+	// donc le seul chemin par lequel une cadence modifiée atteindra un parc
+	// dont la politique ne bouge pas.
+	return reply("05_03", sessionKey, avecCadence([]string{fingerprint})...)
 }
 
 // replyScopeError construit 05_04 (machine) ou 05_08 (user).

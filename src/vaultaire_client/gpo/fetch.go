@@ -245,8 +245,13 @@ func HandleTrame(sub, sessionKey, content string) {
 
 	switch sub {
 	case "02":
+		// La cadence est lue AVANT le manifeste : un manifeste malformé
+		// interrompt la suite, et il n'y a aucune raison de perdre au passage un
+		// réglage que le serveur vient d'annoncer.
+		appliquerCadence(lines)
 		handleManifest(sessionKey, ScopeMachine, "", lines)
 	case "03":
+		appliquerCadence(lines)
 		handleUnchanged(ScopeMachine, "", lineAt(lines, 0))
 	case "04":
 		handleScopeError(ScopeMachine, "", lineAt(lines, 0), lineAt(lines, 1))
@@ -268,6 +273,18 @@ func HandleTrame(sub, sessionKey, content string) {
 	case "14":
 		logs.Write_log("WARNING", fmt.Sprintf(
 			"GPO: rapport d'application refuse par le serveur (%s) : %s", lineAt(lines, 2), lineAt(lines, 3)))
+	case "18":
+		// Seule trame 05 que le serveur ÉMET de lui-même : « rafraîchis
+		// maintenant ». Elle ne porte qu'un motif, journalisé pour qu'un cycle
+		// hors tour reste explicable dans le journal de l'agent.
+		//
+		// Aucune réponse : l'issue du cycle part dans les rapports 05_12 et
+		// 05_15, qui disent bien plus qu'un accusé de réception.
+		motif := strings.TrimSpace(lineAt(lines, 0))
+		if motif == "" {
+			motif = "demande du serveur"
+		}
+		DemanderCycleImmediat(motif)
 	default:
 		logs.Write_log("DEBUG", "GPO: sous-ordre 05_"+sub+" non gere cote client")
 	}

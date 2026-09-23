@@ -187,7 +187,14 @@ func main() {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
 	}
-	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu())
+	// L'identité de la machine. Son absence n'arrête pas l'agent — il peut
+	// encore servir un « fetch-key » et journaliser — mais elle se DIT : sans
+	// elle, aucune session ne s'ouvrira et le journal doit le nommer une fois,
+	// au démarrage, plutôt qu'à chaque tentative.
+	if !yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu()) {
+		logs.Write_log("CRITICAL", "identité de la machine illisible ("+
+			storage.SoftwarePathResolu()+") : aucune session ne pourra s'ouvrir")
+	}
 
 	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
 	purgeGroupes := flag.Bool("purge-groups", false,

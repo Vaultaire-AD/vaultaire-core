@@ -3,8 +3,16 @@ package storage
 import "time"
 
 type UserConnected struct {
-	ID          int
-	Username    string
+	ID       int
+	Username string
+	// Machine est l'identifiant du poste sur lequel la session est ouverte.
+	//
+	// Sans elle, `status -u` affichait une liste de noms : la même personne
+	// connectée sur trois machines donnait trois lignes identiques, et le
+	// compte `vaultaire` — le tunnel de chaque machine du parc — en donnait
+	// une par machine, toutes indiscernables. Une session se lit « qui, et
+	// où » ; la moitié manquait.
+	Machine     string
 	CreatedAt   string
 	TokenExpiry string
 }

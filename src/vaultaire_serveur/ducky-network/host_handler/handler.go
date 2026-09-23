@@ -20,6 +20,28 @@ import (
 	"vaultaire/ducky-network/trame"
 )
 
+// RefusEnregistrement compose le 04_02 d'un enregistrement REFUSÉ.
+//
+// Un refus silencieux était le défaut du point 73 : le core écartait le nœud et
+// ne répondait rien, le nœud journalisait « enregistré » et battait dans le
+// vide. Il ne figurait ni dans la liste servie aux agents, ni dans l'exemption
+// de plafond du limiteur — et rien, de son côté, ne le disait.
+//
+// Le motif est renvoyé au nœud parce qu'il est le seul à pouvoir le corriger :
+// c'est sa configuration (hostname, port, empreinte, type) qui est en cause. Il
+// ne révèle rien qu'il ne sache déjà — jamais l'état d'un AUTRE nœud : une
+// usurpation de hostname répond « nom déjà pris », et non par qui.
+func RefusEnregistrement(tramesContent storage.Trames_struct_client, motif string) string {
+	if strings.TrimSpace(motif) == "" {
+		motif = "refusé"
+	}
+	// Une seule ligne : un motif multiligne décalerait la lecture côté nœud.
+	motif = strings.ReplaceAll(strings.ReplaceAll(motif, "\n", " "), "\r", " ")
+	return trame.ReponseClient("04_02",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
+		"refus", motif)
+}
+
 // HandleHostTrame traite les trames 04_xx (Cluster / Service discovery) et retourne la réponse à envoyer.
 func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duckysession *storage.DuckySession) (string, error) {
 	if len(tramesContent.Message_Order) < 2 {
@@ -84,7 +106,7 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
 	if err != nil {
 		logs.Write_Log("SECURITY", "register_host refusé : "+err.Error())
-		return "", fmt.Errorf("register_host: %w", err)
+		return RefusEnregistrement(tramesContent, "propriétaire introuvable pour cette session"), fmt.Errorf("register_host: %w", err)
 	}
 
 	// Le RÔLE aussi vient du type de programme, et non du contenu.
@@ -101,12 +123,14 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		logs.Write_Log("SECURITY", fmt.Sprintf(
 			"register_host refusé : %q est de type %q, qui ne prend aucun rôle de nœud",
 			proprietaire, duckysession.BoundClientType))
-		return "", fmt.Errorf("register_host: ce type de client ne s'enregistre pas comme nœud du cluster")
+		return RefusEnregistrement(tramesContent, "ce type de client ne s'enregistre pas comme nœud du cluster"),
+			fmt.Errorf("register_host: ce type de client ne s'enregistre pas comme nœud du cluster")
 	}
 
 	lines := strings.Split(content, "\n")
 	if len(lines) < 5 {
-		return "", fmt.Errorf("register_host: contenu invalide (attendu hostname, fqdn, ip, role, domain)")
+		return RefusEnregistrement(tramesContent, "contenu invalide (attendu hostname, fqdn, ip, role, domain)"),
+			fmt.Errorf("register_host: contenu invalide (attendu hostname, fqdn, ip, role, domain)")
 	}
 	hostname := strings.TrimSpace(lines[0])
 	fqdn := strings.TrimSpace(lines[1])
@@ -121,7 +145,8 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	}
 	domain := strings.TrimSpace(lines[4])
 	if hostname == "" || ip == "" {
-		return "", fmt.Errorf("register_host: hostname et ip requis")
+		return RefusEnregistrement(tramesContent, "hostname et ip requis"),
+			fmt.Errorf("register_host: hostname et ip requis")
 	}
 	if fqdn == "" {
 		fqdn = hostname
@@ -132,7 +157,8 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		if texte := strings.TrimSpace(lines[5]); texte != "" {
 			p, err := strconv.Atoi(texte)
 			if err != nil || p < 1 || p > 65535 {
-				return "", fmt.Errorf("register_host: port invalide (%q)", texte)
+				return RefusEnregistrement(tramesContent, fmt.Sprintf("port invalide (%q)", texte)),
+					fmt.Errorf("register_host: port invalide (%q)", texte)
 			}
 			port = p
 		}
@@ -146,7 +172,8 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	if len(lines) > 6 {
 		empreinte = strings.TrimSpace(lines[6])
 		if empreinte != "" && !strings.HasPrefix(empreinte, "SHA256:") {
-			return "", fmt.Errorf("register_host: empreinte de forme inattendue (%q)", empreinte)
+			return RefusEnregistrement(tramesContent, fmt.Sprintf("empreinte de forme inattendue (%q)", empreinte)),
+				fmt.Errorf("register_host: empreinte de forme inattendue (%q)", empreinte)
 		}
 	}
 	if empreinte == "" {
@@ -206,7 +233,11 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		if errors.Is(err, clusterdatabase.ErrNoeudAppartientAUnAutre) {
 			logs.Write_Log("SECURITY", "register_host refusé : "+err.Error())
 		}
-		return "", fmt.Errorf("register_host: %w", err)
+		motif := "enregistrement refusé par la base"
+		if errors.Is(err, clusterdatabase.ErrNoeudAppartientAUnAutre) {
+			motif = "ce nom de nœud appartient déjà à un autre client"
+		}
+		return RefusEnregistrement(tramesContent, motif), fmt.Errorf("register_host: %w", err)
 	}
 	logs.Write_Log("INFO", "host registered: "+hostname+" role="+role+" ip="+ip+
 		" port="+strconv.Itoa(port))

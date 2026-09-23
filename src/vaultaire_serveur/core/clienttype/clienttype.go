@@ -119,7 +119,11 @@ var catalogue = []Definition{
 			// N'est accordée qu'à l'agent — un service du cluster n'a pas de
 			// /etc/group à tenir, et la liste des groupes d'un domaine est une
 			// information de structure.
-			"03_01", "03_04", "03_06", "03_08",
+			// 03_11 : fin d'une session utilisateur, émise par la fermeture
+			// PAM. Elle n'efface qu'une ligne d'affichage, et seulement sur la
+			// machine qui l'émet — l'identifiant de machine vient de l'en-tête
+			// authentifié, jamais du contenu.
+			"03_01", "03_04", "03_06", "03_08", "03_11",
 			// 04_03 : demander la liste des nœuds joignables.
 			//
 			// C'est une LECTURE, et elle ne révèle que ce que l'agent doit

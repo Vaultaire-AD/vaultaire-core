@@ -34,13 +34,14 @@ mécanisme ici, les commandes dans `Utilisation/MAN.md`.
 
 ## 2. Le dépôt en une page
 
-Huit modules Go **indépendants** sous `src/`. **Pas de `go.mod` à la racine** :
+**Neuf** modules Go **indépendants** sous `src/`. **Pas de `go.mod` à la racine** :
 chacun a le sien, en `go 1.26.1` / `toolchain go1.26.5`.
 
 | Module | Chemin | Ce que c'est |
 | --- | --- | --- |
 | `vaultaire` | `src/vaultaire_serveur/` | Le serveur central (core). L'essentiel du code. |
 | `vaultaire_client` | `src/vaultaire_client/` | L'agent installé sur les postes Linux + les modules PAM/NSS en C |
+| `vaultaire_client_windows` | `src/vaultaire_client_windows/` | L'agent des postes **Windows** + le Credential Provider en C++ (V1 : authentification par mot de passe) |
 | `vaultaire_proxy` | `src/vaultaire_proxy/` | Relais Ducky entre un site distant et le core |
 | `vaultaire_nexus` | `src/vaultaire_nexus/` | Dépôt de paquets, d'images et de releases — service du cluster |
 | `vaultairectl` | `src/vaultaire_ctl/` | CLI d'administration distante, via l'API REST signée |
@@ -55,7 +56,8 @@ Ailleurs :
 | `web_packet/sso_WEB_page/` | **Sources** du portail web (templates, JS, CSS) |
 | `cmd/` | **Sortie de compilation.** Produit par `auto-compil.sh`. Ne jamais y éditer. |
 | `deployments/` | Docker dev & préprod, SELinux, configuration de référence |
-| `auto-compil.sh` | Compile les modules + les modules PAM/NSS |
+| `auto-compil.sh` | Compile les modules + les modules PAM/NSS (Linux) |
+| `src/vaultaire_client_windows/build.sh` | Compile l'agent Windows et sa DLL, et fabrique l'archive d'installation |
 | `repo_manage.sh` | Création/fusion de branches selon le modèle Gitflow du dépôt |
 
 ---
@@ -74,6 +76,7 @@ Colonne « doc » = la page à lire **avant** de toucher au code.
 | GPO (côté serveur) | `core/gpo/`, `core/database/db_gpo/`, `ducky-network/gpo_manager/` | [`GPO.md`](./GPO.md) |
 | MFA / TOTP / expiration | `core/global/security/totp/`, `core/auth/passwordpolicy/`, `core/database/db_authpolicy/` | [`MFA_et_Expiration.md`](./MFA_et_Expiration.md) |
 | Journalisation | `core/logs/` | [`Journalisation.md`](./Journalisation.md) |
+| Tests | `*_test.go`, `core/testrunner/` | [`Tests.md`](./Tests.md) |
 | Durées de boucle | `core/reglages/`, `core/database/db_settings/` | [`Reglages_de_duree.md`](./Reglages_de_duree.md) |
 | Versions | `core/version/` | [`Versions.md`](./Versions.md) |
 | Protocole réseau | `ducky-network/` (trames, sessions, clés) | [`ducky-network/`](./ducky-network/README.md) |
@@ -145,6 +148,8 @@ Point d'entrée : `src/vaultaire_client/main.go`.
 
 | La demande | À lire d'abord |
 | --- | --- |
+| **N'importe quelle tâche** : les étapes, de l'entrée TO-DO au commit | [`Pense-bete_developpement.md`](./Pense-bete_developpement.md) |
+| Lancer, comprendre ou écrire un test | [`Tests.md`](./Tests.md) |
 | Ajouter une commande ou une opération | [`Actions.md`](./Actions.md) § 6, puis `core/command/` — **et § 6 ci-dessous** |
 | Ajouter un droit, un objet RBAC | [`Permissions_RBAC.md`](./Permissions_RBAC.md) § 4 |
 | Ajouter / modifier un module GPO | [`GPO.md`](./GPO.md) § 9 à 12 |
@@ -265,9 +270,14 @@ des liens, faux pour un réglage qui *remplace*.
 Toute action de formulaire doit par ailleurs figurer dans `actionsFormulaire` :
 une action inconnue est **refusée**, jamais exécutée sans contrôle.
 
-### 6.5 Il n'y a pas toujours de compilateur
+### 6.5 Quand il n'y a pas de compilateur
 
-Les agents IA travaillent souvent sans toolchain Go. Dans ce cas :
+Un compilateur Go est normalement disponible, et `go test ./...` est **vert sur
+les huit modules** : ne commitez pas sans l'avoir lancé sur ce que vous touchez
+([`Tests.md`](./Tests.md)). L'intégration continue, elle, ne lance aucun test
+(TO-DO 75).
+
+Si vous travaillez malgré tout sans toolchain :
 
 - **ne pas prétendre** que le code compile ou que les tests passent ;
 - vérifier ce qui est vérifiable — délimiteurs, imports, cycles, cohérence

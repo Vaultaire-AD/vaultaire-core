@@ -3,7 +3,6 @@ package dbsessions
 import (
 	"database/sql"
 	"fmt"
-	"time"
 
 	dbclients "vaultaire/core/database/db_clients"
 	dbusers "vaultaire/core/database/db_users"
@@ -35,7 +34,7 @@ func RafraichirConnexion(db *sql.DB, username, computeurID string, cleSession []
 	if err != nil {
 		return fmt.Errorf("battement : machine %s introuvable : %w", computeurID, err)
 	}
-	validite := time.Now().Add(10 * time.Minute).Format("2006/01/02 15:04:05")
+	validite := EcheanceSession()
 
 	var n int
 	if err := db.QueryRow(`SELECT COUNT(*) FROM did_login WHERE d_id_user = ? AND d_id_logiciel = ?`,

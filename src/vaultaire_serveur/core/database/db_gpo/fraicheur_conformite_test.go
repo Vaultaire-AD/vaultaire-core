@@ -89,10 +89,10 @@ func TestFraicheurQualifieLesTroisEtats(t *testing.T) {
 		{"jamais rapporté", ligneMuette("m1"), RapportJamais},
 		{"date nulle sans le drapeau", ComplianceRow{ComputeurID: "m2"}, RapportJamais},
 		{"rapport à l'instant", ligne("m3", 0, 0, 0), RapportAJour},
-		{"un cycle manqué", ligne("m4", IntervalleRapportAgent, 0, 0), RapportAJour},
-		{"deux cycles manqués", ligne("m5", 2*IntervalleRapportAgent, 0, 0), RapportAJour},
-		{"pile la tolérance", ligne("m6", ToleranceRapport, 0, 0), RapportAJour},
-		{"une seconde après", ligne("m7", ToleranceRapport+time.Second, 0, 0), RapportEnRetard},
+		{"un cycle manqué", ligne("m4", CadenceAgent(), 0, 0), RapportAJour},
+		{"deux cycles manqués", ligne("m5", 2*CadenceAgent(), 0, 0), RapportAJour},
+		{"pile la tolérance", ligne("m6", ToleranceRapport(), 0, 0), RapportAJour},
+		{"une seconde après", ligne("m7", ToleranceRapport()+time.Second, 0, 0), RapportEnRetard},
 		{"trois semaines", ligne("m8", 21*24*time.Hour, 0, 0), RapportEnRetard},
 	}
 	for _, c := range cas {
@@ -108,7 +108,7 @@ func TestFraicheurQualifieLesTroisEtats(t *testing.T) {
 // résolvent seuls — un redémarrage, une coupure brève — et l'administrateur
 // cesserait de la lire. Une vue qu'on ne lit plus ne signale rien du tout.
 func TestUnCycleManqueNeDeclencheRien(t *testing.T) {
-	r := ligne("poste-12", IntervalleRapportAgent+time.Minute, 0, 0)
+	r := ligne("poste-12", CadenceAgent()+time.Minute, 0, 0)
 	if r.Silencieuse(maintenant) {
 		t.Error("un seul cycle manqué est signalé comme un retard : " +
 			"un simple redémarrage ferait du bruit")
@@ -141,7 +141,7 @@ func TestOrdreCompletDuTri(t *testing.T) {
 		ligne("d-un-ecart", 0, 0, 1),
 		ligne("c-trois-ecarts", 0, 0, 3),
 		ligne("b-en-echec", 0, 2, 0),
-		ligne("a-en-retard", ToleranceRapport+time.Hour, 0, 0),
+		ligne("a-en-retard", ToleranceRapport()+time.Hour, 0, 0),
 	}
 	TrierConformite(rows, maintenant)
 
@@ -219,7 +219,7 @@ func TestResumeCompteDesMachinesPasDesLignes(t *testing.T) {
 func TestResumeDistingueJamaisEtEnRetard(t *testing.T) {
 	rows := []ComplianceRow{
 		ligneMuette("jamais-vue"),
-		ligne("partie-depuis", ToleranceRapport+time.Hour, 0, 0),
+		ligne("partie-depuis", ToleranceRapport()+time.Hour, 0, 0),
 		ligne("a-jour", time.Minute, 0, 2),
 	}
 	r := ResumerParc(rows, maintenant)

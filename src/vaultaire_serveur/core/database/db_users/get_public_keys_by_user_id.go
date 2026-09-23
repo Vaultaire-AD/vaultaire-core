@@ -28,9 +28,16 @@ func Get_PublicKeys_ByUserID(db *sql.DB, userID int) ([]string, error) {
 		return nil, fmt.Errorf("erreur itération rows: %w", err)
 	}
 
-	if len(keys) == 0 {
-		return nil, fmt.Errorf("aucune clé publique pour l'utilisateur %d", userID)
-	}
-
+	// AUCUNE CLÉ N'EST PAS UNE ERREUR.
+	//
+	// Cette fonction rendait une erreur quand la table ne portait aucune ligne,
+	// et l'appelant de 03_01 en faisait un REFUS D'AUTHENTIFICATION : un compte
+	// sans clé publique ne pouvait donc ouvrir aucune session, pas même par mot
+	// de passe. Le défaut est resté invisible tant que tout compte de test avait
+	// une clé ; il saute aux yeux sur un poste Windows, où les clés SSH n'ont
+	// aucun sens et où personne n'en dépose.
+	//
+	// L'absence et l'échec ne se confondent plus : une liste vide se lit avec
+	// len(), une panne de base reste une erreur.
 	return keys, nil
 }

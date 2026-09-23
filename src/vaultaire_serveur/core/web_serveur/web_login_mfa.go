@@ -31,7 +31,13 @@ import (
 const mfaPendingCookie = "mfa_pending"
 
 // mfaTemplatePath est la page de saisie du code.
-var mfaTemplatePath = CheminGabarit("login_mfa.html")
+//
+// Fonction et non variable de paquet : une variable fige le chemin AU
+// CHARGEMENT, donc avant qu'un test — ou un lancement depuis un autre
+// répertoire — ait pu désigner la racine des ressources par
+// VAULTAIRE_WEB_PACKET. C'est ce qui rendait la résolution paresseuse de
+// racineWeb inopérante.
+func mfaTemplatePath() string { return CheminGabarit("login_mfa.html") }
 
 // startSecondFactor décide de la suite après un mot de passe valide.
 //
@@ -208,7 +214,7 @@ func MFAPageHandler(w http.ResponseWriter, r *http.Request) {
 // les autres pages n'ont pas créerait une incohérence de rechargement en
 // développement.
 func renderMFAPage(w http.ResponseWriter, errMsg string) {
-	tmpl, err := template.ParseFiles(mfaTemplatePath)
+	tmpl, err := template.ParseFiles(mfaTemplatePath())
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "login: template MFA illisible : "+err.Error())
 		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)

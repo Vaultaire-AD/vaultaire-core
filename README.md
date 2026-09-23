@@ -24,6 +24,7 @@ Pour découvrir Vaultaire pas à pas, commencez par la
 | Protocole Ducky Network | [`docs/Developement/how it work/ducky-network/`](./docs/Developement/how%20it%20work/ducky-network/README.md) |
 | Créer un nouveau service | [`docs/Developement/how it work/Nouveau_service.md`](./docs/Developement/how%20it%20work/Nouveau_service.md) |
 | Dépôt de paquets Nexus | [`src/vaultaire_nexus/README.md`](./src/vaultaire_nexus/README.md) |
+| Poste Windows (V1) | [`docs/Installation/Client_Windows.md`](./docs/Installation/Client_Windows.md) · [`src/vaultaire_client_windows/README.md`](./src/vaultaire_client_windows/README.md) |
 | GPO | [`docs/Developement/how it work/GPO.md`](./docs/Developement/how%20it%20work/GPO.md) |
 | Modèle de permissions | [`docs/Developement/how it work/Permissions_RBAC.md`](./docs/Developement/how%20it%20work/Permissions_RBAC.md) · [`Utilisation/Actions_et_Permissions.md`](./docs/Utilisation/Actions_et_Permissions.md) |
 | Schéma de base de données | [`docs/Developement/how it work/Base_de_donnees.md`](./docs/Developement/how%20it%20work/Base_de_donnees.md) |

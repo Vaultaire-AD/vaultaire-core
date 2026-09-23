@@ -13,7 +13,7 @@ Comment une politique voyage du core à la machine, en fragments, et comment la 
 | # | Page |
 |---|---|
 | 5.1 | [Principe, numérotation et séquence](./01-principe-et-sequence.md) |
-| 5.2 | [Les trames 05_01 à 05_17](./02-trames.md) |
+| 5.2 | [Les trames 05_01 à 05_18](./02-trames.md) |
 | 5.3 | [Charge utile, état local, application en scope user](./03-charge-utile-et-etat.md) |
 
 **Commencer : [Principe, numérotation et séquence](./01-principe-et-sequence.md)**

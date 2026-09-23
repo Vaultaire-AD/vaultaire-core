@@ -81,16 +81,16 @@ func StartManager(db *sql.DB) {
 	}
 
 	node := clusterstorage.Node{
-		Hostname:     hostname,
-		FQDN:         fqdn,
-		IPAddress:    ip,
-		Role:         storage.Host_Type,
-		Status:       "online",
+		Hostname:  hostname,
+		FQDN:      fqdn,
+		IPAddress: ip,
+		Role:      storage.Host_Type,
+		Status:    "online",
 		// La version COMPLÈTE — sémantique, commit et date — et non la seule
 		// constante. C'est ce qu'un exploitant lit dans `vlt cluster list` pour
 		// savoir ce qui tourne, et « 2.1.0 » seul ne distingue pas deux cores
 		// construits à deux semaines d'écart.
-		VersionCode:  version.Complete(),
+		VersionCode: version.Complete(),
 		// Vide, et volontairement : le core n'embarque pas le SDK. C'est lui
 		// qui juge les clients, il ne partage pas leur socle réseau.
 		VersionSDK:   "",

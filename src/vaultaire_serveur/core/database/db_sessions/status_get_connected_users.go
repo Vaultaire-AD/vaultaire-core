@@ -14,13 +14,18 @@ func Command_STATUS_GetConnectedUsers(db *sql.DB) ([]storage.UserConnected, erro
 			users.id_user, 
 			users.username, 
 			users.created_at, 
-			did_login.key_time_validity
+			did_login.key_time_validity,
+			id_logiciels.computeur_id
 		FROM 
 			did_login
 		INNER JOIN 
 			users 
 		ON 
 			did_login.d_id_user = users.id_user
+		INNER JOIN
+			id_logiciels
+		ON
+			did_login.d_id_logiciel = id_logiciels.id_logiciel
 	`
 
 	rows, err := db.Query(query)
@@ -37,7 +42,7 @@ func Command_STATUS_GetConnectedUsers(db *sql.DB) ([]storage.UserConnected, erro
 	var connectedUsers []storage.UserConnected
 	for rows.Next() {
 		var user storage.UserConnected
-		err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.TokenExpiry)
+		err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.TokenExpiry, &user.Machine)
 		if err != nil {
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}

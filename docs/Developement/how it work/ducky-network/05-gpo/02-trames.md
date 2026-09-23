@@ -1,6 +1,6 @@
 [⌂ Ducky Network](../README.md) › [Chapitre 5 — Transport des GPO (05)](./README.md) › 5.2
 
-# 5.2 — Les trames 05_01 à 05_17
+# 5.2 — Les trames 05_01 à 05_18
 
 [← Principe, numérotation et séquence](./01-principe-et-sequence.md) · [Charge utile, état local, application en scope user →](./03-charge-utile-et-etat.md)
 
@@ -30,6 +30,7 @@ l'état local. `none` au premier démarrage ou après remise à zéro de l'état
 <taille_totale>      octets de texte clair
 <nb_modules>
 <somme_de_controle>  SHA-256 hex de la charge transmise
+refresh:<minutes>    cadence de rafraîchissement machine — FACULTATIVE, en queue
 ```
 
 > **Ajout par rapport à la v2 validée : la ligne `<somme_de_controle>`.**
@@ -48,11 +49,29 @@ l'état local. `none` au premier démarrage ou après remise à zéro de l'état
 > Sans elle, un défaut de réassemblage produirait un JSON syntaxiquement valide
 > mais amputé, appliqué sans que rien ne le signale.
 
+**La ligne `refresh:`** porte le réglage `gpo_refresh_minutes` du core, qui
+pilote la boucle de rafraîchissement de l'agent. Elle est **ajoutée en queue et
+reconnue à son préfixe, jamais à son rang** : un agent d'une version antérieure
+lit les six champs qu'il connaît et ignore celle-ci, un core d'une version
+antérieure ne l'envoie pas et l'agent garde son défaut d'une heure. Même
+arbitrage que le port et l'empreinte dans `04_01`, et même recette que `sync:`
+dans `03_09`.
+
+Elle ne voyage **que** dans les réponses de scope machine. Un cycle utilisateur
+est déclenché par une ouverture de session, pas par une boucle : il n'y a aucune
+cadence à régler de ce côté.
+
 ### 05_03 — gpo_machine_unchanged (serveur → client)
 
 ```
 <empreinte>
+refresh:<minutes>    même ligne facultative qu'en 05_02
 ```
+
+« Rien à faire » est le cas le plus fréquent sur un parc stable : c'est donc le
+seul chemin par lequel une cadence modifiée atteint des machines dont la
+politique ne bouge pas. L'omettre ici rendrait le réglage inopérant là où il
+sert le plus.
 
 ### 05_04 — gpo_machine_error (serveur → client)
 
@@ -244,6 +263,31 @@ le constat n'a pas été conservé lui évite de croire le serveur informé.
 empreintes des modules concernés dès le scan terminé, et les réapplique au cycle
 suivant, que le rapport soit parti ou non. Une panne du serveur ne doit pas
 laisser une machine en dérive.
+
+### 05_18 — gpo_refresh_now (serveur → client)
+
+```
+<motif>            texte libre, journalisé par l'agent
+```
+
+**La seule trame 05 que le serveur émet de lui-même.** Tout le reste de la
+catégorie est tiré par le client. Elle ne transporte **aucune politique** :
+l'agent repart sur une `05_01` ordinaire, et tout le chemin habituel — calcul
+serveur, empreinte, fragments, rapport — reste identique. Une trame de réveil
+ne pouvait pas devenir un second chemin d'application, qu'il aurait fallu tenir
+d'accord avec le premier.
+
+**Rien n'est mis en file.** Une machine hors ligne ne la reçoit pas et n'en
+garde aucune trace, contrairement à un ordre de révocation qui reste `pending`
+en base. C'est délibéré : une machine qui revient fait de toute façon un cycle à
+la reconnexion, donc rejouer la demande ferait un cycle de plus pour rien.
+
+L'agent n'accuse pas réception : l'issue du cycle part dans les rapports `05_12`
+et `05_15`, qui en disent bien plus qu'un accusé.
+
+Émetteurs : `vlt gpo refresh <machine|--all>`, et l'action `gpo.refresh` — dont
+le droit est `write:update:client` sur les domaines de la machine visée, et non
+`write:update:gpo` : ce qu'on engage est le poste, pas la politique.
 
 ---
 

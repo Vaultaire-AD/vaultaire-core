@@ -45,11 +45,11 @@ func EnregistrerActionsLectureSuite(r *Registre) {
 		CleRBAC: "read:get:client",
 		// Globale + UnDomaineSuffit : le droit sur un domaine ouvre la liste,
 		// le filtre la réduit. Exiger « * » refusait tout au délégué.
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerMachines,
-		Resume:          "liste toutes les machines",
-		Executer:        listerMachines,
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerMachines,
+		Resume:        "liste toutes les machines",
+		Executer:      listerMachines,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -64,13 +64,13 @@ func EnregistrerActionsLectureSuite(r *Registre) {
 	// --- permissions ---
 
 	r.MustEnregistrer(Definition{
-		Nom:             "permission.list",
-		CleRBAC:         "read:get:permission",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerPermissionsUtilisateur,
-		Resume:          "liste les permissions utilisateur",
-		Executer:        listerPermissionsUtilisateur,
+		Nom:           "permission.list",
+		CleRBAC:       "read:get:permission",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerPermissionsUtilisateur,
+		Resume:        "liste les permissions utilisateur",
+		Executer:      listerPermissionsUtilisateur,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -83,13 +83,13 @@ func EnregistrerActionsLectureSuite(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
-		Nom:             "client_permission.list",
-		CleRBAC:         "read:get:permission",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerPermissionsClient,
-		Resume:          "liste les permissions client",
-		Executer:        listerPermissionsClient,
+		Nom:           "client_permission.list",
+		CleRBAC:       "read:get:permission",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerPermissionsClient,
+		Resume:        "liste les permissions client",
+		Executer:      listerPermissionsClient,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -104,13 +104,13 @@ func EnregistrerActionsLectureSuite(r *Registre) {
 	// --- GPO ---
 
 	r.MustEnregistrer(Definition{
-		Nom:             "gpo.list",
-		CleRBAC:         "read:get:gpo",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerGPO,
-		Resume:          "liste les GPO",
-		Executer:        listerGPO,
+		Nom:           "gpo.list",
+		CleRBAC:       "read:get:gpo",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerGPO,
+		Resume:        "liste les GPO",
+		Executer:      listerGPO,
 	})
 
 	r.MustEnregistrer(Definition{

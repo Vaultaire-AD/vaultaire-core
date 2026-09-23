@@ -19,11 +19,13 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 			users.id_user, 
 			users.username, 
 			users.created_at, 
-			did_login.key_time_validity
+			did_login.key_time_validity,
+			id_logiciels.computeur_id
 		FROM 
 			users_group
 		INNER JOIN users ON users_group.d_id_user = users.id_user
 		LEFT JOIN did_login ON did_login.d_id_user = users.id_user
+		LEFT JOIN id_logiciels ON did_login.d_id_logiciel = id_logiciels.id_logiciel
 		INNER JOIN groups ON users_group.d_id_group = groups.id_group
 		WHERE groups.group_name = ?
 	`
@@ -47,10 +49,20 @@ func Command_STATUS_GetUsersByGroup(db *sql.DB, groupName string) ([]storage.Use
 	var users []storage.UserConnected
 	for rows.Next() {
 		var user storage.UserConnected
-		if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &user.TokenExpiry); err != nil {
+		// Colonnes NULLABLES, et elles l'ont toujours été.
+		//
+		// Le LEFT JOIN sur did_login est là pour montrer AUSSI les membres du
+		// groupe qui n'ont aucune session ouverte : leurs deux colonnes de
+		// session arrivent alors à NULL. Les lire dans une chaîne Go faisait
+		// échouer le scan, donc échouer toute la commande — un groupe dont un
+		// seul membre était déconnecté ne s'affichait pas.
+		var validite, machine sql.NullString
+		if err := rows.Scan(&user.ID, &user.Username, &user.CreatedAt, &validite, &machine); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}
+		user.TokenExpiry = validite.String
+		user.Machine = machine.String
 		users = append(users, user)
 	}
 

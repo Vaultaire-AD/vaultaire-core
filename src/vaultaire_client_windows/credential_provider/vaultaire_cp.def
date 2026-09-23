@@ -1,0 +1,11 @@
+; Les quatre points d'entrée d'un serveur COM en DLL.
+;
+; Exportés par un fichier .def et non par __declspec(dllexport) : MinGW
+; décorerait sinon les noms (@4, @16), et regsvr32 ne trouverait pas
+; « DllRegisterServer ».
+LIBRARY VaultaireCredentialProvider
+EXPORTS
+    DllGetClassObject   PRIVATE
+    DllCanUnloadNow     PRIVATE
+    DllRegisterServer   PRIVATE
+    DllUnregisterServer PRIVATE

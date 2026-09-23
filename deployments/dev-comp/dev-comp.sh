@@ -10,8 +10,9 @@
 #   ./deployments/dev-comp/dev-comp.sh --local         compile sur l'hôte (auto-compil.sh), sans conteneur
 #   ./deployments/dev-comp/dev-comp.sh --no-build      redémarre sans recompiler
 #   ./deployments/dev-comp/dev-comp.sh --proxy         démarre aussi un proxy (relais Ducky)
+#   ./deployments/dev-comp/dev-comp.sh --nexus         démarre aussi un Nexus (dépôt de paquets)
 #   ./deployments/dev-comp/dev-comp.sh --down          arrête la pile (garde la base)
-#   ./deployments/dev-comp/dev-comp.sh --reset         arrête et EFFACE la base et l'identité du proxy
+#   ./deployments/dev-comp/dev-comp.sh --reset         arrête et EFFACE la base, l'identité du proxy et les données Nexus
 #   ./deployments/dev-comp/dev-comp.sh --logs          suit les journaux du core
 #   ./deployments/dev-comp/dev-comp.sh --status        état des conteneurs et version compilée
 #
@@ -21,6 +22,11 @@
 # « -dirty » s'y ajoutent : « 2.2.1+g1a2b3c4-dirty (2026-09-22) ». Un binaire de
 # dev-comp se reconnaît donc au premier coup d'œil dans `vlt cluster list` et
 # `vlt version`, sans se faire passer pour une release.
+#
+# Les IMAGES du core, du proxy et du Nexus sont (re)construites à chaque
+# lancement, que leurs conteneurs démarrent ou non. Une image qu'on ne construit
+# qu'au moment d'en avoir besoin casse au pire moment — et ces trois-là sont
+# justement celles qu'on démarre en urgence pour reproduire quelque chose.
 
 set -euo pipefail
 
@@ -38,6 +44,7 @@ docker compose version >/dev/null 2>&1 || erreur "« docker compose » (v2) intr
 COMPILER=1
 LOCAL=0
 PROXY=0
+NEXUS=0
 VERSION_IMPOSEE=""
 ACTION="up"
 
@@ -47,25 +54,35 @@ while [ $# -gt 0 ]; do
         --local)    LOCAL=1 ;;
         --no-build) COMPILER=0 ;;
         --proxy)    PROXY=1 ;;
+        --nexus)    NEXUS=1 ;;
         --down)     ACTION="down" ;;
         --reset)    ACTION="reset" ;;
         --logs)     ACTION="logs" ;;
         --status)   ACTION="status" ;;
-        -h|--help)  sed -n '2,25p' "$0"; exit 0 ;;
+        -h|--help)  sed -n '2,29p' "$0"; exit 0 ;;
         *) erreur "option inconnue : $1 (voir --help)" ;;
     esac
     shift
 done
 
+# Profils des CONTENEURS à démarrer. Les IMAGES, elles, sont toutes
+# construites : voir TOUS plus bas.
 PROFILS=()
 [ "$PROXY" = 1 ] && PROFILS+=(--profile proxy)
+[ "$NEXUS" = 1 ] && PROFILS+=(--profile nexus)
+
+# TOUS : tous les profils, pour les opérations qui doivent voir la pile entière
+# (arrêt, état, construction des images) quels que soient les conteneurs
+# demandés aujourd'hui. Sans cela, « --down » laisserait tourner un proxy
+# démarré la veille.
+TOUS=(--profile proxy --profile nexus)
 
 case "$ACTION" in
-    down)   docker compose --profile proxy down; exit 0 ;;
-    reset)  docker compose --profile proxy down -v; rm -rf "$BUILD"; info "pile, base et binaires effacés"; exit 0 ;;
+    down)   docker compose "${TOUS[@]}" down; exit 0 ;;
+    reset)  docker compose "${TOUS[@]}" down -v; rm -rf "$BUILD"; info "pile, base et binaires effacés"; exit 0 ;;
     logs)   docker compose logs -f vaultaire-ad; exit 0 ;;
     status)
-        docker compose --profile proxy ps
+        docker compose "${TOUS[@]}" ps
         if [ -x "$BUILD/vaultaire_server/vaultaire_serveur" ]; then
             info "binaires compilés le $(date -r "$BUILD/vaultaire_server/vaultaire_serveur" '+%d/%m/%Y %H:%M')"
         else
@@ -110,6 +127,11 @@ fi
 for f in vaultaire_server/vaultaire_serveur vaultaire_server/vaultaire_cli vaultaire_client/vaultaire_client vaultaire_ctl/vaultaire_ctl; do
     [ -x "$BUILD/$f" ] || erreur "$BUILD/$f absent : lancez sans --no-build"
 done
+# Le binaire du Nexus n'est exigé que si son conteneur démarre : son IMAGE, elle,
+# se construit sans lui (elle ne contient aucun binaire).
+if [ "$NEXUS" = 1 ]; then
+    [ -x "$BUILD/vaultaire_nexus/vaultaire_nexus" ] || erreur "binaire du Nexus absent : lancez sans --no-build"
+fi
 if [ "$PROXY" = 1 ]; then
     [ -x "$BUILD/vaultaire_proxy/vaultaire_proxy" ] || erreur "binaire du proxy absent : lancez sans --no-build"
     if ! docker volume inspect dev-comp_devcomp_proxy_keys >/dev/null 2>&1 && [ -z "${DEVCOMP_PROXY_ENROLL_KEY:-$(grep -s '^DEVCOMP_PROXY_ENROLL_KEY=' .env | cut -d= -f2-)}" ]; then
@@ -120,14 +142,26 @@ if [ "$PROXY" = 1 ]; then
     fi
 fi
 
+# --- images ----------------------------------------------------------------
+# Les TROIS images sont construites, même si seul le core démarre : une image
+# qui n'existe pas se découvre au moment où l'on veut s'en servir. Elles ne
+# contiennent aucun binaire (tout est monté), donc c'est rapide et le cache
+# Docker fait le reste.
+info "construction des images (core, proxy, nexus)"
+docker compose "${TOUS[@]}" build vaultaire-ad vlt-proxy vaultaire-nexus
+
 # --- démarrage -------------------------------------------------------------
-# up -d reconstruit l'image d'exécution si le Dockerfile a changé ; les
-# binaires étant montés, un redémarrage suffit à les prendre en compte.
-docker compose "${PROFILS[@]}" up -d --build
-docker compose "${PROFILS[@]}" restart vaultaire-ad $([ "$PROXY" = 1 ] && echo vlt-proxy) >/dev/null
+# Les binaires étant montés, un redémarrage suffit à prendre en compte une
+# recompilation.
+docker compose "${PROFILS[@]}" up -d
+A_REDEMARRER=(vaultaire-ad)
+[ "$PROXY" = 1 ] && A_REDEMARRER+=(vlt-proxy)
+[ "$NEXUS" = 1 ] && A_REDEMARRER+=(vaultaire-nexus)
+docker compose "${PROFILS[@]}" restart "${A_REDEMARRER[@]}" >/dev/null
 
 info "pile démarrée :"
 info "  portail    https://localhost:${DEVCOMP_PORT_WEB:-4443}/login   (admin / admin123)"
 info "  CLI        docker exec -it vlt-dev-ad /opt/vaultaire/bin/vaultaire_cli"
 info "  agent      $BUILD/vaultaire_client/  (servi aux machines par « create -c … -join »)"
+[ "$NEXUS" = 1 ] && info "  nexus      https://localhost:${DEVCOMP_PORT_NEXUS:-8843}/   (admin ; mot de passe initial : docker exec vlt-dev-nexus cat /var/lib/vaultaire_nexus/admin.initial)"
 info "  journaux   ./deployments/dev-comp/dev-comp.sh --logs"

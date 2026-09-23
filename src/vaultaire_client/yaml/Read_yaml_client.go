@@ -9,12 +9,31 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-// Fonction pour lire et analyser un fichier YAML
-func ReadYAMLFile(filename string) {
-	dbConfig, _ := readConfig[storage.ClientSoftware](filename)
+// ReadYAMLFile lit l'identité de la machine et la pose dans le socle.
+//
+// Rend faux quand le fichier est absent ou illisible — l'appelant décide alors
+// quoi en faire.
+//
+// # Le défaut que le retour ferme
+//
+// L'erreur de lecture était ignorée (`dbConfig, _ :=`) et le pointeur NUL
+// déréférencé juste après : l'agent PANIQUAIT au démarrage quand
+// client_software.yaml manquait, avec une trace d'exécution pour seule
+// explication — alors que la ligne juste au-dessus, dans le journal, disait
+// précisément quel fichier n'avait pas pu être lu.
+//
+// Le cas n'a rien d'exotique : c'est celui d'une machine dont l'identité n'a pas
+// encore été déposée, ou effacée par un nettoyage. Relevé en portant l'agent
+// sous Windows, où l'installation manuelle rend le cas fréquent.
+func ReadYAMLFile(filename string) bool {
+	dbConfig, err := readConfig[storage.ClientSoftware](filename)
+	if err != nil || dbConfig == nil {
+		return false
+	}
 	storage.Computeur_ID = dbConfig.NewClient.Computeur_id
 	storage.LogicielType = dbConfig.NewClient.Logiciel_type
 	storage.IsServeur = dbConfig.NewClient.IsServeur
+	return true
 }
 
 func readConfig[T any](filePath string) (*T, error) {

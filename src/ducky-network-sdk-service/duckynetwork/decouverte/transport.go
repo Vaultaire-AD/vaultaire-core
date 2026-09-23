@@ -121,7 +121,7 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 	case "04":
 		traiterListe(t.Content)
 	case "02":
-		logs.Write_log("INFO", "découverte : enregistrement du nœud confirmé par le core")
+		traiterAccuseEnregistrement(t.Content)
 	case "06", "08":
 		// Accusés de métriques et de battement. Rien à faire, mais nommés :
 		// les laisser tomber dans le `default` les ferait passer pour des
@@ -156,4 +156,27 @@ func traiterListe(contenu string) {
 
 	logs.Write_log("INFO", fmt.Sprintf(
 		"découverte : %d nœud(s) joignable(s) — %s", len(noeuds), Resume()))
+}
+
+// traiterAccuseEnregistrement lit le 04_02.
+//
+//	ok              enregistrement accepté
+//	refus\n<motif>  refusé, motif en seconde ligne (point 73)
+//
+// Un contenu vide vaut « accepté » : les cores antérieurs au point 73 n'ont
+// jamais refusé par ce canal, et leur accusé se réduisait parfois à son en-tête.
+func traiterAccuseEnregistrement(contenu string) {
+	lignes := strings.Split(strings.TrimSpace(contenu), "\n")
+	statut := strings.ToLower(strings.TrimSpace(lignes[0]))
+	if statut == "refus" || statut == "refuse" || statut == "refusé" {
+		motif := "sans motif"
+		if len(lignes) > 1 && strings.TrimSpace(lignes[1]) != "" {
+			motif = strings.TrimSpace(lignes[1])
+		}
+		logs.Write_log("ERROR", "découverte : enregistrement du nœud REFUSÉ par le core — "+motif)
+		SignalerAccuseEnregistrement(false, motif)
+		return
+	}
+	logs.Write_log("INFO", "découverte : enregistrement du nœud confirmé par le core")
+	SignalerAccuseEnregistrement(true, "")
 }

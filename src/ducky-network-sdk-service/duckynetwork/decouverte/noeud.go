@@ -6,6 +6,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -146,15 +147,11 @@ func DemarrerNoeud(sessionKey func() string, n InfosNoeud, cadence time.Duration
 	go func() {
 		defer logs.Recover("enregistrement du nœud")
 
-		if !enregistrer(sessionKey, n) {
-			// L'enregistrement a échoué : on ne bat pas dans le vide. Le
-			// battement met à jour une ligne qui n'existe pas — le core répond
-			// sans rien faire, et le journal se remplit d'accusés qui ne
-			// signifient rien.
-			logs.Write_log("ERROR",
-				"nœud : enregistrement échoué, le battement n'est pas démarré")
-			return
-		}
+		// Premier essai, puis un par cadence tant que le core n'a pas confirmé.
+		// C'est le battement qui sert d'horloge : un nœud non enregistré n'a
+		// rien d'autre à faire, et une seconde boucle n'aurait servi qu'à
+		// choisir un autre intervalle.
+		enregistre := tenterEnregistrement(sessionKey, n, cadence)
 
 		for range time.Tick(cadence) {
 			cle := sessionKey()
@@ -165,13 +162,120 @@ func DemarrerNoeud(sessionKey func() string, n InfosNoeud, cadence time.Duration
 			if envoyer == nil {
 				return
 			}
+			if !enregistre {
+				// Battre avant d'être enregistré met à jour une ligne qui
+				// n'existe pas : le core ne fait rien, et le journal se
+				// remplirait d'accusés qui ne signifient rien.
+				enregistre = tenterEnregistrement(sessionKey, n, cadence)
+				continue
+			}
 			envoyer(ConstruireBattement(cle, clientID, n.Hostname))
 		}
 	}()
+}
 
-	logs.Write_log("INFO", fmt.Sprintf(
-		"nœud : %s (%s, %s:%d) enregistré, battement toutes les %s",
-		n.Hostname, n.Role, n.IP, n.Port, cadence))
+// DelaiAccuseEnregistrement borne l'attente du 04_02.
+//
+// Court : le core répond dans la foulée, sur la session déjà établie. Plus long
+// retarderait d'autant la première tentative suivante ; plus court prendrait un
+// aller-retour lent pour un refus.
+// Variable et non constante : les tests l'abaissent pour éprouver le silence
+// d'un core antérieur au point 73 sans attendre dix secondes.
+var DelaiAccuseEnregistrement = 10 * time.Second
+
+// tenterEnregistrement envoie la 04_01 et ATTEND l'accusé du core.
+//
+// # Pourquoi attendre (TO-DO 73)
+//
+// Le nœud journalisait « enregistré » dès la trame émise. Or le core refuse
+// l'enregistrement dans plusieurs cas — hostname déjà pris par un autre client,
+// type qui ne prend aucun rôle de nœud, port ou empreinte mal formés — et, avant
+// le point 73, ne répondait alors rien du tout. Un proxy pouvait donc paraître
+// sain sans figurer dans `cluster_nodes` : ni distribué aux agents, ni exempté
+// du plafond par adresse du core. C'est exactement le genre de panne qu'on
+// cherche ailleurs pendant des heures.
+//
+// Un core ANTÉRIEUR au point 73 reste silencieux sur un refus : l'attente
+// expire, et le nœud retente. C'est le bon comportement dans les deux cas —
+// l'accusé perdu comme le refus muet.
+func tenterEnregistrement(sessionKey func() string, n InfosNoeud, cadence time.Duration) bool {
+	attente := armerAccuse()
+	if !enregistrer(sessionKey, n) {
+		desarmerAccuse()
+		return false
+	}
+
+	accepte, motif, recu := attendreAccuse(attente, DelaiAccuseEnregistrement)
+	switch {
+	case accepte:
+		logs.Write_log("INFO", fmt.Sprintf(
+			"nœud : %s (%s, %s:%d) enregistré, battement toutes les %s",
+			n.Hostname, n.Role, n.IP, n.Port, cadence))
+		return true
+	case recu:
+		logs.Write_log("ERROR", fmt.Sprintf(
+			"nœud : enregistrement REFUSÉ par le core (%s) — %s n'est pas dans le cluster, "+
+				"aucun agent ne lui sera envoyé ; nouvelle tentative dans %s",
+			motif, n.Hostname, cadence))
+	default:
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"nœud : aucun accusé d'enregistrement après %s — %s n'est peut-être pas dans le cluster ; "+
+				"nouvelle tentative dans %s", DelaiAccuseEnregistrement, n.Hostname, cadence))
+	}
+	return false
+}
+
+// attendreAccuse borne l'attente. Rend (accepté, motif, accusé reçu).
+func attendreAccuse(attente <-chan accuseEnregistrement, delai time.Duration) (bool, string, bool) {
+	select {
+	case a := <-attente:
+		return a.ok, a.motif, true
+	case <-time.After(delai):
+		desarmerAccuse()
+		return false, "", false
+	}
+}
+
+// L'accusé 04_02 arrive sur la goroutine de lecture ; l'attente est ailleurs.
+// D'où ce point de rendez-vous, volontairement minuscule : un seul
+// enregistrement est en vol à la fois.
+var (
+	accuseMu sync.Mutex
+	accuse   chan accuseEnregistrement
+)
+
+type accuseEnregistrement struct {
+	ok    bool
+	motif string
+}
+
+func armerAccuse() <-chan accuseEnregistrement {
+	accuseMu.Lock()
+	defer accuseMu.Unlock()
+	// Tampon de 1 : la goroutine de lecture ne doit JAMAIS bloquer sur un
+	// accusé que plus personne n'attend.
+	accuse = make(chan accuseEnregistrement, 1)
+	return accuse
+}
+
+func desarmerAccuse() {
+	accuseMu.Lock()
+	defer accuseMu.Unlock()
+	accuse = nil
+}
+
+// SignalerAccuseEnregistrement est appelée à la réception d'un 04_02.
+func SignalerAccuseEnregistrement(ok bool, motif string) {
+	accuseMu.Lock()
+	defer accuseMu.Unlock()
+	if accuse == nil {
+		return
+	}
+	select {
+	case accuse <- accuseEnregistrement{ok: ok, motif: motif}:
+	default:
+	}
+	accuse = nil
 }
 
 // CadenceBattementParDefaut doit rester NETTEMENT sous le seuil de péremption

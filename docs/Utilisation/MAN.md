@@ -466,6 +466,29 @@ status -u "username"
 status -u -g "group_name"
 ```
 
+| Colonne | Ce qu'elle dit |
+|---|---|
+| **Identifiant** | le compte — `vaultaire` est le tunnel de la machine, pas une personne |
+| **Machine** | le poste sur lequel la session est ouverte |
+| **Jeton valide jusqu'à** | quand la ligne disparaîtra si plus rien ne la prolonge |
+
+Une personne connectée sur trois postes donne **trois lignes** : une session,
+c'est « qui, et où ».
+
+**Ce qui fait vivre et mourir une ligne.** Elle naît à l'authentification
+(`03_01`), meurt à la déconnexion (`03_11`, émise par la fermeture PAM), et
+serait sinon effacée dix minutes après le dernier signe de vie. Ce signe de vie
+est le **battement de la machine** : une session utilisateur n'en a pas à elle.
+
+Conséquence à connaître : une machine éteinte voit ses sessions disparaître en
+une dizaine de minutes, mais une déconnexion dont la trame de fin s'est perdue
+reste affichée tant que le poste tourne. En cas de doute, `status -c` dit si la
+machine, elle, parle encore.
+
+> ⚠️ Un poste **Windows** n'émet pas de trame de fin de session : ses sessions
+> restent affichées jusqu'à l'extinction du poste. Voir
+> [`Installation/Client_Windows.md`](../Installation/Client_Windows.md).
+
 ### 6.2 Clients connectés
 
 ```bash
@@ -904,6 +927,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Imposer le second facteur à un groupe | `mfa -g IT_Group --require` |
 | Émettre une clé d'enrôlement de service | `enroll create --type proxy --uses 1 --expires 30m` |
 | Machines en écart de conformité GPO | `gpo drift` |
+| Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --all` |
 | Voir les durées d'exploitation | `settings list` |
 | Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
 | Arborescence LDAP | `eyes -g` |
@@ -1041,6 +1065,8 @@ gpo status                 # état d'application et de conformité du parc
 gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
 gpo drift                  # uniquement les machines en écart
 gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
+gpo refresh <computeur_id>           # cycle immédiat sur une machine
+gpo refresh --all                    # cycle immédiat sur tout le parc connecté
 ```
 
 **Trois informations distinctes, à ne pas confondre :**
@@ -1058,8 +1084,44 @@ installée, ou dont l’agent est tombé, apparaît donc — en `jamais` ou en `
 retard`. C’est volontaire : auparavant elle n’apparaissait pas du tout, et son
 silence se lisait comme une absence de problème.
 
-`en retard` se déclenche après **trois** cycles manqués, soit trois heures. Un
-redémarrage ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
+`en retard` se déclenche après **trois** cycles manqués. La durée d'un cycle est
+le réglage `gpo_refresh_minutes` (`settings`), soit trois heures avec sa valeur
+par défaut d'une heure — resserrez la cadence et le seuil suit. Un redémarrage
+ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
+
+### Déclencher un cycle tout de suite — `gpo refresh`
+
+```bash
+gpo refresh poste-42     # cette machine redemande sa politique maintenant
+gpo refresh --all        # toutes les machines connectées
+```
+
+Entre la correction d'une GPO et son application, il s'écoule sinon jusqu'à une
+cadence entière. `gpo refresh` supprime cette attente : le core pousse une
+demande de réveil, et la machine repart sur son cycle **ordinaire** — mêmes
+calculs, même empreinte, mêmes rapports. Rien n'est appliqué par un chemin
+différent.
+
+| | |
+|---|---|
+| Machine **hors ligne** | rien n'est mis en file : elle rafraîchira à sa reconnexion, qui déclenche déjà un cycle |
+| Machine **en cours de cycle** | la demande est ignorée : un seul cycle machine à la fois |
+| `--all` | ne vise que les machines **connectées**, et seulement celles de votre périmètre ; le décompte annonce les deux |
+
+Le droit exigé est `write:update:client` sur les domaines de la machine — et non
+`write:update:gpo` : ce qu'on engage, c'est le poste et ses services, pas la
+politique. Un administrateur délégué rafraîchit donc ses machines, pas celles
+des autres.
+
+**Changer la cadence de tout le parc** relève de `settings` :
+
+```bash
+settings set gpo_refresh_minutes 10     # pendant un déploiement
+settings reset gpo_refresh_minutes      # retour à une heure
+```
+
+La nouvelle valeur part avec les réponses GPO : chaque machine l'applique à son
+cycle suivant, sans redémarrage d'agent ni de core.
 
 ### Corriger ou seulement constater — `gpo mode`
 

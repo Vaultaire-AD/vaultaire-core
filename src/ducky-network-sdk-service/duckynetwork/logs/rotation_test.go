@@ -131,7 +131,18 @@ func TestLeRepertoireEstRecreeSIlDisparait(t *testing.T) {
 // est refusée, et les groupes du domaine posés sur la machine. Il était créé en
 // 0644 : tout utilisateur du poste pouvait lire les tentatives des autres.
 func TestLeJournalNEstPasLisibleParTous(t *testing.T) {
-	chemin := avecJournalTemporaire(t)
+	avecJournalTemporaire(t)
+
+	// Le répertoire doit être CRÉÉ par l'écriture, pas exister déjà : c'est le
+	// mode que le paquet POSE qu'on éprouve.
+	//
+	// La version précédente de ce test lisait le mode de t.TempDir() en croyant
+	// qu'il valait 0700 ; il suit en réalité l'umask (0755 ici), et le test
+	// échouait à chaque exécution en accusant un code qui, lui, crée bien en
+	// 0700. Un test rouge en permanence finit par ne plus être lu.
+	dir := filepath.Join(strings.TrimSuffix(storage.LogPath, string(filepath.Separator)), "vaultaire")
+	storage.LogPath = dir + string(filepath.Separator)
+	chemin := filepath.Join(dir, "test.log")
 
 	Write_log("INFO", "une ligne")
 
@@ -143,13 +154,13 @@ func TestLeJournalNEstPasLisibleParTous(t *testing.T) {
 		t.Errorf("mode %#o : le journal est lisible hors de son propriétaire", mode)
 	}
 
-	dir, err := os.Stat(filepath.Dir(chemin))
+	rep, err := os.Stat(dir)
 	if err != nil {
 		t.Fatalf("stat du répertoire : %v", err)
 	}
-	// t.TempDir crée en 0700 ; on vérifie que l'écriture ne l'a pas élargi.
-	if mode := dir.Mode().Perm(); mode&0o077 != 0 {
-		t.Errorf("répertoire en %#o : élargi par la création du journal", mode)
+	if mode := rep.Mode().Perm(); mode&0o077 != 0 {
+		t.Errorf("répertoire créé en %#o : les journaux nomment des comptes, "+
+			"il doit être 0700", mode)
 	}
 }
 

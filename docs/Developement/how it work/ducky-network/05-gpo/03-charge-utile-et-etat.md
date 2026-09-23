@@ -2,7 +2,7 @@
 
 # 5.3 — Charge utile, état local, application en scope user
 
-[← Les trames 05_01 à 05_17](./02-trames.md) · [Chapitre 6 — Révocation — kill switch (06) →](../06-revocation/README.md)
+[← Les trames 05_01 à 05_18](./02-trames.md) · [Chapitre 6 — Révocation — kill switch (06) →](../06-revocation/README.md)
 
 ---
 
@@ -136,4 +136,4 @@ qui bloque les connexions sur incident GPO est un incident d'exploitation majeur
 
 ---
 
-[← Les trames 05_01 à 05_17](./02-trames.md) · [Chapitre 6 — Révocation — kill switch (06) →](../06-revocation/README.md)
+[← Les trames 05_01 à 05_18](./02-trames.md) · [Chapitre 6 — Révocation — kill switch (06) →](../06-revocation/README.md)

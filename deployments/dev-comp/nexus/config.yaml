@@ -1,0 +1,37 @@
+# Nexus — configuration dev-comp
+#
+# Volontairement minimale : mode local, TLS auto-signé, un dépôt de chaque type.
+# Lecture STRICTE : une clé inconnue empêche le démarrage.
+#
+# L'adresse publique et le mot de passe admin se règlent dans .env
+# (NEXUS_PUBLIC_URL, NEXUS_ADMIN_PASSWORD), qui l'emportent sur ce fichier.
+# Mot de passe vide : généré au premier démarrage dans
+# /var/lib/vaultaire_nexus/admin.initial (volume devcomp_nexus).
+
+listen: ":8843"
+public_url: "https://localhost:8843"
+data_dir: /var/lib/vaultaire_nexus
+log_path: /var/log/vaultaire/
+
+tls:
+  enable: true
+  self_signed: true
+
+auth:
+  mode: local
+  local_admin:
+    enable: true
+    username: admin
+
+repositories:
+  - name: rocky9
+    type: rpm
+    description: Paquets internes pour Rocky Linux 9
+    public: true
+  - name: docker
+    type: docker
+    description: Images du parc
+  - name: releases
+    type: vaultaire
+    description: Binaires Vaultaire
+    public: true

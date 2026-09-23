@@ -20,6 +20,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | [`Installation/Requirements.md`](./Installation/Requirements.md) | Prérequis système, versions, dépendances |
 | [`Installation/Setup.md`](./Installation/Setup.md) | Installation complète : base de données, service systemd, configuration YAML, poste client |
 | [`Installation/Docker_Kubernetes.md`](./Installation/Docker_Kubernetes.md) | Déploiement conteneurisé |
+| [`Installation/Client_Windows.md`](./Installation/Client_Windows.md) | **Poste Windows (V1)** : identité de la machine, service, tuile de l'écran de connexion, compte local |
 
 ---
 
@@ -77,6 +78,8 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Base_de_donnees.md`](./Developement/how%20it%20work/Base_de_donnees.md) | Schéma de la base de données |
 | [`MFA_et_Expiration.md`](./Developement/how%20it%20work/MFA_et_Expiration.md) | Second facteur et expiration des mots de passe |
 | [`Journalisation.md`](./Developement/how%20it%20work/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi |
+| [`Tests.md`](./Developement/how%20it%20work/Tests.md) | **Les tests** : comment les lancer, les deux familles, les tests-sentinelles, la suite `--test` |
+| [`Pense-bete_developpement.md`](./Developement/how%20it%20work/Pense-bete_developpement.md) | **Les étapes à suivre** quand on ajoute une fonctionnalité — de l'entrée TO-DO au commit |
 
 > **Ce qui n'a pas sa place ici** : « comment déléguer un droit », « quelle
 > commande taper ». Cela relève de [`Utilisation/`](./Utilisation/). La règle est

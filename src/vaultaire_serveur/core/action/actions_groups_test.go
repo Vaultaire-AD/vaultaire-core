@@ -325,6 +325,9 @@ func (e errSimulee) Error() string { return string(e) }
 // l'administrateur sans confirmation de ce qui a effectivement changé, en
 // particulier après une série d'opérations.
 func TestSuccesNommeLEntiteEtLeGroupe(t *testing.T) {
+	// rattacher vérifie l'existence du groupe en base avant d'appeler la
+	// fonction injectée : le message de succès ne se lit donc pas sans elle.
+	exigeBase(t)
 	executer := rattacher("utilisateur", "username", func(string, string) error { return nil })
 	res, err := executer(Appelant{}, Params{"group": "paris", "username": "alice"})
 	if err != nil {
@@ -353,6 +356,7 @@ func TestSuccesNommeLEntiteEtLeGroupe(t *testing.T) {
 // Le test vérifie que les fonctions intermédiaires reçoivent bien
 // (entité, groupe) dans cet ordre, quel que soit l'ordre attendu en dessous.
 func TestOrdreDesArgumentsPermission(t *testing.T) {
+	exigeBase(t)
 	var vuEntite, vuGroupe string
 
 	ajout := rattacher("permission", "permission", func(entite, groupe string) error {

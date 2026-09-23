@@ -36,11 +36,13 @@ import (
 // boucle qu'il pilote tourne sur l'AGENT. Deux façons de l'y faire arriver :
 // une constante côté agent, ou la valeur dans la réponse.
 //
-// La constante aurait reproduit un défaut déjà nommé dans ce dépôt —
-// `IntervalleRapportAgent` duplique `gpo.MachineRefreshInterval`, et allonger
-// l'un sans l'autre fait apparaître tout le parc en retard du jour au lendemain.
-// Surtout, un réglage qui s'affiche dans l'interface sans rien changer au
-// comportement est plus trompeur que pas de réglage du tout.
+// La constante aurait reproduit un défaut alors présent dans ce dépôt —
+// `IntervalleRapportAgent` dupliquait `gpo.MachineRefreshInterval`, et allonger
+// l'un sans l'autre faisait apparaître tout le parc en retard du jour au
+// lendemain. Ce défaut-là est corrigé (voir db_gpo/fraicheur_conformite.go, et
+// le réglage `gpo_refresh_minutes` qui suit la même recette que celui-ci), mais
+// l'arbitrage reste : un réglage qui s'affiche dans l'interface sans rien
+// changer au comportement est plus trompeur que pas de réglage du tout.
 //
 // La valeur part donc dans `03_09`. Une machine hors ligne l'applique à son
 // retour, pas avant : c'est écrit dans la conséquence du réglage.

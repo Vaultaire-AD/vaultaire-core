@@ -2,14 +2,12 @@ package dbsessions
 
 import (
 	"database/sql"
-	"time"
 	dbclients "vaultaire/core/database/db_clients"
 	"vaultaire/core/logs"
 )
 
 func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwareID string) {
-	sessionVal := time.Now().Add(10 * time.Minute)
-	formattedTime := sessionVal.Format("2006/01/02 15:04:05")
+	formattedTime := EcheanceSession()
 
 	// La machine est résolue par le helper commun, et l'échec ARRÊTE la
 	// fonction.

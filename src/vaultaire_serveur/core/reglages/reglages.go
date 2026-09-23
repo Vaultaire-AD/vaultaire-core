@@ -111,6 +111,7 @@ const (
 	CleSessionWeb          = "web_session_minutes"
 	CleSessionWebPurge     = "web_session_purge_minutes"
 	CleSynchroGroupes      = "group_sync_minutes"
+	CleRafraichissementGPO = "gpo_refresh_minutes"
 )
 
 // catalogue déclare toutes les durées réglables.
@@ -175,6 +176,19 @@ var catalogue = []Definition{
 			"catalogue qui pilote une boucle du PARC et non du core : sa valeur " +
 			"part dans la trame 03_09, et une machine hors ligne l'applique au " +
 			"retour, pas avant.",
+	},
+	{
+		Cle: CleRafraichissementGPO, Unite: Minutes, Defaut: 60, Min: 5, Max: 1440,
+		Libelle: "Rafraîchissement des GPO sur les machines",
+		Consequence: "Cadence à laquelle chaque machine redemande sa politique et " +
+			"scanne ses écarts. C'est le délai maximal entre une GPO modifiée ici et " +
+			"son application sur un poste — et, dans l'autre sens, entre une dérive " +
+			"et sa correction. Plus court : le parc redemande sa politique plus " +
+			"souvent, pour un manifeste qui n'a le plus souvent pas changé. Comme " +
+			"la synchronisation des groupes, ce réglage pilote une boucle du PARC : " +
+			"sa valeur part dans les trames 05_02 et 05_03, et une machine hors " +
+			"ligne l'applique au retour. Il décide aussi du seuil de « en retard » " +
+			"dans « vlt gpo status », fixé à trois cycles.",
 	},
 }
 

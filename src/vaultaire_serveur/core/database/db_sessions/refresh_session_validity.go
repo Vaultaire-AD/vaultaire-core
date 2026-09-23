@@ -2,13 +2,11 @@ package dbsessions
 
 import (
 	"database/sql"
-	"time"
 )
 
 func RefreshSessionValidity(db *sql.DB, sessionKey []byte) error {
 
-	expiration := time.Now().Add(10 * time.Minute)
-	formattedTime := expiration.Format("2006/01/02 15:04:05")
+	formattedTime := EcheanceSession()
 
 	query := `
 		UPDATE did_login

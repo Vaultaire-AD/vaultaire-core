@@ -3,6 +3,7 @@ package security
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -162,7 +163,11 @@ func TestDesParametresNulsSontRefuses(t *testing.T) {
 		{"zéro fil", ArgonMemoireKio, ArgonTours, 0},
 	}
 	for _, c := range cas {
-		empreinte := phc(c.mem, c.tours, c.fils, sel, "mot de passe")
+		// L'empreinte est fabriquée SANS appeler argon2 : c'est le test
+		// lui-même qui paniquait, en demandant à argon2.IDKey de calculer avec
+		// les paramètres nuls qu'il voulait voir refusés. Seule la ligne de
+		// paramètres compte ici — Verifier doit s'arrêter avant l'appel.
+		empreinte := phcParametresSeuls(c.mem, c.tours, c.fils, sel)
 		if valide, _ := Verifier("mot de passe", "", empreinte); valide {
 			t.Errorf("%s : acceptée, alors qu'argon2 paniquerait sur ces paramètres", c.nom)
 		}
@@ -215,4 +220,18 @@ func TestLeSelHeriteNEstPasUtiliseParArgon2id(t *testing.T) {
 // phc fabrique une empreinte avec des paramètres choisis, pour les tests.
 func phc(memoire, tours uint32, fils uint8, sel []byte, motDePasse string) string {
 	return construirePHC(motDePasse, sel, memoire, tours, fils)
+}
+
+// phcParametresSeuls fabrique une chaîne PHC dont seuls les PARAMÈTRES sont
+// choisis : la somme est celle d'une empreinte valide, recopiée telle quelle.
+//
+// C'est ce qu'il faut pour éprouver un refus AVANT calcul : passer par
+// construirePHC appellerait argon2 avec les paramètres à refuser, et argon2
+// panique dessus — le test tombait avant d'avoir rien vérifié.
+func phcParametresSeuls(memoire, tours uint32, fils uint8, sel []byte) string {
+	valide := construirePHC("mot de passe", sel, ArgonMemoireKio, ArgonTours, ArgonFils)
+	champs := strings.Split(valide, "$")
+	// $argon2id$v=19$m=…,t=…,p=…$sel$somme  →  ["", "argon2id", "v=19", params, sel, somme]
+	champs[3] = fmt.Sprintf("m=%d,t=%d,p=%d", memoire, tours, fils)
+	return strings.Join(champs, "$")
 }

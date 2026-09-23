@@ -18,18 +18,31 @@ import (
 //
 // Tout est donc pur : des lignes en entrée, un instant en paramètre.
 
-// IntervalleRapportAgent est la cadence à laquelle un agent rapporte.
+// IntervalleRapportParDefaut est la cadence supposée tant que personne n'a dit
+// autre chose : celle du catalogue des réglages (gpo_refresh_minutes, 60 min).
+const IntervalleRapportParDefaut = 1 * time.Hour
+
+// CadenceAgent rend la cadence à laquelle un agent rapporte.
 //
-// ATTENTION : cette valeur DUPLIQUE gpo.MachineRefreshInterval de
-// vaultaire_client. Les deux vivent dans des modules Go distincts — le serveur
-// n'importe pas l'agent — et rien ne peut donc les tenir liées à la
-// compilation.
+// # Ce que cette indirection ferme
 //
-// Les faire diverger n'a pas d'effet visible immédiat, ce qui est le pire des
-// cas : allonger la cadence de l'agent sans toucher à celle-ci ferait
-// apparaître tout le parc « en retard » du jour au lendemain, et on
-// conclurait à une panne.
-const IntervalleRapportAgent = 1 * time.Hour
+// C'était une CONSTANTE, et son commentaire disait déjà le danger : elle
+// dupliquait `gpo.MachineRefreshInterval` de l'agent, dans un module que le
+// serveur n'importe pas. Allonger la cadence de l'agent sans toucher à celle-ci
+// faisait apparaître tout le parc « en retard » du jour au lendemain, et on
+// concluait à une panne.
+//
+// La cadence est désormais un RÉGLAGE du core (`gpo_refresh_minutes`), envoyé
+// aux agents dans les trames 05_02 et 05_03. Il n'y a donc plus deux valeurs à
+// tenir d'accord, mais une seule — et ce fichier la lit par cette fonction,
+// posée au démarrage du core.
+//
+// Une fonction plutôt qu'une variable : le réglage peut changer en cours
+// d'exécution, et une valeur copiée une fois au démarrage se périmerait
+// silencieusement. Une fonction plutôt qu'une lecture directe du paquet
+// reglages : ce fichier ne consulte rien — c'est ce qui le rend testable sans
+// base, et c'est écrit en tête.
+var CadenceAgent = func() time.Duration { return IntervalleRapportParDefaut }
 
 // ToleranceRapport est le délai au-delà duquel un silence devient un retard.
 //
@@ -38,7 +51,7 @@ const IntervalleRapportAgent = 1 * time.Hour
 // cycle manqué et aucun n'est un incident. Signaler dès le premier remplirait
 // la vue de retards qui se résolvent seuls, et l'administrateur cesserait de la
 // lire — ce qui reviendrait à n'avoir rien signalé du tout.
-const ToleranceRapport = 3 * IntervalleRapportAgent
+func ToleranceRapport() time.Duration { return 3 * CadenceAgent() }
 
 // ScopeInconnu remplace le scope d'une machine qui n'a jamais rapporté.
 //
@@ -78,7 +91,7 @@ type EtatRapport string
 const (
 	// RapportAJour : la machine a rapporté dans la fenêtre attendue.
 	RapportAJour EtatRapport = "à jour"
-	// RapportEnRetard : elle a rapporté un jour, plus depuis ToleranceRapport.
+	// RapportEnRetard : elle a rapporté un jour, plus depuis ToleranceRapport().
 	RapportEnRetard EtatRapport = "en retard"
 	// RapportJamais : elle est à l'inventaire et n'a jamais rapporté.
 	RapportJamais EtatRapport = "jamais"
@@ -92,7 +105,7 @@ func (r ComplianceRow) Fraicheur(maintenant time.Time) EtatRapport {
 	if r.JamaisRapporte || r.ReportedAt.IsZero() {
 		return RapportJamais
 	}
-	if maintenant.Sub(r.ReportedAt.UTC()) > ToleranceRapport {
+	if maintenant.Sub(r.ReportedAt.UTC()) > ToleranceRapport() {
 		return RapportEnRetard
 	}
 	return RapportAJour
@@ -162,7 +175,7 @@ func TrierConformite(rows []ComplianceRow, maintenant time.Time) {
 type ResumeParc struct {
 	Machines   int // machines distinctes à l'inventaire
 	Jamais     int // n'ont jamais rapporté
-	EnRetard   int // ont rapporté un jour, plus depuis ToleranceRapport
+	EnRetard   int // ont rapporté un jour, plus depuis ToleranceRapport()
 	EnEchec    int // au moins un module en échec
 	AvecEcarts int // au moins un écart de conformité constaté
 }

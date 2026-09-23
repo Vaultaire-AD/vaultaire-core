@@ -82,11 +82,11 @@ func TestAnalyserListe(t *testing.T) {
 // est en jeu est ce que la machine acceptera comme serveur.
 func TestUnNoeudSansEmpreinteEstRejete(t *testing.T) {
 	cas := map[string]string{
-		"empreinte vide":       "core1|10.0.0.1|6666|core|0|",
-		"champ absent":         "core1|10.0.0.1|6666|core|0",
-		"mauvaise fonction":    "core1|10.0.0.1|6666|core|0|MD5:xxxx",
-		"chaîne quelconque":    "core1|10.0.0.1|6666|core|0|coucou",
-		"minuscules":           "core1|10.0.0.1|6666|core|0|sha256:AAAA",
+		"empreinte vide":    "core1|10.0.0.1|6666|core|0|",
+		"champ absent":      "core1|10.0.0.1|6666|core|0",
+		"mauvaise fonction": "core1|10.0.0.1|6666|core|0|MD5:xxxx",
+		"chaîne quelconque": "core1|10.0.0.1|6666|core|0|coucou",
+		"minuscules":        "core1|10.0.0.1|6666|core|0|sha256:AAAA",
 	}
 
 	for nom, l := range cas {

@@ -53,22 +53,32 @@ jobs:
             echo "✅ Tous les fichiers sont correctement formatés." | tee gofmt-report.txt
           fi
 
-      # NOTE: corrigé - chaque module pointe maintenant vers son vrai dossier
+      # La liste des modules n'est plus écrite à la main.
+      #
+      # Elle citait `vaultaire_api`, qui n'existe pas — le pas était alors
+      # simplement SAUTÉ, avec un avertissement que personne ne lit — et elle
+      # oubliait `vaultaire_ctl`, `vaultaire_proxy`, `ducky-network-sdk-service`
+      # et `api_client_package`. Une liste tenue à la main diverge du dépôt, et
+      # son silence ressemble à un succès.
+      #
+      # La question est donc posée au dépôt : « quels dossiers de src/ portent
+      # un go.mod ». Même découverte que dans tests.yaml.
       - name: go vet (tous les modules)
         id: vet
         continue-on-error: true
         run: |
           set +e
           STATUS=0
+          MODULES=$(find src -mindepth 2 -maxdepth 2 -name go.mod -printf '%h\n' | sed 's|^src/||' | sort)
           {
-            for mod in vaultaire_serveur vaultaire_client vaultaire_api vaultaire_cli vaultaire_nexus; do
+            if [ -z "$MODULES" ]; then
+              echo "❌ aucun go.mod trouvé sous src/ — la découverte est cassée"
+              STATUS=1
+            fi
+            for mod in $MODULES; do
               echo "### go vet - $mod"
-              if [ -d "src/$mod" ]; then
-                (cd "src/$mod" && go vet ./... 2>&1)
-                if [ $? -ne 0 ]; then STATUS=1; echo "❌ échec sur $mod"; else echo "✅ OK sur $mod"; fi
-              else
-                echo "⚠️  dossier src/$mod introuvable, vérifiez le nom réel"
-              fi
+              (cd "src/$mod" && go vet ./... 2>&1)
+              if [ $? -ne 0 ]; then STATUS=1; echo "❌ échec sur $mod"; else echo "✅ OK sur $mod"; fi
               echo ""
             done
           } | tee vet-report.txt
@@ -92,6 +102,37 @@ jobs:
             vet-report.txt
           retention-days: 30
           if-no-files-found: ignore
+
+      # Le job lint était TOUJOURS vert.
+      #
+      # Ses trois pas portent `continue-on-error: true` — ce qui est voulu, pour
+      # que les trois rapports soient produits même si le premier échoue — mais
+      # rien ne relisait leur issue ensuite. Un fichier non formaté ou un
+      # `go vet` en échec ne bloquait donc rien, et le job affichait un succès.
+      # C'est le même défaut que l'absence de tests (TO-DO 75) : un contrôle qui
+      # ne peut pas dire non ne contrôle rien.
+      #
+      # `golangci-lint` reste non bloquant, et c'est un choix : il tourne en
+      # `version: latest`, donc son verdict peut changer sans que le dépôt
+      # bouge. Un contrôle qui rougit tout seul un matin finit par être ignoré,
+      # et emporte les deux autres avec lui. gofmt et go vet, eux, ne dépendent
+      # que de la version de Go, qui est figée plus haut.
+      - name: Verdict du lint
+        if: always()
+        run: |
+          STATUS=0
+          if [ "${{ steps.gofmt.outcome }}" = "failure" ]; then
+            echo "::error::des fichiers ne sont pas formatés — voir report-lint"
+            STATUS=1
+          fi
+          if [ "${{ steps.vet.outcome }}" = "failure" ]; then
+            echo "::error::go vet a signalé quelque chose — voir report-lint"
+            STATUS=1
+          fi
+          if [ "${{ steps.golangci.outcome }}" = "failure" ]; then
+            echo "::warning::golangci-lint a signalé quelque chose (non bloquant)"
+          fi
+          exit $STATUS
 
   # --------------------------------------------------------------------
   # 2. Analyse statique de sécurité (SAST)

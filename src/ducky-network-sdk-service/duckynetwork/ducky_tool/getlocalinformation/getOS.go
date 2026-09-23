@@ -1,3 +1,10 @@
+//go:build !windows
+
+// Les collecteurs d'inventaire de ce fichier lisent le système à la façon d'un
+// UNIX : /etc/os-release, free, nproc, who. Leur pendant Windows vit dans les
+// fichiers *_windows.go, qui répondent aux mêmes questions par les API du
+// système — et non par des commandes, que Windows n'a pas.
+
 package getlocalinformation
 
 import (
