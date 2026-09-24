@@ -116,6 +116,24 @@ arrêté plus longtemps que ce délai doit être réenrôlé avec une nouvelle c
 Le filtre porte sur `clienttype.ServiceNames()` : tout type service ajouté au
 catalogue y entre sans rien écrire.
 
+### Hors ligne, puis oublié — et rien entre les deux
+
+`CleanupStaleNodes` (cadence `cluster_cleanup_seconds`) :
+
+| Absence | Effet | Sur quoi |
+|---|---|---|
+| > 1 minute | `status = 'offline'` : le nœud quitte la liste servie aux agents | tous |
+| > délai de purge (`vlt cluster purge-delay`, 24 h, 0 = jamais) | ligne **supprimée** — réglages d'exposition, de priorité et d'affinité compris | nœuds d'infrastructure seulement (tout rôle hors `ServiceNames()`) |
+
+Les services ne sont **pas** supprimés ici : `PurgeDepartedServices` le fait,
+avec leur client.
+
+> Jusqu'au TO-DO 85, la suppression tombait à **cinq minutes**, pour tous. Un
+> proxy redémarré lentement ou un hôte en veille revenait par un `INSERT` neuf,
+> aux valeurs par défaut : les décisions d'exploitation étaient perdues, et le
+> délai de purge des services n'était jamais atteint. Le core, lui, battait
+> ensuite dans le vide sans se réenregistrer — il le fait désormais.
+
 ---
 
 [← Sommaire du chapitre](./README.md) · [Découverte de service et proxies →](./02-decouverte-et-proxies.md)

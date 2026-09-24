@@ -194,7 +194,7 @@ func HostnameDuProprietaire(db *sql.DB, proprietaire string) (string, error) {
 }
 
 func GetActiveNodesByRole(db *sql.DB, role string) ([]clusterstorage.Node, error) {
-	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version, adresse_publique, port_public
+	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, COALESCE(capabilities, ''), last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version, adresse_publique, port_public
                             FROM cluster_nodes
                             WHERE role=? AND status='online'`, role)
 	if err != nil {
@@ -221,8 +221,12 @@ func GetActiveNodesByRole(db *sql.DB, role string) ([]clusterstorage.Node, error
 }
 
 // GetAllNodes retourne tous les nœuds, quelque soit leur état.
+//
+// capabilities est lue par COALESCE : la colonne JSON accepte NULL, et une
+// seule ligne NULL — écrite à la main, ou par une version antérieure —
+// faisait échouer le Scan de TOUTE la liste, donc la page Cluster entière.
 func GetAllNodes(db *sql.DB) ([]clusterstorage.Node, error) {
-	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version, adresse_publique, port_public
+	rows, err := db.Query(`SELECT id_node, hostname, fqdn, ip_address, role, status, version_code, COALESCE(capabilities, ''), last_heartbeat, ducky_port, priorite, expose_aux_agents, key_fingerprint, sdk_version, adresse_publique, port_public
                             FROM cluster_nodes
                             ORDER BY role, hostname`)
 	if err != nil {
@@ -248,20 +252,69 @@ func GetAllNodes(db *sql.DB) ([]clusterstorage.Node, error) {
 	return nodes, nil
 }
 
-// CleanupStaleNodes applique la politique :
-// - >1 minute sans heartbeat => status='offline'
-// - >5 minutes sans heartbeat => suppression.
-func CleanupStaleNodes(db *sql.DB) error {
-	// Mettre hors ligne les nœuds inactifs depuis plus d'une minute
-	if _, err := db.Exec(`UPDATE cluster_nodes 
-                           SET status='offline' 
+// CleanupStaleNodes met hors ligne les nœuds muets, et OUBLIE les nœuds
+// d'infrastructure partis depuis `oubli` (TO-DO 85).
+//
+// # Le défaut que cette fonction fermait mal
+//
+// Elle supprimait toute ligne sans battement depuis CINQ MINUTES. Un proxy
+// redémarré un peu lentement, un hôte mis en veille, une coupure réseau : la
+// ligne disparaissait, et le nœud se réenregistrait par un INSERT neuf, aux
+// valeurs par défaut. Les décisions d'exploitation — adresse publique, port
+// exposé, priorité, retrait de rotation, et l'affinité de groupes, supprimée
+// en cascade — étaient perdues sans un mot. C'est ce que la recette du 24/09
+// a vu : « il faut ressaisir l'IP publique et le port ».
+//
+// Elle supprimait aussi les SERVICES au bout de ces cinq minutes, alors que
+// leur purge a son propre délai, réglable (service_purge_hours, 24 h) : ce
+// délai n'était donc jamais atteint.
+//
+// # Ce qu'elle fait désormais
+//
+//   - hors ligne après une minute sans battement, comme avant : c'est ce qui
+//     retire le nœud de la liste servie aux agents ;
+//   - suppression des seuls nœuds d'INFRASTRUCTURE (cores, proxies — tout
+//     rôle qui n'est pas un type de service), hors ligne depuis `oubli`. Zéro :
+//     jamais. Les services sont purgés par PurgeDepartedServices, qui retire
+//     aussi leur client.
+//
+// Rend le nombre de nœuds oubliés.
+func CleanupStaleNodes(db *sql.DB, oubli time.Duration, rolesServices []string) (int64, error) {
+	if db == nil {
+		return 0, errors.New("connexion base indisponible")
+	}
+	if _, err := db.Exec(`UPDATE cluster_nodes
+                           SET status='offline'
                            WHERE status='online' AND last_heartbeat < DATE_SUB(NOW(), INTERVAL 1 MINUTE)`); err != nil {
-		return err
+		return 0, err
 	}
-	// Supprimer les nœuds inactifs depuis plus de cinq minutes
-	if _, err := db.Exec(`DELETE FROM cluster_nodes 
-                           WHERE last_heartbeat < DATE_SUB(NOW(), INTERVAL 5 MINUTE)`); err != nil {
-		return err
+	if oubli <= 0 {
+		return 0, nil
 	}
-	return nil
+	q, args := requeteOubli(oubli, rolesServices)
+	res, err := db.Exec(q, args...)
+	if err != nil {
+		return 0, err
+	}
+	n, _ := res.RowsAffected()
+	return n, nil
+}
+
+// requeteOubli compose la suppression des nœuds d'infrastructure partis.
+//
+// Séparée pour être éprouvée sans base : c'est elle qui décide de ce qui est
+// détruit, et une condition oubliée y effacerait des services ou des nœuds en
+// ligne.
+func requeteOubli(oubli time.Duration, rolesServices []string) (string, []any) {
+	q := `DELETE FROM cluster_nodes
+           WHERE status = 'offline'
+             AND last_heartbeat < DATE_SUB(NOW(), INTERVAL ? SECOND)`
+	args := []any{int64(oubli / time.Second)}
+	if len(rolesServices) > 0 {
+		q += " AND role NOT IN (" + strings.TrimSuffix(strings.Repeat("?,", len(rolesServices)), ",") + ")"
+		for _, r := range rolesServices {
+			args = append(args, r)
+		}
+	}
+	return q, args
 }

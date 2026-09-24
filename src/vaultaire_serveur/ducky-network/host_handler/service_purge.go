@@ -33,6 +33,11 @@ import (
 
 // SettingServicePurgeHours est le délai avant qu'un service hors ligne soit
 // considéré comme définitivement parti.
+//
+// Depuis le TO-DO 85, c'est aussi le délai d'OUBLI des nœuds d'infrastructure
+// (cores, proxies) : voir clusterdatabase.CleanupStaleNodes. Un seul délai pour
+// « ce nœud existe-t-il encore ? ». La clé garde son nom pour ne pas perdre la
+// valeur déjà réglée sur les parcs en service.
 const SettingServicePurgeHours = "service_purge_hours"
 
 // Bornes et défaut du délai de purge.

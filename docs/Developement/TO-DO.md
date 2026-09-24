@@ -26,8 +26,7 @@ Trois gestes, dans le même passage que le code :
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 90  | CLIENT       | Rafraîchir la liste des cores/proxies, et basculer         | À faire                                 |
 | 94  | CORE         | Un core ne redémarre pas si `clientconfpath` ≠ `/opt/vaultaire/` | À faire                          |
-| 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | À faire                                 |
-| 85  | WEB          | Page Cluster : réglages perdus, et illisible               | À faire                                 |
+| 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | Cause probable corrigée (85) — à reproduire |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte     | À faire                                 |
@@ -104,7 +103,9 @@ des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Pourquoi c'est important.** Le parc, lui, sait revenir — la dégressivité et le battement sont en place côté agent depuis le point 74. Ce sont les **nœuds entre eux** qui restent fâchés, et un core hors cluster continue de répondre aux agents qui le connaissent déjà : la panne ne se voit pas, elle se découvre.
 
-**À faire.** Reproduire (une veille suffit, ou `docker pause` sur un core). Puis vérifier deux choses : qu'un nœud retente son `04_01` après une rupture — et pas seulement au démarrage —, et que le battement du cluster distingue « pas de réponse » d'une connexion morte. L'hypothèse la plus probable est la seconde : la connexion TCP paraît encore ouverte au réveil, donc rien ne déclenche de réenregistrement.
+**Cause probable trouvée en traitant le point 85 (24/09).** `CleanupStaleNodes` supprimait toute ligne de `cluster_nodes` muette depuis **cinq minutes**, et le battement d'un core dont la ligne avait disparu se contentait de journaliser « redémarrez-le ». Une veille de plus de cinq minutes produisait donc exactement ce constat. Corrigé au point 85 : l'oubli suit le délai de purge (24 h), et le core se réenregistre seul. **Reste à reproduire** pour confirmer — et à écarter la seconde hypothèse ci-dessous si le symptôme persiste.
+
+**À faire.** Reproduire (une veille suffit, ou `docker pause` sur un core **plus de cinq minutes**). Puis vérifier deux choses : qu'un nœud retente son `04_01` après une rupture — et pas seulement au démarrage —, et que le battement du cluster distingue « pas de réponse » d'une connexion morte. L'hypothèse la plus probable est la seconde : la connexion TCP paraît encore ouverte au réveil, donc rien ne déclenche de réenregistrement.
 
 ---
 
@@ -217,19 +218,6 @@ Une piste pour le second symptôme : l'empreinte porte sur la **politique effect
 **À faire.** Une tâche de fond côté core qui renvoie périodiquement les ordres en attente aux clients connectés.
 
 **Déjà corrigé par le point 89 (24/09).** Une partie des « push en échec sur une machine connectée » ne venait pas du réseau : la session était choisie au hasard parmi celles qui portaient l'identifiant de la machine — poignée de main, session d'un utilisateur. `pushToOnline` passe désormais par `sessionmgr.SessionsMachine`. Reste le vrai sujet de ce point : rejouer un ordre dont l'envoi a réellement échoué.
-
----
-
-## Portail et exploitation
-
-### 85. [WEB] [CLUSTER] Page Cluster : réglages perdus, et illisible
-
-**Constat** (recette du 24/09). Deux choses distinctes, dont une seule est grave :
-
-- les réglages d'un nœud ne sont **pas persistants** — l'IP publique et le port exposé se perdent, et il faut les ressaisir ;
-- la page s'allonge avec le cluster : il faut faire défiler pour trouver un nœud et le configurer.
-
-**À faire.** Chercher d'abord **où la configuration d'un nœud est écrasée** : un battement qui réécrit la ligne, ou un redémarrage qui repart de la configuration de fichier. C'est le vrai défaut — une adresse d'exposition perdue, c'est un parc qui tente une adresse injoignable (voir le point 46). La lisibilité vient ensuite : liste courte des membres, et **fiche de configuration au clic** sur un membre, au lieu de tout déplier.
 
 ---
 

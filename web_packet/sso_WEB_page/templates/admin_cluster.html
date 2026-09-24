@@ -6,6 +6,9 @@
   <title>Cluster — Vaultaire</title>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/vlt_picker.css">
+  <style>
+    .cluster-liste tr.cluster-choisi td { background: rgba(0, 123, 255, 0.08); }
+  </style>
 </head>
 <body>
   <div class="app-layout">
@@ -31,64 +34,67 @@
           {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
           <h2 class="h2">Nœuds enregistrés</h2>
+          <p class="muted small">Cliquez un nœud pour ouvrir sa fiche : adresse d'accès, priorité, rotation et groupes servis.</p>
           <div class="table-wrap">
-            <table>
+            <table class="cluster-liste">
               <thead>
                 <tr>
-                  <th>ID</th>
-                  <th>Hostname</th>
-                  <th>FQDN</th>
-                  <th>Accès des agents</th>
-                  <th>Vu par le nœud</th>
-                  <th>Sert en priorité</th>
+                  <th>Nœud</th>
                   <th>Rôle</th>
                   <th>Statut</th>
-                  <th>Version</th>
-                  <th>Dernier heartbeat</th>
+                  <th>Accès des agents</th>
+                  <th>Priorité</th>
+                  <th>Sert en priorité</th>
+                  <th>Dernier battement</th>
                 </tr>
               </thead>
               <tbody>
               {{ range .Nodes }}
-                <tr>
-                  <td>{{ .ID }}</td>
-                  <td>{{ .Hostname }}</td>
-                  <td>{{ .FQDN }}</td>
+                <tr{{ if and $.Selection (eq $.Selection.Hostname .Hostname) }} class="cluster-choisi"{{ end }}>
+                  <td><a href="/admin/cluster?noeud={{ .Hostname }}">{{ .Hostname }}</a></td>
+                  <td>{{ if eq .Role "vaultaire_nexus" }}Nexus{{ else if eq .Role "vaultaire_web" }}Interface web{{ else }}{{ .Role }}{{ end }}</td>
+                  <td>{{ .Status }}</td>
                   <td>
-                    {{ if .LienService }}<a href="{{ .LienService }}" target="_blank" rel="noopener noreferrer">{{ .LienService }}</a> <span class="muted small">service</span>
+                    {{ if .LienService }}<a href="{{ .LienService }}" target="_blank" rel="noopener noreferrer">{{ .LienService }}</a>
                     {{ else if .ExpositionDeclaree }}<strong>{{ .Acces }}</strong> <span class="muted small">déclaré</span>
                     {{ else }}{{ .Acces }}{{ end }}
-                    {{ if not .ExposeAuxAgents }}<br><span class="muted small">hors rotation — annoncé à aucun agent</span>{{ end }}
+                    {{ if not .ExposeAuxAgents }}<br><span class="muted small">hors rotation</span>{{ end }}
                   </td>
-                  <td class="muted small">{{ if .ExpositionDeclaree }}{{ .IPAddress }}:{{ .Port }}{{ end }}</td>
+                  <td>{{ if .Priorite }}{{ .Priorite }}{{ else }}<span class="muted small">—</span>{{ end }}</td>
                   <td>
                     {{ if .GroupesAffins }}{{ range $i, $g := .GroupesAffins }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
                     {{ else }}<span class="muted small">tout le parc</span>{{ end }}
                   </td>
-                  <td>{{ if eq .Role "vaultaire_nexus" }}Nexus <span class="muted small">(dépôt de paquets)</span>{{ else if eq .Role "vaultaire_web" }}Interface web{{ else }}{{ .Role }}{{ end }}</td>
-                  <td>{{ .Status }}</td>
-                  <td>{{ .VersionCode }}</td>
-                  <td>{{ .LastHeartbeat }}</td>
+                  <td class="muted small">{{ .LastHeartbeat.Format "2006-01-02 15:04:05" }}</td>
                 </tr>
               {{ end }}
               </tbody>
             </table>
           </div>
 
-          <h2 class="h2">Par où les agents joignent un nœud</h2>
-          <p class="muted small">
-            Un nœud déclare l'adresse qu'il voit de <em>lui-même</em>. Derrière une redirection NAT,
-            dans un conteneur ou sur un hôte à plusieurs interfaces, ce n'est pas celle par laquelle
-            le parc l'atteint — et il n'a aucun moyen de le savoir. La déclaration ci-dessous
-            l'emporte, et c'est elle que reçoivent les agents.
-          </p>
+          {{ with .Selection }}
+          <div class="cluster-fiche">
+            <div style="display:flex; justify-content:space-between; align-items:baseline; margin-top:1.6rem">
+              <h2 class="h2">Fiche de {{ .Hostname }} <span class="muted small">({{ .Role }})</span></h2>
+              <a href="/admin/cluster" class="btn btn-ghost">Fermer</a>
+            </div>
+            <p class="muted small">
+              FQDN {{ .FQDN }} · vu par le nœud : {{ .IPAddress }}{{ if .Port }}:{{ .Port }}{{ end }} ·
+              version {{ .VersionCode }} · identifiant {{ .ID }}
+            </p>
+            <p class="muted small">
+              Un nœud déclare l'adresse qu'il voit de <em>lui-même</em>. Derrière une redirection NAT,
+              dans un conteneur ou sur un hôte à plusieurs interfaces, ce n'est pas celle par laquelle
+              le parc l'atteint — et il n'a aucun moyen de le savoir. La déclaration ci-dessous
+              l'emporte, et c'est elle que reçoivent les agents. Elle est conservée tant que le nœud
+              n'est pas oublié (délai de purge du cluster, 24 h d'absence par défaut).
+            </p>
 
-          {{ range .Nodes }}
-          <form method="post" class="card" style="margin-bottom:0.8rem">
+          <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" class="card" style="margin-bottom:0.8rem">
             <input type="hidden" name="action" value="set_node_exposure">
             <input type="hidden" name="node" value="{{ .Hostname }}">
 
-            <h3>{{ .Hostname }} <span class="muted small">({{ .Role }})</span></h3>
-
+            <h3>Par où les agents le joignent</h3>
             <label>Adresse publique</label>
             <input name="address" value="{{ .AdressePublique }}"
                    placeholder="{{ .IPAddress }} — vide : on garde ce que le nœud annonce">
@@ -124,7 +130,7 @@
             <div class="gpo-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div>
           </form>
 
-          <form method="post" class="card" style="margin-bottom:1.6rem">
+          <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" class="card" style="margin-bottom:1.6rem">
             <input type="hidden" name="action" value="set_node_groups">
             <input type="hidden" name="node" value="{{ .Hostname }}">
 
@@ -163,6 +169,9 @@
 
             <div class="gpo-actions"><button type="submit" class="btn btn-secondary">Appliquer l'affinité</button></div>
           </form>
+          </div>
+          {{ else }}
+          <p class="muted" style="margin-top:1.2rem">Aucun nœud ouvert.</p>
           {{ end }}
         </div>
       </div>

@@ -198,7 +198,7 @@ func rotation(args []string, appelant action.Appelant) string {
 	return res.Message
 }
 
-// purgeDelay lit ou règle le délai avant suppression d'un service parti.
+// purgeDelay lit ou règle le délai avant suppression d'un service ou d'un nœud parti.
 //
 // Deux actions distinctes et non un paramètre optionnel : la lecture se
 // contente de `read:cluster`, l'écriture exige `write:cluster`. Les confondre
@@ -289,7 +289,7 @@ func aide() string {
 
   cluster list                       tous les nœuds enregistrés
   cluster list <role>                nœuds actifs d'un rôle
-  cluster purge-delay                délai avant suppression d'un service parti
+  cluster purge-delay                délai avant suppression d'un service ou d'un nœud parti
   cluster purge-delay <heures>       règle ce délai (0 désactive la purge)
   cluster metrics-retention          conservation des métriques de nœuds
   cluster metrics-retention <jours>  la règle (0 conserve sans limite)

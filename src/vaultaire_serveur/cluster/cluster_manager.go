@@ -3,6 +3,7 @@ package cluster
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net"
 	"os"
 	"strconv"
@@ -10,10 +11,12 @@ import (
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
 	clusterstorage "vaultaire/cluster/cluster_storage"
+	"vaultaire/core/clienttype"
 	"vaultaire/core/logs"
 	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 	"vaultaire/core/version"
+	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
 )
 
@@ -117,7 +120,7 @@ func StartManager(db *sql.DB) {
 			strconv.Itoa(port)+")")
 	}
 
-	go startHeartbeatLoop(db, hostname)
+	go startHeartbeatLoop(db, node)
 	go startCleanupLoop(db)
 }
 
@@ -126,11 +129,11 @@ func StartManager(db *sql.DB) {
 // La cadence est relue à chaque tour : un ticker créé une fois garderait sa
 // période même après changement du réglage, et rien ne le dirait — la valeur
 // s'afficherait, sans agir.
-func startHeartbeatLoop(db *sql.DB, hostname string) {
+func startHeartbeatLoop(db *sql.DB, node clusterstorage.Node) {
 	// Le core bat sur SA ligne, désignée par le même propriétaire que celui de
 	// son enregistrement. Battre par hostname reviendrait à rafraîchir la ligne
 	// qui porte ce nom, quelle qu'elle soit.
-	proprietaire := clusterdatabase.ProprietaireCoreLocal(hostname)
+	proprietaire := node.Proprietaire
 
 	reglages.Boucle(reglages.CleBattementCluster, func() {
 		touchees, err := clusterdatabase.UpdateHeartbeat(db, proprietaire)
@@ -139,22 +142,42 @@ func startHeartbeatLoop(db *sql.DB, hostname string) {
 			return
 		}
 		if touchees == 0 {
-			// La ligne de ce core a disparu — purge trop agressive, base
-			// réinitialisée sous lui. Sans ce message, il battrait indéfiniment
-			// dans le vide et se croirait en ligne alors qu'il n'est plus
-			// annoncé à personne.
-			logs.Write_Log("WARNING", "cluster: la ligne de ce core a disparu de "+
-				"cluster_nodes — il n'est plus annoncé aux agents, redémarrez-le "+
-				"pour la recréer")
+			// La ligne de ce core a disparu — oubliée après une longue absence
+			// (veille de l'hôte, coupure), ou base réinitialisée sous lui.
+			//
+			// Il se RÉENREGISTRE, au lieu de demander un redémarrage : sans
+			// cela, il battait indéfiniment dans le vide et se croyait en ligne
+			// alors qu'il n'était plus annoncé à personne — le symptôme du
+			// TO-DO 84, « les cores ne réintègrent pas le cluster après une
+			// veille ».
+			if err := clusterdatabase.RegisterNode(db, node); err != nil {
+				logs.Write_Log("ERROR", "cluster: la ligne de ce core a disparu de "+
+					"cluster_nodes et son réenregistrement a échoué : "+err.Error())
+				return
+			}
+			logs.Write_Log("WARNING", "cluster: la ligne de ce core avait disparu de "+
+				"cluster_nodes — réenregistré. Ses réglages d'exposition, de priorité "+
+				"et d'affinité sont à refaire s'il en avait.")
 		}
 	})
 }
 
 // startCleanupLoop applique périodiquement les règles de mise hors ligne / purge.
+//
+// L'oubli des nœuds suit le délai de purge des services (« cluster
+// purge-delay », 24 h par défaut) : un seul délai pour répondre à « ce nœud
+// existe-t-il encore ? », quel que soit son genre.
 func startCleanupLoop(db *sql.DB) {
 	reglages.Boucle(reglages.CleNettoyageCluster, func() {
-		if err := clusterdatabase.CleanupStaleNodes(db); err != nil {
+		n, err := clusterdatabase.CleanupStaleNodes(db, hosthandler.PurgeDelay(db), clienttype.ServiceNames())
+		if err != nil {
 			logs.Write_Log("ERROR", "cluster: cleanup stale nodes failed: "+err.Error())
+			return
+		}
+		if n > 0 {
+			logs.Write_Log("WARNING", fmt.Sprintf(
+				"cluster: %d nœud(s) hors ligne depuis plus que le délai de purge oublié(s) — "+
+					"leurs réglages d'exposition, de priorité et d'affinité sont perdus", n))
 		}
 	})
 }

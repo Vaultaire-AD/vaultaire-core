@@ -90,7 +90,7 @@ func EnregistrerActionsServeur(r *Registre) {
 		// savoir lesquels, et se contourne le jour où l'on se trompe de
 		// catégorie.
 		UnDomaineSuffit: true,
-		Resume:          "lit le délai avant suppression d'un service parti",
+		Resume:          "lit le délai avant suppression d'un service ou d'un nœud parti",
 		Executer: func(_ Appelant, _ Params) (Resultat, error) {
 			return lireDelaiDePurge()
 		},
@@ -103,7 +103,7 @@ func EnregistrerActionsServeur(r *Registre) {
 		// engage le parc, pas une consultation.
 		CleRBAC:  permission.ActionWriteCluster,
 		Portee:   PorteeGlobale,
-		Resume:   "règle le délai avant suppression d'un service parti",
+		Resume:   "règle le délai avant suppression d'un service ou d'un nœud parti",
 		Executer: reglerDelaiDePurge,
 	})
 
@@ -620,15 +620,16 @@ func lireDelaiDePurge() (Resultat, error) {
 	d := hosthandler.PurgeDelay(database.GetDatabase())
 	if d <= 0 {
 		return Resultat{
-			Message: "Purge des services désactivée : un service hors ligne conserve " +
-				"son identité indéfiniment.",
+			Message: "Purge désactivée : un service hors ligne conserve son identité, et " +
+				"un nœud hors ligne ses réglages, indéfiniment.",
 			Donnees: DelaiDePurge{Desactivee: true},
 		}, nil
 	}
 	return Resultat{
 		Message: fmt.Sprintf(
-			"Délai avant suppression d'un service parti : %s. Passé ce délai sans "+
-				"battement de cœur, son client est supprimé et il devra se réenrôler.", d),
+			"Délai de purge : %s. Passé ce délai sans battement de cœur, un service est "+
+				"supprimé avec son client et devra se réenrôler ; un nœud (core, proxy) est "+
+				"oublié, avec ses réglages d'exposition, de priorité et d'affinité.", d),
 		Donnees: DelaiDePurge{Delai: d},
 	}, nil
 }
@@ -655,11 +656,11 @@ func reglerDelaiDePurge(a Appelant, p Params) (Resultat, error) {
 	}
 
 	logs.Write_Log("SECURITY", fmt.Sprintf(
-		"%s a réglé le délai de purge des services à %d heure(s)", a.Username, heures))
+		"%s a réglé le délai de purge des services et des nœuds à %d heure(s)", a.Username, heures))
 
 	if heures == 0 {
-		return Resultat{Message: "Purge des services désactivée. Aucun client de " +
-			"service ne sera plus supprimé automatiquement."}, nil
+		return Resultat{Message: "Purge désactivée. Aucun service ni aucun nœud ne sera " +
+			"plus supprimé automatiquement."}, nil
 	}
 	return Resultat{Message: fmt.Sprintf("Délai porté à %d heure(s).", heures)}, nil
 }

@@ -1195,7 +1195,7 @@ La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’int
 ```bash
 cluster list                  # tous les nœuds enregistrés
 cluster list <role>           # nœuds actifs d'un rôle
-cluster purge-delay           # délai avant suppression d'un service parti
+cluster purge-delay           # délai avant suppression d'un service ou d'un nœud parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 
 cluster expose <noeud> <adresse> [port]   # par où les AGENTS joignent ce nœud
@@ -1278,7 +1278,18 @@ tous les autres.
 
 Ces trois réglages sont des **décisions d'administrateur** : un nœud qui
 redémarre ne les écrase pas. Ils exigent `write:cluster` et laissent une trace
-`SECURITY`. Les mêmes champs sont éditables depuis **Admin → Cluster**.
+`SECURITY`. Les mêmes champs sont éditables depuis **Admin → Cluster** : cliquez
+un nœud de la liste pour ouvrir sa fiche.
+
+**Ils survivent à une absence.** Un nœud muet passe **hors ligne** au bout d'une
+minute — il quitte la liste servie aux agents — mais sa ligne et ses réglages
+restent. Il n'est **oublié** qu'après le délai de `cluster purge-delay` (24 h par
+défaut, 0 = jamais) ; ses réglages partent alors avec lui. Jusqu'au TO-DO 85,
+cet oubli intervenait au bout de **cinq minutes** : une veille ou un redémarrage
+lent suffisait à perdre l'adresse publique, le port et la priorité.
+
+Un **core** dont la ligne a disparu (oubli, base réinitialisée) se réenregistre
+de lui-même au battement suivant, et le journal le dit.
 
 La colonne **VERSION** porte ce que le nœud déclare de lui-même. Elle contenait
 auparavant le TYPE du programme, écrit en dur côté serveur — que la colonne

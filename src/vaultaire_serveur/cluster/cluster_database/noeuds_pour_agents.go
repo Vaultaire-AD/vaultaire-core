@@ -90,7 +90,7 @@ func NoeudsPourAgents(db *sql.DB, groupesDuDemandeur []int) ([]clusterstorage.No
 
 	rows, err := db.Query(`
 		SELECT id_node, hostname, fqdn, ip_address, role, status, version_code,
-		       capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents,
+		       COALESCE(capabilities, ''), last_heartbeat, ducky_port, priorite, expose_aux_agents,
 		       key_fingerprint, sdk_version, adresse_publique, port_public
 		  FROM cluster_nodes
 		 WHERE status = 'online'

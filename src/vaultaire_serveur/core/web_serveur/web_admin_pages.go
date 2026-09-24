@@ -14,6 +14,7 @@ import (
 	dbusers "vaultaire/core/database/db_users"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
+	clusterstorage "vaultaire/cluster/cluster_storage"
 	act "vaultaire/core/action"
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
@@ -1035,6 +1036,19 @@ func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(res.Donnees)
 }
 
+// noeudChoisi rend le nœud dont le hostname est demandé, ou nil.
+func noeudChoisi(nodes []clusterstorage.Node, hostname string) *clusterstorage.Node {
+	if hostname == "" {
+		return nil
+	}
+	for i := range nodes {
+		if nodes[i].Hostname == hostname {
+			return &nodes[i]
+		}
+	}
+	return nil
+}
+
 // joindreValeursMultiples réunit les valeurs d'un champ multi-valué en une
 // seule, séparées par des virgules.
 //
@@ -1136,9 +1150,27 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// La FICHE d'un nœud, au clic (TO-DO 85).
+	//
+	// La page dépliait les formulaires de TOUS les nœuds les uns sous les
+	// autres : avec le cluster, il fallait faire défiler pour trouver celui
+	// qu'on voulait régler. La liste reste courte ; la configuration ne
+	// s'affiche que pour le nœud choisi — par le lien de la liste, ou parce
+	// qu'on vient d'enregistrer un de ses formulaires, pour voir le résultat à
+	// côté du message.
+	choisi := strings.TrimSpace(r.URL.Query().Get("noeud"))
+	if choisi == "" && r.Method == http.MethodPost {
+		choisi = strings.TrimSpace(r.PostFormValue("node"))
+	}
+	selection := noeudChoisi(nodes, choisi)
+	if choisi != "" && selection == nil && errMsg == "" {
+		errMsg = "Nœud « " + choisi + " » introuvable : il a peut-être été oublié après une longue absence."
+	}
+
 	data := struct {
 		Username  string
-		Nodes     interface{}
+		Nodes     []clusterstorage.Node
+		Selection *clusterstorage.Node
 		AllGroups []string
 		Message   string
 		Error     string
@@ -1147,6 +1179,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	}{
 		Username:  username,
 		Nodes:     nodes,
+		Selection: selection,
 		AllGroups: tousGroupes,
 		Message:   message,
 		Error:     errMsg,
