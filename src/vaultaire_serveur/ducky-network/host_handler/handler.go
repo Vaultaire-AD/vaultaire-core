@@ -68,6 +68,11 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 		return handleServiceHeartbeat(db, tramesContent, duckysession)
 	case "14":
 		return handleDeregisterService(db, tramesContent, duckysession)
+
+	// Services d'un type, pour le relais HTTPS d'un proxy (TO-DO 72). Voir
+	// services_du_cluster.go.
+	case "15":
+		return handleListServices(db, tramesContent, content)
 	default:
 		return "", fmt.Errorf("sous-trame 04_%s non gérée", sub)
 	}

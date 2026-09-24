@@ -14,15 +14,18 @@
 // port il écoute par défaut :
 //
 //	ducky   agents → cores (Ducky, 6666)                         ACTIF
-//	https   navigateurs, dnf, docker → services HTTPS (Nexus…)   PRÉVU
-//	ldap    applications → cores (LDAP, 389)                     PRÉVU
-//	ldaps   applications → cores (LDAPS, 636)                    PRÉVU
+//	https   navigateurs, dnf, docker → services HTTPS (Nexus…)   ACTIF (TO-DO 72)
+//	ldaps   applications → cores (LDAPS, 636)                    ACTIF (TO-DO 72)
+//	ldap    applications → cores (LDAP, 389)                     REFUSÉ
 //
-// Les types prévus sont reconnus par la configuration, mais refusés à
-// l'activation tant que ce qui les rend sûrs n'existe pas : pour LDAP/S, le SAN
-// du certificat du core qui couvre les proxies et la limitation par source
-// côté core ; pour HTTPS, la découverte des services (le core n'annonce que
-// les cores et les proxies en 04_04). Voir TO-DO 72.
+// HTTPS apprend ses cibles du core par la 04_15 (services d'un type, réservée
+// aux proxies). LDAPS place devant chaque connexion un en-tête PROXY v2 qui
+// porte l'adresse du client : le core ne le croit que d'un proxy enregistré,
+// et la limitation des échecs de bind compte ainsi par client, pas par site.
+//
+// LDAP en clair reste REFUSÉ : relayé, il ferait voyager des mots de passe en
+// clair du site jusqu'au core — c'est-à-dire sur le lien le plus long, celui
+// qu'on protège le moins bien —, et le core n'implémente pas StartTLS.
 package relais
 
 import (
@@ -47,7 +50,13 @@ const (
 )
 
 // actif dit quels types peuvent être démarrés aujourd'hui.
-var actif = map[Type]bool{TypeDucky: true}
+var actif = map[Type]bool{TypeDucky: true, TypeHTTPS: true, TypeLDAPS: true}
+
+// raisonRefus dit pourquoi un type reconnu n'est pas activable.
+var raisonRefus = map[Type]string{
+	TypeLDAP: "relayé, LDAP en clair ferait voyager les mots de passe en clair du " +
+		"site jusqu'au core, et le core n'implémente pas StartTLS — employez « ldaps »",
+}
 
 // portParDefaut est le port d'écoute si la configuration n'en donne pas.
 var portParDefaut = map[Type]int{TypeDucky: 6666, TypeHTTPS: 443, TypeLDAP: 389, TypeLDAPS: 636}
@@ -60,8 +69,8 @@ const (
 	SourceCores = "cores"
 	// SourceListe : les adresses écrites dans la configuration, dans l'ordre.
 	SourceListe = "liste"
-	// SourceService : un TYPE de service du cluster (« service:vaultaire_nexus »).
-	// Prévu pour le relais HTTPS : demande que le core annonce les services.
+	// SourceService : un TYPE de service du cluster (« service:vaultaire_nexus »),
+	// appris du core par la 04_15. Pour le relais HTTPS.
 	SourceService = "service:"
 )
 
@@ -69,6 +78,30 @@ const (
 type Cibles struct {
 	Source   string   `yaml:"source"`
 	Adresses []string `yaml:"adresses,omitempty"`
+
+	// Port : pour la source « cores », le port à joindre sur chaque core.
+	//
+	// La découverte (04_04) n'annonce que le port DUCKY des cores. Un relais
+	// LDAPS qui reprendrait ces adresses telles quelles enverrait LDAPS sur le
+	// port 6666 — défaut trouvé en éprouvant le TO-DO 72. Zéro : 636 pour un
+	// relais ldaps, le port annoncé pour un relais ducky.
+	Port int `yaml:"port,omitempty"`
+}
+
+// PortLDAPSParDefaut est le port LDAPS des cores quand la configuration du
+// relais n'en donne pas.
+const PortLDAPSParDefaut = 636
+
+// PortCible rend le port à substituer aux adresses des cores, ou 0 pour les
+// garder telles qu'annoncées.
+func (r Relais) PortCible() int {
+	if r.Cibles.Port > 0 {
+		return r.Cibles.Port
+	}
+	if r.Type == TypeLDAPS && r.Cibles.Source == SourceCores {
+		return PortLDAPSParDefaut
+	}
+	return 0
 }
 
 // Relais est la configuration d'un relais.
@@ -131,8 +164,40 @@ func (r Relais) maxParSource() int {
 type ErrTypePrevu struct{ Type Type }
 
 func (e ErrTypePrevu) Error() string {
-	return fmt.Sprintf("relais de type %q prévu mais pas encore activé (TO-DO 72) : "+
-		"seul « ducky » est disponible aujourd'hui", e.Type)
+	return fmt.Sprintf("relais de type %q refusé : %s", e.Type, raisonRefus[e.Type])
+}
+
+// EnvoieEnteteProxy dit si le relais place un en-tête PROXY v2 devant chaque
+// connexion.
+//
+// LDAPS seulement, et sans réglage : le core ne lit l'en-tête que sur ses
+// écoutes LDAP. Envoyé à l'écoute Ducky ou à un Nexus, il serait pris pour le
+// début du protocole et la connexion échouerait. Un réglage de plus ne
+// permettrait que cette erreur-là.
+func (r Relais) EnvoieEnteteProxy() bool {
+	return r.Type == TypeLDAPS
+}
+
+// TypeDeService rend le type de service d'une source « service:… », ou "".
+func (r Relais) TypeDeService() string {
+	if strings.HasPrefix(r.Cibles.Source, SourceService) {
+		return strings.TrimSpace(strings.TrimPrefix(r.Cibles.Source, SourceService))
+	}
+	return ""
+}
+
+// ServicesSuivis rend les types de services dont les relais ont besoin, sans
+// doublon — ce que le proxy demandera au core.
+func ServicesSuivis(liste []Relais) []string {
+	vus := map[string]bool{}
+	var out []string
+	for _, r := range liste {
+		if t := r.TypeDeService(); t != "" && !vus[t] {
+			vus[t] = true
+			out = append(out, t)
+		}
+	}
+	return out
 }
 
 // Valider contrôle une configuration de relais.
@@ -156,10 +221,31 @@ func (r *Relais) Valider() error {
 		return fmt.Errorf("relais %q : écoute %q invalide (attendu « [adresse]:port »)", r.Nom, r.Ecoute)
 	}
 	if r.Cibles.Source == "" {
+		if r.Type == TypeHTTPS {
+			// Pas de défaut pour HTTPS : « cores » y serait faux (voir plus bas),
+			// et deviner un type de service serait pire que le demander.
+			return fmt.Errorf("relais %q : un relais https doit nommer ses cibles — "+
+				"source « service:vaultaire_nexus » ou « liste »", r.Nom)
+		}
 		r.Cibles.Source = SourceCores
+	}
+	if r.Cibles.Port != 0 {
+		if r.Cibles.Source != SourceCores {
+			return fmt.Errorf("relais %q : « port » ne vaut que pour la source « cores » — "+
+				"une liste porte déjà le port de chaque adresse", r.Nom)
+		}
+		if r.Cibles.Port < 1 || r.Cibles.Port > 65535 {
+			return fmt.Errorf("relais %q : port cible %d invalide", r.Nom, r.Cibles.Port)
+		}
 	}
 	switch {
 	case r.Cibles.Source == SourceCores:
+		if r.Type == TypeHTTPS {
+			// Les cores appris sont leurs adresses DUCKY : relayer du HTTPS vers
+			// le port 6666 d'un core ne mènerait nulle part.
+			return fmt.Errorf("relais %q : la source « cores » donne les adresses Ducky des cores, "+
+				"pas un service HTTPS — employez « service:<type> » ou « liste »", r.Nom)
+		}
 	case r.Cibles.Source == SourceListe:
 		if len(r.Cibles.Adresses) == 0 {
 			return fmt.Errorf("relais %q : source « liste » sans adresse", r.Nom)
@@ -170,10 +256,15 @@ func (r *Relais) Valider() error {
 			}
 		}
 	case strings.HasPrefix(r.Cibles.Source, SourceService):
-		return fmt.Errorf("relais %q : la source %q (services du cluster) est prévue avec le relais HTTPS, pas encore disponible (TO-DO 72)",
-			r.Nom, r.Cibles.Source)
+		if r.Type != TypeHTTPS {
+			return fmt.Errorf("relais %q : la source %q ne sert qu'au relais https — un %s relaie vers les cores",
+				r.Nom, r.Cibles.Source, r.Type)
+		}
+		if r.TypeDeService() == "" {
+			return fmt.Errorf("relais %q : source « service: » sans type (ex. « service:vaultaire_nexus »)", r.Nom)
+		}
 	default:
-		return fmt.Errorf("relais %q : source de cibles %q inconnue (cores, liste)", r.Nom, r.Cibles.Source)
+		return fmt.Errorf("relais %q : source de cibles %q inconnue (cores, liste, service:<type>)", r.Nom, r.Cibles.Source)
 	}
 	return nil
 }

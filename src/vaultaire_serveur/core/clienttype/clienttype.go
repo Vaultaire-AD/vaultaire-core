@@ -169,10 +169,15 @@ var catalogue = []Definition{
 		// clients SERVICE, qui déclarent une fonction. Le proxy déclare une
 		// machine — c'est 04_01, qu'il a. Lui donner les deux jeux le ferait
 		// exister deux fois dans le cluster, sous deux identités.
+		//
+		// 04_15 (TO-DO 72) : les services d'un type — les Nexus — vers qui
+		// relayer en HTTPS. RÉSERVÉE au proxy : la carte des services n'a pas
+		// à être diffusée à tout le parc, et c'est pour cela qu'elle n'est pas
+		// dans la 04_04 que reçoit chaque agent.
 		Frames: []string{
 			"01_01", "01_05", "01_07",
 			"02_01", "02_03", "02_05", "02_12",
-			"04_01", "04_03", "04_05", "04_07",
+			"04_01", "04_03", "04_05", "04_07", "04_15",
 		},
 	},
 	{

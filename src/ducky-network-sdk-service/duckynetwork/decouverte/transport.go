@@ -110,7 +110,7 @@ func emettre(sessionKey func() string) {
 
 // HandleTrame traite une trame 04_xx reçue par un CLIENT.
 //
-// Seules 04_04 et 04_02 y arrivent en pratique : les autres 04_xx sont des
+// Seules 04_04, 04_02 et, pour un proxy, 04_16 y arrivent en pratique : les autres 04_xx sont des
 // requêtes, que le core reçoit et non l'inverse.
 func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string {
 	if len(t.Message_Order) < 2 {
@@ -122,6 +122,8 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 		traiterListe(t.Content)
 	case "02":
 		traiterAccuseEnregistrement(t.Content)
+	case "16":
+		traiterServices(t.Content)
 	case "06", "08":
 		// Accusés de métriques et de battement. Rien à faire, mais nommés :
 		// les laisser tomber dans le `default` les ferait passer pour des

@@ -31,8 +31,9 @@ enrollment:
 # Ducky ni TLS. Sans section « relais », un seul relais Ducky vers les cores, sur
 # le port annoncé au cluster (-listen-port) — c'est le cas courant.
 #
-# Types : ducky (actif) ; https, ldap, ldaps (prévus, refusés au démarrage tant
-# qu'ils ne sont pas activés — TO-DO 72). Voir docs/proxy/relais.md.
+# Types : ducky, https (vers les Nexus), ldaps (vers les cores, avec l'adresse du
+# client en PROXY v2). ldap en clair est refusé. Voir docs/proxy/relais.md et
+# docs/proxy/https-et-ldaps.md.
 #
 # relais:
 #   - nom: ducky
@@ -53,9 +54,21 @@ enrollment:
 #   #     source: liste
 #   #     adresses: ["10.0.0.10:6666", "10.0.0.11:6666"]
 #
-#   # PRÉVU — relais HTTPS vers les dépôts Nexus du cluster :
-#   # - nom: nexus
-#   #   type: https
-#   #   ecoute: ":8843"
-#   #   cibles:
-#   #     source: "service:vaultaire_nexus"
+#   # Relais HTTPS vers les dépôts Nexus du cluster. Les adresses sont
+#   # demandées au core (04_15) toutes les 5 minutes. Le certificat reçu est
+#   # celui du Nexus : il doit couvrir le nom par lequel le site joint le proxy.
+#   - nom: nexus
+#     type: https
+#     ecoute: ":8843"            # port haut : le conteneur tourne en UID 10001
+#     cibles:
+#       source: "service:vaultaire_nexus"
+#
+#   # Relais LDAPS vers les cores, pour les applications du site. Le core reçoit
+#   # l'adresse du client (en-tête PROXY v2) : la limitation des échecs de bind
+#   # compte par client, pas par site.
+#   - nom: ldaps
+#     type: ldaps
+#     ecoute: ":1636"
+#     cibles:
+#       source: cores            # joints sur le port 636, ou « port: » ci-dessous
+#       # port: 636

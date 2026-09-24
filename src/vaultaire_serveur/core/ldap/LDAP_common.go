@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/netguard"
+	"vaultaire/core/proxiesconnus"
+	"vaultaire/core/proxyproto"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -27,8 +30,59 @@ import (
 // web.
 var ldapLimiter = netguard.NewLimiter("ldap", 500, 20)
 
-// Fonction générique utilisée par LDAP et LDAPS
-func handleLDAPConnections(listener net.Listener, protocol string) {
+// PlafondLDAPParProxy est le plafond par adresse d'un PROXY du cluster.
+//
+// Toutes les applications d'un site relayées par un proxy arrivent de son
+// adresse (TO-DO 72) : au plafond ordinaire de vingt, le site entier serait
+// coupé à la vingt-et-unième connexion. Même motif que PlafondParProxy pour
+// Ducky, à la taille d'un annuaire. Le plafond global, lui, reste commun.
+const PlafondLDAPParProxy = 200
+
+func plafondLDAPPourSource(source string) int {
+	if proxiesconnus.EstUnProxy(source) {
+		return PlafondLDAPParProxy
+	}
+	return 0
+}
+
+// preparerConnexion lit un éventuel en-tête PROXY v2, puis pose TLS pour LDAPS.
+//
+// La place au limiteur a été prise sur l'adresse du PAIR — le proxy, s'il y en
+// a un. C'est voulu : c'est lui qui consomme les descripteurs. Ce qui compte
+// par CLIENT, la limitation des échecs de bind, lit RemoteAddr, qui rend
+// désormais l'adresse d'origine.
+func preparerConnexion(conn net.Conn, protocol string, tlsConfig *tls.Config) (net.Conn, error) {
+	c, err := proxyproto.Lire(conn, proxiesconnus.EstUnProxy, netguard.HandshakeReadTimeout)
+	if err != nil {
+		niveau := "WARNING"
+		if errors.Is(err, proxyproto.ErrNonDeConfiance) {
+			// Quelqu'un qui envoie un en-tête PROXY sans être un proxy du
+			// cluster essaie de choisir l'adresse sous laquelle il est compté.
+			niveau = "SECURITY"
+		}
+		logs.Write_LogCode(niveau, logs.CodeLDAPListen, fmt.Sprintf(
+			"ldap: connexion %s de %s refusée : %v", protocol, netguard.SourceAddr(conn), err))
+		return nil, err
+	}
+	if c.Relais != nil {
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: connexion %s de %s relayée par le proxy %s",
+			protocol, c.RemoteAddr(), c.Relais))
+	}
+	if tlsConfig != nil {
+		return tls.Server(c, tlsConfig), nil
+	}
+	return c, nil
+}
+
+// Fonction générique utilisée par LDAP et LDAPS.
+//
+// tlsConfig non nul : LDAPS. TLS est posé APRÈS la lecture d'un éventuel
+// en-tête PROXY, dans la goroutine de la connexion — jamais dans la boucle
+// d'acceptation, qu'un pair lent bloquerait pour tout le monde.
+func handleLDAPConnections(listener net.Listener, protocol string, tlsConfig *tls.Config) {
+	ldapLimiter.DefinirPlafondPour(plafondLDAPPourSource)
+	proxiesconnus.Demarrer()
+
 	defer func() {
 		if err := listener.Close(); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: listener close failed: "+err.Error())
@@ -60,7 +114,14 @@ func handleLDAPConnections(listener net.Listener, protocol string) {
 
 		go func() {
 			defer release()
-			handleLDAPSession(conn, protocol)
+			session, err := preparerConnexion(conn, protocol, tlsConfig)
+			if err != nil {
+				if cerr := conn.Close(); cerr != nil {
+					logs.Write_Log("DEBUG", "ldap: fermeture après refus : "+cerr.Error())
+				}
+				return
+			}
+			handleLDAPSession(session, protocol)
 		}()
 	}
 }

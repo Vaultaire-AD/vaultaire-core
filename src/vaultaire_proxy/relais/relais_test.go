@@ -33,23 +33,89 @@ func TestSansSectionUnRelaisDuckySurLePortAnnonce(t *testing.T) {
 	}
 }
 
-func TestLesTypesPrevusSontRefuses(t *testing.T) {
-	for _, typ := range []string{"https", "ldap", "ldaps"} {
-		_, err := Charger(ecrire(t, "relais:\n  - type: "+typ+"\n    cibles: {source: liste, adresses: [\"10.0.0.9:443\"]}\n"), 6666)
-		var prevu ErrTypePrevu
-		if !errors.As(err, &prevu) {
-			t.Errorf("%s : attendu ErrTypePrevu, reçu %v", typ, err)
-		}
+// TestLDAPEnClairResteRefuse.
+//
+// Relayé, LDAP en clair ferait voyager les mots de passe en clair du site
+// jusqu'au core — le lien le plus long, le moins bien protégé. Le refus doit
+// dire quoi employer à la place.
+func TestLDAPEnClairResteRefuse(t *testing.T) {
+	_, err := Charger(ecrire(t, "relais:\n  - type: ldap\n    cibles: {source: liste, adresses: [\"10.0.0.9:389\"]}\n"), 6666)
+	var prevu ErrTypePrevu
+	if !errors.As(err, &prevu) || !strings.Contains(err.Error(), "ldaps") {
+		t.Fatalf("ldap : attendu un refus qui renvoie vers ldaps, reçu %v", err)
 	}
 	if _, err := Charger(ecrire(t, "relais:\n  - type: ftp\n"), 6666); err == nil || !strings.Contains(err.Error(), "inconnu") {
 		t.Errorf("type inconnu accepté : %v", err)
 	}
 }
 
-func TestLaSourceServiceEstPrevue(t *testing.T) {
-	_, err := Charger(ecrire(t, "relais:\n  - type: ducky\n    ecoute: \":6666\"\n    cibles: {source: \"service:vaultaire_nexus\"}\n"), 6666)
-	if err == nil || !strings.Contains(err.Error(), "TO-DO 72") {
-		t.Fatalf("%v", err)
+// TestHTTPSEtLDAPSSontActifs (TO-DO 72).
+func TestHTTPSEtLDAPSSontActifs(t *testing.T) {
+	l, err := Charger(ecrire(t, `relais:
+  - nom: ducky
+    type: ducky
+    ecoute: ":6666"
+  - nom: nexus
+    type: https
+    ecoute: ":8843"
+    cibles: {source: "service:vaultaire_nexus"}
+  - nom: nexus-secours
+    type: https
+    ecoute: ":8844"
+    cibles: {source: "service:vaultaire_nexus"}
+  - nom: ldaps
+    type: ldaps
+    ecoute: ":1636"
+`), 6666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l[3].Cibles.Source != SourceCores || !l[3].EnvoieEnteteProxy() {
+		t.Errorf("ldaps : source %q, en-tête %v — attendu les cores, avec l'adresse du client",
+			l[3].Cibles.Source, l[3].EnvoieEnteteProxy())
+	}
+	if l[0].EnvoieEnteteProxy() || l[1].EnvoieEnteteProxy() {
+		t.Error("en-tête PROXY envoyé à Ducky ou à un Nexus : ils le prendraient pour le début du protocole")
+	}
+	if got := ServicesSuivis(l); len(got) != 1 || got[0] != "vaultaire_nexus" {
+		t.Errorf("services suivis = %v, attendu un seul vaultaire_nexus", got)
+	}
+}
+
+// TestLDAPSJointLePortLDAPSDesCores.
+//
+// La découverte n'annonce que le port DUCKY des cores : un relais LDAPS qui
+// les reprendrait tels quels enverrait LDAPS sur 6666. C'est le défaut que
+// l'essai de bout en bout a montré.
+func TestLDAPSJointLePortLDAPSDesCores(t *testing.T) {
+	l, err := Charger(ecrire(t, "relais:\n  - type: ldaps\n  - nom: autre\n    type: ldaps\n    ecoute: \":1636\"\n    cibles: {source: cores, port: 10636}\n"), 6666)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if l[0].PortCible() != PortLDAPSParDefaut || l[1].PortCible() != 10636 {
+		t.Fatalf("ports cibles %d et %d", l[0].PortCible(), l[1].PortCible())
+	}
+	d, _ := Charger(ecrire(t, "relais:\n  - type: ducky\n    ecoute: \":6666\"\n"), 6666)
+	if d[0].PortCible() != 0 {
+		t.Fatalf("ducky : port cible %d, attendu le port annoncé (0)", d[0].PortCible())
+	}
+	if _, err := Charger(ecrire(t, "relais:\n  - type: ldaps\n    cibles: {source: liste, adresses: [\"10.0.0.1:636\"], port: 636}\n"), 6666); err == nil {
+		t.Fatal("port accepté avec une liste, qui porte déjà ses ports")
+	}
+}
+
+func TestLesSourcesDependentDuType(t *testing.T) {
+	cas := map[string]string{
+		"https sans source":    "relais:\n  - type: https\n    ecoute: \":8843\"\n",
+		"https vers les cores": "relais:\n  - type: https\n    ecoute: \":8843\"\n    cibles: {source: cores}\n",
+		"service pour ducky":   "relais:\n  - type: ducky\n    ecoute: \":6666\"\n    cibles: {source: \"service:vaultaire_nexus\"}\n",
+		"service pour ldaps":   "relais:\n  - type: ldaps\n    cibles: {source: \"service:vaultaire_nexus\"}\n",
+		"service sans type":    "relais:\n  - type: https\n    ecoute: \":8843\"\n    cibles: {source: \"service:\"}\n",
+	}
+	for nom, conf := range cas {
+		if _, err := Charger(ecrire(t, conf), 6666); err == nil {
+			t.Errorf("%s : accepté", nom)
+		}
 	}
 }
 
@@ -152,6 +218,88 @@ func TestLesOctetsPassentDansLesDeuxSens(t *testing.T) {
 	st := s.Stats()
 	if st.Total != 1 || st.ParCible[cible] != 1 {
 		t.Fatalf("%+v", st)
+	}
+}
+
+// capture démarre un serveur qui garde les premiers octets reçus.
+func capture(t *testing.T) (string, chan []byte) {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	recus := make(chan []byte, 1)
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		defer c.Close()
+		_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		b := make([]byte, 64)
+		n, _ := io.ReadAtLeast(c, b, 1)
+		time.Sleep(100 * time.Millisecond)
+		m, _ := c.Read(b[n:])
+		recus <- b[:n+m]
+	}()
+	return ln.Addr().String(), recus
+}
+
+// TestLDAPSEnvoieLAdresseDuClient.
+//
+// Le core compte les échecs de bind par adresse : sans l'en-tête, tout le
+// site derrière le proxy partagerait un compteur. L'en-tête doit précéder le
+// premier octet du client, et porter SON adresse.
+func TestLDAPSEnvoieLAdresseDuClient(t *testing.T) {
+	cible, recus := capture(t)
+	s := demarrer(t, Relais{Nom: "l", Type: TypeLDAPS}, func() []string { return []string{cible} })
+
+	c, err := net.Dial("tcp", s.Adresse())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte{0x16, 0x03, 0x01}); err != nil {
+		t.Fatal(err)
+	}
+	var b []byte
+	select {
+	case b = <-recus:
+	case <-time.After(3 * time.Second):
+		t.Fatal("rien reçu")
+	}
+	if len(b) < 28+3 || string(b[:12]) != string(signatureV2) {
+		t.Fatalf("reçu %x : l'en-tête PROXY v2 doit précéder les octets du client", b)
+	}
+	if b[12] != 0x21 || b[13] != 0x11 {
+		t.Fatalf("version/commande %x, famille %x : attendu v2 PROXY, TCP/IPv4", b[12], b[13])
+	}
+	client := c.LocalAddr().(*net.TCPAddr)
+	if !net.IP(b[16:20]).Equal(client.IP) || int(b[24])<<8|int(b[25]) != client.Port {
+		t.Fatalf("source %s:%d, attendu le client %s", net.IP(b[16:20]), int(b[24])<<8|int(b[25]), client)
+	}
+	if string(b[28:31]) != string([]byte{0x16, 0x03, 0x01}) {
+		t.Fatalf("octets du client altérés : %x", b[28:])
+	}
+}
+
+func TestDuckyNEnvoieAucunEntete(t *testing.T) {
+	cible, recus := capture(t)
+	s := demarrer(t, Relais{Nom: "d", Type: TypeDucky}, func() []string { return []string{cible} })
+	c, err := net.Dial("tcp", s.Adresse())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_, _ = c.Write([]byte("01_01\n"))
+	select {
+	case b := <-recus:
+		if string(b) != "01_01\n" {
+			t.Fatalf("reçu %q : Ducky prendrait l'en-tête pour le début d'une trame", b)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("rien reçu")
 	}
 }
 

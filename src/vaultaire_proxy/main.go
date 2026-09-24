@@ -46,6 +46,7 @@ import (
 	"duckynetworkclient/V1/ducky"
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/storage"
+	"vaultaire_proxy/relais"
 	"vaultaire_proxy/version"
 )
 
@@ -115,11 +116,20 @@ func main() {
 	// qu'il perd est sa visibilité dans le cluster. Traiter cela comme fatal
 	// ferait qu'un défaut de déclaration — nom d'hôte introuvable, aucune
 	// adresse non locale — coupe un service qui fonctionne par ailleurs.
+	// Les relais sont lus AVANT de rejoindre le cluster : ce sont eux qui
+	// disent de quels services demander les adresses (04_15). Une erreur de
+	// configuration arrête le proxy ici, avant qu'il ne s'annonce aux agents.
+	liste, err := relais.Charger(*configPath, *listen)
+	if err != nil {
+		log.Fatalf("proxy : %v", err)
+	}
+
 	if err := ducky.RejoindreCluster(ducky.OptionsCluster{
 		Role:      "proxy",
 		Domaine:   *domaine,
 		Port:      *listen,
 		Decouvrir: true, // un proxy doit savoir vers quels cores relayer
+		Services:  relais.ServicesSuivis(liste),
 	}); err != nil {
 		log.Printf("proxy : raccordement au cluster impossible : %v", err)
 		log.Printf("proxy : le service reste connecté, mais n'apparaîtra pas " +
@@ -134,7 +144,7 @@ func main() {
 	//
 	// Un relais qui ne peut pas écouter est FATAL : ce proxy est annoncé aux
 	// agents sur ce port, et y laisser un port mort en ferait un trou noir.
-	serveurs, err := demarrerRelais(*configPath, *listen)
+	serveurs, err := demarrerRelais(liste)
 	if err != nil {
 		log.Fatalf("proxy : %v", err)
 	}

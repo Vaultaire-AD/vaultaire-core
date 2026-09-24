@@ -52,6 +52,12 @@ type OptionsCluster struct {
 	// qui ne relaie rien n'a aucune raison de la demander, et le laisser à faux
 	// lui évite d'apprendre des empreintes qu'il n'utilisera jamais.
 	Decouvrir bool
+
+	// Services : les types de services du cluster dont ce nœud veut les
+	// adresses — « vaultaire_nexus » pour un proxy qui relaie en HTTPS
+	// (TO-DO 72). Lues ensuite par decouverte.AdressesService. Vide : rien
+	// n'est demandé. Le core n'y répond qu'à un vaultaire_proxy.
+	Services []string
 }
 
 // RejoindreCluster enregistre ce service dans le cluster et l'y maintient.
@@ -105,5 +111,6 @@ func RejoindreCluster(opts OptionsCluster) error {
 	if opts.Decouvrir {
 		decouverte.Demarrer(cleDeSession)
 	}
+	decouverte.SuivreServices(opts.Services, cleDeSession)
 	return nil
 }

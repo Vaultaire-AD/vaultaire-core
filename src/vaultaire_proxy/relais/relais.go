@@ -152,7 +152,7 @@ func (s *Serveur) traiter(client net.Conn) {
 	defer s.rendre(src)
 	s.total.Add(1)
 
-	cible, amont := s.joindre()
+	cible, amont := s.joindre(client)
 	if amont == nil {
 		// REFUS FRANC : fermer tout de suite. Le client essaie le suivant de
 		// sa liste — un core, puisqu'ils y figurent toujours. Faire attendre
@@ -179,9 +179,31 @@ func (s *Serveur) traiter(client net.Conn) {
 // même cible tant qu'elle répond. Un agent garde en cache UNE clé de core ; le
 // promener d'un core à l'autre à chaque connexion ferait échouer la poignée de
 // main dès que les cores n'ont pas la même clé.
-func (s *Serveur) joindre() (string, net.Conn) {
+//
+// Pour LDAPS, l'en-tête PROXY v2 est écrit ICI, avant tout octet du client :
+// une cible qui ne l'accepte pas est traitée comme une cible injoignable, et
+// la suivante est essayée.
+func (s *Serveur) joindre(client net.Conn) (string, net.Conn) {
+	var entete []byte
+	if s.cfg.EnvoieEnteteProxy() {
+		var err error
+		if entete, err = enteteV2(client.RemoteAddr(), client.LocalAddr()); err != nil {
+			// Sans en-tête, le core compterait ce client sous l'adresse du
+			// proxy : mieux vaut refuser que fausser la limitation.
+			s.journal("WARNING", fmt.Sprintf("relais %s : en-tête PROXY impossible : %v", s.cfg.Nom, err))
+			return "", nil
+		}
+	}
 	for _, c := range s.cibles() {
 		conn, err := s.dial("tcp", c, s.cfg.DelaiConnexion())
+		if err == nil && entete != nil {
+			_ = conn.SetWriteDeadline(time.Now().Add(s.cfg.DelaiConnexion()))
+			if _, err = conn.Write(entete); err != nil {
+				_ = conn.Close()
+			} else {
+				_ = conn.SetWriteDeadline(time.Time{})
+			}
+		}
 		if err == nil {
 			return c, conn
 		}

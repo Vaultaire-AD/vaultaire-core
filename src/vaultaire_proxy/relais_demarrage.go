@@ -12,14 +12,10 @@ import (
 // PeriodeBilan est l'intervalle du bilan des relais dans le journal.
 const PeriodeBilan = 5 * time.Minute
 
-// demarrerRelais lit la section « relais » de la configuration, ouvre les
-// ports, et lance les boucles. Rend une erreur si un relais ne peut pas
-// écouter : c'est à l'appelant d'arrêter le proxy.
-func demarrerRelais(configPath string, portAnnonce int) ([]*relais.Serveur, error) {
-	liste, err := relais.Charger(configPath, portAnnonce)
-	if err != nil {
-		return nil, err
-	}
+// demarrerRelais ouvre les ports des relais déjà chargés et lance les
+// boucles. Rend une erreur si un relais ne peut pas écouter : c'est à
+// l'appelant d'arrêter le proxy.
+func demarrerRelais(liste []relais.Relais) ([]*relais.Serveur, error) {
 	journal := func(niveau, message string) { logs.Write_log(niveau, message) }
 
 	var serveurs []*relais.Serveur

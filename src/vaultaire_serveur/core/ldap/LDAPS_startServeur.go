@@ -2,6 +2,7 @@ package ldap
 
 import (
 	"crypto/tls"
+	"net"
 	"strconv"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/logs"
@@ -58,11 +59,16 @@ func HandleLDAPSserveur() {
 		MinVersion:   tls.VersionTLS12,
 	}
 
-	listener, err := tls.Listen("tcp", ":"+strconv.Itoa(storage.Ldaps_Port), tlsConfig)
+	// Écoute TCP NUE, et TLS posé connexion par connexion.
+	//
+	// tls.Listen ferait la poignée de main sur les premiers octets reçus. Or un
+	// proxy du cluster place devant eux un en-tête PROXY v2 (TO-DO 72), qui
+	// doit être lu AVANT TLS : c'est lui qui porte l'adresse du client.
+	listener, err := net.Listen("tcp", ":"+strconv.Itoa(storage.Ldaps_Port))
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldaps: TLS listen failed: "+err.Error())
 		return
 	}
 
-	handleLDAPConnections(listener, "LDAPS")
+	handleLDAPConnections(listener, "LDAPS", tlsConfig)
 }

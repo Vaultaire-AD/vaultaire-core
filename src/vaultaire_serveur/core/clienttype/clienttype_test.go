@@ -35,6 +35,9 @@ func TestFailClosed(t *testing.T) {
 		{Client, "02_13"}, // l'agent émet 02_12, jamais 02_13
 		{Client, "01_05"}, // un agent ne s'enrôle pas : il est créé sur le core
 		{Client, "01_07"},
+		{Client, "04_15"}, // la carte des services est réservée aux proxies
+		{Nexus, "04_15"},
+		{Web, "04_15"},
 	}
 	for _, c := range cases {
 		if MayEmit(c.clientType, c.frame) {
@@ -50,7 +53,7 @@ func TestMayEmitAllowed(t *testing.T) {
 		{Client, "02_12"},
 		{Proxy, "01_01"}, {Proxy, "02_01"},
 		{Web, "07_01"}, {Web, "02_01"}, {Web, "04_09"},
-		{Proxy, "04_01"}, {Proxy, "04_07"},
+		{Proxy, "04_01"}, {Proxy, "04_07"}, {Proxy, "04_15"},
 		{Nexus, "01_05"}, {Nexus, "02_12"}, {Nexus, "04_09"}, {Nexus, "04_12"},
 		{Nexus, "04_14"}, {Nexus, "08_01"}, {Nexus, "08_04"},
 	}
