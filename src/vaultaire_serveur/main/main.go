@@ -19,6 +19,7 @@ import (
 	dbenrollment "vaultaire/core/database/db_enrollment"
 	dbgpo "vaultaire/core/database/db_gpo"
 	dbgroups "vaultaire/core/database/db_groups"
+	dbjournaux "vaultaire/core/database/db_journaux"
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/dns"
 	ldap "vaultaire/core/ldap"
@@ -92,6 +93,24 @@ func main() {
 	db.InitDatabase()
 	dbschema.Create_DataBase(db.GetDatabase())
 
+	// Journal commun des cores, AUSSITÔT la base ouverte (TO-DO 91).
+	//
+	// Le plus tôt possible : chaque ligne émise avant ce branchement manque au
+	// journal commun — elle reste sur la sortie standard. Seules la lecture de
+	// la configuration et l'ouverture de la base sont dans ce cas.
+	//
+	// Un échec ici n'arrête PAS le core, contrairement aux autres schémas : le
+	// journal commun est un confort de lecture, pas une condition de service.
+	// Le core journalise alors comme avant, sur sa sortie standard, et le
+	// portail se replie sur sa mémoire en le disant.
+	journalCommun := dbjournaux.CreateTables(db.GetDatabase()) == nil
+	if journalCommun {
+		dbjournaux.Demarrer(db.GetDatabase)
+	} else {
+		logs.Write_Log("ERROR", "journaux: journal commun désactivé sur ce core — "+
+			"les lignes restent sur la sortie standard")
+	}
+
 	// Le schéma GPO est créé après les tables de base (gpo_group référence
 	// groups) et par son propre package, qui détient aussi la suppression des
 	// tables de l'ancien modèle.
@@ -123,6 +142,24 @@ func main() {
 	// authentification n'ait lieu sur un schéma à moitié posé.
 	if err := dbauthpolicy.CreateSchema(db.GetDatabase()); err != nil {
 		log.Fatalf("Erreur lors de la création du schéma d'authentification : %v", err)
+	}
+
+	// Purge du journal commun : au démarrage PUIS à la cadence du réglage.
+	// Boucle attend un tour avant de travailler, et un core qu'on redémarre
+	// chaque nuit ne purgerait sinon jamais.
+	//
+	// APRÈS le schéma d'authentification, qui crée `server_settings` : lancée
+	// plus tôt, la purge lisait sa rétention dans une table absente — valeur
+	// par défaut, et deux avertissements à chaque démarrage sur base neuve.
+	if journalCommun {
+		purgerJournaux := func() {
+			if _, err := dbjournaux.Purger(db.GetDatabase(),
+				reglages.Duree(reglages.CleRetentionJournaux)); err != nil {
+				logs.Write_LogCode("ERROR", logs.CodeLogPurge, "journaux: "+err.Error())
+			}
+		}
+		go purgerJournaux()
+		go reglages.Boucle(reglages.ClePurgeJournaux, purgerJournaux)
 	}
 
 	// Clés d'enrôlement des clients service.

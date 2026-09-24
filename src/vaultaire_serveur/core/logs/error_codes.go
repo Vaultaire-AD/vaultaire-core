@@ -55,6 +55,10 @@ const (
 	CodeGPOApplyReport  = "VLT-GPO004" // rapport d'application remonté par un agent
 	CodeGPORestrictions = "VLT-GPO005" // restrictions indisponibles (fail-closed)
 
+	// Journal centralisé en base (VLT-LOGxxx) — TO-DO 91
+	CodeLogCentral = "VLT-LOG001" // lignes perdues avant d'atteindre la base
+	CodeLogPurge   = "VLT-LOG002" // purge de la rétention
+
 	// Générique
 	CodeInternal = "VLT-ERR000"
 )

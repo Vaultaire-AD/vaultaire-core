@@ -61,6 +61,10 @@ const (
 	Secondes Unite = "s"
 	Minutes  Unite = "min"
 	Heures   Unite = "h"
+
+	// Jours sert aux RÉTENTIONS, qui se pensent en jours : « 30 » se lit,
+	// « 720 » heures se recalcule de tête avant chaque saisie.
+	Jours Unite = "j"
 )
 
 // Duree convertit une valeur entière dans son unité.
@@ -72,6 +76,8 @@ func (u Unite) Duree(v int) time.Duration {
 		return time.Duration(v) * time.Minute
 	case Heures:
 		return time.Duration(v) * time.Hour
+	case Jours:
+		return time.Duration(v) * 24 * time.Hour
 	}
 	return 0
 }
@@ -112,6 +118,8 @@ const (
 	CleSessionWebPurge     = "web_session_purge_minutes"
 	CleSynchroGroupes      = "group_sync_minutes"
 	CleRafraichissementGPO = "gpo_refresh_minutes"
+	CleRetentionJournaux   = "log_retention_days"
+	ClePurgeJournaux       = "log_purge_hours"
 )
 
 // catalogue déclare toutes les durées réglables.
@@ -189,6 +197,33 @@ var catalogue = []Definition{
 			"sa valeur part dans les trames 05_02 et 05_03, et une machine hors " +
 			"ligne l'applique au retour. Il décide aussi du seuil de « en retard » " +
 			"dans « vlt gpo status », fixé à trois cycles.",
+	},
+	{
+		// Rétention du journal centralisé (TO-DO 91).
+		//
+		// 30 jours : la même fenêtre que les archives de fichier du core
+		// (logs.ArchivesConservees) et que les métriques de nœuds. Trois
+		// rétentions différentes pour trois journaux du même serveur feraient
+		// répondre « ça a commencé il y a trois semaines » différemment selon
+		// l'endroit où l'on cherche.
+		//
+		// Pas de zéro pour « garder tout » : c'est précisément ce qui remplit
+		// le disque de la base, et l'annuaire avec lui.
+		Cle: CleRetentionJournaux, Unite: Jours, Defaut: 30, Min: 1, Max: 365,
+		Libelle: "Conservation des journaux en base",
+		Consequence: "Au-delà, les lignes du journal commun des cores sont " +
+			"supprimées. C'est ce qui empêche la table de remplir le disque de la " +
+			"base — et d'emporter l'annuaire avec elle. Plus long : on remonte " +
+			"plus loin un incident signalé tard, au prix de la place. La sortie " +
+			"standard et les fichiers du core ne sont pas concernés.",
+	},
+	{
+		Cle: ClePurgeJournaux, Unite: Heures, Defaut: 24, Min: 1, Max: 168,
+		Libelle: "Purge des journaux expirés",
+		Consequence: "Cadence à laquelle chaque core supprime les lignes plus " +
+			"anciennes que la conservation. La purge passe aussi au démarrage. " +
+			"Plus long : la table dépasse la conservation d'autant entre deux " +
+			"passages, ce qui compte si un emballement l'a fait grossir.",
 	},
 }
 

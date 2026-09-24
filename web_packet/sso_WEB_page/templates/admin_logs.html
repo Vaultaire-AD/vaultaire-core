@@ -7,19 +7,17 @@
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/vlt_picker.css">
   <style>
-    .log-entry { padding: 0.5rem; border-bottom: 1px solid var(--border-color, #e0e0e0); font-family: monospace; font-size: 0.875rem; }
-    .log-entry.level-ERROR, .log-entry.level-CRITICAL { background-color: rgba(220, 53, 69, 0.1); }
-    .log-entry.level-WARNING { background-color: rgba(255, 193, 7, 0.1); }
-    .log-entry.level-INFO { background-color: rgba(0, 123, 255, 0.05); }
-    .log-entry.level-DEBUG { color: #666; }
-    .log-timestamp { color: #666; margin-right: 0.5rem; }
-    .log-level { font-weight: bold; margin-right: 0.5rem; display: inline-block; min-width: 80px; }
-    .log-code { color: #0066cc; margin-right: 0.5rem; }
-    .log-message { word-break: break-word; }
     .log-filters { display: flex; gap: 1rem; margin-bottom: 1rem; flex-wrap: wrap; align-items: end; }
+    .log-filters label { display: block; font-size: 0.8125rem; }
     .log-filters select, .log-filters input { padding: 0.5rem; }
-    .log-stats { font-size: 0.875rem; color: #666; margin-bottom: 1rem; }
-    #log-container { max-height: 600px; overflow-y: auto; border: 1px solid var(--border-color, #e0e0e0); border-radius: 4px; }
+    .log-table td { font-family: monospace; font-size: 0.8125rem; vertical-align: top; }
+    .log-table td.log-message { word-break: break-word; white-space: pre-wrap; }
+    .log-table td.log-when, .log-table td.log-core, .log-table td.log-level, .log-table td.log-code { white-space: nowrap; }
+    .log-table tr.level-ERROR, .log-table tr.level-CRITICAL, .log-table tr.level-ALERT, .log-table tr.level-EMERGENCY { background-color: rgba(220, 53, 69, 0.1); }
+    .log-table tr.level-WARNING { background-color: rgba(255, 193, 7, 0.1); }
+    .log-code { color: #0066cc; }
+    .log-pager { display: flex; gap: 1rem; align-items: center; margin-top: 1rem; }
+    #log-container { max-height: 70vh; overflow-y: auto; }
     .loading { text-align: center; padding: 2rem; color: #666; }
   </style>
 </head>
@@ -42,45 +40,71 @@
       </header>
       <div class="app-content">
         <div class="app-container animate-in">
-    <h1>Logs système</h1>
-    <p class="muted">Logs RFC 5424 — Buffer en mémoire (max {{ .Stats.max_size }} entrées)</p>
+    <h1>Logs — journal commun des cores</h1>
+    <p class="muted">
+      Journal <strong>commun des cores</strong> : chaque core y écrit ses lignes
+      et les signe de son nom. La plus récente est en haut. Le niveau DEBUG n'y
+      figure jamais ; la conservation se règle dans
+      <a href="/admin/settings">Durées d'exploitation</a>
+      (<code>log_retention_days</code>). Page servie par <strong>{{ .CeCore }}</strong>.
+    </p>
 
-    <div class="log-stats">
-      <span>Total: <strong>{{ .Stats.total_entries }}</strong> entrées</span>
-      <span style="margin-left: 1rem;">Hostname: <strong>{{ .Stats.hostname }}</strong></span>
-    </div>
+    <div id="log-warning" class="alert alert-warning" hidden></div>
+    <div id="log-error" class="alert alert-error" hidden></div>
 
     <div class="log-filters">
       <div>
-        <label for="level-filter">Niveau:</label>
+        <label for="level-filter">Gravité minimale</label>
         <select id="level-filter">
-          <option value="">Tous</option>
-          <option value="DEBUG">DEBUG</option>
-          <option value="INFO">INFO</option>
-          <option value="NOTICE">NOTICE</option>
-          <option value="WARNING">WARNING</option>
-          <option value="ERROR">ERROR</option>
-          <option value="CRITICAL">CRITICAL</option>
-          <option value="ALERT">ALERT</option>
-          <option value="EMERGENCY">EMERGENCY</option>
+          <option value="">Toutes</option>
+          <option value="INFO">INFO et plus grave</option>
+          <option value="NOTICE">NOTICE et plus grave</option>
+          <option value="WARNING">WARNING et plus grave</option>
+          <option value="ERROR">ERROR et plus grave</option>
+          <option value="CRITICAL">CRITICAL et plus grave</option>
         </select>
       </div>
       <div>
-        <label for="code-filter">Code:</label>
-        <input type="text" id="code-filter" placeholder="Ex: VLT-DB001" style="width: 150px;">
+        <label for="core-filter">Core</label>
+        <select id="core-filter">
+          <option value="">Tous</option>
+        </select>
       </div>
       <div>
-        <label for="limit-filter">Limite:</label>
-        <input type="number" id="limit-filter" value="100" min="1" max="1000" style="width: 80px;">
+        <label for="code-filter">Code</label>
+        <input type="text" id="code-filter" placeholder="Ex : VLT-DB001" style="width: 140px;">
       </div>
       <div>
-        <button type="button" id="refresh-logs" class="btn btn-primary">Actualiser</button>
+        <label for="since-filter">Depuis</label>
+        <input type="datetime-local" id="since-filter">
+      </div>
+      <div>
+        <label for="until-filter">Jusqu'à</label>
+        <input type="datetime-local" id="until-filter">
+      </div>
+      <div>
+        <label for="per-page-filter">Par page</label>
+        <select id="per-page-filter">
+          <option value="50">50</option>
+          <option value="100">100</option>
+          <option value="200">200</option>
+          <option value="500">500</option>
+        </select>
+      </div>
+      <div>
+        <button type="button" id="apply-filters" class="btn btn-primary">Filtrer</button>
         <button type="button" id="auto-refresh" class="btn btn-ghost">Auto-actualisation</button>
       </div>
     </div>
 
-    <div id="log-container">
-      <div class="loading">Chargement des logs...</div>
+    <div id="log-container" class="table-wrap">
+      <div class="loading">Chargement des journaux…</div>
+    </div>
+
+    <div class="log-pager">
+      <button type="button" id="page-prev" class="btn btn-ghost" disabled>← Plus récents</button>
+      <span id="page-label" class="muted small"></span>
+      <button type="button" id="page-next" class="btn btn-ghost" disabled>Plus anciens →</button>
     </div>
         </div>
       </div>
@@ -90,6 +114,11 @@
   <script src="/static/vlt_picker.js"></script>
   <script src="/static/admin_sidebar.js"></script>
   <script>
+    // La page ne filtre rien elle-même : elle transmet les champs à
+    // /admin/api/logs, qui appelle l'action log.list — la même que « vlt logs ».
+    // Deux filtres, l'un en JavaScript et l'autre en Go, finiraient par ne plus
+    // rendre les mêmes lignes.
+    let page = 1;
     let autoRefreshInterval = null;
 
     function formatTimestamp(ts) {
@@ -97,47 +126,116 @@
       return d.toLocaleString('fr-FR', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit' });
     }
 
-    function loadLogs() {
-      const level = document.getElementById('level-filter').value;
-      const code = document.getElementById('code-filter').value.trim();
-      const limit = document.getElementById('limit-filter').value || 100;
-
-      const params = new URLSearchParams();
-      if (level) params.append('level', level);
-      if (code) params.append('code', code);
-      params.append('limit', limit);
-
-      fetch('/admin/api/logs?' + params.toString())
-        .then(r => r.json())
-        .then(data => {
-          const container = document.getElementById('log-container');
-          if (data.logs && data.logs.length > 0) {
-            container.innerHTML = data.logs.map(log => {
-              const levelClass = 'level-' + log.level;
-              return `<div class="log-entry ${levelClass}">
-                <span class="log-timestamp">${formatTimestamp(log.timestamp)}</span>
-                <span class="log-level">[${log.level}]</span>
-                ${log.code ? `<span class="log-code">[${log.code}]</span>` : ''}
-                <span class="log-message">${escapeHtml(log.message)}</span>
-              </div>`;
-            }).join('');
-            container.scrollTop = container.scrollHeight;
-          } else {
-            container.innerHTML = '<div class="loading">Aucun log trouvé avec ces filtres.</div>';
-          }
-        })
-        .catch(err => {
-          document.getElementById('log-container').innerHTML = '<div class="loading" style="color: red;">Erreur: ' + escapeHtml(err.message) + '</div>';
-        });
-    }
-
     function escapeHtml(text) {
       const div = document.createElement('div');
-      div.textContent = text;
+      div.textContent = text == null ? '' : String(text);
       return div.innerHTML;
     }
 
-    document.getElementById('refresh-logs').addEventListener('click', loadLogs);
+    function params() {
+      const p = new URLSearchParams();
+      const champs = { level: 'level-filter', core: 'core-filter', code: 'code-filter',
+                       per_page: 'per-page-filter' };
+      for (const [nom, id] of Object.entries(champs)) {
+        const v = document.getElementById(id).value.trim();
+        if (v) p.append(nom, v);
+      }
+      // Un champ datetime-local est à l'heure du NAVIGATEUR, sans fuseau. Le
+      // core, lui, lirait « 14:30 » à SON heure — souvent UTC dans un
+      // conteneur — et la période serait décalée sans que rien ne le montre.
+      // On envoie donc un instant complet, en RFC 3339.
+      for (const [nom, id] of [['since', 'since-filter'], ['until', 'until-filter']]) {
+        const v = document.getElementById(id).value;
+        if (v) p.append(nom, new Date(v).toISOString());
+      }
+      p.append('page', page);
+      return p;
+    }
+
+    // Garnit la liste des cores sans perdre la sélection en cours : un core
+    // choisi qui disparaîtrait de la liste à l'actualisation changerait le
+    // filtre sans qu'on l'ait touché.
+    function garnirCores(cores) {
+      const select = document.getElementById('core-filter');
+      const choisi = select.value;
+      const connus = new Set(Array.from(select.options).map(o => o.value));
+      (cores || []).forEach(c => {
+        if (!connus.has(c)) {
+          const o = document.createElement('option');
+          o.value = c; o.textContent = c;
+          select.appendChild(o);
+        }
+      });
+      select.value = choisi;
+    }
+
+    function afficher(data) {
+      const warning = document.getElementById('log-warning');
+      if (data.source === 'memoire') {
+        warning.textContent = data.avertissement;
+        warning.hidden = false;
+      } else {
+        warning.hidden = true;
+      }
+      garnirCores(data.cores);
+
+      const container = document.getElementById('log-container');
+      const lignes = data.lignes || [];
+      if (lignes.length === 0) {
+        container.innerHTML = '<div class="loading">Aucune ligne pour ce filtre.</div>';
+      } else {
+        container.innerHTML = '<table class="log-table"><thead><tr>' +
+          '<th>Quand</th><th>Core</th><th>Niveau</th><th>Code</th><th>Message</th>' +
+          '</tr></thead><tbody>' +
+          lignes.map(l => `<tr class="level-${escapeHtml(l.level)}">
+            <td class="log-when">${escapeHtml(formatTimestamp(l.timestamp))}</td>
+            <td class="log-core">${escapeHtml(l.hostname)}</td>
+            <td class="log-level">${escapeHtml(l.level)}</td>
+            <td class="log-code">${escapeHtml(l.code || '')}</td>
+            <td class="log-message">${escapeHtml(l.message)}</td>
+          </tr>`).join('') +
+          '</tbody></table>';
+      }
+
+      document.getElementById('page-label').textContent = 'Page ' + data.page;
+      document.getElementById('page-prev').disabled = data.page <= 1;
+      document.getElementById('page-next').disabled = !data.suivante;
+    }
+
+    function loadLogs() {
+      const erreur = document.getElementById('log-error');
+      fetch('/admin/api/logs?' + params().toString(), { cache: 'no-store' })
+        .then(r => r.json().then(data => ({ ok: r.ok, data })))
+        .then(({ ok, data }) => {
+          if (!ok) {
+            erreur.textContent = data.erreur || 'Lecture du journal refusée.';
+            erreur.hidden = false;
+            return;
+          }
+          erreur.hidden = true;
+          afficher(data);
+        })
+        .catch(err => {
+          erreur.textContent = 'Erreur : ' + err.message;
+          erreur.hidden = false;
+        });
+    }
+
+    document.getElementById('apply-filters').addEventListener('click', function() {
+      page = 1;
+      loadLogs();
+    });
+    document.getElementById('page-prev').addEventListener('click', function() {
+      if (page > 1) { page--; loadLogs(); }
+    });
+    document.getElementById('page-next').addEventListener('click', function() {
+      page++;
+      loadLogs();
+    });
+
+    // L'auto-actualisation ramène à la PAGE 1 : actualiser une page ancienne
+    // la ferait glisser à mesure que de nouvelles lignes arrivent, et on
+    // lirait deux fois les mêmes lignes.
     document.getElementById('auto-refresh').addEventListener('click', function() {
       if (autoRefreshInterval) {
         clearInterval(autoRefreshInterval);
@@ -146,8 +244,10 @@
         this.classList.remove('btn-primary');
         this.classList.add('btn-ghost');
       } else {
-        autoRefreshInterval = setInterval(loadLogs, 2000);
-        this.textContent = 'Arrêter auto-actualisation';
+        page = 1;
+        loadLogs();
+        autoRefreshInterval = setInterval(function() { page = 1; loadLogs(); }, 5000);
+        this.textContent = 'Arrêter l\'auto-actualisation';
         this.classList.remove('btn-ghost');
         this.classList.add('btn-primary');
       }

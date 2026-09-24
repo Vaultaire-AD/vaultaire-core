@@ -143,6 +143,13 @@ var porteesAttendues = map[string]string{
 	"cluster.get_purge_delay":       "PorteeGlobale",
 	"cluster.set_purge_delay":       "PorteeGlobale",
 	"cluster.get_metrics_retention": "PorteeGlobale",
+
+	// Durées d'exploitation et journal : réglages et lignes du SERVEUR, qu'aucun
+	// domaine ne porte.
+	"settings.list":                 "PorteeGlobale",
+	"settings.set":                  "PorteeGlobale",
+	"settings.reset":                "PorteeGlobale",
+	"log.list":                      "PorteeGlobale",
 	"cluster.set_metrics_retention": "PorteeGlobale",
 	"cluster.set_node_exposure":     "PorteeGlobale",
 	"cluster.set_node_groups":       "PorteeGlobale",
@@ -287,6 +294,13 @@ var clesAttendues = map[string]string{
 	"cluster.get_purge_delay":       "read:cluster",
 	"cluster.set_purge_delay":       "write:cluster",
 	"cluster.get_metrics_retention": "read:cluster",
+
+	// Durées et journal. La lecture des durées emprunte read:log — voir
+	// actions_reglages_duree.go.
+	"settings.list":                 "read:log",
+	"settings.set":                  "write:server",
+	"settings.reset":                "write:server",
+	"log.list":                      "read:log",
 	"cluster.set_metrics_retention": "write:cluster",
 	"cluster.set_node_exposure":     "write:cluster",
 	"cluster.set_node_groups":       "write:cluster",
@@ -450,4 +464,6 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsRafraichissementGPO(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
+	EnregistrerActionsDuree(r)
+	EnregistrerActionsJournaux(r)
 }

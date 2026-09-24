@@ -311,7 +311,7 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// Il valait 37 — le total des seules écritures, à l'époque où le registre ne
 	// portait qu'elles — puis 80 quand les lots de lecture sont arrivés.
 	// Il vaut 89 depuis les lots 2.1/2.2 (conformité GPO, réglages de rétention,
-	// cluster, Nexus).
+	// cluster, Nexus), et 91 depuis log.list (journal commun, TO-DO 91).
 	//
 	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
 	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
@@ -322,7 +322,7 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// veut — ajouter une action sans s'en apercevoir est précisément ce qu'il
 	// empêche. Le laisser rouge des mois, en revanche, le rend inutile : on
 	// cesse de le lire.
-	const actionsAttendues = 90
+	const actionsAttendues = 91
 	if len(defs) != actionsAttendues {
 		t.Fatalf("%d actions au catalogue, attendu %d — "+
 			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée. "+

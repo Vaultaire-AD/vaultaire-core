@@ -938,9 +938,12 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminLogsHandler affiche la page des logs avec filtres.
+// AdminLogsHandler affiche la page du journal commun des cores.
 // Access: web_admin + read:log. Les journaux couvrent tous les domaines, ils ne
 // se rattachent donc à aucun droit de lecture par entité.
+//
+// La page ne porte aucune ligne : elle les demande à AdminLogsAPIHandler, qui
+// passe par l'action `log.list` — la même que `vlt logs`.
 func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
@@ -961,12 +964,12 @@ func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 		Username  string
 		DnsEnable bool
 		Section   string
-		Stats     map[string]interface{}
+		CeCore    string
 	}{
 		Username:  username,
 		DnsEnable: storage.Dns_Enable,
 		Section:   "logs",
-		Stats:     logs.GetLogsStats(),
+		CeCore:    logs.NomDuCore(),
 	}
 
 	if err := executeAdminPage(w, "admin_logs.html", data); err != nil {
@@ -975,7 +978,14 @@ func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminLogsAPIHandler retourne les logs filtrés en JSON.
+// parametresJournal sont les paramètres de `log.list` recopiés depuis l'URL.
+//
+// Une liste fermée plutôt que toute la requête : un paramètre ajouté à l'URL
+// par la page ou par un curieux ne doit pas atteindre l'action sans avoir été
+// déclaré ici.
+var parametresJournal = []string{"level", "core", "code", "since", "until", "page", "per_page"}
+
+// AdminLogsAPIHandler rend une page du journal commun, en JSON.
 // Access: web_admin + read:log, revérifié ici et pas seulement sur la page.
 func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
@@ -986,36 +996,43 @@ func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// Même droit que la page, vérifié séparément : l'API est appelée
 	// directement par le navigateur et doit se défendre seule. S'en remettre au
 	// contrôle de la page laisserait l'endpoint ouvert à qui connaît son URL.
+	//
+	// L'action le revérifie : cette garde-ci n'existe que pour répondre 403
+	// sans solliciter la base.
 	if !permission.HasActionAnywhere(groupIDs, permission.ActionReadLog) {
 		logs.Write_Log("SECURITY", "webadmin: "+username+" tente de lire les journaux sans le droit "+permission.ActionReadLog)
 		http.Error(w, "Permission refusée", http.StatusForbidden)
 		return
 	}
 
-	levelFilter := r.URL.Query().Get("level")
-	codeFilter := r.URL.Query().Get("code")
-	limitStr := r.URL.Query().Get("limit")
-
-	limit := 100
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
-			limit = l
+	p := act.Params{}
+	for _, nom := range parametresJournal {
+		if v := r.URL.Query().Get(nom); v != "" {
+			p[nom] = v
 		}
 	}
 
-	entries, err := logs.GetLogsForWebUI(levelFilter, codeFilter, limit)
+	w.Header().Set("Content-Type", "application/json")
+	// Des journaux ne se mettent pas en cache : un navigateur ou un
+	// intermédiaire qui garderait la page montrerait un incident déjà passé
+	// comme l'état présent — et garderait sur disque des lignes qui nomment
+	// des comptes.
+	w.Header().Set("Cache-Control", "no-store")
+
+	res, err := act.Executer("log.list", act.Appelant{Username: username, GroupIDs: groupIDs}, p)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: logs retrieval failed: "+err.Error())
-		http.Error(w, "Erreur récupération logs", http.StatusInternalServerError)
+		// Hors refus de droit, la cause est une saisie illisible — une date mal
+		// tapée : 400 et le message de l'action, qui dit la forme attendue.
+		statut := http.StatusBadRequest
+		var refus *act.ErrRefusee
+		if errors.As(err, &refus) {
+			statut = http.StatusForbidden
+		}
+		w.WriteHeader(statut)
+		json.NewEncoder(w).Encode(map[string]string{"erreur": MessageDActionPourAffichage(res, err)})
 		return
 	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs":  entries,
-		"count": len(entries),
-		"stats": logs.GetLogsStats(),
-	})
+	json.NewEncoder(w).Encode(res.Donnees)
 }
 
 // joindreValeursMultiples réunit les valeurs d'un champ multi-valué en une
