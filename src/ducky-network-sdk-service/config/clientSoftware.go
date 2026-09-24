@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // ClientSoftware est l'identité du programme, telle que le core la lui a
@@ -80,7 +80,7 @@ func SaveClientSoftware(computeurID, logicielType string, isServeur bool) error 
 	cs.NewClient.Logiciel_type = logicielType
 	cs.NewClient.IsServeur = isServeur
 
-	data, err := yaml.Marshal(&cs)
+	data, err := enYAML(&cs)
 	if err != nil {
 		return fmt.Errorf("sérialisation de l'identité : %w", err)
 	}

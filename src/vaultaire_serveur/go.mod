@@ -1,28 +1,25 @@
 module vaultaire
 
 go 1.26.1
+
 toolchain go1.26.5
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
-	github.com/Azure/go-ntlmssp v0.0.0-20221128193559-754e69321358 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/kr/fs v0.1.0 // indirect
 )
 
 require (
-	// Dépendance DIRECTE depuis le passage à argon2id : core/global/security
-	// importe golang.org/x/crypto/argon2. Elle était marquée « indirect »,
-	// tirée par go-ldap et sftp.
-	golang.org/x/crypto v0.52.0
-
 	github.com/fatih/color v1.18.0
-	github.com/go-asn1-ber/asn1-ber v1.5.8-0.20250403174932-29230038a667
-	github.com/go-ldap/ldap/v3 v3.4.12
+	github.com/go-asn1-ber/asn1-ber v1.5.8
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pkg/sftp v1.13.10
-	golang.org/x/sys v0.45.0 // indirect
+	// Dépendance DIRECTE depuis le passage à argon2id : core/global/security
+	// importe golang.org/x/crypto/argon2. Elle était marquée « indirect »,
+	// tirée par go-ldap (retirée, TO-DO 93 : importée nulle part) et sftp.
+	golang.org/x/crypto v0.54.0
+	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )

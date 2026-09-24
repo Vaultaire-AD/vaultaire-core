@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // ServerConfig est un core à joindre.
@@ -90,7 +90,7 @@ func SaveConfig(newConfig Config) error {
 	if configPath == "" {
 		return fmt.Errorf("aucun fichier de configuration chargé")
 	}
-	data, err := yaml.Marshal(newConfig)
+	data, err := enYAML(newConfig)
 	if err != nil {
 		return err
 	}

@@ -6,14 +6,17 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
 // Modes d'authentification.
@@ -232,7 +235,14 @@ func Load(path string) (Config, error) {
 		if err != nil {
 			return cfg, fmt.Errorf("lecture de %s : %w", path, err)
 		}
-		if err := yaml.UnmarshalStrict(b, &cfg); err != nil {
+		// Strict : un champ inconnu est une faute de frappe, et l'ignorer
+		// laisserait tourner Nexus avec un réglage qu'on croit posé.
+		// KnownFields est l'équivalent v3 de l'UnmarshalStrict de v2 ; un
+		// fichier vide rend io.EOF, qui n'est pas une erreur — les défauts
+		// s'appliquent, comme avant.
+		dec := yaml.NewDecoder(bytes.NewReader(b))
+		dec.KnownFields(true)
+		if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
 			return cfg, fmt.Errorf("%s : %w", path, err)
 		}
 	}

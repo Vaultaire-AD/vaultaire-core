@@ -16,8 +16,8 @@
 
 # --- Cryptographie et transport ---------------------------------------------
 
-golang.org/x/crypto = argon2id pour les empreintes de mot de passe (core/global/security), ed25519 pour les clés de machine et de core, et le client SSH de « create -c … -join ». Elle a été explicitement remontée en dépendance DIRECTE au passage à argon2id : elle était tirée par go-ldap et sftp, et l'aurait suivie si l'un des deux disparaissait.
-golang.org/x/sys = les API Windows de l'agent : netapi32 pour les comptes locaux, wtsapi32 pour les sessions, le registre, et l'enveloppe de service. Pas d'équivalent en bibliothèque standard.
+golang.org/x/crypto = argon2id pour les empreintes de mot de passe (core/global/security), ed25519 pour les clés de machine et de core, et le client SSH de « create -c … -join ». Elle a été explicitement remontée en dépendance DIRECTE au passage à argon2id : elle était tirée par go-ldap et sftp, et l'aurait suivie si l'un des deux disparaissait — go-ldap est partie (TO-DO 93), elle est restée. Une seule version dans tout le dépôt depuis le TO-DO 93 : c'est la bibliothèque qui porte la cryptographie, un correctif doit protéger tous les modules à la fois.
+golang.org/x/sys = les API Windows de l'agent : netapi32 pour les comptes locaux, wtsapi32 pour les sessions, le registre, et l'enveloppe de service. Pas d'équivalent en bibliothèque standard. Ailleurs, indirecte, tirée par x/crypto et le socle Ducky.
 filippo.io/edwards25519 = indirecte, tirée par go-sql-driver/mysql pour l'authentification caching_sha2_password. Jamais importée par nous.
 
 # --- Base de données ---------------------------------------------------------
@@ -26,10 +26,7 @@ github.com/go-sql-driver/mysql = le pilote MySQL/MariaDB, importé pour son seul
 
 # --- LDAP --------------------------------------------------------------------
 
-github.com/go-asn1-ber/asn1-ber = l'encodage BER/DER des messages LDAP. Le core l'emploie pour servir LDAP, Nexus pour interroger un annuaire — sans passer par go-ldap, dont Nexus n'a besoin ni du NTLM ni du GSSAPI.
-github.com/go-ldap/ldap/v3 = PLUS IMPORTÉE NULLE PART (constaté le 24/09). Déclarée directe dans vaultaire_serveur, elle n'apparaît dans aucun fichier : elle tire go-ntlmssp, uuid et golang.org/x/crypto pour rien. Retrait à traiter — voir TO-DO 93.
-github.com/Azure/go-ntlmssp = indirecte, tirée par go-ldap pour l'authentification NTLM. Jamais importée par nous, et elle partira avec go-ldap.
-github.com/google/uuid = indirecte, tirée par go-ldap. Jamais importée par nous.
+github.com/go-asn1-ber/asn1-ber = l'encodage BER/DER des messages LDAP. Le core l'emploie pour servir LDAP, Nexus pour interroger un annuaire — sans passer par go-ldap, dont ni l'un ni l'autre n'a besoin. Le core était épinglé sur un commit antérieur à v1.5.8 : c'était l'exigence de go-ldap v3.4.12, et l'épinglage est parti avec elle (TO-DO 93).
 
 # --- Dépôts de paquets (Nexus) ----------------------------------------------
 
@@ -49,8 +46,7 @@ github.com/mattn/go-isatty = indirecte, tirée par fatih/color : c'est elle qui 
 
 # --- Configuration -----------------------------------------------------------
 
-gopkg.in/yaml.v2 = la lecture des fichiers de configuration de l'agent, du proxy, du Nexus et du socle Ducky.
-gopkg.in/yaml.v3 = la même chose côté core. Deux versions de la MÊME bibliothèque cohabitent donc dans le produit — voir TO-DO 93.
+gopkg.in/yaml.v3 = la lecture et l'écriture des fichiers de configuration du core, de l'agent, du proxy, du Nexus et du socle Ducky. Une seule version depuis le TO-DO 93 : v2 n'est plus maintenue, et deux bibliothèques pour le même format faisaient diverger le core et l'agent sur un même fichier (clés en double, indentation).
 
 # --- Images de base ----------------------------------------------------------
 
@@ -63,6 +59,4 @@ debian:12-slim = l'image de l'environnement de compilation croisée et des essai
 # décidé d'accepter et une divergence qu'on n'a pas vue se ressemblent
 # beaucoup, et c'est la seule chose qui les sépare.
 
-!golang.org/x/crypto = RELEVÉE LE 24/09, PAS ENCORE RÉSOLUE. Trois versions : v0.47.0 (vaultaire_ctl), v0.52.0 (vaultaire_serveur), v0.54.0 (api_client_package). C'est la divergence la plus gênante du dépôt — un correctif de sécurité appliqué à l'une ne protège pas les autres. Alignement à traiter, voir TO-DO 93.
-!golang.org/x/sys = suit la précédente : les trois mêmes modules, tirée indirectement par x/crypto. Elle s'alignera d'elle-même quand x/crypto le sera.
-!github.com/go-asn1-ber/asn1-ber = le core est épinglé sur un commit (v1.5.8-0.20250403…) et Nexus sur la version publiée v1.5.8. La raison de l'épinglage n'est écrite nulle part ; à retrouver avant d'aligner, voir TO-DO 93.
+# Aucune depuis le TO-DO 93 : x/crypto, x/sys et asn1-ber ont été alignés.

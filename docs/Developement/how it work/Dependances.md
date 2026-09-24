@@ -58,10 +58,12 @@ Sans cette ligne, le test échoue. Une divergence qu'on a décidé d'accepter et
 une divergence qu'on n'a pas vue se ressemblent beaucoup, et c'est la seule
 chose qui les sépare.
 
-> ⚠️ Trois divergences dormaient dans le dépôt au 24/09, dont
+> Trois divergences dormaient dans le dépôt au 24/09, dont
 > **`golang.org/x/crypto` en trois versions** — la bibliothèque de crypto. Un
 > correctif de sécurité appliqué dans un module et pas dans les deux autres
-> n'aurait alerté personne. Elles sont déclarées et renvoyées au **TO-DO 93**.
+> n'aurait alerté personne. Le **TO-DO 93** les a résolues : il n'y a plus
+> aucune divergence déclarée. La prochaine qui apparaîtra fera échouer le test
+> tant que sa raison n'est pas écrite.
 
 ## 4. Ce que l'inventaire ne garantit pas
 
@@ -79,37 +81,23 @@ complet.
 
 <!-- INVENTAIRE:DEBUT — produit par automatisation/dependances.sh, ne pas éditer à la main -->
 
-### Bibliothèques Go — 17
+### Bibliothèques Go — 13
 
 | Dépendance | Version | Lien | À quoi elle sert |
 |---|---|---|---|
 | `filippo.io/edwards25519` | v1.1.0 | indirecte | indirecte, tirée par go-sql-driver/mysql pour l'authentification caching_sha2_password. Jamais importée par nous. |
-| `github.com/Azure/go-ntlmssp` | v0.0.0-20221128193559-754e69321358 | indirecte | indirecte, tirée par go-ldap pour l'authentification NTLM. Jamais importée par nous, et elle partira avec go-ldap. |
 | `github.com/fatih/color` | v1.18.0 | directe | la couleur des tableaux de « vlt », et surtout la détection d'un terminal : la sortie redirigée dans un fichier ne doit pas porter de codes d'échappement. |
-| `github.com/go-asn1-ber/asn1-ber` | **≠** v1.5.8<br>**≠** v1.5.8-0.20250403174932-29230038a667 | directe | l'encodage BER/DER des messages LDAP. Le core l'emploie pour servir LDAP, Nexus pour interroger un annuaire — sans passer par go-ldap, dont Nexus n'a besoin ni du NTLM ni du GSSAPI. |
-| `github.com/go-ldap/ldap/v3` | v3.4.12 | directe | PLUS IMPORTÉE NULLE PART (constaté le 24/09). Déclarée directe dans vaultaire_serveur, elle n'apparaît dans aucun fichier : elle tire go-ntlmssp, uuid et golang.org/x/crypto pour rien. Retrait à traiter — voir TO-DO 93. |
+| `github.com/go-asn1-ber/asn1-ber` | v1.5.8 | directe | l'encodage BER/DER des messages LDAP. Le core l'emploie pour servir LDAP, Nexus pour interroger un annuaire — sans passer par go-ldap, dont ni l'un ni l'autre n'a besoin. Le core était épinglé sur un commit antérieur à v1.5.8 : c'était l'exigence de go-ldap v3.4.12, et l'épinglage est parti avec elle (TO-DO 93). |
 | `github.com/go-sql-driver/mysql` | v1.8.1 | directe | le pilote MySQL/MariaDB, importé pour son seul effet d'enregistrement (« _ »). Toute la base du core passe par lui. |
-| `github.com/google/uuid` | v1.6.0 | indirecte | indirecte, tirée par go-ldap. Jamais importée par nous. |
 | `github.com/klauspost/compress` | v1.20.0 | directe | la décompression zstd des paquets Debian, que Nexus doit ouvrir pour en lire les métadonnées. |
 | `github.com/kr/fs` | v0.1.0 | indirecte | indirecte, tirée par pkg/sftp pour parcourir une arborescence distante. |
 | `github.com/mattn/go-colorable` | v0.1.13 | indirecte | indirecte, tirée par fatih/color pour la console Windows. |
 | `github.com/mattn/go-isatty` | v0.0.20 | indirecte | indirecte, tirée par fatih/color : c'est elle qui sait si la sortie est un terminal. |
 | `github.com/pkg/sftp` | v1.13.10 | directe | le dépôt de l'agent et de sa configuration sur une machine distante par « create -c … --join ». C'est le seul chemin qui écrit sur une machine qui n'a pas encore d'agent. |
 | `github.com/ulikunitz/xz` | v0.5.16 | directe | la décompression xz, pour la même raison : un .deb est en xz ou en zstd selon son âge. |
-| `golang.org/x/crypto` | **≠** v0.47.0<br>**≠** v0.52.0<br>**≠** v0.54.0 | directe | argon2id pour les empreintes de mot de passe (core/global/security), ed25519 pour les clés de machine et de core, et le client SSH de « create -c … -join ». Elle a été explicitement remontée en dépendance DIRECTE au passage à argon2id : elle était tirée par go-ldap et sftp, et l'aurait suivie si l'un des deux disparaissait. |
-| `golang.org/x/sys` | **≠** v0.40.0<br>**≠** v0.45.0<br>**≠** v0.47.0 | directe | les API Windows de l'agent : netapi32 pour les comptes locaux, wtsapi32 pour les sessions, le registre, et l'enveloppe de service. Pas d'équivalent en bibliothèque standard. |
-| `gopkg.in/yaml.v2` | v2.4.0 | directe | la lecture des fichiers de configuration de l'agent, du proxy, du Nexus et du socle Ducky. |
-| `gopkg.in/yaml.v3` | v3.0.1 | directe | la même chose côté core. Deux versions de la MÊME bibliothèque cohabitent donc dans le produit — voir TO-DO 93. |
-
-### Versions divergentes
-
-Une dépendance tirée en plusieurs versions. Un correctif appliqué à l'une ne protège pas les autres.
-
-| Dépendance | Versions et modules | Pourquoi c'est accepté |
-|---|---|---|
-| `github.com/go-asn1-ber/asn1-ber` | `v1.5.8` — vaultaire_nexus<br>`v1.5.8-0.20250403174932-29230038a667` — vaultaire_serveur | le core est épinglé sur un commit (v1.5.8-0.20250403…) et Nexus sur la version publiée v1.5.8. La raison de l'épinglage n'est écrite nulle part ; à retrouver avant d'aligner, voir TO-DO 93. |
-| `golang.org/x/crypto` | `v0.47.0` — vaultaire_ctl<br>`v0.52.0` — vaultaire_serveur<br>`v0.54.0` — api_client_package | RELEVÉE LE 24/09, PAS ENCORE RÉSOLUE. Trois versions : v0.47.0 (vaultaire_ctl), v0.52.0 (vaultaire_serveur), v0.54.0 (api_client_package). C'est la divergence la plus gênante du dépôt — un correctif de sécurité appliqué à l'une ne protège pas les autres. Alignement à traiter, voir TO-DO 93. |
-| `golang.org/x/sys` | `v0.40.0` — vaultaire_ctl<br>`v0.45.0` — ducky-network-sdk-service, vaultaire_client_windows, vaultaire_serveur<br>`v0.47.0` — api_client_package | suit la précédente : les trois mêmes modules, tirée indirectement par x/crypto. Elle s'alignera d'elle-même quand x/crypto le sera. |
+| `golang.org/x/crypto` | v0.54.0 | directe | argon2id pour les empreintes de mot de passe (core/global/security), ed25519 pour les clés de machine et de core, et le client SSH de « create -c … -join ». Elle a été explicitement remontée en dépendance DIRECTE au passage à argon2id : elle était tirée par go-ldap et sftp, et l'aurait suivie si l'un des deux disparaissait — go-ldap est partie (TO-DO 93), elle est restée. Une seule version dans tout le dépôt depuis le TO-DO 93 : c'est la bibliothèque qui porte la cryptographie, un correctif doit protéger tous les modules à la fois. |
+| `golang.org/x/sys` | v0.47.0 | directe | les API Windows de l'agent : netapi32 pour les comptes locaux, wtsapi32 pour les sessions, le registre, et l'enveloppe de service. Pas d'équivalent en bibliothèque standard. Ailleurs, indirecte, tirée par x/crypto et le socle Ducky. |
+| `gopkg.in/yaml.v3` | v3.0.1 | directe | la lecture et l'écriture des fichiers de configuration du core, de l'agent, du proxy, du Nexus et du socle Ducky. Une seule version depuis le TO-DO 93 : v2 n'est plus maintenue, et deux bibliothèques pour le même format faisaient diverger le core et l'agent sur un même fichier (clés en double, indentation). |
 
 ### Images de base
 

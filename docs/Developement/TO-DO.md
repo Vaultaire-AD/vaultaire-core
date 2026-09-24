@@ -30,7 +30,6 @@ Trois gestes, dans le même passage que le code :
 | 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | À faire                                 |
 | 85  | WEB          | Page Cluster : réglages perdus, et illisible               | À faire                                 |
 | 72  | PROXY        | Relais HTTPS (vers les Nexus) et LDAP/S                    | À faire — code prêt, verrous à lever    |
-| 93  | DEP VERSION  | Trois défauts relevés par l'inventaire des dépendances  | À faire                              |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte     | À faire                                 |
@@ -240,26 +239,6 @@ Une piste pour le second symptôme : l'empreinte porte sur la **politique effect
 **Constat.** La révocation poussée ne touche que les machines connectées au moment du déclenchement. Une machine absente récupère ses ordres en attente à sa reconnexion (`revocation_manager/trames.go`), mais une machine **connectée dont le push a échoué** attend elle aussi la reconnexion suivante, qui peut ne jamais venir tant que le tunnel tient.
 
 **À faire.** Une tâche de fond côté core qui renvoie périodiquement les ordres en attente aux clients connectés.
-
-### 93. [DEP VERSION] Trois défauts relevés par l'inventaire des dépendances
-
-**Constat** (point 80, 24/09). L'inventaire mis en place a immédiatement montré trois choses qui dormaient. Aucune n'est urgente ; toutes sont écrites, et le test les garde visibles.
-
-**1. `golang.org/x/crypto` en TROIS versions** — v0.47.0 (`vaultaire_ctl`), v0.52.0 (`vaultaire_serveur`), v0.54.0 (`api_client_package`).
-
-C'est la plus gênante : c'est la bibliothèque qui porte argon2id, ed25519 et le client SSH. Un correctif de sécurité appliqué dans un module et pas dans les deux autres n'alerterait personne. `golang.org/x/sys` suit, tirée par elle.
-
-**À faire.** Aligner sur la plus récente, module par module, en vérifiant que rien ne casse — `vaultaire_ctl` est le plus en retard. Puis retirer les deux déclarations de divergence de `dependances.roles` : le test refuse une justification qui ne correspond plus à rien.
-
-**2. `github.com/go-ldap/ldap/v3` n'est plus importée nulle part.** Déclarée directe dans `vaultaire_serveur`, elle n'apparaît dans aucun fichier `.go` — le seul endroit qui la nomme est un commentaire de Nexus expliquant pourquoi Nexus ne l'emploie PAS. Elle tire `go-ntlmssp`, `google/uuid` et `golang.org/x/crypto` pour rien.
-
-**À faire.** Vérifier (`go mod tidy`, qui demande le réseau), retirer, et laisser partir les trois dépendances indirectes qui la suivent. Attention : `x/crypto` doit RESTER, elle est directe depuis le passage à argon2id — c'est écrit dans le `go.mod` du serveur.
-
-**3. Deux versions de YAML dans le même produit.** `vaultaire_serveur` lit sa configuration avec `yaml.v3`, tout le reste du dépôt avec `yaml.v2`. Les deux fonctionnent, et rien ne les oblige à se ressembler — mais un comportement qui diffère entre le core et l'agent sur un fichier de configuration se cherche longtemps.
-
-**À faire.** Trancher : v3 partout, ou v2 partout. v3 est la version maintenue ; la migration n'est pas transparente (elle change le traitement des clés en double et l'indentation rendue).
-
----
 
 ---
 
