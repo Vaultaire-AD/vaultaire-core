@@ -141,6 +141,35 @@ func Create_DataBase(db *sql.DB) {
 			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
 		);`,
 
+		// Sessions UTILISATEUR ouvertes par PAM.
+		//
+		// # Pourquoi une table à elle, et pas une ligne de did_login
+		//
+		// `did_login` vaut « une ligne = une session Ducky », et `status -c` la
+		// lit pour énumérer les machines connectées. Y écrire les sessions PAM
+		// — ce qu'a fait le point 68 — faisait apparaître une machine deux fois
+		// dès que quelqu'un s'y connectait, alors qu'un seul tunnel existe.
+		//
+		// Les deux objets n'ont ni le même cycle de vie, ni la même clé, ni le
+		// même lecteur. Une colonne d'origine aurait suffi à les distinguer,
+		// mais aurait laissé deux natures dans la même table et un filtre à ne
+		// pas oublier : la prochaine lecture de `did_login` serait retombée
+		// dans le piège.
+		//
+		// L'unicité (compte, machine) est portée par la BASE cette fois, et non
+		// par le code comme dans did_login : deux ouvertures de session
+		// successives doivent mettre à jour une ligne, pas en empiler deux.
+		`CREATE TABLE IF NOT EXISTS user_sessions (
+			id_user_session INT AUTO_INCREMENT PRIMARY KEY,
+			d_id_user INT NOT NULL,
+			d_id_logiciel INT NOT NULL,
+			opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			key_time_validity TIMESTAMP NULL DEFAULT NULL,
+			UNIQUE KEY uq_user_session (d_id_user, d_id_logiciel),
+			FOREIGN KEY (d_id_user) REFERENCES users(id_user) ON DELETE CASCADE,
+			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
+		);`,
+
 		// Sessions logicielles
 		`CREATE TABLE IF NOT EXISTS sessions (
 			id INT AUTO_INCREMENT PRIMARY KEY,

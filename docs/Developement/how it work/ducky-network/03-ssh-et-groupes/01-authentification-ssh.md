@@ -76,15 +76,22 @@ longtemps manqué les deux bouts du cycle de vie qui en découle.
 
 ### Ouverture — écrite par `03_01`
 
-Une `03_01` qui franchit tous les contrôles écrit désormais une ligne
-`did_login` (compte, machine). Sans elle, `status -u` ne listait que les lignes
-du compte `vaultaire` — une par machine du parc — et jamais la personne
+Une `03_01` qui franchit tous les contrôles écrit une ligne dans la table
+`user_sessions` (compte, machine). Sans elle, `status -u` ne listait que les
+lignes du compte `vaultaire` — une par machine du parc — et jamais la personne
 réellement connectée : le core savait qui il venait de laisser entrer, et
 l'oubliait dans la même seconde.
 
-La clé enregistrée est celle du **tunnel machine**, faute de mieux : une session
-PAM n'en a pas à elle, et c'est bien sous cette clé que l'authentification a
-voyagé.
+**Une table à elle, et pas une ligne de `did_login`.** La première version de ce
+correctif écrivait dans `did_login` ; or `did_login` veut dire « une session
+Ducky », et `status -c` la lit pour énumérer les machines. Une machine sur
+laquelle quelqu'un travaillait apparaissait donc **deux fois**, alors qu'un seul
+tunnel existe. Les deux objets n'ont ni le même cycle de vie, ni la même clé, ni
+le même lecteur.
+
+Une simple colonne d'origine aurait suffi à les distinguer — et aurait laissé
+deux natures dans la même table, plus un filtre à ne pas oublier : la lecture
+suivante serait retombée dans le piège.
 
 ### Fermeture — `03_11`
 
@@ -111,9 +118,11 @@ et l'effacer la ferait disparaître de `status -c` alors qu'elle est bien là.
 
 ### Expiration — le battement de la machine
 
-Une ligne `did_login` vaut dix minutes. Une session utilisateur n'a pas de
-battement à elle : c'est celui de la **machine** (`02_12`) qui prolonge toutes
-les lignes du poste, la sienne comme celles de ses utilisateurs.
+Une ligne de session vaut dix minutes. Une session utilisateur n'a pas de
+battement à elle : c'est celui de la **machine** (`02_12`) qui prolonge les
+lignes `user_sessions` du poste. La ligne `did_login` de la machine, elle, est
+rafraîchie par le même battement mais par son propre chemin — les deux tables ne
+se croisent nulle part, et un test le vérifie.
 
 La contrepartie est voulue : une machine éteinte cesse de battre, et ses
 sessions utilisateur expirent avec elle. Une déconnexion dont la `03_11` se perd

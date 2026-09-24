@@ -224,11 +224,11 @@ Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 
 | Ordre | Type | Scope | Ce qu'il fait |
 |-------|------|-------|---------------|
-| 10 | `directory_manage` | both | Répertoire avec permissions et propriétaire |
-| 11 | `file_deploy` | both | Fichier avec contenu, permissions, propriétaire |
+| 10 | `directory_manage` | both | Répertoire avec ses permissions (propriétaire : scope machine seulement) |
+| 11 | `file_deploy` | both | Fichier avec contenu et permissions (propriétaire : scope machine seulement) |
 | 12 | `templated_file_deploy` | both | Idem, avec `{{hostname}}` `{{fqdn}}` `{{username}}` `{{domain}}` |
 | 13 | `file_acl` | both | ACL POSIX (`setfacl`), avec héritage si récursif |
-| 14 | `trusted_ca` | machine | CA interne dans le magasin de confiance |
+| 14 | `trusted_ca` | machine | CA interne dans le magasin de confiance — la famille de distribution est reconnue à sa **commande** de régénération |
 | 20 | `dns_resolver` | machine | Serveurs DNS, chez ce qui tient la résolution : `resolved.conf.d/` (systemd-resolved actif), `[global-dns]` de NetworkManager (RHEL/Rocky 9), sinon `/etc/resolv.conf` |
 | 21 | `package_repository` | machine | Dépôt de paquets autorisé |
 | 30 | `package` | machine | Présence, absence, version épinglée |
@@ -343,6 +343,43 @@ Déclarés dans `core/gpo/types.go`, chacun avec son validateur dans
 | `ident` | identifiant POSIX | champ texte |
 | `cron` | expression à 5 champs | champ texte |
 | `env_name` | nom de variable, hors liste interdite | champ texte |
+
+### Un champ peut être restreint à un scope
+
+`ModuleSchema.Scope` dit dans quelle GPO un module a le droit de figurer.
+`FieldSchema.Scope` fait la même chose pour un **champ**, à l'intérieur d'un
+module qui vit dans les deux — vide, le champ vaut partout, ce qui est le cas de
+presque tous.
+
+Un seul cas aujourd'hui : **propriétaire et groupe**, sur `file_deploy`,
+`directory_manage` et `templated_file_deploy`. En scope user, le propriétaire
+est l'utilisateur cible et l'agent le pose lui-même (`writeUserFile`) — le champ
+ne changeait rien, et affichait le contraire. Quelqu'un y a saisi `root` en
+recette ; le dossier a bien été créé au nom de l'utilisateur.
+
+> **Un champ qui ne change rien à ce qui se passe est pire qu'un champ absent :**
+> il se remplit, il se relit, et on lui prête un effet qu'il n'a pas. C'est le
+> même raisonnement que pour un réglage qui s'affiche sans agir.
+
+Le filtre s'applique en quatre endroits, et les quatre comptent :
+
+| Où | Pourquoi |
+|---|---|
+| `FieldsForScope` à la construction du formulaire | le champ n'est plus proposé |
+| `ParametresDeModule` à la collecte du POST | sinon il serait réécrit vide en base à chaque modification, et survivrait à son propre retrait |
+| `ValidateModule` à la normalisation | le champ n'est plus recopié dans les paramètres retenus |
+| `moduleSummary` au résumé | une GPO ancienne n'affiche plus « Propriétaire = root » |
+
+**Un paramètre hors scope trouvé en base est ignoré, jamais refusé.** Les GPO
+écrites avant le retrait portent encore la clé ; or `ValidateModule` est
+rappelée sur les modules **voisins** à chaque modification d'une GPO. La
+refuser rendrait ces politiques immodifiables tant que personne n'aurait
+nettoyé la base à la main. Un paramètre qui n'existe nulle part au schéma, lui,
+reste refusé : c'est ce qui empêche une faute de frappe de passer pour un
+réglage.
+
+L'empreinte de la politique change une fois, puisque les clés disparaissent des
+paramètres retenus : le parc user réapplique une fois, puis se tait.
 
 ### Ce que le catalogue produit dans l'interface
 
@@ -1076,6 +1113,30 @@ source est intacte et **aucune connexion TLS ne fait confiance à cette autorit�
 L'empreinte porte sur le **DER**, pas sur le texte : `update-ca-trust` réécrit ce
 qu'il agrège — longueur de ligne, ordre, en-têtes — et chercher le texte déposé
 échouerait sur une machine parfaitement conforme.
+
+#### Quelle famille de distribution, et à quoi on la reconnaît
+
+| Famille | Répertoire d'ancrage | Commande | Suffixe |
+|---|---|---|---|
+| Debian/Ubuntu | `/usr/local/share/ca-certificates` | `update-ca-certificates` | `.crt` |
+| RHEL/Rocky | `/etc/pki/ca-trust/source/anchors` | `update-ca-trust extract` | `.pem` |
+
+**C'est la COMMANDE qui identifie la famille, pas le répertoire.** La détection
+retenait le premier répertoire existant, Debian en tête de liste — or
+`/usr/local/share/ca-certificates` est un répertoire ordinaire sous
+`/usr/local`, que n'importe quel paquet peut créer. Une Rocky 9 était alors
+prise pour une Debian et l'agent lançait `update-ca-certificates`, qui n'y
+existe pas (recette du 24/09).
+
+Le raisonnement tient au-delà du symptôme : un magasin n'est utilisable que si
+le programme qui le **compile** est là, puisque déposer le fichier ne suffit pas
+à rendre la CA effective. Un répertoire, lui, ne prouve rien.
+
+Le répertoire garde un rôle — départager deux familles dont les deux commandes
+sont installées — et, s'il manque alors que la commande est là, il est créé :
+c'est un emplacement documenté de la distribution, pas un chemin inventé.
+Lorsque aucune commande n'est trouvée, l'échec **nomme ce qui a été cherché**,
+ce qui manquait au message d'origine.
 
 Deux précautions, dans les deux cas :
 

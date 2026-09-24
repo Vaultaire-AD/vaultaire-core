@@ -166,6 +166,20 @@ La vérification avant commit reste utile — voir le
 [pense-bête de développement](./Pense-bete_developpement.md) : l'intégration
 continue dit non après le merge, le pense-bête l'évite avant.
 
+## L'inventaire des dépendances
+
+`core/dependances` n'éprouve pas du code : il éprouve le **dépôt**. Il échoue
+quand [`Dependances.md`](./Dependances.md) ne décrit plus les `go.mod` et les
+Dockerfiles, quand une dépendance arrive sans qu'on dise à quoi elle sert, ou
+quand deux modules divergent sur une version sans raison écrite.
+
+```bash
+./automatisation/dependances.sh     # régénère la page
+```
+
+C'est la même famille que les tests-sentinelles ci-dessous : rien dans le
+compilateur ne peut garantir qu'une page de documentation reste vraie.
+
 ## Écrire un test dans ce dépôt
 
 - **En français, et il dit POURQUOI.** Le commentaire au-dessus explique ce que

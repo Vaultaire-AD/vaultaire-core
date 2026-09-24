@@ -98,9 +98,15 @@ type gpoCatalogCategory struct {
 // buildFieldViews convertit les champs d'un schéma en vues de formulaire,
 // valorisées par params (nil pour un formulaire d'ajout : les valeurs par défaut
 // du schéma s'appliquent alors).
-func buildFieldViews(schema gpo.ModuleSchema, params map[string]string) []gpoFieldView {
-	views := make([]gpoFieldView, 0, len(schema.Fields))
-	for _, f := range schema.Fields {
+//
+// Le scope de la GPO écarte les champs qui n'ont pas de sens dans ce
+// contexte — propriétaire et groupe en scope user. Le filtre est ici et non
+// dans le gabarit : le formulaire doit proposer exactement ce que le serveur
+// acceptera, et le gabarit ne connaît pas le catalogue.
+func buildFieldViews(schema gpo.ModuleSchema, scope gpo.Scope, params map[string]string) []gpoFieldView {
+	champs := schema.FieldsForScope(scope)
+	views := make([]gpoFieldView, 0, len(champs))
+	for _, f := range champs {
 		value := f.Default
 		if params != nil {
 			if v, ok := params[f.Name]; ok {
@@ -138,7 +144,7 @@ func buildFieldViews(schema gpo.ModuleSchema, params map[string]string) []gpoFie
 }
 
 // buildModuleViews convertit les modules d'une GPO en vues éditables.
-func buildModuleViews(modules []gpo.Module) []gpoModuleView {
+func buildModuleViews(modules []gpo.Module, scope gpo.Scope) []gpoModuleView {
 	views := make([]gpoModuleView, 0, len(modules))
 	for _, m := range modules {
 		schema, known := gpo.SchemaFor(m.Type)
@@ -147,14 +153,14 @@ func buildModuleViews(modules []gpo.Module) []gpoModuleView {
 			Type:       m.Type,
 			Label:      m.Type,
 			ApplyOrder: m.ApplyOrder,
-			Summary:    moduleSummary(m),
+			Summary:    moduleSummary(m, scope),
 			Target:     moduleTarget(m),
 		}
 		if known {
 			view.Label = schema.Label
 			view.Category = schema.Category
 			view.Description = schema.Description
-			view.Fields = buildFieldViews(schema, m.Params)
+			view.Fields = buildFieldViews(schema, scope, m.Params)
 		}
 		view.SearchText = strings.ToLower(strings.Join(
 			[]string{view.Label, view.Type, view.Target, view.Summary, view.Category}, " "))
@@ -187,15 +193,18 @@ func moduleTarget(m gpo.Module) string {
 //
 // La cible est volontairement exclue : elle a sa propre colonne dans le tableau,
 // la répéter dans le résumé mangerait la place des autres paramètres.
-func moduleSummary(m gpo.Module) string {
+func moduleSummary(m gpo.Module, scope gpo.Scope) string {
 	schema, known := gpo.SchemaFor(m.Type)
 	if !known {
 		return ""
 	}
 	target := moduleTarget(m)
 
+	// Filtré par le scope, comme le formulaire : une GPO user écrite avant le
+	// retrait de ces champs porte encore « owner » en base, et l'afficher
+	// ferait croire à un propriétaire choisi alors qu'il est ignoré.
 	var parts []string
-	for _, f := range schema.Fields {
+	for _, f := range schema.FieldsForScope(scope) {
 		val := strings.TrimSpace(m.Params[f.Name])
 		if val == "" || val == "unchanged" || strings.Contains(val, "\n") {
 			continue
@@ -221,7 +230,7 @@ func buildCatalogForScope(scope gpo.Scope) []gpoCatalogCategory {
 			Label:       schema.Label,
 			Category:    schema.Category,
 			Description: schema.Description,
-			Fields:      buildFieldViews(schema, nil),
+			Fields:      buildFieldViews(schema, scope, nil),
 			SearchText: strings.ToLower(strings.Join(
 				[]string{schema.Label, schema.Type, schema.Category, schema.Description}, " ")),
 		})
@@ -410,7 +419,7 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 	}
 
 	data.Policy = policy
-	data.Modules = buildModuleViews(policy.Modules)
+	data.Modules = buildModuleViews(policy.Modules, policy.Scope)
 	data.Catalog = buildCatalogForScope(policy.Scope)
 	data.CatalogFlat = flattenCatalog(data.Catalog)
 	data.ModuleCount = len(data.Modules)

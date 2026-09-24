@@ -27,16 +27,22 @@ var (
 
 // Indicateurs d'un compte, tels que les attend USER_INFO_1.
 const (
-	usrPrivUser         = 1       // utilisateur ordinaire, jamais administrateur d'office
-	ufScript            = 0x0001  // exigé par NetUserAdd, sans quoi l'appel échoue
-	ufDontExpirePasswd  = 0x10000 // le mot de passe local ne périme pas
-	ufNormalAccount     = 0x0200  // compte ordinaire
-	niveauUtilisateur1  = 1       // USER_INFO_1
-	niveauMotDePasse    = 1003    // USER_INFO_1003 : le mot de passe seul
-	niveauMembreParSID  = 0       // LOCALGROUP_MEMBERS_INFO_0 : membre désigné par SID
-	erreurMembreExiste  = 1378    // ERROR_MEMBER_IN_ALIAS
-	erreurCompteExiste  = 2224    // NERR_UserExists
-	erreurCompteInconnu = 2221    // NERR_UserNotFound
+	usrPrivUser        = 1       // utilisateur ordinaire, jamais administrateur d'office
+	ufScript           = 0x0001  // exigé par NetUserAdd, sans quoi l'appel échoue
+	ufDontExpirePasswd = 0x10000 // le mot de passe local ne périme pas
+	ufNormalAccount    = 0x0200  // compte ordinaire
+	niveauUtilisateur1 = 1       // USER_INFO_1
+	niveauMotDePasse   = 1003    // USER_INFO_1003 : le mot de passe seul
+	niveauMembreParSID = 0       // LOCALGROUP_MEMBERS_INFO_0 : membre désigné par SID
+	erreurMembreExiste = 1378    // ERROR_MEMBER_IN_ALIAS
+)
+
+// Les codes de netapi32 et leur traduction vivent dans erreurs.go, qui compile
+// sur toute plateforme : un message d'erreur ne se vérifie qu'en le lisant, et
+// il ne fallait pas une machine Windows pour cela.
+const (
+	erreurCompteExiste  = ErrCompteExiste
+	erreurCompteInconnu = ErrCompteInconnu
 )
 
 // SID des groupes locaux, plutôt que leurs noms.
@@ -171,7 +177,7 @@ func creer(nomW, mdpW *uint16, utilisateur string) error {
 			// Course avec une autre session : quelqu'un vient de le créer.
 			return poserMotDePasse(nomW, mdpW)
 		}
-		return fmt.Errorf("NetUserAdd : code %d (paramètre %d)", r, erreurParam)
+		return ErreurNetapi("NetUserAdd", uint32(r), erreurParam)
 	}
 	_ = utilisateur // le nom complet du domaine n'est pas posé en V1 : voir README
 	return nil
@@ -183,7 +189,7 @@ func poserMotDePasse(nomW, mdpW *uint16) error {
 	r, _, _ := procNetUserSetInfo.Call(0, uintptr(unsafe.Pointer(nomW)), niveauMotDePasse,
 		uintptr(unsafe.Pointer(&info)), uintptr(unsafe.Pointer(&erreurParam)))
 	if r != 0 {
-		return fmt.Errorf("NetUserSetInfo : code %d (paramètre %d)", r, erreurParam)
+		return ErreurNetapi("NetUserSetInfo", uint32(r), erreurParam)
 	}
 	return nil
 }

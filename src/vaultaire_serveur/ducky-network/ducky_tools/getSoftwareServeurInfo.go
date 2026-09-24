@@ -42,7 +42,7 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 			trames_content.ClientSoftwareID, []byte(trames_content.SessionIntegritykey))
 
 		// Le battement de la machine prolonge aussi les sessions de SES
-		// utilisateurs.
+		// utilisateurs, dans leur propre table.
 		//
 		// Une session ouverte par PAM n'a ni connexion ni clé propre : elle vit
 		// dans ce tunnel-ci (trame 03_01). Rien ne peut donc la prolonger
@@ -52,9 +52,12 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 		//
 		// La contrepartie est voulue : si la machine s'éteint, elle cesse de
 		// battre, et ses sessions utilisateur expirent avec elle. C'est le seul
-		// mécanisme d'expiration qu'elles aient — voir
-		// dbsessions.ProlongerSessionsDeLaMachine.
-		if _, errS := dbsessions.ProlongerSessionsDeLaMachine(db, trames_content.ClientSoftwareID); errS != nil {
+		// mécanisme d'expiration qu'elles aient.
+		//
+		// La prolongation ne touche QUE `user_sessions` : étendue à `did_login`,
+		// elle maintiendrait en vie les lignes fantômes écrites par la première
+		// version du point 68, qu'on laisse justement expirer.
+		if _, errS := dbsessions.ProlongerSessionsUtilisateurDeLaMachine(db, trames_content.ClientSoftwareID); errS != nil {
 			logs.Write_LogCode("WARNING", logs.CodeDBQuery,
 				"battement: sessions utilisateur non prolongées sur "+
 					trames_content.ClientSoftwareID+" : "+errS.Error())

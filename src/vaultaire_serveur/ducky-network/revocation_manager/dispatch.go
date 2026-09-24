@@ -17,6 +17,7 @@ import (
 
 	"vaultaire/core/database"
 	dbrevocation "vaultaire/core/database/db_revocation"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -179,6 +180,21 @@ func killSessions(username string) int {
 			"revocation: fermeture de la session Ducky de "+username,
 			logs.WithMeta(sess.SessionID, username))
 		sessionmgr.Sessions.RemoveSession(sess.SessionID)
+	}
+
+	// Les sessions PAM affichées par `status -u`.
+	//
+	// Elles ne se « ferment » pas d'ici : une session ouverte sur un poste est
+	// fermée par l'ordre de révocation lui-même (trames 06), pas par une ligne
+	// de base. Ce qu'on retire, c'est l'AFFICHAGE — un tableau de bord qui
+	// montre encore comme connecté un compte qu'on vient de couper est un
+	// tableau de bord qui ment, et c'est précisément au moment d'un kill switch
+	// qu'on le regarde.
+	if n, err := dbsessions.FermerSessionsUtilisateurPartout(database.GetDatabase(), username); err != nil {
+		logs.Write_Log("WARNING", "revocation: sessions utilisateur de "+username+" non retirées : "+err.Error())
+	} else if n > 0 {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: %d session(s) utilisateur de %s retirée(s) de l'affichage", n, username))
 	}
 
 	web := websession.DeleteSessionsOf(username)

@@ -157,6 +157,7 @@ La désinstallation **ne supprime pas** ces comptes : ils portent les profils.
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` — le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu sortant, ou `servers` faux dans `client_conf.json` |
 | Mot de passe accepté, Windows refuse la session | compte local non inscrit dans Utilisateurs, ou stratégie « Interdire l'ouverture de session locale » |
+| « la politique de mot de passe de CE POSTE refuse… » (code 2245) | la politique locale est plus stricte que celle du domaine ; `install.ps1` propose de l'aligner, ou `secpol.msc` |
 | Deux profils pour la même personne | l'identifiant a été tapé différemment : le nom local dépend du **nom complet** |
 
 Détail technique, protocole du tube et compilation :

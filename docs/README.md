@@ -79,6 +79,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`MFA_et_Expiration.md`](./Developement/how%20it%20work/MFA_et_Expiration.md) | Second facteur et expiration des mots de passe |
 | [`Journalisation.md`](./Developement/how%20it%20work/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi |
 | [`Tests.md`](./Developement/how%20it%20work/Tests.md) | **Les tests** : comment les lancer, les deux familles, les tests-sentinelles, la suite `--test` |
+| [`Dependances.md`](./Developement/how%20it%20work/Dependances.md) | **De quoi Vaultaire dépend** : l'inventaire, à quoi chaque dépendance sert, et les divergences de version |
 | [`Pense-bete_developpement.md`](./Developement/how%20it%20work/Pense-bete_developpement.md) | **Les étapes à suivre** quand on ajoute une fonctionnalité — de l'entrée TO-DO au commit |
 
 > **Ce qui n'a pas sa place ici** : « comment déléguer un droit », « quelle

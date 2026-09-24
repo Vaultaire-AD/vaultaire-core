@@ -134,15 +134,19 @@ func expandTemplate(ctx Context, content string) string {
 // Autorité de certification
 // ---------------------------------------------------------------------------
 
-// caStorePaths liste les emplacements du magasin de confiance selon la famille
-// de distribution, avec la commande de régénération associée.
-var caStorePaths = []struct {
+// magasinCA décrit le magasin de confiance d'une famille de distribution.
+type magasinCA struct {
+	famille string
 	dir     string
 	suffix  string
 	refresh []string
-}{
-	{"/usr/local/share/ca-certificates", ".crt", []string{"update-ca-certificates"}},     // Debian/Ubuntu
-	{"/etc/pki/ca-trust/source/anchors", ".pem", []string{"update-ca-trust", "extract"}}, // RHEL/Rocky
+}
+
+// caStorePaths liste les magasins de confiance connus, avec la commande de
+// régénération associée.
+var caStorePaths = []magasinCA{
+	{"Debian/Ubuntu", "/usr/local/share/ca-certificates", ".crt", []string{"update-ca-certificates"}},
+	{"RHEL/Rocky", "/etc/pki/ca-trust/source/anchors", ".pem", []string{"update-ca-trust", "extract"}},
 }
 
 // applyTrustedCA installe ou retire une CA du magasin de confiance système.
@@ -154,7 +158,7 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 
 	store, ok := detectCAStore()
 	if !ok {
-		return "", fmt.Errorf("aucun magasin de confiance reconnu sur cette distribution")
+		return "", fmt.Errorf("aucun magasin de confiance utilisable : cherche %s", famillesConnues())
 	}
 	path := store.dir + "/vaultaire-" + name + store.suffix
 
@@ -207,18 +211,68 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 	return "CA " + name + " installee (" + store.dir + ")", nil
 }
 
-// detectCAStore retourne le magasin de confiance présent sur la machine.
-func detectCAStore() (struct {
-	dir     string
-	suffix  string
-	refresh []string
-}, bool) {
+// detectCAStore retourne le magasin de confiance utilisable sur la machine.
+//
+// # Ce que la version précédente reconnaissait, et le défaut que ça donnait
+//
+// Elle retenait le PREMIER RÉPERTOIRE qui existe, Debian en tête de liste. Or
+// `/usr/local/share/ca-certificates` est un répertoire ordinaire sous
+// `/usr/local` : il peut parfaitement exister, vide, sur une Rocky. Une Rocky
+// était alors prise pour une Debian, et l'agent lançait
+// `update-ca-certificates`, qui n'y existe pas. Le module échouait, et le
+// message ne disait pas pourquoi — il a fallu une session de recette pour le
+// comprendre.
+//
+// # Ce qui identifie réellement une famille
+//
+// La COMMANDE de régénération, pas le répertoire. Un magasin n'est utilisable
+// que si le programme qui le compile est là : c'est lui qui rend la CA
+// effective, déposer le fichier ne suffit pas. Un répertoire, lui, ne prouve
+// rien — n'importe quel paquet, ou un administrateur, a pu le créer.
+//
+// Le répertoire garde un rôle : départager deux familles dont les deux
+// commandes seraient présentes, ce qui arrive sur une machine où l'on a
+// installé les outils de l'autre distribution.
+func detectCAStore() (magasinCA, bool) {
+	var premierPossible magasinCA
+	trouve := false
+
 	for _, store := range caStorePaths {
+		if !commandExists(store.refresh[0]) {
+			continue
+		}
+		// La commande est là : cette famille est possible. Si son répertoire
+		// existe aussi, c'est elle, sans hésitation.
 		if info, err := os.Stat(store.dir); err == nil && info.IsDir() {
 			return store, true
 		}
+		if !trouve {
+			premierPossible, trouve = store, true
+		}
 	}
-	return caStorePaths[0], false
+
+	// Commande présente mais répertoire absent : le répertoire d'ancrage est
+	// créé. C'est un emplacement documenté de la distribution, pas un chemin
+	// inventé, et le refuser bloquerait le module sur une machine parfaitement
+	// capable de faire ce qu'on lui demande.
+	if trouve {
+		if err := os.MkdirAll(premierPossible.dir, 0o755); err == nil {
+			return premierPossible, true
+		}
+	}
+	return magasinCA{}, false
+}
+
+// famillesConnues rend la liste des magasins cherchés, pour le message d'échec.
+//
+// Un « aucun magasin reconnu » qui ne dit pas ce qui a été cherché oblige à
+// aller lire le code — c'est précisément ce qui a coûté du temps ici.
+func famillesConnues() string {
+	var parts []string
+	for _, store := range caStorePaths {
+		parts = append(parts, store.famille+" ("+store.refresh[0]+")")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ---------------------------------------------------------------------------

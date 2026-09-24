@@ -54,6 +54,26 @@ function DemanderOuiNon($question, $defautOui) {
     return $reponse -match '^[oOyY]'
 }
 
+# EcrireTexte écrit un fichier en UTF-8 SANS marque d'ordre des octets (BOM).
+#
+# # Pourquoi pas Set-Content -Encoding UTF8
+#
+# Dans Windows PowerShell 5.1 — celui livré avec Windows, donc celui qui lancera
+# ce script — « -Encoding UTF8 » écrit un BOM (EF BB BF) en tête de fichier. Or
+# la norme JSON ne l'autorise pas : le décodeur de l'agent refuse le document et
+# se plaint d'un « caractère invalide 'ï' », ce qui n'évoque rien pour personne.
+# L'agent ne lisait donc jamais sa configuration (recette du 24/09).
+#
+# « > » et « Out-File » sans option sont pires encore : ils écrivent en UTF-16LE,
+# illisible pour tout ce qui attend du texte.
+#
+# WriteAllText avec un UTF8Encoding($false) est le seul moyen sûr d'obtenir de
+# l'UTF-8 nu, identique sur PowerShell 5.1 et 7.
+function EcrireTexte($chemin, $texte) {
+    $utf8SansBOM = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($chemin, $texte, $utf8SansBOM)
+}
+
 Titre "Agent Vaultaire pour Windows"
 Info "Racine d'installation : $Racine"
 
@@ -127,7 +147,7 @@ if (-not (Test-Path $empreinte)) {
     Info "Aucune empreinte de core fournie : la première connexion fera confiance"
     Info "au serveur qui répond (sur le core : vlt certificate fingerprint)."
     $valeur = Demander "Empreinte du core (SHA256:... , vide pour passer)" ""
-    if ($valeur) { Set-Content -Path $empreinte -Value $valeur -Encoding ASCII }
+    if ($valeur) { EcrireTexte $empreinte ($valeur.Trim() + "`n") }
 }
 
 # --- 4. La configuration ---------------------------------------------------
@@ -153,7 +173,7 @@ if ($serveurs.Count -eq 0) { Erreur "aucun core déclaré : l'agent ne saurait �
 # « servers » n'est jamais réécrite par l'agent : c'est le dernier recours,
 # celui qui reste quand tout ce qui a été appris est faux ou éteint.
 $contenu = [ordered]@{ servers = $serveurs }
-$contenu | ConvertTo-Json -Depth 4 | Set-Content -Path $Config -Encoding UTF8
+EcrireTexte $Config (($contenu | ConvertTo-Json -Depth 4) + "`n")
 Info "configuration écrite : $Config"
 
 # --- 5. Le service ---------------------------------------------------------
@@ -178,6 +198,83 @@ if (DemanderOuiNon "Installer le service $Service" $true) {
     Info "service non installé — lancez l'agent à la main :"
     Info "  $Bin\vaultaire_client_windows.exe -console"
 }
+
+# --- 5 bis. La politique de mot de passe locale ----------------------------
+#
+# Windows crée le compte local avec LE MOT DE PASSE DU DOMAINE, et il n'y a pas
+# le choix : c'est celui que la personne tape à l'écran de connexion, et c'est
+# Windows qui le vérifie contre le compte local. En poser un autre rendrait la
+# connexion impossible.
+#
+# Conséquence : si la politique locale du poste est plus stricte que celle du
+# domaine, NetUserAdd refuse le compte avec le code 2245 — et rien ne se passe
+# (recette du 24/09). Le poste refuse un mot de passe que le core vient de
+# valider.
+#
+# On PROPOSE de l'aligner, on ne le fait pas d'office : c'est une politique de
+# sécurité du poste, et l'assouplir sans le dire serait exactement le genre de
+# décision qu'un installeur n'a pas à prendre seul.
+Titre "Politique de mot de passe locale"
+
+function PolitiqueLocale {
+    $sortie = & net accounts 2>$null
+    $longueur = ($sortie | Select-String -Pattern "^(Minimum password length|Longueur minimale du mot de passe)" |
+                 ForEach-Object { ($_ -split ":")[-1].Trim() })
+    $historique = ($sortie | Select-String -Pattern "^(Length of password history|Longueur de l.historique)" |
+                 ForEach-Object { ($_ -split ":")[-1].Trim() })
+    return @{ Longueur = $longueur; Historique = $historique }
+}
+
+$politique = PolitiqueLocale
+Info "longueur minimale : $($politique.Longueur)"
+Info "historique        : $($politique.Historique)"
+Info ""
+Info "Si ces règles sont plus strictes que celles de votre domaine Vaultaire, la"
+Info "création du compte local échouera avec « code 2245 » et personne ne pourra"
+Info "ouvrir de session — le mot de passe local EST celui du domaine."
+
+if (DemanderOuiNon "Aligner la politique locale (longueur 0, aucun historique, complexite desactivee)" $false) {
+    # `net accounts` couvre la longueur et l'historique ; la COMPLEXITÉ n'y est
+    # pas exposée et demande secedit, qui passe par un export/import de la
+    # stratégie de sécurité locale.
+    & net accounts /minpwlen:0 /uniquepw:0 | Out-Null
+
+    $export = Join-Path $env:TEMP "vaultaire-secpol.cfg"
+    $base   = Join-Path $env:TEMP "vaultaire-secpol.sdb"
+    & secedit /export /cfg $export /areas SECURITYPOLICY | Out-Null
+    if (Test-Path $export) {
+        $cfg = Get-Content $export
+        $cfg = $cfg -replace "^PasswordComplexity\s*=.*", "PasswordComplexity = 0"
+        $cfg = $cfg -replace "^MinimumPasswordLength\s*=.*", "MinimumPasswordLength = 0"
+        $cfg = $cfg -replace "^PasswordHistorySize\s*=.*", "PasswordHistorySize = 0"
+
+        # UTF-16, et c'est LE cas où c'est correct : secedit produit et attend
+        # de l'Unicode. Le réécrire en UTF-8 — ce que fait EcrireTexte pour tout
+        # le reste — le rendrait illisible pour secedit. La règle n'est pas
+        # « toujours de l'UTF-8 », c'est « l'encodage que le lecteur attend ».
+        Set-Content -Path $export -Value $cfg -Encoding Unicode
+
+        & secedit /configure /db $base /cfg $export /areas SECURITYPOLICY | Out-Null
+        Remove-Item $export, $base -Force -ErrorAction SilentlyContinue
+        Info "politique locale alignée (complexité désactivée)"
+    } else {
+        Info "secedit n'a rien exporté : la complexité n'a PAS été modifiée."
+        Info "À faire à la main dans secpol.msc → Stratégies de mot de passe."
+    }
+
+    $politique = PolitiqueLocale
+    Info "longueur minimale : $($politique.Longueur)"
+    Write-Host "`n    ⚠ Cette machine accepte désormais des mots de passe locaux faibles." -ForegroundColor Yellow
+    Write-Host "      La robustesse est alors celle de votre politique de DOMAINE, qui est" -ForegroundColor Yellow
+    Write-Host "      ce qui protège réellement le compte." -ForegroundColor Yellow
+} else {
+    Info "politique inchangée."
+    Info "Si « code 2245 » apparaît à la connexion, c'est elle : secpol.msc, ou"
+    Info "relancez ce script."
+}
+
+# Machine jointe à un Active Directory : une stratégie de DOMAINE écrase la
+# politique locale à chaque actualisation. Il faut alors la régler côté AD.
 
 # --- 6. Le Credential Provider ---------------------------------------------
 Titre "Écran de connexion"

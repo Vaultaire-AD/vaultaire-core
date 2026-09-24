@@ -92,7 +92,32 @@ else
 fi
 
 # --- ce qui accompagne les binaires ----------------------------------------
-cp "$ICI/install.ps1" "$ICI/uninstall.ps1" "$ETAPE/"
+
+# Les scripts PowerShell partent avec une marque d'ordre des octets (BOM).
+#
+# C'est l'inverse de ce que fait install.ps1 pour les fichiers qu'il ÉCRIT, et
+# les deux règles sont justes :
+#
+#   - un fichier LU PAR WINDOWS POWERSHELL 5.1 — celui livré avec Windows —
+#     doit porter un BOM. Sans lui, l'interpréteur suppose l'encodage ANSI de la
+#     machine (Windows-1252) et les accents deviennent des « Ã© ». Tout ce
+#     script est en français : sans BOM, la moitié des messages est illisible ;
+#   - un fichier LU PAR L'AGENT (JSON, empreinte) ne doit PAS en porter : la
+#     norme JSON l'interdit, et le décodeur Go refuse le document.
+#
+# PowerShell 7 lit l'UTF-8 par défaut et se moque du BOM : l'ajouter ne coûte
+# rien là où il n'est pas nécessaire.
+ajouter_bom() {
+    local source="$1" cible="$2"
+    if head -c 3 "$source" | od -An -tx1 | grep -q "ef bb bf"; then
+        cp "$source" "$cible"
+    else
+        printf '\xEF\xBB\xBF' > "$cible"
+        cat "$source" >> "$cible"
+    fi
+}
+ajouter_bom "$ICI/install.ps1" "$ETAPE/install.ps1"
+ajouter_bom "$ICI/uninstall.ps1" "$ETAPE/uninstall.ps1"
 cp "$ICI/README.md" "$ETAPE/LISEZMOI.md"
 
 cat > "$ETAPE/client_conf.exemple.json" <<'JSON'

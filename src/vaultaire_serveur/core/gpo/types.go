@@ -76,6 +76,25 @@ type FieldSchema struct {
 	MaxLen int    `json:"max_len,omitempty"`
 	Help   string `json:"help,omitempty"`
 
+	// Scope restreint le champ à un scope, dans un module qui vit dans les
+	// deux. Vide = le champ vaut partout, ce qui est le cas de presque tous.
+	//
+	// # Pourquoi un scope au niveau du CHAMP
+	//
+	// Le catalogue ne savait restreindre qu'un module entier. Or `file_deploy`
+	// et `directory_manage` sont légitimes dans les deux scopes : seuls deux de
+	// leurs champs — propriétaire et groupe — n'ont de sens qu'en scope
+	// machine. En scope user, le propriétaire est l'utilisateur cible, toujours,
+	// et l'agent le pose lui-même.
+	//
+	// Le formulaire les proposait quand même. Quelqu'un y a saisi `root`, le
+	// dossier a été créé au nom de l'utilisateur — le bon comportement — et le
+	// champ affirmait le contraire. Un champ qui ne change rien à ce qui se
+	// passe est pire qu'un champ absent : il se remplit, il se relit, et on lui
+	// prête un effet qu'il n'a pas. C'est le même raisonnement que pour un
+	// réglage qui s'affiche sans agir.
+	Scope Scope `json:"scope,omitempty"`
+
 	// Dynamic marque un champ dont le domaine de valeurs est défini en base
 	// (table gpo_restriction) et non dans le code. Les trois champs suivants
 	// sont renseignés à la résolution du schéma, depuis les restrictions en
@@ -90,6 +109,26 @@ type FieldSchema struct {
 // cas où l'interface web peut afficher un menu déroulant).
 func (f FieldSchema) IsListMode() bool {
 	return !f.Dynamic || f.Mode == "" || f.Mode == FieldModeList
+}
+
+// AllowedInScope indique si le champ a un sens dans une GPO de ce scope.
+//
+// Un scope de politique vide (catalogue consulté hors contexte, outillage) rend
+// vrai : on montre alors le catalogue complet plutôt que d'en cacher une partie
+// sans raison affichable.
+func (f FieldSchema) AllowedInScope(policyScope Scope) bool {
+	return f.Scope == "" || policyScope == "" || f.Scope == policyScope
+}
+
+// FieldsForScope rend les champs qui ont un sens dans ce scope.
+func (s ModuleSchema) FieldsForScope(policyScope Scope) []FieldSchema {
+	out := make([]FieldSchema, 0, len(s.Fields))
+	for _, f := range s.Fields {
+		if f.AllowedInScope(policyScope) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // ModuleSchema décrit une brique du catalogue : ce qu'elle fait, dans quel

@@ -1,0 +1,68 @@
+# De quoi Vaultaire dépend, et à quoi chaque chose sert.
+#
+# Ce fichier est la SEULE partie écrite à la main de l'inventaire : les
+# versions, les modules qui les tirent et les images se lisent dans les
+# fichiers du dépôt, et n'ont donc pas à être recopiés. Ce qu'aucun fichier
+# ne sait dire, c'est à quoi une dépendance sert — et c'est la seule chose
+# qui permette de décider si on peut s'en passer.
+#
+# Format :
+#     <chemin ou image> = à quoi ça sert
+#     !<chemin>         = pourquoi plusieurs versions coexistent (divergence acceptée)
+#     # commentaire
+#
+# La page docs/Developement/how it work/Dependances.md se régénère avec :
+#     ./automatisation/dependances.sh
+
+# --- Cryptographie et transport ---------------------------------------------
+
+golang.org/x/crypto = argon2id pour les empreintes de mot de passe (core/global/security), ed25519 pour les clés de machine et de core, et le client SSH de « create -c … -join ». Elle a été explicitement remontée en dépendance DIRECTE au passage à argon2id : elle était tirée par go-ldap et sftp, et l'aurait suivie si l'un des deux disparaissait.
+golang.org/x/sys = les API Windows de l'agent : netapi32 pour les comptes locaux, wtsapi32 pour les sessions, le registre, et l'enveloppe de service. Pas d'équivalent en bibliothèque standard.
+filippo.io/edwards25519 = indirecte, tirée par go-sql-driver/mysql pour l'authentification caching_sha2_password. Jamais importée par nous.
+
+# --- Base de données ---------------------------------------------------------
+
+github.com/go-sql-driver/mysql = le pilote MySQL/MariaDB, importé pour son seul effet d'enregistrement (« _ »). Toute la base du core passe par lui.
+
+# --- LDAP --------------------------------------------------------------------
+
+github.com/go-asn1-ber/asn1-ber = l'encodage BER/DER des messages LDAP. Le core l'emploie pour servir LDAP, Nexus pour interroger un annuaire — sans passer par go-ldap, dont Nexus n'a besoin ni du NTLM ni du GSSAPI.
+github.com/go-ldap/ldap/v3 = PLUS IMPORTÉE NULLE PART (constaté le 24/09). Déclarée directe dans vaultaire_serveur, elle n'apparaît dans aucun fichier : elle tire go-ntlmssp, uuid et golang.org/x/crypto pour rien. Retrait à traiter — voir TO-DO 93.
+github.com/Azure/go-ntlmssp = indirecte, tirée par go-ldap pour l'authentification NTLM. Jamais importée par nous, et elle partira avec go-ldap.
+github.com/google/uuid = indirecte, tirée par go-ldap. Jamais importée par nous.
+
+# --- Dépôts de paquets (Nexus) ----------------------------------------------
+
+github.com/klauspost/compress = la décompression zstd des paquets Debian, que Nexus doit ouvrir pour en lire les métadonnées.
+github.com/ulikunitz/xz = la décompression xz, pour la même raison : un .deb est en xz ou en zstd selon son âge.
+
+# --- Transfert de fichiers ---------------------------------------------------
+
+github.com/pkg/sftp = le dépôt de l'agent et de sa configuration sur une machine distante par « create -c … --join ». C'est le seul chemin qui écrit sur une machine qui n'a pas encore d'agent.
+github.com/kr/fs = indirecte, tirée par pkg/sftp pour parcourir une arborescence distante.
+
+# --- Affichage en ligne de commande -----------------------------------------
+
+github.com/fatih/color = la couleur des tableaux de « vlt », et surtout la détection d'un terminal : la sortie redirigée dans un fichier ne doit pas porter de codes d'échappement.
+github.com/mattn/go-colorable = indirecte, tirée par fatih/color pour la console Windows.
+github.com/mattn/go-isatty = indirecte, tirée par fatih/color : c'est elle qui sait si la sortie est un terminal.
+
+# --- Configuration -----------------------------------------------------------
+
+gopkg.in/yaml.v2 = la lecture des fichiers de configuration de l'agent, du proxy, du Nexus et du socle Ducky.
+gopkg.in/yaml.v3 = la même chose côté core. Deux versions de la MÊME bibliothèque cohabitent donc dans le produit — voir TO-DO 93.
+
+# --- Images de base ----------------------------------------------------------
+
+rockylinux:9 = l'image des conteneurs de production et de préproduction. Choisie pour coller à la distribution du parc visé : ce que l'image contient est ce que l'agent trouvera sur une vraie machine.
+debian:12-slim = l'image de l'environnement de compilation croisée et des essais Debian, pour vérifier que l'agent ne suppose pas une Rocky.
+
+# --- Divergences de version acceptées ---------------------------------------
+#
+# Une divergence non déclarée fait échouer le test : une divergence qu'on a
+# décidé d'accepter et une divergence qu'on n'a pas vue se ressemblent
+# beaucoup, et c'est la seule chose qui les sépare.
+
+!golang.org/x/crypto = RELEVÉE LE 24/09, PAS ENCORE RÉSOLUE. Trois versions : v0.47.0 (vaultaire_ctl), v0.52.0 (vaultaire_serveur), v0.54.0 (api_client_package). C'est la divergence la plus gênante du dépôt — un correctif de sécurité appliqué à l'une ne protège pas les autres. Alignement à traiter, voir TO-DO 93.
+!golang.org/x/sys = suit la précédente : les trois mêmes modules, tirée indirectement par x/crypto. Elle s'alignera d'elle-même quand x/crypto le sera.
+!github.com/go-asn1-ber/asn1-ber = le core est épinglé sur un commit (v1.5.8-0.20250403…) et Nexus sur la version publiée v1.5.8. La raison de l'épinglage n'est écrite nulle part ; à retrouver avant d'aligner, voir TO-DO 93.

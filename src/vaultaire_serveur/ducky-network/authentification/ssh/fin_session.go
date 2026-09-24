@@ -71,7 +71,7 @@ func SSH_Fin_De_Session(trames_content storage.Trames_struct_client) string {
 		return ""
 	}
 
-	if err := dbsessions.DeleteDidLogin(db, utilisateur, trames_content.ClientSoftwareID); err != nil {
+	if _, err := dbsessions.FermerSessionUtilisateur(db, utilisateur, trames_content.ClientSoftwareID); err != nil {
 		// Journalisé sans être renvoyé : la personne est partie de toute façon,
 		// et la ligne finira par expirer. On veut seulement pouvoir expliquer
 		// une session fantôme dans `status -u`.

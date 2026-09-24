@@ -22,11 +22,18 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 			u.email,
 			COALESCE(DATE_FORMAT(u.date_naissance, '%Y-%m-%d'), '') AS date_naissance, 
 			COALESCE(g.group_name, '') AS group_name, 
-			CASE WHEN dl.d_id_user IS NOT NULL THEN TRUE ELSE FALSE END AS is_connected
+			CASE WHEN dl.d_id_user IS NOT NULL OR us.d_id_user IS NOT NULL
+			     THEN TRUE ELSE FALSE END AS is_connected
 		FROM users u
 		LEFT JOIN users_group ug ON u.id_user = ug.d_id_user
 		LEFT JOIN groups g ON ug.d_id_group = g.id_group
+		-- « Connecté » couvre les DEUX sortes de session : un tunnel Ducky
+		-- (portail, vlt, API) et une session ouverte par PAM sur un poste.
+		-- N'interroger que did_login répondrait « non » à propos de quelqu'un
+		-- assis devant sa machine, ce qui est la réponse la plus fausse
+		-- possible à cette question.
 		LEFT JOIN did_login dl ON u.id_user = dl.d_id_user
+		LEFT JOIN user_sessions us ON u.id_user = us.d_id_user
 		WHERE u.username = ?;
 	`
 

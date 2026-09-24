@@ -53,6 +53,7 @@ Dans le même passage que le code — pas « après ».
 | les GPO | [`GPO.md`](./GPO.md) |
 | le schéma de base | [`Base_de_donnees.md`](./Base_de_donnees.md) |
 | un déploiement, un conteneur | le `README.md` du dossier dans `deployments/` |
+| une dépendance (ajout, retrait, montée de version) | `./automatisation/dependances.sh`, et l'explication dans [`dependances.roles`](../dependances.roles) |
 | un mot de vocabulaire | [`Utilisation/Lexique.md`](../../Utilisation/Lexique.md) |
 | une nouvelle page de doc | l'index [`docs/README.md`](../../README.md) |
 

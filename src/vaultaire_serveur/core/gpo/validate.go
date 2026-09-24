@@ -77,6 +77,13 @@ func ValidateModule(policyScope Scope, m Module) (map[string]string, error) {
 	}
 
 	// Refus des paramètres hors schéma.
+	//
+	// Un champ RETIRÉ DU SCOPE est une autre affaire : il figure au schéma, il
+	// n'a simplement plus de sens ici. Les GPO écrites avant ce retrait portent
+	// encore sa clé en base — ValidateModule est rappelée sur les modules
+	// voisins à chaque modification d'une GPO —, et la refuser empêcherait de
+	// toucher à une politique existante tant que personne n'a nettoyé la base à
+	// la main. Elle est donc ignorée, silencieusement et sans être recopiée.
 	for key := range m.Params {
 		if _, known := schema.Field(key); !known {
 			return nil, fmt.Errorf("module %s : paramètre inconnu %q", m.Type, key)
@@ -84,7 +91,7 @@ func ValidateModule(policyScope Scope, m Module) (map[string]string, error) {
 	}
 
 	out := make(map[string]string, len(schema.Fields))
-	for _, f := range schema.Fields {
+	for _, f := range schema.FieldsForScope(policyScope) {
 		raw, provided := m.Params[f.Name]
 		val := strings.TrimSpace(raw)
 		if f.Type == FieldText {

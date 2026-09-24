@@ -479,6 +479,13 @@ c'est « qui, et où ».
 (`03_01`), meurt à la déconnexion (`03_11`, émise par la fermeture PAM), et
 serait sinon effacée dix minutes après le dernier signe de vie. Ce signe de vie
 est le **battement de la machine** : une session utilisateur n'en a pas à elle.
+Une révocation (`vlt kill`) la retire aussi — un tableau de bord qui montre
+encore comme connecté un compte qu'on vient de couper est un tableau de bord qui
+ment.
+
+`status -u` et `status -c` lisent **deux tables différentes** : la première les
+sessions ouvertes par PAM, la seconde les tunnels Ducky. Une machine avec trois
+personnes connectées reste donc **une** ligne dans `status -c`.
 
 Conséquence à connaître : une machine éteinte voit ses sessions disparaître en
 une dizaine de minutes, mais une déconnexion dont la trame de fin s'est perdue

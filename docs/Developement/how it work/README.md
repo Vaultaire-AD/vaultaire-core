@@ -150,6 +150,7 @@ Point d'entrée : `src/vaultaire_client/main.go`.
 | --- | --- |
 | **N'importe quelle tâche** : les étapes, de l'entrée TO-DO au commit | [`Pense-bete_developpement.md`](./Pense-bete_developpement.md) |
 | Lancer, comprendre ou écrire un test | [`Tests.md`](./Tests.md) |
+| Savoir de quoi le produit dépend, et pourquoi | [`Dependances.md`](./Dependances.md) |
 | Ajouter une commande ou une opération | [`Actions.md`](./Actions.md) § 6, puis `core/command/` — **et § 6 ci-dessous** |
 | Ajouter un droit, un objet RBAC | [`Permissions_RBAC.md`](./Permissions_RBAC.md) § 4 |
 | Ajouter / modifier un module GPO | [`GPO.md`](./GPO.md) § 9 à 12 |
@@ -274,8 +275,9 @@ une action inconnue est **refusée**, jamais exécutée sans contrôle.
 
 Un compilateur Go est normalement disponible, et `go test ./...` est **vert sur
 les huit modules** : ne commitez pas sans l'avoir lancé sur ce que vous touchez
-([`Tests.md`](./Tests.md)). L'intégration continue, elle, ne lance aucun test
-(TO-DO 75).
+([`Tests.md`](./Tests.md)). L'intégration continue les lance à chaque merge dans
+`dev` depuis le point 75 — mais après coup : le pense-bête évite ce que la CI se
+contente de signaler.
 
 Si vous travaillez malgré tout sans toolchain :
 

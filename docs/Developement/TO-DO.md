@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **81**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **94**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -20,21 +20,28 @@ Trois gestes, dans le même passage que le code :
 
 ## Vue d'ensemble
 
-| #   | Domaine      | Sujet                                                  | État                                 |
-| --- | ------------ | ------------------------------------------------------ | ------------------------------------ |
-| 72  | PROXY        | Relais HTTPS (vers les Nexus) et LDAP/S                | À faire — code prêt, verrous à lever |
-| 80  | DEP VERSION  | Gestion des version des dependances                    | A faire - Petit                      |
-| 79  | WINDOWS      | GPO et révocations sur les postes Windows              | À faire — gros chantier              |
-| 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit    | À faire — gros chantier              |
-| 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte | À faire                              |
-| 71  | CLIENT       | `-join` ne sait installer que Rocky                    | À faire                              |
-| 33  | GPO          | La dérive du scope utilisateur n'est jamais scannée    | À faire                              |
-| 22  | SELINUX      | Domaine dédié pour l'agent                             | En cours                             |
-| 49  | RÉVOCATION   | Retenter les révocations poussées en échec             | À faire                              |
-| 52  | GPO          | Signature des politiques par le core                   | À faire                              |
-| 53  | GPO          | Persister les rapports d'application en base           | À faire                              |
-| 8   | LDAP         | Mode synchro avec un annuaire existant                 | Idée                                 |
-| 40  | AGENT-UPDATE | Mettre à jour le parc de clients                       | Idée — à trancher                    |
+| #   | Domaine      | Sujet                                                      | État                                    |
+| --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
+| 89  | GPO          | `gpo refresh` répond « hors ligne » sur un client en ligne | À faire                                 |
+| 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
+| 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
+| 90  | CLIENT       | Rafraîchir la liste des cores/proxies, et basculer         | À faire                                 |
+| 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | À faire                                 |
+| 85  | WEB          | Page Cluster : réglages perdus, et illisible               | À faire                                 |
+| 91  | LOGS         | Journaux non centralisés entre plusieurs cores             | À faire — gros chantier                 |
+| 72  | PROXY        | Relais HTTPS (vers les Nexus) et LDAP/S                    | À faire — code prêt, verrous à lever    |
+| 93  | DEP VERSION  | Trois défauts relevés par l'inventaire des dépendances  | À faire                              |
+| 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
+| 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
+| 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte     | À faire                                 |
+| 71  | CLIENT       | `-join` ne sait installer que Rocky                        | À faire                                 |
+| 33  | GPO          | La dérive du scope utilisateur n'est jamais scannée        | À faire                                 |
+| 22  | SELINUX      | Domaine dédié pour l'agent                                 | En cours                                |
+| 49  | RÉVOCATION   | Retenter les révocations poussées en échec                 | À faire                                 |
+| 52  | GPO          | Signature des politiques par le core                       | À faire                                 |
+| 53  | GPO          | Persister les rapports d'application en base               | À faire                                 |
+| 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
+| 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
 
 ---
 
@@ -102,6 +109,14 @@ pour un client ; le filtrage change qui il sert. À concevoir ensemble.
 
 **Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
 
+### 84. [CLUSTER] Les cores ne réintègrent pas le cluster après une veille de l'hôte
+
+**Constat** (recette du 24/09). L'hôte des conteneurs se met en veille ; au réveil, les cores sont sortis du cluster et n'y reviennent pas seuls. Il faut les redémarrer.
+
+**Pourquoi c'est important.** Le parc, lui, sait revenir — la dégressivité et le battement sont en place côté agent depuis le point 74. Ce sont les **nœuds entre eux** qui restent fâchés, et un core hors cluster continue de répondre aux agents qui le connaissent déjà : la panne ne se voit pas, elle se découvre.
+
+**À faire.** Reproduire (une veille suffit, ou `docker pause` sur un core). Puis vérifier deux choses : qu'un nœud retente son `04_01` après une rupture — et pas seulement au démarrage —, et que le battement du cluster distingue « pas de réponse » d'une connexion morte. L'hypothèse la plus probable est la seconde : la connexion TCP paraît encore ouverte au réveil, donc rien ne déclenche de réenregistrement.
+
 ---
 
 ## Agent
@@ -133,6 +148,33 @@ journalisée, et tester sur un `passwd` de fixture. Vérifier au passage le poin
 Debian et Ubuntu, avec la même section 4 (liste des cores déposée par le core,
 repli sur `SSH_CONNECTION`).
 
+### 82. [ENRÔLEMENT] Archive d'enrôlement : identité de la machine et empreinte du core
+
+**Constat** (recette du 24/09). Récupérer l'identité d'une machine créée demande un `docker exec` sur le core ; récupérer l'empreinte du core demande d'aller la lire sur un poste déjà installé. Deux étapes manuelles au milieu d'une installation qui se veut simple — et l'empreinte finit recopiée dans la documentation d'installation, c'est-à-dire publiée.
+
+**Décision du 24/09.** Une **archive d'enrôlement**, produite par la CLI et téléchargeable depuis le portail. Le modèle de confiance ne change pas : un agent ne s'enrôle toujours pas seul, l'identité est créée sur le core et transportée. On rend seulement le transport praticable.
+
+**À faire.**
+
+1. `vlt create -c <nom> --export <chemin>`, et une commande d'export pour une machine déjà créée : une archive portant `client_software.yaml`, `private_key.pem` **et l'empreinte du core**.
+2. Page Machines du portail : téléchargement de cette archive, sous le droit qui crée la machine.
+3. `install.ps1` accepte l'archive et ne pose plus de question sur l'empreinte.
+4. Retirer de [`Installation/Client_Windows.md`](../Installation/Client_Windows.md) l'étape « relevez l'empreinte » : elle n'a plus lieu d'être — c'est la demande explicite du 24/09.
+
+**Attention.** L'archive porte une **clé privée de machine**. Validité courte du lien de téléchargement, trace dans le journal, aucune mise en cache côté portail, et un nom de fichier qui ne laisse aucun doute sur ce qu'il contient.
+
+### 90. [CLIENT] La liste des cores et proxies ne se met à jour qu'au démarrage
+
+**Constat** (recette du 24/09). La liste apprise ne se rafraîchit qu'au démarrage ou au redémarrage de l'agent. Un nœud ajouté, retiré ou repriorisé n'est donc pris en compte qu'au prochain redémarrage — et le poste peut rester accroché à un nœud qui n'est plus le bon.
+
+**À faire.** Reprendre la recette des GPO, éprouvée aux points 50 et 51 :
+
+1. **cadence configurable côté core**, envoyée à l'agent en queue d'une trame qu'il reçoit déjà (`04_04`), sur une ligne préfixée — même dispositif que `refresh:` et `sync:` ;
+2. **déclenchement à la demande, par machine et par groupe** : une trame poussée par le core et une commande `vlt`, sur le modèle de `gpo refresh` ;
+3. **bascule** : si le nœud en cours d'utilisation n'est pas de priorité maximale, fermer la session et en rouvrir une — la reconnexion choisit naturellement le premier. **Égalité de priorité : on ne bascule pas.** C'est la règle qui empêche le va-et-vient entre deux nœuds équivalents, qui coûterait une coupure à chaque tour pour rien.
+
+**Attention.** Une bascule coupe le tunnel machine. Vérifier qu'elle ne fait pas disparaître la machine de `status -c` le temps de la reconnexion, et qu'elle ne fait pas tomber une session PAM en cours — c'est exactement le défaut du point 64, atteint par un autre chemin.
+
 ---
 
 ## GPO
@@ -157,6 +199,20 @@ repli sur `SSH_CONNECTION`).
 
 **À faire.** Les stocker côté core et les afficher sur la page du client, par exemple avec une rétention bornée comme les métriques de nœuds (point 43).
 
+### 86. [GPO] Le mode audit ne se distingue pas d'enforce, et une GPO modifiée ne semble pas repartir
+
+**Constat** (recette du 24/09, **à préciser**). Deux symptômes rapportés, aucun reproduit ici : le mode `audit` ne produit pas de différence visible, et une GPO mise à jour ne semble rien changer chez un client qui l'avait déjà appliquée.
+
+**À faire.** D'abord **reproduire et décrire** : que voit-on exactement, et où — `vlt gpo status`, le journal de l'agent, ou l'état réel des fichiers sur la machine ? Tant que le symptôme n'est pas posé, toute correction serait une supposition.
+
+Une piste pour le second symptôme : l'empreinte porte sur la **politique effective**. Si elle ne bouge pas quand on modifie un module, le client reçoit un `05_03` « rien à faire » — ce qui est cohérent de son point de vue et faux du nôtre. Vérifier ce qui entre dans le calcul de l'empreinte, et si la version de la GPO est bien incrémentée à la modification d'un module.
+
+### 89. [GPO] `gpo refresh` répond « hors ligne » sur un client en ligne
+
+**Constat** (recette du 24/09). La commande annonce la machine hors ligne alors que sa session est établie et que `status -c` la voit. Non approfondi : une session en mauvais état n'est pas exclue.
+
+**À faire.** `DemanderRafraichissement` cherche la session par `sessionmgr.Sessions.GetByClientSoftwareID`. Vérifier que l'identifiant porté par la session est bien celui qu'on lui passe (casse, forme, et **moment** où `SetIdentity` est appelé), et que la session est à l'état authentifié. C'est du neuf — point 50, écrit le 23/09 — et jamais éprouvé contre un vrai parc.
+
 ---
 
 ## Sécurité et authentification
@@ -176,6 +232,53 @@ repli sur `SSH_CONNECTION`).
 **Constat.** La révocation poussée ne touche que les machines connectées au moment du déclenchement. Une machine absente récupère ses ordres en attente à sa reconnexion (`revocation_manager/trames.go`), mais une machine **connectée dont le push a échoué** attend elle aussi la reconnexion suivante, qui peut ne jamais venir tant que le tunnel tient.
 
 **À faire.** Une tâche de fond côté core qui renvoie périodiquement les ordres en attente aux clients connectés.
+
+### 93. [DEP VERSION] Trois défauts relevés par l'inventaire des dépendances
+
+**Constat** (point 80, 24/09). L'inventaire mis en place a immédiatement montré trois choses qui dormaient. Aucune n'est urgente ; toutes sont écrites, et le test les garde visibles.
+
+**1. `golang.org/x/crypto` en TROIS versions** — v0.47.0 (`vaultaire_ctl`), v0.52.0 (`vaultaire_serveur`), v0.54.0 (`api_client_package`).
+
+C'est la plus gênante : c'est la bibliothèque qui porte argon2id, ed25519 et le client SSH. Un correctif de sécurité appliqué dans un module et pas dans les deux autres n'alerterait personne. `golang.org/x/sys` suit, tirée par elle.
+
+**À faire.** Aligner sur la plus récente, module par module, en vérifiant que rien ne casse — `vaultaire_ctl` est le plus en retard. Puis retirer les deux déclarations de divergence de `dependances.roles` : le test refuse une justification qui ne correspond plus à rien.
+
+**2. `github.com/go-ldap/ldap/v3` n'est plus importée nulle part.** Déclarée directe dans `vaultaire_serveur`, elle n'apparaît dans aucun fichier `.go` — le seul endroit qui la nomme est un commentaire de Nexus expliquant pourquoi Nexus ne l'emploie PAS. Elle tire `go-ntlmssp`, `google/uuid` et `golang.org/x/crypto` pour rien.
+
+**À faire.** Vérifier (`go mod tidy`, qui demande le réseau), retirer, et laisser partir les trois dépendances indirectes qui la suivent. Attention : `x/crypto` doit RESTER, elle est directe depuis le passage à argon2id — c'est écrit dans le `go.mod` du serveur.
+
+**3. Deux versions de YAML dans le même produit.** `vaultaire_serveur` lit sa configuration avec `yaml.v3`, tout le reste du dépôt avec `yaml.v2`. Les deux fonctionnent, et rien ne les oblige à se ressembler — mais un comportement qui diffère entre le core et l'agent sur un fichier de configuration se cherche longtemps.
+
+**À faire.** Trancher : v3 partout, ou v2 partout. v3 est la version maintenue ; la migration n'est pas transparente (elle change le traitement des clés en double et l'indentation rendue).
+
+---
+
+---
+
+## Portail et exploitation
+
+### 85. [WEB] [CLUSTER] Page Cluster : réglages perdus, et illisible
+
+**Constat** (recette du 24/09). Deux choses distinctes, dont une seule est grave :
+
+- les réglages d'un nœud ne sont **pas persistants** — l'IP publique et le port exposé se perdent, et il faut les ressaisir ;
+- la page s'allonge avec le cluster : il faut faire défiler pour trouver un nœud et le configurer.
+
+**À faire.** Chercher d'abord **où la configuration d'un nœud est écrasée** : un battement qui réécrit la ligne, ou un redémarrage qui repart de la configuration de fichier. C'est le vrai défaut — une adresse d'exposition perdue, c'est un parc qui tente une adresse injoignable (voir le point 46). La lisibilité vient ensuite : liste courte des membres, et **fiche de configuration au clic** sur un membre, au lieu de tout déplier.
+
+### 91. [LOGS] Journaux non centralisés entre plusieurs cores
+
+**Constat** (recette du 24/09). Chaque core journalise chez lui. Avec plusieurs cores, il faut deviner lequel a traité la requête avant de pouvoir lire quoi que ce soit, et le portail n'affiche que les journaux du core qui le sert. La lecture est par ailleurs peu confortable sur le portail.
+
+**Décision du 24/09 : une table dédiée en base**, plutôt qu'un service de journalisation. La base est déjà le point de rendez-vous du cluster ; un service de plus serait à installer, à authentifier, à superviser — et sa panne ferait perdre les journaux au moment précis où l'on en a besoin.
+
+**À faire.**
+
+1. Une table de journaux : horodatage, niveau, code, **core émetteur**, message, métadonnées. Le nom du core est indispensable — centraliser sans dire qui a écrit quoi ne fait que mélanger.
+2. Rétention **paramétrable** (`core/reglages`), purge au démarrage **et** toutes les 24 h. Même dispositif que la purge des sessions Ducky, qui a déjà sa boucle.
+3. Portail : filtre par niveau, par core et par période, et pagination.
+
+**Attention au volume.** Un core bavard écrit beaucoup, et une table de journaux sans borne remplit le disque de la base — c'est-à-dire qu'elle emporte l'annuaire avec elle. La rétention n'est pas une commodité d'affichage, c'est ce qui rend la table tenable. Décider aussi ce qui part en base : tout, ou à partir d'un niveau.
 
 ---
 

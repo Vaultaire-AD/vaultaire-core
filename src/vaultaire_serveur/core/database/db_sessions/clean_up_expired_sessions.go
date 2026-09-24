@@ -33,5 +33,15 @@ func CleanUpExpiredSessions(db *sql.DB) error {
 	if n, _ := res.RowsAffected(); n > 0 {
 		logs.Write_Log("INFO", fmt.Sprintf("%d session(s) expirée(s) supprimée(s)", n))
 	}
+
+	// Les sessions UTILISATEUR ont leur propre table, et la même échéance.
+	//
+	// Purgées dans le même passage plutôt que dans une boucle à elles : les
+	// deux expirations sont gouvernées par la même durée et par le même
+	// battement, et deux boucles auraient fini par tourner à des cadences
+	// différentes sans que personne ne sache laquelle fait foi.
+	if err := PurgerSessionsUtilisateurExpirees(db); err != nil {
+		return err
+	}
 	return nil
 }

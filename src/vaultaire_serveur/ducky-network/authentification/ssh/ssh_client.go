@@ -212,14 +212,23 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	// réellement connectée. Le core savait qui il avait laissé entrer, et
 	// l'oubliait dans la même seconde.
 	//
-	// La clé enregistrée est celle du tunnel machine, faute de mieux : une
-	// session PAM n'en a pas à elle. C'est la clé sous laquelle
-	// l'authentification a réellement voyagé, donc la seule vraie.
+	// Elle va dans sa PROPRE table, et non dans `did_login`.
+	//
+	// `did_login` veut dire « une session Ducky », et `status -c` la lit pour
+	// énumérer les machines connectées. Y écrire les sessions PAM — ce qu'a
+	// fait la première version de ce correctif — faisait apparaître une machine
+	// deux fois dès que quelqu'un s'y connectait, alors qu'un seul tunnel
+	// existe (recette du 24/09).
 	//
 	// Cet enregistrement vient APRÈS tous les contrôles : une ligne écrite plus
 	// tôt ferait apparaître dans `status -u` des gens à qui l'accès a été
 	// refusé.
-	dbsessions.AddLoginEntry(db, userid, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
+	if err := dbsessions.OuvrirSessionUtilisateur(db, sshUser, trames_content.ClientSoftwareID); err != nil {
+		// La connexion est accordée quand même : le mot de passe est vérifié et
+		// les droits contrôlés. Refuser une session parce qu'un tableau de bord
+		// n'a pas pu être tenu à jour serait disproportionné.
+		logs.Write_Log("WARNING", "SSH: session de "+sshUser+" non enregistrée : "+err.Error())
+	}
 
 	// La ligne des groupes porte un PRÉFIXE, et se place avant les clés.
 	//

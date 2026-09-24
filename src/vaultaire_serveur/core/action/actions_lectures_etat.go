@@ -126,7 +126,7 @@ func filtrerSessionsClient(donnees any, perim Perimetre) (any, int) {
 // --- utilisateurs ------------------------------------------------------------
 
 func listerSessionsUtilisateur(_ Appelant, _ Params) (Resultat, error) {
-	sessions, err := dbsessions.Command_STATUS_GetConnectedUsers(database.GetDatabase())
+	sessions, err := dbsessions.ListerSessionsUtilisateur(database.GetDatabase())
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des sessions utilisateur : %w", err)
 	}
@@ -141,7 +141,7 @@ func lireSessionUtilisateur(_ Appelant, p Params) (Resultat, error) {
 	if nom == "" {
 		return Resultat{}, fmt.Errorf("nom d'utilisateur requis")
 	}
-	sessions, err := dbsessions.Command_STATUS_GetConnectedUser(database.GetDatabase(), nom)
+	sessions, err := dbsessions.SessionsDUnUtilisateur(database.GetDatabase(), nom)
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des sessions de %q : %w", nom, err)
 	}
@@ -156,7 +156,7 @@ func listerSessionsUtilisateurParGroupe(_ Appelant, p Params) (Resultat, error) 
 	if groupe == "" {
 		return Resultat{}, fmt.Errorf("nom de groupe requis")
 	}
-	sessions, err := dbsessions.Command_STATUS_GetUsersByGroup(database.GetDatabase(), groupe)
+	sessions, err := dbsessions.SessionsDuGroupe(database.GetDatabase(), groupe)
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des sessions du groupe %q : %w", groupe, err)
 	}

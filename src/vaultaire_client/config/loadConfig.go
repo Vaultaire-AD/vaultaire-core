@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -69,6 +70,31 @@ var (
 // IntervalleDebugParDefaut est la période du rapport de debug.
 const IntervalleDebugParDefaut = 60
 
+// marqueurBOM est la marque d'ordre des octets UTF-8 (U+FEFF, EF BB BF).
+//
+// Elle n'a aucune utilité en UTF-8 — il n'y a pas d'ordre d'octets à marquer —
+// mais Windows en met partout : le Bloc-notes, `Set-Content -Encoding UTF8` de
+// Windows PowerShell 5.1, et la plupart des éditeurs par défaut.
+var marqueurBOM = []byte{0xEF, 0xBB, 0xBF}
+
+// sansBOM retire la marque d'ordre des octets en tête de fichier.
+//
+// # Le défaut que cela corrige
+//
+// `encoding/json` refuse un document qui commence par un BOM : la norme JSON ne
+// l'autorise pas, et le décodeur signale « invalid character 'ï' ». L'installeur
+// Windows écrivait `client_conf.json` avec `Set-Content -Encoding UTF8`, qui en
+// ajoute un — l'agent ne lisait donc jamais sa configuration, avec un message
+// qui n'évoquait rien pour personne (recette du 24/09).
+//
+// L'installeur est corrigé, mais ce filtre reste : n'importe qui peut ouvrir ce
+// fichier dans le Bloc-notes pour ajouter un core et le réenregistrer. Refuser
+// une configuration valide pour trois octets invisibles serait une mauvaise
+// manière de faire respecter la norme.
+func sansBOM(data []byte) []byte {
+	return bytes.TrimPrefix(data, marqueurBOM)
+}
+
 // LoadConfig charge le fichier JSON et remplace la configuration en mémoire.
 func LoadConfig(filePath string) error {
 	data, err := os.ReadFile(filePath)
@@ -76,7 +102,7 @@ func LoadConfig(filePath string) error {
 		return err
 	}
 	var c Config
-	if err := json.Unmarshal(data, &c); err != nil {
+	if err := json.Unmarshal(sansBOM(data), &c); err != nil {
 		return fmt.Errorf("%s illisible : %w", filePath, err)
 	}
 	configMutex.Lock()

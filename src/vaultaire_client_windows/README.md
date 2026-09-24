@@ -153,6 +153,59 @@ donc **tout ce qui peut être éprouvé avant doit l'être ici**.
 > `.\uninstall.ps1 -CredentialProviderSeulement` rend l'écran de connexion
 > d'origine sans toucher au reste.
 
+## Encodages : deux règles opposées, et les deux sont justes
+
+Windows PowerShell 5.1 — celui livré avec Windows, donc celui qui lancera
+l'installeur — traite la marque d'ordre des octets (BOM) à l'envers de ce qu'on
+attend :
+
+| Fichier | Encodage attendu | Pourquoi |
+|---|---|---|
+| `install.ps1`, `uninstall.ps1` | UTF-8 **avec** BOM | sans lui, PowerShell 5.1 suppose l'ANSI de la machine (Windows-1252) et tous les accents deviennent des `Ã©` |
+| `client_conf.json`, `keys/core_key_fingerprint` | UTF-8 **sans** BOM | la norme JSON interdit le BOM ; le décodeur Go refuse le document et se plaint d'un « caractère invalide `ï` » |
+
+D'où deux dispositifs :
+
+- **`build.sh` ajoute le BOM** aux deux `.ps1` en les copiant dans l'archive.
+  Les sources du dépôt restent sans BOM, pour que `git diff` et `grep` restent
+  lisibles ;
+- **`install.ps1` écrit sans BOM**, par `EcrireTexte` — qui appelle
+  `[System.IO.File]::WriteAllText` avec un `UTF8Encoding($false)`. Ni
+  `Set-Content -Encoding UTF8` (qui ajoute un BOM en 5.1), ni `>` ou `Out-File`
+  sans option (qui écrivent en **UTF-16LE**, illisible pour tout ce qui attend
+  du texte).
+
+L'agent, de son côté, **tolère** un BOM en tête de `client_conf.json` : le
+fichier sera rouvert dans un éditeur Windows pour ajouter un core, et refuser
+une configuration valide pour trois octets invisibles serait une mauvaise
+manière de faire respecter la norme.
+
+## Le mot de passe local, et la politique du poste
+
+Le compte local porte **le mot de passe du domaine**, et il n'y a pas le choix :
+c'est celui que la personne tape à l'écran de connexion, et c'est Windows qui le
+vérifie contre le compte local. En poser un autre rendrait la connexion
+impossible.
+
+Conséquence : si la politique de mot de passe **du poste** est plus stricte que
+celle du domaine, `NetUserAdd` refuse la création avec le code **2245**
+(`NERR_PasswordTooShort`) — dont le nom ment, puisque Windows le rend aussi pour
+un refus de complexité ou un mot de passe encore dans l'historique. Le paramètre
+fautif vaut alors `0xFFFFFFFF`, c'est-à-dire « je ne sais pas lequel ».
+
+C'est le symptôme observé en recette : `-etat` répond, `-u … -check` répond
+`success` — il ne crée aucun compte — et `-u …` échoue.
+
+`install.ps1` affiche la politique locale et **propose** de l'aligner : longueur
+minimale à 0, historique à 0, complexité désactivée (`net accounts`, puis
+`secedit` pour la complexité, qui n'est pas exposée autrement). Rien n'est
+assoupli sans accord : c'est une politique de sécurité du poste, et la robustesse
+devient alors celle de la politique de **domaine** — qui est ce qui protège
+réellement le compte.
+
+> Sur une machine jointe à un Active Directory, une stratégie de domaine écrase
+> la politique locale à chaque actualisation : il faut la régler côté AD.
+
 ## Où vivent les choses
 
 | Chemin | Contenu |
