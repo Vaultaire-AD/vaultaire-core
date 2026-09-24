@@ -1114,6 +1114,7 @@ différent.
 | | |
 |---|---|
 | Machine **hors ligne** | rien n'est mis en file : elle rafraîchira à sa reconnexion, qui déclenche déjà un cycle |
+| Machine **connectée, demande non remise** | le message le dit, avec l'erreur : réessayez. Ce n'est pas « hors ligne », la machine ne va pas se reconnecter d'elle-même |
 | Machine **en cours de cycle** | la demande est ignorée : un seul cycle machine à la fois |
 | `--all` | ne vise que les machines **connectées**, et seulement celles de votre périmètre ; le décompte annonce les deux |
 

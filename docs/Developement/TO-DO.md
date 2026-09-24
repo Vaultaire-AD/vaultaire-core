@@ -22,7 +22,6 @@ Trois gestes, dans le même passage que le code :
 
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
-| 89  | GPO          | `gpo refresh` répond « hors ligne » sur un client en ligne | À faire                                 |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 90  | CLIENT       | Rafraîchir la liste des cores/proxies, et basculer         | À faire                                 |
@@ -197,12 +196,6 @@ repli sur `SSH_CONNECTION`).
 
 Une piste pour le second symptôme : l'empreinte porte sur la **politique effective**. Si elle ne bouge pas quand on modifie un module, le client reçoit un `05_03` « rien à faire » — ce qui est cohérent de son point de vue et faux du nôtre. Vérifier ce qui entre dans le calcul de l'empreinte, et si la version de la GPO est bien incrémentée à la modification d'un module.
 
-### 89. [GPO] `gpo refresh` répond « hors ligne » sur un client en ligne
-
-**Constat** (recette du 24/09). La commande annonce la machine hors ligne alors que sa session est établie et que `status -c` la voit. Non approfondi : une session en mauvais état n'est pas exclue.
-
-**À faire.** `DemanderRafraichissement` cherche la session par `sessionmgr.Sessions.GetByClientSoftwareID`. Vérifier que l'identifiant porté par la session est bien celui qu'on lui passe (casse, forme, et **moment** où `SetIdentity` est appelé), et que la session est à l'état authentifié. C'est du neuf — point 50, écrit le 23/09 — et jamais éprouvé contre un vrai parc.
-
 ---
 
 ## Sécurité et authentification
@@ -222,6 +215,8 @@ Une piste pour le second symptôme : l'empreinte porte sur la **politique effect
 **Constat.** La révocation poussée ne touche que les machines connectées au moment du déclenchement. Une machine absente récupère ses ordres en attente à sa reconnexion (`revocation_manager/trames.go`), mais une machine **connectée dont le push a échoué** attend elle aussi la reconnexion suivante, qui peut ne jamais venir tant que le tunnel tient.
 
 **À faire.** Une tâche de fond côté core qui renvoie périodiquement les ordres en attente aux clients connectés.
+
+**Déjà corrigé par le point 89 (24/09).** Une partie des « push en échec sur une machine connectée » ne venait pas du réseau : la session était choisie au hasard parmi celles qui portaient l'identifiant de la machine — poignée de main, session d'un utilisateur. `pushToOnline` passe désormais par `sessionmgr.SessionsMachine`. Reste le vrai sujet de ce point : rejouer un ordre dont l'envoi a réellement échoué.
 
 ---
 

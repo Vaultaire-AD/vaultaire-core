@@ -975,6 +975,22 @@ Le core pousse une trame `05_18` à la machine, qui repart sur son cycle
 **ordinaire** — mêmes calculs, même empreinte, mêmes rapports. Une trame de
 réveil n'est pas un second chemin d'application.
 
+**À quelle session la pousser** (TO-DO 89). Une machine a souvent plusieurs
+sessions sous son identifiant : son tunnel (compte `vaultaire`), les connexions
+de quelques secondes du `--fetch-key` de sshd, les sessions de ses
+utilisateurs, et des sessions encore en poignée de main — l'identité est posée
+dès la `01_01`. La première venue, prise au hasard, faisait répondre « hors
+ligne » à une machine connectée, ou envoyait la trame dans la session d'un
+utilisateur. `sessionmgr.SessionsMachine` ne rend que les sessions
+authentifiées du compte machine, les récemment vues d'abord (un tunnel mort
+après une coupure reste inscrit jusqu'au balayage), puis la plus ancienne (le
+tunnel dure) ; l'envoi est essayé dans cet ordre. L'ordre de révocation
+(`pushToOnline`) passe par la même fonction.
+
+La commande distingue **hors ligne** (aucun tunnel) de **non remise** (un tunnel,
+mais aucun envoi n'a abouti) : les confondre faisait attendre une reconnexion
+qui n'aurait pas lieu.
+
 Trois autres déclenchements existent, sans intervention :
 
 | Quand | Ce qui se passe |

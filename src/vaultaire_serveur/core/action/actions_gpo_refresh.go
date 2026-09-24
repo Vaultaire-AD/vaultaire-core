@@ -58,7 +58,18 @@ func rafraichirMachine(a Appelant, p Params) (Resultat, error) {
 		motif = "demande de " + a.Username
 	}
 
-	if !gpomanager.DemanderRafraichissement(id, motif) {
+	remis, err := gpomanager.DemanderRafraichissement(id, motif)
+	if err != nil {
+		// Connectée, mais la trame n'est pas partie. Ce n'est PAS « hors
+		// ligne » : le dire ferait attendre une reconnexion qui n'aura pas
+		// lieu, puisque la machine est déjà là (TO-DO 89).
+		return Resultat{
+			Message: fmt.Sprintf("Machine %s connectée, mais la demande n'a pas pu lui être remise (%v). "+
+				"Réessayez ; à défaut, elle rafraîchira sa politique à son prochain tour.", id, err),
+			Donnees: false,
+		}, nil
+	}
+	if !remis {
 		return Resultat{
 			Message: fmt.Sprintf("Machine %s hors ligne : elle rafraîchira sa politique à sa reconnexion.", id),
 			Donnees: false,

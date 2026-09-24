@@ -228,17 +228,21 @@ func killSessions(username string) int {
 func pushToOnline(order revocation.Order, targets []string) int {
 	pushed := 0
 	for _, computeurID := range targets {
-		sess, ok := sessionmgr.Sessions.GetByClientSoftwareID(computeurID)
-		if !ok || sess.DuckySession == nil {
-			continue
+		// Même choix de session que le rafraîchissement GPO (TO-DO 89) : la
+		// « première session portant l'identifiant » pouvait être une poignée
+		// de main ou la session d'un utilisateur, et l'ordre restait en
+		// attente sur une machine pourtant connectée.
+		for _, sess := range sessionmgr.Sessions.SessionsMachine(computeurID, sessionmgr.FraicheurTunnel()) {
+			msg := buildOrderFrame(sess.SessionID, order)
+			if err := sendmessage.SendMessage(msg, sess.ClientSoftwareID, sess.DuckySession); err != nil {
+				logs.Write_Log("WARNING", fmt.Sprintf(
+					"revocation: ordre %d non remis à %s par la session %s : %v",
+					order.ID, computeurID, sess.SessionID, err))
+				continue
+			}
+			pushed++
+			break
 		}
-		msg := buildOrderFrame(sess.SessionID, order)
-		if err := sendmessage.SendMessage(msg, computeurID, sess.DuckySession); err != nil {
-			logs.Write_Log("WARNING", fmt.Sprintf(
-				"revocation: ordre %d non remis à %s (sera rejoué) : %v", order.ID, computeurID, err))
-			continue
-		}
-		pushed++
 	}
 	return pushed
 }

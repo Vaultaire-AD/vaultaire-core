@@ -36,13 +36,22 @@ import (
 
 // DemanderRafraichissement pousse 05_18 à une machine connectée.
 //
-// Rend faux si la machine n'a pas de session Ducky en cours — ce qui n'est pas
-// une erreur mais un « pas maintenant » : l'appelant l'affiche, et la machine
-// se rafraîchira en revenant.
-func DemanderRafraichissement(computeurID, motif string) bool {
-	sess, ok := sessionmgr.Sessions.GetByClientSoftwareID(computeurID)
-	if !ok || sess.DuckySession == nil {
-		return false
+// Rend (vrai, nil) si la trame est partie ; (faux, nil) si la machine n'a pas
+// de tunnel en cours — ce n'est pas une erreur mais un « pas maintenant », et
+// la machine se rafraîchira en revenant ; (faux, err) si un tunnel existe mais
+// qu'aucun envoi n'a abouti.
+//
+// Les deux échecs étaient confondus en un seul « hors ligne » : devant une
+// machine visiblement connectée, l'administrateur ne pouvait pas savoir s'il
+// devait attendre ou chercher un défaut (TO-DO 89).
+//
+// La session est choisie par sessionmgr.SessionsMachine, et les candidates
+// sont essayées dans l'ordre : voir là-bas pourquoi la « première session qui
+// porte l'identifiant » n'était pas la bonne.
+func DemanderRafraichissement(computeurID, motif string) (bool, error) {
+	candidates := sessionmgr.Sessions.SessionsMachine(computeurID, sessionmgr.FraicheurTunnel())
+	if len(candidates) == 0 {
+		return false, nil
 	}
 
 	motif = strings.TrimSpace(motif)
@@ -50,16 +59,26 @@ func DemanderRafraichissement(computeurID, motif string) bool {
 		motif = "demande administrateur"
 	}
 
-	trame := reply("05_18", sess.SessionID, motif)
-	if err := sendmessage.SendMessage(trame, computeurID, sess.DuckySession); err != nil {
-		logs.Write_LogCode("WARNING", logs.CodeGPOTransport, fmt.Sprintf(
-			"gpo: rafraichissement non remis à %s : %v", computeurID, err))
-		return false
+	var derniere error
+	for _, sess := range candidates {
+		trame := reply("05_18", sess.SessionID, motif)
+		if err := sendmessage.SendMessage(trame, sess.ClientSoftwareID, sess.DuckySession); err != nil {
+			derniere = err
+			logs.Write_LogCode("DEBUG", logs.CodeGPOTransport, fmt.Sprintf(
+				"gpo: rafraichissement non remis à %s par la session %s : %v",
+				sess.ClientSoftwareID, sess.SessionID, err))
+			continue
+		}
+		logs.Write_LogCode("INFO", logs.CodeGPOTransport, fmt.Sprintf(
+			"gpo: rafraichissement demandé à %s (%s)", sess.ClientSoftwareID, motif))
+		return true, nil
 	}
 
-	logs.Write_LogCode("INFO", logs.CodeGPOTransport, fmt.Sprintf(
-		"gpo: rafraichissement demandé à %s (%s)", computeurID, motif))
-	return true
+	logs.Write_LogCode("WARNING", logs.CodeGPOTransport, fmt.Sprintf(
+		"gpo: rafraichissement non remis à %s : %d session(s) essayée(s), dernière erreur : %v",
+		computeurID, len(candidates), derniere))
+	return false, fmt.Errorf("%d session(s) du tunnel essayée(s), aucun envoi n'a abouti : %v",
+		len(candidates), derniere)
 }
 
 // MachinesEnLigne rend les identifiants des machines actuellement connectées.
@@ -71,6 +90,12 @@ func MachinesEnLigne() []string {
 	vus := map[string]bool{}
 	var ids []string
 	for _, sess := range sessionmgr.Sessions.ListAuthenticated() {
+		// Le tunnel de la MACHINE seulement : une session d'utilisateur porte
+		// aussi l'identifiant du poste, mais ne reçoit pas les GPO. La compter
+		// annonçait comme joignable une machine sans tunnel (TO-DO 89).
+		if sess.Username != sessionmgr.CompteMachine {
+			continue
+		}
 		id := strings.TrimSpace(sess.ClientSoftwareID)
 		if id == "" || vus[id] {
 			continue
@@ -89,7 +114,7 @@ func MachinesEnLigne() []string {
 func DemanderRafraichissementParc(computeurIDs []string, motif string) int {
 	joint := 0
 	for _, id := range computeurIDs {
-		if DemanderRafraichissement(id, motif) {
+		if ok, _ := DemanderRafraichissement(id, motif); ok {
 			joint++
 		}
 	}
