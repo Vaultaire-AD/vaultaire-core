@@ -320,9 +320,10 @@ code — et, une fois compris, **écrire la page ici**.
 - Anti-abus réseau (`core/netguard/`, `core/auth/ratelimit/`)
 - Tests intégrés (`core/testrunner/`) — pourtant ce sont eux qui tiennent les
   invariants du § 6.2
-- Le proxy (`src/vaultaire_proxy/`) — le relais Ducky est écrit (lot 4, 2.2,
-  commenté dans `relais/`) ; l'usage est dans [`docs/proxy/`](../../proxy/README.md).
-  Restent les relais HTTPS et LDAP/S (TO-DO 72)
+- Le proxy (`src/vaultaire_proxy/`) — les relais Ducky, HTTPS et LDAPS sont
+  écrits et commentés dans `relais/` ; l'usage est dans
+  [`docs/proxy/`](../../proxy/README.md). L'en-tête PROXY v2 côté core est dans
+  `core/proxyproto/`, la liste des proxies enregistrés dans `core/proxiesconnus/`
 
 Le **cluster** n'est plus dans cette liste : son fonctionnement est décrit dans
 [chapitre 4 du protocole](./ducky-network/04-cluster/README.md), dont la page

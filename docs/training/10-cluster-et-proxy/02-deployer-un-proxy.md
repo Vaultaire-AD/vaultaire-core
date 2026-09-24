@@ -14,8 +14,10 @@ Démarrer `vlt-proxy` et le voir apparaître dans le cluster.
 
 Le proxy **relaie le Ducky** : les agents d'un site le joignent, il transporte
 leurs connexions vers les cores sans les lire. Si aucun core ne répond, il
-ferme la connexion tout de suite et l'agent passe au nœud suivant. (HTTPS et
-LDAP/S sont prévus, pas encore actifs.) Référence : [`docs/proxy/`](../../proxy/README.md).
+ferme la connexion tout de suite et l'agent passe au nœud suivant. Il sait aussi
+relayer HTTPS vers les Nexus et LDAPS vers les cores ; ce jalon s'en tient au
+Ducky. Référence : [`docs/proxy/`](../../proxy/README.md), et
+[`https-et-ldaps.md`](../../proxy/https-et-ldaps.md) pour les deux autres.
 
 ## Étapes
 

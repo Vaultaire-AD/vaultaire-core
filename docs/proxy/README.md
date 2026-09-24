@@ -16,17 +16,16 @@ réunit ce qu'il faut pour le déployer, le régler et le dépanner.
 | [`deploiement.md`](./deploiement.md) | exploitant | Enrôlement, conteneur `vlt-proxy`, `-listen-port`, `cluster expose`, dev-comp |
 | [`relais.md`](./relais.md) | exploitant | Ce qu'est un relais, types, sources de cibles, section `relais:`, limites, journal |
 | [`securite.md`](./securite.md) | exploitant, relecteur | Pourquoi le proxy ne déchiffre rien, ce que l'agent lui accorde, exemption côté core |
-| [`prevu-https-ldap.md`](./prevu-https-ldap.md) | développeur | Relais HTTPS (vers les Nexus), LDAP et LDAPS : ce qui est prêt, ce qui manque (TO-DO 72) |
+| [`https-et-ldaps.md`](./https-et-ldaps.md) | exploitant | Relais HTTPS vers les Nexus, LDAPS vers les cores (adresse du client en PROXY v2), certificats, ports |
 | [`depannage.md`](./depannage.md) | exploitant | Messages du journal, causes, vérifications |
 
 ## En une minute
 
-- **Ce qui marche en 2.2** : le relais **Ducky** (agents → cores). C'est le lot 4
-  du point 38.
-- **Ce qui est prévu** : relais **HTTPS** vers des services du cluster (Nexus,
-  par exemple), **LDAP** et **LDAPS** vers les cores. La configuration les
-  reconnaît déjà ; le proxy refuse de les démarrer tant qu'ils ne sont pas
-  activés (TO-DO 72).
+- **Ce qui marche en 2.2** : le relais **Ducky** (agents → cores), le relais
+  **HTTPS** vers les Nexus du cluster, et le relais **LDAPS** vers les cores,
+  qui transmet l'adresse du client au core (TO-DO 72).
+- **Ce qui est refusé** : **LDAP en clair**, qui ferait voyager les mots de
+  passe en clair jusqu'au core.
 - **Le proxy ne termine rien** : ni la session Ducky, ni TLS. Il ne voit jamais un
   mot de passe en clair.
 - **Tous les cores injoignables → refus franc** : la connexion de l'agent est

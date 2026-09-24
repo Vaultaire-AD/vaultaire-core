@@ -107,9 +107,9 @@ son affinité se règle à la main.
 
 ## Le relais *(lot 4 fait — 2.2)*
 
-Relais TCP Ducky en place ; relais LDAP/S et HTTPS prévus. Le code
-(`src/vaultaire_proxy/relais/`) connaît déjà les quatre types et plusieurs
-relais par proxy ; seuls `ducky` et les sources `cores`/`liste` sont actifs.
+Relais TCP Ducky en place ; relais HTTPS et LDAPS depuis le TO-DO 72 (voir
+plus bas). Le code (`src/vaultaire_proxy/relais/`) connaît les quatre types et
+plusieurs relais par proxy ; `ldap` en clair seul reste refusé.
 Exploitation : [`docs/proxy/relais.md`](../../../../proxy/relais.md).
 
 **Que fait un proxy dont tous les cores sont injoignables ?** Tranché : il
@@ -124,19 +124,21 @@ core ; le promener d'un core à l'autre ferait échouer la poignée de main dès
 les cores n'ont pas la même clé. Le repli n'a lieu que si la cible précédente ne
 répond pas.
 
-**Relayer vers autre chose qu'un core.** Le proxy doit pouvoir relayer du HTTPS
-vers les Nexus. Il y faut que le core annonce les **services** (la `04_04`
-n'annonce que cores et proxies) : source `service:<type>`, prévue. Pour LDAP/S :
-SAN du core couvrant les proxies, et limitation des échecs de bind qui ne
-pénalise pas tout un site. Détail : [`docs/proxy/prevu-https-ldap.md`](../../../../proxy/prevu-https-ldap.md).
+**Relayer vers autre chose qu'un core** (TO-DO 72, fait). HTTPS vers les Nexus :
+le proxy apprend les services d'un type par une trame qui lui est RÉSERVÉE,
+`04_15` → `04_16` — pas par la `04_04`, qui aurait appris la carte des services
+à tout le parc. LDAPS vers les cores : un en-tête **PROXY v2** porte l'adresse
+du client, et le core ne le croit que d'un proxy enregistré ; la limitation des
+échecs de bind compte ainsi par client, pas par site. LDAP en clair reste
+refusé. Détail : [`docs/proxy/https-et-ldaps.md`](../../../../proxy/https-et-ldaps.md).
 
 ## Découpage restant
 
 | Lot | Contenu | État |
 |---|---|---|
 | 4 | Relais TCP Ducky | **fait** (2.2) |
-| 5 | Relais LDAP/S, SAN du core couvrant les proxies | **reste à faire** — TO-DO 72 |
-| 5 bis | Relais HTTPS vers les services (Nexus), découverte des services | **reste à faire** — TO-DO 72 |
+| 5 | Relais LDAPS (PROXY v2), SAN du core couvrant les proxies (documenté) | **fait** — TO-DO 72 ; LDAP en clair refusé |
+| 5 bis | Relais HTTPS vers les services (Nexus), trame `04_15`/`04_16` | **fait** — TO-DO 72 |
 | 6 | Table d'affinité `(nœud, groupe)` et tri côté serveur | fait |
 | 7 | Groupes portés par une clé d'enrôlement | fait |
 
@@ -144,7 +146,8 @@ Le lot 7 est venu **après** le 6 et non avant : rattacher un service à des gro
 n'a aucun effet observable tant que l'affinité ne trie rien. L'écrire d'abord
 aurait donné une fonctionnalité qu'on ne peut pas éprouver.
 
-Ce qui reste est le sujet du point 72 dans `TO-DO.md`.
+Ce qui reste — restreindre les nœuds qu'un client ou un proxy voit — est le
+sujet du point 67 dans `TO-DO.md`.
 
 ---
 

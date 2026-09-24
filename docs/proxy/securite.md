@@ -2,7 +2,7 @@
 
 # Sécurité du proxy
 
-[← Relais](./relais.md) · [Prévu : HTTPS et LDAP →](./prevu-https-ldap.md)
+[← Relais](./relais.md) · [HTTPS et LDAPS →](./https-et-ldaps.md)
 
 ---
 
@@ -74,9 +74,18 @@ L'identité de la machine, elle, est prouvée par sa clé dans la session : ce q
 décide d'un droit ne dépend jamais de l'adresse.
 
 Pour LDAP, c'est plus sérieux : la limitation des échecs de bind se fait **par
-adresse source**. Relayer LDAP ferait partager un compteur à tout un site. C'est
-l'une des raisons pour lesquelles le relais LDAP n'est pas encore activé
-([`prevu-https-ldap.md`](./prevu-https-ldap.md)).
+adresse source**, et relayer sans rien de plus ferait partager un compteur à
+tout un site. Le relais `ldaps` place donc un **en-tête PROXY v2** devant chaque
+connexion, avec l'adresse du client. Le core ne le croit que d'un **proxy
+enregistré** — la même liste que pour l'exemption Ducky — et ferme la connexion
+de quiconque d'autre l'envoie : sinon n'importe qui choisirait l'adresse sous
+laquelle il est compté. Détail : [`https-et-ldaps.md`](./https-et-ldaps.md).
+
+> **À savoir.** Comme l'exemption, la confiance suit l'adresse **vue par le
+> core**. Un proxy dont les connexions sortent par une autre adresse que celle
+> déclarée (NAT, hôte multi-cartes) voit ses connexions LDAPS **fermées** —
+> `en-tête PROXY reçu d'un pair qui n'est pas un proxy enregistré`. Remède :
+> `vlt cluster expose` à l'adresse que le core voit.
 
 ## Plafonds du proxy lui-même
 
@@ -86,4 +95,4 @@ seulement d'être saturé par une machine. Voir [`relais.md`](./relais.md).
 
 ---
 
-[← Relais](./relais.md) · [Prévu : HTTPS et LDAP →](./prevu-https-ldap.md)
+[← Relais](./relais.md) · [HTTPS et LDAPS →](./https-et-ldaps.md)

@@ -2,7 +2,7 @@
 
 # Dépanner un proxy
 
-[← Prévu : HTTPS et LDAP](./prevu-https-ldap.md) · [Proxy ↑](./README.md)
+[← HTTPS et LDAPS](./https-et-ldaps.md) · [Proxy ↑](./README.md)
 
 ---
 
@@ -30,7 +30,12 @@ savoir si un agent passe par le proxy.
 |---|---|---|
 | Le proxy s'arrête au démarrage : `-listen-port est obligatoire` | option absente | conteneur : `VAULTAIRE_LISTEN_PORT` ; à la main : `-listen-port 6666` |
 | `relais Ducky … sur le port X, alors que le port annoncé aux agents est Y` | la section `relais:` écoute ailleurs que `-listen-port` | aligner `ecoute` et `-listen-port` |
-| `relais de type "https" prévu mais pas encore activé` | type prévu dans `relais:` | le retirer : seul `ducky` est actif ([détail](./prevu-https-ldap.md)) |
+| `relais de type "ldap" refusé` | relais LDAP en clair dans `relais:` | employer `ldaps` ([détail](./https-et-ldaps.md)) |
+| `la source « cores » donne les adresses Ducky des cores` | relais `https` vers `cores` | `source: "service:vaultaire_nexus"` ou une `liste` |
+| `services du cluster : 0 vaultaire_nexus joignable(s)` | aucun Nexus en ligne et exposé, ou `04_15` refusée | `vlt cluster list` : le Nexus doit être en ligne, dans la rotation ; journal du core : `04_15 : …` |
+| Le client HTTPS refuse le certificat à travers le proxy | le certificat du Nexus ne porte pas le nom visé | ajouter ce nom à `tls.dns_names` du Nexus, ou faire résoudre le nom du Nexus vers le proxy par le DNS du site |
+| LDAPS par le proxy : connexion fermée aussitôt ; core : `en-tête PROXY reçu d'un pair qui n'est pas un proxy enregistré` | le core ne reconnaît pas l'adresse du proxy (NAT, autre carte réseau, proxy hors ligne) | l'IP du message doit être l'adresse déclarée ou exposée du proxy : `vlt cluster expose <proxy> <IP>` |
+| LDAPS par le proxy : `SSLHandshakeFailed` côté application | le certificat du core ne couvre pas le nom du proxy | l'ajouter à `ldaps_tls_dns_names` du core, puis `vlt certificate regenerate ldaps` |
 | `bind: address already in use` au démarrage | port déjà pris sur l'hôte | un autre proxy, ou un core sur la même machine sur 6666 |
 | `aucune cible joignable pour … — connexion refusée` | aucun core joignable **depuis le proxy** | depuis le conteneur du proxy : `nc -vz <core> 6666` ; pare-feu sortant ; adresse effective du core (`cluster expose` sur le core) joignable du proxy ? |
 | Les agents ignorent le proxy et vont au core | adresse annoncée injoignable pour eux | `vlt cluster list` : l'adresse exposée doit être celle de l'hôte et le port **publié** (6667 en préprod) — `vlt cluster expose <proxy> <IP> <port>` |
@@ -70,4 +75,4 @@ qui avale les paquets entre le proxy et le core : le délai par cible est de 3 s
 
 ---
 
-[← Prévu : HTTPS et LDAP](./prevu-https-ldap.md) · [Proxy ↑](./README.md)
+[← HTTPS et LDAPS](./https-et-ldaps.md) · [Proxy ↑](./README.md)

@@ -16,17 +16,14 @@ type à l'autre ne changent que **vers qui** on relaie et le port par défaut.
 | Type | De → vers | Port par défaut | État |
 |---|---|---|---|
 | `ducky` | agents → cores | 6666 | **actif** (2.2) |
-| `https` | navigateurs, `dnf`, `docker` → services HTTPS du cluster (Nexus…) | 443 | prévu |
-| `ldap` | applications → cores | 389 | prévu |
-| `ldaps` | applications → cores | 636 | prévu |
+| `https` | navigateurs, `dnf`, `docker` → services HTTPS du cluster (Nexus…) | 443 | **actif** (TO-DO 72) |
+| `ldaps` | applications → cores, avec l'adresse du client (PROXY v2) | 636 | **actif** (TO-DO 72) |
+| `ldap` | applications → cores | 389 | **refusé** |
 
-Un type prévu est **reconnu** par la configuration, et **refusé au démarrage** :
-
-```
-relais de type "https" prévu mais pas encore activé (TO-DO 72) : seul « ducky » est disponible aujourd'hui
-```
-
-Ce qui manque pour les activer : [`prevu-https-ldap.md`](./prevu-https-ldap.md).
+`ldap` est reconnu par la configuration et **refusé au démarrage** : relayé, il
+ferait voyager les mots de passe en clair du site jusqu'au core. Le détail des
+relais `https` et `ldaps` — cibles, certificats, en-tête PROXY — est dans
+[`https-et-ldaps.md`](./https-et-ldaps.md).
 
 ## Le cas courant : aucune configuration
 
@@ -56,6 +53,7 @@ relais:
 | `ecoute` | `:<port par défaut>` | `ducky` : obligatoirement le port de `-listen-port` |
 | `cibles.source` | `cores` | voir ci-dessous |
 | `cibles.adresses` | — | pour `source: liste`, en `hôte:port` |
+| `cibles.port` | 636 pour `ldaps`, le port annoncé sinon | pour `source: cores` seulement : le port à joindre sur chaque core |
 | `delai_connexion_secondes` | 3 | court à dessein : on passe vite à la cible suivante |
 | `inactivite_secondes` | 900 | doit dépasser le battement du protocole (Ducky : 2 min) |
 | `max_connexions` | 4000 | |
@@ -66,7 +64,10 @@ Règles vérifiées au chargement — une erreur arrête le proxy :
 - un seul relais `ducky`, et sur le port annoncé : les agents se présentent là où
   le cluster leur dit d'aller ;
 - deux relais n'ont ni le même nom ni la même adresse d'écoute ;
-- une source `liste` a au moins une adresse, chacune en `hôte:port`.
+- une source `liste` a au moins une adresse, chacune en `hôte:port` ;
+- un relais `https` nomme ses cibles (`service:<type>` ou `liste`) : `cores`
+  donnerait les adresses Ducky des cores ;
+- `service:<type>` ne sert qu'au relais `https`.
 
 ## Les sources de cibles
 
@@ -74,12 +75,13 @@ Règles vérifiées au chargement — une erreur arrête le proxy :
 |---|---|---|
 | `cores` | les cores appris du cluster (trame `04_04`, dans l'ordre servi), puis les serveurs du `config.yaml` du proxy | actif |
 | `liste` | les `adresses`, dans l'ordre écrit | actif |
-| `service:<type>` | les nœuds d'un type de service du cluster, p. ex. `service:vaultaire_nexus` | prévu (TO-DO 72) |
+| `service:<type>` | les services d'un type en ligne, p. ex. `service:vaultaire_nexus` — trame `04_15`, relue toutes les 5 min | actif (`https`) |
 
 Avec `cores`, les **proxies** de la liste apprise sont écartés : relayer vers un
 autre proxy pourrait boucler, et n'apporterait rien. L'adresse utilisée est
 l'adresse **effective** servie en `04_04` — celle de `cluster expose` si elle
-est déclarée.
+est déclarée. Pour un relais `ldaps`, son port est remplacé par le port LDAPS
+(`cibles.port`, 636 par défaut) : la `04_04` n'annonce que le port Ducky.
 
 `liste` sert aux tests et aux sites qui doivent viser un core précis.
 

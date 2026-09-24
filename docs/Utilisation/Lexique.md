@@ -31,7 +31,8 @@ et sa configuration.
 
 ### Proxy
 `vaultaire_proxy`. Nœud du cluster placé près des postes d'un site : il
-**relaie** leurs connexions Ducky vers les **cores** (HTTPS et LDAP/S prévus).
+**relaie** leurs connexions Ducky et LDAPS vers les **cores**, et HTTPS vers les
+**Nexus**.
 Voir [`docs/proxy/`](../proxy/README.md).
 
 **Il ne déchiffre rien** : la session Ducky reste de bout en bout entre l'agent

@@ -72,6 +72,7 @@ l'accordait à personne**, et que rien ne l'émettait.
 | `04_03` | oui | personne | agent, proxy |
 | `04_05` | oui | personne | proxy |
 | `04_07` | oui | personne | proxy |
+| `04_15` | oui (TO-DO 72) | — (trame neuve) | proxy seulement |
 
 ## Arbitrage 1 — la découverte vit en `04`, et nulle part ailleurs
 

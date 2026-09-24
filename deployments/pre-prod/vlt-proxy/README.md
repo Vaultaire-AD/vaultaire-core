@@ -94,6 +94,11 @@ de consommer un jeton.
 Reprendre le volume au démarrage rend le conteneur remplaçable : l'identité du
 proxy survit aux reconstructions d'image.
 
+**Relais HTTPS et LDAPS.** Même contrainte pour eux : UID 10001, donc pas de
+port sous 1024 dans le conteneur. Déclarez-les dans la section `relais:` sur un
+port haut (`:8843`, `:1636`) et publiez 443 ou 636 sur l'hôte dans le
+`docker-compose.yml` — voir [`docs/proxy/https-et-ldaps.md`](../../../docs/proxy/https-et-ldaps.md).
+
 **Le binaire monté doit rester en 0755.** `docker-update.sh` le pose à
 l'installation. Symptôme sinon :
 

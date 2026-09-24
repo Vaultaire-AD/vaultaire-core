@@ -36,7 +36,7 @@ donnée : c'est une frontière de privilège.
 | Type | Famille | Trames émises |
 |---|---|---|
 | `vaultaire_client` | agent | `01_01` · `02_01 02_03 02_05 02_12` · `03_01 03_04 03_06 03_08` · `04_03` · `05_01 05_05 05_09 05_12 05_15` · `06_02 06_03 06_04` |
-| `vaultaire_proxy` | service | `01_01 01_05 01_07` · `02_01 02_03 02_05 02_12` · `04_01 04_03 04_05 04_07` |
+| `vaultaire_proxy` | service | `01_01 01_05 01_07` · `02_01 02_03 02_05 02_12` · `04_01 04_03 04_05 04_07 04_15` |
 | `vaultaire_web` | service | `01_01 01_05 01_07` · `02_01 02_03 02_05 02_12` · `04_09 04_12 04_14` · `07_01 07_04` — **porte `AssertsUser`** |
 | `vaultaire_nexus` | service | `01_01 01_05 01_07` · `02_01 02_03 02_05 02_12` · `04_09 04_12 04_14` · `08_01 08_04` — apprend `read:nexus write:nexus write:nexus_admin` |
 

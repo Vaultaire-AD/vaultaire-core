@@ -46,7 +46,7 @@ intégrateurs. Elle répond à « que taper » et « quel droit accorder », jam
 
 | Fichier | Contenu |
 | --- | --- |
-| [`proxy/README.md`](./proxy/README.md) | **Le proxy** : déploiement, relais (Ducky actif ; HTTPS, LDAP/S prévus), sécurité, dépannage |
+| [`proxy/README.md`](./proxy/README.md) | **Le proxy** : déploiement, relais (Ducky, HTTPS vers les Nexus, LDAPS ; LDAP en clair refusé), sécurité, dépannage |
 
 ---
 

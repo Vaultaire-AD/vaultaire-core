@@ -1,45 +1,21 @@
-[⌂ Documentation](../README.md) › [Proxy](./README.md) › Prévu : HTTPS et LDAP
+[⌂ Documentation](../README.md) › [Proxy](./README.md) › HTTPS et LDAPS
 
-# Relais prévus : HTTPS, LDAP, LDAPS
+# Relais HTTPS et LDAPS
 
 [← Sécurité](./securite.md) · [Dépannage →](./depannage.md)
 
 ---
 
-Le proxy ne doit pas relayer que vers des cores. Deux besoins sont identifiés :
+Depuis le **TO-DO 72**, le proxy ne relaie plus seulement Ducky :
 
-- **HTTPS vers des services du cluster** — un site qui installe ses paquets
-  depuis un **Nexus** (dépôts RPM, Debian, registre Docker) ne devrait joindre
-  que son proxy ;
-- **LDAP et LDAPS vers les cores** — les applications d'un site (Keycloak,
-  GitLab, une appliance) interrogent l'annuaire par le proxy local.
+- **HTTPS vers les services du cluster** — un site installe ses paquets depuis
+  un **Nexus** (dépôts RPM, Debian, registre Docker) en ne joignant que son
+  proxy ;
+- **LDAPS vers les cores** — les applications d'un site (Keycloak, GitLab, une
+  appliance) interrogent l'annuaire par le proxy local.
 
-Ce document dit ce qui est **déjà prêt** dans le code, et ce qui **manque** avant
-d'activer ces types. Le suivi est le **TO-DO 72**.
-
-## Ce qui est prêt
-
-Le relais a été écrit pour tous les types dès le lot 4 :
-
-- `relais.Type` connaît `ducky`, `https`, `ldap`, `ldaps`, avec leurs ports par
-  défaut (6666, 443, 389, 636) ;
-- la section `relais:` du `config.yaml` accepte plusieurs relais, chacun avec
-  son port et ses cibles ;
-- les sources `cores`, `liste` et `service:<type>` sont reconnues ;
-- le transport est le même pour tous : octets recopiés sans lecture, refus
-  franc, plafonds, bilan dans le journal.
-
-Deux verrous empêchent l'activation, volontairement :
-
-| Verrou | Où | Message |
-|---|---|---|
-| type non actif | `relais/config.go`, table `actif` | `relais de type "https" prévu mais pas encore activé (TO-DO 72)` |
-| source `service:` | `relais.Valider` | `la source "service:…" (services du cluster) est prévue avec le relais HTTPS` |
-
-Activer un type revient à l'ajouter à `actif`, **une fois** les conditions
-ci-dessous remplies — et à écrire les tests qui les vérifient.
-
-Exemple de configuration visée :
+Le relais ne termine **toujours pas TLS** : le client négocie TLS avec le Nexus
+ou le core, de bout en bout. Le proxy ne voit ni un mot de passe, ni un paquet.
 
 ```yaml
 relais:
@@ -53,55 +29,128 @@ relais:
       source: "service:vaultaire_nexus"
   - nom: ldaps
     type: ldaps
-    ecoute: ":636"
+    ecoute: ":1636"            # port haut : le conteneur tourne en UID 10001
     cibles:
-      source: cores
+      source: cores            # port 636 des cores, par défaut
 ```
 
-## Ce qui manque
+## HTTPS vers un Nexus
 
-### HTTPS vers un Nexus
+### D'où viennent les cibles
 
-1. **Découvrir les services.** La trame `04_04` n'annonce que les **cores** et
-   les **proxies**. Pour `source: "service:vaultaire_nexus"`, le proxy doit
-   apprendre les adresses des Nexus du cluster : soit une extension de `04_04`
-   (un rôle `service` avec son type), soit une trame dédiée, réservée aux
-   proxies. À trancher avec le TO-DO 67 (quels nœuds un client voit).
-2. **Le certificat.** Le relais ne termine pas TLS : le navigateur, `dnf` ou
-   `docker` reçoivent le certificat **du Nexus**. Il doit porter dans son SAN le
-   nom par lequel les clients joignent le proxy — ou les clients doivent viser
-   le nom du Nexus résolu vers le proxy par le DNS du site.
-3. **Plusieurs Nexus.** L'ordre fixe (sans rotation) convient : un client HTTP
-   n'a pas de clé en cache, mais garder l'ordre évite de promener un `docker
-   pull` entre deux dépôts pas encore synchronisés.
-4. **Port.** 443 est privilégié : le conteneur tourne en UID 10001. Écouter sur
-   un port haut (8843) et publier 443 sur l'hôte, ou donner
-   `CAP_NET_BIND_SERVICE`.
+`source: "service:vaultaire_nexus"` : le proxy demande au core les Nexus **en
+ligne** par la trame **`04_15`**, au démarrage puis toutes les **5 minutes**. La
+réponse **`04_16`** donne leurs adresses, déduites de l'URL publique que chaque
+Nexus déclare (`public_url` : `https://nexus.acme.lan:8843` → `nexus.acme.lan:8843`,
+443 si l'URL n'a pas de port).
 
-### LDAP et LDAPS vers les cores
+- **Ordre fixe**, sans rotation : priorité explicite (`vlt cluster priority`),
+  puis les Nexus sans priorité, puis le nom. Garder un site sur le même dépôt
+  évite de promener un `docker pull` entre deux Nexus pas encore synchronisés.
+  Si le premier ne répond pas, le suivant est tenté.
+- **`vlt cluster rotation <nexus> out`** retire un Nexus de la liste, au plus
+  cinq minutes plus tard.
+- Une liste **vide** remplace la précédente : le relais refuse alors franchement,
+  plutôt que de tenter des adresses que le core dit hors ligne.
 
-1. **SAN du certificat du core** (lot 5 du point 38). En LDAPS, le client
-   vérifie le nom du serveur : le certificat du core doit couvrir les noms ou
-   adresses des proxies, sinon le client TLS refuse — voir
-   [`exploitation/ldaps_keycloak.md`](../exploitation/ldaps_keycloak.md).
-2. **Limitation par source.** Le core freine les échecs de bind **par adresse
-   IP**. Derrière un proxy, tout le site partage l'adresse du proxy : un poste qui
-   se trompe de mot de passe en boucle ferait freiner tout le site. Il faut, pour
-   les adresses de proxies enregistrés, soit une exemption comme pour Ducky
-   ([`securite.md`](./securite.md#le-plafond-par-adresse-côté-core)), soit un
-   moyen de transmettre l'adresse d'origine (PROXY protocol v2, lu **seulement**
-   depuis un proxy enregistré — sans quoi n'importe qui choisirait son adresse).
-3. **LDAP en clair.** Le core refuse déjà le bind simple hors TLS. Un relais
-   `ldap` (389) ne sert donc qu'avec StartTLS : à documenter, ou à ne pas
-   activer du tout.
-4. **Port.** 389 et 636 sont privilégiés : même remarque que pour 443.
+La `04_15` est **réservée aux proxies** : la carte des services n'est pas
+diffusée à tout le parc, comme elle le serait dans la `04_04` que reçoit chaque
+agent.
 
-## Ce qui ne changera pas
+Une source `liste` reste possible (Nexus hors cluster, tests). La source
+`cores` est **refusée** pour un relais `https` : elle donne les adresses Ducky
+des cores, pas un service HTTPS.
 
-- Le relais **ne terminera pas TLS**, pour aucun type (arbitrage 2).
-- Le **refus franc** reste la règle : un client HTTP ou LDAP qui reçoit une
-  fermeture essaie son serveur suivant, s'il en a un.
-- Un seul relais **Ducky** par proxy, sur le port annoncé au cluster.
+### Le certificat
+
+Le client reçoit le certificat **du Nexus**. Il doit donc porter le nom par
+lequel le client joint le proxy. Deux façons :
+
+1. ajouter ce nom au SAN du Nexus (`tls.dns_names` de sa configuration) ;
+2. ou faire résoudre le nom du Nexus **vers le proxy** par le DNS du site : le
+   client vise `nexus.acme.lan`, le DNS du site répond l'adresse du proxy, et
+   le certificat correspond sans rien changer.
+
+La seconde est la plus simple quand le site a son propre DNS — voir
+[`Utilisation/DNS.md`](../Utilisation/DNS.md).
+
+### Ce que Nexus voit
+
+L'adresse **du proxy** pour tous les clients du site : aucun en-tête ne la
+corrige, le relais ne terminant pas TLS. Les journaux d'accès de Nexus et son
+verrouillage après échecs nomment donc le proxy.
+
+## LDAPS vers les cores
+
+### L'adresse du client : PROXY protocol v2
+
+Le core freine les échecs de bind **par adresse source**. Derrière un proxy,
+tout le site partagerait un compteur : un poste qui se trompe de mot de passe
+en boucle ferait freiner tout le site, et un balayage d'un mot de passe sur
+mille comptes ne serait plus freiné par source du tout.
+
+Le relais `ldaps` place donc devant chaque connexion un **en-tête PROXY v2**
+(spécification HAProxy) qui porte l'adresse du client. Le core le lit **avant**
+la poignée de main TLS et s'en sert partout où il lit l'adresse du client :
+limitation des binds, journaux, session LDAP.
+
+| Le pair qui envoie l'en-tête | Le core |
+|---|---|
+| un proxy **enregistré** et en ligne | croit l'en-tête : le client est compté sous son adresse |
+| n'importe qui d'autre | **ferme** la connexion — `en-tête PROXY reçu d'un pair qui n'est pas un proxy enregistré` |
+| un proxy, sans en-tête | connexion ordinaire, sous l'adresse du proxy |
+
+Refuser plutôt qu'ignorer : quelqu'un qui envoie cet en-tête sans être un proxy
+essaie précisément de choisir l'adresse sous laquelle il est compté.
+
+L'en-tête n'est envoyé **qu'en LDAPS**, sans réglage : l'écoute Ducky et un
+Nexus le prendraient pour le début de leur protocole.
+
+### Le port
+
+`source: cores` : les cores appris du cluster, **joints sur leur port LDAPS** —
+636 par défaut, `cibles.port` sinon. La découverte n'annonce que leur port
+Ducky, qu'il ne faut surtout pas reprendre ici.
+
+```yaml
+    cibles:
+      source: cores
+      port: 10636              # si les cores écoutent LDAPS ailleurs que sur 636
+```
+
+### Le certificat du core
+
+Le client LDAPS vérifie le nom du serveur. Le certificat du core doit couvrir le
+nom ou l'adresse **par lesquels les applications joignent le proxy** : ajoutez-les
+à `ldaps_tls_dns_names` / `ldaps_tls_ip_addresses` de la configuration du core,
+puis `vlt certificate regenerate ldaps`. Voir
+[`exploitation/ldaps_keycloak.md`](../exploitation/ldaps_keycloak.md).
+
+### Le plafond côté core
+
+Les applications d'un site arrivent sur le core par l'adresse du proxy : pour un
+proxy enregistré, le plafond de connexions LDAP par adresse passe de 20 à
+**200**, comme pour Ducky. Le plafond global (500) reste commun.
+
+## LDAP en clair : refusé
+
+Le type `ldap` (389) reste **refusé** au démarrage :
+
+```
+relais de type "ldap" refusé : relayé, LDAP en clair ferait voyager les mots de
+passe en clair du site jusqu'au core, et le core n'implémente pas StartTLS —
+employez « ldaps »
+```
+
+Le core accepte le bind en clair tant que `RequireTLSForBind` n'est pas posé,
+mais un relais le ferait passer sur le lien le plus long — du site au core —,
+celui qu'on protège le moins bien.
+
+## Le port 443 et les ports privilégiés
+
+Le conteneur `vlt-proxy` tourne en UID 10001 : il ne peut pas écouter sous
+1024. Écoutez sur un port haut (`:8843`, `:1636`) et publiez 443 ou 636 sur
+l'hôte, ou donnez `CAP_NET_BIND_SERVICE` au conteneur.
 
 ---
 

@@ -29,7 +29,6 @@ Trois gestes, dans le même passage que le code :
 | 94  | CORE         | Un core ne redémarre pas si `clientconfpath` ≠ `/opt/vaultaire/` | À faire                          |
 | 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | À faire                                 |
 | 85  | WEB          | Page Cluster : réglages perdus, et illisible               | À faire                                 |
-| 72  | PROXY        | Relais HTTPS (vers les Nexus) et LDAP/S                    | À faire — code prêt, verrous à lever    |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte     | À faire                                 |
@@ -45,24 +44,6 @@ Trois gestes, dans le même passage que le code :
 ---
 
 ## Réseau Ducky
-
-### 72. [PROXY] Relais HTTPS vers les services du cluster, et relais LDAP/S
-
-**Reste du point 38** (lot 4, relais Ducky, fait en 2.2 : `DO/2.2/2.2.md`, entrée 38). Demande de Lorens (22/09) : « le proxy doit pouvoir faire des relais pas que vers du core, il doit aussi pouvoir faire des relais HTTPS vers les Nexus par exemple ».
-
-**Aujourd'hui.** `src/vaultaire_proxy/relais/` connaît les types `https`, `ldap`, `ldaps` et la source `service:<type>`, et les **refuse** au démarrage (`ErrTypePrevu`). Le transport est commun à tous les types et déjà testé.
-
-**Spécification :** `docs/proxy/prevu-https-ldap.md`.
-
-- **HTTPS (lot 5 bis).**
-  - Découverte des services : la `04_04` n'annonce que cores et proxies. Il faut que le proxy apprenne les Nexus (extension de `04_04` ou trame réservée aux proxies) — à concevoir avec le 67.
-  - Le relais ne termine pas TLS : SAN du certificat du Nexus, ou DNS du site qui résout le nom du Nexus vers le proxy.
-  - 443 est privilégié : port haut publié, ou `CAP_NET_BIND_SERVICE`.
-- **LDAP/S (lot 5).**
-  - SAN du certificat du core couvrant les proxies.
-  - La limitation des échecs de bind est **par IP source** (`ratelimit.SourceConn`) : derrière un proxy, un site entier partage un compteur. Exemption pour les proxies enregistrés (comme `netguard` pour Ducky) ou PROXY protocol v2 cru seulement depuis un proxy enregistré.
-  - `ldap` (389) : bind simple refusé hors TLS, donc utile seulement avec StartTLS — ou ne pas l'activer.
-- Activer = ajouter le type à `actif` dans `relais/config.go`, avec des tests des conditions ci-dessus.
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
@@ -90,8 +71,10 @@ connaît ses cores par sa configuration.
   la liste reçue est déjà persistée (point 61, fait en 2.2 : section `learned`
   de `client_conf.json`) ; un filtre devra s'y appliquer aussi.
 
-**Dépendances.** Le relais (point 38 fait pour Ducky, reste au 72) change ce qu'un proxy fait
-pour un client ; le filtrage change qui il sert. À concevoir ensemble.
+**Dépendances.** Le relais (points 38 et 72, faits : Ducky, HTTPS, LDAPS) change ce qu'un proxy
+fait pour un client ; le filtrage change qui il sert. Le 72 a déjà donné au proxy une vue
+qui lui est propre — les services d'un type, par la `04_15` réservée aux proxies : un filtre
+des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
 
