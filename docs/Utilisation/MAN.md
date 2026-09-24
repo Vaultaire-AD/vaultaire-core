@@ -32,6 +32,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 21. [cluster — Nœuds du parc](#21-cluster--nœuds-du-parc)
 22. [settings — Durées d'exploitation](#22-settings--durées-dexploitation)
 23. [version — Version du core](#23-version--version-du-core)
+24. [logs — Journal commun des cores](#24-logs--journal-commun-des-cores)
 
 ---
 
@@ -181,6 +182,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `version` | Version de ce core — voir [§23](#23-version--version-du-core) |
 | `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
 | `settings`| Durées d'exploitation du serveur — voir [§22](#22-settings--durées-dexploitation) |
+| `logs`   | Journal commun des cores, filtré et paginé — voir [§24](#24-logs--journal-commun-des-cores) |
 | `help`   | Liste les commandes. Chaque commande accepte `-h`. |
 
 > Chaque commande répond à `-h` avec sa syntaxe à jour. En cas de désaccord entre ce manuel et `vlt <commande> -h`, **c’est l’aide qui fait foi** : elle vit dans le même fichier que le code qui l’applique.
@@ -1309,6 +1311,9 @@ settings reset <clé>           # la ramène à son défaut codé
 | `web_session_minutes` | min | 30 | durée d'une session du portail |
 | `web_session_purge_minutes` | min | 5 | purge des sessions web expirées |
 | `group_sync_minutes` | min | 60 | synchronisation des groupes du domaine sur les machines |
+| `gpo_refresh_minutes` | min | 60 | rafraîchissement des GPO sur les machines — voir [§20](#20-gpo--application-et-conformité) |
+| `log_retention_days` | j | 30 | conservation du journal commun en base — voir [§24](#24-logs--journal-commun-des-cores) |
+| `log_purge_hours` | h | 24 | purge des lignes du journal plus anciennes que la conservation |
 
 **Les valeurs vivent en base ; les défauts sont codés dans le serveur.** Un
 changement prend effet au **prochain tour** de la boucle concernée — aucun
@@ -1384,3 +1389,83 @@ et l'inventer serait pire que se taire.
 Une règle de comparaison de versions se trompe sur les cas limites, et se
 tromper ici voudrait dire fermer la porte à un parc dont le seul outil de
 réparation est l'agent qu'on vient de refuser.
+
+---
+
+## 24. logs — Journal commun des cores
+
+Tous les cores écrivent leur journal dans **une même table de la base**, chaque
+ligne signée du core qui l'a émise. Une seule commande — et une seule page du
+portail, **Admin → Logs** — suffit donc pour lire tout le cluster, sans
+deviner quel core a traité la requête.
+
+```bash
+logs --level WARNING --since 2h                  # ce qui ne va pas depuis deux heures
+logs --core core-2 --since 2026-09-24            # un seul core, depuis minuit
+logs --code VLT-AUTH001 --since 3j               # un code précis, trois jours
+logs --since "2026-09-24 08:00" --until "2026-09-24 12:00"
+logs --per-page 200 --page 2                     # la page suivante, plus ancienne
+```
+
+| Option | Rôle |
+|---|---|
+| `--level` | **seuil** : `WARNING` rend WARNING, ERROR et CRITICAL |
+| `--core` | un seul core, par son nom — celui de `cluster list` |
+| `--code` | un code d'erreur, ex. `VLT-DB001` |
+| `--since` | début, **inclus** : `30m`, `2h`, `3j`, `2026-09-24`, `2026-09-24 14:30` |
+| `--until` | fin, **exclue**, mêmes formes |
+| `--page` | 1 = la plus récente |
+| `--per-page` | 50 par défaut, 500 au plus |
+
+`logs` tapé seul affiche l'aide, comme toutes les commandes : pour la dernière
+page sans filtre, `logs --page 1`.
+
+La ligne **la plus récente est en haut**. Quand une suite existe, la réponse
+donne la commande exacte pour l'afficher. Les dates absolues de la ligne de
+commande sont à l'heure **du core** ; le portail, lui, envoie l'heure du
+navigateur avec son fuseau.
+
+Une option inconnue est **refusée**, pas ignorée : `--sinec 2h` rendrait sinon
+tout le journal en laissant croire qu'il a été filtré.
+
+**Droit** : `read:log` — le même que la page du portail et `settings list`. Il ne
+se délègue pas par domaine : une ligne de journal n'appartient à aucun domaine.
+
+### Ce qui est en base, et ce qui n'y est pas
+
+- **Tout sauf DEBUG.** Le DEBUG reste sur la sortie standard du core (mode
+  `debug`) : c'est le niveau le plus bavard, et on ne l'allume que pour un
+  diagnostic.
+- Les toutes premières lignes du démarrage — lecture de la configuration,
+  ouverture de la base — sont émises avant que le core ne sache écrire en base.
+  Elles ne sont que sur sa sortie standard.
+- Une ligne met **au plus une seconde** à apparaître : les cores écrivent par
+  lots.
+
+### Quand la base ne répond pas
+
+La commande le **dit** en tête de réponse, et montre à la place la mémoire du
+core qui répond : ses 10 000 dernières lignes, **lui seul**. Le filtre et la
+pagination s'y appliquent de la même façon.
+
+Un core qui n'arrive pas à écrire en base — base arrêtée, emballement — perd ces
+lignes pour la base et les garde sur sa sortie standard. Il le signale une fois
+par minute par un `WARNING` de code `VLT-LOG001`, qui dit combien de lignes
+manquent : un trou dans le journal commun se lit comme un trou, pas comme une
+période calme.
+
+### Conservation
+
+```bash
+settings set log_retention_days 90    # garder trois mois
+settings set log_purge_hours 6        # purger toutes les six heures
+```
+
+Chaque core purge au **démarrage**, puis à la cadence de `log_purge_hours`. La
+conservation va de 1 à 365 jours, 30 par défaut. Pas de « garder tout » : une
+table de journaux sans borne remplit le disque de la base, et emporte
+l'annuaire avec elle.
+
+La sortie standard des cores (`docker logs`, `journalctl`) et les fichiers de
+`/var/log/vaultaire/` ne sont **pas** concernés : ils gardent leur propre
+rétention.

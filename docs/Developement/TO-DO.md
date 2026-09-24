@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **94**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **95**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -26,9 +26,9 @@ Trois gestes, dans le même passage que le code :
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 90  | CLIENT       | Rafraîchir la liste des cores/proxies, et basculer         | À faire                                 |
+| 94  | CORE         | Un core ne redémarre pas si `clientconfpath` ≠ `/opt/vaultaire/` | À faire                          |
 | 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | À faire                                 |
 | 85  | WEB          | Page Cluster : réglages perdus, et illisible               | À faire                                 |
-| 91  | LOGS         | Journaux non centralisés entre plusieurs cores             | À faire — gros chantier                 |
 | 72  | PROXY        | Relais HTTPS (vers les Nexus) et LDAP/S                    | À faire — code prêt, verrous à lever    |
 | 93  | DEP VERSION  | Trois défauts relevés par l'inventaire des dépendances  | À faire                              |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
@@ -108,6 +108,14 @@ pour un client ; le filtrage change qui il sert. À concevoir ensemble.
 - Les groupes du domaine n'ont pas d'équivalent local posé par l'agent : faut-il créer des groupes Windows locaux, comme on crée les comptes ?
 
 **Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
+
+### 94. [CORE] Un core ne redémarre pas sur sa base quand `clientconfpath` n'est pas `/opt/vaultaire/`
+
+**Constat** (relevé en éprouvant le point 91, 24/09 ; reproduit sur le commit de départ, sans rapport avec lui). Premier démarrage sur une base neuve : normal. Second démarrage sur la même base : arrêt, « Impossible d'amorcer les clés du core : clé SSH de déploiement des agents : sauvegarde clé SSH en BDD: certificat 'server_login_client' existe déjà ».
+
+**Cause lue dans le code.** `Generate_SSH_Key_For_Login_Client` appelle `EnsureLoginClientKeyFiles`, et prend **toute** erreur pour « clé absente » : elle régénère alors, et l'enregistrement bute sur la clé déjà en base. Or l'erreur vient ici de l'écriture du FICHIER : le répertoire créé suit `clientconfpath` (`storage.Client_Conf_path + ".ssh"`), mais le chemin écrit est `storage.PrivateKeyforlogintoclient`, codé en dur sous `/opt/vaultaire/.ssh/`. Dans le conteneur de référence les deux coïncident, d'où un défaut invisible jusqu'ici.
+
+**À faire.** Distinguer « absente en base » de « présente mais pas écrite sur disque » — la seconde ne doit jamais régénérer une clé que tout le parc a déjà acceptée. Et dériver le chemin du fichier de `clientconfpath`, comme le répertoire.
 
 ### 84. [CLUSTER] Les cores ne réintègrent pas le cluster après une veille de l'hôte
 
@@ -265,20 +273,6 @@ C'est la plus gênante : c'est la bibliothèque qui porte argon2id, ed25519 et l
 - la page s'allonge avec le cluster : il faut faire défiler pour trouver un nœud et le configurer.
 
 **À faire.** Chercher d'abord **où la configuration d'un nœud est écrasée** : un battement qui réécrit la ligne, ou un redémarrage qui repart de la configuration de fichier. C'est le vrai défaut — une adresse d'exposition perdue, c'est un parc qui tente une adresse injoignable (voir le point 46). La lisibilité vient ensuite : liste courte des membres, et **fiche de configuration au clic** sur un membre, au lieu de tout déplier.
-
-### 91. [LOGS] Journaux non centralisés entre plusieurs cores
-
-**Constat** (recette du 24/09). Chaque core journalise chez lui. Avec plusieurs cores, il faut deviner lequel a traité la requête avant de pouvoir lire quoi que ce soit, et le portail n'affiche que les journaux du core qui le sert. La lecture est par ailleurs peu confortable sur le portail.
-
-**Décision du 24/09 : une table dédiée en base**, plutôt qu'un service de journalisation. La base est déjà le point de rendez-vous du cluster ; un service de plus serait à installer, à authentifier, à superviser — et sa panne ferait perdre les journaux au moment précis où l'on en a besoin.
-
-**À faire.**
-
-1. Une table de journaux : horodatage, niveau, code, **core émetteur**, message, métadonnées. Le nom du core est indispensable — centraliser sans dire qui a écrit quoi ne fait que mélanger.
-2. Rétention **paramétrable** (`core/reglages`), purge au démarrage **et** toutes les 24 h. Même dispositif que la purge des sessions Ducky, qui a déjà sa boucle.
-3. Portail : filtre par niveau, par core et par période, et pagination.
-
-**Attention au volume.** Un core bavard écrit beaucoup, et une table de journaux sans borne remplit le disque de la base — c'est-à-dire qu'elle emporte l'annuaire avec elle. La rétention n'est pas une commodité d'affichage, c'est ce qui rend la table tenable. Décider aussi ce qui part en base : tout, ou à partir d'un niveau.
 
 ---
 

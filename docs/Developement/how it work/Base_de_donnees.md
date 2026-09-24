@@ -148,6 +148,40 @@ coup, « inconnu donc valide » crée une population qui n'expirera jamais.
 
 Détails et raisonnement dans [`MFA_et_Expiration.md`](./MFA_et_Expiration.md).
 
+## Journal commun des cores — `server_logs`
+
+Créée par `core/database/db_journaux/schema.go`, appelé à chaque démarrage juste
+après `Create_DataBase`. Table **neuve** : `CREATE TABLE IF NOT EXISTS` suffit.
+Une colonne ajoutée plus tard devra passer aussi par `EnsureColumn`.
+
+```sql
+CREATE TABLE IF NOT EXISTS server_logs (
+    id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    created_at DATETIME(6)      NOT NULL,   -- UTC
+    severity   TINYINT UNSIGNED NOT NULL,   -- RFC 5424 : 0 le plus grave
+    level      VARCHAR(16)      NOT NULL,
+    code       VARCHAR(32)      NOT NULL DEFAULT '',
+    core_name  VARCHAR(255)     NOT NULL,   -- os.Hostname() du core émetteur
+    message    TEXT             NOT NULL,   -- tronqué à 8 Ko, marqué
+    request_id VARCHAR(64)      NOT NULL DEFAULT '',
+    user_id    VARCHAR(64)      NOT NULL DEFAULT '',
+    INDEX idx_server_logs_created  (created_at),
+    INDEX idx_server_logs_core     (core_name, created_at),
+    INDEX idx_server_logs_severity (severity, created_at),
+    INDEX idx_server_logs_code     (code, created_at)
+);
+```
+
+- **`core_name` en texte, sans clé étrangère** vers `cluster_nodes` : un core
+  retiré du cluster laisse ses lignes — c'est souvent pour comprendre pourquoi il
+  est tombé qu'on les relit.
+- **`DATETIME(6)`** : à la seconde, deux lignes de deux cores émises dans la même
+  seconde ne se départagent pas. L'heure est écrite et relue en **UTC**.
+- **Troncature avant insertion** : en mode SQL strict, une valeur trop longue
+  fait échouer l'INSERT — et avec lui tout le lot de 200 lignes.
+- **Rétention** : `log_retention_days` (30 j par défaut), purge par lots de
+  10 000. La table est bornée par le temps, pas par le nombre de lignes.
+
 ## Notes rapides / observations
 
 * Les tables **d'association** (`users_group`, `logiciel_group`, `group_user_permission`, `group_permission_logiciel`, `group_linux_gpo`, `users_logiciel`) implémentent des relations N-N et ont des PK composites — c'est correct pour l'intégrité.

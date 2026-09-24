@@ -48,7 +48,7 @@ Tout est dans `catalogue`, une seule liste :
 | Champ | Rôle |
 |---|---|
 | `Cle` | l'identifiant en base et en ligne de commande |
-| `Unite` | `s`, `min` ou `h`. La base stocke un **entier dans cette unité** |
+| `Unite` | `s`, `min`, `h` ou `j`. La base stocke un **entier dans cette unité** |
 | `Defaut` | la valeur si la base ne dit rien |
 | `Min`, `Max` | garde-fous de **saisie** |
 | `Libelle` | ce que la durée gouverne, en une ligne |
@@ -180,6 +180,13 @@ connexion. Elles relèvent des GPO.
 2. une constante `CleXxx` à côté des autres ;
 3. remplacer le `time.NewTicker` par `reglages.Boucle` ;
 4. rien d'autre — l'action, la commande et la page web parcourent le catalogue.
+
+**Une rétention n'est pas une cadence, mais elle entre ici.** `log_retention_days`
+(TO-DO 91) ne pilote aucune boucle : c'est l'âge au-delà duquel la purge du
+journal commun supprime une ligne. Elle est au catalogue pour hériter de ce
+qu'il apporte — bornes, conséquence affichée, façades sans code — et c'est
+pour elle que l'unité `j` existe : une rétention se pense en jours. Sa purge,
+elle, est une boucle ordinaire (`log_purge_hours`).
 
 Le point 4 est l'intérêt du dispositif : les trois façades n'énumèrent aucun
 réglage. Ajouter une durée ne demande pas de les toucher, donc ne peut pas les

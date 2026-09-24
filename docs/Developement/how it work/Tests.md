@@ -58,6 +58,20 @@ base. Reprenez ce geste si vous en écrivez un.
 > qui les écartait. Un paquet qu'on ne lance qu'en écartant des tests ne dit
 > plus rien de ce qu'il couvre.
 
+### Les tests contre une vraie MariaDB : `VAULTAIRE_TEST_DSN`
+
+`core/database/db_journaux` a des tests qui traversent jusqu'à une **vraie**
+base — ce qu'un test de règle ne voit pas : une colonne qui refuse une valeur
+en mode SQL strict, des microsecondes perdues, un fuseau qui change à la
+relecture. Sans la variable, ils se sautent en le disant.
+
+```bash
+VAULTAIRE_TEST_DSN='vlt:vlt@tcp(127.0.0.1:3306)/vltest?parseTime=true' \
+  go test ./core/database/db_journaux/
+```
+
+La base doit être **jetable** : ces tests y créent leur table et y écrivent.
+
 ### Le module Windows se teste SOUS LINUX
 
 `src/vaultaire_client_windows` se compile pour les deux systèmes : ce qui touche

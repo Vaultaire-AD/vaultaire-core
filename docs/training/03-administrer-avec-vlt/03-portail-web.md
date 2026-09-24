@@ -27,7 +27,7 @@ Savoir retrouver dans le portail tout ce que vous faites en ligne de commande.
 | `settings …` | **Admin → Durées** |
 | `eyes -g` | **Admin → Arborescence** |
 | `mfa -g`, `mfa policy` | **Admin → Authentification** |
-| journal du serveur | **Admin → Logs** |
+| `logs …` — journal commun des cores | **Admin → Logs** |
 | son propre second facteur | **Profil** |
 
 ## Étapes
@@ -43,7 +43,11 @@ Savoir retrouver dans le portail tout ce que vous faites en ligne de commande.
 
 3. Retirez-la depuis la ligne de commande et rechargez la page.
 4. Ouvrez **Admin → Logs** : les deux opérations y figurent, avec leur
-   auteur.
+   auteur. En ligne de commande, la même consultation :
+
+   ```bash
+   vlt logs --since 10m
+   ```
 
 ## ✅ Vous avez réussi si
 

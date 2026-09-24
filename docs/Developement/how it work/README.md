@@ -75,7 +75,7 @@ Colonne « doc » = la page à lire **avant** de toucher au code.
 | Base de données | `core/database/` (un sous-paquet `db_*` par table) | [`Base_de_donnees.md`](./Base_de_donnees.md) |
 | GPO (côté serveur) | `core/gpo/`, `core/database/db_gpo/`, `ducky-network/gpo_manager/` | [`GPO.md`](./GPO.md) |
 | MFA / TOTP / expiration | `core/global/security/totp/`, `core/auth/passwordpolicy/`, `core/database/db_authpolicy/` | [`MFA_et_Expiration.md`](./MFA_et_Expiration.md) |
-| Journalisation | `core/logs/` | [`Journalisation.md`](./Journalisation.md) |
+| Journalisation, journal commun des cores | `core/logs/`, `core/database/db_journaux/` | [`Journalisation.md`](./Journalisation.md) |
 | Tests | `*_test.go`, `core/testrunner/` | [`Tests.md`](./Tests.md) |
 | Durées de boucle | `core/reglages/`, `core/database/db_settings/` | [`Reglages_de_duree.md`](./Reglages_de_duree.md) |
 | Versions | `core/version/` | [`Versions.md`](./Versions.md) |

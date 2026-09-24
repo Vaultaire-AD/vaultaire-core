@@ -193,6 +193,9 @@ Le droit est désormais distinct dans les deux sens : on peut confier l'audit à
 quelqu'un qui n'administre rien, et administrer un domaine sans lire les
 journaux des autres.
 
+Depuis le journal commun (TO-DO 91), c'est aussi le droit de `vlt logs` : les
+deux façades passent par l'action `log.list`.
+
 ### `write:mfa` — second facteur
 
 Réinitialise le second facteur d'un compte (téléphone perdu) et règle

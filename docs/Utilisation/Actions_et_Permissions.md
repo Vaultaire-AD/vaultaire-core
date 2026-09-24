@@ -236,6 +236,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `settings.list` | `read:log` | Globale | — | **Registre** — `settings list` | **Registre** — `/admin/settings` |
 | `settings.set` | `write:server` | Globale | — | **Registre** — `settings set` | **Registre** — `/admin/settings` |
 | `settings.reset` | `write:server` | Globale | — | **Registre** — `settings reset` | **Registre** — `/admin/settings` |
+| `log.list` | `read:log` | Globale | — | **Registre** — `logs` | **Registre** — `/admin/logs` |
 | **Certificats et politique** |
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
