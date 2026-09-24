@@ -1012,7 +1012,6 @@ Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
 
 | Sujet | État | TO-DO |
 |-------|------|-------|
-| **Scan de dérive du scope utilisateur** | Non implémenté — seul le scope machine est scanné | 33 |
 | Signature des politiques par le serveur central | Champ prévu, non rempli ni vérifié | 52 |
 | Persistance des rapports d'application en base | Journalisés seulement | 53 |
 | `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent | — |
@@ -1024,9 +1023,10 @@ Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
 
 Trois inventaires, tenus pendant l'application et relus à chaque scan.
 
-> ⚠️ **Scope machine uniquement.** Le scan tourne avant chaque cycle machine
-> (`scanMachineDrift`). Les GPO du scope utilisateur sont appliquées à
-> l'ouverture de session mais leur dérive n'est **pas** vérifiée (TO-DO 33).
+Le scan tourne avant chaque cycle — avant le cycle machine
+(`scanMachineDrift`) et, depuis la 2.2 (TO-DO 33), avant le cycle utilisateur
+(`scanUserDrift`). Voir [Le scope utilisateur](#le-scan-du-scope-utilisateur)
+pour ce qui lui est propre.
 
 | Inventaire | Ce qu'il contient | Écart détecté |
 |---|---|---|
@@ -1266,6 +1266,78 @@ Comme pour les fichiers : l'empreinte du module est oubliée, le cycle suivant l
 réapplique. La correction n'est jamais immédiate — réappliquer peut relancer un
 service, et le faire à l'instant de la détection reviendrait à redémarrer sshd
 pendant qu'un administrateur débogue.
+
+---
+
+## Le scan du scope utilisateur
+
+*(2.2, TO-DO 33.)* Jusque-là, le scan n'existait que pour la machine : les GPO
+utilisateur étaient appliquées à l'ouverture de session et **plus jamais
+vérifiées**. Un fichier posé dans le `HOME` puis modifié, supprimé ou rendu
+illisible y restait aussi longtemps que l'empreinte de politique ne bougeait
+pas — c'est-à-dire indéfiniment sur un parc stable.
+
+C'est pourtant le scope où la dérive est la **plus probable**. Le `HOME` est le
+seul endroit où l'utilisateur écrit librement sans être root : il n'a besoin
+d'aucun privilège pour défaire ce que la politique a posé, et il n'a même pas
+besoin de le vouloir — un `.bashrc` réécrit par un outil tiers suffit.
+
+### Ce qui n'a rien demandé de neuf
+
+Côté core, **rien**. `05_15` porte déjà le scope et le nom d'utilisateur, la
+table `gpo_drift` a sa colonne `target_user`, et l'unicité de `gpo_compliance`
+porte les trois colonnes. Le rapport utilisateur remonte par le chemin existant
+et s'affiche là où s'affiche celui de la machine.
+
+Sur le **mode** non plus : il est un attribut de la GPO, hérité par ses modules
+(section suivante). `EnforceDrift` le lit module par module sans savoir de quel
+scope il s'agit. Une GPO utilisateur qu'on préfère ne pas voir corriger dans les
+`HOME` se met en audit comme n'importe quelle autre.
+
+### Avant le cycle, pour la même raison que la machine
+
+Le scan oublie l'empreinte des modules dérivés ; le cycle qui suit les réapplique
+dans la foulée. L'utilisateur trouve donc son environnement remis en état **à
+l'ouverture de session**, avant que son shell ne démarre.
+
+Scanner après aurait reporté la correction au cycle suivant — et le cycle suivant
+d'un scope utilisateur n'est pas dans une heure, c'est à la **prochaine
+connexion**. Quelqu'un qui se connecte une fois par semaine aurait gardé son
+`HOME` dérivé une semaine, signalé non conforme tout du long.
+
+### Une vérification par cadence, pas une par `sudo`
+
+Le scope machine a une boucle qui décide quand elle tourne. Le scope utilisateur
+n'en a pas : il est déclenché par PAM, sollicité à chaque `ssh` **et à chaque
+`sudo`**. Scanner à chaque passage aurait fait, sur un poste d'administration, un
+hachage de tout l'inventaire et une trame `05_15` par commande privilégiée.
+
+Le scan est donc borné à un par compte et par cadence GPO (`gpo_refresh_minutes`,
+la valeur en vigueur — resserrer le rafraîchissement du parc resserre aussi les
+vérifications). La borne vit en mémoire : un agent qui redémarre refait un scan
+de trop, ce qui est le sens sûr de l'erreur.
+
+### Deux connexions du même compte
+
+Le cycle utilisateur est désormais **sérialisé par compte**. Deux connexions
+simultanées — deux terminaux, ou un `sudo` pendant une session `ssh` — lançaient
+deux cycles en parallèle sur le même `HOME` et le même état local ; tant que le
+cycle ne faisait qu'appliquer, les modules étant idempotents, cela passait. Le
+scan ajoute une lecture suivie d'une écriture, et deux exécutions entrelacées y
+perdraient l'une des deux corrections.
+
+La seconde connexion **attend**, là où un second cycle machine abandonne : elle a
+besoin que son environnement soit en place avant que la main ne soit rendue à
+PAM.
+
+> ⚠️ **Ce qui reste assumé.** Une seconde connexion pendant qu'une première
+> travaille peut faire réécrire un fichier que l'utilisateur vient d'éditer. La
+> politique est la source de vérité, et l'agent n'a aucun moyen fiable de savoir
+> qu'une autre session est ouverte : compter les ouvertures et les fermetures PAM
+> laisserait un compteur faussé par la première session tuée, et désarmerait la
+> correction en silence — un défaut permissif invisible, exactement ce que
+> `DefaultDriftMode` refuse par ailleurs. Un parc où ces interventions sont
+> légitimes met les GPO concernées en audit.
 
 ---
 

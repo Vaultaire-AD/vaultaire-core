@@ -6,8 +6,11 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"errors"
 	"fmt"
 	"strings"
+
+	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
 
 	"golang.org/x/crypto/ssh"
@@ -71,11 +74,37 @@ func GenerateSSHKeyInOpenSSHFormat() (privateKeyOpenSSH string, publicKeyOpenSSH
 	return privateKeyOpenSSH, publicKeyOpenSSH, nil
 }
 
+// Generate_SSH_Key_For_Login_Client amorce la clé SSH de déploiement des agents.
+//
+// # Ce qui empêchait un core de redémarrer
+//
+// Cette fonction prenait TOUTE erreur d'EnsureLoginClientKeyFiles pour « la clé
+// n'existe pas encore » et régénérait. Au second démarrage sur une base
+// existante, l'erreur venait en réalité de l'écriture du fichier — la clé, elle,
+// était bien en base. La régénération butait alors sur « certificat
+// server_login_client existe déjà », et le core s'arrêtait (TO-DO 94).
+//
+// Une seule erreur autorise la génération : le certificat est ABSENT de la base.
+// Tout le reste — répertoire non accessible en écriture, base injoignable,
+// certificat incomplet — est remonté tel quel.
+//
+// Ce n'est pas de la prudence de principe. Cette clé est celle que `create -c …
+// --join` dépose sur les machines : la régénérer invaliderait l'accès à tout ce
+// qui l'a déjà acceptée. Mieux vaut un démarrage qui échoue en disant pourquoi
+// qu'un démarrage qui réussit en coupant le parc.
 func Generate_SSH_Key_For_Login_Client() error {
-	if err := EnsureLoginClientKeyFiles(); err == nil {
-		logs.Write_Log("INFO", "keymanagement: login client SSH keys loaded from database")
+	err := EnsureLoginClientKeyFiles()
+	if err == nil {
+		logs.Write_Log("INFO", "keymanagement: clé SSH de déploiement chargée depuis la base")
 		return nil
 	}
+	if !errors.Is(err, dbcertificates.ErrCertificatIntrouvable) {
+		logs.Write_LogCode("ERROR", logs.CodeCertSave,
+			"keymanagement: clé SSH de déploiement présente en base mais non exportée : "+err.Error())
+		return fmt.Errorf("clé SSH de déploiement des agents : %w", err)
+	}
+
+	logs.Write_Log("INFO", "keymanagement: aucune clé SSH de déploiement en base, génération")
 
 	privContent, pubContent, err := GenerateSSHKeyInOpenSSHFormat()
 	if err != nil {

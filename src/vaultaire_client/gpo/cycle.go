@@ -89,7 +89,24 @@ func RunMachineCycle(sessionKey string) Report {
 // privilèges : une variable d'environnement non posée ne crée pas de faille,
 // alors qu'un annuaire qui bloque les connexions sur incident GPO est un
 // incident d'exploitation majeur.
+//
+// # Le scan de conformité, comme côté machine
+//
+// Un cycle utilisateur ne faisait qu'appliquer : ce qui avait été posé dans le
+// `HOME` n'était plus jamais vérifié. Le scan précède le cycle pour la même
+// raison qu'au scope machine — il oublie l'empreinte des modules dérivés, et le
+// cycle qui suit les réapplique dans la foulée, avant que le shell ne démarre.
+//
+// Le verrou est pris pour les DEUX : le scan lit puis écrit l'état local, et
+// deux connexions simultanées du même compte — deux terminaux, ou un `sudo`
+// pendant une session `ssh` — y perdraient une correction. Voir drift_user.go.
 func RunUserCycle(sessionKey, username string) Report {
+	verrou := verrouDe(username)
+	verrou.Lock()
+	defer verrou.Unlock()
+
+	scanUserDrift(sessionKey, username)
+
 	return runCycle(sessionKey, ScopeUser, username, UserFetchTimeout)
 }
 

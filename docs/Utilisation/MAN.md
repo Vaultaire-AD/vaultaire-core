@@ -1088,6 +1088,17 @@ gpo refresh --all                    # cycle immédiat sur tout le parc connect�
 
 > « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
 
+**Les deux scopes sont vérifiés.** La machine l'est avant chaque cycle machine ;
+un compte l'est à son ouverture de session, au plus une fois par cadence GPO —
+PAM est sollicité à chaque `ssh` mais aussi à chaque `sudo`, et scanner à chaque
+passage aurait envoyé un rapport par commande privilégiée. `gpo status
+<computeur_id>` affiche donc une ligne de conformité par utilisateur, là où elle
+disait « jamais vérifiée » avant la 2.2.
+
+Un écart dans un `HOME` est corrigé **à la connexion suivante de ce compte**, pas
+au prochain cycle machine : le scan précède le cycle utilisateur, si bien que
+l'environnement est remis en état avant que le shell ne démarre.
+
 **La vue part de l’inventaire, pas des rapports.** Une machine créée mais jamais
 installée, ou dont l’agent est tombé, apparaît donc — en `jamais` ou en `en
 retard`. C’est volontaire : auparavant elle n’apparaissait pas du tout, et son
@@ -1202,6 +1213,10 @@ cluster expose <noeud> <adresse> [port]   # par où les AGENTS joignent ce nœud
 cluster expose <noeud> --clear            # retire la déclaration
 cluster priority <noeud> <valeur>         # ordre de service
 cluster rotation <noeud> <in|out>         # annoncer ce nœud aux agents, ou non
+
+cluster refresh <computeur_id>            # la machine redemande la liste des nœuds
+cluster refresh -g <groupe>               # les machines d'un groupe
+cluster refresh --all                     # toutes les machines connectées
 ```
 
 ### Dire à un nœud par où on le joint
@@ -1276,6 +1291,34 @@ tous les autres.
 > désenregistrer — ce qui le ferait disparaître des vues de supervision au moment
 > précis où on le surveille.
 
+### Faire prendre en compte un changement tout de suite
+
+```bash
+cluster refresh poste-042        # une machine
+cluster refresh -g paris         # les machines d'un groupe
+cluster refresh --all            # toutes les machines connectées
+```
+
+Chaque machine redemande la liste des nœuds **toutes les 30 minutes** par défaut
+(réglage `node_list_refresh_minutes`, `settings set`). C'est le délai maximal
+entre un `cluster expose`, `priority` ou `rotation` fait ici et sa prise en
+compte par un poste. Acceptable en régime normal, beaucoup trop long pendant une
+bascule de cluster : `cluster refresh` demande l'actualisation **maintenant**.
+
+Si le nœud que la machine utilise n'est plus le mieux placé, elle **rouvre son
+tunnel** sur celui qui l'est. À priorité égale elle ne bouge pas : basculer entre
+deux nœuds équivalents ne gagne rien et coûte une coupure.
+
+> **Une machine hors ligne n'est pas une erreur.** Elle ne reçoit rien et rien
+> n'est mis en attente pour elle : elle relira sa liste à sa reconnexion. Le
+> compte-rendu de `--all` et `-g` distingue les machines jointes, hors ligne, et
+> hors de votre périmètre.
+
+Ce droit est celui de la **machine** (`write:update:client` sur ses domaines),
+et non `write:cluster` : l'action ne modifie rien du cluster, elle engage un
+poste. Un délégué peut donc rafraîchir les machines qu'il administre, et
+seulement celles-là. Même raisonnement que `gpo refresh`.
+
 Ces trois réglages sont des **décisions d'administrateur** : un nœud qui
 redémarre ne les écrase pas. Ils exigent `write:cluster` et laissent une trace
 `SECURITY`. Les mêmes champs sont éditables depuis **Admin → Cluster** : cliquez
@@ -1324,6 +1367,7 @@ settings reset <clé>           # la ramène à son défaut codé
 | `web_session_purge_minutes` | min | 5 | purge des sessions web expirées |
 | `group_sync_minutes` | min | 60 | synchronisation des groupes du domaine sur les machines |
 | `gpo_refresh_minutes` | min | 60 | rafraîchissement des GPO sur les machines — voir [§20](#20-gpo--application-et-conformité) |
+| `node_list_refresh_minutes` | min | 30 | rafraîchissement de la liste des cores et proxies sur les machines — voir [§21](#21-cluster--nœuds-du-parc) |
 | `log_retention_days` | j | 30 | conservation du journal commun en base — voir [§24](#24-logs--journal-commun-des-cores) |
 | `log_purge_hours` | h | 24 | purge des lignes du journal plus anciennes que la conservation |
 

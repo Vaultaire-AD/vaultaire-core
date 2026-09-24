@@ -35,25 +35,6 @@ func Configure(s Sender, id string) {
 	clientID = id
 }
 
-// CadenceParDefaut espace deux demandes de liste.
-//
-// # Pourquoi une constante ici, et non un réglage
-//
-// La cadence de synchronisation des groupes voyage dans sa trame, parce qu'elle
-// pilote une action sur le système — créer et vider des groupes — dont le coût
-// et le risque se règlent depuis le core.
-//
-// Celle-ci ne pilote qu'une lecture, dont le seul effet est de rafraîchir une
-// liste d'adresses en mémoire. Lui donner un réglage ajouterait une entrée au
-// catalogue, une colonne à l'interface et une question de plus à qui l'exploite,
-// pour un choix que personne n'a de raison de changer.
-//
-// Elle est longue à dessein : la liste ne change qu'à l'ajout ou au retrait d'un
-// nœud, ce qui n'arrive pas tous les jours. Une machine qui a besoin de la liste
-// TOUT DE SUITE — parce que son serveur habituel ne répond plus — ne l'attend
-// pas : elle bascule sur l'adresse suivante, qu'elle a déjà.
-const CadenceParDefaut = 30 * time.Minute
-
 // Demarrer arme la boucle de découverte et rend la main immédiatement.
 //
 // `sessionKey` est un FOURNISSEUR et non une valeur : la clé change à chaque
@@ -62,7 +43,7 @@ const CadenceParDefaut = 30 * time.Minute
 func Demarrer(sessionKey func() string) {
 	go boucle(sessionKey)
 	logs.Write_log("INFO", fmt.Sprintf(
-		"découverte : active (cadence %s, %d empreinte(s) de confiance)",
+		"découverte : active (cadence %s par défaut, %d empreinte(s) de confiance)",
 		CadenceParDefaut, EmpreintesConnues()))
 }
 
@@ -87,9 +68,18 @@ func boucle(sessionKey func() string) {
 	emettre(sessionKey)
 
 	for {
+		// La cadence est RELUE à chaque tour : le core peut la changer par la
+		// ligne « disco: » de n'importe quelle 04_04, et une valeur capturée
+		// une fois ne bougerait plus jusqu'au redémarrage de l'agent.
 		select {
-		case <-time.After(CadenceParDefaut):
+		case <-time.After(Cadence()):
 		case <-demandeInit:
+		case <-reveilCadence:
+			// La cadence vient de changer : on réarme sur la nouvelle valeur
+			// sans émettre. Redemander la liste ici ferait redemander tout le
+			// parc à la seconde où l'on touche au réglage — exactement la
+			// rafale que la cadence sert à éviter.
+			continue
 		}
 		emettre(sessionKey)
 	}
@@ -124,6 +114,18 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 		traiterAccuseEnregistrement(t.Content)
 	case "16":
 		traiterServices(t.Content)
+	case "17":
+		// « Redemande ta liste maintenant ». Elle ne transporte AUCUNE liste :
+		// l'agent repart sur une 04_03 ordinaire, et tout le chemin habituel —
+		// filtrage par groupes, tri, empreintes, persistance — reste identique.
+		// Une trame de réveil ne pouvait pas devenir un second chemin
+		// d'apprentissage, qu'il aurait fallu tenir d'accord avec le premier.
+		motif := strings.TrimSpace(t.Content)
+		if motif == "" {
+			motif = "demande du core"
+		}
+		logs.Write_log("INFO", "découverte : liste redemandée hors tour ("+motif+")")
+		DemanderMaintenant()
 	case "06", "08":
 		// Accusés de métriques et de battement. Rien à faire, mais nommés :
 		// les laisser tomber dans le `default` les ferait passer pour des

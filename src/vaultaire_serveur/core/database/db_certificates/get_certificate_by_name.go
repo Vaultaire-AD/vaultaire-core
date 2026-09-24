@@ -20,7 +20,7 @@ func GetCertificateByName(name string) (*storage.Certificate, error) {
 	).Scan(&cert.ID, &cert.Name, &cert.CertificateType, &certData, &privKeyData, &pubKeyData, &desc, &createdAtBytes, &updatedAtBytes)
 
 	if err == sql.ErrNoRows {
-		return nil, fmt.Errorf("certificat non trouvé: %s", name)
+		return nil, fmt.Errorf("%w: %s", ErrCertificatIntrouvable, name)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("erreur récupération certificat: %v", err)

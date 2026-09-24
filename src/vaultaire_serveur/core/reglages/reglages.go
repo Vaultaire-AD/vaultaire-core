@@ -118,6 +118,7 @@ const (
 	CleSessionWebPurge     = "web_session_purge_minutes"
 	CleSynchroGroupes      = "group_sync_minutes"
 	CleRafraichissementGPO = "gpo_refresh_minutes"
+	CleListeDesNoeuds      = "node_list_refresh_minutes"
 	CleRetentionJournaux   = "log_retention_days"
 	ClePurgeJournaux       = "log_purge_hours"
 )
@@ -197,6 +198,19 @@ var catalogue = []Definition{
 			"sa valeur part dans les trames 05_02 et 05_03, et une machine hors " +
 			"ligne l'applique au retour. Il décide aussi du seuil de « en retard » " +
 			"dans « vlt gpo status », fixé à trois cycles.",
+	},
+	{
+		Cle: CleListeDesNoeuds, Unite: Minutes, Defaut: 30, Min: 5, Max: 1440,
+		Libelle: "Rafraîchissement de la liste des cores et proxies sur les machines",
+		Consequence: "Cadence à laquelle chaque machine redemande la liste des nœuds " +
+			"joignables (trame 04_03). C'est le délai maximal entre l'ajout, le " +
+			"retrait ou la repriorisation d'un nœud ici et la prise en compte par " +
+			"un poste. Plus court : le parc redemande une liste qui n'a le plus " +
+			"souvent pas changé. Troisième réglage à piloter une boucle du PARC : " +
+			"sa valeur part en queue de la trame 04_04, et une machine hors ligne " +
+			"l'applique au retour. Une machine qui a besoin de la liste tout de " +
+			"suite ne l'attend pas — elle bascule sur l'adresse suivante, qu'elle " +
+			"a déjà.",
 	},
 	{
 		// Rétention du journal centralisé (TO-DO 91).

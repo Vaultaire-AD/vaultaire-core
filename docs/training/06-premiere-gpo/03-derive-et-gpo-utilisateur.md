@@ -72,8 +72,10 @@ Parce que le scope `user` n'accepte que des modules sans effet sur les
 privilèges. La règle est vérifiée par le serveur **et** par l'agent.
 </details>
 
-> ⚠️ La dérive des GPO **utilisateur** n'est pas encore vérifiée
-> (TO-DO 33) : seul le scope machine est scanné.
+> Depuis la 2.2, la dérive des GPO **utilisateur** est vérifiée elle aussi, à
+> l'ouverture de session — au plus une fois par cadence GPO et par compte, pour
+> ne pas scanner à chaque `sudo`. L'environnement est remis en état avant que le
+> shell ne démarre.
 
 ## 📚 Référence
 

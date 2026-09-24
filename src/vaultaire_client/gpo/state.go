@@ -305,6 +305,10 @@ func ForgetUser(username string) error {
 		return nil
 	}
 	delete(state.Users, username)
+	// La mémoire des scans part avec l'état : la garder ferait sauter la
+	// première vérification d'un compte recréé sous le même nom, dont le HOME
+	// est justement celui qu'on ne connaît pas.
+	oublierScansUtilisateur(username)
 	logs.Write_log("DEBUG", "GPO: etat local de l'utilisateur "+username+" oublie")
 	return writeStateLocked(state)
 }

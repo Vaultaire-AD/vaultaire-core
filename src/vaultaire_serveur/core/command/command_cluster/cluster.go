@@ -7,6 +7,7 @@ import (
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
+	hosthandler "vaultaire/ducky-network/host_handler"
 )
 
 // Cluster_Command donne une vue de l'état du cluster.
@@ -72,6 +73,9 @@ func Cluster_Command(args []string, sender_groupsIDs []int, sender_Username stri
 
 	case "affinity":
 		return affinite(args[1:], appelant)
+
+	case "refresh":
+		return actualiserListes(args[1:], appelant)
 
 	default:
 		return "Commande cluster invalide. Utilisez « cluster -h »."
@@ -284,6 +288,103 @@ func affinite(args []string, appelant action.Appelant) string {
 	return res.Message
 }
 
+// actualiserListes traite `cluster refresh <machine> | --all | -g <groupe>`.
+//
+// # Pourquoi une cible obligatoire
+//
+// Une actualisation peut provoquer une RECONNEXION : si le nœud utilisé n'est
+// plus le mieux placé, l'agent ferme son tunnel et repart sur le premier de la
+// liste. Le demander à tout le parc est une opération légitime — après une
+// bascule de cluster — mais ce n'est pas ce qu'on veut quand on a simplement
+// oublié de taper un identifiant.
+//
+// # Pourquoi la boucle est ici et pas dans l'action
+//
+// Chaque machine est contrôlée pour elle-même : un administrateur délégué
+// actualise les siennes et se voit refuser les autres, au lieu de tout ou rien.
+// Le décompte final le dit.
+func actualiserListes(args []string, appelant action.Appelant) string {
+	cible := ""
+	if len(args) > 0 {
+		cible = strings.TrimSpace(args[0])
+	}
+
+	switch cible {
+	case "":
+		return "Usage : vlt cluster refresh <computeur_id> | --all | -g <groupe>\n\n" +
+			"La machine redemande la liste des nœuds joignables, au lieu d'attendre son\n" +
+			"prochain tour. Si le nœud qu'elle utilise n'est plus le mieux placé, elle\n" +
+			"rouvre son tunnel sur celui qui l'est. Une machine hors ligne le fera à sa\n" +
+			"reconnexion."
+
+	case "--all", "-a":
+		return actualiserPlusieurs(appelant, hosthandler.MachinesEnLigne(),
+			"aucune machine connectée : il n'y a personne à qui demander une actualisation.")
+
+	case "-g", "--group":
+		if len(args) < 2 || strings.TrimSpace(args[1]) == "" {
+			return "Usage : vlt cluster refresh -g <groupe>"
+		}
+		groupe := strings.TrimSpace(args[1])
+		res, err := action.Executer("group.list_clients", appelant, action.Params{"group": groupe})
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		d, ok := res.Donnees.(action.MachinesDeGroupe)
+		if !ok {
+			return res.Message
+		}
+		var ids []string
+		for _, m := range d.Machines {
+			ids = append(ids, m.ComputeurID)
+		}
+		return actualiserPlusieurs(appelant, ids,
+			"aucune machine dans le groupe "+groupe+".")
+	}
+
+	res, err := action.Executer("cluster.refresh_nodes", appelant,
+		action.Params{"computeur_id": cible})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
+}
+
+// actualiserPlusieurs pousse la demande à une liste de machines.
+func actualiserPlusieurs(appelant action.Appelant, machines []string, siVide string) string {
+	if len(machines) == 0 {
+		return siVide
+	}
+
+	jointes, refusees, horsLigne := 0, 0, 0
+	for _, id := range machines {
+		res, err := action.Executer("cluster.refresh_nodes", appelant,
+			action.Params{"computeur_id": id})
+		if err != nil {
+			// Hors périmètre, ou machine inconnue de l'annuaire : compté, pas
+			// détaillé. Lister les machines qu'on n'a pas le droit de toucher
+			// renseignerait sur un parc qu'on n'a pas le droit de voir.
+			refusees++
+			continue
+		}
+		if remis, _ := res.Donnees.(bool); remis {
+			jointes++
+		} else {
+			horsLigne++
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Actualisation demandée à %d machine(s) sur %d.\n", jointes, len(machines))
+	if horsLigne > 0 {
+		fmt.Fprintf(&b, "%d hors ligne : elles reliront leur liste à leur reconnexion.\n", horsLigne)
+	}
+	if refusees > 0 {
+		fmt.Fprintf(&b, "%d machine(s) hors de votre périmètre n'ont pas été touchées.\n", refusees)
+	}
+	return b.String()
+}
+
 func aide() string {
 	return fmt.Sprintf(`cluster — supervision du cluster.
 
@@ -300,6 +401,10 @@ func aide() string {
   cluster rotation <noeud> <in|out>         annoncer ce nœud aux agents, ou l'en retirer
   cluster affinity <noeud> <groupe...>      groupes que ce nœud sert en priorité
   cluster affinity <noeud> --none           retire toute affinité
+
+  cluster refresh <computeur_id>            la machine redemande la liste des nœuds
+  cluster refresh --all                     toutes les machines connectées
+  cluster refresh -g <groupe>               les machines d'un groupe
 
 L'affinité range un nœud devant les autres de son rôle pour les agents des
 groupes visés. PRÉFÉRENCE et non exclusivité : les autres nœuds restent dans la

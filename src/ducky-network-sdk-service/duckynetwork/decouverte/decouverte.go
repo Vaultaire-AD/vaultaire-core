@@ -126,6 +126,14 @@ func AnalyserListe(contenu string) ([]Noeud, error) {
 		if ligne == "" {
 			continue
 		}
+		// La ligne de cadence n'est pas un nœud : elle est écartée AVANT
+		// l'analyse et ne compte ni dans les retenues ni dans les rejetées.
+		// La compter ferait dire à chaque trame qu'elle est tronquée, puisque
+		// le nombre annoncé en première ligne ne compte que des nœuds.
+		if strings.HasPrefix(ligne, PrefixeCadence) {
+			appliquerCadenceDepuis(ligne)
+			continue
+		}
 		n, err := analyserLigne(ligne)
 		if err != nil {
 			// Une ligne fautive n'emporte pas les autres : mieux vaut une liste

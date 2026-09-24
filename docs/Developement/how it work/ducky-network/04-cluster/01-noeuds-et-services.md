@@ -24,8 +24,9 @@
 | `04_14` | core | service_deregister | sortie propre, sans réponse |
 | `04_15` | core | list_services | **proxy seulement** : les services d'un type — contenu `<type>` (ex. `vaultaire_nexus`) |
 | `04_16` | proxy | list_services_response | `<type>`, `<nombre>`, puis `<hôte:port>` par service en ligne et exposé, **ordonnés** (priorité, puis nom). Adresse déduite de l'URL déclarée en `04_09` |
+| `04_17` | client | refresh_nodes | le core demande à une machine de redemander sa liste — contenu : le motif, aucune liste |
 
-Plage réservée : `04_01` à `04_19` — libre à partir de `04_17`.
+Plage réservée : `04_01` à `04_19` — libre à partir de `04_18`.
 
 **Nœud ou service ?** Un nœud (`04_01`) est une MACHINE joignable par les
 agents : core, proxy. Un service (`04_09`) est une FONCTION : l'interface web,

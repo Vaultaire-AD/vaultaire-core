@@ -24,14 +24,10 @@ Trois gestes, dans le même passage que le code :
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
-| 90  | CLIENT       | Rafraîchir la liste des cores/proxies, et basculer         | À faire                                 |
-| 94  | CORE         | Un core ne redémarre pas si `clientconfpath` ≠ `/opt/vaultaire/` | À faire                          |
-| 84  | CLUSTER      | Les cores ne réintègrent pas le cluster après une veille   | Cause probable corrigée (85) — à reproduire |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 70  | CLIENT       | Le ménage quotidien des comptes ne trouve aucun compte     | À faire                                 |
 | 71  | CLIENT       | `-join` ne sait installer que Rocky                        | À faire                                 |
-| 33  | GPO          | La dérive du scope utilisateur n'est jamais scannée        | À faire                                 |
 | 22  | SELINUX      | Domaine dédié pour l'agent                                 | En cours                                |
 | 49  | RÉVOCATION   | Retenter les révocations poussées en échec                 | À faire                                 |
 | 52  | GPO          | Signature des politiques par le core                       | À faire                                 |
@@ -89,24 +85,6 @@ des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
 
-### 94. [CORE] Un core ne redémarre pas sur sa base quand `clientconfpath` n'est pas `/opt/vaultaire/`
-
-**Constat** (relevé en éprouvant le point 91, 24/09 ; reproduit sur le commit de départ, sans rapport avec lui). Premier démarrage sur une base neuve : normal. Second démarrage sur la même base : arrêt, « Impossible d'amorcer les clés du core : clé SSH de déploiement des agents : sauvegarde clé SSH en BDD: certificat 'server_login_client' existe déjà ».
-
-**Cause lue dans le code.** `Generate_SSH_Key_For_Login_Client` appelle `EnsureLoginClientKeyFiles`, et prend **toute** erreur pour « clé absente » : elle régénère alors, et l'enregistrement bute sur la clé déjà en base. Or l'erreur vient ici de l'écriture du FICHIER : le répertoire créé suit `clientconfpath` (`storage.Client_Conf_path + ".ssh"`), mais le chemin écrit est `storage.PrivateKeyforlogintoclient`, codé en dur sous `/opt/vaultaire/.ssh/`. Dans le conteneur de référence les deux coïncident, d'où un défaut invisible jusqu'ici.
-
-**À faire.** Distinguer « absente en base » de « présente mais pas écrite sur disque » — la seconde ne doit jamais régénérer une clé que tout le parc a déjà acceptée. Et dériver le chemin du fichier de `clientconfpath`, comme le répertoire.
-
-### 84. [CLUSTER] Les cores ne réintègrent pas le cluster après une veille de l'hôte
-
-**Constat** (recette du 24/09). L'hôte des conteneurs se met en veille ; au réveil, les cores sont sortis du cluster et n'y reviennent pas seuls. Il faut les redémarrer.
-
-**Pourquoi c'est important.** Le parc, lui, sait revenir — la dégressivité et le battement sont en place côté agent depuis le point 74. Ce sont les **nœuds entre eux** qui restent fâchés, et un core hors cluster continue de répondre aux agents qui le connaissent déjà : la panne ne se voit pas, elle se découvre.
-
-**Cause probable trouvée en traitant le point 85 (24/09).** `CleanupStaleNodes` supprimait toute ligne de `cluster_nodes` muette depuis **cinq minutes**, et le battement d'un core dont la ligne avait disparu se contentait de journaliser « redémarrez-le ». Une veille de plus de cinq minutes produisait donc exactement ce constat. Corrigé au point 85 : l'oubli suit le délai de purge (24 h), et le core se réenregistre seul. **Reste à reproduire** pour confirmer — et à écarter la seconde hypothèse ci-dessous si le symptôme persiste.
-
-**À faire.** Reproduire (une veille suffit, ou `docker pause` sur un core **plus de cinq minutes**). Puis vérifier deux choses : qu'un nœud retente son `04_01` après une rupture — et pas seulement au démarrage —, et que le battement du cluster distingue « pas de réponse » d'une connexion morte. L'hypothèse la plus probable est la seconde : la connexion TCP paraît encore ouverte au réveil, donc rien ne déclenche de réenregistrement.
-
 ---
 
 ## Agent
@@ -153,29 +131,9 @@ repli sur `SSH_CONNECTION`).
 
 **Attention.** L'archive porte une **clé privée de machine**. Validité courte du lien de téléchargement, trace dans le journal, aucune mise en cache côté portail, et un nom de fichier qui ne laisse aucun doute sur ce qu'il contient.
 
-### 90. [CLIENT] La liste des cores et proxies ne se met à jour qu'au démarrage
-
-**Constat** (recette du 24/09). La liste apprise ne se rafraîchit qu'au démarrage ou au redémarrage de l'agent. Un nœud ajouté, retiré ou repriorisé n'est donc pris en compte qu'au prochain redémarrage — et le poste peut rester accroché à un nœud qui n'est plus le bon.
-
-**À faire.** Reprendre la recette des GPO, éprouvée aux points 50 et 51 :
-
-1. **cadence configurable côté core**, envoyée à l'agent en queue d'une trame qu'il reçoit déjà (`04_04`), sur une ligne préfixée — même dispositif que `refresh:` et `sync:` ;
-2. **déclenchement à la demande, par machine et par groupe** : une trame poussée par le core et une commande `vlt`, sur le modèle de `gpo refresh` ;
-3. **bascule** : si le nœud en cours d'utilisation n'est pas de priorité maximale, fermer la session et en rouvrir une — la reconnexion choisit naturellement le premier. **Égalité de priorité : on ne bascule pas.** C'est la règle qui empêche le va-et-vient entre deux nœuds équivalents, qui coûterait une coupure à chaque tour pour rien.
-
-**Attention.** Une bascule coupe le tunnel machine. Vérifier qu'elle ne fait pas disparaître la machine de `status -c` le temps de la reconnexion, et qu'elle ne fait pas tomber une session PAM en cours — c'est exactement le défaut du point 64, atteint par un autre chemin.
-
 ---
 
 ## GPO
-
-### 33. [GPO] La dérive du scope utilisateur n'est jamais scannée
-
-**Constat.** `scanMachineDrift` n'existe que pour le scope machine (`vaultaire_client/gpo/cycle.go`). `RunUserCycle` applique les GPO utilisateur à l'ouverture de session mais ne vérifie jamais l'état laissé par la session précédente.
-
-**Pourquoi c'est important.** Les fichiers du scope utilisateur vivent dans son `HOME`, le seul endroit où il édite librement sans être root. La dérive la plus probable est donc celle qui n'est pas surveillée.
-
-**À faire.** Ajouter `scanUserDrift` dans `RunUserCycle`, symétrique de l'existant, à l'ouverture de session. Il doit respecter le mode enforce/audit de chaque module (point 34, fait). La correction reste **différée au cycle suivant**, comme côté machine : réappliquer dans le home pendant que l'utilisateur travaille écraserait ce qu'il vient d'éditer.
 
 ### 52. [GPO] Signature des politiques par le core
 

@@ -322,10 +322,86 @@ adresse du fichier. Côté SDK, un programme s'abonne avec
 `decouverte.SurNouvelleListe`. Détail :
 [Agent : liste des cores et rapport de debug](../../../../exploitation/Agent_configuration_et_debug.md).
 
-Cadence : 30 minutes, constante côté agent. La liste ne change qu'à l'ajout ou au
-retrait d'un nœud. Une machine qui a besoin de la liste *tout de suite* — parce
-que son serveur habituel ne répond plus — ne l'attend pas : elle bascule sur
-l'adresse suivante, qu'elle a déjà.
+## La cadence vient du core, la liste peut être poussée (2.2, TO-DO 90)
+
+La cadence était une **constante** de 30 minutes côté agent, avec cet argument :
+elle ne pilote qu'une lecture, dont le seul effet est de rafraîchir une liste
+d'adresses en mémoire.
+
+L'argument ne tient plus depuis que la liste sert à **basculer** (ci-dessous) :
+une lecture peut désormais décider que le nœud en cours d'usage n'est plus le
+bon, et provoquer une reconnexion. Ce qu'elle pilote est devenu un effet sur le
+parc, comme `group_sync_minutes` et `gpo_refresh_minutes` — et comme eux, cela
+se règle depuis le core, par `node_list_refresh_minutes`.
+
+**La valeur voyage en queue de `04_04`, derrière `disco:`.** Les lignes de nœud
+de cette trame se lisent **par position** — six champs séparés par `|` —, à la
+différence de `03_09` et `05_02` qui se lisent par préfixe : une ligne de plus au
+milieu casserait l'analyse. En queue et préfixée, un agent d'une version
+antérieure la rejette comme une ligne fautive et garde le reste. Elle n'entre
+**pas** dans le nombre annoncé en première ligne, qui compte des nœuds et que
+l'agent vérifie : l'y ajouter ferait croire à une trame tronquée à chaque envoi.
+
+L'agent **borne** ce qu'il reçoit entre 5 minutes et 24 heures, comme le réglage
+côté core. Cette borne est là parce qu'une valeur venue du **réseau** pilote une
+boucle infinie : une cadence nulle ferait de l'agent un générateur de trafic, une
+cadence d'un mois le laisserait ignorer un nœud retiré. Une ligne illisible ne
+change **rien** : la valeur en vigueur a été décidée par un core, et la
+remplacer par le défaut à la première trame abîmée annulerait le réglage.
+
+**`04_17` pousse une actualisation.** La cadence borne le retard — au pire une
+demi-heure entre l'ajout d'un core et sa prise en compte. C'est acceptable en
+régime normal et beaucoup trop long pendant une bascule de cluster. Raccourcir
+la cadence de tout le parc à cause d'un moment particulier reviendrait à faire
+redemander la liste toutes les minutes pendant l'année, pour les dix minutes qui
+comptent.
+
+Cette trame **ne transporte aucune liste** : l'agent repart sur une `04_03`
+ordinaire, et tout le chemin habituel — filtrage par groupes, tri, apprentissage
+des empreintes, persistance — reste identique. Une trame de réveil ne pouvait
+pas devenir un second chemin d'apprentissage, qu'il aurait fallu tenir d'accord
+avec le premier ; c'est le même arbitrage que pour `05_18` côté GPO.
+
+**Rien n'est mis en file.** Une machine hors ligne ne la reçoit pas et n'en garde
+aucune trace : elle redemandera sa liste à sa reconnexion, puisque la boucle de
+découverte commence par un passage immédiat.
+
+Côté exploitation : `vlt cluster refresh <machine|-g groupe|--all>`, action
+`cluster.refresh_nodes`.
+
+## La bascule vers le nœud prioritaire (2.2, TO-DO 90)
+
+L'agent se connecte au premier nœud qui répond, dans l'ordre servi par le core.
+Cet ordre est calculé **une fois**, à la connexion. Si un nœud plus prioritaire
+est ajouté, remis en ligne ou repriorisé ensuite, l'agent continue de parler à
+celui qu'il tient — jusqu'au prochain redémarrage. Un poste pouvait donc rester
+des semaines sur un nœud de secours alors que le principal était revenu, sans
+que rien ne le signale : de son point de vue tout fonctionnait.
+
+À chaque nouvelle liste, l'agent compare la priorité du nœud **courant** à la
+meilleure de la liste, et **ferme sa session mère** si elle est strictement
+moins bonne. Il ne CHOISIT pas de nœud : la supervision du tunnel rétablit la
+connexion par le chemin ordinaire, qui essaie les adresses dans l'ordre servi
+par le core. Rejouer ici une logique de sélection en aurait fait une seconde, à
+tenir d'accord avec la première.
+
+**L'égalité ne bascule pas.** Deux nœuds de même priorité sont équivalents :
+basculer de l'un vers l'autre ne gagne rien et coûte une coupure. Pire, sur un
+parc où deux nœuds se disputent la tête de liste, chaque `04_04` provoquerait
+une reconnexion — un va-et-vient permanent déclenché par le mécanisme censé
+améliorer les choses.
+
+Deux autres cas, pour la même raison :
+
+- **liste vide** : elle ne dit pas que le nœud courant est mauvais, elle dit
+  qu'on ne sait rien ; basculer couperait le tunnel pour se reconnecter au même
+  endroit, ou à rien ;
+- **priorité 0 ou absente** : elle vaut « dernier », comme côté core
+  (`prioriteEffective`) ; la lire comme « premier » ferait basculer tout le parc
+  vers le nœud le moins bien renseigné.
+
+Le nœud courant **absent de la liste** servie est en revanche un cas de bascule :
+il a été retiré ou n'est plus joignable.
 
 ## Ce que le proxy émet
 

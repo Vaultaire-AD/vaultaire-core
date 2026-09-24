@@ -15,6 +15,7 @@ import (
 	clusterstorage "vaultaire/cluster/cluster_storage"
 	"vaultaire/core/clienttype"
 	"vaultaire/core/logs"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/trame"
@@ -361,9 +362,44 @@ func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 	if body != "" {
 		contenu = append(contenu, body)
 	}
+	if cadence := ligneCadenceDecouverte(); cadence != "" {
+		contenu = append(contenu, cadence)
+	}
 	return trame.ReponseClient("04_04",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
 		contenu...), nil
+}
+
+// PrefixeCadenceDecouverte ouvre la ligne de cadence de la trame 04_04.
+//
+// # Pourquoi elle est ajoutée en QUEUE, et reconnue à son préfixe
+//
+// Les lignes de nœud de 04_04 sont lues PAR POSITION — six champs séparés par
+// « | » —, contrairement à 03_09 et 05_02 qui se lisent par préfixe. Une ligne
+// de plus au milieu casserait donc l'analyse ; en queue et préfixée, un agent
+// qui ne la connaît pas la rejette comme une ligne fautive et garde le reste.
+//
+// Elle n'entre pas dans le NOMBRE annoncé en première ligne : ce nombre compte
+// des nœuds, et l'agent le vérifie contre ce qu'il a lu. L'y ajouter ferait
+// croire à une trame tronquée à chaque envoi.
+//
+// # Pourquoi la cadence vient du core
+//
+// La boucle tourne sur l'agent, mais c'est ici qu'on sait si le cluster bouge.
+// Une constante côté agent aurait obligé à redéployer le parc pour changer un
+// nombre — même raisonnement que `group_sync_minutes` (03_09) et
+// `gpo_refresh_minutes` (05_02).
+const PrefixeCadenceDecouverte = "disco:"
+
+// ligneCadenceDecouverte rend « disco:<minutes> », ou une chaîne vide si la
+// valeur est aberrante — auquel cas l'agent garde la sienne, ce qui vaut mieux
+// que de lui faire appliquer un zéro.
+func ligneCadenceDecouverte() string {
+	minutes := reglages.Valeur(reglages.CleListeDesNoeuds)
+	if minutes <= 0 {
+		return ""
+	}
+	return PrefixeCadenceDecouverte + strconv.Itoa(minutes)
 }
 
 // semerAffiniteDuNoeud reporte les groupes du client sur sa ligne de nœud.

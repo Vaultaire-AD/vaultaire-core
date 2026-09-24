@@ -141,7 +141,8 @@ La recette, éprouvée d'abord par `group_sync_minutes` :
 
 1. le réglage est déclaré ici, dans `catalogue`, comme n'importe quelle durée ;
 2. sa valeur est **ajoutée en queue** d'une trame que l'agent reçoit déjà, sur
-   une ligne **préfixée** — `sync:` en `03_09`, `refresh:` en `05_02`/`05_03` ;
+   une ligne **préfixée** — `sync:` en `03_09`, `refresh:` en `05_02`/`05_03`,
+   `disco:` en `04_04` ;
 3. l'agent la lit **par son préfixe, jamais par son rang**, la **borne**, et
    réarme sa boucle.
 
@@ -167,6 +168,23 @@ calculée depuis le réglage (`dbgpo.CadenceAgent`, posée au démarrage du core
 pas depuis une constante. Une constante de plus aurait fait mentir la colonne
 SUIVI dès le premier changement de cadence — le défaut exact que ce dispositif
 existe pour éviter.
+
+**Une trame lue par POSITION se traite autrement.** `node_list_refresh_minutes`
+(TO-DO 90) suit la même recette, mais les lignes de nœud de la `04_04` se lisent
+par rang — six champs séparés par `|` — et non par préfixe. La ligne `disco:`
+est donc mise en **queue de la trame entière**, après les lignes de nœud, et
+n'entre **pas** dans le nombre annoncé en première ligne : ce nombre compte des
+nœuds et l'agent le vérifie contre ce qu'il a lu, si bien que l'y ajouter ferait
+croire à une trame tronquée à chaque envoi. Un agent d'une version antérieure la
+rejette comme une ligne fautive et garde le reste.
+
+**Ce réglage a changé de nature une fois entré au catalogue.** La cadence de la
+liste des nœuds était une constante, avec cet argument : elle ne pilote qu'une
+lecture, dont le seul effet est de rafraîchir des adresses en mémoire.
+L'argument est tombé quand la liste a servi à **basculer** de nœud : une lecture
+peut désormais couper un tunnel. C'est ce qui l'a fait passer du code au
+catalogue — la question à se poser pour une durée d'agent n'est pas « à quelle
+fréquence », mais « qu'est-ce que cela déclenche sur le parc ».
 
 Restent hors de portée les durées que l'agent est **seul** à connaître : délais
 d'attente d'une réponse, budget d'un cycle utilisateur sur le chemin de

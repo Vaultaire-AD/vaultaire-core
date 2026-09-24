@@ -159,9 +159,10 @@ var porteesAttendues = map[string]string{
 	"certificate.regenerate":        "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
-	"gpo.list_compliance": "PorteeGlobale",
-	"gpo.get_compliance":  "PorteeClient",
-	"gpo.refresh":         "PorteeClient",
+	"gpo.list_compliance":   "PorteeGlobale",
+	"gpo.get_compliance":    "PorteeClient",
+	"gpo.refresh":           "PorteeClient",
+	"cluster.refresh_nodes": "PorteeClient",
 
 	// Arborescence : même droit que get -g.
 	"domain.list_tree":   "PorteeGlobale",
@@ -261,18 +262,19 @@ var clesAttendues = map[string]string{
 	"client_permission.delete": "write:delete:permission",
 
 	// GPO. Toutes en *:gpo — voir GPO.CleSpecifiqueAuxGPO dans le testrunner.
-	"gpo.create":          "write:create:gpo",
-	"gpo.get":             "read:get:gpo",
-	"gpo.list":            "read:get:gpo",
-	"gpo.update":          "write:update:gpo",
-	"gpo.set_drift_mode":  "write:update:gpo",
-	"gpo.delete":          "write:delete:gpo",
-	"gpo.add_module":      "write:update:gpo",
-	"gpo.update_module":   "write:update:gpo",
-	"gpo.delete_module":   "write:update:gpo",
-	"gpo.list_compliance": "read:get:gpo",
-	"gpo.get_compliance":  "read:get:gpo",
-	"gpo.refresh":         "write:update:client",
+	"gpo.create":            "write:create:gpo",
+	"gpo.get":               "read:get:gpo",
+	"gpo.list":              "read:get:gpo",
+	"gpo.update":            "write:update:gpo",
+	"gpo.set_drift_mode":    "write:update:gpo",
+	"gpo.delete":            "write:delete:gpo",
+	"gpo.add_module":        "write:update:gpo",
+	"gpo.update_module":     "write:update:gpo",
+	"gpo.delete_module":     "write:update:gpo",
+	"gpo.list_compliance":   "read:get:gpo",
+	"gpo.get_compliance":    "read:get:gpo",
+	"gpo.refresh":           "write:update:client",
+	"cluster.refresh_nodes": "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et
 	// savoir qu'il est ouvert sur une machine ne se délèguent pas pareil.
@@ -462,6 +464,7 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsServeur(r)
 	EnregistrerActionsConformiteGPO(r)
 	EnregistrerActionsRafraichissementGPO(r)
+	EnregistrerActionsRafraichissementCluster(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
 	EnregistrerActionsDuree(r)

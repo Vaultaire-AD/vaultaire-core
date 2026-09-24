@@ -214,7 +214,14 @@ défaut de configuration.
 <identité_module>|<type_écart>|<chemin>|<détail>     une ligne par écart
 ```
 
-`<type_écart>` : `modified`, `missing`, `unreadable` ou `permissions`.
+`<type_écart>` : `modified`, `missing`, `unreadable`, `permissions`,
+`reappeared`, `system_state` ou `unverifiable`.
+
+**Les deux scopes l'émettent.** Elle ne partait que du scope machine jusqu'à la
+2.2 (TO-DO 33) ; l'agent l'émet désormais aussi pour un compte, à l'ouverture de
+session et au plus une fois par cadence GPO. Rien n'a changé dans la trame : le
+`<username_cible>` était déjà prévu, et le serveur rangeait déjà par
+`(machine, scope, utilisateur)`.
 
 **Pourquoi une trame distincte de 05_12.** 05_12 rapporte une *application* : ce
 que l'agent vient de faire. 05_15 rapporte une *vérification* : ce qu'il

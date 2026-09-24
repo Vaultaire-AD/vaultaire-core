@@ -252,8 +252,9 @@ magasin de confiance, DNS…). Un effet que l'agent ne sait pas relire est signa
 Selon le **mode** de la GPO, un écart est corrigé au cycle suivant (`enforce`)
 ou seulement signalé (`audit`).
 
-Limite actuelle : seul le scope **machine** est scanné ; le scope utilisateur ne
-l'est pas encore (TO-DO 33).
+Les deux scopes sont scannés : la **machine** avant chaque cycle machine,
+l'**utilisateur** à l'ouverture de session — au plus une fois par cadence GPO et
+par compte.
 
 > « Non vérifié » ne veut pas dire conforme : cela veut dire que l'agent n'a pas
 > encore rapporté de scan.

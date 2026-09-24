@@ -128,6 +128,11 @@ func bootstrapDecouverte() {
 		}
 	})
 
+	// La bascule vers le nœud prioritaire, second abonné à la même liste
+	// (TO-DO 90). Les abonnés s'ajoutent : celui-ci ne désarme pas la
+	// persistance ci-dessus.
+	serveurcommunication.ArmerBascule()
+
 	decouverte.Demarrer(func() string {
 		session, err := stosession.SessionsUser.WaitForVaultaireSession()
 		if err != nil || session == nil || session.DuckySession == nil {

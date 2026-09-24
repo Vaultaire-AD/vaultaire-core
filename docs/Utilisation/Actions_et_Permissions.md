@@ -218,6 +218,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `cluster.set_node_exposure` | `write:cluster` | Globale | — | **Registre** — `cluster expose`, `priority`, `rotation` | **Registre** (page Cluster) |
 | `cluster.set_node_groups` | `write:cluster` | Globale | — | **Registre** — `cluster affinity` | **Registre** (page Cluster) |
 | `cluster.client_targets` | `read:cluster` | Globale | — | **Registre** — `get -c <id> --targets` | fiche machine |
+| `cluster.refresh_nodes` | `write:update:client` | Machine | — | **Registre** — `cluster refresh <machine>`, `-g`, `--all` | — |
 | `certificate.list` | `read:certificate` | Globale | — | **Registre** — `certificate list` | — |
 | `certificate.get` | `read:certificate` | Globale | — | **Registre** — `certificate show` | — |
 | `certificate.regenerate` | `write:certificate` | Globale | — | **Registre** — `certificate regenerate` | — |
@@ -241,7 +242,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**90 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+**92 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
 ligne de commande.**
 
 ³ **Sept clés RBAC nouvelles** — voir ci-dessous.

@@ -287,6 +287,7 @@ func EnregistrerTout() {
 	EnregistrerActionsServeur(Catalogue)
 	EnregistrerActionsConformiteGPO(Catalogue)
 	EnregistrerActionsRafraichissementGPO(Catalogue)
+	EnregistrerActionsRafraichissementCluster(Catalogue)
 	EnregistrerActionsArborescence(Catalogue)
 	EnregistrerActionsReglages(Catalogue)
 	EnregistrerActionsCertificat(Catalogue)

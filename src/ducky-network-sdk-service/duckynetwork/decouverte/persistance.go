@@ -26,15 +26,27 @@ import (
 
 var (
 	abonneMu      sync.Mutex
-	surNouvelle   func([]Noeud)
+	abonnes       []func([]Noeud)
 	derniereListe time.Time
 )
 
-// SurNouvelleListe enregistre la fonction appelée après chaque 04_04 retenue,
+// SurNouvelleListe enregistre une fonction appelée après chaque 04_04 retenue,
 // avec les seuls nœuds de confiance, dans l'ordre servi par le core.
+//
+// # Les abonnés s'AJOUTENT, ils ne se remplacent pas
+//
+// Il n'y en avait qu'un, et un second appel écrasait le premier — en silence.
+// Deux besoins indépendants consomment maintenant cet événement : la
+// persistance de la liste (TO-DO 61) et la bascule vers le nœud prioritaire
+// (TO-DO 90). Le second aurait désarmé le premier, et rien ne l'aurait dit :
+// la liste aurait cessé d'être persistée, ce qui ne se voit qu'au redémarrage
+// suivant.
 func SurNouvelleListe(f func([]Noeud)) {
+	if f == nil {
+		return
+	}
 	abonneMu.Lock()
-	surNouvelle = f
+	abonnes = append(abonnes, f)
 	abonneMu.Unlock()
 }
 
@@ -85,13 +97,13 @@ func NoeudsDeConfiance(noeuds []Noeud) []Noeud {
 	return out
 }
 
-// notifier transmet la liste à l'abonné, s'il y en a un.
+// notifier transmet la liste aux abonnés, s'il y en a.
 func notifier(noeuds []Noeud) {
 	abonneMu.Lock()
 	derniereListe = time.Now()
-	f := surNouvelle
+	destinataires := append([]func([]Noeud){}, abonnes...)
 	abonneMu.Unlock()
-	if f == nil || len(noeuds) == 0 {
+	if len(destinataires) == 0 || len(noeuds) == 0 {
 		return
 	}
 	fiables := NoeudsDeConfiance(noeuds)
@@ -105,5 +117,7 @@ func notifier(noeuds []Noeud) {
 			"découverte : %d nœud(s) sur %d persisté(s), les autres n'ont pas d'empreinte de confiance",
 			len(fiables), len(noeuds)))
 	}
-	f(fiables)
+	for _, f := range destinataires {
+		f(fiables)
+	}
 }

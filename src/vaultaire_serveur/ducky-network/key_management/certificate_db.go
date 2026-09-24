@@ -152,8 +152,34 @@ func SaveSSHKeyToDB(name, description, privContent, pubContent string) error {
 	return nil
 }
 
-// EnsureLoginClientKeyFiles écrit les clés SSH "login client" depuis la BDD vers les chemins fichiers
-// pour que ssh -i /path fonctionne. À appeler au démarrage si le certificat existe en BDD.
+// CheminsCleLoginClient rend les chemins où la clé SSH de déploiement est
+// écrite, DÉRIVÉS de `clientconfpath`.
+//
+// # Le défaut que cela corrige
+//
+// Le répertoire était créé sous `clientconfpath` et les fichiers écrits sous
+// `/opt/vaultaire/.ssh/`, codé en dur dans storage. Dans le conteneur de
+// référence les deux coïncident, et le défaut restait invisible ; ailleurs,
+// l'écriture échouait — et l'appelant prenait cet échec pour « clé absente »
+// (TO-DO 94).
+//
+// Les variables de storage restent pour ne pas casser ce qui les lit encore,
+// mais elles ne décident plus rien ici : un chemin d'installation a une seule
+// source, et c'est le fichier de configuration.
+func CheminsCleLoginClient() (repertoire, prive, public string) {
+	repertoire = filepath.Join(storage.Client_Conf_path, ".ssh")
+	prive = filepath.Join(repertoire, "private_key_for_login_client_rsa")
+	return repertoire, prive, prive + ".pub"
+}
+
+// EnsureLoginClientKeyFiles écrit les clés SSH « login client » depuis la BDD
+// vers les fichiers, pour que `ssh -i /chemin` fonctionne.
+//
+// Une erreur d'ÉCRITURE et une clé ABSENTE ne se ressemblent pas : la première
+// enveloppe ErrCertificatIntrouvable, la seconde non. L'appelant doit pouvoir
+// les distinguer — régénérer une clé que tout le parc a déjà acceptée parce
+// qu'un répertoire n'est pas accessible en écriture serait la pire des
+// réactions.
 func EnsureLoginClientKeyFiles() error {
 	cert, err := dbcertificates.GetCertificateByName(ServerLoginClientKeyName)
 	if err != nil {
@@ -162,18 +188,18 @@ func EnsureLoginClientKeyFiles() error {
 	if cert.PrivateKeyData == nil || cert.PublicKeyData == nil {
 		return fmt.Errorf("certificat %s incomplet (clé privée ou publique manquante)", ServerLoginClientKeyName)
 	}
-	dir := storage.Client_Conf_path + ".ssh"
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return fmt.Errorf("création répertoire .ssh: %v", err)
+
+	repertoire, prive, public := CheminsCleLoginClient()
+	if err := os.MkdirAll(repertoire, 0700); err != nil {
+		return fmt.Errorf("création du répertoire %s : %v", repertoire, err)
 	}
-	if err := os.WriteFile(storage.PrivateKeyforlogintoclient, []byte(*cert.PrivateKeyData), 0600); err != nil {
-		return fmt.Errorf("écriture clé privée login client: %v", err)
+	if err := os.WriteFile(prive, []byte(*cert.PrivateKeyData), 0600); err != nil {
+		return fmt.Errorf("écriture de la clé privée dans %s : %v", prive, err)
 	}
-	pubPath := storage.PublicKeyforlogintoclient
-	if err := os.WriteFile(pubPath, []byte(*cert.PublicKeyData), 0600); err != nil {
-		return fmt.Errorf("écriture clé publique login client: %v", err)
+	if err := os.WriteFile(public, []byte(*cert.PublicKeyData), 0600); err != nil {
+		return fmt.Errorf("écriture de la clé publique dans %s : %v", public, err)
 	}
-	logs.Write_Log("INFO", "keymanagement: login client SSH keys exported from database to files")
+	logs.Write_Log("INFO", "keymanagement: clés SSH de déploiement exportées de la base vers "+repertoire)
 	return nil
 }
 
@@ -185,7 +211,8 @@ func GetLoginClientPrivateKeyPath() (string, error) {
 	if err := EnsureLoginClientKeyFiles(); err != nil {
 		return "", fmt.Errorf("impossible de préparer la clé SSH login client: %v", err)
 	}
-	return storage.PrivateKeyforlogintoclient, nil
+	_, prive, _ := CheminsCleLoginClient()
+	return prive, nil
 }
 
 // EnsureClientSoftwareKeyFiles écrit les clés d'un client software depuis la BDD vers des fichiers temporaires
