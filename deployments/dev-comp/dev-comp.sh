@@ -160,7 +160,12 @@ A_REDEMARRER=(vaultaire-ad)
 docker compose "${PROFILS[@]}" restart "${A_REDEMARRER[@]}" >/dev/null
 
 info "pile démarrée :"
-info "  portail    https://localhost:${DEVCOMP_PORT_WEB:-4443}/login   (admin / admin123)"
+# Le mot de passe d'amorçage n'est plus « admin123 » : le core refuse de
+# démarrer sur les valeurs du dépôt (TO-DO 99). Il vient de l'environnement, et
+# il est PROVISOIRE — le portail demandera de le changer à la première
+# connexion, ce qui est le comportement à éprouver ici aussi.
+info "  portail    https://localhost:${DEVCOMP_PORT_WEB:-4443}/login   (admin / ${VAULTAIRE_ADMIN_PASSWORD:-correcte agrafe batterie})"
+info "             ce mot de passe est PROVISOIRE : le portail en demandera un autre."
 info "  CLI        docker exec -it vlt-dev-ad /opt/vaultaire/bin/vaultaire_cli"
 info "  agent      $BUILD/vaultaire_client/  (servi aux machines par « create -c … -join »)"
 [ "$NEXUS" = 1 ] && info "  nexus      https://localhost:${DEVCOMP_PORT_NEXUS:-8843}/   (admin ; mot de passe initial : docker exec vlt-dev-nexus cat /var/lib/vaultaire_nexus/admin.initial)"

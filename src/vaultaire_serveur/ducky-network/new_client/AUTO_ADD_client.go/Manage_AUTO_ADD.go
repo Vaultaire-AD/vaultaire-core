@@ -69,6 +69,22 @@ func Manage_Auto_ADD_client(hostuser, hostip, client_softwareID string) string {
 				" — l'agent acceptera la première clé reçue")
 	}
 
+	// La clé de signature des politiques (TO-DO 52), au même endroit et sur le
+	// même canal.
+	//
+	// C'est le SEUL moment où elle peut être posée : la faire demander par
+	// l'agent au core reviendrait à lui faire apprendre d'un core la clé qui
+	// sert à juger ce que ce core envoie.
+	//
+	// Même règle que l'empreinte pour l'échec : une machine sans cette clé ne
+	// vérifie pas les signatures et fonctionne comme avant. Refuser d'installer
+	// transformerait un durcissement en panne de déploiement.
+	if err := duckykey.EcrireClePolitiquePourClient(repertoireClient); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeCertLoad,
+			"autoadd: clé de signature des politiques non déposée pour "+client_softwareID+" : "+
+				err.Error()+" — l'agent ne vérifiera pas les signatures de politique")
+	}
+
 	// La liste des CORES à joindre (TO-DO 61), dans le même répertoire.
 	//
 	// Le script d'installation écrivait une adresse fixe, en dur. Elle vient

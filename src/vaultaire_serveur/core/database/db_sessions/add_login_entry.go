@@ -30,95 +30,63 @@ func AddLoginEntry(db *sql.DB, userID int, sessionPublicKey []byte, clientSoftwa
 		return
 	}
 
-	tx, err := db.Begin()
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la création de la transaction :"+err.Error())
+	// INSERT … ON DUPLICATE KEY UPDATE, et non SELECT EXISTS puis INSERT.
+	//
+	// La séquence d'origine lisait puis écrivait sans verrou : deux
+	// authentifications simultanées de la même paire (compte, machine) y
+	// trouvaient toutes les deux « la ligne n'existe pas » et inséraient chacune
+	// la leur. La machine apparaissait alors DEUX FOIS dans « status -c » — le
+	// doublon que le point 92 a fermé pour les sessions PAM, par une autre porte.
+	//
+	// La fenêtre s'ouvre en fonctionnement normal : le « --fetch-key » de sshd
+	// ouvre une session à chaque connexion SSH, en parallèle du tunnel.
+	//
+	// Depuis le TO-DO 107, la base porte l'unicité (uq_did_login) : c'est elle
+	// qui tranche, et laisser MySQL le faire supprime la course au lieu de la
+	// rendre plus rare.
+	if _, err := db.Exec(`
+		INSERT INTO did_login (d_id_user, session_key, key_time_validity, d_id_logiciel)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			session_key       = VALUES(session_key),
+			key_time_validity = VALUES(key_time_validity)`,
+		userID, sessionPublicKey, formattedTime, logiciel_id); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: enregistrement de la session échoué : "+err.Error())
+		return
 	}
 
+	// users_logiciel : même remplacement, pour la même raison.
+	//
+	// Cette table porte la date de dernier usage d'un compte sur une machine.
+	// Son unicité n'est pas garantie par la base ; on n'en pose pas ici, parce
+	// qu'elle est lue ailleurs et qu'un doublon y est sans conséquence visible.
+	// Mais la séquence lecture-puis-écriture, elle, n'a aucune raison de rester.
 	var exists bool
-	err = tx.QueryRow("SELECT EXISTS(SELECT 1 FROM did_login WHERE d_id_user = ? AND d_id_logiciel = ?)", userID, logiciel_id).Scan(&exists)
-	if err != nil {
-		err = tx.Rollback()
-		if err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'annulation de la transaction : "+err.Error())
-		}
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la vérification de l'existence de l'entrée did_login : "+err.Error())
+	if err := db.QueryRow(`
+		SELECT EXISTS (SELECT 1 FROM users_logiciel WHERE d_id_user = ? AND d_id_logiciel = ?)`,
+		userID, logiciel_id).Scan(&exists); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: lecture de users_logiciel échouée : "+err.Error())
+		return
 	}
 
 	if exists {
-		_, err = tx.Exec(`
-        UPDATE did_login
-        SET session_key = ?, key_time_validity = ?
-        WHERE d_id_user = ? AND d_id_logiciel = ?
-    `, sessionPublicKey, formattedTime, userID, logiciel_id)
-		if err != nil {
-			err = tx.Rollback()
-			if err != nil {
-				logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'annulation de la transaction : "+err.Error())
-			}
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la mise à jour de l'entrée de connexion : "+err.Error())
+		if _, err := db.Exec(`
+			UPDATE users_logiciel SET recent_utilisation = ?
+			 WHERE d_id_user = ? AND d_id_logiciel = ?`,
+			formattedTime, userID, logiciel_id); err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+				"database: mise à jour de users_logiciel échouée : "+err.Error())
 		}
-	} else {
-		_, err = tx.Exec(`
-        INSERT INTO did_login (d_id_user, session_key, key_time_validity, d_id_logiciel)
-        VALUES (?, ?, ?, ?)
-    `, userID, sessionPublicKey, formattedTime, logiciel_id)
-		if err != nil {
-			err = tx.Rollback()
-			if err != nil {
-				logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'annulation de la transaction : "+err.Error())
-			}
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'insertion de l'entrée de connexion : "+err.Error())
-		}
-	}
-	err = tx.Commit()
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de la validation de la transaction : "+err.Error())
+		return
 	}
 
-	tx, err = db.Begin()
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to begin transaction:: "+err.Error())
-	}
-	// defer tx.Rollback()
-
-	checkQuery := `
-		SELECT EXISTS (
-			SELECT 1 FROM users_logiciel WHERE d_id_user = ? AND d_id_logiciel = ?
-		)
-	`
-
-	err = tx.QueryRow(checkQuery, userID, logiciel_id).Scan(&exists)
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to check existing entry: "+err.Error())
-	}
-
-	if exists {
-		// Mise à jour de recent_utilisation
-		updateQuery := `
-			UPDATE users_logiciel
-			SET recent_utilisation = ?
-			WHERE d_id_user = ? AND d_id_logiciel = ?
-		`
-		_, err = tx.Exec(updateQuery, formattedTime, userID, logiciel_id)
-		if err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to update entry:: "+err.Error())
-		}
-	} else {
-		// Insérer une nouvelle ligne
-		insertQuery := `
-			INSERT INTO users_logiciel (d_id_user, d_id_logiciel, recent_utilisation)
-			VALUES (?, ?, ?)
-		`
-		_, err = tx.Exec(insertQuery, userID, logiciel_id, formattedTime)
-		if err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to insert new user: "+err.Error())
-		}
-	}
-
-	// Valider la transaction
-	err = tx.Commit()
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"failed to commit transaction: "+err.Error())
+	if _, err := db.Exec(`
+		INSERT INTO users_logiciel (d_id_user, d_id_logiciel, recent_utilisation)
+		VALUES (?, ?, ?)`,
+		userID, logiciel_id, formattedTime); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: insertion dans users_logiciel échouée : "+err.Error())
 	}
 }

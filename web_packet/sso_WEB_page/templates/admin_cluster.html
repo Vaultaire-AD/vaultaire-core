@@ -45,6 +45,8 @@
                   <th>Accès des agents</th>
                   <th>Priorité</th>
                   <th>Sert en priorité</th>
+                  <th>Relais</th>
+                  <th>Trafic</th>
                   <th>Dernier battement</th>
                 </tr>
               </thead>
@@ -65,6 +67,20 @@
                     {{ if .GroupesAffins }}{{ range $i, $g := .GroupesAffins }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
                     {{ else }}<span class="muted small">tout le parc</span>{{ end }}
                   </td>
+                  {{/* Les compteurs remontés par le nœud lui-même (04_05).
+                       Vide sur un core — il ne relaie rien — et sur un proxy
+                       silencieux depuis plus de trois minutes : un compteur de
+                       connexions actives périmé ne décrit plus rien, et
+                       l'afficher se lirait comme l'état courant. */}}
+                  {{ with .Relais }}
+                  <td>{{ .Actives }} <span class="muted small">/ {{ .Total }}</span>
+                    {{ if .Ecartees }}<br><span class="muted small">{{ .Ecartees }} écartée(s)</span>{{ end }}
+                  </td>
+                  <td class="muted small">{{ .TraficLisible }}</td>
+                  {{ else }}
+                  <td><span class="muted small">—</span></td>
+                  <td><span class="muted small">—</span></td>
+                  {{ end }}
                   <td class="muted small">{{ .LastHeartbeat.Format "2006-01-02 15:04:05" }}</td>
                 </tr>
               {{ end }}
@@ -89,6 +105,54 @@
               l'emporte, et c'est elle que reçoivent les agents. Elle est conservée tant que le nœud
               n'est pas oublié (délai de purge du cluster, 24 h d'absence par défaut).
             </p>
+
+            {{/* Le détail par relais (TO-DO 108).
+                 L'agrégat de la liste dit qu'un proxy écarte des connexions ;
+                 seul ce tableau dit LEQUEL de ses relais les écarte, et un
+                 proxy en porte plusieurs — Ducky, HTTPS, LDAP. */}}
+            {{ with .Relais }}
+            <h3>Relais</h3>
+            <p class="muted small">
+              Compteurs remontés par le nœud, relevés à {{ .Mesure.Format "15:04:05" }}.
+              Les totaux sont cumulés depuis le démarrage du proxy. Ces mesures sont
+              <em>déclaratives</em> : elles sont affichées, elles n'ordonnent pas la liste
+              des nœuds servie aux agents.
+            </p>
+            <div class="table-wrap">
+              <table class="cluster-liste">
+                <thead>
+                  <tr>
+                    <th>Relais</th>
+                    <th>Type</th>
+                    <th>Écoute</th>
+                    <th>Actives</th>
+                    <th>Total</th>
+                    <th>Écartées</th>
+                    <th>Trafic</th>
+                  </tr>
+                </thead>
+                <tbody>
+                {{ range .Relais }}
+                  <tr>
+                    <td>{{ .Nom }}</td>
+                    <td>{{ .Type }}</td>
+                    <td class="muted small">{{ .Ecoute }}</td>
+                    <td>{{ .Actives }}</td>
+                    <td>{{ .Total }}</td>
+                    {{/* Le détail des deux causes : « refusée » = aucune cible
+                         joignable, « rejetée » = plafond atteint. Elles ne se
+                         règlent pas pareil, et les additionner ici ferait
+                         chercher au mauvais endroit. */}}
+                    <td>{{ if .Ecartees }}{{ .Ecartees }}
+                      <span class="muted small">({{ .Refusees }} sans cible, {{ .Rejetees }} au plafond)</span>
+                      {{ else }}<span class="muted small">0</span>{{ end }}</td>
+                    <td class="muted small">{{ .TraficLisible }}</td>
+                  </tr>
+                {{ end }}
+                </tbody>
+              </table>
+            </div>
+            {{ end }}
 
           <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" class="card" style="margin-bottom:0.8rem">
             <input type="hidden" name="action" value="set_node_exposure">

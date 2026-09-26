@@ -121,12 +121,15 @@ func ConstruireBattement(sessionKey, clientID, hostname string) string {
 // La valeur est formatée sans notation exponentielle : le core la lit avec
 // ParseFloat, qui l'accepterait, mais la table est aussi lue à l'œil et
 // « 1.5e+03 » y est illisible.
-func ConstruireMetrique(sessionKey, clientID string, n InfosNoeud, typeMetrique string, valeur float64) string {
+//
+// L'accompagnement est la DERNIÈRE ligne, et le core recolle tout ce qui suit la
+// valeur avant de l'analyser : un JSON multiligne ne décalerait donc aucun champ.
+func ConstruireMetrique(sessionKey, clientID string, n InfosNoeud, m Metrique) string {
 	return strings.Join([]string{
 		"04_05", "serveur_central", sessionKey, "vaultaire", clientID,
-		n.Hostname, n.IP, typeMetrique,
-		strconv.FormatFloat(valeur, 'f', -1, 64),
-		"{}",
+		n.Hostname, n.IP, m.Type,
+		strconv.FormatFloat(m.Valeur, 'f', -1, 64),
+		extraJSON(m.Extra),
 	}, "\n")
 }
 
@@ -170,6 +173,15 @@ func DemarrerNoeud(sessionKey func() string, n InfosNoeud, cadence time.Duration
 				continue
 			}
 			envoyer(ConstruireBattement(cle, clientID, n.Hostname))
+
+			// Les mesures suivent le battement, sur la même horloge et dans le
+			// même tour de boucle.
+			//
+			// Après et non avant : le battement est ce qui maintient le nœud
+			// dans la liste servie aux agents, les mesures ne servent qu'à le
+			// regarder. Si l'émission devait un jour coûter cher, c'est la
+			// seconde qui doit en pâtir.
+			emettreMetriques(cle, n)
 		}
 	}()
 }

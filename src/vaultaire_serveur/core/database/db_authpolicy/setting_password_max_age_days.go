@@ -8,4 +8,8 @@ const (
 
 	// SettingPasswordWarnDays est la durée du préavis affiché avant expiration.
 	SettingPasswordWarnDays = "password_warn_days"
+
+	// SettingPasswordMinLength est la longueur minimale exigée d'un mot de
+	// passe neuf (TO-DO 100).
+	SettingPasswordMinLength = "password_min_length"
 )

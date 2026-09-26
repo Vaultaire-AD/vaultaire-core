@@ -6,6 +6,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"strconv"
 	"strings"
 
 	dbschema "vaultaire/core/database/db_schema"
@@ -90,6 +91,21 @@ func main() {
 	}
 	logs.Write_Log("INFO", "config: chargée depuis "+cheminConfig)
 
+	// LES VALEURS DE DÉMONSTRATION ARRÊTENT LE DÉMARRAGE — TO-DO 99.
+	//
+	// ICI, et pas plus loin : avant l'ouverture de la base, avant la création du
+	// schéma, avant qu'aucun service n'écoute. Un serveur qui refuse de démarrer
+	// sur sa configuration ne doit pas avoir eu le temps de créer quoi que ce
+	// soit — sans quoi la correction se ferait sur une base déjà peuplée d'un
+	// compte qu'on voulait justement empêcher de naître.
+	//
+	// Un AVERTISSEMENT n'aurait servi à rien : il est lu une fois, le jour de
+	// l'installation, par quelqu'un qui regarde si le service monte. Le refus
+	// arrive au seul moment où quelqu'un est devant l'écran et peut corriger.
+	if err := configurationfile.VerifierValeursLivrees(); err != nil {
+		log.Fatalf("configuration refusée : %v", err)
+	}
+
 	db.InitDatabase()
 	dbschema.Create_DataBase(db.GetDatabase())
 
@@ -161,6 +177,29 @@ func main() {
 		go purgerJournaux()
 		go reglages.Boucle(reglages.ClePurgeJournaux, purgerJournaux)
 	}
+
+	// L'historique des applications GPO suit la MÊME cadence de purge que les
+	// journaux, et non la sienne.
+	//
+	// Une troisième boucle pour une table qui ne reçoit une ligne qu'aux
+	// changements aurait fait un réglage de plus à comprendre, pour un travail
+	// qui tient en une requête. Les deux rétentions restent distinctes — c'est
+	// la question à laquelle chacune répond qui diffère, pas le rythme du
+	// ménage.
+	purgerHistoriqueGPO := func() {
+		n, err := dbgpo.PurgerHistoriqueApplication(db.GetDatabase(),
+			reglages.Duree(reglages.CleRetentionHistoGPO))
+		if err != nil {
+			logs.Write_Log("ERROR", "gpo: purge de l'historique : "+err.Error())
+			return
+		}
+		if n > 0 {
+			logs.Write_Log("INFO",
+				"gpo: "+strconv.FormatInt(n, 10)+" transition(s) d'application purgée(s)")
+		}
+	}
+	go purgerHistoriqueGPO()
+	go reglages.Boucle(reglages.ClePurgeJournaux, purgerHistoriqueGPO)
 
 	// Clés d'enrôlement des clients service.
 	//

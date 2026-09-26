@@ -1140,6 +1140,10 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		nodes[i].GroupesAffins = groupes
 	}
 
+	// Les compteurs de relais remontés par les nœuds (04_05, TO-DO 108). Même
+	// tolérance : une colonne vide plutôt qu'une page d'état indisponible.
+	clusterdatabase.GarnirMetriquesRelais(db, nodes)
+
 	// La liste complète des groupes garnit le sélecteur du formulaire. Sans
 	// elle, l'administrateur devrait taper les noms de mémoire — et une faute de
 	// frappe est refusée par l'action, ce qui est juste mais pénible.

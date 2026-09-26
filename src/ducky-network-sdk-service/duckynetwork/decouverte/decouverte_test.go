@@ -267,7 +267,7 @@ func TestConstruireBattement(t *testing.T) {
 func TestUneMetriqueNEstJamaisEnNotationExponentielle(t *testing.T) {
 	n := InfosNoeud{Hostname: "proxy1", IP: "10.0.0.2"}
 	for _, v := range []float64{1500, 0.000015, 1e21} {
-		trame := ConstruireMetrique("cle", "id", n, "connections_total", v)
+		trame := ConstruireMetrique("cle", "id", n, Metrique{Type: "connections_total", Valeur: v})
 		if strings.ContainsAny(trame, "eE") &&
 			strings.Contains(strings.Split(trame, "\n")[8], "e") {
 			t.Errorf("valeur %v rendue en notation exponentielle : %q",

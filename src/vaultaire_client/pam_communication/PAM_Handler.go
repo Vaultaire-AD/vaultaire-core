@@ -6,6 +6,7 @@ import (
 	"net"
 	"time"
 	"vaultaire_client/pamstate"
+	"vaultaire_client/sshauth"
 
 	duckytool "duckynetworkclient/V1/duckynetwork/ducky_tool"
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -44,6 +45,11 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 
 	statusRep := "failed"
 	isAdminResult := false
+	// notice ne vaut quelque chose que sur un succès : un refus n'a rien à dire
+	// à l'utilisateur au-delà de son refus, et lui présenter « votre mot de
+	// passe est provisoire » après un mot de passe faux lui apprendrait que le
+	// compte existe.
+	notice := ""
 	// Non nil dès le départ : voir parseSSHKeys, une tranche nil se sérialise en
 	// `null` et le module PAM y lit « réponse illisible », donc « ne touche pas
 	// à authorized_keys ».
@@ -81,9 +87,23 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	// Effet de bord : plus de premier aller-retour, donc une ouverture de session
 	// plus courte et une fenêtre de moins où l'échange pouvait rester en plan.
 	logs.Write_log("DEBUG", fmt.Sprintf("CLIENT SOFTWARE ID: %s", storage.Computeur_ID))
+	// Le code de second facteur voyage EN QUEUE, sur une ligne préfixée
+	// (TO-DO 95). Les deux premières lignes de contenu gardent leur rang : un
+	// core resté à l'ancienne version les lit à l'identique et ignore le reste,
+	// au lieu de prendre le code pour un mot de passe.
+	//
+	// La ligne n'est ajoutée que si le module PAM a envoyé le champ : son
+	// ABSENCE est ce qui dit au core « agent ancien », et en fabriquer une
+	// vide ferait passer cet agent pour à jour alors qu'il ne demande rien à
+	// l'utilisateur.
+	contenu := []string{req.User, req.Password}
+	if req.Otp != "" {
+		contenu = append(contenu, sshauth.PrefixeOTP+req.Otp)
+	}
+
 	authMsg := sendmessage.BuildClientTrame("03_01", "serveur_central",
 		string(sess.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID,
-		req.User, req.Password)
+		contenu...)
 	sendmessage.SendMessage(authMsg, sess.DuckySession)
 
 	//----------------------------------------------------------------
@@ -102,6 +122,10 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		statusRep = "success"
 		isAdminResult = result.IsAdmin
 		sshKeys = parseSSHKeys(result.SSHKeys)
+		// L'avertissement du serveur traverse SANS ÊTRE INTERPRÉTÉ (TO-DO 99).
+		// Il n'est pas journalisé : ce n'est pas un événement, c'est un texte
+		// destiné à un écran, et il serait répété à chaque ouverture de session.
+		notice = result.Avertissement
 		logs.Write_log("INFO", fmt.Sprintf("[%s] Reponse du serveur central recue %s (Admin: %t, Cles: %d)",
 			reqType, req.User, isAdminResult, len(sshKeys)))
 
@@ -127,6 +151,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		Status:  statusRep,
 		IsAdmin: isAdminResult,
 		SSHKeys: sshKeys,
+		Notice:  notice,
 	})
 }
 

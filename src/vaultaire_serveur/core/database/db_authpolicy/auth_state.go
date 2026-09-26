@@ -19,4 +19,14 @@ type AuthState struct {
 	HasMFALastCounter bool
 	PasswordChangedAt time.Time
 	HasPasswordDate   bool
+
+	// MustChangePassword : le mot de passe en place est provisoire et doit être
+	// remplacé par son titulaire (TO-DO 99).
+	MustChangePassword bool
+
+	// ProvisionalUntil borne la validité de ce mot de passe provisoire.
+	// HasProvisionalUntil faux = aucune limite de temps, le changement reste
+	// obligatoire.
+	ProvisionalUntil    time.Time
+	HasProvisionalUntil bool
 }

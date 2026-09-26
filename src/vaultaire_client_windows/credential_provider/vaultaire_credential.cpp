@@ -17,6 +17,10 @@ const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR kChamps[kNombreDeChamps] = {
     {kChampTitre,       CPFT_LARGE_TEXT,    const_cast<wchar_t*>(L"Vaultaire"),           GUID_NULL},
     {kChampUtilisateur, CPFT_EDIT_TEXT,     const_cast<wchar_t*>(L"Utilisateur@domaine"), GUID_NULL},
     {kChampMotDePasse,  CPFT_PASSWORD_TEXT, const_cast<wchar_t*>(L"Mot de passe"),        GUID_NULL},
+    // Le libellé dit QUOI TAPER quand on n'a pas de second facteur. Sans cette
+    // précision, la majorité des utilisateurs — qui n'en ont pas — voit un
+    // champ qu'elle ne comprend pas, à chaque connexion.
+    {kChampCode,        CPFT_PASSWORD_TEXT, const_cast<wchar_t*>(L"Code a 6 chiffres (0000 si vous n'en avez pas)"), GUID_NULL},
     {kChampValider,     CPFT_SUBMIT_BUTTON, const_cast<wchar_t*>(L"Se connecter"),        GUID_NULL},
     {kChampMessage,     CPFT_SMALL_TEXT,    const_cast<wchar_t*>(L""),                    GUID_NULL},
 };
@@ -37,7 +41,10 @@ const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps() { return kCha
 CVaultaireCredential::CVaultaireCredential()
     : references_(1), scenario_(CPUS_LOGON), evenements_(nullptr) {}
 
-CVaultaireCredential::~CVaultaireCredential() { EffacerMotDePasse(); }
+CVaultaireCredential::~CVaultaireCredential() {
+  EffacerMotDePasse();
+  EffacerCode();
+}
 
 // EffacerMotDePasse écrase la mémoire, et ne se contente pas de vider la chaîne.
 //
@@ -49,6 +56,18 @@ void CVaultaireCredential::EffacerMotDePasse() {
     SecureZeroMemory(&mot_de_passe_[0], mot_de_passe_.size() * sizeof(wchar_t));
   }
   mot_de_passe_.clear();
+}
+
+// EffacerCode : même raisonnement que pour le mot de passe.
+//
+// Un code TOTP n'est pas un secret durable — il vaut 90 secondes au plus — mais
+// 90 secondes suffisent largement à qui lit la mémoire d'un processus, et
+// l'anti-rejeu ne protège que d'un SECOND usage : le premier reste possible.
+void CVaultaireCredential::EffacerCode() {
+  if (!code_.empty()) {
+    SecureZeroMemory(&code_[0], code_.size() * sizeof(wchar_t));
+  }
+  code_.clear();
 }
 
 HRESULT CVaultaireCredential::Initialiser(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario) {
@@ -120,8 +139,10 @@ IFACEMETHODIMP CVaultaireCredential::SetSelected(BOOL* auto_ouvrir) {
 // SetDeselected : la tuile perd le focus. Le mot de passe part avec.
 IFACEMETHODIMP CVaultaireCredential::SetDeselected() {
   EffacerMotDePasse();
+  EffacerCode();
   if (evenements_ != nullptr) {
     evenements_->SetFieldString(this, kChampMotDePasse, L"");
+    evenements_->SetFieldString(this, kChampCode, L"");
   }
   return S_OK;
 }
@@ -141,6 +162,7 @@ IFACEMETHODIMP CVaultaireCredential::GetFieldState(
       *interaction = CPFIS_FOCUSED;
       break;
     case kChampMotDePasse:
+    case kChampCode:
       *interaction = CPFIS_NONE;
       break;
     default:
@@ -154,7 +176,10 @@ IFACEMETHODIMP CVaultaireCredential::GetStringValue(DWORD champ, wchar_t** valeu
   switch (champ) {
     case kChampTitre:       return Copier(L"Vaultaire", valeur);
     case kChampUtilisateur: return Copier(utilisateur_, valeur);
+    // Rendus VIDES, comme le mot de passe : Windows redemande la valeur à
+    // chaque affichage, et la lui rendre reviendrait à la réafficher.
     case kChampMotDePasse:  return Copier(L"", valeur);
+    case kChampCode:        return Copier(L"", valeur);
     case kChampValider:     return Copier(L"Se connecter", valeur);
     case kChampMessage:     return Copier(message_, valeur);
     default:                return E_INVALIDARG;
@@ -171,9 +196,11 @@ IFACEMETHODIMP CVaultaireCredential::CommandLinkClicked(DWORD) { return E_NOTIMP
 
 IFACEMETHODIMP CVaultaireCredential::GetSubmitButtonValue(DWORD champ, DWORD* champ_adjacent) {
   if (champ != kChampValider || champ_adjacent == nullptr) return E_INVALIDARG;
-  // Le bouton se place sous le champ du mot de passe : c'est ce qui fait
-  // valider la saisie avec la touche Entrée.
-  *champ_adjacent = kChampMotDePasse;
+  // Le bouton se place sous le DERNIER champ de saisie : c'est ce qui fait
+  // valider avec la touche Entrée. Depuis le second facteur (TO-DO 95), ce
+  // dernier champ est le code et non le mot de passe — le laisser sur le mot de
+  // passe ferait valider une saisie incomplète.
+  *champ_adjacent = kChampCode;
   return S_OK;
 }
 
@@ -185,6 +212,10 @@ IFACEMETHODIMP CVaultaireCredential::SetStringValue(DWORD champ, const wchar_t* 
     case kChampMotDePasse:
       EffacerMotDePasse();
       mot_de_passe_ = (valeur != nullptr) ? valeur : L"";
+      return S_OK;
+    case kChampCode:
+      EffacerCode();
+      code_ = (valeur != nullptr) ? valeur : L"";
       return S_OK;
     default:
       return E_INVALIDARG;
@@ -221,8 +252,18 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
     *icone = CPSI_WARNING;
     return Copier(L"Renseignez l'identifiant et le mot de passe.", texte_erreur);
   }
+  // Le code est EXIGÉ ici, et le message dit quoi taper quand on n'en a pas.
+  //
+  // Envoyer un champ vide serait pire que de refuser : le core n'aurait aucun
+  // moyen de distinguer « agent ancien » de « l'utilisateur n'a rien tapé », et
+  // c'est précisément cette distinction qui porte la migration (TO-DO 95).
+  if (code_.empty()) {
+    *icone = CPSI_WARNING;
+    return Copier(L"Renseignez le code. Tapez 0000 si vous n'avez pas de second facteur.",
+                  texte_erreur);
+  }
 
-  Reponse verdict = Authentifier(utilisateur_, mot_de_passe_);
+  Reponse verdict = Authentifier(utilisateur_, mot_de_passe_, code_);
 
   if (verdict.statut != Statut::kSucces) {
     const wchar_t* texte = L"Connexion refusée.";
@@ -244,6 +285,9 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
     }
     Journaliser(L"refus pour %s (statut %d)", utilisateur_.c_str(), (int)verdict.statut);
     EffacerMotDePasse();
+    // Le code aussi : un code refusé reste valide quelques dizaines de secondes,
+    // et l'anti-rejeu ne protège que d'un SECOND usage réussi.
+    EffacerCode();
     *icone = CPSI_ERROR;
     return Copier(texte, texte_erreur);
   }
@@ -254,6 +298,7 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
     // bloc que Windows refusera ensuite sans expliquer pourquoi.
     Journaliser(L"acceptation sans compte local pour %s", utilisateur_.c_str());
     EffacerMotDePasse();
+    EffacerCode();
     *icone = CPSI_ERROR;
     return Copier(L"Compte local indisponible sur ce poste.", texte_erreur);
   }

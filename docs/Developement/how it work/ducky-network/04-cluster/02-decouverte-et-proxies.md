@@ -18,7 +18,7 @@ rien.
   04_02  accusé
 04_03  demander les nœuds joignables   (client → core)   contenu vide
   04_04  la liste, ORDONNÉE            (core → client)
-04_05  remonter une métrique           (nœud → core)
+04_05  remonter ses mesures            (nœud → core)   à chaque battement
   04_06  accusé
 04_07  battre                          (nœud → core)
   04_08  accusé
@@ -248,14 +248,78 @@ lu que pour journaliser un écart.
 
 Un battement dit « **je** suis là », pas « celui-là est là ». Sans quoi n'importe
 quel nœud maintenait en ligne la ligne d'un core éteint, qui restait annoncé aux
-agents et absorbait leurs tentatives. Et les métriques alimentent le **tri** de
-la liste : les écrire au nom d'un pair revenait à décider vers qui le parc se
-dirige.
+agents et absorbait leurs tentatives. Et les métriques décrivent l'état d'un nœud
+dans les vues de supervision : les écrire au nom d'un pair revenait à décrire son
+état à sa place.
+
+> Une version antérieure de ce paragraphe affirmait que les métriques
+> « alimentent le tri de la liste ». **C'était faux** — rien dans le core n'a
+> jamais lu `proxy_metrics` pour ordonner quoi que ce soit — et la confusion
+> avait de la valeur pour un attaquant : elle laissait croire qu'un nœud qui ment
+> sur sa charge détourne le parc. Voir *Ce que les métriques décident* ci-dessous.
 
 `04_12` et `04_14` prenaient l'identifiant dans l'**en-tête** — que
 `Split_Action` vérifie déjà contre la session. Ce n'était donc pas exploitable,
 mais c'était juste *par dépendance* : le jour où ce contrôle bouge, ce code
 devient faux sans avoir été touché.
+
+### Ce que le proxy remonte, et sous quelle forme *(TO-DO 108)*
+
+Jusqu'à la 2.2, `04_05` n'était **émise par personne** : le core l'acceptait, la
+plafonnait, la purgeait, exposait un réglage de rétention et deux actions RBAC —
+et la table `proxy_metrics` n'avait jamais reçu une ligne. Une supervision qui
+affiche une table vide est pire qu'une supervision absente : elle se lit
+« aucune charge » quand elle dit « aucune mesure ».
+
+Le proxy émet désormais ses compteurs **à la cadence de son battement** (20 s),
+dans le même tour de boucle et **après** lui — le battement est ce qui maintient
+le nœud dans la liste servie aux agents, la mesure ne sert qu'à le regarder.
+
+**Une seule ligne par battement**, et c'est un choix :
+
+```
+metric_type   relais
+metric_value  connexions actives          ← le seul compteur qui ait un sens
+                                            en série temporelle ; les autres
+                                            sont cumulés depuis le démarrage
+extra         {"actives":3,"total":128,"refusees":7,"rejetees":2,
+               "octets_montants":…, "octets_descendants":…,
+               "relais":[{"nom":"ducky","type":"ducky","ecoute":"0.0.0.0:2222",
+                          "actives":3,"total":128,"refusees":7,"rejetees":2,
+                          "octets_ms":…,"octets_ds":…}]}
+```
+
+Une ligne par compteur aurait fait six lignes toutes les vingt secondes et par
+proxy — près d'un million sur la rétention de trente jours, pour une vue qui n'en
+lit jamais qu'une : la dernière. La colonne `extra` est du JSON exactement pour
+cela.
+
+Le **détail par relais** est dans l'accompagnement parce qu'un proxy en porte
+plusieurs (Ducky, HTTPS, LDAPS) : l'agrégat dit qu'il écarte des connexions, seul
+le détail dit lequel.
+
+> Les étiquettes JSON sont un **format de protocole**, au même titre qu'un numéro
+> de trame : le SDK les écrit, le core les relit, et les deux modules ne
+> partagent aucun code. Un champ inconnu du core est ignoré — c'est ce qui permet
+> un déploiement échelonné.
+
+**Côté core, la mesure est affichée, pas obéie.** `vlt cluster list` porte deux
+colonnes (RELAIS, TRAFIC) et **Admin → Cluster** montre le détail par relais dans
+la fiche d'un nœud. Une mesure de plus de **trois minutes** n'est pas affichée :
+un compteur de connexions actives périmé ne décrit plus rien, et l'afficher se
+lirait comme l'état courant.
+
+### Ce que les métriques décident : rien
+
+Le tri de la liste servie aux agents — `noeuds_pour_agents.go` — ordonne par
+**affinité de groupe, priorité et état**. Il n'a jamais lu `proxy_metrics` et ne
+le fait toujours pas.
+
+C'est volontaire. Une `04_05` est **déclarative** : chaque nœud choisit les
+chiffres qu'il envoie. Faire dépendre l'acheminement du parc de ces chiffres
+reviendrait à laisser un nœud s'attirer le trafic en se déclarant au repos — ou
+en écarter un pair en le déclarant saturé. Une répartition par charge est un
+autre lot, qui devra d'abord répondre à cette question-là.
 
 ### Ce qui borne les métriques
 

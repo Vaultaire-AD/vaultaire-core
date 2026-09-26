@@ -1012,8 +1012,6 @@ Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
 
 | Sujet | État | TO-DO |
 |-------|------|-------|
-| Signature des politiques par le serveur central | Champ prévu, non rempli ni vérifié | 52 |
-| Persistance des rapports d'application en base | Journalisés seulement | 53 |
 | `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent | — |
 
 
@@ -1338,6 +1336,139 @@ PAM.
 > correction en silence — un défaut permissif invisible, exactement ce que
 > `DefaultDriftMode` refuse par ailleurs. Un parc où ces interventions sont
 > légitimes met les GPO concernées en audit.
+
+---
+
+## La signature des politiques *(2.2, TO-DO 52)*
+
+Le champ `signature` du document existait depuis longtemps, vide. Il l'est
+resté : la signature voyage en **queue du manifeste**, sur la ligne `sig:`.
+
+### Pourquoi pas dans le document
+
+On signe un document, on y insère la signature, et le document n'est plus celui
+qui a été signé. Il aurait fallu une **forme canonique** — donc une seconde
+implémentation du hachage côté agent, exactement ce que ce paquet refuse par
+ailleurs pour l'empreinte de politique : *« deux implémentations du même hachage
+dans deux modules Go finiraient par diverger »*. La ligne de manifeste l'évite,
+et suit la recette déjà éprouvée par `refresh:` et `sync:`.
+
+### Ce qui est signé
+
+```
+vaultaire-gpo-v1
+<computeur_id>
+<scope>
+<username>
+<empreinte>
+<somme de contrôle>
+```
+
+Trois décisions tiennent dans ces six lignes :
+
+- **`vaultaire-gpo-v1`** est une séparation de domaine. La même clé ne pourra
+  jamais signer autre chose qui soit pris pour une politique, et la version
+  permet de changer la composition un jour sans qu'une signature ancienne reste
+  valable pour la nouvelle règle.
+- **`computeur_id`, `scope`, `username`** lient la politique à son
+  **destinataire**. Signer les seuls octets du document aurait laissé une
+  politique valide rejouable d'une machine à l'autre : une politique de scope
+  machine ne nomme pas la machine.
+- **la somme de contrôle** couvre le document. L'agent la vérifie contre les
+  octets qu'il a réassemblés *avant* de vérifier la signature : signer la somme
+  revient donc à signer le document, sans lui faire recalculer une empreinte
+  canonique.
+
+RSA-PSS SHA-256, bibliothèque standard des deux côtés. Pas de format SSH : le
+lire aurait coûté à l'agent une dépendance entière — `golang.org/x/crypto` — pour
+une seule fonction d'analyse, et l'agent n'a aujourd'hui que deux dépendances.
+
+### La clé : `gpo_signing`, et pourquoi pas `server_main`
+
+C'est la question qui décide de la valeur de la fonctionnalité.
+
+`server_main` est la clé de **transport**. L'agent l'obtient du core au moment de
+se connecter et la confronte à une **liste** d'empreintes de confiance — une
+liste qui peut s'allonger, puisqu'un core déjà de confiance peut en annoncer
+d'autres dans la `04_04` (*« tout core de confiance peut ajouter de la
+confiance »*). Signer avec elle n'aurait donc rien prouvé de plus que le
+tunnel : un nœud entré par transitivité aurait signé ses propres politiques.
+
+`gpo_signing` est **posée à l'installation** (`create -c … --join` dépose
+`gpo_signing_key.pem` à côté de `core_key_fingerprint`) et **ne s'apprend
+jamais** en route. La confiance de transport peut s'étendre ; celle des
+politiques, non.
+
+Elle vit dans la table `certificates`, dont le nom est unique : les cores d'un
+cluster partagent une base, donc la clé, sans aucun travail de réplication.
+
+> ⚠️ **Ce que la signature ne couvre pas.** Un core dont la base est compromise
+> détient cette clé comme toutes les autres. Seul un secret hors de la base
+> protégerait de cela, avec un autre coût d'exploitation. Ce qu'elle apporte :
+> la politique porte sa preuve **avec elle**, indépendamment du canal — un
+> document réassemblé, mis en cache, rejoué, ou servi par un nœud entré dans la
+> confiance de transport ne s'applique plus sans la clé du cluster.
+
+### La migration
+
+Quatre cas, et le premier décide de tout :
+
+| Machine | Signature | Exigence | Résultat |
+|---|---|---|---|
+| **sans clé** | — | quelconque | appliquée. Elle ne peut rien vérifier ; refuser couperait les GPO d'un parc installé avant cette version |
+| avec clé | présente | quelconque | **doit être valide**. Une signature fausse n'est pas une signature absente |
+| avec clé | absente | posée | **refus** (`signature_invalide`) |
+| avec clé | absente | non posée | appliquée, avec un WARNING — c'est l'état de migration, et il doit se voir |
+
+L'exigence est un réglage du **core**, poussé sur la ligne `sigreq:` de chaque
+manifeste : `vlt gpo signature on`. Décidée par l'agent (« qui a la clé exige »),
+elle aurait été **irréversible** — revenir en arrière aurait demandé de repasser
+sur chaque machine. Poussée, elle s'active et se retire en une commande.
+
+`vlt gpo signature` sans argument dit l'état et l'empreinte de la clé du
+cluster ; `on` est **refusé** si le core n'a pas de clé de signature, parce que
+le message d'erreur arriverait sinon sur les machines et non devant celui qui
+tape la commande.
+
+---
+
+## L'historique des applications *(2.2, TO-DO 53)*
+
+`gpo_compliance` et `gpo_module_report` sont **écrasées** à chaque rapport :
+elles répondent à « où en est-on maintenant ». Devant une machine en `partial`,
+la question suivante est pourtant toujours la même — **« depuis quand ? »** —, et
+la réponse était dans le journal, mêlée à tout le reste.
+
+`gpo_apply_history` y répond. Une ligne par **changement**, pas par cycle :
+
+- écrire une ligne par rapport aurait fait, sur mille machines qui rapportent
+  toutes les heures, vingt-quatre mille lignes par jour pour dire vingt-quatre
+  mille fois « toujours pareil » ;
+- la table aurait grossi au rythme du **parc**, pas à celui des **événements**,
+  et « depuis quand » aurait demandé de parcourir des milliers de lignes
+  identiques.
+
+Une ligne est donc écrite quand le **statut** ou l'**empreinte** diffère du
+dernier enregistrement. Une machine saine et stable en produit une, à son
+premier rapport, et plus rien. Une machine qui casse en produit une le jour où
+elle casse : c'est exactement celle qu'on cherche.
+
+L'écriture se fait dans la **même transaction** que l'état courant : à part, une
+panne entre les deux laisserait un historique qui affirme un changement que
+l'état courant ne montre pas.
+
+Le champ `modules_en_echec` retient les clés fautives, **bornées à 20** — une
+machine hors service fait échouer tous ses modules à la fois. Le détail complet
+du dernier rapport reste dans `gpo_module_report`.
+
+Rétention : `gpo_history_retention_days`, 90 jours par défaut, purgée à la
+cadence des journaux (`log_purge_hours`). Plus longue que celle des journaux, et
+c'est voulu : la table ne grossit qu'aux changements, et « depuis quand cette
+machine échoue » se demande souvent des mois après.
+
+Affichage : `vlt gpo status <machine>`, section « Changements d'état », et la
+fiche de conformité du portail. La fiche machine (**Admin → Machines**) y
+renvoie.
 
 ---
 

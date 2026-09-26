@@ -50,11 +50,16 @@ struct Reponse {
   std::wstring message;
 };
 
-// Authentifier soumet un identifiant et un mot de passe à l'agent.
+// Authentifier soumet un identifiant, un mot de passe et un code de second
+// facteur à l'agent (TO-DO 95).
 //
-// Le mot de passe est effacé du tampon d'envoi avant retour : il ne doit pas
-// traîner dans la mémoire de LogonUI plus longtemps que nécessaire.
-Reponse Authentifier(const std::wstring& utilisateur, const std::wstring& mot_de_passe);
+// Le code vaut « 0000 » pour un compte qui n'a pas de second facteur : c'est ce
+// que dit le libellé du champ, et le core ne l'accepte QUE pour un tel compte.
+//
+// Les deux secrets sont effacés du tampon d'envoi avant retour : ils ne doivent
+// pas traîner dans la mémoire de LogonUI plus longtemps que nécessaire.
+Reponse Authentifier(const std::wstring& utilisateur, const std::wstring& mot_de_passe,
+                     const std::wstring& code);
 
 // Etat demande si l'agent est raccordé à un core. Sert à prévenir AVANT la
 // saisie : « service indisponible » au premier écran vaut mieux qu'un refus

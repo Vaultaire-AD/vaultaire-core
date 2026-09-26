@@ -146,6 +146,15 @@
     {{ end }}
 
     <section class="section">
+      <h2>GPO</h2>
+      <p class="muted">
+        État d'application et de conformité de cette machine, modules en échec,
+        écarts constatés et changements d'état :
+        <a href="/admin/gpo/compliance?machine={{ .Client.ComputeurID }}">voir sa conformité</a>.
+      </p>
+    </section>
+
+    <section class="section">
       <form method="post" action="/admin/clients?client={{ .Client.ComputeurID }}" onsubmit="return confirm('Supprimer ce client ?');">
         <input type="hidden" name="action" value="delete_client">
         <input type="hidden" name="target_client" value="{{ .Client.ComputeurID }}">

@@ -159,5 +159,16 @@ var Debug bool = false
 
 var Administrateur_Enable bool = true
 var Administrateur_Username string = "admin"
-var Administrateur_Password string = "admin123"
+
+// VIDE, et non « admin123 » — TO-DO 99.
+//
+// Le défaut du code était identique à la valeur du fichier livré, et c'est ce
+// qui a rendu invisible pendant toute la vie du produit le fait que la section
+// « administreur: » n'était jamais lue : un exploitant qui changeait le mot de
+// passe dans le fichier démarrait quand même sur celui-ci, sans qu'aucun écart
+// ne se voie nulle part.
+//
+// Vide, l'amorçage s'arrête en le disant. C'est bruyant, et c'est exactement ce
+// qu'on veut : un mot de passe de superadmin ne doit jamais venir d'un défaut.
+var Administrateur_Password string = ""
 var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJnFvZ8sfvIGVc0gB5oQEv2Vh1A6lqGNK/CrcgZj5ybNoEwxdbkQyRYkJ6NmtxDs1zLyRUr5GCGtjX44JNNnTDdL+E00Aiw8nFBJRlHkV78ehG62p2DeeVLUydnlnT5ey3KJtmY+Tc0dq5AqWdnAsLbZ/JHw/EuZTeifYJ6wmpxp69oHnsvRxBomH2wSp7CjeYTaBpVFF4KChBSXm/gO4quWQT0JBsDyNmPhZ/QwRJKqujh1B5OX6bbKAl5MOC3OoPXfYkyhilaMku9lK5E6i3wLdP08FQ6Op/Psy7ukTTvMduhqsauxZMMx+x12RAT72LFySZ6RSkLKQXhwkO8pG4laNKFQbDoTULC973AKy0le2Jyb7SnNBL+I+KviMojItYCc6QmQ39TVowy6VQimHiPPs6UPTDt8KROm1SEtPSXj7QvtwJU5hbAG9uFVH/udX7y6BhNPkOgCmrH9s5fh0= root@NTFS"

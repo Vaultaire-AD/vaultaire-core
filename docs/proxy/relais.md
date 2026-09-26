@@ -118,10 +118,40 @@ qui se reconnecte comme il le ferait en direct.
 Le bilan périodique est là pour un cas : un relais qui refuse tout ne se verrait
 sinon qu'en lisant une ligne par connexion. Diagnostic : [`depannage.md`](./depannage.md).
 
+## Ce que le core en voit *(TO-DO 108)*
+
+Les mêmes compteurs partent au core à la cadence du **battement** du nœud
+(20 s), dans une trame `04_05`. Ils n'ont donc plus besoin d'être lus dans le
+journal de la machine.
+
+```
+vlt cluster list        RELAIS  3/128 ✗7        TRAFIC  1,4 Gio
+```
+
+`3/128` : trois connexions en cours, cent vingt-huit relayées depuis le démarrage
+du proxy. `✗7` : sept qui ne sont pas passées — le compteur n'apparaît que s'il
+est non nul. **Admin → Cluster**, fiche du nœud, sépare les deux causes (aucune
+cible joignable / plafond atteint) et donne le détail **par relais**.
+
+Une seule ligne part par battement : `metric_value` porte les connexions actives
+— le seul compteur qui ait un sens dans le temps, les autres étant cumulés depuis
+le démarrage — et la colonne `extra` porte le reste. Six trames auraient rempli
+la table de près d'un million de lignes par proxy sur la rétention de trente
+jours, pour une vue qui n'en lit jamais qu'une.
+
+Passé **trois minutes** sans mesure, les colonnes redeviennent vides : un
+compteur de connexions actives périmé se lirait comme l'état courant.
+
+> Ces chiffres sont **montrés, pas obéis** : ils n'ordonnent pas la liste des
+> nœuds servie aux agents. Voir ci-dessous.
+
 ## Ce que le relais ne fait pas
 
 - **Répartir la charge.** L'ordre est fixe ; la répartition entre sites se fait
-  par l'affinité et la priorité, côté core (`vlt cluster`).
+  par l'affinité et la priorité, côté core (`vlt cluster`). Les compteurs
+  remontés en `04_05` n'y changent rien : une mesure est **déclarative**, et
+  faire dépendre l'acheminement du parc d'un chiffre que chaque nœud choisit
+  lui-même laisserait un proxy s'attirer le trafic en se déclarant au repos.
 - **Filtrer qui a le droit de passer.** Tout client qui joint le port est
   relayé ; c'est le core qui authentifie. Restreindre quels nœuds un client voit
   est le sujet du TO-DO 67.

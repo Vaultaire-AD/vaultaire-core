@@ -69,6 +69,20 @@ type AuthResult struct {
 	IsAdmin bool   `json:"is_admin"`
 	SSHKeys string `json:"ssh_keys"`
 
+	// Avertissement est le message que le SERVEUR demande de présenter à
+	// l'utilisateur au moment où il ouvre sa session (TO-DO 99) : mot de passe
+	// provisoire à changer, expiration prochaine.
+	//
+	// Le texte est composé par le core et traverse l'agent SANS ÊTRE INTERPRÉTÉ.
+	// C'est le core qui connaît l'état du compte ; le formuler ici demanderait
+	// de relire cet état, et trois clients — PAM, GDM, Windows — auraient trois
+	// formulations, dont deux finiraient périmées.
+	//
+	// Il ne porte JAMAIS de secret : c'est un texte destiné à un écran de
+	// connexion, dont le contenu est lisible par qui regarde par-dessus
+	// l'épaule.
+	Avertissement string `json:"avertissement,omitempty"`
+
 	// Accepte porte le VERDICT du serveur, explicitement.
 	//
 	// # Le défaut que ce champ ferme

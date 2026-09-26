@@ -141,7 +141,14 @@ func avecCadence(lignes []string) []string {
 // Le scope n'apparaît pas dans le contenu : il est porté par le numéro de trame.
 // L'utilisateur cible, en revanche, est repris en scope user, parce que plusieurs
 // connexions peuvent être en cours sur la même machine.
-func replyManifest(sessionKey string, m gpo.Manifest) string {
+//
+// # Les lignes de queue
+//
+// La cadence (`refresh:`) ne part qu'en scope machine — un cycle utilisateur
+// n'a pas de boucle à régler. La signature (`sig:`) et l'exigence (`sigreq:`),
+// elles, partent dans les DEUX scopes : une politique utilisateur se signe
+// comme une autre, et c'est même celle dont le contenu atterrit dans un `HOME`.
+func replyManifest(sessionKey, clientID string, m gpo.Manifest) string {
 	common := []string{
 		strconv.Itoa(m.Version),
 		m.Fingerprint,
@@ -151,9 +158,11 @@ func replyManifest(sessionKey string, m gpo.Manifest) string {
 		m.Checksum,
 	}
 	if m.Scope == gpo.ScopeUser {
-		return reply("05_06", sessionKey, append([]string{m.Username}, common...)...)
+		lignes := append([]string{m.Username}, common...)
+		return reply("05_06", sessionKey, append(lignes, lignesSignature(clientID, m)...)...)
 	}
-	return reply("05_02", sessionKey, avecCadence(common)...)
+	return reply("05_02", sessionKey,
+		append(avecCadence(common), lignesSignature(clientID, m)...)...)
 }
 
 // replyUnchanged construit 05_03 (machine) ou 05_07 (user).

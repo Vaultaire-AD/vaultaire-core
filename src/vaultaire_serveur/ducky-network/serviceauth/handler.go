@@ -40,6 +40,14 @@ type Deps struct {
 	Groups     func(user string) ([]string, error) // « groupe@domaine »
 	Name       func(user string) string
 
+	// EstCompteDAmorcage refuse le compte que les machines partagent avec le
+	// superadmin (TO-DO 106). Injectée comme le reste, pour que ce paquet ne
+	// dépende d'aucune base — c'est ce qui le rend éprouvable.
+	//
+	// Nil est toléré : les tests qui ne s'intéressent pas à ce point ne sont pas
+	// obligés de la fournir. Le handler le vérifie.
+	EstCompteDAmorcage func(user string) bool
+
 	Log func(niveau, message string)
 	Now func() time.Time
 }
@@ -111,6 +119,21 @@ func (m *Manager) authentifier(service, typ, contenu string) (string, []string) 
 	user, _, _ := strings.Cut(d.Identifiant, "@")
 	journal := func(niveau, quoi string) {
 		m.deps.Log(niveau, fmt.Sprintf("service auth: %s user=%s service=%s from=%s", quoi, user, service, orTiret(d.From)))
+	}
+
+	// 0. LE COMPTE D'AMORÇAGE EST REFUSÉ (TO-DO 106).
+	//
+	// `vaultaire` désigne à la fois le compte sous lequel chaque machine ouvre
+	// son tunnel et le compte d'annuaire du groupe superadmin — la même ligne de
+	// `users`. Un service qui fait vérifier ce nom demande donc à s'authentifier
+	// comme le compte le plus privilégié du produit, par une porte prévue pour
+	// des personnes.
+	//
+	// Avant le freinage : ce n'est pas une tentative à compter, c'est un nom qui
+	// n'a rien à faire ici.
+	if m.deps.EstCompteDAmorcage != nil && m.deps.EstCompteDAmorcage(user) {
+		journal("SECURITY", "refusé, compte d'amorçage — ce nom est celui du tunnel machine")
+		return refus(CodeBadCredentials, "identifiants invalides")
 	}
 
 	// 1. LIMITATION — avant tout, y compris avant de savoir si le compte existe.

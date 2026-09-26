@@ -84,9 +84,54 @@ func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 		return reglerMode(appelant, commandList[1:])
 	case "refresh":
 		return rafraichir(appelant, commandList[1:])
+	case "signature":
+		return reglerSignature(appelant, commandList[1:])
 	default:
 		return "Requête invalide. Essayez « gpo -h »."
 	}
+}
+
+// reglerSignature traite `vlt gpo signature [on|off]`.
+//
+// Sans argument, elle LIT — contrairement à `gpo mode`, et pour la raison
+// inverse : il n'existe aucune autre façon de savoir si l'exigence est posée,
+// alors que le mode de dérive s'affiche déjà dans `gpo status`. Une commande
+// dont l'état ne se lit nulle part est une commande qu'on active sans savoir
+// ce qu'elle remplaçait.
+func reglerSignature(appelant action.Appelant, args []string) string {
+	if len(args) == 0 {
+		res, err := action.Executer("gpo.get_signature_policy", appelant, nil)
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		etat, ok := res.Donnees.(action.EtatSignatureGPO)
+		if !ok {
+			return res.Message
+		}
+
+		var b strings.Builder
+		b.WriteString(res.Message + "\n")
+		if etat.Indisponible != "" {
+			// Dit FORT : sans clé, activer l'exigence couperait le parc, et
+			// c'est la seule chose qu'il faut savoir avant de taper la commande
+			// suivante.
+			b.WriteString("\n⚠ Ce core n'a PAS de clé de signature : " + etat.Indisponible + "\n" +
+				"  Les politiques partent non signées, et « gpo signature on » sera refusé.\n")
+		} else {
+			b.WriteString("\nClé de signature du cluster : " + etat.Empreinte + "\n" +
+				"  Une machine vérifie si elle porte cette clé, déposée par\n" +
+				"  « create -c … --join ». Les autres appliquent sans vérifier.\n")
+		}
+		b.WriteString("\nUsage : vlt gpo signature <on|off>\n")
+		return b.String()
+	}
+
+	res, err := action.Executer("gpo.set_signature_policy", appelant,
+		action.Params{"exigee": strings.TrimSpace(args[0])})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
 }
 
 // reglerMode traite `vlt gpo mode <nom> <enforce|audit>`.
@@ -352,6 +397,31 @@ func rendreConformiteMachineA(d action.ConformiteMachine, maintenant time.Time) 
 		b.WriteString(indenter(td.String(), "    "))
 	}
 
+	// L'historique vient EN DERNIER, après l'état et ses détails.
+	//
+	// La première question devant une fiche est « où en est cette machine » ;
+	// « depuis quand » ne se pose qu'après, et seulement si la réponse à la
+	// première ne plaît pas. Le mettre en tête repousserait l'état courant sous
+	// la ligne de flottaison sur une machine qui a beaucoup bougé.
+	if d.HistoriqueIllisible != "" {
+		b.WriteString("\n  Historique illisible : " + d.HistoriqueIllisible + "\n")
+	} else if len(d.Historique) > 0 {
+		b.WriteString("\n  Changements d'état (le plus récent en tête)\n")
+		th := display.NouvelleTable("QUAND", "SCOPE", "UTILISATEUR", "ÉTAT", "MODULES", "EN ÉCHEC OU IGNORÉS")
+		for _, h := range d.Historique {
+			th.Ajouter(
+				dbgpo.AgeRelatif(h.ReportedAt, maintenant),
+				h.Scope,
+				orDash(h.TargetUser),
+				orDash(h.Status),
+				fmt.Sprintf("%d/%d", h.ModulesTotal-h.ModulesFailed-h.ModulesSkipped, h.ModulesTotal),
+				orDash(unLigne(h.ModulesEnEchec)))
+		}
+		b.WriteString(indenter(th.String(), "    "))
+		b.WriteString("\n    Une ligne par CHANGEMENT d'état ou d'empreinte, pas par cycle :\n" +
+			"    une machine stable n'en produit qu'une, à son premier rapport.\n")
+	}
+
 	return b.String()
 }
 
@@ -413,6 +483,7 @@ func helpText() string {
   drift                  machines en écart, et machines muettes
   mode <gpo> <valeur>    enforce | audit — ce qui est fait d'un écart
   refresh <id> | --all   demande un cycle maintenant, sans attendre le tour
+  signature [on|off]     exige, ou non, que les politiques soient signées
 
 Le mode est porté par la GPO et hérité par ses modules : une machine qui reçoit
 une GPO en audit et une autre en enforce applique la règle de chacune. Un écart
@@ -425,6 +496,12 @@ Trois informations distinctes :
 
 « non vérifié » ne veut pas dire conforme : il veut dire que l'agent n'a pas
 encore rapporté de scan, ou qu'il n'a aucun fichier inventorié.
+
+Les politiques sont SIGNÉES par le cluster. Une machine qui porte la clé de
+signature — déposée par « create -c … --join » — vérifie chaque politique
+avant de l'appliquer ; les autres appliquent sans vérifier. « gpo signature on »
+fait refuser les politiques NON signées : à n'activer qu'une fois le parc
+réinstallé ou la clé déposée partout.
 
 La vue part de l'INVENTAIRE et non des rapports : une machine créée mais jamais
 installée, ou dont l'agent est tombé, apparaît en « jamais » ou « en retard ».

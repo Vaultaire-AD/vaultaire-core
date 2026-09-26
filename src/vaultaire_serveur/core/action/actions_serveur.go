@@ -287,6 +287,10 @@ func listerNoeuds(_ Appelant, p Params) (Resultat, error) {
 		noeuds[i].GroupesAffins = groupes
 	}
 
+	// Les compteurs de relais (TO-DO 108), pour la même raison et avec la même
+	// tolérance : une colonne vide vaut mieux qu'un refus d'afficher le cluster.
+	clusterdatabase.GarnirMetriquesRelais(db, noeuds)
+
 	message := fmt.Sprintf("%d nœud(s).", len(noeuds))
 	if role != "" {
 		message = fmt.Sprintf("%d nœud(s) actif(s) pour le rôle %s.", len(noeuds), role)

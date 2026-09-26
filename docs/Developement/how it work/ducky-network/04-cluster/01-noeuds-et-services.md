@@ -12,7 +12,7 @@
 | `04_02` | nœud | register_host_ack | accusé |
 | `04_03` | core | list_cores | demande des nœuds joignables — contenu vide |
 | `04_04` | client | list_cores_response | `<nombre>` puis `<host>\|<ip>\|<port>\|<rôle>\|<priorité>\|<empreinte>`, **ordonnée** par le core ; `<ip>` et `<port>` sont les valeurs EFFECTIVES |
-| `04_05` | core | proxy_metrics | métriques d'un proxy (table `proxy_metrics`) |
+| `04_05` | core | proxy_metrics | mesures d'un nœud : `hostname\|ip\|type\|valeur\|extra_json`, une ligne par battement (table `proxy_metrics`) |
 | `04_06` | nœud | proxy_metrics_ack | accusé |
 | `04_07` | core | host_heartbeat | battement d'un nœud |
 | `04_08` | nœud | host_heartbeat_ack | accusé |

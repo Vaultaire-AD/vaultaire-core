@@ -26,6 +26,18 @@ import (
 	yaml_vaultaire "vaultaire_client/yaml"
 )
 
+// StartDailyUserCleanup lance le ménage des comptes du domaine, chaque jour à 6 h.
+//
+// # Il tournait un jour sur deux
+//
+// La boucle attendait l'heure dite, faisait son travail, puis dormait vingt-
+// quatre heures de plus avant de recalculer la prochaine échéance. Elle se
+// réveillait donc à 6 h le lendemain, constatait que 6 h était passé « de
+// quelques microsecondes », et repartait pour un jour entier : le ménage
+// quotidien avait lieu tous les deux jours.
+//
+// Une seule attente, celle qui mène à la prochaine échéance, suffit et ne peut
+// pas dériver.
 func StartDailyUserCleanup() {
 	go func() {
 		defer logs.Recover("tache de fond")
@@ -33,18 +45,17 @@ func StartDailyUserCleanup() {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day(), 6, 0, 0, 0, now.Location())
 
-			if now.After(next) {
+			// !Before plutôt que After : à 6 h 00 min 00 s pile, l'échéance du
+			// jour vient d'être servie — c'est celle de demain qu'on vise.
+			if !now.Before(next) {
 				next = next.Add(24 * time.Hour)
 			}
 
-			duration := time.Until(next)
-			logs.Write_log("INFO", fmt.Sprintf("⏳ Prochaine exécution de la suppression à %s", next.Format(time.RFC1123)))
+			logs.Write_log("INFO", fmt.Sprintf("Prochain ménage des comptes à %s", next.Format(time.RFC1123)))
+			time.Sleep(time.Until(next))
 
-			time.Sleep(duration)
-			logs.Write_log("INFO", "🚀 Lancement de la suppression des utilisateurs Vaultaire inactifs")
+			logs.Write_log("INFO", "Ménage des comptes du domaine restés sans connexion")
 			localusermanagement.DeleteUser_Vaultaire_Past_4Days_withoutconnection()
-
-			time.Sleep(24 * time.Hour)
 		}
 	}()
 }

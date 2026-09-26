@@ -100,15 +100,32 @@ func startSecondFactor(w http.ResponseWriter, r *http.Request, username string) 
 // la priorité au mot de passe, parce qu'un mot de passe expiré bloque déjà LDAP
 // et Ducky, alors qu'un second facteur manquant ne bloque que l'interface.
 func finishLogin(w http.ResponseWriter, r *http.Request, username string, mustEnrollMFA bool) bool {
+	db := database.GetDatabase()
+
 	status := passwordpolicy.Status{State: passwordpolicy.StateValid}
-	if st, err := passwordpolicy.Check(database.GetDatabase(), username); err != nil {
+	if st, err := passwordpolicy.Check(db, username); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"login: état d'expiration illisible pour "+username+" ("+err.Error()+") — connexion autorisée")
 	} else {
 		status = st
 	}
 
-	token := session.CreateSessionWithConstraint(username, status.IsExpired())
+	// LE MOT DE PASSE PROVISOIRE ENFERME AUSSI LA SESSION — TO-DO 99.
+	//
+	// Sur le PORTAIL seulement, et c'est la différence avec Ducky/PAM : le
+	// portail est justement l'endroit où l'on change son mot de passe. Y
+	// enfermer la session ne coupe personne de rien, elle l'amène là où il doit
+	// aller. Sur un poste, la même règle enfermerait l'utilisateur dehors.
+	//
+	// Un provisoire PÉRIMÉ, lui, est déjà un StateExpired — passwordpolicy.Check
+	// s'en charge —, donc il est couvert par la ligne au-dessus.
+	obligation := passwordpolicy.Obligation{}
+	if st, err := dbauthpolicy.GetAuthState(db, username); err == nil {
+		obligation = passwordpolicy.ObligationDepuisEtat(st)
+	}
+
+	enferme := status.IsExpired() || obligation.ADemander
+	token := session.CreateSessionWithConstraint(username, enferme)
 	if token == "" {
 		logs.Write_LogCode("ERROR", logs.CodeWebSession, "Session non créée pour "+username)
 		http.Redirect(w, r, "/", http.StatusSeeOther)
@@ -119,6 +136,9 @@ func finishLogin(w http.ResponseWriter, r *http.Request, username string, mustEn
 	switch {
 	case status.IsExpired():
 		logs.Write_Log("SECURITY", "login: "+username+" connecté avec un mot de passe expiré, accès restreint au changement")
+		http.Redirect(w, r, "/profil", http.StatusSeeOther)
+	case obligation.ADemander:
+		logs.Write_Log("INFO", "login: "+username+" connecté avec un mot de passe provisoire, accès restreint au changement")
 		http.Redirect(w, r, "/profil", http.StatusSeeOther)
 	case mustEnrollMFA:
 		http.Redirect(w, r, "/profil/mfa", http.StatusSeeOther)

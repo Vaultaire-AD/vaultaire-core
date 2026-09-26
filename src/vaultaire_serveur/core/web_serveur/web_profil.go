@@ -1,6 +1,7 @@
 package webserveur
 
 import (
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -10,6 +11,7 @@ import (
 	dbusers "vaultaire/core/database/db_users"
 
 	act "vaultaire/core/action"
+	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
 
 	"vaultaire/core/logs"
@@ -166,6 +168,16 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 
 		err = dbusers.Update_User_Info(db, userID, newUsername, firstname, lastname, password, "")
 		if err != nil {
+			// Un mot de passe refusé pour sa robustesse (TO-DO 100) n'est pas une
+			// panne du serveur : c'est une saisie à reprendre. Le code 400 et le
+			// message tel quel, parce qu'il DIT CE QUI MANQUE — un « erreur mise à
+			// jour » générique ferait essayer des variantes au hasard, donc
+			// finir sur quelque chose d'à peine acceptable.
+			var faible *passwordpolicy.ErreurRobustesse
+			if errors.As(err, &faible) {
+				http.Error(w, faible.Error(), http.StatusBadRequest)
+				return
+			}
 			http.Error(w, "Erreur mise à jour: "+err.Error(), http.StatusInternalServerError)
 			return
 		}
@@ -201,6 +213,25 @@ func ProfilHandler(w http.ResponseWriter, r *http.Request) {
 			// Les AUTRES sessions ne sont pas à corriger : elles sont fermées
 			// juste en dessous.
 			session.ClearMustChangePassword(sessionToken)
+
+			// ET LE DRAPEAU EN BASE (TO-DO 99).
+			//
+			// La ligne ci-dessus ne lève la restriction que sur CETTE session.
+			// Le drapeau persistant, lui, est ce que lisent les chemins qui
+			// n'ont pas de session web — Ducky/PAM et le bind LDAP : sans cette
+			// seconde ligne, l'utilisateur qui vient de changer son mot de passe
+			// continuerait d'être averti à chaque ouverture de session SSH, pour
+			// un changement qu'il a déjà fait.
+			//
+			// C'est ICI et nulle part ailleurs que le drapeau se lève : le
+			// portail est le seul chemin par lequel le TITULAIRE choisit son mot
+			// de passe. Une réinitialisation par un administrateur le POSE, elle
+			// ne le lève pas.
+			if err := passwordpolicy.LeverProvisoire(db, currentUsername); err != nil {
+				logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+					"profil: drapeau de changement obligatoire non levé pour "+
+						currentUsername+" : "+err.Error())
+			}
 
 			if closed := session.DeleteOtherSessionsOf(currentUsername, sessionToken); closed > 0 {
 				logs.Write_Log("INFO", fmt.Sprintf(

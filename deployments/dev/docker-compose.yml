@@ -47,6 +47,12 @@ services:
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=dev
+      # Le fichier de configuration monte juste au-dessus porte CHANGEZ_MOI, et
+      # le core REFUSE de demarrer dessus (TO-DO 99). Les valeurs de cette pile
+      # de developpement sont posees ici : visibles, versionnees, et personne ne
+      # peut les prendre pour un secret.
+      - VAULTAIRE_DB_PASSWORD=root
+      - VAULTAIRE_ADMIN_PASSWORD=${VAULTAIRE_ADMIN_PASSWORD:-correcte agrafe batterie}
     ports:
       - "6666:6666"
       - "443:443"

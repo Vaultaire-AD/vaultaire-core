@@ -121,6 +121,7 @@ const (
 	CleListeDesNoeuds      = "node_list_refresh_minutes"
 	CleRetentionJournaux   = "log_retention_days"
 	ClePurgeJournaux       = "log_purge_hours"
+	CleRetentionHistoGPO   = "gpo_history_retention_days"
 )
 
 // catalogue déclare toutes les durées réglables.
@@ -230,6 +231,29 @@ var catalogue = []Definition{
 			"base — et d'emporter l'annuaire avec elle. Plus long : on remonte " +
 			"plus loin un incident signalé tard, au prix de la place. La sortie " +
 			"standard et les fichiers du core ne sont pas concernés.",
+	},
+	{
+		// Une seconde rétention, et il faut dire pourquoi elle ne suit pas
+		// celle des journaux.
+		//
+		// L'historique GPO ne répond pas à la même question. Un journal sert à
+		// reconstituer un incident signalé récemment ; l'historique d'une
+		// machine sert à répondre à « depuis quand ce poste échoue », et cette
+		// question se pose souvent des mois après. Comme la table ne grossit
+		// qu'aux CHANGEMENTS, la garder trois fois plus longtemps ne coûte
+		// presque rien — alors que garder les journaux aussi longtemps
+		// remplirait le disque de la base.
+		//
+		// Pas de zéro pour « tout garder », même raison qu'ailleurs : une table
+		// sans borne finit par emporter l'annuaire avec elle.
+		Cle: CleRetentionHistoGPO, Unite: Jours, Defaut: 90, Min: 7, Max: 1095,
+		Libelle: "Conservation de l'historique des applications GPO",
+		Consequence: "Au-delà, les changements d'état d'application (table " +
+			"gpo_apply_history) sont supprimés. Cette table ne reçoit une ligne " +
+			"que lorsque le statut ou l'empreinte d'une machine CHANGE : un parc " +
+			"stable n'en produit presque aucune. C'est elle qui répond à « depuis " +
+			"quand cette machine est-elle en échec » ; l'état courant, lui, n'est " +
+			"jamais purgé. La purge passe à la cadence des journaux.",
 	},
 	{
 		Cle: ClePurgeJournaux, Unite: Heures, Defaut: 24, Min: 1, Max: 168,

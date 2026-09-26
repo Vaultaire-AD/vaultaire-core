@@ -404,6 +404,73 @@ Les combinaisons objet × verbe sont **vérifiées et non supposées** au moment
 construire la matrice. Si le modèle cessait d'être un produit cartésien plein,
 la case deviendrait grise au lieu d'exposer une clé que le serveur refuserait.
 
+### Le domaine du groupe superadmin est fermé en écriture *(TO-DO 96)*
+
+Le groupe `vaultaire` porte `vaultaire_all` : **tous les droits, sur tous les
+domaines**. Il est rattaché à un domaine comme n'importe quel groupe — par défaut
+`vaultaire.fr`.
+
+Or la propagation de domaine est un **suffixe**, et `group.add_user` exige
+`write:add:user` sur l'union des domaines du groupe visé et du compte visé. Un
+délégué portant ce droit sur `fr` ou sur `vaultaire.fr` exécutait donc :
+
+```bash
+vlt add -u son_compte -g vaultaire
+```
+
+et devenait superadmin. Les gardes de `is_protected` couvraient le **retrait**, le
+renommage et la suppression du groupe protégé — jamais l'**entrée**.
+
+**La garde est posée sur le DOMAINE, pas sur l'action.** Fermer `group.add_user`
+aurait fermé un chemin ; le domaine du groupe superadmin est atteignable par
+toutes les écritures qui raisonnent par domaine — y créer un groupe, y rattacher
+une permission, y déplacer une machine. Une liste d'actions à compléter aurait
+oublié la prochaine.
+
+Elle vit donc dans `CheckPermissionsAllDomains`, l'entonnoir commun de la ligne
+de commande, du portail et de l'API :
+
+| | |
+|---|---|
+| Couvre | le domaine rattaché au groupe `vaultaire` **et tous ses sous-domaines** |
+| Ne couvre pas | un domaine dont le nom finit par le même texte sans en être un sous-domaine (`pasvaultaire.fr`) |
+| Exception | **les membres du groupe `vaultaire`** : celui qui donne le pouvoir doit déjà l'avoir |
+| Lecture | inchangée : voir n'est pas écrire |
+
+**Le domaine est lu en base, pas codé en dur.** Un nom de compte et un nom de
+groupe sont fixés par l'amorçage ; un domaine, non — un annuaire peut rattacher
+son groupe superadmin à autre chose. Coder `vaultaire.fr` aurait protégé un
+domaine que personne n'utilise en laissant le vrai ouvert. La lecture est mise en
+cache **une minute**, et `vlt` ne voit donc un changement de rattachement qu'au
+bout de ce délai.
+
+En cas de panne de lecture, le repli est `vaultaire.fr` — *fail-closed* : sans
+repli, une base muette rendrait « aucun domaine protégé », c'est-à-dire ouvrirait
+exactement ce que cette garde ferme, au moment où le serveur va mal.
+
+### Le compte d'amorçage n'ouvre la session de personne *(TO-DO 106)*
+
+`vaultaire` désigne deux choses : le compte sous lequel **chaque machine du
+parc** ouvre son tunnel, et le compte membre du groupe superadmin. C'est la même
+ligne de `users`, et une session Ducky authentifiée d'une machine porte donc
+`Username == "vaultaire"`.
+
+Ce qui protège le produit est que **rien n'accorde de droit à partir de ce
+champ** : le contrôle des trames passe par `clienttype.MayEmit`, qui raisonne sur
+le **type** du programme. C'était une propriété que rien n'énonçait — une lecture
+de droits ajoutée un jour à partir de `Session.Username`, le geste le plus
+naturel du monde, aurait tout accordé à n'importe quelle machine enrôlée, sans
+qu'aucun test ne tombe.
+
+Elle est désormais énoncée par un test de **source** :
+`ducky-network/sessionmgr/identite_non_autorisante_test.go` parcourt les paquets
+réseau et échoue si une fonction de lecture de droits reçoit un champ de nom de
+session. Voir [`Tests.md`](./Tests.md), tests-sentinelles.
+
+Et les deux portes d'ouverture de session au nom de ce compte sont fermées :
+`03_01` (SSH/PAM) et `08_01` (vérification par un service) le refusent. Le
+portail web, lui, reste ouvert : c'est le compte de secours.
+
 ---
 
 ## 7. Diagnostic

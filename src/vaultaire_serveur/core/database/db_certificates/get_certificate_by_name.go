@@ -10,6 +10,16 @@ import (
 // GetCertificateByName récupère un certificat par son nom
 func GetCertificateByName(name string) (*storage.Certificate, error) {
 	db := database.GetDatabase()
+	// Base absente : une ERREUR, pas une panique.
+	//
+	// Le cas se présente avant l'ouverture de la connexion et dans tout test
+	// qui traverse un chemin lisant un certificat. La panique qui en résultait
+	// était un déréférencement nul sans message, à trois appels de distance de
+	// la cause.
+	if db == nil {
+		return nil, fmt.Errorf("erreur récupération certificat: connexion base indisponible")
+	}
+
 	var cert storage.Certificate
 	var certData, privKeyData, pubKeyData, desc sql.NullString
 	var createdAtBytes, updatedAtBytes []byte

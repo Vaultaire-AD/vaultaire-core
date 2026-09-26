@@ -144,18 +144,26 @@ func Check(db *sql.DB, username string) (Status, error) {
 		return Status{State: StateValid, Exempt: true}, nil
 	}
 
-	policy := dbauthpolicy.GetPasswordPolicy(db)
-	if !policy.Enabled() {
-		return Status{State: StateValid, PolicyEnabled: false}, nil
-	}
-
+	// L'état du compte est lu AVANT le test d'activation de l'expiration.
+	//
+	// Un mot de passe provisoire périmé (TO-DO 99) doit être refusé même sur une
+	// installation qui n'a aucune politique d'expiration — c'est justement le cas
+	// d'une installation neuve, celle où le mot de passe d'amorçage traîne.
+	// Sortir plus tôt aurait laissé le provisoire valable indéfiniment sur les
+	// installations qui en ont le plus besoin.
 	state, err := dbauthpolicy.GetAuthState(db, username)
 	if err != nil {
 		return Status{State: StateValid, PolicyEnabled: true}, err
 	}
+	obligation := ObligationDepuisEtat(state)
 
-	return Evaluate(policy.MaxAgeDays, policy.WarnDays,
-		state.PasswordChangedAt, state.HasPasswordDate, time.Now()), nil
+	policy := dbauthpolicy.GetPasswordPolicy(db)
+	if !policy.Enabled() {
+		return StatutAvecProvisoire(Status{State: StateValid, PolicyEnabled: false}, obligation), nil
+	}
+
+	return StatutAvecProvisoire(Evaluate(policy.MaxAgeDays, policy.WarnDays,
+		state.PasswordChangedAt, state.HasPasswordDate, time.Now()), obligation), nil
 }
 
 // CheckFromState évalue l'état à partir d'une lecture déjà faite.
@@ -169,6 +177,7 @@ func CheckFromState(db *sql.DB, state dbauthpolicy.AuthState) Status {
 		return Status{State: StateValid, Exempt: true}
 	}
 	policy := dbauthpolicy.GetPasswordPolicy(db)
-	return Evaluate(policy.MaxAgeDays, policy.WarnDays,
-		state.PasswordChangedAt, state.HasPasswordDate, time.Now())
+	return StatutAvecProvisoire(Evaluate(policy.MaxAgeDays, policy.WarnDays,
+		state.PasswordChangedAt, state.HasPasswordDate, time.Now()),
+		ObligationDepuisEtat(state))
 }

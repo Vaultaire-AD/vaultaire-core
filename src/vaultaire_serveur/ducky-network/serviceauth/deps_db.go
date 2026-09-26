@@ -11,6 +11,7 @@ import (
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbldap "vaultaire/core/database/db_ldap"
 	dbusers "vaultaire/core/database/db_users"
+	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/global/security/totp"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -31,7 +32,8 @@ func depsDB() Deps {
 		CheckPassword: func(id int, mdp string) (bool, error) {
 			return dbusers.VerifierMotDePasse(database.GetDatabase(), id, mdp)
 		},
-		IsRevoked: permission.IsRevoked,
+		IsRevoked:          permission.IsRevoked,
+		EstCompteDAmorcage: isprotected.IsProtectedUser,
 		PasswordExpired: func(user string) (bool, error) {
 			st, err := passwordpolicy.Check(database.GetDatabase(), user)
 			return st.IsExpired(), err

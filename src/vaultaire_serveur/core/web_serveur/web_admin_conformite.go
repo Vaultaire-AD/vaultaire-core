@@ -148,24 +148,44 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 		JamaisScanne bool
 	}
 
+	// L'historique porte une date déjà mise en forme : un gabarit HTML ne sait
+	// pas dire « il y a trois jours », et lui faire calculer une durée
+	// donnerait deux façons de l'écrire selon qu'on lit la page ou la CLI.
+	type transitionVue struct {
+		dbgpo.ApplyHistoryRow
+		QuandIlYA string
+		Reussis   int
+	}
+
 	data := struct {
-		Username  string
-		DnsEnable bool
-		Section   string
-		Machine   string
-		Etats     []etatVue
-		Echecs    []dbgpo.ModuleReportRow
-		Ecarts    []dbgpo.DriftRow
-		// Les deux lectures secondaires peuvent échouer sans faire échouer la
+		Username   string
+		DnsEnable  bool
+		Section    string
+		Machine    string
+		Etats      []etatVue
+		Echecs     []dbgpo.ModuleReportRow
+		Ecarts     []dbgpo.DriftRow
+		Historique []transitionVue
+		// Les lectures secondaires peuvent échouer sans faire échouer la
 		// fiche : l'état par portée suffit à répondre à « cette machine est-elle
 		// conforme ». Refuser toute la page parce que le détail des modules
 		// manque priverait de la réponse principale.
-		ModulesIllisibles string
-		EcartsIllisibles  string
+		ModulesIllisibles   string
+		EcartsIllisibles    string
+		HistoriqueIllisible string
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "conformite",
 		Machine: d.ComputeurID, Echecs: d.Echecs, Ecarts: d.Ecarts,
 		ModulesIllisibles: d.ModulesIllisibles, EcartsIllisibles: d.EcartsIllisibles,
+		HistoriqueIllisible: d.HistoriqueIllisible,
+	}
+
+	for _, h := range d.Historique {
+		data.Historique = append(data.Historique, transitionVue{
+			ApplyHistoryRow: h,
+			QuandIlYA:       dbgpo.AgeRelatif(h.ReportedAt, maintenant),
+			Reussis:         h.ModulesTotal - h.ModulesFailed - h.ModulesSkipped,
+		})
 	}
 
 	for _, e := range d.Etats {

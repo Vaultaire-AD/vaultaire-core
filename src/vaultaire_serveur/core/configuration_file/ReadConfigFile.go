@@ -28,24 +28,29 @@ func ReadConfigUser[T any](filePath string) (*T, error) {
 }
 
 func LoadConfig(filePath string) error {
-	// Ouvrir le fichier
-	file, err := os.Open(filePath)
+	// Le fichier est lu EN ENTIER puis décodé, au lieu d'être décodé au fil de
+	// l'ouverture.
+	//
+	// C'est ce qui permet d'inspecter son TEXTE avant décodage — et il faut
+	// l'inspecter : une clé qu'aucune étiquette ne réclame ne laisse aucune
+	// trace après décodage, par construction. C'est exactement ce qui a rendu la
+	// section « administreur: » invisible pendant toute la vie du produit
+	// (TO-DO 99, voir SignalerCleMalOrthographiee).
+	contenu, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeFileConfig, "config: file close failed: "+err.Error())
-		}
-	}()
+
+	if err := SignalerCleMalOrthographiee(contenu); err != nil {
+		logs.Write_LogCode("CRITICAL", logs.CodeFileConfig, "config: "+err.Error())
+		return err
+	}
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config storage.Config
 
 	// Décoder le fichier YAML dans la structure Config
-	decoder := yaml.NewDecoder(file)
-	err = decoder.Decode(&config)
-	if err != nil {
+	if err := yaml.Unmarshal(contenu, &config); err != nil {
 		return err
 	}
 

@@ -30,6 +30,10 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		sshUser := lines[0]
 		isAdmin := (lines[1] == "true")
 		groupes, reste := extraireGroupes(lines[2:])
+		// L'avertissement à présenter à l'utilisateur (TO-DO 99). Retiré du
+		// reste au même titre que les groupes : la laisser la ferait écrire
+		// dans authorized_keys.
+		avertissement, reste := extraireAvertissement(reste)
 		pubKeys := strings.Join(reste, "\n")
 
 		// 🔥 ACTION SYSTÈME : On crée le user et on pose les clés
@@ -87,9 +91,10 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			// Le VERDICT est posé explicitement. Sans lui, l'acceptation se
 			// déduisait de l'absence d'information — voir pamstate.AuthResult.
 			result := pamstate.AuthResult{
-				Type:    "AUTH",
-				Accepte: true,
-				IsAdmin: isAdmin,
+				Type:          "AUTH",
+				Accepte:       true,
+				IsAdmin:       isAdmin,
+				Avertissement: avertissement,
 			}
 			select {
 			case respChan <- result:
@@ -185,23 +190,56 @@ const PrefixeGroupes = "groups:"
 // déjà une contrainte de version du même ordre — voir la trame 03_04, qui répond
 // « obsolete client, update required ».
 func extraireGroupes(lignes []string) (groupes []string, reste []string) {
+	liste, reste := extraireLignePrefixee(lignes, PrefixeGroupes)
+	for _, g := range strings.Split(liste, ",") {
+		if g = strings.TrimSpace(g); g != "" {
+			groupes = append(groupes, g)
+		}
+	}
+	return groupes, reste
+}
+
+// PrefixeAvertissement ouvre la ligne du message à présenter à l'utilisateur.
+//
+// La même chaîne que côté serveur, et pour la même raison que PrefixeGroupes :
+// les deux vivent dans des modules Go distincts, rien ne peut les tenir liées à
+// la compilation, et les faire diverger d'un caractère ferait écrire le message
+// dans authorized_keys au lieu de l'afficher.
+const PrefixeAvertissement = "notice:"
+
+// extraireAvertissement rend le message du serveur, s'il y en a un.
+//
+// Le TEXTE vient du serveur et n'est pas composé ici : c'est lui qui connaît
+// l'état du compte, et trois clients — PAM, GDM, Windows — auraient sinon trois
+// formulations, dont deux finiraient périmées.
+func extraireAvertissement(lignes []string) (avertissement string, reste []string) {
+	message, reste := extraireLignePrefixee(lignes, PrefixeAvertissement)
+	return strings.TrimSpace(message), reste
+}
+
+// extraireLignePrefixee retire d'un contenu la première ligne portant un
+// préfixe, et rend sa valeur.
+//
+// # Pourquoi la reconnaissance et non le rang
+//
+// Les clés publiques occupent « tout le reste » du contenu : il n'existe aucune
+// position libre après elles. Les champs ajoutés se placent donc AVANT et se
+// reconnaissent à leur préfixe. Compter les lignes aurait lié l'agent à une
+// version précise du serveur — un serveur qui n'envoie pas encore le champ
+// décalerait tout, et la première clé serait lue comme une valeur.
+//
+// La ligne est RETIRÉE du reste : la laisser la ferait écrire dans
+// authorized_keys par le provisionnement, ce que la reconnaissance existe
+// précisément pour éviter.
+func extraireLignePrefixee(lignes []string, prefixe string) (valeur string, reste []string) {
 	for i, l := range lignes {
-		if !strings.HasPrefix(l, PrefixeGroupes) {
+		if !strings.HasPrefix(l, prefixe) {
 			continue
 		}
-		liste := strings.TrimPrefix(l, PrefixeGroupes)
-		for _, g := range strings.Split(liste, ",") {
-			if g = strings.TrimSpace(g); g != "" {
-				groupes = append(groupes, g)
-			}
-		}
-		// La ligne est RETIRÉE du reste : la laisser la ferait écrire dans
-		// authorized_keys par le provisionnement, ce que la reconnaissance existe
-		// précisément pour éviter.
 		reste = append(append([]string{}, lignes[:i]...), lignes[i+1:]...)
-		return groupes, reste
+		return strings.TrimPrefix(l, prefixe), reste
 	}
-	return nil, lignes
+	return "", lignes
 }
 
 func SSH_Handle_Fetch_Pubkey(trames_content storage.Trames_struct_client) {
@@ -230,3 +268,16 @@ func SSH_Handle_Fetch_Pubkey(trames_content storage.Trames_struct_client) {
 		logs.Write_log("WARNING", "Channel réponse SSH plein pour "+sshUser)
 	}
 }
+
+// PrefixeOTP ouvre la ligne du code de second facteur dans la trame 03_01.
+//
+// La même chaîne que côté core (TO-DO 95). Les deux vivent dans des modules Go
+// distincts, rien ne peut les tenir liées à la compilation, et les faire
+// diverger d'un caractère ferait simplement ignorer le code par le core — donc
+// refuser la session d'un compte à second facteur, sans qu'aucun message ne dise
+// pourquoi.
+//
+// Déclarée ICI et non dans pam_communication parce que c'est le paquet qui porte
+// déjà les constantes du protocole 03 côté agent — voir PrefixeGroupes et
+// PrefixeAvertissement.
+const PrefixeOTP = "otp:"

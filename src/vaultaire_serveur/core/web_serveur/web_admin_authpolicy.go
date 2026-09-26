@@ -31,10 +31,21 @@ type authPolicyView struct {
 	WarnDays   int
 	Enabled    bool
 
+	// MinLength est la longueur minimale d'un mot de passe NEUF (TO-DO 100).
+	// Elle n'a pas de jumeau « Enabled » : contrairement à l'expiration, elle
+	// ne se désactive pas.
+	MinLength int
+
 	// MaxAgeLimit et WarnLimit sont affichés dans le formulaire pour que les
 	// bornes soient visibles avant la saisie, et non découvertes par un refus.
 	MaxAgeLimit int
 	WarnLimit   int
+
+	// MinLengthPlancher et MinLengthLimit encadrent la saisie. Le plancher est
+	// affiché parce qu'un champ dont le minimum n'est pas zéro sans que rien ne
+	// le dise se lit comme un défaut du formulaire.
+	MinLengthPlancher int
+	MinLengthLimit    int
 }
 
 // Bornes reprises de la couche base. Recopiées ici pour l'affichage seulement :
@@ -43,6 +54,7 @@ type authPolicyView struct {
 const (
 	authPolicyMaxAgeLimit = 3650
 	authPolicyWarnLimit   = 365
+	authPolicyMinLenLimit = 128
 )
 
 // AdminAuthPolicyHandler affiche et enregistre la politique de mot de passe.
@@ -56,6 +68,8 @@ func AdminAuthPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	data := authPolicyView{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "authpolicy",
 		MaxAgeLimit: authPolicyMaxAgeLimit, WarnLimit: authPolicyWarnLimit,
+		MinLengthPlancher: dbauthpolicy.MinLengthPlancher,
+		MinLengthLimit:    authPolicyMinLenLimit,
 	}
 
 	if r.Method == http.MethodPost {
@@ -99,6 +113,7 @@ func AdminAuthPolicyHandler(w http.ResponseWriter, r *http.Request) {
 	// croirait avoir enregistré autre chose.
 	current := dbauthpolicy.GetPasswordPolicy(db)
 	data.MaxAgeDays, data.WarnDays, data.Enabled = current.MaxAgeDays, current.WarnDays, current.Enabled()
+	data.MinLength = current.MinLength
 
 	if err := executeAdminPage(w, "admin_authpolicy.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)

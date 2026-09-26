@@ -15,7 +15,7 @@ identifiants par défaut.
 
 | Accès | Adresse | Identifiants |
 |---|---|---|
-| Portail | `https://<IP>:4443/login` | `admin` / `admin123` |
+| Portail | `https://<IP>:4443/login` | `admin` / le mot de passe que **vous** avez posé |
 | CLI locale | `docker exec -it vaultaire-ad /opt/vaultaire/bin/vaultaire_cli` | aucun : socket local |
 
 Le certificat du portail est auto-signé : acceptez l'avertissement du
@@ -25,8 +25,19 @@ Deux comptes existent dès le premier démarrage :
 
 | Compte | Rôle | Mot de passe à l'installation |
 |---|---|---|
-| `admin` | administrateur de la pile, membre du groupe `vaultaire` | `admin123` — section `administreur` de `serveur_conf.yaml` |
+| `admin` | administrateur de la pile, membre du groupe `vaultaire` | celui de `administrateur.password` (ou `VAULTAIRE_ADMIN_PASSWORD`) — **provisoire** |
 | `vaultaire` | compte d'amorçage du core, protégé | **aucun utilisable** : il faut lui en donner un |
+
+> ⚠️ **Il n'y a plus de mot de passe par défaut** (TO-DO 99). Le fichier livré
+> ne porte que des marqueurs `CHANGEZ_MOI`, et le core **refuse de démarrer**
+> tant qu'ils y sont : c'est vous qui posez le mot de passe de `admin`, avant le
+> premier démarrage. Il doit tenir la règle de robustesse — 12 caractères par
+> défaut, et ne pas contenir l'identifiant du compte ni son domaine (TO-DO 100).
+>
+> Ce mot de passe est **provisoire** : à votre première connexion, le portail ne
+> vous laissera aller nulle part ailleurs que sur la page de changement. C'est
+> voulu — celui qui a posé ce mot de passe le connaît, donc ce n'est pas encore
+> un secret.
 
 > ℹ️ `vaultaire` n'a pas de mot de passe par défaut. La ligne créée par le
 > schéma porte une empreinte d'un format que le core ne lit pas : **aucun** mot
@@ -35,9 +46,21 @@ Deux comptes existent dès le premier démarrage :
 
 ## Étapes
 
-1. Ouvrez `https://<IP>:4443/login` et connectez-vous avec `admin` /
-   `admin123`. Parcourez le menu **Admin** : Utilisateurs, Groupes, Clients,
-   GPO, DNS, Logs, Arborescence.
+0. **Avant le premier démarrage**, posez le mot de passe d'amorçage — sans quoi
+   le core refusera de démarrer :
+
+   ```bash
+   export VAULTAIRE_ADMIN_PASSWORD='correcte agrafe batterie'
+   ```
+
+   ou remplacez `CHANGEZ_MOI` dans `administrateur.password` de
+   `serveur_conf.yaml`. Une phrase de passe est exactement ce qu'on veut : c'est
+   la longueur qui compte, pas les caractères spéciaux.
+
+1. Ouvrez `https://<IP>:4443/login` et connectez-vous avec `admin` et ce mot de
+   passe. **Le portail vous envoie directement sur la page de changement** : le
+   mot de passe d'amorçage est provisoire. Posez-en un nouveau, puis parcourez le
+   menu **Admin** : Utilisateurs, Groupes, Clients, GPO, DNS, Logs, Arborescence.
 
 2. Ouvrez la ligne de commande et créez un alias pour la suite :
 
@@ -51,16 +74,20 @@ Deux comptes existent dès le premier démarrage :
    « the input device is not a TTY ». Pour l'invite interactive `vaultaire>`,
    lancez la commande complète avec `-it` (jalon 3.1).
 
-3. Remplacez le mot de passe de `admin`, puis **donnez-en un** à `vaultaire` :
+3. **Donnez un mot de passe** à `vaultaire` :
 
    ```bash
-   vlt update -u admin -p 'Un-Mot-De-Passe-Solide'
-   vlt update -u vaultaire -p 'Un-Autre-Mot-De-Passe-Solide'
+   vlt update -u vaultaire -p 'une autre phrase de passe solide'
    ```
 
-   - `admin` : le nouveau mot de passe remplace `admin123` pour de bon. Le
-     modifier ensuite dans `serveur_conf.yaml` n'a plus d'effet : la section
-     `administreur` ne sert qu'à **créer** le compte, au premier démarrage.
+   - `admin` : vous venez de le changer sur le portail, à l'étape 1. Le modifier
+     ensuite dans `serveur_conf.yaml` n'a aucun effet : la section
+     `administrateur` ne sert qu'à **créer** le compte, au premier démarrage.
+   - ⚠️ Un mot de passe posé par `vlt update -u <autre> -p …` est **provisoire** :
+     son titulaire devra le changer sur le portail, et il cesse de fonctionner au
+     bout de 24 h. C'est voulu — vous le connaissez, donc ce n'est pas un secret.
+     Ce n'est pas le cas ici : `vaultaire` est le compte de secours, et vous en
+     êtes le titulaire.
    - `vaultaire` : c'est le compte de secours. Il ne peut être ni supprimé ni
      renommé ; son mot de passe n'ouvre **que le portail** — le bind LDAP et les
      connexions aux machines (SSH, PAM) lui sont refusés — et n'expire jamais.
@@ -79,7 +106,9 @@ Deux comptes existent dès le premier démarrage :
 
 - vous voyez le tableau de bord du portail ;
 - `vlt get -u` liste au moins `vaultaire` et `admin` ;
-- `admin123` est refusé sur le portail ;
+- l'ancien mot de passe d'amorçage est refusé sur le portail ;
+- le portail ne vous a laissé aller nulle part avant que vous n'en ayez posé un
+  nouveau ;
 - vous ouvrez le portail avec `vaultaire` et son nouveau mot de passe.
 
 ## 🧪 Exercice

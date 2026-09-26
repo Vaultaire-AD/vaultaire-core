@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
+	"duckynetworkclient/V1/duckynetwork/storage"
 )
 
 // Réception des politiques — côté client des trames 05_XX.
@@ -67,6 +68,13 @@ type pendingFetch struct {
 		totalSize   int
 		moduleCount int
 		checksum    string
+
+		// Lues en QUEUE, au préfixe : voir signature.go. Retenues ici parce
+		// que la vérification a lieu au réassemblage, quand les octets sont
+		// enfin là — pas à la réception du manifeste, qui ne porte encore
+		// aucune politique.
+		signature       string
+		signatureExigee bool
 	}
 	chunks   map[int][]byte
 	received int
@@ -309,6 +317,7 @@ func handleManifest(sessionKey, scope, username string, lines []string) {
 	totalSize, _ := strconv.Atoi(strings.TrimSpace(lineAt(lines, 3)))
 	moduleCount, _ := strconv.Atoi(strings.TrimSpace(lineAt(lines, 4)))
 	checksum := strings.TrimSpace(lineAt(lines, 5))
+	signature, signatureExigee := lireLignesSignature(lines)
 
 	fetchMu.Lock()
 	fetch.manifest.version = version
@@ -317,6 +326,8 @@ func handleManifest(sessionKey, scope, username string, lines []string) {
 	fetch.manifest.totalSize = totalSize
 	fetch.manifest.moduleCount = moduleCount
 	fetch.manifest.checksum = checksum
+	fetch.manifest.signature = signature
+	fetch.manifest.signatureExigee = signatureExigee
 	fetch.chunks = map[int][]byte{}
 	fetch.received = 0
 	fetchMu.Unlock()
@@ -430,6 +441,26 @@ func assemble(scope, username string) {
 				ErrorMessage: "somme de controle du reassemblage incorrecte"})
 			return
 		}
+	}
+
+	// La signature est vérifiée APRÈS la somme de contrôle et AVANT le
+	// décodage.
+	//
+	// Après la somme, parce que c'est elle que le core a signée : la vérifier
+	// d'abord revient à s'assurer que la somme décrit bien les octets qu'on
+	// tient, et la signature couvre alors le document entier sans que l'agent
+	// ait à recalculer une empreinte canonique qu'il ne sait pas produire.
+	//
+	// Avant le décodage, parce qu'un document dont la provenance n'est pas
+	// établie n'a pas à être analysé : refuser plus tard reviendrait à faire
+	// lire à l'agent ce qu'on vient de décider de ne pas croire.
+	if err := VerifierSignature(storage.Computeur_ID, scope, username,
+		manifest.fingerprint, manifest.checksum,
+		manifest.signature, manifest.signatureExigee); err != nil {
+		logs.Write_log("ERROR", "GPO: politique refusee — "+err.Error())
+		finishFetch(scope, username, Outcome{ErrorCode: "signature_invalide",
+			ErrorMessage: err.Error()})
+		return
 	}
 
 	policy, err := DecodePolicy(payload)

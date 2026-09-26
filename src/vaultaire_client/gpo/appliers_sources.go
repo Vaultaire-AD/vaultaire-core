@@ -49,14 +49,35 @@ func applyDirectory(ctx Context, m Module) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(path, os.FileMode(mode)); err != nil {
-		return "", fmt.Errorf("creation de %s impossible : %v", path, err)
-	}
-	// MkdirAll n'applique le mode qu'aux répertoires qu'il crée : un répertoire
-	// préexistant garderait ses permissions, et la politique serait annoncée
-	// appliquée sans l'être.
-	if err := os.Chmod(path, os.FileMode(mode)); err != nil {
-		return "", fmt.Errorf("permissions de %s impossibles : %v", path, err)
+	// LE SCOPE UTILISATEUR NE TRAVERSE PLUS PAR CHEMIN — TO-DO 97.
+	//
+	// `MkdirAll` puis `os.Chmod` suivent tous deux les liens symboliques. Sur un
+	// dossier que l'utilisateur contrôle, et exécutés EN ROOT par PAM, un lien
+	// `~/.config -> /etc` et un mode permissif rendaient `/etc` accessible en
+	// écriture à tout le monde. C'est la même faille que `writeUserFile`, par
+	// une autre porte.
+	//
+	// Le scope MACHINE garde le chemin : `/etc` et ses voisins ne sont pas sous
+	// le contrôle d'un utilisateur non privilégié, et il n'y a pas de `HOME`
+	// sous lequel descendre.
+	if ctx.Scope == ScopeUser {
+		uid, gid, err := resolveUserIDs(ctx.Username)
+		if err != nil {
+			return "", err
+		}
+		if err := preparerRepertoireUtilisateur(ctx.HomeDir, path, os.FileMode(mode), uid, gid); err != nil {
+			return "", err
+		}
+	} else {
+		if err := os.MkdirAll(path, os.FileMode(mode)); err != nil {
+			return "", fmt.Errorf("creation de %s impossible : %v", path, err)
+		}
+		// MkdirAll n'applique le mode qu'aux répertoires qu'il crée : un répertoire
+		// préexistant garderait ses permissions, et la politique serait annoncée
+		// appliquée sans l'être.
+		if err := os.Chmod(path, os.FileMode(mode)); err != nil {
+			return "", fmt.Errorf("permissions de %s impossibles : %v", path, err)
+		}
 	}
 
 	detail := fmt.Sprintf("repertoire %s (%04o)", path, mode)

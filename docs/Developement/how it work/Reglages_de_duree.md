@@ -199,6 +199,16 @@ connexion. Elles relèvent des GPO.
 3. remplacer le `time.NewTicker` par `reglages.Boucle` ;
 4. rien d'autre — l'action, la commande et la page web parcourent le catalogue.
 
+**Deux rétentions peuvent coexister sans se suivre.** `gpo_history_retention_days`
+(TO-DO 53, 90 jours) est trois fois plus longue que `log_retention_days`, et
+c'est délibéré : un journal sert à reconstituer un incident signalé récemment,
+l'historique GPO à répondre à « depuis quand ce poste échoue », question qui se
+pose des mois après. La table ne grossit qu'aux CHANGEMENTS d'état, si bien que
+la garder longtemps ne coûte presque rien — alors que garder les journaux aussi
+longtemps remplirait le disque de la base. La PURGE, elle, suit la cadence des
+journaux : une troisième boucle pour une requête n'aurait ajouté qu'un réglage
+de plus à comprendre.
+
 **Une rétention n'est pas une cadence, mais elle entre ici.** `log_retention_days`
 (TO-DO 91) ne pilote aucune boucle : c'est l'âge au-delà duquel la purge du
 journal commun supprime une ligne. Elle est au catalogue pour hériter de ce

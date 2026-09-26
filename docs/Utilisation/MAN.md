@@ -96,14 +96,30 @@ api:
   api_enable: true
   api_port: 6643
 
-administreur:
+administrateur:
   enable: true
   username: admin
-  password: admin123
+  password: CHANGEZ_MOI
   public_key: "ssh-rsa ..."
 ```
 
-**À ne pas oublier** : en production, désactiver `debug` (section debug) et changer les mots de passe / clés.
+> ⚠️ **La configuration livrée ne fonctionne pas, et c'est voulu.** Le core
+> **refuse de démarrer** tant que `administrateur.password` vaut `CHANGEZ_MOI`
+> ou l'une des valeurs de démonstration publiées. Posez-y un vrai mot de passe,
+> ou la variable `VAULTAIRE_ADMIN_PASSWORD`.
+>
+> Il doit aussi tenir la règle de robustesse (12 caractères par défaut, voir
+> `mfa policy`), et il est **provisoire** : le portail en demandera un autre à la
+> première connexion.
+>
+> `administrateur` et non `administreur` : l'ancienne orthographe n'a jamais été
+> lue, et toute la section était ignorée en silence. Le core refuse maintenant de
+> démarrer dessus, en la nommant.
+
+**À ne pas oublier** : `debug: false` en production — les lignes DEBUG portent
+les DN des binds LDAP, les identifiants de groupe des décisions de permission et
+le détail des vérifications de signature ; aucun secret, mais la cartographie
+complète de l'annuaire et des droits.
 
 ---
 
@@ -1005,11 +1021,58 @@ mfa -u <user>                          # état du second facteur d'un compte
 mfa -u <user> --reset                  # efface son secret            (write:mfa)
 mfa -g <groupe> --require              # impose le second facteur     (write:mfa)
 mfa -g <groupe> --optional             # le rend facultatif           (write:mfa)
-mfa policy                             # lit la politique d'expiration
-mfa policy --max-age <j> --warn <j>    # l'écrit          (groupe vaultaire)
+mfa policy                             # lit la politique de mot de passe
+mfa policy --max-age <j> --warn <j>    # règle l'expiration       (groupe vaultaire)
+mfa policy --min-length <n>            # règle la longueur minimale (groupe vaultaire)
+mfa ducky                              # dit si un code est exigé à l'ouverture de session
+mfa ducky <on|off>                     # l'exige, ou non          (write:server)
 ```
 
 L’exigence se pose sur un **groupe**, pas sur un compte : elle s’applique à tous ses membres.
+
+### Le second facteur à l'ouverture de session *(TO-DO 95)*
+
+Depuis la 2.2, SSH, GDM et la tuile Windows demandent un **code à 6 chiffres**
+après le mot de passe. Un compte qui n'a pas de second facteur tape `0000` — c'est
+ce que dit l'invite, et c'est la seule valeur que le core accepte pour lui.
+
+```bash
+mfa ducky            # état, et nombre de comptes ayant enrôlé un second facteur
+mfa ducky on         # tout agent doit envoyer un code
+mfa ducky off        # retire l'exigence
+```
+
+> ⚠️ **Mettez le parc à jour AVANT d'activer.** Un agent d'une version antérieure
+> n'envoie aucun code : avec `on`, ses machines ne peuvent plus ouvrir de session.
+> `off` retire l'exigence en une commande — c'est ce qui rend l'activation
+> réversible. La commande refuse `on` tant qu'aucun compte n'a enrôlé de second
+> facteur.
+>
+> Les comptes qui **ont** un second facteur doivent le fournir dans tous les cas,
+> que cette exigence soit active ou non.
+
+**SSH par clé publique** : sshd n'ouvre pas de conversation PAM, donc rien ne peut
+être demandé — l'agent envoie `0000`, et une connexion par clé sur un compte à
+second facteur est **refusée**. Pour qu'elle fonctionne avec un code :
+
+```
+AuthenticationMethods publickey,keyboard-interactive
+KbdInteractiveAuthentication yes
+```
+
+### La robustesse des mots de passe *(TO-DO 100)*
+
+`--min-length` fixe la longueur minimale d'un mot de passe **neuf** (12 par
+défaut, **plancher 8 non désactivable**). Sont aussi refusés : l'identifiant du
+compte, les libellés de son domaine, le nom du produit et une courte liste de
+classiques — comparés après normalisation, `P@ssw0rd` valant `password`.
+
+Aucune règle de complexité : elle produit `Password1!`, qui est dans toutes les
+listes. **Une phrase de passe est ce qu'on veut encourager.**
+
+La règle ne touche pas les mots de passe déjà en base : on ne peut pas recalculer
+ce qu'on refuserait, le mot de passe n'existant nulle part. Le parc s'y conforme
+au premier changement de chacun.
 
 > LDAP n’a aucun champ pour un second facteur. Au bind, un compte soumis au MFA fournit son mot de passe **suivi** du code à 6 chiffres (`MotDePasse123456`) ; le mot de passe seul est refusé. `ldap.mfa_bypass: true` (dans `serveur_conf.yaml`) lève cette exigence pour tout le parc — chaque bind concerné est journalisé. Voir [MFA et expiration](../Developement/how%20it%20work/MFA_et_Expiration.md).
 
@@ -1076,6 +1139,8 @@ gpo drift                  # uniquement les machines en écart
 gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
 gpo refresh <computeur_id>           # cycle immédiat sur une machine
 gpo refresh --all                    # cycle immédiat sur tout le parc connecté
+gpo signature                        # les politiques non signées sont-elles refusées ?
+gpo signature <on|off>               # les refuser, ou non
 ```
 
 **Trois informations distinctes, à ne pas confondre :**
@@ -1098,6 +1163,49 @@ disait « jamais vérifiée » avant la 2.2.
 Un écart dans un `HOME` est corrigé **à la connexion suivante de ce compte**, pas
 au prochain cycle machine : le scan précède le cycle utilisateur, si bien que
 l'environnement est remis en état avant que le shell ne démarre.
+
+**« Depuis quand ? »** `gpo status <computeur_id>` termine par une section
+**Changements d'état** : une ligne par changement de statut ou d'empreinte, la
+plus récente en tête. Une machine saine et stable n'en produit qu'une, à son
+premier rapport ; une machine qui casse en produit une le jour où elle casse.
+C'est volontairement un historique des **changements** et non un journal des
+cycles — sur mille machines qui rapportent toutes les heures, le second ferait
+vingt-quatre mille lignes par jour pour dire toujours la même chose.
+
+La conservation se règle avec `gpo_history_retention_days` (90 jours par
+défaut). L'état courant, lui, n'est jamais purgé.
+
+### Signer les politiques — `gpo signature`
+
+```bash
+gpo signature          # état, et empreinte de la clé du cluster
+gpo signature on       # refuser les politiques NON signées
+gpo signature off      # les accepter de nouveau
+```
+
+Les politiques sont **signées par le cluster** avec une clé qui lui est propre,
+distincte de celle du tunnel. Une machine la reçoit à son installation
+(`create -c … --join` dépose `gpo_signing_key.pem` à côté de l'empreinte du
+core) et vérifie alors chaque politique avant de l'appliquer.
+
+| Machine | Ce qui se passe |
+|---|---|
+| **installée avant la 2.2** (pas de clé) | applique sans vérifier, même avec `gpo signature on` |
+| avec la clé, politique **signée** | la signature doit être valide, toujours — `on` ou `off` |
+| avec la clé, politique **non signée** | refusée si `on`, appliquée avec un avertissement si `off` |
+
+> `gpo signature on` ne casse donc **rien** sur un parc ancien : il n'agit que
+> sur les machines qui portent la clé. C'est ce qui permet de l'activer avant
+> d'avoir fini la migration, puis de vérifier machine par machine dans le
+> journal de l'agent.
+
+La commande est **refusée** si ce core n'a pas de clé de signature : l'activer
+ferait refuser toutes les politiques du parc, et le message d'erreur arriverait
+sur les machines et non devant vous.
+
+Droits : `read:log` pour lire, `write:server` pour régler — c'est un réglage de
+serveur, pas une écriture de GPO : il change ce que **tout le parc** accepte de
+recevoir.
 
 **La vue part de l’inventaire, pas des rapports.** Une machine créée mais jamais
 installée, ou dont l’agent est tombé, apparaît donc — en `jamais` ou en `en
@@ -1209,6 +1317,9 @@ cluster list <role>           # nœuds actifs d'un rôle
 cluster purge-delay           # délai avant suppression d'un service ou d'un nœud parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 
+cluster metrics-retention           # conservation des mesures remontées par les nœuds
+cluster metrics-retention <jours>   # la règle (0 conserve sans limite)
+
 cluster expose <noeud> <adresse> [port]   # par où les AGENTS joignent ce nœud
 cluster expose <noeud> --clear            # retire la déclaration
 cluster priority <noeud> <valeur>         # ordre de service
@@ -1246,6 +1357,35 @@ les agents. `cluster list` montre les deux : **ACCÈS AGENTS** est ce qui est
 distribué, **VU PAR LE NŒUD** ce que la machine rapporte — renseigné seulement
 quand il diffère, parce que c'est leur écart qu'on cherche quand une connexion ne
 passe pas.
+
+### Ce qu'un proxy relaie
+
+Les colonnes **RELAIS** et **TRAFIC** de `cluster list` portent ce que le nœud a
+remonté de lui-même, à la cadence de son battement (20 s).
+
+```
+RELAIS   3/128 ✗7     3 connexions en cours, 128 relayées depuis le démarrage
+                      du proxy, 7 qui ne sont pas passées
+TRAFIC   1,4 Gio      les deux sens confondus
+```
+
+Le compteur `✗` n'apparaît que s'il est non nul. Il additionne deux causes qui ne
+se règlent pas de la même façon — « aucune cible joignable » et « plafond
+atteint » : **Admin → Cluster**, fiche du nœud, les sépare et donne le détail
+**par relais** (Ducky, HTTPS, LDAPS), ce que l'agrégat ne peut pas dire.
+
+Les deux colonnes sont vides pour un core — il ne relaie rien — et pour un proxy
+qui n'a rien remonté depuis plus de trois minutes. C'est voulu : un compteur de
+connexions actives vieux d'une heure ne décrit plus rien, et l'afficher se lirait
+comme l'état courant.
+
+> **Ces mesures sont montrées, elles n'ordonnent rien.** Un nœud décide de ce
+> qu'il déclare : faire dépendre l'ordre de la liste servie aux agents d'un
+> chiffre qu'il choisit lui-même reviendrait à le laisser attirer le parc vers
+> lui. L'ordre reste celui de l'affinité, de la priorité et de l'état.
+
+La conservation de ces mesures se règle avec `cluster metrics-retention`
+(30 jours par défaut).
 
 ### Affinité — quel nœud sert quel site
 
@@ -1369,6 +1509,7 @@ settings reset <clé>           # la ramène à son défaut codé
 | `gpo_refresh_minutes` | min | 60 | rafraîchissement des GPO sur les machines — voir [§20](#20-gpo--application-et-conformité) |
 | `node_list_refresh_minutes` | min | 30 | rafraîchissement de la liste des cores et proxies sur les machines — voir [§21](#21-cluster--nœuds-du-parc) |
 | `log_retention_days` | j | 30 | conservation du journal commun en base — voir [§24](#24-logs--journal-commun-des-cores) |
+| `gpo_history_retention_days` | j | 90 | conservation des changements d'état d'application GPO — voir [§20](#20-gpo--application-et-conformité) |
 | `log_purge_hours` | h | 24 | purge des lignes du journal plus anciennes que la conservation |
 
 **Les valeurs vivent en base ; les défauts sont codés dans le serveur.** Un

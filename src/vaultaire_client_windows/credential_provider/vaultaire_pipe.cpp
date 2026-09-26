@@ -192,10 +192,16 @@ void Journaliser(const wchar_t* format, ...) {
   fclose(f);
 }
 
-Reponse Authentifier(const std::wstring& utilisateur, const std::wstring& mot_de_passe) {
+Reponse Authentifier(const std::wstring& utilisateur, const std::wstring& mot_de_passe,
+                     const std::wstring& code) {
+  // Le champ « otp » est TOUJOURS écrit, même vide : sa PRÉSENCE dit à l'agent,
+  // puis au core, qu'ils parlent à une tuile récente. L'omettre quand il est
+  // vide la ferait passer pour une tuile ancienne, et le core laisserait passer
+  // sans second facteur (TO-DO 95).
   std::string requete = "{\"type\":\"auth\",\"user\":\"" +
                         EchapperJSON(VersUtf8(utilisateur)) + "\",\"password\":\"" +
-                        EchapperJSON(VersUtf8(mot_de_passe)) + "\"}\n";
+                        EchapperJSON(VersUtf8(mot_de_passe)) + "\",\"otp\":\"" +
+                        EchapperJSON(VersUtf8(code)) + "\"}\n";
 
   Reponse reponse = Echanger(requete);
 

@@ -455,12 +455,23 @@ func groupesDuClient(db *sql.DB, computeurID string) ([]int, error) {
 // # Le hostname du contenu est IGNORÉ
 //
 // Il servait de clé d'insertion. N'importe quel nœud pouvait donc écrire des
-// métriques sous le nom d'un autre — et ces métriques alimentent le tri de la
-// liste servie aux agents : fabriquer les chiffres d'un pair revenait à décider
-// vers qui le parc se dirige.
+// métriques sous le nom d'un autre — c'est-à-dire décrire l'état d'un pair dans
+// les vues de supervision.
 //
 // Le nom retenu est celui de la ligne du DEMANDEUR. La première ligne du contenu
 // n'est plus lue que pour signaler un écart.
+//
+// # Ces mesures sont VUES, elles ne décident de rien (TO-DO 108)
+//
+// Une version antérieure de ce commentaire disait qu'elles « alimentent le tri
+// de la liste servie aux agents ». C'était faux, et la confusion avait de la
+// valeur pour un attaquant : elle laissait croire qu'un nœud qui ment sur sa
+// charge détourne le parc. Le tri de `noeuds_pour_agents.go` n'a jamais lu
+// `proxy_metrics` — il ordonne par priorité, affinité de groupe et état.
+//
+// C'est volontaire et cela doit le rester : une 04_05 est DÉCLARATIVE. Faire
+// dépendre l'acheminement du parc d'un chiffre que chaque nœud choisit lui-même
+// est un autre lot, qui devra d'abord répondre à cette question-là.
 func handleProxyMetrics(db *sql.DB, tramesContent storage.Trames_struct_client, content string, duckysession *storage.DuckySession) (string, error) {
 	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
 	if err != nil {

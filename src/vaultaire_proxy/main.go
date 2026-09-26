@@ -130,6 +130,12 @@ func main() {
 		Port:      *listen,
 		Decouvrir: true, // un proxy doit savoir vers quels cores relayer
 		Services:  relais.ServicesSuivis(liste),
+		// Les compteurs des relais, à la cadence du battement (TO-DO 108).
+		//
+		// Une fonction, et non des valeurs : les relais s'ouvrent PLUS BAS, après
+		// ce raccordement — c'est la découverte qu'il démarre qui dit vers quels
+		// cores relayer. À cet instant, il n'y a donc encore rien à mesurer.
+		Metriques: metriquesRelais,
 	}); err != nil {
 		log.Printf("proxy : raccordement au cluster impossible : %v", err)
 		log.Printf("proxy : le service reste connecté, mais n'apparaîtra pas " +

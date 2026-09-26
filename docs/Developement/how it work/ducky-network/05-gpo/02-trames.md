@@ -31,6 +31,8 @@ l'état local. `none` au premier démarrage ou après remise à zéro de l'état
 <nb_modules>
 <somme_de_controle>  SHA-256 hex de la charge transmise
 refresh:<minutes>    cadence de rafraîchissement machine — FACULTATIVE, en queue
+sig:<base64>         signature de la livraison — FACULTATIVE, en queue
+sigreq:<0|1>         l'agent doit-il refuser une politique non signée
 ```
 
 > **Ajout par rapport à la v2 validée : la ligne `<somme_de_controle>`.**
@@ -60,6 +62,28 @@ dans `03_09`.
 Elle ne voyage **que** dans les réponses de scope machine. Un cycle utilisateur
 est déclenché par une ouverture de session, pas par une boucle : il n'y a aucune
 cadence à régler de ce côté.
+
+**Les lignes `sig:` et `sigreq:`** *(2.2, TO-DO 52)*. La signature couvre
+`vaultaire-gpo-v1`, l'identifiant de la machine, le scope, l'utilisateur,
+l'empreinte et la somme de contrôle — dans cet ordre, une ligne chacun. Elle lie
+donc la politique à **son destinataire** : signer les seuls octets du document
+aurait laissé une politique valide rejouable d'une machine à l'autre, puisqu'une
+politique de scope machine ne nomme pas la machine.
+
+RSA-PSS SHA-256 avec la clé `gpo_signing` du cluster, vérifiée contre le fichier
+`gpo_signing_key.pem` déposé à l'installation. Ces deux lignes partent dans les
+**deux scopes**, contrairement à `refresh:` : une politique utilisateur se signe
+comme une autre, et c'est même celle dont le contenu atterrit dans un `HOME`.
+
+`sigreq:` dit ce que l'agent fait d'une politique **non signée** — l'appliquer
+ou la refuser. Poussée plutôt que décidée par l'agent, l'exigence s'active et se
+retire en une commande (`vlt gpo signature on|off`) au lieu de demander un
+passage sur chaque machine. Détail et migration :
+[`GPO.md`](../../GPO.md).
+
+`05_03` et `05_07` (« rien à faire ») n'en portent **aucune** : elles ne
+transportent pas de politique, et une signature y laisserait croire qu'un
+document a été vérifié.
 
 ### 05_03 — gpo_machine_unchanged (serveur → client)
 

@@ -72,17 +72,42 @@ func TestNomsReservesInsensiblesALaCasse(t *testing.T) {
 	}
 }
 
+// Le mot de passe des tests de hachage doit passer la règle de robustesse
+// (TO-DO 100) : hacherMotDePasse la contrôle avant de hacher, et c'est
+// précisément ce qu'on veut — ces tests parcourent le chemin réel, pas un
+// raccourci qui l'éviterait.
+//
+// Sans base, la politique retombe sur son plancher. La valeur ci-dessous est
+// donc choisie pour le passer : longue, et sans rapport avec le compte.
+const (
+	compteDeTest     = "alice@exemple.test"
+	motDePasseDeTest = "correcte agrafe batterie"
+)
+
+// Le pendant : un mot de passe faible n'atteint JAMAIS le hachage.
+//
+// C'est le test de comportement qui accompagne le test-sentinelle du paquet
+// passwordpolicy : celui-là dit que personne ne contourne le point d'écriture,
+// celui-ci dit que le point d'écriture refuse bien.
+func TestUnMotDePasseFaibleNAtteintPasLeHachage(t *testing.T) {
+	for _, faible := range []string{"1234", "", "azerty", "alice1234567"} {
+		if _, _, err := hacherMotDePasse(compteDeTest, faible); err == nil {
+			t.Errorf("%q haché sans refus : la règle de robustesse est contournée", faible)
+		}
+	}
+}
+
 // TestHachageSelAleatoire : deux comptes, même mot de passe, hachés différents.
 //
 // C'est ce que le sel apporte, et c'est vérifiable sans base. Un sel constant —
 // ou oublié — donnerait deux hachés identiques, et une seule table précalculée
 // ouvrirait les deux comptes.
 func TestHachageSelAleatoire(t *testing.T) {
-	sel1, hache1, err := hacherMotDePasse("le meme mot de passe")
+	sel1, hache1, err := hacherMotDePasse(compteDeTest, motDePasseDeTest)
 	if err != nil {
 		t.Fatalf("hachage : %v", err)
 	}
-	sel2, hache2, err := hacherMotDePasse("le meme mot de passe")
+	sel2, hache2, err := hacherMotDePasse(compteDeTest, motDePasseDeTest)
 	if err != nil {
 		t.Fatalf("hachage : %v", err)
 	}
@@ -109,7 +134,7 @@ func TestHachageSelAleatoire(t *testing.T) {
 // permanence ne surveille plus rien : on cesse de le lire, et le vrai échec du
 // jour se perd dans le bruit. Il décrit donc désormais le contrat réel.
 func TestFormeDuSelEtDuHache(t *testing.T) {
-	sel, empreinte, err := hacherMotDePasse("motdepasse")
+	sel, empreinte, err := hacherMotDePasse(compteDeTest, motDePasseDeTest)
 	if err != nil {
 		t.Fatalf("hachage : %v", err)
 	}
@@ -143,12 +168,12 @@ func TestFormeDuSelEtDuHache(t *testing.T) {
 // `security.Verifier` — et n'exige AUCUN réencodage, sans quoi chaque connexion
 // réécrirait la base pour rien.
 func TestLEmpreinteSeRelitParVerifier(t *testing.T) {
-	sel, empreinte, err := hacherMotDePasse("secret")
+	sel, empreinte, err := hacherMotDePasse(compteDeTest, motDePasseDeTest)
 	if err != nil {
 		t.Fatalf("hachage : %v", err)
 	}
 
-	ok, aReencoder := security.Verifier("secret", sel, empreinte)
+	ok, aReencoder := security.Verifier(motDePasseDeTest, sel, empreinte)
 	if !ok {
 		t.Fatal("le mot de passe juste haché est refusé : le stockage et la vérification divergent")
 	}

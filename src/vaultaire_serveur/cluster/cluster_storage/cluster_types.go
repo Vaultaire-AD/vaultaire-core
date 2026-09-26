@@ -143,6 +143,24 @@ type Node struct {
 	// toutes les machines. Un agent a besoin de savoir QUI joindre, pas
 	// pourquoi ce nœud est là.
 	GroupesAffins []string
+
+	// Relais porte la dernière mesure remontée par ce nœud (04_05, TO-DO 108).
+	//
+	// # Un pointeur, et c'est le point
+	//
+	// Nil se lit « aucune mesure » ; une structure à zéro se lirait « aucun
+	// trafic ». La différence est exactement ce que ce point corrige : une vue
+	// qui affichait des colonnes vides laissait croire à une supervision qui
+	// n'existait pas.
+	//
+	// Nil pour un core — il n'a pas de relais —, et pour un proxy dont la
+	// dernière mesure est trop ancienne : un compteur de connexions actives
+	// périmé ne décrit plus rien.
+	//
+	// Renseigné pour les VUES seulement, comme GroupesAffins. Il ne voyage pas
+	// dans la 04_04 : ce que le parc doit savoir d'un nœud est son adresse, pas
+	// sa charge.
+	Relais *MetriquesRelais
 }
 
 // AdresseEffective rend l'adresse à annoncer aux agents.

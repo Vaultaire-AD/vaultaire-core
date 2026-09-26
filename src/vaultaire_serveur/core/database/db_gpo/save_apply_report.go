@@ -96,5 +96,22 @@ func SaveApplyReport(db *sql.DB, computeurID, scope, targetUser, fingerprint, st
 		}
 	}
 
+	// L'historique, dans la MÊME transaction.
+	//
+	// Les deux tables précédentes disent « où on en est » ; celle-ci dit
+	// « depuis quand ». Écrite à part, une panne entre les deux laisserait un
+	// historique qui affirme un changement que l'état courant ne montre pas.
+	//
+	// Elle n'écrit que si quelque chose a changé : voir historique_application.go.
+	if err := enregistrerTransition(tx, ApplyHistoryRow{
+		ComputeurID: computeurID, Scope: scope, TargetUser: targetUser,
+		Fingerprint: fingerprint, Status: status,
+		ModulesTotal: len(modules), ModulesFailed: échoués, ModulesSkipped: ignorés,
+		ModulesEnEchec: ResumerModulesFautifs(modules),
+		ReportedAt:     maintenant,
+	}); err != nil {
+		return err
+	}
+
 	return tx.Commit()
 }

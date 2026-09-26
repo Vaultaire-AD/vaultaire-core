@@ -5,11 +5,14 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
+	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbgroups "vaultaire/core/database/db_groups"
 	dbsessions "vaultaire/core/database/db_sessions"
 	dbusers "vaultaire/core/database/db_users"
+	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -95,8 +98,33 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	sshUser, domaine := domain.ExctractDomainFromUsername(content[0])
 	motDePasse := content[1]
 
+	// Le code de second facteur est lu EN QUEUE, par préfixe (TO-DO 95). Les
+	// deux premières lignes gardent leur rang : un core ancien les lit à
+	// l'identique et ignore le reste.
+	codeOTP, otpPresent := LireCodeOTP(content[2:])
+
 	refus := func(raison string) string {
 		return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + sshUser + "@" + domaine + "\n" + raison
+	}
+
+	// Le compte d'amorçage est REFUSÉ ici (TO-DO 106).
+	//
+	// `vaultaire` désigne deux choses dans ce produit : le compte sous lequel
+	// chaque machine ouvre son tunnel, et le compte d'annuaire membre du groupe
+	// superadmin. C'est la même ligne de la table `users`.
+	//
+	// 03_01 authentifie une PERSONNE qui ouvre une session sur un poste. Laisser
+	// ce nom y passer reviendrait à provisionner un compte local `vaultaire` sur
+	// la machine, à lui poser les clés SSH du superadmin, et à ouvrir une ligne
+	// dans `status -u` pour une identité qui n'est celle de personne.
+	//
+	// Avant même le freinage : ce n'est pas une tentative à compter, c'est un
+	// nom qui n'a rien à faire sur ce chemin.
+	if isprotected.IsProtectedUser(sshUser) {
+		logs.Write_Log("SECURITY", "SSH: ouverture de session refusée au nom du compte "+
+			"d'amorçage depuis "+trames_content.ClientSoftwareID+
+			" — ce compte est celui du tunnel machine, pas celui d'une personne")
+		return refus("permission denied")
 	}
 
 	// LIMITATION DES TENTATIVES — avant tout le reste.
@@ -142,6 +170,74 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	if permission.IsRevoked(sshUser) {
 		logs.Write_Log("SECURITY", sshUser+" : mot de passe valide mais compte révoqué, accès SSH refusé sur "+trames_content.ClientSoftwareID)
 		return refus("permission denied")
+	}
+
+	// SECOND FACTEUR — TO-DO 95.
+	//
+	// ICI : après le mot de passe et le freinage, avant le kill switch et les
+	// droits. C'est l'ordre des deux autres portes qui en ont un — le portail et
+	// la catégorie 08 — et il se justifie des deux côtés : on ne demande pas de
+	// second facteur à quelqu'un qui n'a pas prouvé le premier, et on ne dit pas
+	// « compte révoqué » à quelqu'un qui n'a pas fini de s'authentifier.
+	//
+	// Le refus ne dit PAS lequel des deux facteurs a échoué à l'agent : le motif
+	// détaillé va au journal du core, et le poste reçoit « permission denied ».
+	// Distinguer les deux renseignerait qui essaie des mots de passe sur le fait
+	// qu'il a trouvé le bon.
+	switch resultat, motif := VerifierSecondFacteur(db, sshUser, codeOTP, otpPresent); resultat {
+	case MFAAccepte:
+		// rien
+	case MFAIndisponible:
+		logs.Write_Log("ERROR", "SSH: second facteur de "+sshUser+" non vérifiable : "+motif)
+		return refus("mfa unavailable")
+	case MFAManquant:
+		logs.Write_Log("WARNING", "SSH: "+sshUser+" sur "+
+			trames_content.ClientSoftwareID+" — "+motif)
+		ratelimit.Echec(sshUser, source)
+		return refus("mfa required")
+	default:
+		logs.Write_Log("SECURITY", "SSH: "+sshUser+" refusé sur "+
+			trames_content.ClientSoftwareID+" — "+motif)
+		ratelimit.Echec(sshUser, source)
+		return refus("permission denied")
+	}
+
+	// L'AVERTISSEMENT À PRÉSENTER À L'UTILISATEUR — TO-DO 99.
+	//
+	// Il est composé ICI, après le mot de passe et avant les droits : un
+	// avertissement n'a de sens que pour quelqu'un qui a prouvé son identité, et
+	// il ne doit pas être calculé pour une connexion qui sera refusée ensuite.
+	//
+	// Un mot de passe PROVISOIRE n'interdit PAS d'ouvrir la session sur un
+	// poste. C'est le chemin par lequel on se connecte vraiment : y refuser la
+	// session demanderait de changer son mot de passe sans pouvoir ouvrir de
+	// session pour le faire. L'utilisateur est averti, et va sur le portail.
+	//
+	// Un provisoire PÉRIMÉ, lui, est un mot de passe expiré — passwordpolicy le
+	// rend comme tel — et ce chemin refuse déjà les mots de passe expirés.
+	avertissement := ""
+	if etat, errEtat := dbauthpolicy.GetAuthState(db, sshUser); errEtat == nil {
+		obligation := passwordpolicy.ObligationDepuisEtat(etat)
+		statut := passwordpolicy.StatutAvecProvisoire(
+			passwordpolicy.CheckFromState(db, etat), obligation)
+
+		if statut.IsExpired() {
+			// L'expiration refusait déjà sur ce chemin par CheckAuthentification
+			// (trames 02) ; elle ne l'était PAS sur 03_01, qui est celui des
+			// sessions de personnes. Un provisoire périmé y serait donc resté
+			// valable indéfiniment.
+			logs.Write_Log("SECURITY", sshUser+
+				" : mot de passe expiré ou provisoire périmé, session refusée sur "+
+				trames_content.ClientSoftwareID)
+			return refus("password expired")
+		}
+		avertissement = passwordpolicy.AvertissementDeConnexion(obligation, statut)
+	} else {
+		// Non bloquant : un avertissement manquant est un manque, pas un
+		// incident. Refuser la session parce qu'on n'a pas pu calculer un
+		// message couperait l'accès pour la raison la moins grave du fichier.
+		logs.Write_Log("WARNING", "SSH: état d'authentification de "+sshUser+
+			" illisible, aucun avertissement présenté : "+errEtat.Error())
 	}
 
 	// Droit de se connecter au DOMAINE.
@@ -240,10 +336,21 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 	// C'est le compromis assumé de la compatibilité descendante sur ce chemin,
 	// qui en a déjà un : un agent resté à l'ancienne authentification reçoit
 	// « obsolete client, update required » sur 03_04.
+	// L'avertissement part AVANT les clés, comme les groupes, et pour la même
+	// raison : les clés occupent tout le reste du contenu, il n'existe aucune
+	// position après elles. Absent, la ligne n'est pas émise du tout — un agent
+	// ancien n'en saurait rien, et un agent neuf ne doit pas afficher une ligne
+	// vide à l'utilisateur.
+	ligneAvertissement := ""
+	if avertissement != "" {
+		ligneAvertissement = PrefixeAvertissement + avertissement + "\n"
+	}
+
 	return "03_02\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" +
 		sshUser + "@" + domaine + "\n" +
 		strconv.FormatBool(isadmin) + "\n" +
 		PrefixeGroupes + strings.Join(groupes, ",") + "\n" +
+		ligneAvertissement +
 		sshkeyString
 }
 
@@ -253,6 +360,25 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 // une valeur recopiée dans les deux dépôts finirait par différer d'un caractère
 // — auquel cas l'agent prendrait la ligne pour une clé publique, en silence.
 const PrefixeGroupes = "groups:"
+
+// PrefixeAvertissement ouvre la ligne du message à présenter à l'utilisateur.
+//
+// # Un canal, pas un message
+//
+// Il transporte aujourd'hui « votre mot de passe est provisoire » (TO-DO 99) et
+// « votre mot de passe expire dans N jours » — ce préavis n'était affiché que
+// sur le portail, c'est-à-dire à l'endroit où l'utilisateur ne va justement pas.
+// Il transportera demain tout ce qu'on a à dire à quelqu'un au moment où il
+// ouvre une session.
+//
+// Le TEXTE est composé par le core et non par l'agent : c'est le core qui
+// connaît l'état du compte, et trois clients — PAM, GDM, Windows — auraient
+// sinon trois formulations, dont deux finiraient périmées.
+//
+// Même recette que « groups: » : préfixé, en queue des champs positionnels, une
+// seule ligne. Un agent qui l'ignore écrit une ligne inerte dans
+// authorized_keys, que sshd passe.
+const PrefixeAvertissement = "notice:"
 
 // SSH_SEND_SALT refuse : la trame 03_04 n'existe plus.
 //

@@ -992,9 +992,10 @@ int vaultaire_json_escape(const char *src, char *out, size_t out_size) {
  * de leur cote, avec le meme defaut recopie. Une correction a un seul endroit
  * en aurait laisse un derriere elle. */
 int vaultaire_build_check_request(const char *username, const char *password,
-                                  char *out, size_t out_size) {
+                                  const char *otp, char *out, size_t out_size) {
     char u[512];
     char p[512];
+    char o[64];
 
     if (vaultaire_json_escape(username ? username : "", u, sizeof(u)) != 0) {
         vaultaire_log_err("nom d'utilisateur trop long apres echappement");
@@ -1007,8 +1008,25 @@ int vaultaire_build_check_request(const char *username, const char *password,
         return -1;
     }
 
+    /* Le code de second facteur — TO-DO 95.
+     *
+     * Echappe comme les autres, bien qu'un code TOTP soit six chiffres : ce
+     * champ vient d'une SAISIE UTILISATEUR, et rien ne garantit que
+     * l'utilisateur ait tape des chiffres. C'est exactement le defaut qu'avait
+     * le mot de passe avant le durcissement — un guillemet produisait un JSON
+     * invalide, et ce compte ne pouvait jamais se connecter.
+     *
+     * Le champ est TOUJOURS ecrit, meme vide : sa PRESENCE dit au core qu'il
+     * parle a un agent recent. L'omettre quand il est vide le ferait passer
+     * pour un agent ancien, et le core laisserait passer. */
+    if (vaultaire_json_escape(otp ? otp : "", o, sizeof(o)) != 0) {
+        vaultaire_log_err("code de second facteur trop long apres echappement");
+        return -1;
+    }
+
     int n = snprintf(out, out_size,
-                     "{\"check\":{\"user\":\"%s\",\"password\":\"%s\"}}", u, p);
+                     "{\"check\":{\"user\":\"%s\",\"password\":\"%s\",\"otp\":\"%s\"}}",
+                     u, p, o);
     if (n < 0 || (size_t)n >= out_size) {
         vaultaire_log_err("requete d'authentification trop longue");
         return -1;
@@ -1032,12 +1050,51 @@ int vaultaire_json_get_string(const char *json, const char *key, char *out, size
     while (*p == ' ' || *p == '\t') p++;
     if (*p != '"') return -1;
     p++;
-    const char *start = p;
-    while (*p && *p != '"') p++;
-    if (!*p) return -1;
-    size_t len = (size_t)(p - start);
-    if (len >= out_size) len = out_size - 1;
-    memcpy(out, start, len);
+
+    /* Les ECHAPPEMENTS sont DESECHAPPES, et ce n'est pas du confort.
+     *
+     * Cette fonction ne lisait que des valeurs que le daemon compose lui-meme
+     * et qui ne contiennent jamais de guillemet : un statut, un nom de compte
+     * local. Elle lit desormais aussi « notice » (TO-DO 99) — un TEXTE LIBRE
+     * compose par le core et destine a l'ecran de connexion.
+     *
+     * Sans desechappement, un texte contenant un guillemet etait coupe au
+     * premier \" : l'utilisateur lisait une phrase tronquee, et le reste de la
+     * reponse — dont les cles — restait derriere. Avec, la valeur se lit en
+     * entier, quelle qu'elle soit.
+     *
+     * Les sequences \uXXXX ne sont PAS converties en UTF-8 : un point
+     * d'interrogation est substitue. Le core n'en produit pas — encoding/json
+     * n'echappe que les caracteres de controle et, par defaut, < > & — et
+     * ecrire un convertisseur UTF-16 ici pour un cas qui n'arrive pas serait
+     * du code non eprouve sur un chemin critique. */
+    size_t len = 0;
+    while (*p && *p != '"') {
+        char c = *p;
+        if (c == '\\') {
+            p++;
+            if (!*p) return -1;   /* echappement coupe : reponse tronquee */
+            switch (*p) {
+                case 'n': c = '\n'; break;
+                case 't': c = '\t'; break;
+                case 'r': c = '\r'; break;
+                case 'b': c = '\b'; break;
+                case 'f': c = '\f'; break;
+                case 'u':
+                    /* \uXXXX : on saute les quatre chiffres hexadecimaux et on
+                     * pose un caractere de remplacement. */
+                    for (int i = 0; i < 4 && p[1]; i++) p++;
+                    c = '?';
+                    break;
+                default:  c = *p; break;   /* \" \\ \/ et tout le reste */
+            }
+        }
+        if (len + 1 < out_size) {
+            out[len++] = c;
+        }
+        p++;
+    }
+    if (!*p) return -1;   /* chaine non terminee : reponse tronquee */
     out[len] = '\0';
     return 0;
 }

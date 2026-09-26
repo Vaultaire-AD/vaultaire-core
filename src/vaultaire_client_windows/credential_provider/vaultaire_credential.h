@@ -17,6 +17,11 @@ enum Champ {
   kChampTitre = 0,      // « Vaultaire », grand texte
   kChampUtilisateur,    // saisie : alice@domaine.fr
   kChampMotDePasse,     // saisie masquée
+  // Second facteur (TO-DO 95). Saisie masquée elle aussi : un code TOTP reste
+  // valide jusqu'à 90 secondes, assez pour que quelqu'un qui regarde l'écran
+  // s'en serve. L'ordre place ce champ APRÈS le mot de passe — et avant le
+  // bouton — parce que c'est l'ordre dans lequel on le saisit.
+  kChampCode,
   kChampValider,        // bouton
   kChampMessage,        // petit texte : état de l'agent, motif d'un refus
   kNombreDeChamps,
@@ -68,6 +73,9 @@ class CVaultaireCredential : public ICredentialProviderCredential2 {
   // destructeur de base tournerait — le mot de passe ne serait pas effacé.
   virtual ~CVaultaireCredential();
   void EffacerMotDePasse();
+  // Même traitement que le mot de passe : un code reste valide jusqu'à 90
+  // secondes, il ne doit pas traîner dans la mémoire de LogonUI.
+  void EffacerCode();
 
   LONG references_;
   CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario_;
@@ -75,6 +83,7 @@ class CVaultaireCredential : public ICredentialProviderCredential2 {
 
   std::wstring utilisateur_;
   std::wstring mot_de_passe_;
+  std::wstring code_;
   std::wstring message_;
 };
 

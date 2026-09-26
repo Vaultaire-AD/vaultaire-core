@@ -226,6 +226,8 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `gpo.list_compliance` ² | `read:get:gpo` | Globale | — | **Registre** — `gpo status`, `gpo drift` | — |
 | `gpo.get_compliance` | `read:get:gpo` | Machine | — | **Registre** — `gpo status <machine>` | — |
 | `gpo.refresh` | `write:update:client` | Machine | — | **Registre** — `gpo refresh <machine>`, `--all` | — |
+| `gpo.get_signature_policy` | `read:log` | Globale | — | **Registre** — `gpo signature` | — |
+| `gpo.set_signature_policy` | `write:server` | Globale | — | **Registre** — `gpo signature <on\|off>` | — |
 | `domain.list_tree` ² | `read:get:group` | Globale | — | **Registre** — `eyes -g` | **Registre** — page Arborescence |
 | `domain.list_groups` ² | `read:get:group` | Domaine | — | **Registre** — `eyes -g <domaine>` | — |
 | **DNS, enrôlement, réglages** ³ |
@@ -242,7 +244,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**92 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+**94 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
 ligne de commande.**
 
 ³ **Sept clés RBAC nouvelles** — voir ci-dessous.

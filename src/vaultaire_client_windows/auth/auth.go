@@ -47,13 +47,21 @@ type Verdict struct {
 	Indisponible bool
 	Delai        bool
 	Motif        string
+
+	// Avertissement est le message que le CORE demande d'afficher quand la
+	// session s'ouvre (TO-DO 99) : mot de passe provisoire, expiration
+	// prochaine. Vide le plus souvent.
+	//
+	// Il accompagne une acceptation, jamais un refus : le motif d'un refus
+	// voyage dans Motif.
+	Avertissement string
 }
 
 // Authentifier envoie le mot de passe au core et attend le verdict.
 //
 // Le mot de passe n'est ni journalisé, ni conservé : il ne sort de cette
 // fonction que dans la trame.
-func Authentifier(utilisateur, motDePasse string) Verdict {
+func Authentifier(utilisateur, motDePasse, code string) Verdict {
 	// La session EXISTANTE, sans jamais attendre qu'elle s'ouvre.
 	//
 	// Le chemin habituel du socle (OpenVaultaireDefaultSession) démarre le
@@ -79,9 +87,21 @@ func Authentifier(utilisateur, motDePasse string) Verdict {
 	sshreq.Register(utilisateur, attente)
 	defer sshreq.Remove(utilisateur)
 
+	// Le code de second facteur voyage EN QUEUE, sur une ligne préfixée
+	// (TO-DO 95) : un core resté à l'ancienne version lit les deux premières
+	// lignes et ignore le reste, au lieu de prendre le code pour autre chose.
+	//
+	// La ligne n'est ajoutée que si la tuile a envoyé un code : son ABSENCE dit
+	// au core « agent ancien », et en fabriquer une vide ferait passer cet agent
+	// pour à jour alors qu'il ne demande rien à l'utilisateur.
+	contenu := []string{utilisateur, motDePasse}
+	if code != "" {
+		contenu = append(contenu, PrefixeOTP+code)
+	}
+
 	trame := sendmessage.BuildClientTrame("03_01", "serveur_central",
 		string(sess.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID,
-		utilisateur, motDePasse)
+		contenu...)
 	sendmessage.SendMessage(trame, sess.DuckySession)
 
 	select {
@@ -95,7 +115,8 @@ func Authentifier(utilisateur, motDePasse string) Verdict {
 		}
 		logs.Write_log("INFO", fmt.Sprintf(
 			"authentification acceptée pour %s (administrateur : %t)", utilisateur, resultat.IsAdmin))
-		return Verdict{Accepte: true, Administrateur: resultat.IsAdmin}
+		return Verdict{Accepte: true, Administrateur: resultat.IsAdmin,
+			Avertissement: resultat.Avertissement}
 
 	case <-time.After(DelaiVerdict):
 		logs.Write_log("ERROR", fmt.Sprintf(

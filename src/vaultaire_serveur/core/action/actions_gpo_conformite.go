@@ -74,6 +74,12 @@ func filtrerConformite(donnees any, perim Perimetre) (any, int) {
 	return garde, len(rows) - len(garde)
 }
 
+// MaxTransitionsFiche borne l'historique rendu par la fiche d'une machine.
+//
+// Assez pour voir une série d'allers-retours, trop peu pour qu'une machine
+// instable remplisse l'écran — et pour qu'une fiche coûte une requête bornée.
+const MaxTransitionsFiche = 20
+
 // ConformiteMachine rassemble ce qu'il faut pour la fiche d'une machine.
 //
 // Trois requêtes distinctes en une seule réponse : l'état par portée, les
@@ -85,14 +91,21 @@ type ConformiteMachine struct {
 	Echecs      []dbgpo.ModuleReportRow
 	Ecarts      []dbgpo.DriftRow
 
-	// ModulesIllisibles et EcartsIllisibles disent qu'une des trois lectures a
-	// échoué, sans faire échouer l'ensemble.
+	// Historique est la suite des CHANGEMENTS d'état d'application, la plus
+	// récente en tête. Les trois champs ci-dessus disent où en est la machine ;
+	// celui-ci dit depuis quand — la question qui suit immédiatement devant un
+	// « partial », et à laquelle il fallait jusqu'ici fouiller le journal.
+	Historique []dbgpo.ApplyHistoryRow
+
+	// ModulesIllisibles, EcartsIllisibles et HistoriqueIllisible disent qu'une
+	// des lectures a échoué, sans faire échouer l'ensemble.
 	//
 	// L'état par portée suffit à répondre à « cette machine est-elle
 	// conforme ». Refuser toute la fiche parce que le détail des modules
 	// manque priverait de la réponse principale.
-	ModulesIllisibles string
-	EcartsIllisibles  string
+	ModulesIllisibles   string
+	EcartsIllisibles    string
+	HistoriqueIllisible string
 }
 
 func listerConformite(_ Appelant, _ Params) (Resultat, error) {
@@ -134,6 +147,15 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 		out.EcartsIllisibles = err.Error()
 	} else {
 		out.Ecarts = ecarts
+	}
+
+	// Borné : une fiche montre les dernières transitions, pas l'histoire
+	// complète d'une machine qu'on répare depuis six mois. Ce qui dépasse reste
+	// en base jusqu'à la rétention, et se lit par la même action.
+	if histo, err := dbgpo.HistoriqueApplication(db, id, MaxTransitionsFiche); err != nil {
+		out.HistoriqueIllisible = err.Error()
+	} else {
+		out.Historique = histo
 	}
 
 	return Resultat{

@@ -8,8 +8,8 @@
 
 | Trame | Reçue par | Nom | Rôle |
 |---|---|---|---|
-| `03_01` | core | client ask if user can login | l'agent envoie identifiant et mot de passe |
-| `03_02` | client | success | `is_admin`, la ligne `groups:`, puis les clés publiques du compte |
+| `03_01` | core | client ask if user can login | l'agent envoie identifiant, mot de passe, et la ligne `otp:` (TO-DO 95) |
+| `03_02` | client | success | `is_admin`, la ligne `groups:`, la ligne `notice:` (TO-DO 99), puis les clés publiques du compte |
 | `03_03` | client | failed | refus et raison |
 | ~~`03_04`~~ | core | **obsolète** | demandait le sel d'un compte — refusée par « obsolete client » |
 | ~~`03_05`~~ | client | **obsolète** | rendait sel + nonce — journalisée en WARNING par l'agent |
@@ -48,8 +48,8 @@ l'identique, et l'empreinte serait restée la clé.
 ## Échange actuel
 
 ```
-03_01  <utilisateur@domaine>\n<mot de passe>
-  03_02  <utilisateur@domaine>\n<is_admin>\ngroups:<g1>,<g2>\n<clé pub 1>\n<clé pub 2>…
+03_01  <utilisateur@domaine>\n<mot de passe>\notp:<code>
+  03_02  <utilisateur@domaine>\n<is_admin>\ngroups:<g1>,<g2>\nnotice:<message>\n<clé pub 1>…
   03_03  <utilisateur@domaine>\n<raison>
 
 03_06  <utilisateur@domaine>              demande des clés publiques seules
@@ -129,6 +129,47 @@ sessions utilisateur expirent avec elle. Une déconnexion dont la `03_11` se per
 reste en revanche affichée tant que la machine tourne — un défaut d'affichage,
 assumé, contre l'alternative qui afficherait comme partis des gens toujours
 connectés.
+
+## Les lignes de queue, et pourquoi elles sont préfixées
+
+Trois champs se sont ajoutés à cet échange sans jamais décaler les précédents :
+
+| Ligne | Sens | Point |
+|---|---|---|
+| `otp:<code>` | dans `03_01` — le second facteur | TO-DO 95 |
+| `groups:<g1>,<g2>` | dans `03_02` — les appartenances | lot 6 |
+| `notice:<message>` | dans `03_02` — le message à afficher à l'utilisateur | TO-DO 99 |
+
+La règle est la même pour les trois, et elle est expliquée ci-dessous pour
+`groups:` : **en queue, reconnues par leur préfixe, jamais par leur rang.**
+
+### `otp:` — le second facteur *(TO-DO 95)*
+
+Le code voyage sur sa propre ligne, et non accolé au mot de passe comme au bind
+LDAP — où c'est subi, le protocole LDAP n'ayant pas de second champ. Accoler
+rendrait ambigu tout mot de passe qui finit par six chiffres, et mettrait le code
+dans la même variable que le mot de passe.
+
+La ligne est **présente même quand le code est vide**, côté canal PAM : c'est sa
+présence qui dit au core qu'il parle à un agent récent. Un agent ancien n'en
+envoie aucune, et cette distinction porte toute la migration
+(`mfa_ducky_required`).
+
+Voir [`MFA_et_Expiration.md`](../../MFA_et_Expiration.md) §3 pour la règle, la
+convention `0000` et le cas de SSH par clé publique.
+
+### `notice:` — le message d'ouverture de session *(TO-DO 99)*
+
+Un **canal**, pas un message : il transporte « votre mot de passe est provisoire »
+et « votre mot de passe expire dans N jours », et transportera ce qu'on aura à
+dire à quelqu'un au moment où il ouvre une session.
+
+Le texte est composé **par le core** et traverse l'agent sans être interprété :
+lui seul connaît l'état du compte, et trois clients — PAM, GDM, Windows —
+auraient sinon trois formulations, dont deux finiraient périmées.
+
+Ce n'est **pas** un motif de refus : la réponse qui le porte est une acceptation.
+Un motif de refus voyage dans la `03_03`.
 
 ## La ligne des groupes dans `03_02`
 

@@ -51,7 +51,7 @@ func authentifier(req ipc.Requete) ipc.Reponse {
 		}
 	}
 
-	verdict := Authentifier(req.Utilisateur, req.MotDePasse)
+	verdict := Authentifier(req.Utilisateur, req.MotDePasse, req.Code)
 	switch {
 	case verdict.Indisponible:
 		return ipc.Reponse{Statut: ipc.StatutIndisponible, Message: verdict.Motif}
@@ -71,6 +71,7 @@ func authentifier(req ipc.Requete) ipc.Reponse {
 			Statut:         ipc.StatutSucces,
 			Administrateur: verdict.Administrateur,
 			CompteLocal:    compte.NomLocal(req.Utilisateur),
+			Message:        verdict.Avertissement,
 		}
 	}
 
@@ -86,9 +87,20 @@ func authentifier(req ipc.Requete) ipc.Reponse {
 		}
 	}
 
+	// L'AVERTISSEMENT DU CORE voyage dans Message (TO-DO 99).
+	//
+	// Le champ existait déjà et porte, sur un refus, le motif à afficher : la
+	// tuile sait donc déjà le montrer. Un second champ aurait demandé de
+	// toucher le Credential Provider pour un texte que celui-ci affiche au même
+	// endroit et de la même façon.
+	//
+	// Sur un SUCCÈS, Message n'a jamais rien porté jusqu'ici — il n'y a donc
+	// aucune ambiguïté à lever côté C++ : un message présent sur un succès est
+	// un avertissement, et rien d'autre.
 	return ipc.Reponse{
 		Statut:         ipc.StatutSucces,
 		Administrateur: verdict.Administrateur,
 		CompteLocal:    nomLocal,
+		Message:        verdict.Avertissement,
 	}
 }

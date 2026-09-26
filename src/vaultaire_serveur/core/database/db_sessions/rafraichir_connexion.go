@@ -36,17 +36,25 @@ func RafraichirConnexion(db *sql.DB, username, computeurID string, cleSession []
 	}
 	validite := EcheanceSession()
 
-	var n int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM did_login WHERE d_id_user = ? AND d_id_logiciel = ?`,
-		idUser, idLogiciel).Scan(&n); err != nil {
-		return fmt.Errorf("battement : lecture : %w", err)
+	// Une seule écriture, qui prolonge OU recrée.
+	//
+	// C'était COUNT(*) puis UPDATE, puis un AddLoginEntry si le compte était à
+	// zéro : trois allers-retours, et une course entre la lecture et l'écriture.
+	// Deux battements simultanés de la même machine — le tunnel et une
+	// connexion du « --fetch-key » de sshd — y trouvaient tous les deux « la
+	// ligne n'existe pas » et en inséraient chacun une.
+	//
+	// Depuis le TO-DO 107, l'unicité (compte, machine) est portée par la base :
+	// ON DUPLICATE KEY UPDATE fait les deux cas en une requête, et c'est MySQL
+	// qui tranche.
+	if _, err := db.Exec(`
+		INSERT INTO did_login (d_id_user, session_key, key_time_validity, d_id_logiciel)
+		VALUES (?, ?, ?, ?)
+		ON DUPLICATE KEY UPDATE
+			session_key       = VALUES(session_key),
+			key_time_validity = VALUES(key_time_validity)`,
+		idUser, cleSession, validite, idLogiciel); err != nil {
+		return fmt.Errorf("battement : enregistrement : %w", err)
 	}
-	if n > 0 {
-		_, err = db.Exec(`UPDATE did_login SET key_time_validity = ?, session_key = ?
-			WHERE d_id_user = ? AND d_id_logiciel = ?`, validite, cleSession, idUser, idLogiciel)
-		return err
-	}
-	// Absente : même écriture qu'à l'authentification.
-	AddLoginEntry(db, idUser, cleSession, computeurID)
 	return nil
 }

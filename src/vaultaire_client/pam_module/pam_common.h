@@ -30,6 +30,14 @@
 #define VAULTAIRE_MAX_BUF        4096
 #define VAULTAIRE_CMD_SIZE       512
 
+/* Taille du message presente a l'utilisateur a l'ouverture de session
+ * (champ « notice », TO-DO 99).
+ *
+ * Borne cote CORE a la composition ; celle-ci n'est qu'un garde-fou de lecture.
+ * 512 octets laissent de la place aux accents — une phrase francaise de deux
+ * cents caracteres en occupe environ deux cent trente en UTF-8. */
+#define VAULTAIRE_NOTICE_MAX     512
+
 /* --- Logging (syslog, LOG_AUTH) --- */
 void vaultaire_log_info(const char *fmt, ...);
 void vaultaire_log_err(const char *fmt, ...);
@@ -80,7 +88,24 @@ int vaultaire_json_escape(const char *src, char *out, size_t out_size);
  * construction : les deux modules PAM l'assemblaient chacun de leur cote, avec
  * le meme defaut recopie. */
 int vaultaire_build_check_request(const char *username, const char *password,
-                                  char *out, size_t out_size);
+                                  const char *otp, char *out, size_t out_size);
+
+/* --- Second facteur, TO-DO 95 --- */
+
+/* Le texte de l'invite dit QUOI TAPER quand on n'a pas de second facteur.
+ *
+ * Sans cette precision, l'utilisateur d'un compte ordinaire voit une invite
+ * qu'il ne comprend pas, a chaque connexion, et appelle le support. Le produit
+ * propose le second facteur a tous : la majorite des comptes n'en a pas, et
+ * c'est cette majorite qui lit l'invite. */
+#define VAULTAIRE_INVITE_OTP "Code a 6 chiffres (0000 si vous n'en avez pas) : "
+
+/* Tampon du code saisi : large pour un format futur, serre pour qu'une saisie
+ * demesuree ne traverse pas la requete. */
+#define VAULTAIRE_OTP_MAX 64
+
+/* Valeur conventionnelle pour un compte sans second facteur. */
+#define VAULTAIRE_OTP_SANS_MFA "0000"
 
 /* --- Minimal JSON helpers (no external lib) --- */
 /* Get string value for key "key" into out (at most out_size bytes). Returns 0 on success. */

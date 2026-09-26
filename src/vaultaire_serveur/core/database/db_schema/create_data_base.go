@@ -137,6 +137,16 @@ func Create_DataBase(db *sql.DB) {
 			session_key BLOB NOT NULL,
 			key_time_validity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			d_id_logiciel INT NOT NULL,
+			-- L'unicité (compte, machine), portée par la BASE depuis le TO-DO 107.
+			--
+			-- Elle était tenue par le code : SELECT EXISTS puis INSERT d'un côté,
+			-- COUNT(*) puis UPDATE de l'autre. Deux séquences non atomiques, donc
+			-- deux courses — et deux authentifications simultanées de la même paire
+			-- faisaient apparaître la machine DEUX FOIS dans « status -c ».
+			--
+			-- Le même nom d'index est posé sur une base existante par
+			-- EnsureDidLoginUnicite, après dédoublonnage.
+			UNIQUE KEY uq_did_login (d_id_user, d_id_logiciel),
 			FOREIGN KEY (d_id_user) REFERENCES users(id_user) ON DELETE CASCADE,
 			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
 		);`,
@@ -449,6 +459,19 @@ func Create_DataBase(db *sql.DB) {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"database: complément du schéma cluster_nodes échoué : "+err.Error())
 		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
+	}
+
+	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
+	//
+	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue
+	// laisse une base qui fonctionne exactement comme avant, avec le défaut
+	// qu'elle avait déjà. Arrêter le core sur ce motif transformerait une
+	// correction en panne de démarrage — et sur la base d'un parc en service,
+	// c'est le genre de migration qu'on veut pouvoir reprendre au tour suivant.
+	if err := EnsureDidLoginUnicite(db); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+			"database: unicité de did_login non posée, les doublons de « status -c » "+
+				"restent possibles : "+err.Error())
 	}
 
 	logs.Write_Log("INFO", "database: all tables and relations created successfully")

@@ -159,10 +159,12 @@ var porteesAttendues = map[string]string{
 	"certificate.regenerate":        "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
-	"gpo.list_compliance":   "PorteeGlobale",
-	"gpo.get_compliance":    "PorteeClient",
-	"gpo.refresh":           "PorteeClient",
-	"cluster.refresh_nodes": "PorteeClient",
+	"gpo.list_compliance":      "PorteeGlobale",
+	"gpo.get_compliance":       "PorteeClient",
+	"gpo.refresh":              "PorteeClient",
+	"gpo.get_signature_policy": "PorteeGlobale",
+	"gpo.set_signature_policy": "PorteeGlobale",
+	"cluster.refresh_nodes":    "PorteeClient",
 
 	// Arborescence : même droit que get -g.
 	"domain.list_tree":   "PorteeGlobale",
@@ -189,6 +191,10 @@ var porteesAttendues = map[string]string{
 	"dns.delete_ptr":                 "PorteeGlobale",
 	"certificate.delete":             "PorteeGlobale",
 	"authpolicy.set_password_policy": "PorteeGlobale",
+	// Le second facteur du chemin Ducky décide de ce que TOUT le parc exige à
+	// l'ouverture de session : aucun domaine ne le porte (TO-DO 95).
+	"mfa.get_ducky_policy": "PorteeGlobale",
+	"mfa.set_ducky_policy": "PorteeGlobale",
 }
 
 // clesAttendues : nom d'action → clé RBAC exigée.
@@ -262,18 +268,24 @@ var clesAttendues = map[string]string{
 	"client_permission.delete": "write:delete:permission",
 
 	// GPO. Toutes en *:gpo — voir GPO.CleSpecifiqueAuxGPO dans le testrunner.
-	"gpo.create":            "write:create:gpo",
-	"gpo.get":               "read:get:gpo",
-	"gpo.list":              "read:get:gpo",
-	"gpo.update":            "write:update:gpo",
-	"gpo.set_drift_mode":    "write:update:gpo",
-	"gpo.delete":            "write:delete:gpo",
-	"gpo.add_module":        "write:update:gpo",
-	"gpo.update_module":     "write:update:gpo",
-	"gpo.delete_module":     "write:update:gpo",
-	"gpo.list_compliance":   "read:get:gpo",
-	"gpo.get_compliance":    "read:get:gpo",
-	"gpo.refresh":           "write:update:client",
+	"gpo.create":               "write:create:gpo",
+	"gpo.get":                  "read:get:gpo",
+	"gpo.list":                 "read:get:gpo",
+	"gpo.update":               "write:update:gpo",
+	"gpo.set_drift_mode":       "write:update:gpo",
+	"gpo.delete":               "write:delete:gpo",
+	"gpo.add_module":           "write:update:gpo",
+	"gpo.update_module":        "write:update:gpo",
+	"gpo.delete_module":        "write:update:gpo",
+	"gpo.list_compliance":      "read:get:gpo",
+	"gpo.get_compliance":       "read:get:gpo",
+	"gpo.refresh":              "write:update:client",
+	"gpo.get_signature_policy": "read:log",
+	"gpo.set_signature_policy": "write:server",
+	// Même paire de clés que la signature des GPO, et pour le même raisonnement :
+	// le réglage engage tout le parc, il ne se délègue pas par domaine (TO-DO 95).
+	"mfa.get_ducky_policy":  "read:log",
+	"mfa.set_ducky_policy":  "write:server",
 	"cluster.refresh_nodes": "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et
@@ -465,6 +477,8 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsConformiteGPO(r)
 	EnregistrerActionsRafraichissementGPO(r)
 	EnregistrerActionsRafraichissementCluster(r)
+	EnregistrerActionsSignatureGPO(r)
+	EnregistrerActionsMFADucky(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
 	EnregistrerActionsDuree(r)

@@ -2,11 +2,12 @@ package dbusers
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
+	"vaultaire/core/auth/passwordpolicy"
 	database "vaultaire/core/database"
 	dbdomains "vaultaire/core/database/db_domains"
 	guardprotected "vaultaire/core/database/guard_protected"
-	"vaultaire/core/global/security"
 	"vaultaire/core/logs"
 )
 
@@ -68,9 +69,22 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 		// quel que soit le format de celle qu'il remplace. C'est le second chemin
 		// de migration, en plus du réencodage à la connexion : qui change son mot
 		// de passe quitte le SHA-256 par ce seul geste.
+		//
+		// PreparerNouveauMotDePasse et non security.Hacher : le contrôle de
+		// robustesse (TO-DO 100) est adossé au hachage, pas recopié dans chaque
+		// façade. Ce chemin-ci est emprunté par la page profil, la page
+		// d'administration et le CLI ; les brancher un à un aurait laissé le
+		// quatrième dehors.
 		var err error
-		hashHex, saltHex, err = security.Hacher(password)
+		hashHex, saltHex, err = passwordpolicy.PreparerNouveauMotDePasse(db, username, password)
 		if err != nil {
+			// Un refus de robustesse n'est PAS une erreur de base : il est rendu
+			// tel quel pour que son message atteigne celui qui tape, et il n'est
+			// pas journalisé en ERROR — PreparerNouveauMotDePasse l'a déjà noté.
+			var faible *passwordpolicy.ErreurRobustesse
+			if errors.As(err, &faible) {
+				return faible
+			}
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur hachage du mot de passe: "+err.Error())
 			return fmt.Errorf("erreur hachage du mot de passe: %v", err)
 		}

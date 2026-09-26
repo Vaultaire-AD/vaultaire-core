@@ -61,19 +61,51 @@ int main(void) {
     ok("place insuffisante -> erreur", vaultaire_json_escape("abcdefgh", petit, sizeof(petit))!=0);
 
     /* LE cas : le mot de passe avec guillemet doit produire un JSON VALIDE */
-    vaultaire_build_check_request("admin@dom", "pa\"ss", req, sizeof(req));
+    vaultaire_build_check_request("admin@dom", "pa\"ss", "0000", req, sizeof(req));
     ok("requete avec guillemet bien formee",
-       strcmp(req,"{\"check\":{\"user\":\"admin@dom\",\"password\":\"pa\\\"ss\"}}")==0);
+       strcmp(req,"{\"check\":{\"user\":\"admin@dom\",\"password\":\"pa\\\"ss\",\"otp\":\"0000\"}}")==0);
     printf("       %s\n", req);
 
     /* injection : le mot de passe ne doit pas pouvoir ajouter un champ */
-    vaultaire_build_check_request("attaquant@dom", "x\",\"user\":\"admin@dom", req, sizeof(req));
+    vaultaire_build_check_request("attaquant@dom", "x\",\"user\":\"admin@dom", "0000", req, sizeof(req));
     ok("injection neutralisee (un seul champ user)",
        strstr(req,"\"user\":\"attaquant@dom\"")!=NULL &&
        strstr(req,"\",\"user\":\"admin@dom\"")==NULL);
     printf("       %s\n", req);
 
     
+    /* TO-DO 95 : le code de second facteur vient d'une SAISIE UTILISATEUR.
+     *
+     * Rien ne garantit que l'utilisateur ait tape six chiffres — et le defaut
+     * qu'avait le mot de passe avant le durcissement serait exactement le meme
+     * ici : un guillemet produirait un JSON invalide, et le compte ne pourrait
+     * jamais se connecter. */
+    vaultaire_build_check_request("alice@dom", "mdp", "12\"34", req, sizeof(req));
+    ok("code avec guillemet echappe",
+       strstr(req,"\"otp\":\"12\\\"34\"")!=NULL);
+
+    vaultaire_build_check_request("alice@dom", "mdp", "x\",\"password\":\"vole", req, sizeof(req));
+    ok("injection par le code neutralisee",
+       strstr(req,"\"password\":\"mdp\"")!=NULL &&
+       strstr(req,"\"password\":\"vole\"")==NULL);
+
+    /* Le champ est TOUJOURS ecrit, meme vide : sa PRESENCE dit au core qu'il
+     * parle a un agent recent. L'omettre le ferait passer pour un agent ancien,
+     * et le core laisserait passer sans second facteur. */
+    vaultaire_build_check_request("alice@dom", "mdp", "", req, sizeof(req));
+    ok("champ otp present meme vide", strstr(req,"\"otp\":\"\"")!=NULL);
+
+    /* Un code demesure est REFUSE, jamais tronque : un code tronque serait
+     * refuse par le core comme un code faux, et l'utilisateur chercherait du
+     * cote de son telephone. */
+    {
+        char tres_long[256];
+        memset(tres_long, '7', sizeof(tres_long)-1);
+        tres_long[sizeof(tres_long)-1] = '\0';
+        ok("code demesure refuse",
+           vaultaire_build_check_request("alice@dom", "mdp", tres_long, req, sizeof(req)) != 0);
+    }
+
     printf("\n--- Point 6 : liste blanche des noms ---\n");
 
     ok("alice@dom accepte",            vaultaire_is_valid_username("alice@dom"));
@@ -366,6 +398,87 @@ int main(void) {
        vaultaire_local_account_usable("jamais-vu-ici@dom") == 0);
     /* root existe et n'est ni verrouille ni expire sur une machine saine. */
     ok("un compte local sain passe", vaultaire_local_account_usable("root") == 0);
+
+    /* ---------------------------------------------------------------------
+     * TO-DO 99 : le message presente a l'utilisateur a l'ouverture de session.
+     *
+     * Le champ « notice » est le premier TEXTE LIBRE que ces modules lisent
+     * dans la reponse du daemon. Les valeurs lues jusqu'ici — un statut, un nom
+     * de compte — ne contiennent jamais de guillemet ni d'accent ; celle-ci est
+     * une phrase francaise composee par le core.
+     *
+     * Ce que ces cas verifient est donc ce que l'ancien lecteur ne faisait pas :
+     * rendre la valeur ENTIERE quelle qu'elle soit, au lieu de la couper au
+     * premier echappement.
+     * --------------------------------------------------------------------- */
+    printf("\n--- TO-DO 99 : lecture du message d'ouverture de session ---\n");
+
+    char notice[512];
+
+    ok("un message simple se lit",
+       vaultaire_json_get_string("{\"status\":\"success\",\"notice\":\"changez votre mot de passe\"}",
+                                 "notice", notice, sizeof(notice)) == 0 &&
+       strcmp(notice, "changez votre mot de passe") == 0);
+
+    /* LE cas du point : un guillemet echappe coupait la phrase en deux, et
+     * l'utilisateur lisait un message tronque sans savoir pourquoi. */
+    ok("un guillemet echappe ne coupe pas le message",
+       vaultaire_json_get_string("{\"notice\":\"tapez \\\"oui\\\" pour continuer\"}",
+                                 "notice", notice, sizeof(notice)) == 0 &&
+       strcmp(notice, "tapez \"oui\" pour continuer") == 0);
+
+    ok("une barre oblique inverse se lit",
+       vaultaire_json_get_string("{\"notice\":\"C:\\\\Windows\"}",
+                                 "notice", notice, sizeof(notice)) == 0 &&
+       strcmp(notice, "C:\\Windows") == 0);
+
+    ok("un saut de ligne echappe devient un vrai saut de ligne",
+       vaultaire_json_get_string("{\"notice\":\"ligne1\\nligne2\"}",
+                                 "notice", notice, sizeof(notice)) == 0 &&
+       strcmp(notice, "ligne1\nligne2") == 0);
+
+    /* Les accents voyagent en UTF-8 brut : encoding/json ne les echappe pas,
+     * et ce lecteur ne doit pas les abimer. */
+    ok("les accents traversent intacts",
+       vaultaire_json_get_string("{\"notice\":\"mot de passe perime\"}",
+                                 "notice", notice, sizeof(notice)) == 0 &&
+       strcmp(notice, "mot de passe perime") == 0);
+
+    /* Le champ est FACULTATIF : son absence n'est pas une erreur de lecture de
+     * la reponse, c'est le cas ordinaire — il n'y a rien a dire. */
+    ok("un champ absent est signale sans toucher au tampon",
+       vaultaire_json_get_string("{\"status\":\"success\"}",
+                                 "notice", notice, sizeof(notice)) != 0 &&
+       notice[0] == '\0');
+
+    /* Une reponse COUPEE ne doit pas passer pour un message valide : le champ
+     * precede les cles dans la reponse, et une chaine non terminee signifie que
+     * tout ce qui suit manque aussi. */
+    ok("une chaine non terminee est refusee",
+       vaultaire_json_get_string("{\"notice\":\"coupe au milieu",
+                                 "notice", notice, sizeof(notice)) != 0);
+
+    ok("un echappement coupe en fin de tampon est refuse",
+       vaultaire_json_get_string("{\"notice\":\"fini par \\",
+                                 "notice", notice, sizeof(notice)) != 0);
+
+    /* Le statut continue de se lire comme avant : c'est lui qui decide du
+     * refus, et le nouveau lecteur ne doit rien y changer. */
+    ok("le statut se lit toujours",
+       vaultaire_json_get_string("{\"status\":\"success\",\"is_admin\":true}",
+                                 "status", notice, sizeof(notice)) == 0 &&
+       strcmp(notice, "success") == 0);
+
+    /* Un message plus long que le tampon est TRONQUE, pas refuse : il reste
+     * lisible, et le refuser priverait l'utilisateur de l'avertissement entier
+     * pour une question de place. */
+    {
+        char petit[8];
+        ok("un message trop long est tronque proprement",
+           vaultaire_json_get_string("{\"notice\":\"beaucoup trop long pour huit octets\"}",
+                                     "notice", petit, sizeof(petit)) == 0 &&
+           strlen(petit) == sizeof(petit) - 1);
+    }
 
     printf("\n%s\n", echecs ? "DES TESTS ECHOUENT" : "tous les tests passent");
     return echecs ? 1 : 0;

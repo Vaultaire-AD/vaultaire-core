@@ -79,6 +79,15 @@ type Requete struct {
 	// que le core cherche ; un nom sans domaine est refusé côté core.
 	Utilisateur string `json:"user"`
 	MotDePasse  string `json:"password,omitempty"`
+
+	// Code est le second facteur saisi dans la tuile (TO-DO 95). « 0000 » pour
+	// un compte qui n'en a pas — c'est ce que dit le libellé du champ.
+	//
+	// SANS `omitempty`, contrairement au mot de passe : c'est la PRÉSENCE de ce
+	// champ qui dit au core qu'il parle à un agent récent. Omis parce que vide,
+	// il se confondrait avec un agent ancien, et le core laisserait passer sans
+	// second facteur.
+	Code string `json:"otp"`
 }
 
 // Reponse est ce que l'agent rend.

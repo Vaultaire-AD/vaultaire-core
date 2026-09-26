@@ -83,4 +83,9 @@ var complianceTablesDDL = []string{
 		detected_at  DATETIME     NOT NULL,
 		KEY idx_drift (computeur_id, scope, target_user)
 	) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+
+	// L'historique des applications, lui, est la SEULE des quatre à
+	// s'accumuler — et il ne le fait qu'aux changements. Voir
+	// historique_application.go pour la règle et sa rétention.
+	historiqueDDL,
 }

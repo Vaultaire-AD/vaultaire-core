@@ -53,8 +53,11 @@ Le détail des correctifs de sécurité est dans [`../Version/2.0/2.0.md`](../Ve
   d'authentification — à l'intérieur de TLS, de LDAPS ou de la session Ducky
   chiffrée, mais visible d'un serveur compromis. Seul un PAKE augmenté (OPAQUE,
   SRP) supprimerait cela
-- La configuration de référence livre des identifiants de démonstration
-  (`root`/`root`, `admin`/`admin123`) : à changer avant toute exposition
+- ~~La configuration de référence livre des identifiants de démonstration
+  (`root`/`root`, `admin`/`admin123`)~~ — **corrigé (TO-DO 99)**. Le fichier livré
+  ne porte plus que des marqueurs `CHANGEZ_MOI`, et le core **refuse de démarrer**
+  tant qu'ils y sont. Le mot de passe d'amorçage est par ailleurs **provisoire** :
+  le portail en demande un autre à la première connexion
 
 ---
 

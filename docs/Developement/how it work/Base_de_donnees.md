@@ -86,6 +86,7 @@ DATABASE: DUCKY
 │
 ├─ did_login   [* une ligne = une session DUCKY : un tunnel, une clé *]
 │   ├─ PK: id_login
+│   ├─ UNIQUE uq_did_login (d_id_user, d_id_logiciel)   ← porté par la BASE (TO-DO 107)
 │   ├─ d_id_user FK -> users.id_user
 │   ├─ session_key BLOB, key_time_validity TIMESTAMP
 │   └─ d_id_logiciel FK -> id_logiciels.id_logiciel
@@ -104,9 +105,43 @@ DATABASE: DUCKY
 > que quelqu'un s'y connectait. Un test-sentinelle analyse les littéraux SQL des
 > deux paquets et refuse qu'un nom de table passe dans l'autre.
 >
-> L'unicité `(compte, machine)` est cette fois une contrainte de la base :
-> celle de `did_login` n'existait que dans le code, et rien n'empêchait une
-> ligne en double.
+> L'unicité `(compte, machine)` est **des deux côtés** une contrainte de la
+> base. Celle de `did_login` n'existait que dans le code jusqu'au point 107 —
+> voir ci-dessous.
+
+### `did_login` : l'unicité a quitté le code *(TO-DO 107)*
+
+Elle était tenue par deux séquences **lecture-puis-écriture** : `AddLoginEntry`
+faisait `SELECT EXISTS` puis `INSERT`, `RafraichirConnexion` faisait `COUNT(*)`
+puis `UPDATE`. Donc deux courses. Deux authentifications simultanées de la même
+paire y trouvaient toutes les deux « la ligne n'existe pas » et inséraient chacune
+la leur : la machine apparaissait **deux fois** dans `status -c`.
+
+Ce n'était pas théorique : le `--fetch-key` de sshd ouvre une session à chaque
+connexion SSH, en parallèle du tunnel permanent. La fenêtre s'ouvre en
+fonctionnement normal, sans que personne ne cherche à la provoquer — et c'est
+exactement le doublon que le point 92 a fermé pour les sessions PAM, par une
+autre porte.
+
+Les deux écritures passent désormais par un `INSERT … ON DUPLICATE KEY UPDATE`,
+et la contrainte est dans le schéma.
+
+**Migration.** `EnsureDidLoginUnicite` (`db_schema/did_login_unicite.go`)
+dédoublonne **puis** contraint : `ADD UNIQUE KEY` échoue si la table porte déjà
+des doublons, c'est-à-dire précisément sur les bases qui en ont besoin. La ligne
+gardée est celle dont l'identifiant est le plus grand — la dernière insérée, donc
+celle qui porte la clé de session la plus récente : garder une ancienne ferait
+échouer le prochain rafraîchissement, qui la cherche par sa clé.
+
+L'appel est **non fatal** au démarrage : un core qui ne peut pas poser cet index
+doit continuer à servir, en le disant en WARNING. Le nombre de lignes retirées est
+journalisé.
+
+Un test-sentinelle (`did_login_unicite_test.go`) vérifie trois choses : que le
+`CREATE TABLE` d'une base neuve porte l'index, que son **nom** est le même que
+celui de la migration — sinon elle tente de le reposer à chaque démarrage —, et
+qu'aucun littéral SQL des deux fichiers d'écriture ne relit la table avant de
+l'écrire.
 
 ## Second facteur et expiration des mots de passe
 
@@ -148,6 +183,43 @@ coup, « inconnu donc valide » crée une population qui n'expirera jamais.
 
 Détails et raisonnement dans [`MFA_et_Expiration.md`](./MFA_et_Expiration.md).
 
+## Mot de passe provisoire et robustesse — TO-DO 99 et 100
+
+Deux colonnes de plus sur `users`, posées par `db_authpolicy/create_schema.go`
+comme les colonnes `mfa_*` :
+
+| Colonne | Type | Rôle |
+|---|---|---|
+| `must_change_password` | `BOOLEAN NOT NULL DEFAULT FALSE` | le mot de passe en place est provisoire |
+| `provisional_password_until` | `DATETIME NULL` | son échéance ; NULL = pas de limite de temps, le changement reste obligatoire |
+
+- **En base et non dans la session** : le drapeau doit survivre à une
+  déconnexion, et surtout être lu par les chemins qui n'ont **pas** de session
+  web — Ducky/PAM et le bind LDAP. La session web en porte une copie, que cette
+  colonne renseigne.
+- **Une DATE et non une durée** : la durée est un réglage global qui peut changer
+  entre la pose du mot de passe et sa première utilisation. Recalculer l'échéance
+  à partir de la durée du jour déplacerait celle des mots de passe déjà posés,
+  dans les deux sens.
+- **`BOOLEAN NOT NULL DEFAULT FALSE`** donne la bonne valeur aux lignes
+  existantes sans rattrapage : un annuaire en service ne voit rien changer.
+- Les deux colonnes sont lues par `GetAuthState`, dans la **même requête** que
+  l'état du second facteur. Les chemins d'authentification la font déjà : leur
+  faire relire le compte doublerait les requêtes sur le trajet le plus fréquent
+  du serveur, et ouvrirait une fenêtre où les deux lectures ne verraient pas le
+  même compte.
+
+Un réglage de plus dans `server_settings` :
+
+| Clé | Bornes | Défaut |
+|---|---|---|
+| `password_min_length` | 8 à 128, **le plancher ne se désactive pas** | 12 |
+
+Le plancher est appliqué **à la lecture** autant qu'à l'écriture : une ligne
+posée à la main, ou héritée d'une version où la borne était plus basse, ne doit
+pas pouvoir abaisser la règle. Voir
+[`MFA_et_Expiration.md`](./MFA_et_Expiration.md) §4 ter.
+
 ## Journal commun des cores — `server_logs`
 
 Créée par `core/database/db_journaux/schema.go`, appelé à chaque démarrage juste
@@ -181,6 +253,40 @@ CREATE TABLE IF NOT EXISTS server_logs (
   fait échouer l'INSERT — et avec lui tout le lot de 200 lignes.
 - **Rétention** : `log_retention_days` (30 j par défaut), purge par lots de
   10 000. La table est bornée par le temps, pas par le nombre de lignes.
+
+## Mesures des nœuds — `proxy_metrics`
+
+Créée par `create_data_base.go`. Une ligne par trame `04_05`.
+
+```sql
+proxy_metrics (
+    id_metric      INT AUTO_INCREMENT PRIMARY KEY,
+    proxy_hostname VARCHAR(255) NOT NULL,   -- celui de la ligne du DEMANDEUR
+    proxy_ip       VARCHAR(45)  NOT NULL,
+    metric_type    VARCHAR(64)  NOT NULL,   -- « relais » pour un vlt-proxy
+    metric_value   DOUBLE       NOT NULL,   -- connexions actives
+    extra          JSON,                    -- tous les autres compteurs
+    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_proxy (proxy_hostname),
+    INDEX idx_created (created_at)
+)
+```
+
+- **Une seule ligne par battement** (20 s), et non une par compteur *(TO-DO
+  108)*. Six lignes toutes les vingt secondes feraient vingt-cinq mille par jour
+  et par proxy — près d'un million sur la rétention, pour une vue qui n'en lit
+  jamais qu'une : la dernière. `extra` est du JSON exactement pour cela.
+- **`proxy_hostname` n'est pas celui du contenu de la trame** : c'est celui de la
+  ligne `cluster_nodes` du demandeur. Sinon n'importe quel nœud décrivait l'état
+  d'un pair. L'écart est journalisé en `SECURITY`.
+- **Lecture** : `DernieresMetriquesRelais` ne prend que la **dernière** ligne par
+  nœud, par `MAX(id_metric)` — et non par date : deux mesures de la même seconde
+  portent la même date, ce qui arrive dès qu'un nœud rattrape un retard. Une
+  mesure de plus de **trois minutes** n'est pas rendue.
+- **Rétention** : `proxy_metrics_retention_days` (30 j par défaut, 0 = illimité),
+  purge par lots de 10 000. Débit borné à 60 écritures par nœud et par minute.
+- **Rien ne s'en sert pour décider.** Le tri de la liste servie aux agents ne lit
+  pas cette table, et c'est volontaire : une `04_05` est déclarative.
 
 ## Notes rapides / observations
 
