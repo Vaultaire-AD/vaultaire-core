@@ -20,6 +20,13 @@ func (s SchemaEntry) DN() string {
 	return "cn=schema"
 }
 
+// Domaines — voir ldapinterface.LDAPEntry. Comme le RootDSE, le sous-schéma
+// n'appartient à aucun domaine et passe par le chemin qui court-circuite le
+// filtre d'autorisation.
+func (s SchemaEntry) Domaines() []string {
+	return nil
+}
+
 func (s SchemaEntry) ObjectClasses() []string {
 	return []string{"top", "subschema"}
 }

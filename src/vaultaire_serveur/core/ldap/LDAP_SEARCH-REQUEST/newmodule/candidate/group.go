@@ -16,6 +16,18 @@ func (g GroupEntry) DN() string {
 	return fmt.Sprintf("cn=%s,ou=groups,%s", g.Name, ldaptools.ToRootDN(g.BaseDN))
 }
 
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Un groupe n'a qu'un domaine, et `BaseDN` porte ici le SIEN — le résolveur y
+// place `g.DomainName`, lu en base, et non le domaine demandé par le client.
+// C'est exactement le cas que le filtre d'autorisation doit pouvoir écarter.
+func (g GroupEntry) Domaines() []string {
+	if g.BaseDN == "" {
+		return nil
+	}
+	return []string{g.BaseDN}
+}
+
 func (g GroupEntry) ObjectClasses() []string {
 	return []string{
 		"top",

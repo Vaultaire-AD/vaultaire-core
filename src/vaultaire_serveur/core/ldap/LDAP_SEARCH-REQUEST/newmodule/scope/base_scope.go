@@ -3,6 +3,7 @@ package scope
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	dbdomains "vaultaire/core/database/db_domains"
 	dbldap "vaultaire/core/database/db_ldap"
@@ -95,26 +96,99 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 		return candidate.UserEntry{}, false
 	}
 
-	baseDN := ldaptools.ConvertLDAPBaseToDomainName(expectedDN)
-	if userID, err := dbusers.Get_User_ID_By_Username(db, username); err == nil {
-		if domains, err := dbdomains.GetDomainsForUser(db, userID); err == nil && len(domains) > 0 {
-			baseDN = domains[0]
+	domaineDuDN := ldaptools.ConvertLDAPBaseToDomainName(expectedDN)
+
+	rattachements, lus := domainesDuCompte(db, username)
+	if !lus {
+		// LECTURE EN ÉCHEC : on REFUSE, on ne retombe pas sur le domaine demandé.
+		//
+		// Le secours ci-dessous est réservé au compte qui n'a réellement aucun
+		// domaine. L'appliquer aussi à une panne de lecture rattacherait le compte
+		// au domaine que l'appelant vient de se voir autoriser — donc le filtre
+		// s'autoriserait lui-même, ce qui est exactement le défaut du point 120,
+		// reproduit sur un autre chemin et déclenchable par une erreur transitoire.
+		//
+		// Partout ailleurs dans ce correctif, une lecture de droits qui échoue
+		// refuse ; ici aussi.
+		logs.Write_Log("ERROR", "ldap: domaines de "+username+
+			" illisibles — entrée non rendue")
+		return candidate.UserEntry{}, false
+	}
+
+	baseDN := domaineDuDN
+	if len(rattachements) > 0 {
+		// Le domaine qui compose le DN : celui des rattachements qui redonne le DN
+		// demandé, et à défaut le premier dans l'ordre alphabétique.
+		//
+		// La version antérieure prenait `domains[0]` sans plus de façon, alors que
+		// `GetDomainsForUser` n'a AUCUN ORDER BY. Dans un même arbre cela ne se
+		// voyait pas — `ToRootDN` ne garde que les deux derniers labels, donc
+		// `admin.enov.local` et `enov.local` composent le même DN. Mais pour un
+		// compte membre de groupes dans DEUX arbres (`enov.local` et `acme.fr`), le
+		// DN construit tombait tantôt sur l'un tantôt sur l'autre : la comparaison
+		// finale échouait une fois sur deux et le compte devenait introuvable par
+		// intermittence — sur le chemin que JumpServer emprunte après CHAQUE
+		// authentification.
+		baseDN = rattachements[0]
+		for _, d := range rattachements {
+			if strings.EqualFold(ldaptools.ToRootDN(d), ldaptools.ToRootDN(domaineDuDN)) {
+				baseDN = d
+				break
+			}
 		}
 	}
 
+	// Compte sans aucun domaine : on retient celui du DN demandé.
+	//
+	// Il n'appartient à aucun groupe, donc à aucune délégation : le refuser ne
+	// protégerait personne, et le rendrait illisible alors qu'il l'est
+	// aujourd'hui. Le domaine du DN est par ailleurs celui que l'appelant vient de
+	// se voir autoriser à l'entrée, donc ce secours n'ouvre rien.
+	//
+	// Ce cas est celui du point 122 — un compte sans groupe est déjà introuvable
+	// par une recherche `one` ou `sub`, et n'est lisible que par son DN exact.
+	// C'est là qu'il faudra décider ce qu'un tel compte est censé être.
+	if len(rattachements) == 0 && domaineDuDN != "" {
+		rattachements = []string{domaineDuDN}
+	}
+
 	entry := candidate.UserEntry{
-		User:        userObj,
-		BaseDN:      baseDN,
-		Groups:      memberOfForUser(db, username),
-		DisplayName: userObj.Firstname + " " + userObj.Lastname,
-		GivenName:   userObj.Firstname,
-		Sn:          userObj.Lastname,
-		Uid:         userObj.Username,
+		User:          userObj,
+		BaseDN:        baseDN,
+		Rattachements: rattachements,
+		Groups:        memberOfForUser(db, username),
+		DisplayName:   userObj.Firstname + " " + userObj.Lastname,
+		GivenName:     userObj.Firstname,
+		Sn:            userObj.Lastname,
+		Uid:           userObj.Username,
 	}
 	if strings.ToLower(entry.DN()) != expectedDN {
 		return candidate.UserEntry{}, false
 	}
 	return entry, true
+}
+
+// domainesDuCompte rend les domaines d'un compte, triés, et dit si la LECTURE a
+// abouti.
+//
+// Le second retour distingue « ce compte n'a aucun domaine » de « je n'ai pas pu
+// savoir ». Les deux se ressemblaient — une liste vide dans les deux cas — et
+// c'est ce qui permettait à une panne de base de passer pour un compte sans
+// groupe, donc de déclencher un secours qui ouvre.
+func domainesDuCompte(db *sql.DB, username string) (domaines []string, lus bool) {
+	userID, err := dbusers.Get_User_ID_By_Username(db, username)
+	if err != nil {
+		return nil, false
+	}
+	domains, err := dbdomains.GetDomainsForUser(db, userID)
+	if err != nil {
+		return nil, false
+	}
+	domaines = append(domaines, domains...)
+	// Trié : `GetDomainsForUser` n'a aucun ORDER BY, et une liste dont l'ordre
+	// change d'une exécution à l'autre rend les journaux incomparables.
+	sort.Strings(domaines)
+	return domaines, true
 }
 
 func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.GroupEntry, bool) {

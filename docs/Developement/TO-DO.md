@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **111**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **133**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -22,6 +22,23 @@ ouverts** : 98 (secrets au repos, à cadrer) et 101 à 105. Ce fichier porte :
 ce que le code fait, qui peut l'atteindre, ce qu'il obtient, et pourquoi la
 correction n'est pas triviale. Ce fichier porte aussi les constats laissés de
 côté, pour qu'ils ne soient pas redécouverts comme neufs.
+
+**Mise à jour du parc (point 40).** Cadrée le 28/09 : la stratégie et ses
+arbitrages sont dans [`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md), le
+travail est découpé aux points **111 à 118**. Lire le fichier avant d'ouvrir l'un
+d'eux — l'ordre entre les points n'est pas indifférent, et ce qui a été écarté
+compte autant que ce qui a été retenu.
+
+**Audit LDAP du 28/09.** Relecture de `core/ldap` — sécurité, fonctionnalités et
+compatibilité avec les clients LDAP du marché. Les constats sont détaillés dans
+[`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md), le travail est découpé
+aux points **119 à 131**. **Traités dans la 2.2** : 120 et 121, les deux constats
+de sécurité. **Restent ouverts** : 119, 122 à 131, plus le **132**, relevé en
+traitant le 120. Les entrées ci-dessous disent
+quoi faire ; le fichier d'audit dit ce que le code fait aujourd'hui, avec fichier
+et ligne — le lire avant d'ouvrir un point. Il porte aussi la section « ce qui est
+sain » : plusieurs de ces corrections touchent des fichiers voisins du chemin de
+bind, qui vient d'être repris.
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -39,11 +56,31 @@ côté, pour qu'ils ne soient pas redécouverts comme neufs.
 | 105 | DNS          | Nom de table construit par concaténation                    | À faire — sérieux                       |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
+| 119 | LDAP         | `>=`, `<=`, `~=` rendent zéro entrée en silence             | À faire — **à faire en premier**        |
+| 122 | LDAP         | Un compte sans groupe est invisible en recherche            | À faire                                 |
+| 123 | LDAP         | POSIX annoncé sans être servi — trancher                    | À faire — à trancher d'abord            |
+| 124 | LDAP         | `noSuchObject` (32) sur un DN inexistant                    | À faire                                 |
+| 125 | LDAP         | Sous-schéma inanalysable par un client strict               | À faire                                 |
+| 126 | LDAP         | `createTimestamp` / `modifyTimestamp` par entrée            | À faire — synchro Keycloak              |
+| 127 | LDAP         | `scope=1` promu en `scope=2` sur `ou=users`                 | À faire — après 122                     |
+| 128 | LDAP         | Bind non authentifié : le mauvais cas est refusé            | À faire — petit                         |
+| 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire                                 |
+| 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
+| 131 | LDAP         | Requête par groupe, et `isInScope` mort                     | À faire — petit                         |
+| 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — suite du 120                  |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 71  | CLIENT       | `-join` ne sait installer que Rocky                        | À faire                                 |
+| 112 | AGENT        | Durcir le service de l'agent (relance bornée, `--check`)    | À faire — **à faire en premier**        |
+| 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
+| 113 | AGENT-UPDATE | Clé `pkg_signing` et format du manifeste signé              | À faire                                 |
+| 114 | AGENT-UPDATE | Dépôt Nexus en lecture anonyme, découvert par `04_15`       | À faire                                 |
+| 115 | AGENT-UPDATE | Ordre de mise à jour : catégorie de trames `09`             | À faire                                 |
+| 116 | AGENT-UPDATE | Basculement survivable et retour arrière automatique        | À faire — **cœur du lot**, après 112    |
+| 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
+| 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 22  | SELINUX      | Domaine dédié pour l'agent                                 | En cours                                |
 | 49  | RÉVOCATION   | Retenter les révocations poussées en échec                 | À faire                                 |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
@@ -316,6 +353,304 @@ Un délégué `write:dns` peut vraisemblablement faire supprimer une table arbit
 
 ---
 
+## Annuaire LDAP
+
+> Constats détaillés : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md).
+> Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
+> scénario.
+>
+> **Les deux constats de sécurité — 120 et 121 — sont traités dans la 2.2.** Ce
+> qui reste est fonctionnel ou de conformité.
+>
+> **Ordre.** 119 d'abord — c'est une panne silencieuse, et tant qu'elle dure,
+> tout diagnostic sur les autres points part sur une réponse vide dont on ne sait
+> pas si elle est vraie. 123 demande une décision avant du code. 127 dépend
+> de 122.
+
+### 119. [LDAP] Trois types de filtres sur dix rendent zéro entrée, en silence
+
+**À faire en premier.** C'est le pire mode de panne du paquet : le client reçoit
+`success` avec zéro entrée, le serveur n'écrit rien, et rien n'a l'air cassé
+d'aucun des deux côtés.
+
+**Constat.** `filter/logical.go` termine son `switch` par `default: return false`,
+et sa ligne d'avertissement est commentée. Le parseur décode pourtant
+`FilterGreaterOrEqual` (5), `FilterLessOrEqual` (6) et `FilterApprox` (8) : les
+trois y tombent. `(uidNumber>=1000)` et `(whenCreated>=20260101000000Z)` ne
+rendent donc jamais rien.
+
+`FilterExtensible` est traité dans le même fichier comme une **égalité simple** :
+la règle de correspondance et le marqueur `dn:` sont ignorés. La chaîne AD
+d'appartenance transitive `(memberOf:1.2.840.113556.1.4.1941:=…)` rend un
+résultat **faux**, ce qui est pire que de ne rien rendre.
+
+**À faire.**
+
+1. Journaliser tout type de filtre non géré, en WARNING, avec le type et le DN.
+   À faire même si rien d'autre n'est fait : c'est ce qui manquait pour que le
+   défaut se voie.
+2. `>=` et `<=` : comparaison d'ordre. Numérique quand les deux côtés le sont,
+   sinon lexicographique insensible à la casse — c'est ce que dit
+   `caseIgnoreOrderingMatch`, déjà déclaré dans le sous-schéma.
+3. `~=` : à défaut d'une vraie correspondance approchée, le traiter comme une
+   égalité insensible à la casse **et le dire dans le journal**. Un client qui
+   emploie `~=` accepte l'à-peu-près ; ce qu'il n'accepte pas, c'est zéro.
+4. `FilterExtensible` : refuser une règle de correspondance inconnue plutôt que
+   d'y répondre à côté.
+5. Un test par type, sur des entrées construites à la main — le paquet n'a besoin
+   d'aucune base pour cela.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.1 et 2.2.
+
+### 122. [LDAP] Un compte sans groupe est invisible en recherche
+
+**Constat.** `loadGroupsAndUsers` (`scope/resolver.go`) ne découvre les
+utilisateurs **que** par les membres des groupes : `àLire` est rempli depuis
+`g.Users`. Un compte sans groupe n'apparaît dans aucune recherche `one` ni `sub`.
+
+Il peut malgré tout se **lier** — le bind ne passe pas par là — et être lu en
+`scope=base` sur son DN exact, ce qui donne un symptôme déroutant : « il se
+connecte mais on ne le trouve pas ».
+
+Pour un client qui synchronise, c'est plus grave : retirer un compte de son
+dernier groupe le fait **disparaître** de l'annuaire, ce que Keycloak et Nextcloud
+lisent comme une suppression de compte.
+
+**À faire.** Charger les utilisateurs **du domaine**, indépendamment des groupes,
+et ne se servir des groupes que pour le `memberOf`. La lecture en lot existe déjà
+(`GetUsersByUsernames`) ; il manque la liste des comptes d'un domaine, que
+`db_domains` sait produire pour d'autres chemins.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.3.
+
+### 123. [LDAP] POSIX est annoncé sans être servi — à trancher avant d'écrire
+
+**Une décision d'abord, du code ensuite.**
+
+**Constat.** Les entrées déclarent `posixAccount` (`candidate/user.go:36`) et
+`posixGroup` (`candidate/group.go:19`), et ne servent **aucun** de `uidNumber`,
+`gidNumber`, `homeDirectory`, `loginShell`, `gecos`, `memberUid`. Un client
+RFC 2307 trouve l'entrée, puis ne peut pas construire le compte — et sa requête
+de plage rend zéro tant que le point 119 n'est pas fait.
+
+**Les deux issues, et il faut en choisir une.**
+
+1. **Servir POSIX.** Suppose une source **stable** pour `uidNumber` / `gidNumber` :
+   un compteur en base, avec une plage réservée. Jamais un hachage du nom — deux
+   comptes qui collisionnent partageraient l'UID, donc les fichiers.
+2. **Retirer les classes `posix*`.** Cohérent avec le produit : le poste Linux est
+   servi par le client Vaultaire et les modules PAM, pas par sssd. C'est
+   probablement le bon choix, mais il ferme la porte à un parc mixte.
+
+Annoncer sans servir est le seul choix à exclure : c'est ce qui fait chercher du
+côté du client un défaut qui est ici.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.4.
+
+### 124. [LDAP] `noSuchObject` (32) sur un baseObject inexistant
+
+**Constat.** `resolveBaseScope` rend `nil` quand le DN n'existe pas, et
+`handler.go:74` envoie un `SearchResultDone` de **succès** avec zéro entrée. Un
+client ne distingue plus « ce DN n'existe pas » de « ce DN existe et est vide ».
+
+C'est la distinction sur laquelle s'appuient les outils qui vérifient l'existence
+avant d'écrire ou de synchroniser.
+
+**À faire.** Renvoyer 32 quand le `baseObject` ne désigne aucune entrée, en
+`scope=base` comme aux autres scopes. Renseigner `matchedDN` avec le plus long
+préfixe qui existe, comme le prévoit la RFC 4511 §4.1.9 : c'est ce qui permet à un
+client de dire *où* le chemin se rompt.
+
+Attention au RootDSE et à `cn=schema`, qui ne sont pas des entrées de l'annuaire
+et ne doivent pas tomber dans ce cas.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.5.
+
+### 125. [LDAP] Le sous-schéma n'est pas analysable par un client strict
+
+**Constat** (`candidate/SchemaEntry.go`) :
+
+1. `2.5.6.0` est porté **deux fois**, par `top` et par `subschema` — dont l'OID
+   est `2.5.20.1` ;
+2. `( vaultaireServiceRights-oid NAME … )` n'est pas un `numericoid`. Un
+   analyseur strict — Apache Directory Studio, python-ldap avec chargement de
+   schéma, les outils OpenLDAP — rejette **toute** la liste `attributeTypes`,
+   pas seulement cette ligne. Le constat le plus coûteux du lot, pour un
+   caractère ;
+3. `posixAccount` est déclaré `2.5.6.30`, qui n'est pas son OID (RFC 2307 :
+   `1.3.6.1.1.1.2.0`) ;
+4. classes annoncées par les entrées mais absentes du schéma : `inetOrgPerson`,
+   `posixGroup`, `organizationalUnit`, `user`, `group` ;
+5. attributs servis mais non déclarés : `displayName`, `givenName`, `entryUUID`,
+   `nsuniqueid`, `objectGUID`, `guid`, `ipaUniqueID` ;
+6. `createTimestamp` / `modifyTimestamp` figés au `20260314210522Z`.
+
+**À faire.** Corriger les OID, déclarer ce qui est réellement servi, retirer ce
+qui ne l'est plus après le point 123, et poser un OID de branche privée pour
+`vaultaireServiceRights` — à défaut d'un numéro d'entreprise enregistré, une
+branche sous `1.3.6.1.4.1.99999` documentée comme provisoire vaut mieux qu'une
+chaîne qui casse l'analyse.
+
+Un test qui relit le sous-schéma produit et vérifie que chaque `objectClass`
+annoncée par une entrée y est déclarée : sans lui, l'écart se recreusera au
+premier attribut ajouté.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.8.
+
+### 126. [LDAP] `createTimestamp` et `modifyTimestamp` par entrée
+
+**Constat.** Ils ne sont servis que sur `cn=schema`, et figés. Aucune entrée
+utilisateur ou groupe n'en porte.
+
+C'est sur eux que s'appuie la synchronisation **incrémentale** de Keycloak : sans
+eux, seule la synchronisation complète fonctionne, ce qui relit tout l'annuaire à
+chaque passage et bute sur `sizeLimitExceeded` au-delà de 10 000 entrées.
+
+**À faire.** Les servir depuis les colonnes de création et de modification des
+comptes et des groupes, au format `GeneralizedTime` (`YYYYMMDDHHMMSSZ`, UTC). Ce
+sont des attributs **opérationnels** : ils ne sortent que demandés nommément ou
+par `+`, comme le fait déjà `vaultaireServiceRights` — la règle est écrite dans
+`candidate/user.go`.
+
+Vérifier d'abord que les colonnes existent et sont tenues à jour : une date de
+modification qui ne bouge pas est pire que pas de date du tout, puisqu'elle fait
+croire à une synchronisation qui n'a rien vu.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
+
+### 127. [LDAP] `scope=1` est silencieusement promu en `scope=2` sur `ou=users`
+
+**Après le 122** : c'est le même fichier, et la promotion sert aujourd'hui à
+compenser en partie ce que le 122 corrige proprement.
+
+**Constat.** `scope/resolver.go:42` — `if isUserContainerSearch(baseObject) &&
+scope == 1 { loadScope = 2 }`. Écrit pour JumpServer, qui cherche en one-level et
+attend les sous-domaines.
+
+Conséquence plus large : un administrateur qui configure une application en
+`scope=one` pour restreindre le périmètre obtient l'arbre entier. Ce qui est écrit
+dans la configuration cliente ne décrit plus ce qui est servi. Écart à la
+RFC 4511 §4.5.1, avec un effet de périmètre.
+
+**À faire.** Honorer `scope=1`. Si JumpServer doit rester servi, le faire par un
+réglage nommé et documenté plutôt que par une exception silencieuse sur le nom du
+conteneur — et vérifier d'abord si le besoin subsiste une fois le 122 fait.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.3.
+
+### 128. [LDAP] Le bind non authentifié refusé n'est pas celui de la RFC
+
+**Petit, et à faire pour ce qu'il évite de croire.**
+
+**Constat.** `LDAP_bind.go:148` refuse `op.Name == "" && len(op.Authentication) > 0`
+sous un commentaire qui cite la RFC 4513 §5.1.2. Or §5.1.2 vise l'inverse : DN
+**non vide** et mot de passe **de longueur nulle**. Ce cas-là descend jusqu'à
+`VerifierMotDePasse` avec une chaîne vide.
+
+**Ce n'est pas exploitable** : argon2id d'une chaîne vide ne correspond à aucune
+empreinte, et les mots de passe vides sont refusés à la création depuis le point
+100. Ce qui doit être corrigé, c'est que le commentaire affirme une protection qui
+n'existe pas — la prochaine personne le croira couvert — et qu'un client mal
+configuré consomme du rate-limit au lieu d'un refus de protocole immédiat.
+
+**À faire.** Refuser aussi `op.Name != "" && len(op.Authentication) == 0`, avec
+`invalidCredentials` ou `unwillingToPerform`, **avant** toute lecture de base, et
+corriger les deux commentaires pour qu'ils nomment §5.1.1 et §5.1.2 chacun à sa
+place.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.4.
+
+### 129. [LDAP] Un identifiant d'entrée stable, indépendant du nom
+
+**Constat.** `entryuuid`, `objectguid`, `nsuniqueid` et `ipauniqueid` valent le
+nom d'utilisateur, ou ce nom préfixé (`candidate/user.go`). Ce ne sont donc pas
+des identifiants : renommer un compte le fait apparaître comme un compte **neuf**
+chez tout client qui s'appuie dessus — Keycloak crée un doublon au lieu de
+renommer.
+
+**À faire.** Un UUID posé à la création du compte, stocké, jamais réattribué,
+servi en `entryUUID`. Les variantes propriétaires (`objectGUID`, `nsuniqueid`)
+peuvent en dériver, ou disparaître : elles n'ont d'intérêt que pour un client qui
+croit parler à AD ou à 389-ds.
+
+Prévoir la migration des comptes existants, et le fait qu'un client déjà
+synchronisé verra ses comptes changer d'identifiant **une fois**.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
+
+### 130. [LDAP] Pagination `1.2.840.113556.1.4.319`
+
+**Constat.** Le contrôle n'est ni annoncé ni supporté, et un contrôle critique
+est refusé avec `unavailableCriticalExtension` (12). **C'est le bon comportement
+en l'état** — mieux qu'un client qui boucle indéfiniment sur la même page.
+
+La limite est ailleurs : au-delà de `MaxSearchEntries = 10000`, la réponse est
+`sizeLimitExceeded` et il n'existe aucun moyen d'obtenir la suite. Un annuaire qui
+dépasse ce seuil n'est plus énumérable par aucun client.
+
+**À faire, quand le besoin se présentera.** Le contrôle « simple paged results » :
+cookie opaque côté serveur, jeu ordonné stable entre deux pages — c'est cette
+stabilité qui est le vrai travail, pas l'encodage du contrôle. Et l'annoncer dans
+le RootDSE **seulement** une fois implémenté : il y était annoncé sans l'être, et
+c'est précisément ce qui avait été retiré.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.6.
+
+### 131. [LDAP] Une requête SQL par groupe, et du code mort trompeur
+
+**Deux petites choses du même passage.**
+
+1. `GetGroupsWithUsersByNames`
+   (`db_ldap/get_groups_with_users_by_names.go:18`) boucle et fait **une requête
+   par groupe**, alors que le commentaire du résolveur annonce une lecture en lot.
+   Le N+1 par **utilisateur** a bien été supprimé ; celui par groupe demeure. Sur
+   500 groupes, c'est 500 allers-retours par recherche.
+2. `isInScope` (`filter/logical.go`) n'est appelé par personne. Le point 120 étant
+   traité, plus rien ne retient : il décrit la règle du « saut de sous-domaine »
+   et peut faire croire qu'elle est appliquée au filtrage, alors que le contrôle
+   d'accès vit désormais dans `security.PorteeDeRecherche`. Le retirer.
+
+Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
+
+### 132. [LDAP] [SÉCURITÉ] `memberOf` porte les groupes des sous-domaines
+
+**Relevé en traitant le point 120**, et laissé ouvert à dessein : la correction
+demande une décision de conception, pas une rustine glissée dans ce lot-là.
+
+**Constat.** Le point 120 écarte bien les entrées de groupe qu'un compte n'a pas
+le droit de lire. Mais `userMembershipMap` (`scope/resolver.go`) et
+`memberOfForUser` (`scope/base_scope.go`) construisent l'attribut `memberOf` à
+partir de **tous** les groupes du compte, sous-domaines compris.
+
+Un délégué de `enov.local` **sans propagation** reçoit donc un compte dont le
+`memberOf` nomme des groupes de `admin.enov.local`. Les entrées de ces groupes ne
+sortent pas ; leurs **noms**, si. Et comme `ToRootDN` ne garde que les deux
+derniers labels, le DN porté par `memberOf` ne dit même pas que le groupe vient
+d'ailleurs — il est indistinguable d'un groupe du domaine parent.
+
+C'est plus étroit que le 120 — des noms de groupes, pas des comptes — mais c'est
+la même fuite, et elle rend les groupes d'un sous-domaine énumérables.
+
+**Ce qu'il faut décider avant d'écrire.** Filtrer `memberOf` suppose de savoir à
+quel domaine appartient chaque groupe listé, donc de porter ce domaine à côté de
+son DN. Trois formes possibles, et ce n'est pas indifférent :
+
+1. une liste parallèle dans `UserEntry` — simple, mais deux tranches à tenir
+   alignées, ce qui finit toujours mal ;
+2. `Groups` devenant une liste de structures `{DN, Domaine}` — propre, mais
+   `GetAttributes` et tous ses appelants s'en ressentent ;
+3. le filtrage fait dans le résolveur, qui connaît déjà les domaines — le moins
+   de code, mais il faudrait y faire remonter la portée, donc mêler le contrôle
+   d'accès à la résolution, ce que le point 120 a précisément séparé.
+
+**Et ne pas oublier `member`** : l'attribut symétrique d'une `GroupEntry` liste
+les DN de ses membres, y compris des comptes que l'appelant n'a pas le droit de
+voir. Même question, même réponse à trouver.
+
+Détail : `DO/2.2/2.2.md`, point 120, alinéa -13.
+
+---
+
 ## Idées à cadrer
 
 ### 8. [LDAP] Mode synchro avec un annuaire existant
@@ -324,12 +659,241 @@ Relier Vaultaire à un AD déjà en place pour bénéficier de ses fonctionnalit
 
 ### 40. [AGENT-UPDATE] Mettre à jour le parc de clients
 
-**Question.** Comment mettre à jour les agents, y compris sans accès Internet ?
+**Cadré le 28/09/2026.** La question est tranchée, la stratégie est écrite dans
+[`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md), et le travail est découpé
+en **points 111 à 118** (section « Mise à jour du parc » ci-dessous).
 
-**Pistes :**
+Ce qui a été décidé, en quatre lignes :
 
-- **Dépôt (Nexus)** ordonné par le core — la plus simple ; le dépôt n'a pas besoin d'authentification, ce n'est pas un service sensible à consulter. **Piste privilégiée.**
-- Téléchargement **via le réseau Ducky**.
-- Un nouveau service, **`vlt-upm`** (Vaultaire Update Manager), pour les parcs sans Internet — fonctionnement à définir.
+- **Nexus** sert les artefacts, en **lecture anonyme** — l'intégrité vient de la
+  signature, pas du transport. `vlt-upm` disparaît : un site sans Internet verse
+  les archives dans son Nexus local, et la signature rend le canal indifférent ;
+- une clé **`pkg_signing`** distincte de celle des GPO, déposée à l'installation
+  comme elle, avec son propre domaine de signature ;
+- une **version attendue portée par le groupe**, pour un déploiement par anneaux,
+  et l'agent qui s'y conforme à son rythme ;
+- la mise à jour remplace **le binaire et les modules natifs ensemble**, et la
+  **configuration système est réconciliée par l'agent**, versionnée avec le code
+  qui en a besoin.
 
-Dans tous les cas, le pilotage passe par l'interface web d'administration.
+Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 118.
+
+---
+
+## Mise à jour du parc
+
+> Découpage du point 40, arrêté le 28/09. La conception, les arbitrages et ce
+> qui a été écarté sont dans [`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md) —
+> le lire **avant** d'ouvrir l'un de ces points.
+>
+> **L'ordre compte.** Le 112 est un préalable de sûreté qui vaut par lui-même ;
+> le 111 est le socle sans lequel rien n'est pilotable ; le 116 est le cœur du
+> lot et ne doit pas être écrit avant que 112 ne soit en place.
+
+### 112. [AGENT] Durcir le service de l'agent : relance bornée et validation au démarrage
+
+**À faire en premier, et il vaut par lui-même** — indépendamment de toute mise à
+jour.
+
+**Constat.** `/etc/systemd/system/vaultaire_client.service`, écrit par
+`rocky.sh:96-112`, ne porte que `Restart=on-failure`. Pas de `RestartSec`, pas de
+`StartLimitBurst`, pas d'`ExecStartPre`, aucun durcissement. L'unité de Nexus
+(`src/vaultaire_nexus/deploy/vaultaire_nexus.service`) a tout cela ; l'agent est
+très en retard sur elle.
+
+**Pourquoi c'est grave ici et pas ailleurs.** Les trois piles PAM sont en
+`default=die` sans repli : un agent qui ne démarre pas rend la machine
+inaccessible à **tous** les comptes du domaine, sur console, SSH et GDM. Sans
+borne de relance, un binaire corrompu boucle indéfiniment et rien ne distingue
+« en cours de démarrage » de « ne démarrera jamais ».
+
+**À faire.**
+
+1. `RestartSec=5s`, `StartLimitBurst=3`, `StartLimitIntervalSec=60`.
+2. Un mode `vaultaire_client --check` : le binaire s'exécute, lit sa
+   configuration, trouve ses clés, et **sort** — sans ouvrir de socket ni de
+   tunnel. Branché en `ExecStartPre`.
+3. Le même durcissement dans `rocky.sh`, pour les installations neuves, **et** un
+   rattrapage sur les unités déjà posées.
+4. Un test-sentinelle sur le gabarit des piles PAM : le `PAM_IGNORE` qui laisse
+   passer les comptes **hors du domaine** vers `system-auth` est la seule porte
+   de secours du produit. Le jour où quelqu'un le retire, plus rien ne le dira.
+
+### 111. [AGENT-UPDATE] La version attendue, et la vue « constaté vs attendu »
+
+**Le socle.** Sans lui, rien n'est pilotable — et il vaut déjà quelque chose
+seul : savoir quelles machines sont en retard.
+
+**Constat.** Le core **stocke** la version d'un agent (`id_logiciels.agent_version`,
+remontée par `02_12`) et l'**affiche**. Il ne la compare à rien. Aucune notion de
+version attendue n'existe nulle part : ni table, ni réglage, ni écart calculé.
+
+**À faire.**
+
+1. Trois niveaux de cible : `id_logiciels.agent_target_version` (dérogation par
+   machine), `groups.agent_target_version` (**le niveau ordinaire**, les anneaux
+   de déploiement), `server_settings.agent_target_version` (défaut du parc).
+2. Résolution : machine, sinon **la plus haute** des cibles de ses groupes, sinon
+   le défaut global, sinon **vide**. Vide = aucune mise à jour automatique, et
+   c'est le défaut : une installation en service ne doit rien voir changer tant
+   que personne n'a posé de cible.
+3. `vlt agent`, `vlt agent -g <groupe>`, `vlt agent target [-g <groupe>] <version>`,
+   `vlt agent pin <machine> <version|--none>`. Droits `read:log` / `write:server`,
+   portée globale — mêmes clés que la signature GPO et le second facteur Ducky,
+   et pour la même raison.
+4. Une colonne **VERSION** dans la liste des machines du portail, qui n'en a
+   aucune, avec l'écart mis en évidence.
+5. Comparaison de versions sémantiques : à écrire une fois, proprement, et à
+   éprouver — c'est elle qui décide de « la plus haute » et du refus de
+   rétrogradation du point 116.
+
+### 113. [AGENT-UPDATE] [SÉCURITÉ] La clé de signature des paquets et le format signé
+
+**À faire.**
+
+1. Clé **`pkg_signing`** dans la table `certificates`, RSA 4096, amorçage
+   idempotent — le calque de `gpo_signing` (`signature_politique.go`). Partagée
+   par le cluster sans réplication à écrire, et **jamais régénérée** : le faire
+   ferait refuser leurs paquets à toutes les machines portant l'ancienne.
+2. Dépôt de la partie publique à l'installation, par le SCP de `--join`, à côté
+   de `gpo_signing_key.pem`. **Jamais apprise en route** : faire demander à
+   l'agent la clé qui juge ce qu'on lui envoie n'aurait aucun sens (raisonnement
+   du point 52).
+3. Domaine de signature **`vaultaire-pkg-v1`**, distinct de `vaultaire-gpo-v1` :
+   une clé ne doit jamais pouvoir signer quelque chose qui passe pour le rôle de
+   l'autre.
+4. Le manifeste : version, plateforme, et le SHA-256 de chacun des cinq fichiers.
+   **Un manifeste plutôt que cinq signatures** — il lie le JEU, et empêche de
+   composer un jeu mixte fait de fichiers authentiques pris dans deux versions.
+5. Il ne nomme **aucune machine**, contrairement à la signature d'une politique :
+   un paquet est le même pour tout le monde, et le lier obligerait à signer à
+   chaque téléchargement. La rétrogradation est fermée ailleurs — voir 116.
+6. **Prévoir la rotation dès le format** : l'agent doit pouvoir accepter deux
+   clés de confiance, sinon remplacer la clé demandera de repasser sur chaque
+   machine.
+7. Signature à la release : `auto-compil.sh` et le workflow produisent le
+   manifeste signé à côté des archives. La clé privée vit sur le core par défaut ;
+   documenter le chemin pour la garder hors ligne, sans l'imposer.
+
+### 114. [AGENT-UPDATE] [NEXUS] Le dépôt de mise à jour, et sa découverte par l'agent
+
+**À faire.**
+
+1. Un dépôt Nexus de type **`vaultaire`** pour les artefacts d'agent, en
+   **lecture anonyme**. C'est un choix de sûreté, pas un relâchement : l'intégrité
+   vient de la signature, et un dépôt authentifié qui sert des paquets nus est
+   moins sûr qu'un dépôt libre qui sert des paquets signés. Cela évite aussi de
+   distribuer un jeton Nexus à chaque machine du parc.
+2. L'agent **n'a pas d'URL Nexus en configuration** : il la demande au cluster par
+   `04_15`/`04_16`, comme le proxy le fait déjà pour relayer en HTTPS (point 72).
+   `decouverte.AdressesService` existe ; il faut seulement accorder `04_15` au
+   type de client `Client`, qui ne l'a pas.
+3. Repli sur une URL de `client_conf.json` si le cluster n'annonce aucun Nexus —
+   un parc peut vouloir un miroir local qui n'est pas un service enrôlé.
+4. Documenter la procédure du site **sans Internet** : télécharger les archives
+   ailleurs, les verser par `/api/v1/repos/{repo}/upload`. C'est ce qui remplace
+   `vlt-upm`, et c'est un service de moins à écrire, enrôler, superviser et
+   mettre à jour lui-même.
+
+### 115. [AGENT-UPDATE] [DUCKY] L'ordre de mise à jour : catégorie `09`
+
+**Constat.** Les catégories `01` à `08` sont prises, `09` est libre.
+
+**À faire.**
+
+```
+09_01  demander l'ordre        client → core   au démarrage et à chaque reconnexion
+  09_02  ordre : version, dépôt
+  09_03  rien à faire
+09_04  compte rendu            client → core   version, résultat, motif
+  09_05  accusé
+09_06  ordre poussé            core → client
+```
+
+1. **Le modèle de la révocation (`06`), repris tel quel** : poussée opportuniste
+   vers qui est connecté — un échec d'envoi n'est *pas* une erreur, personne ne
+   tient de file — et **rattrapage par demande** à chaque reconnexion. C'est ce
+   qui rend la poussée non fiable acceptable, et ce qui fait qu'une machine
+   éteinte trois semaines se met à jour à son retour.
+2. Droits : `09_01` et `09_04` au type `Client`, dans `core/clienttype`.
+3. Le compte rendu `09_04` alimente la vue du point 111 : c'est lui qui distingue
+   « pas encore tenté » de « tenté et revenu en arrière ».
+
+### 116. [AGENT-UPDATE] Le basculement survivable et le retour arrière
+
+**Le cœur du lot. À ne pas écrire avant que le 112 ne soit en place.**
+
+**À faire.**
+
+1. **Un programme séparé**, `vaultaire_update`, dans `/usr/libexec/vaultaire/` :
+   le programme qui remplace un fichier ne peut pas être ce fichier, et il doit
+   survivre au redémarrage du service. Lancé détaché par `systemd-run`. C'est le
+   problème que `deployments/pre-prod/docker-update.sh` a déjà résolu en se
+   recopiant dans un `mktemp` — **à relire avant d'écrire une ligne**.
+2. L'ordre : télécharger → vérifier la signature **puis** chaque SHA-256 →
+   **`dlopen()` chaque `.so`** → garder la version en place → basculer → redémarrer
+   → porte de santé → retour arrière si elle échoue.
+3. Le `dlopen()` est le contrôle qui compte : le mode de défaillance réel d'un
+   module PAM est l'édition de liens — glibc trop récente, `-lcrypt` manquant — et
+   il se voit là, **avant** que sshd n'ait à le charger.
+4. Bascule par **`rename()` dans le répertoire de destination**. `rename()` n'est
+   atomique qu'au sein d'un système de fichiers : écrire dans `/var/lib` puis
+   déplacer vers `/usr/bin` ne l'est pas. Un `.so` déjà chargé n'est pas affecté,
+   l'ancien inode reste projeté.
+5. **La porte de santé**, trois conditions sous échéance : le service tient
+   au-delà de la fenêtre de relance ; le tunnel est rétabli et authentifié ; **le
+   socket PAM répond à une sonde sans identifiants**. La troisième est celle qui
+   compte — les deux premières ne disent rien du socket, dont dépendent toutes
+   les ouvertures de session.
+6. **Refus de toute version inférieure** à celle en place, sauf rétrogradation
+   explicitement demandée par l'ordre — journalisée en `SECURITY` des deux côtés.
+   C'est ce qui ferme la rejouabilité d'un manifeste non lié à une machine.
+7. **Ne jamais toucher**, dans la même opération : la configuration système (voir
+   117 — si elle est fausse, le retour arrière du binaire ne la répare pas),
+   `/etc/vaultaire_client/` (identité et clés : les perdre oblige à réenrôler),
+   `/var/lib/vaultaire/applied_policies.json` (le perdre fait réappliquer toutes
+   les GPO au cycle suivant).
+
+### 117. [AGENT-UPDATE] La configuration système réconciliée avec la version
+
+**Le cas qui rend ce point urgent.** L'invite du second facteur (point 95) a
+besoin de `KbdInteractiveAuthentication yes` dans `sshd_config`. Seul `rocky.sh`
+l'écrit, à l'installation. **Toutes les machines installées avant la 2.2 ne
+verront donc jamais l'invite** — et rien ne le signalera : le second facteur sera
+absent, en silence, sur un chemin d'authentification.
+
+**À faire.**
+
+1. L'agent porte les gabarits que **sa version** attend, chacun marqué
+   `# vaultaire-conf v<N>`. Réconciliation au démarrage, **après** que la porte de
+   santé du point 116 a été franchie — jamais dans la même opération.
+2. Concernés : `/etc/pam.d/{login,sshd,gdm-password}`, `/etc/ssh/sshd_config`,
+   `/etc/nsswitch.conf`, `/etc/dconf/db/gdm.d/10-vaultaire-userlist`. Aucun n'est
+   sauvegardé ni écrit de façon atomique aujourd'hui.
+3. Sauvegarde `<fichier>.vaultaire-bak-<horodatage>`, écriture atomique, et pour
+   `sshd_config` : **`sshd -t -f <candidat>` avant de basculer**. S'il refuse, on
+   ne touche à rien et on remonte l'écart.
+4. **Il n'existe pas de `pam -t`.** D'où les deux protections du point 112 : le
+   `PAM_IGNORE` des comptes locaux, tenu par un test-sentinelle, et la sauvegarde
+   horodatée qui rend la réparation possible en une commande.
+5. **Pas par GPO**, et c'est délibéré : `/etc/pam.d/` est en `path_deny` dans le
+   seed, avec son motif écrit — « pile d'authentification : modifiable =
+   contournement de l'auth ». Un module GPO, même typé, rendrait la pile
+   d'authentification pilotable par une politique, donc potentiellement par un
+   délégué de domaine.
+6. Éprouver sur le cas `KbdInteractiveAuthentication` avant tout autre : il est
+   réel, il est daté, et son absence est silencieuse.
+
+### 118. [AGENT-UPDATE] [WINDOWS] La mise à jour du client Windows
+
+**Après que le mécanisme Linux aura tourné en production.**
+
+**Constat.** La DLL du Credential Provider est chargée par Winlogon, et Windows
+**verrouille le fichier** : elle ne peut pas être remplacée à chaud. Il faut
+déposer à côté et basculer au redémarrage, ou au minimum hors session. Le service,
+lui, se remplace comme sous Linux — mais `install.ps1` est manuel et interactif,
+et il n'y a aucun équivalent de `rocky.sh` côté core.
+
+Mêler les deux systèmes produirait une conception qui ne conviendrait bien à
+aucun des deux. Reprendre alors : la version attendue (111), la signature (113),
+le dépôt (114) et les trames (115), qui sont communs — seul le basculement change.

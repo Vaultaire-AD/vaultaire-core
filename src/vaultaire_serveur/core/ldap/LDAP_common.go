@@ -177,7 +177,7 @@ func handleLDAPSession(c net.Conn, protocol string) {
 			return
 		}
 
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet))
+		logs.Write_Log("DEBUG", traceDuPaquet(clientAddr, packet))
 
 		message, err := ldapparser.ParseLDAPMessage(packet)
 		if err != nil {
@@ -218,6 +218,53 @@ func handleLDAPSession(c net.Conn, protocol string) {
 
 		ldapparser.DispatchLDAPOperation(message, message.MessageID, c)
 	}
+}
+
+// traceDuPaquet rend la ligne de mise au point d'une trame reçue.
+//
+// # Ce que cette ligne faisait
+//
+// Elle vidait le paquet ENTIER en hexadécimal, avant toute analyse. Sur un
+// BindRequest simple, ce paquet porte le mot de passe en clair — et, quand le
+// second facteur est actif, le code à six chiffres qui lui est accolé (voir la
+// convention décrite dans LDAP_Limits.go). Le journal est un fichier : il tourne,
+// il part dans les sauvegardes.
+//
+// `debug: false` est livré depuis le point 99, ce qui limite la portée. Mais on
+// active DEBUG exactement quand on diagnostique un problème d'annuaire,
+// c'est-à-dire au moment où tous les clients LDAP du parc se lient en boucle.
+//
+// # Ce qui est gardé
+//
+// Le vidage reste, pour toutes les autres opérations : c'est lui qui permet de
+// comprendre une trame mal découpée, et c'est la raison d'être de cette ligne.
+// Seul le bind est masqué.
+func traceDuPaquet(clientAddr string, packet []byte) string {
+	if peutEtreUnBind(packet) {
+		return fmt.Sprintf("ldap: packet from %s: BindRequest de %d octets, contenu masqué",
+			clientAddr, len(packet))
+	}
+	return fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet)
+}
+
+// peutEtreUnBind répond à la seule question utile ici, et répond OUI quand elle
+// ne sait pas.
+//
+// Le nom dit l'asymétrie : un paquet qu'on n'arrive pas à découper PEUT être un
+// bind, et rien ne permet d'affirmer le contraire sans lire le corps — ce qu'il
+// s'agit précisément d'éviter. Masquer à tort ne coûte qu'une ligne de mise au
+// point, sur un chemin où l'erreur d'analyse est déjà journalisée avec son motif.
+// Se tromper dans l'autre sens coûte un mot de passe.
+//
+// DecodePacketErr et non DecodePacket : la seconde panique sur une entrée
+// forgée, et ce code s'exécute sur des octets venus d'inconnus.
+func peutEtreUnBind(packet []byte) bool {
+	p, err := ber.DecodePacketErr(packet)
+	if err != nil || p == nil || len(p.Children) < 2 {
+		return true
+	}
+	op := p.Children[1]
+	return op.ClassType == ber.ClassApplication && op.Tag == ldapstorage.AppBindRequest
 }
 
 // messageIDOf extrait le messageID d'un paquet dont l'opération n'a pas pu être

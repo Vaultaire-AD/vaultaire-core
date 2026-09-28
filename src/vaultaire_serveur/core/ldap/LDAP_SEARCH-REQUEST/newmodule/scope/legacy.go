@@ -1,5 +1,13 @@
 package scope
 
+// Ancienne version de loadGroupsAndUsers, conservée en commentaire.
+//
+// Elle appelle `security.IsAuthorizedToSearch`, qui n'existe plus : le contrôle
+// d'accès à la recherche est passé à `security.PorteeDeRecherche`, lue une fois
+// et consultée par entrée (point 120). Ne pas partir à la recherche de l'ancienne
+// fonction ; et noter que cette version-ci évaluait bien les droits PAR DOMAINE,
+// ce que la version en service avait perdu.
+
 // loadGroupsAndUsers récupère pour chaque domaine/groupe les GroupEntry et les UserEntry correspondants
 // avec gestion du scope pour éviter de retourner tous les groupes sous-jacents par défaut.
 // Cette version enrichit les attributs LDAP pour compatibilité Nextcloud et autres clients.

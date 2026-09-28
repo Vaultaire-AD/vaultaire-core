@@ -71,7 +71,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Actions.md`](./Developement/how%20it%20work/Actions.md) | Le registre `core/action` : chemin d'une requête, portées, filtrage, **comment ajouter une action** |
 | [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
 | [`Reglages_de_duree.md`](./Developement/how%20it%20work/Reglages_de_duree.md) | Comment une période de boucle est déclarée, lue et changée |
-| [`ducky-network/`](./Developement/how%20it%20work/ducky-network/README.md) | **Référence du protocole Ducky Network**, un chapitre par catégorie de trames (01 à 08) |
+| [`ducky-network/`](./Developement/how%20it%20work/ducky-network/README.md) | **Référence du protocole Ducky Network**, un chapitre par catégorie de trames (01 à 08 ; la `09` est réservée à la mise à jour du parc) |
 | [`Nouveau_service.md`](./Developement/how%20it%20work/Nouveau_service.md) | **Créer un nouveau service** : module, catalogue, raccordement, authentification, droits, build, déploiement |
 | [`Versions.md`](./Developement/how%20it%20work/Versions.md) | Comment chaque composant déclare sa version, et ce que le core en fait |
 | [`GPO.md`](./Developement/how%20it%20work/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions, **ajouter un module** |
@@ -96,6 +96,8 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | Fichier | Contenu |
 | --- | --- |
 | [`Developement/TO-DO.md`](./Developement/TO-DO.md) | Tâches ouvertes |
+| [`Developement/Mise_a_jour_du_parc.md`](./Developement/Mise_a_jour_du_parc.md) | **Mettre à jour le parc d'agents** : la stratégie arrêtée le 28/09, ses arbitrages et ce qui a été écarté (points 111 à 118) |
+| [`Developement/Audit_LDAP_2026-09-28.md`](./Developement/Audit_LDAP_2026-09-28.md) | **Audit LDAP du 28/09** : sécurité, fonctionnalités et compatibilité client par client (points 119 à 131) |
 | [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`) |
 
 > Une tâche validée est déplacée **à la main** de `TO-DO.md` vers

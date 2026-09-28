@@ -16,6 +16,17 @@ func (ou OUEntry) DN() string {
 	return fmt.Sprintf("ou=%s,%s", ou.Name, ldaptools.ToRootDN(ou.BaseDN))
 }
 
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Une OU est fabriquée pour un domaine donné : `users` et `groups` sont créées
+// une fois par domaine parcouru, et `BaseDN` est ce domaine-là.
+func (ou OUEntry) Domaines() []string {
+	if ou.BaseDN == "" {
+		return nil
+	}
+	return []string{ou.BaseDN}
+}
+
 func (ou OUEntry) ObjectClasses() []string {
 	return []string{"top", "organizationalUnit"}
 }

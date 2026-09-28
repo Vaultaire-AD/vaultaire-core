@@ -49,6 +49,14 @@ Cela limitera la recherche uniquement aux groupes sous `it.company.com` **et ses
 
 > ℹ️ Les utilisateurs en dehors de ce domaine ne seront **pas visibles** pendant la synchronisation LDAP.
 
+> 🔒 **Les droits du compte de connexion s'appliquent en plus du domaine de recherche.**
+> Une entrée n'est rendue que si le compte a le droit de lire **son** domaine à
+> elle, et pas seulement celui qui a été demandé. Concrètement : un compte dont la
+> permission `search` porte sur `company.com` **sans propagation** obtient les
+> entrées de `company.com` et **aucune** de `it.company.com`, même en recherchant
+> sur toute l'arborescence. Pour qu'un compte de service voie les sous-domaines,
+> donnez-lui la permission **avec propagation** sur le domaine parent.
+
 ---
 
 ## ⚠️ Important : syntaxe du DN

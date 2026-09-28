@@ -1,0 +1,2452 @@
+From 3472d4e3d70cb5e61926bf5746bea0ea8944c924 Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Mon, 28 Sep 2026 19:24:35 +0000
+Subject: [PATCH] =?UTF-8?q?fix(ldap):=20points=20120=20et=20121=20?=
+ =?UTF-8?q?=E2=80=94=20droits=20de=20recherche=20par=20entree,=20et=20bind?=
+ =?UTF-8?q?=20hors=20journal?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+120. Le controle d'acces ne portait que sur le baseDN demande, alors que le
+resolveur charge le domaine ET ses sous-domaines. Une permission « sans
+propagation » n'avait donc aucun effet par LDAP.
+
+Le filtre s'evalue maintenant par entree, sur ce a quoi elle est RATTACHEE.
+`Domaines()` entre dans l'interface : le domaine ne peut pas se deduire du DN,
+puisque ToRootDN ne garde que deux labels — une entree de admin.enov.local et
+une de enov.local ont exactement le meme DN. Le rattachement est la seule chose
+qui les distingue.
+
+Deux relectures ont ete passees sur ce correctif, et toutes deux ont trouve. La
+premiere : seuls les groupes etaient filtres, les comptes portaient le domaine
+demande, donc le filtre s'autorisait lui-meme. La seconde : le secours prevu
+pour un compte sans domaine etait aussi atteint par une panne de lecture, ce qui
+reproduisait le meme defaut. Une sentinelle AST garde desormais le cablage — la
+regle, elle, etait juste, et aucun test de la regle n'aurait vu ces deux-la.
+
+121. Le vidage hexadecimal du paquet, ecrit avant toute analyse, portait le mot
+de passe du bind. Il est masque pour les BindRequest et pour toute trame qu'on
+ne sait pas decouper : un paquet indecoupable PEUT etre un bind, et masquer a
+tort coute une ligne de mise au point la ou se tromper coute un mot de passe.
+
+La relecture a trouve la meme fuite sur l'ExtendedRequest, dont le contenu porte
+l'ancien et le nouveau mot de passe d'un changement RFC 3062.
+
+Non traite, consigne au point 132 : `memberOf` nomme encore les groupes des
+sous-domaines. Filtrer cet attribut demande de porter le domaine de chaque
+groupe a cote de son DN, ce qui est une decision de conception.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018uaGGJR8wxcuBPzfnNRjUv
+---
+ docs/Developement/Audit_LDAP_2026-09-28.md    |  23 ++
+ docs/Developement/DO/2.2/2.2.md               | 139 ++++++++
+ docs/Developement/TO-DO.md                    | 110 +++---
+ docs/Utilisation/vaultaireLDAP.md             |   8 +
+ docs/Version/2.0/2.2.md                       |  22 ++
+ docs/exploitation/A_TESTER.md                 | 177 +++++++++-
+ .../core/domain/GET-GroupsUnderDomain.go      |  15 +-
+ .../LDAP_ExtendedRequest.go                   |  15 +-
+ .../newmodule/candidate/SchemaEntry.go        |   7 +
+ .../newmodule/candidate/domain.go             |  16 +
+ .../newmodule/candidate/group.go              |  12 +
+ .../candidate/ldap_interface/entry.go         |  33 ++
+ .../newmodule/candidate/ou.go                 |  11 +
+ .../newmodule/candidate/rattachement_test.go  | 129 +++++++
+ .../newmodule/candidate/rootdse.go            |  11 +
+ .../newmodule/candidate/user.go               |  26 ++
+ .../LDAP_SEARCH-REQUEST/newmodule/handler.go  |  77 ++++-
+ .../newmodule/scope/base_scope.go             |  96 +++++-
+ .../newmodule/scope/legacy.go                 |   8 +
+ .../scope/rattachement_sentinelle_test.go     | 193 +++++++++++
+ .../newmodule/scope/resolver.go               |  66 +++-
+ .../newmodule/security/auth.go                | 231 ++++++++++++-
+ .../newmodule/security/portee_test.go         | 316 ++++++++++++++++++
+ .../core/ldap/LDAP_common.go                  |  49 ++-
+ .../core/ldap/trace_paquet_test.go            | 141 ++++++++
+ .../core/testrunner/run_ldap.go               |  13 +-
+ 26 files changed, 1847 insertions(+), 97 deletions(-)
+ mode change 100755 => 100644 docs/Developement/DO/2.2/2.2.md
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rattachement_test.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/rattachement_sentinelle_test.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/portee_test.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/trace_paquet_test.go
+
+diff --git a/docs/Developement/Audit_LDAP_2026-09-28.md b/docs/Developement/Audit_LDAP_2026-09-28.md
+index 0263bc3..3d24f4a 100644
+--- a/docs/Developement/Audit_LDAP_2026-09-28.md
++++ b/docs/Developement/Audit_LDAP_2026-09-28.md
+@@ -12,6 +12,29 @@ # Audit LDAP du 28/09/2026 — sécurité, fonctionnalités, compatibilité clie
+ > Méthode : relecture du code, pas d'exécution. Chaque constat porte le fichier
+ > et la ligne. Ce qui n'a pas été mesuré est marqué comme tel.
+ 
++### État au 28/09/2026
++
++| Point | État |
++|---|---|
++| **120** — RBAC évalué sur le seul baseDN | **traité** (2.2) — `security.PorteeDeRecherche` lue une fois, consultée par entrée ; `Domaines()` entre dans l'interface `LDAPEntry`, et une sentinelle AST garde le câblage |
++| **121** — mot de passe du bind au journal DEBUG | **traité** (2.2) — le vidage du paquet est masqué pour les `BindRequest` et pour toute trame qu'on ne sait pas découper ; l'ExtendedRequest ne journalise plus son contenu (RFC 3062) |
++| 119, 122 à 131 | ouverts |
++| **132** — `memberOf` porte les groupes des sous-domaines | **ouvert**, relevé en traitant le 120 |
++
++Les deux constats de **sécurité** de cet audit sont donc fermés ; ce qui reste
++est fonctionnel ou de conformité, à une exception près — le **132**, découvert en
++corrigeant le 120 et laissé ouvert parce que sa correction demande une décision
++de conception. Le détail de ce qui a été fait, et de ce qui a été écarté, est dans
++`DO/2.2/2.2.md`.
++
++> Deux relectures ont été passées sur le correctif du 120. La première a trouvé
++> qu'il ne filtrait que les **groupes** : les comptes portaient le domaine
++> *demandé*, si bien que le filtre s'autorisait lui-même. La seconde a trouvé que
++> le secours prévu pour un compte sans domaine était aussi atteint par une panne
++> de lecture, ce qui reproduisait le même défaut. Les deux sont corrigés, et la
++> première est désormais gardée par une sentinelle — c'est le genre de défaut
++> qu'aucun test de la règle ne voit, puisque la règle, elle, était juste.
++
+ ---
+ 
+ ## 0. Ce qui est sain, et qu'il ne faut pas défaire en corrigeant le reste
+diff --git a/docs/Developement/DO/2.2/2.2.md b/docs/Developement/DO/2.2/2.2.md
+old mode 100755
+new mode 100644
+index 0acf134..c55171b
+--- a/docs/Developement/DO/2.2/2.2.md
++++ b/docs/Developement/DO/2.2/2.2.md
+@@ -1,3 +1,142 @@
++120.[FAIT-IA] [LDAP] [SECURITE] [RBAC] Le RBAC de recherche s'evaluait sur le seul baseDN
++       Audit LDAP du 28/09. handler.go appelait IsAuthorizedToSearch UNE fois,
++       sur le domaine deduit du baseObject. Le resolveur, lui, charge le domaine
++       ET tous ses sous-domaines (GetGroupsUnderDomain retient
++       HasSuffix(dn, "."+cible)) — et aucun filtrage ne suivait. Un compte
++       portant search en « custom SANS propagation » sur enov.local passait le
++       controle, puis recevait dans la meme reponse les comptes et les groupes
++       de admin.enov.local. Le mode « sans propagation », dont c'est la seule
++       raison d'etre, n'avait aucun effet sur ce chemin.
++
++    -0 UN OBJET, PAS UN APPEL PAR ENTREE. security.PorteeDeRecherche lit les
++       permissions UNE fois au debut de la recherche, puis decide par domaine en
++       pur travail de chaine, memorise. Appeler IsAuthorizedToSearch par entree
++       aurait ajoute une requete SQL par compte rendu, sur le chemin le plus
++       chaud du serveur.
++    -1 LA REGLE EST SEPAREE DE LA LECTURE. NouvellePortee(permissions) est pure
++       et s'eprouve sans base ; PorteeDeRecherchePour(username) lit.
++    -2 Domaines() []string DANS L'INTERFACE, et non un seul domaine. Le deduire
++       du DN est IMPOSSIBLE : ToRootDN ne garde que les deux derniers labels,
++       donc une entree de admin.enov.local et une de enov.local ont exactement le
++       MEME DN. Le rattachement est la seule chose qui les distingue. Le mettre
++       dans l'interface fait que le compilateur reclamera une reponse au prochain
++       type d'entree ajoute.
++    -3 PLUSIEURS domaines, parce qu'un compte appartient a des groupes qui
++       peuvent vivre dans des domaines differents. Une entree sort des qu'UN de
++       ses rattachements est autorise : exiger que tous le soient rendrait
++       invisible, pour un delegue de enov.local, un compte pourtant membre d'un
++       groupe de enov.local, au seul motif qu'il est aussi membre ailleurs.
++    -4 LE PIEGE, et la premiere version du correctif y est tombee : UserEntry.
++       BaseDN porte le domaine DEMANDE par le client, pas celui ou vit le compte.
++       S'en servir pour les droits autorise tout compte par construction — le
++       filtre ne voit que le domaine qui vient d'etre autorise. Le champ
++       Rattachements est donc DISTINCT de BaseDN, sans valeur de secours sur lui,
++       et une SENTINELLE AST refuse dans tout le paquet scope une UserEntry sans
++       Rattachements, ou dont les Rattachements valent domain / baseDN /
++       baseObject / expectedDN. C'est le seul test capable d'attraper un retour
++       en arriere ici : ceux de la regle passaient tous quand le defaut etait la.
++    -5 UNE LISTE VIDE EST ECARTEE, jamais laissee passer. C'est ce que rendent le
++       RootDSE et le sous-schema — servis par un chemin qui ne passe pas par la —
++       et ce que rendrait une entree construite sans rattachement. L'oubli rend
++       l'entree invisible, il ne la diffuse pas.
++    -6 LA CONDITION DU SAUT est « !isRootDSE », la MEME que celle qui accorde la
++       dispense d'authentification, et non « si une portee a ete lue ». Si un
++       chemin futur arrivait la sans portee, Filtrer ecarte tout, ce qui se voit ;
++       tester le pointeur aurait, dans ce meme cas, tout laisse passer.
++    -7 UNE LECTURE QUI ECHOUE REFUSE, partout. Droits illisibles : refus avec
++       insufficientAccessRights, pas une erreur de protocole — dire au client que
++       la base est en difficulte ne l'aide pas et renseigne qui sonde la porte.
++       Domaines d'un compte illisibles en scope=base : l'entree n'est pas rendue.
++       Ce dernier cas comptait : le secours « compte sans aucun domaine » etait
++       d'abord atteint aussi par une panne de lecture, ce qui rattachait le compte
++       au domaine demande — le defaut du point, reproduit par une erreur
++       transitoire.
++    -8 NORMALISATION SYMETRIQUE. GetGroupsUnderDomain decide des groupes CHARGES
++       apres minuscules et retrait d'un point final ; le filtre decide de ce qui
++       est RENDU. Sans la meme regle, un groupe dont domain_name vaut
++       « Admin.Enov.Local » est charge puis ecarte. normalizeDomain est donc
++       EXPORTEE en domain.NormaliserDomaine et appelee des deux cotes, plutot que
++       recopiee : deux normalisations qui se ressemblent finissent par diverger.
++    -9 LA NORMALISATION NE PORTE QUE SUR LES NOMS DE DOMAINE. Mettre la chaine de
++       permission entiere en minuscules paraissait equivalent — sa grammaire est
++       faite de chiffres et de ponctuation — mais elle porte aussi les mots-cles
++       « all » et « nil », compares litteralement. Une valeur « ALL » ecrite a la
++       main en base etait lue comme un custom sans domaine, donc REFUSEE ; en
++       minuscules elle serait devenue « tous les domaines ». Une normalisation ne
++       doit jamais pouvoir elargir un droit, et un test le verifie.
++    -10 LA REGLE RESTE CELLE DU RBAC. decider() la reecrit, parce que
++       IsUserAuthorizedToSearch prend des permissions BRUTES et ne peut donc pas
++       comparer des domaines normalises. Un test compare les deux verdicts cas
++       par cas sur des entrees minuscules : les deux ecritures ne peuvent plus
++       diverger en silence.
++    -11 scope=base : le domaine qui compose le DN est celui des rattachements qui
++       redonne le DN demande, a defaut le premier dans l'ordre alphabetique. La
++       version anterieure prenait domains[0] alors que GetDomainsForUser n'a
++       aucun ORDER BY : pour un compte membre de groupes dans DEUX arbres, le DN
++       tombait tantot sur l'un tantot sur l'autre, la comparaison finale echouait
++       une fois sur deux et le compte devenait introuvable par intermittence —
++       sur le chemin que JumpServer emprunte apres CHAQUE authentification.
++    -12 FILTRE AVANT LE FILTRE LDAP : le filtre de recherche n'a pas a voir des
++       entrees que le compte n'a pas le droit de lire, et sizeLimit doit compter
++       ce qui est rendu, pas ce qui a ete ecarte. Et le vidage DEBUG des entrees
++       est deplace du resolveur vers le gestionnaire, donc APRES le filtre : il
++       ecrivait sur disque le contenu des entrees hors portee.
++    -13 NON TRAITE, et consigne au point 132 : l'attribut memberOf d'un compte
++       porte les DN de TOUS ses groupes, sous-domaines compris. Les entrees de
++       groupe correspondantes sont bien ecartees, mais leurs NOMS voyagent dans
++       l'attribut — et comme ToRootDN n'ecrit pas le sous-domaine, le DN ne dit
++       meme pas qu'il vient d'ailleurs. Filtrer memberOf demande de porter le
++       domaine de chaque groupe a cote de son DN : c'est une decision de
++       conception, pas une rustine a glisser dans ce lot.
++    -14 NON TRAITE : le point 127 (scope=1 promu en scope=2 sur ou=users) reste
++       ouvert, il depend du point 122.
++
++121.[FAIT-IA] [LDAP] [SECURITE] [LOGS] Le mot de passe du bind partait au journal DEBUG
++       Audit LDAP du 28/09. LDAP_common.go vidait le paquet ENTIER en
++       hexadecimal, avant toute analyse. Sur un BindRequest simple, ce paquet
++       porte le mot de passe en clair — et, quand le second facteur est actif, le
++       code a six chiffres qui lui est accole. Le journal est un fichier : il
++       tourne, il part dans les sauvegardes. Verifie : la ligne d'origine
++       contenait bien la forme hexadecimale du mot de passe.
++
++    -0 « debug: false » est livre depuis le point 99, ce qui limite la portee.
++       Mais on active DEBUG exactement quand on diagnostique un probleme
++       d'annuaire, c'est-a-dire au moment ou tous les clients LDAP du parc se
++       lient en boucle.
++    -1 LE VIDAGE RESTE pour toutes les autres operations : c'est lui qui permet
++       de comprendre une trame mal decoupee, et c'est la raison d'etre de la
++       ligne. Corriger la fuite en supprimant le moyen de diagnostiquer aurait
++       ete une fausse economie. Seul le bind est masque.
++    -2 LA DETECTION SE FAIT SUR L'ETIQUETTE de l'operation, sans lire le corps :
++       il s'agit justement de ne pas le lire.
++    -3 peutEtreUnBind REPOND OUI QUAND ELLE NE SAIT PAS. Le nom dit l'asymetrie :
++       un paquet qu'on n'arrive pas a decouper PEUT etre un bind. Masquer a tort
++       coute une ligne de mise au point, sur un chemin ou le motif de l'echec
++       d'analyse est deja journalise a cote ; se tromper dans l'autre sens coute
++       un mot de passe.
++    -4 DecodePacketErr ET NON DecodePacket : la seconde panique sur une entree
++       forgee, et ce code s'execute sur des octets venus d'inconnus, avant toute
++       authentification.
++    -5 LA MEME FUITE, SUR UNE AUTRE OPERATION, trouvee a la relecture :
++       HandleExtendedRequest journalisait RequestValue en %s. Or le Password
++       Modify de la RFC 3062 y transporte l'ancien ET le nouveau mot de passe, et
++       le refus prononce plus bas n'y changeait rien — la ligne etait deja
++       ecrite. Seuls le nom de l'extension et la taille sont desormais
++       journalises, ce qui suffit a savoir « un client tente telle operation et
++       le serveur ne la gere pas », la seule chose que cette ligne ait jamais
++       servi a savoir.
++    -6 LA TRACE DIT QUAND MEME CE QUI EST ARRIVE : source, « BindRequest », et la
++       taille. L'evenement reste visible, seul son contenu part.
++    -7 TESTS : le mot de passe est cherche sous sa forme HEXADECIMALE, parce que
++       c'est ainsi que la ligne l'ecrivait — chercher le texte en clair ne
++       prouverait rien. Plus : la trace garde source/type/taille, un
++       SearchRequest garde son vidage complet, une trame illisible est masquee,
++       et quatre trames forgees ne font pas paniquer.
++    -8 NON TRAITE : ParseLDAPMessage et messageIDOf emploient toujours
++       ber.DecodePacket, celui qui panique, sur les memes octets non
++       authentifies. Le recover de handleLDAPSession absorbe, au prix d'une ligne
++       CRITICAL avec sa pile par paquet — c'est le terrain du point 101.
++
+ 95.[FAIT-IA] [SECURITE] [DUCKY] [PAM] [WINDOWS] Le second facteur sur le chemin Ducky
+        Audit du 25/09. « grep -rn "mfa|totp" ducky-network/authentification/ »
+        ne rendait RIEN. Le second facteur vivait sur le portail, au bind LDAP et
+diff --git a/docs/Developement/TO-DO.md b/docs/Developement/TO-DO.md
+index 6506a34..019a870 100755
+--- a/docs/Developement/TO-DO.md
++++ b/docs/Developement/TO-DO.md
+@@ -12,7 +12,7 @@ ## Convention
+ 
+ `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
+ 
+-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **132**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
++**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **133**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+ 
+ **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
+ code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
+@@ -32,11 +32,13 @@ ## Convention
+ **Audit LDAP du 28/09.** Relecture de `core/ldap` — sécurité, fonctionnalités et
+ compatibilité avec les clients LDAP du marché. Les constats sont détaillés dans
+ [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md), le travail est découpé
+-aux points **119 à 131**. Les entrées ci-dessous disent quoi faire ; le fichier
+-d'audit dit ce que le code fait aujourd'hui, avec fichier et ligne — le lire
+-avant d'ouvrir un point. Il porte aussi la section « ce qui est sain » : plusieurs
+-de ces corrections touchent des fichiers voisins du chemin de bind, qui vient
+-d'être repris.
++aux points **119 à 131**. **Traités dans la 2.2** : 120 et 121, les deux constats
++de sécurité. **Restent ouverts** : 119, 122 à 131, plus le **132**, relevé en
++traitant le 120. Les entrées ci-dessous disent
++quoi faire ; le fichier d'audit dit ce que le code fait aujourd'hui, avec fichier
++et ligne — le lire avant d'ouvrir un point. Il porte aussi la section « ce qui est
++sain » : plusieurs de ces corrections touchent des fichiers voisins du chemin de
++bind, qui vient d'être repris.
+ 
+ **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
+ 
+@@ -55,8 +57,6 @@ ## Vue d'ensemble
+ | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
+ | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
+ | 119 | LDAP         | `>=`, `<=`, `~=` rendent zéro entrée en silence             | À faire — **à faire en premier**        |
+-| 120 | LDAP         | Le RBAC n'est évalué que sur le baseDN                     | À faire — sérieux                       |
+-| 121 | LDAP         | Le mot de passe du bind part au journal DEBUG               | À faire — sérieux                       |
+ | 122 | LDAP         | Un compte sans groupe est invisible en recherche            | À faire                                 |
+ | 123 | LDAP         | POSIX annoncé sans être servi — trancher                    | À faire — à trancher d'abord            |
+ | 124 | LDAP         | `noSuchObject` (32) sur un DN inexistant                    | À faire                                 |
+@@ -67,6 +67,7 @@ ## Vue d'ensemble
+ | 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire                                 |
+ | 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
+ | 131 | LDAP         | Requête par groupe, et `isInScope` mort                     | À faire — petit                         |
++| 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — suite du 120                  |
+ | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
+ | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
+ | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
+@@ -358,10 +359,13 @@ ## Annuaire LDAP
+ > Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
+ > scénario.
+ >
++> **Les deux constats de sécurité — 120 et 121 — sont traités dans la 2.2.** Ce
++> qui reste est fonctionnel ou de conformité.
++>
+ > **Ordre.** 119 d'abord — c'est une panne silencieuse, et tant qu'elle dure,
+ > tout diagnostic sur les autres points part sur une réponse vide dont on ne sait
+-> pas si elle est vraie. Puis 120 et 121, les deux seuls constats de sécurité.
+-> 123 demande une décision avant du code.
++> pas si elle est vraie. 123 demande une décision avant du code. 127 dépend
++> de 122.
+ 
+ ### 119. [LDAP] Trois types de filtres sur dix rendent zéro entrée, en silence
+ 
+@@ -398,47 +402,6 @@ ### 119. [LDAP] Trois types de filtres sur dix rendent zéro entrée, en silence
+ 
+ Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.1 et 2.2.
+ 
+-### 120. [LDAP] [SÉCURITÉ] Le RBAC n'est évalué que sur le baseDN
+-
+-**Constat.** `newmodule/handler.go:53` appelle `IsAuthorizedToSearch(username,
+-baseDN)` **une seule fois**, sur le domaine demandé. `GetGroupsUnderDomain` charge
+-ensuite le domaine **et tous ses sous-domaines** (`HasSuffix(dn, "."+target)`), et
+-aucun filtrage par entrée ne suit.
+-
+-Or `permission.IsUserAuthorizedToSearch` distingue `WithPropagation` de
+-`WithoutPropagation`. Un délégué portant `search` **sans propagation** sur
+-`enov.local` passe le contrôle, puis reçoit les comptes de `admin.enov.local`. Le
+-mode « sans propagation » est donc sans effet sur le chemin LDAP — c'est la seule
+-fuite de données de l'audit.
+-
+-**À faire.** Résoudre **une fois** l'ensemble des domaines autorisés au compte,
+-puis écarter les entrées dont le domaine n'y figure pas. Chaque entrée porte déjà
+-le sien (`UserEntry.BaseDN`, `GroupEntry.BaseDN`), donc rien à aller chercher.
+-
+-Ne **pas** appeler le RBAC par entrée : c'est le chemin le plus chaud du serveur,
+-et une recherche peut porter sur des milliers d'entrées.
+-
+-Un test qui vaut le point : une permission sans propagation sur un domaine parent
+-ne doit rendre aucune entrée d'un sous-domaine.
+-
+-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.1.
+-
+-### 121. [LDAP] [SÉCURITÉ] Le mot de passe du bind part en clair dans le journal DEBUG
+-
+-**Constat.** `LDAP_common.go:180` vide la trame complète en hexadécimal **avant**
+-toute analyse. Sur un `BindRequest` simple, elle porte le mot de passe — et le
+-code TOTP qui lui est accolé quand le second facteur est actif.
+-
+-`debug: false` est livré depuis le point 99, ce qui limite la portée. Mais on
+-active DEBUG exactement quand on diagnostique un problème d'annuaire, c'est-à-dire
+-au moment où tous les clients LDAP du parc se lient en boucle.
+-
+-**À faire.** Analyser l'en-tête avant de journaliser, et ne vider le paquet que
+-pour les opérations autres que `BindRequest` — ou masquer le contenu du champ
+-`Authentication`. Garder la trace : elle sert, c'est pour cela qu'elle existe.
+-
+-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.2.
+-
+ ### 122. [LDAP] Un compte sans groupe est invisible en recherche
+ 
+ **Constat.** `loadGroupsAndUsers` (`scope/resolver.go`) ne découvre les
+@@ -642,13 +605,50 @@ ### 131. [LDAP] Une requête SQL par groupe, et du code mort trompeur
+    par groupe**, alors que le commentaire du résolveur annonce une lecture en lot.
+    Le N+1 par **utilisateur** a bien été supprimé ; celui par groupe demeure. Sur
+    500 groupes, c'est 500 allers-retours par recherche.
+-2. `isInScope` (`filter/logical.go`) n'est appelé par personne. Le retirer — mais
+-   après le point 120, et pas avant : il décrit la règle du « saut de
+-   sous-domaine » et peut faire croire qu'elle est appliquée au filtrage, ce qui
+-   est exactement le malentendu à éviter en traitant 120.
++2. `isInScope` (`filter/logical.go`) n'est appelé par personne. Le point 120 étant
++   traité, plus rien ne retient : il décrit la règle du « saut de sous-domaine »
++   et peut faire croire qu'elle est appliquée au filtrage, alors que le contrôle
++   d'accès vit désormais dans `security.PorteeDeRecherche`. Le retirer.
+ 
+ Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
+ 
++### 132. [LDAP] [SÉCURITÉ] `memberOf` porte les groupes des sous-domaines
++
++**Relevé en traitant le point 120**, et laissé ouvert à dessein : la correction
++demande une décision de conception, pas une rustine glissée dans ce lot-là.
++
++**Constat.** Le point 120 écarte bien les entrées de groupe qu'un compte n'a pas
++le droit de lire. Mais `userMembershipMap` (`scope/resolver.go`) et
++`memberOfForUser` (`scope/base_scope.go`) construisent l'attribut `memberOf` à
++partir de **tous** les groupes du compte, sous-domaines compris.
++
++Un délégué de `enov.local` **sans propagation** reçoit donc un compte dont le
++`memberOf` nomme des groupes de `admin.enov.local`. Les entrées de ces groupes ne
++sortent pas ; leurs **noms**, si. Et comme `ToRootDN` ne garde que les deux
++derniers labels, le DN porté par `memberOf` ne dit même pas que le groupe vient
++d'ailleurs — il est indistinguable d'un groupe du domaine parent.
++
++C'est plus étroit que le 120 — des noms de groupes, pas des comptes — mais c'est
++la même fuite, et elle rend les groupes d'un sous-domaine énumérables.
++
++**Ce qu'il faut décider avant d'écrire.** Filtrer `memberOf` suppose de savoir à
++quel domaine appartient chaque groupe listé, donc de porter ce domaine à côté de
++son DN. Trois formes possibles, et ce n'est pas indifférent :
++
++1. une liste parallèle dans `UserEntry` — simple, mais deux tranches à tenir
++   alignées, ce qui finit toujours mal ;
++2. `Groups` devenant une liste de structures `{DN, Domaine}` — propre, mais
++   `GetAttributes` et tous ses appelants s'en ressentent ;
++3. le filtrage fait dans le résolveur, qui connaît déjà les domaines — le moins
++   de code, mais il faudrait y faire remonter la portée, donc mêler le contrôle
++   d'accès à la résolution, ce que le point 120 a précisément séparé.
++
++**Et ne pas oublier `member`** : l'attribut symétrique d'une `GroupEntry` liste
++les DN de ses membres, y compris des comptes que l'appelant n'a pas le droit de
++voir. Même question, même réponse à trouver.
++
++Détail : `DO/2.2/2.2.md`, point 120, alinéa -13.
++
+ ---
+ 
+ ## Idées à cadrer
+diff --git a/docs/Utilisation/vaultaireLDAP.md b/docs/Utilisation/vaultaireLDAP.md
+index 32aaaad..89ca4ec 100755
+--- a/docs/Utilisation/vaultaireLDAP.md
++++ b/docs/Utilisation/vaultaireLDAP.md
+@@ -49,6 +49,14 @@ ## 🌲 Étape 2 : Définir le domaine de recherche
+ 
+ > ℹ️ Les utilisateurs en dehors de ce domaine ne seront **pas visibles** pendant la synchronisation LDAP.
+ 
++> 🔒 **Les droits du compte de connexion s'appliquent en plus du domaine de recherche.**
++> Une entrée n'est rendue que si le compte a le droit de lire **son** domaine à
++> elle, et pas seulement celui qui a été demandé. Concrètement : un compte dont la
++> permission `search` porte sur `company.com` **sans propagation** obtient les
++> entrées de `company.com` et **aucune** de `it.company.com`, même en recherchant
++> sur toute l'arborescence. Pour qu'un compte de service voie les sous-domaines,
++> donnez-lui la permission **avec propagation** sur le domaine parent.
++
+ ---
+ 
+ ## ⚠️ Important : syntaxe du DN
+diff --git a/docs/Version/2.0/2.2.md b/docs/Version/2.0/2.2.md
+index f5ea793..b333b7b 100755
+--- a/docs/Version/2.0/2.2.md
++++ b/docs/Version/2.0/2.2.md
+@@ -10,6 +10,28 @@ # Vaultaire — Alpha 2.2
+ 
+ ## 🚧 Non publié
+ 
++### 🔒 Les deux constats de sécurité de l'audit LDAP du 28/09 *(TO-DO 120 et 121)*
++
++**Un délégué ne voit plus les comptes d'un sous-domaine qu'on ne lui a pas confié** *(point 120)*
++
++- 🛡️ **Le contrôle d'accès à la recherche portait sur la question posée, pas sur la réponse rendue.** Il était évalué une fois, sur le domaine demandé — alors que le serveur charge ce domaine **et tous ses sous-domaines**. Un compte autorisé à chercher dans `enov.local` **sans propagation** recevait, dans la même réponse, les comptes et les groupes de `admin.enov.local` - Lorens Viguie
++- 🎯 **La distinction « avec / sans propagation » retrouve son sens.** C'est sa seule raison d'être, et elle n'avait aucun effet par LDAP : la fermer ailleurs et la laisser ouverte ici revenait à ne l'avoir nulle part - Lorens Viguie
++- ⚡ **Sans coût sur les recherches** : les droits sont lus **une fois** par recherche, puis la décision se prend par domaine, mémorisée. Un contrôle par entrée aurait ajouté une requête à la base pour chaque compte rendu, sur le chemin le plus utilisé du serveur - Lorens Viguie
++- 🧭 **Chaque entrée déclare désormais son domaine**, au lieu de le laisser deviner depuis son nom LDAP. Un contrôle d'accès ne doit pas reposer sur une reconstruction — et le compilateur réclamera cette déclaration au prochain type d'entrée ajouté - Lorens Viguie
++- 🚪 **Une entrée dont le domaine est inconnu est écartée**, jamais rendue. Un oubli rend une entrée invisible ; il ne la diffuse pas. De même, des droits illisibles refusent la recherche au lieu de l'ouvrir - Lorens Viguie
++- ✅ **Rien ne change pour qui a la propagation** : la recherche dans un domaine et ses sous-domaines fonctionne comme avant. C'est précisément ce qu'un test vérifie, pour que le correctif ne coupe pas les délégués - Lorens Viguie
++- 🔤 **La casse d'un nom de domaine ne décide plus de rien** : le chargement des groupes la ignorait déjà, le contrôle d'accès la ignore désormais aussi. Sans cela, un groupe enregistré « Admin.Enov.Local » aurait été chargé puis écarté, et aurait disparu sans explication - Lorens Viguie
++- ⚠️ **Ce qui n'est pas encore couvert** : la liste des groupes portée par un compte (`memberOf`) nomme encore ses groupes de sous-domaines. Les groupes eux-mêmes ne sortent plus, mais leurs noms voyagent dans cet attribut. La correction demande de revoir la façon dont cette liste est construite ; elle est consignée et sera traitée à part - Lorens Viguie
++
++**Le mot de passe LDAP ne part plus dans le journal** *(point 121)*
++
++- 🔑 **En mode DEBUG, le serveur recopiait chaque trame reçue dans son journal, en entier.** Sur une connexion LDAP, cette trame contient le mot de passe en clair — et le code à six chiffres quand le second facteur est actif. Le journal est un fichier : il tourne, il part dans les sauvegardes - Lorens Viguie
++- 🩺 **Le mode DEBUG s'active exactement dans la situation où c'est le pire** : quand on diagnostique un problème d'annuaire, c'est-à-dire au moment où tous les clients LDAP du parc se connectent en boucle - Lorens Viguie
++- 🔍 **La trace reste, et reste utile** : elle dit d'où vient la connexion, qu'il s'agit d'une demande d'authentification et sa taille. Seul le contenu part. Toutes les autres opérations gardent leur trace complète — c'est elle qui permet de comprendre une trame mal formée - Lorens Viguie
++- 🤫 **Une trame que le serveur n'arrive pas à découper est masquée elle aussi.** Rien ne permet d'affirmer que ce n'est pas une authentification sans lire son contenu, ce qu'il s'agit justement d'éviter. Masquer à tort coûte une ligne de mise au point ; l'inverse coûte un mot de passe - Lorens Viguie
++- 🔁 **La même fuite existait sur une autre opération** : la demande de changement de mot de passe LDAP (RFC 3062) voyait, elle aussi, son contenu recopié dans le journal — donc l'ancien et le nouveau mot de passe. Seuls le nom de l'opération et sa taille y figurent désormais - Lorens Viguie
++- 📌 Ces deux points viennent de l'audit LDAP du 28/09. **Le reste de cet audit — filtres non évalués, comptes sans groupe, attributs POSIX annoncés sans être servis — n'est pas traité ici** et reste ouvert - Lorens Viguie
++
+ ### 🔐 Quatre points critiques de l'audit du 25/09 *(TO-DO 95, 97, 99 et 100)*
+ 
+ **Un code à six chiffres à l'ouverture de session** *(point 95)*
+diff --git a/docs/exploitation/A_TESTER.md b/docs/exploitation/A_TESTER.md
+index 4356ff9..0d7adc7 100755
+--- a/docs/exploitation/A_TESTER.md
++++ b/docs/exploitation/A_TESTER.md
+@@ -1,4 +1,4 @@
+-# À tester — points 9, 10, 34, 38, 41, 44, 46, 47, 48, 50, 51, 61, 62 à 66, 68, 69, 72, 80, 81, 83, 85, 87, 88, 89, 91, 92, 93
++# À tester — points 9, 10, 34, 38, 41, 44, 46, 47, 48, 50, 51, 61, 62 à 66, 68, 69, 72, 80, 81, 83, 85, 87, 88, 89, 91, 92, 93, 120 et 121
+ 
+ Avant tout : `./auto-compil.sh`, puis `go test ./...` dans les trois modules
+ touchés — `vaultaire_serveur`, `vaultaire_client`, `ducky-network-sdk-service`.
+@@ -1139,3 +1139,178 @@ ### 29d. L'élévation par lien symbolique *(point 97)*
+ |---|
+ | le scan le signale comme **dérive** (« remplacé par un lien symbolique ») |
+ | il est corrigé, et la cible du lien n'est pas touchée |
++
++---
++
++## 30. Audit LDAP : droits de recherche et journal du bind *(points 120 et 121)*
++
++> ⚠️ **Le point 120 change ce qu'une recherche LDAP renvoie.** Si un client du
++> parc s'appuyait, sans le savoir, sur des entrées qu'il n'avait pas le droit de
++> lire, il en verra moins après la mise à jour. C'est le but — mais il faut le
++> constater avant de le découvrir en production.
++
++### 30a. Le compte de service ordinaire ne perd rien *(point 120)*
++
++À faire **en premier**, parce que c'est le cas qui touche tout le monde.
++
++1. Reprenez un compte de service LDAP déjà en place — celui de Keycloak, de
++   Nextcloud ou d'un pare-feu — sans rien changer à ses droits.
++2. Relancez sa recherche habituelle (synchronisation, ou un `ldapsearch` avec la
++   même base et le même filtre).
++
++| Attendu |
++|---|
++| **exactement le même nombre d'entrées** qu'avant la mise à jour |
++| aucune ligne `entrée écartée par les droits` dans le journal en DEBUG |
++
++Un compte en `all`, ou avec la propagation sur son domaine, ne doit **rien**
++perdre. Si ce test recule, arrêtez-vous là : c'est le correctif qui est trop
++large, pas la configuration du client.
++
++### 30b. Un délégué sans propagation ne voit plus le sous-domaine *(point 120)*
++
++C'est le défaut lui-même. Il faut un domaine avec au moins un sous-domaine
++peuplé — par exemple `enov.local` et `admin.enov.local`, chacun avec un groupe et
++un compte.
++
++1. Donnez à un compte la permission `search` en **custom sans propagation** sur le
++   domaine parent uniquement.
++2. `ldapsearch` en `sub` sur `dc=enov,dc=local`, filtre `(objectClass=*)`.
++
++| Attendu |
++|---|
++| les entrées de `enov.local` sont rendues |
++| **aucune** entrée dont le DN contient `dc=admin` |
++| le code de retour reste **success**, pas une erreur : ce qui est refusé est écarté, pas signalé au client |
++| en DEBUG : `ldap: N entrée(s) écartée(s) des droits de <compte> sur baseDN=…` |
++
++> 🔎 **Regardez les COMPTES autant que les groupes.** La première version de ce
++> correctif ne filtrait que les groupes : les comptes du sous-domaine sortaient
++> toujours. C'est l'endroit exact où il faut être méfiant.
++
++3. Passez la même permission **avec propagation**, refaites la même recherche.
++
++| Attendu |
++|---|
++| les entrées du sous-domaine reviennent |
++| plus aucune ligne d'entrée écartée |
++
++4. Demandez directement le sous-domaine (`-b dc=admin,dc=enov,dc=local`) avec la
++   permission **sans** propagation.
++
++| Attendu |
++|---|
++| `insufficientAccessRights` (50) — le refus est à l'entrée, pas un résultat vide |
++
++### 30c. Un compte membre de DEUX domaines reste visible *(point 120)*
++
++Le cas qui se casse si le filtre est trop strict. Il faut un compte membre d'un
++groupe de `enov.local` **et** d'un groupe de `admin.enov.local`.
++
++1. Avec la permission `search` **sans propagation** sur `enov.local`, recherchez
++   en `sub` sur `dc=enov,dc=local`.
++
++| Attendu |
++|---|
++| ce compte **est rendu** : il est bien membre d'un groupe du domaine autorisé |
++| un compte membre **uniquement** de groupes de `admin.enov.local` ne l'est pas |
++
++2. Puis le chemin `scope=base`, celui que JumpServer emprunte après chaque
++   authentification :
++
++```
++ldapsearch ... -b "uid=<compte>,ou=users,dc=enov,dc=local" -s base "(objectClass=*)"
++```
++
++| Attendu |
++|---|
++| **la même réponse à chaque exécution** — relancez-la dix fois |
++| le compte est rendu s'il est membre d'un groupe d'un domaine autorisé |
++
++La répétition n'est pas du zèle : le domaine retenu venait d'une requête sans
++tri, donc l'ancienne version pouvait répondre différemment d'une fois sur l'autre
++pour un compte à cheval sur deux arbres.
++
++3. **`memberOf` n'est pas encore filtré** *(point 132, ouvert)*. Regardez cet
++   attribut sur un compte rendu à un délégué sans propagation : il nomme encore
++   les groupes de `admin.enov.local`. C'est attendu à ce stade — notez-le, ne le
++   traitez pas comme un échec du 120.
++
++### 30d. Le RootDSE et le schéma restent lisibles sans compte *(point 120)*
++
++Le filtre ne doit pas les emporter : c'est par là qu'un client découvre ce que le
++serveur sait faire, et cela doit marcher avant toute authentification (RFC 4512).
++
++```
++ldapsearch -x -H ldap://<core>:389 -b "" -s base "(objectClass=*)" +
++ldapsearch -x -H ldap://<core>:389 -b "cn=schema" -s base "(objectClass=*)"
++```
++
++| Attendu |
++|---|
++| les deux répondent **sans bind**, avec leur contenu |
++| `supportedControl`, `supportedExtension` et `supportedSASLMechanisms` restent **vides** — ils l'étaient déjà, vérifiez que rien n'est revenu |
++
++### 30e. Le mot de passe n'est plus dans le journal *(point 121)*
++
++C'est le test qui demande d'aller regarder, et personne d'autre ne peut le faire.
++
++1. Passez le core en `debug: true`.
++2. Faites un bind avec un mot de passe **reconnaissable** (`MotDePasseDeRecette42`)
++   sur un compte de test, sur le port 389 puis en LDAPS sur 636.
++3. Cherchez dans le journal, **en clair et en hexadécimal**. Le vidage écrivait
++   un octet par groupe, séparés par des espaces : chercher la suite hexadécimale
++   telle quelle ne trouverait rien, il faut retirer les espaces d'abord.
++
++```
++grep -i "MotDePasseDeRecette42" <journal>
++tr -d ' ' < <journal> | grep -io "4D6F74446550617373654465526563657474653432"
++```
++
++Si vous changez de mot de passe d'essai, recalculez la suite :
++`python3 -c "print('<votre mot de passe>'.encode().hex().upper())"`.
++
++| Attendu |
++|---|
++| **aucune correspondance**, dans aucune des deux formes |
++| une ligne `ldap: packet from <ip>: BindRequest de N octets, contenu masqué` |
++| une recherche faite juste après garde, elle, son vidage hexadécimal complet |
++
++4. Refaites-le sur un compte **à second facteur**, en collant le code au mot de
++   passe (`motdepasse123456`). Le code ne doit pas apparaître non plus.
++
++5. **La demande de changement de mot de passe LDAP** (RFC 3062), qui portait la
++   même fuite sur une autre opération :
++
++```
++ldappasswd -x -H ldap://<core>:389 -D "uid=<compte>,ou=users,dc=<...>" \
++  -w AncienMotDePasse42 -s NouveauMotDePasse42 "uid=<compte>,ou=users,dc=<...>"
++```
++
++| Attendu |
++|---|
++| l'opération est **refusée** (le serveur ne la gère pas) — c'est le comportement attendu |
++| aucun des deux mots de passe dans le journal, ni en clair ni en hexadécimal |
++| une ligne `ldap: extended request name=1.3.6.1.4.1.4203.1.11.1, N octet(s) de contenu (non journalisé)` |
++
++6. Remettez `debug: false`.
++
++### 30f. Un client hostile ne fait rien tomber *(point 121)*
++
++La détection lit l'étiquette du paquet avant toute analyse, sur des octets venus
++d'inconnus. Vérifiez qu'elle ne devient pas un moyen d'arrêter le service.
++
++1. Envoyez des octets quelconques sur le port 389 :
++
++```
++printf '\x30\x84\xff\xff\xff\xff' | nc <core> 389
++head -c 4096 /dev/urandom | nc <core> 389
++```
++
++2. Répétez une centaine de fois, en DEBUG puis sans.
++
++| Attendu |
++|---|
++| le core **reste debout**, et les binds légitimes continuent de passer |
++| aucune ligne `CRITICAL` de panique |
++| en DEBUG, ces trames sont **masquées** et non vidées — c'est voulu, et le motif de l'échec d'analyse est journalisé à côté |
+diff --git a/src/vaultaire_serveur/core/domain/GET-GroupsUnderDomain.go b/src/vaultaire_serveur/core/domain/GET-GroupsUnderDomain.go
+index 66280f2..7fe5e8a 100755
+--- a/src/vaultaire_serveur/core/domain/GET-GroupsUnderDomain.go
++++ b/src/vaultaire_serveur/core/domain/GET-GroupsUnderDomain.go
+@@ -7,13 +7,24 @@
+ 	dbdomains "vaultaire/core/database/db_domains"
+ )
+ 
+-// normalizeDomain normalise un nom de domaine : minuscules, trim espaces et point final
+-func normalizeDomain(s string) string {
++// NormaliserDomaine met un nom de domaine sous sa forme de comparaison :
++// minuscules, sans espaces de bord ni point final.
++//
++// EXPORTÉE parce qu'elle décide de ce qui est chargé, et que le contrôle d'accès
++// LDAP doit décider de ce qui est RENDU avec exactement la même règle
++// (`security.PorteeDeRecherche`, point 120). Deux normalisations qui se
++// ressemblent finissent par diverger, et la divergence se manifeste alors en
++// entrée chargée puis écartée — ou l'inverse.
++func NormaliserDomaine(s string) string {
+ 	s = strings.TrimSpace(s)
+ 	s = strings.TrimSuffix(s, ".")
+ 	return strings.ToLower(s)
+ }
+ 
++func normalizeDomain(s string) string {
++	return NormaliserDomaine(s)
++}
++
+ // GetGroupsUnderDomain retourne tous les noms de groupes appartenant à un domaine
+ // et à tous ses sous-domaines (scope subtree LDAP)
+ // Exemples :
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_EXTENDED-REQUEST/LDAP_ExtendedRequest.go b/src/vaultaire_serveur/core/ldap/LDAP_EXTENDED-REQUEST/LDAP_ExtendedRequest.go
+index d20f54a..65b61b8 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_EXTENDED-REQUEST/LDAP_ExtendedRequest.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_EXTENDED-REQUEST/LDAP_ExtendedRequest.go
+@@ -31,7 +31,20 @@ func respond(conn net.Conn, messageID, resultCode int, diagnostic, responseName,
+ }
+ 
+ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn net.Conn) {
+-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: extended request name=%s value=%s", op.RequestName, op.RequestValue))
++	// Le NOM de l'opération, sa taille — pas son contenu.
++	//
++	// Même défaut que celui du point 121, sur une autre opération : `RequestValue`
++	// était rendu en `%s`, donc écrit en clair dans le journal. Or le Password
++	// Modify de la RFC 3062 (1.3.6.1.4.1.4203.1.11.1) y transporte l'ancien ET le
++	// nouveau mot de passe. Le refus prononcé plus bas n'y changeait rien : la
++	// ligne était déjà écrite.
++	//
++	// Le nom de l'extension suffit à diagnostiquer « un client tente telle
++	// opération et le serveur ne la gère pas », qui est la seule chose que cette
++	// ligne ait jamais servi à savoir.
++	logs.Write_Log("DEBUG", fmt.Sprintf(
++		"ldap: extended request name=%s, %d octet(s) de contenu (non journalisé)",
++		op.RequestName, len(op.RequestValue)))
+ 
+ 	// --- 🔐 Étape 1 : Identification de l’utilisateur
+ 	session, ok := ldapsessionmanager.GetLDAPSession(conn)
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go
+index 5af749f..9ad8e00 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go
+@@ -20,6 +20,13 @@ func (s SchemaEntry) DN() string {
+ 	return "cn=schema"
+ }
+ 
++// Domaines — voir ldapinterface.LDAPEntry. Comme le RootDSE, le sous-schéma
++// n'appartient à aucun domaine et passe par le chemin qui court-circuite le
++// filtre d'autorisation.
++func (s SchemaEntry) Domaines() []string {
++	return nil
++}
++
+ func (s SchemaEntry) ObjectClasses() []string {
+ 	return []string{"top", "subschema"}
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/domain.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/domain.go
+index 2d84816..e9088d1 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/domain.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/domain.go
+@@ -18,6 +18,22 @@ func (d DomainEntry) DN() string {
+ 	return ldaptools.ToDN(d.DNName)
+ }
+ 
++// Domaines — voir ldapinterface.LDAPEntry.
++//
++// DNName porte tantôt « enov.local », tantôt « dc=enov,dc=local » selon le
++// chemin qui a construit l'entrée. Le RBAC ne connaît que la première forme :
++// la conversion est donc faite ici, et pas laissée à l'appelant.
++func (d DomainEntry) Domaines() []string {
++	nom := d.DNName
++	if strings.Contains(nom, "=") {
++		nom = ldaptools.ConvertLDAPBaseToDomainName(nom)
++	}
++	if nom == "" {
++		return nil
++	}
++	return []string{nom}
++}
++
+ func (d DomainEntry) ObjectClasses() []string {
+ 	return []string{"top", "domain"}
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go
+index 757a1a1..5eae38f 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go
+@@ -16,6 +16,18 @@ func (g GroupEntry) DN() string {
+ 	return fmt.Sprintf("cn=%s,ou=groups,%s", g.Name, ldaptools.ToRootDN(g.BaseDN))
+ }
+ 
++// Domaines — voir ldapinterface.LDAPEntry.
++//
++// Un groupe n'a qu'un domaine, et `BaseDN` porte ici le SIEN — le résolveur y
++// place `g.DomainName`, lu en base, et non le domaine demandé par le client.
++// C'est exactement le cas que le filtre d'autorisation doit pouvoir écarter.
++func (g GroupEntry) Domaines() []string {
++	if g.BaseDN == "" {
++		return nil
++	}
++	return []string{g.BaseDN}
++}
++
+ func (g GroupEntry) ObjectClasses() []string {
+ 	return []string{
+ 		"top",
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface/entry.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface/entry.go
+index 4a1b8cb..4bc504a 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface/entry.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface/entry.go
+@@ -5,4 +5,37 @@ type LDAPEntry interface {
+ 	GetAttribute(attr string) []string
+ 	GetAttributes(attrs []string, typesOnly bool) map[string][]string
+ 	ObjectClasses() []string
++
++	// Domaines rend les domaines Vaultaire auxquels l'entrée est rattachée, sous
++	// la forme employée par le RBAC — « admin.enov.local », et non « dc=admin,… ».
++	//
++	// # Pourquoi c'est dans l'interface
++	//
++	// Le contrôle d'accès à la recherche s'évaluait sur le seul baseDN demandé.
++	// Or le résolveur charge le domaine ET ses sous-domaines : un compte autorisé
++	// sur « enov.local » SANS propagation recevait les entrées de
++	// « admin.enov.local ». La distinction avec/sans propagation, qui est toute
++	// la raison d'être du mode « sans », n'avait aucun effet sur ce chemin.
++	//
++	// Filtrer suppose de savoir à quoi est rattachée CHAQUE entrée. Le déduire du
++	// DN ne marcherait pas : `ToRootDN` ne garde que les deux derniers labels, si
++	// bien qu'une entrée de « admin.enov.local » et une de « enov.local » ont
++	// exactement le MÊME DN. Le rattachement est donc la seule chose qui les
++	// distingue, et il doit être porté, pas reconstruit.
++	//
++	// Le mettre dans l'INTERFACE, et non dans une fonction auxiliaire, fait que
++	// le compilateur réclamera une réponse au prochain type d'entrée ajouté.
++	//
++	// # Pourquoi PLUSIEURS domaines
++	//
++	// Un compte appartient à des groupes qui peuvent vivre dans des domaines
++	// différents. Le rattacher à un seul obligerait à en choisir un — et la
++	// première version de ce correctif choisissait le domaine DEMANDÉ, ce qui
++	// autorisait tout compte par construction : le filtre ne voyait jamais que le
++	// domaine qui venait d'être autorisé.
++	//
++	// Une entrée est rendue si l'un AU MOINS de ses rattachements est autorisé.
++	// Une liste vide est ÉCARTÉE, jamais laissée passer : voir
++	// security.PorteeDeRecherche.
++	Domaines() []string
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ou.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ou.go
+index ac02e7e..c943cfd 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ou.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ou.go
+@@ -16,6 +16,17 @@ func (ou OUEntry) DN() string {
+ 	return fmt.Sprintf("ou=%s,%s", ou.Name, ldaptools.ToRootDN(ou.BaseDN))
+ }
+ 
++// Domaines — voir ldapinterface.LDAPEntry.
++//
++// Une OU est fabriquée pour un domaine donné : `users` et `groups` sont créées
++// une fois par domaine parcouru, et `BaseDN` est ce domaine-là.
++func (ou OUEntry) Domaines() []string {
++	if ou.BaseDN == "" {
++		return nil
++	}
++	return []string{ou.BaseDN}
++}
++
+ func (ou OUEntry) ObjectClasses() []string {
+ 	return []string{"top", "organizationalUnit"}
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rattachement_test.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rattachement_test.go
+new file mode 100644
+index 0000000..1690e5d
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rattachement_test.go
+@@ -0,0 +1,129 @@
++package candidate
++
++import (
++	"strings"
++	"testing"
++
++	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
++)
++
++// Point 120 : ce à quoi une entrée est rattachée décide de qui a le droit de la
++// lire. Ce fichier éprouve les rattachements eux-mêmes ; la règle qui les
++// interprète est éprouvée dans newmodule/security.
++
++// LE piège du point, et la première version du correctif s'y est prise.
++//
++// `BaseDN` compose le DN ; sur le chemin d'une recherche `one` ou `sub`, c'est le
++// domaine que le CLIENT a demandé, pas celui où vit le compte. S'en servir comme
++// valeur de secours pour les droits autoriserait tout compte par construction :
++// le filtre ne verrait jamais que le domaine qui vient d'être autorisé.
++func TestUnCompteNeSeRattachePasAuDomaineDeSonDN(t *testing.T) {
++	// Un compte de admin.enov.local, rendu dans une recherche sur enov.local.
++	u := UserEntry{BaseDN: "enov.local", Rattachements: []string{"admin.enov.local"}}
++
++	domaines := u.Domaines()
++	if len(domaines) != 1 || domaines[0] != "admin.enov.local" {
++		t.Fatalf("Domaines() = %v : c'est le rattachement réel du compte qui décide "+
++			"des droits, pas le domaine demandé", domaines)
++	}
++
++	// Et sans rattachement, RIEN — surtout pas BaseDN.
++	sans := UserEntry{BaseDN: "enov.local"}
++	if d := sans.Domaines(); len(d) != 0 {
++		t.Errorf("Domaines() = %v pour un compte sans rattachement : le secours sur "+
++			"BaseDN autoriserait tout compte, puisque BaseDN est le domaine demandé", d)
++	}
++}
++
++// LE DN NE DISTINGUE PAS un compte de sous-domaine.
++//
++// C'est ce qui rend le rattachement indispensable, et c'est contre-intuitif :
++// `ToRootDN` ne garde que les deux derniers labels. Si ce test venait à échouer
++// parce que les DN portent enfin le sous-domaine, il resterait juste d'écarter
++// sur le rattachement — mais l'inverse, déduire le domaine du DN, serait alors
++// tentant et toujours faux pour les autres formes.
++func TestDeuxComptesDeDomainesDifferentsOntLeMemeDN(t *testing.T) {
++	a := UserEntry{BaseDN: "enov.local", Rattachements: []string{"enov.local"}}
++	a.User.Username = "alice"
++	b := UserEntry{BaseDN: "admin.enov.local", Rattachements: []string{"admin.enov.local"}}
++	b.User.Username = "alice"
++
++	if a.DN() != b.DN() {
++		// Un ÉCHEC, pas un saut : si les DN se mettent à porter le sous-domaine,
++		// c'est une bonne nouvelle, mais tout le raisonnement du point 120 — et ce
++		// qu'on peut ou non déduire d'un DN — est à relire. Passer en silence
++		// laisserait ce test endormi pour toujours.
++		t.Errorf("les DN diffèrent désormais (%q vs %q) : ToRootDN a changé, "+
++			"relire le raisonnement du point 120", a.DN(), b.DN())
++		return
++	}
++	if !strings.Contains(a.DN(), "dc=enov,dc=local") {
++		t.Errorf("DN inattendu : %q", a.DN())
++	}
++}
++
++// Les autres types d'entrée se rattachent bien à leur propre domaine.
++func TestChaqueTypeDEntreeDitSonRattachement(t *testing.T) {
++	cas := []struct {
++		nom     string
++		entrée  ldapinterface.LDAPEntry
++		attendu []string
++	}{
++		{"groupe", GroupEntry{Name: "admins", BaseDN: "admin.enov.local"},
++			[]string{"admin.enov.local"}},
++		{"unité d'organisation", OUEntry{Name: "users", BaseDN: "admin.enov.local"},
++			[]string{"admin.enov.local"}},
++		{"domaine, forme pointée", DomainEntry{DNName: "admin.enov.local"},
++			[]string{"admin.enov.local"}},
++		{"domaine, forme DN", DomainEntry{DNName: "dc=admin,dc=enov,dc=local"},
++			[]string{"admin.enov.local"}},
++		{"compte", UserEntry{BaseDN: "enov.local", Rattachements: []string{"a.local", "b.local"}},
++			[]string{"a.local", "b.local"}},
++	}
++
++	for _, c := range cas {
++		obtenu := c.entrée.Domaines()
++		if len(obtenu) != len(c.attendu) {
++			t.Errorf("%s : Domaines() = %v, attendu %v", c.nom, obtenu, c.attendu)
++			continue
++		}
++		for i := range obtenu {
++			if obtenu[i] != c.attendu[i] {
++				t.Errorf("%s : Domaines() = %v, attendu %v", c.nom, obtenu, c.attendu)
++				break
++			}
++		}
++	}
++}
++
++// LE ROOTDSE ET LE SOUS-SCHÉMA ne se rattachent à rien, et c'est voulu.
++//
++// Ils sont servis par le chemin qui court-circuite le filtre, parce qu'ils
++// doivent rester lisibles sans authentification (RFC 4512). S'ils passaient un
++// jour par le filtre, ils seraient écartés — c'est le bon sens du refus : une
++// liste vide ferme, elle n'ouvre pas.
++func TestLeRootDSEEtLeSchemaNeSeRattachentARien(t *testing.T) {
++	if d := NewRootDSE().Domaines(); len(d) != 0 {
++		t.Errorf("RootDSE rattaché à %v", d)
++	}
++	if d := NewSchemaEntry().Domaines(); len(d) != 0 {
++		t.Errorf("sous-schéma rattaché à %v", d)
++	}
++}
++
++// Un BaseDN vide ne devient pas un rattachement vide qui aurait l'air renseigné.
++//
++// « [""] » et « [] » ne se distinguent pas à la lecture d'un journal, mais la
++// première forme ferait boucler le filtre sur une chaîne vide. Les deux sont
++// refusées ; autant n'en produire qu'une.
++func TestUnDomaineVideNeDevientPasUnRattachement(t *testing.T) {
++	for nom, e := range map[string]ldapinterface.LDAPEntry{
++		"groupe":  GroupEntry{Name: "x"},
++		"OU":      OUEntry{Name: "users"},
++		"domaine": DomainEntry{},
++	} {
++		if d := e.Domaines(); len(d) != 0 {
++			t.Errorf("%s sans domaine : Domaines() = %#v, attendu vide", nom, d)
++		}
++	}
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rootdse.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rootdse.go
+index 8e6589b..e90bb1a 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rootdse.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/rootdse.go
+@@ -23,6 +23,17 @@ func (r RootDSEEntry) DN() string {
+ 	return "" // La racine a un DN vide, c'est la règle RFC
+ }
+ 
++// Domaines — voir ldapinterface.LDAPEntry.
++//
++// Le RootDSE n'appartient à AUCUN domaine : c'est la racine, hors de
++// l'arborescence. La chaîne vide vaut donc « écartée par le filtre
++// d'autorisation », et c'est le bon comportement — cette entrée est servie par
++// le chemin qui court-circuite le filtre, parce qu'elle doit rester lisible sans
++// authentification (RFC 4512).
++func (r RootDSEEntry) Domaines() []string {
++	return nil
++}
++
+ func (r RootDSEEntry) ObjectClasses() []string {
+ 	return []string{"top", "LDAProotDSE"}
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go
+index 6311fcf..552cb6a 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go
+@@ -18,6 +18,16 @@ type UserEntry struct {
+ 	Uid         string   // Username
+ 	MemberOf    []string // Groupes
+ 
++	// Rattachements : les domaines où vit RÉELLEMENT le compte, c'est-à-dire ceux
++	// des groupes par lesquels il a été trouvé. Sert au contrôle d'accès, et à
++	// rien d'autre — voir Domaines().
++	//
++	// Distinct de BaseDN, qui est le domaine dont le DN est composé : `ToRootDN`
++	// ne garde que les deux derniers labels, si bien qu'un compte de
++	// « admin.enov.local » et un compte de « enov.local » portent le MÊME DN.
++	// Confondre les deux champs revient à n'avoir aucun contrôle.
++	Rattachements []string
++
+ 	// ServiceRights : clés RBAC de service (read:nexus…) accordées au compte.
+ 	// Renseigné par la recherche UNIQUEMENT quand l'attribut est demandé nommément et
+ 	// que le compte lié a le droit de le lire — voir newmodule/service_rights.go.
+@@ -32,6 +42,22 @@ func (u UserEntry) DN() string {
+ 	return fmt.Sprintf("uid=%s,ou=users,%s", u.User.Username, ldaptools.ToRootDN(u.BaseDN))
+ }
+ 
++// Domaines — voir ldapinterface.LDAPEntry.
++//
++// Rend `Rattachements`, et RIEN d'autre. Surtout pas `BaseDN` en secours :
++// BaseDN est le domaine qui compose le DN, et sur ce chemin c'est celui que le
++// client a DEMANDÉ, pas celui où vit le compte. S'en servir pour décider des
++// droits autoriserait tout compte par construction — le filtre ne verrait jamais
++// que le domaine qui vient d'être autorisé. C'était le défaut de la première
++// version de ce correctif.
++//
++// Une liste vide écarte l'entrée. C'est ce qui doit arriver à une UserEntry
++// construite sans renseigner ses rattachements : l'oubli rend le compte
++// invisible, il ne le diffuse pas.
++func (u UserEntry) Domaines() []string {
++	return u.Rattachements
++}
++
+ func (u UserEntry) ObjectClasses() []string {
+ 	return []string{"inetOrgPerson", "posixAccount", "organizationalPerson", "person", "user"}
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/handler.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/handler.go
+index dc05d15..8963291 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/handler.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/handler.go
+@@ -13,6 +13,7 @@
+ 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
+ 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
+ 	"vaultaire/core/logs"
++	"vaultaire/core/storage"
+ )
+ 
+ // HandleSearchRequest traite une requête LDAP Search
+@@ -43,13 +44,48 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
+ 		isBound = session.IsBound
+ 	}
+ 
++	// La portée du compte : les domaines qu'il a le droit de lire.
++	//
++	// Lue UNE fois ici, puis consultée pour chaque entrée. Elle sert donc deux
++	// fois : à refuser la recherche d'emblée quand le baseDN n'est pas autorisé,
++	// et à écarter les entrées que le résolveur ramène hors de cette portée —
++	// voir security.PorteeDeRecherche pour ce que cela ferme.
++	var portée *security.PorteeDeRecherche
++
+ 	if !isRootDSE {
+ 		if !isBound {
+ 			response.SendLDAPSearchFailureCode(conn, messageID,
+ 				ldapstorage.ResultStrongerAuthRequired, "authentication required")
+ 			return
+ 		}
+-		if !security.IsAuthorizedToSearch(username, baseDN) {
++
++		var err error
++		portée, err = security.PorteeDeRecherchePour(username)
++		if err != nil {
++			// Une lecture de droits qui échoue REFUSE. Le message reste celui des
++			// droits insuffisants : dire au client que la base est en difficulté ne
++			// l'aide pas et renseigne qui sonde la porte. Le journal, lui, distingue.
++			logs.Write_LogCode("ERROR", logs.CodeAuthPermission, fmt.Sprintf(
++				"ldap: droits de recherche illisibles pour %s (%v) — refusé", username, err))
++			response.SendLDAPSearchFailureCode(conn, messageID,
++				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
++			return
++		}
++
++		if !portée.Autorise(baseDN) {
++			// Un baseObject dont on ne tire AUCUN domaine tombe ici, et ce n'est pas
++			// un refus de droits : c'est une base que le serveur ne sait pas situer,
++			// et qui n'est ni le RootDSE ni le sous-schéma. Le dire dans le journal,
++			// sans quoi l'administrateur cherchera une permission manquante.
++			//
++			// La réponse, elle, reste `insufficientAccessRights` : le code juste
++			// serait `noSuchObject` (32), qui n'est pas encore rendu — voir le
++			// point 124.
++			if baseDN == "" {
++				logs.Write_Log("WARNING", fmt.Sprintf(
++					"ldap: baseObject %q sans composant dc= — aucun domaine à autoriser",
++					op.BaseObject))
++			}
+ 			response.SendLDAPSearchFailureCode(conn, messageID,
+ 				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
+ 			return
+@@ -63,6 +99,45 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
+ 		return
+ 	}
+ 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolved %d candidates for baseDN=%s scope=%d", len(candidates), baseDN, op.Scope))
++
++	// LE FILTRE D'AUTORISATION, avant le filtre LDAP.
++	//
++	// `Resolve` charge le domaine demandé ET ses sous-domaines : c'est voulu pour
++	// une recherche subtree, et c'était jusqu'ici sans aucun contrôle. Un compte
++	// autorisé sur `enov.local` sans propagation recevait `admin.enov.local`.
++	//
++	// Placé ICI, et pas dans la boucle d'envoi, pour deux raisons : le filtre LDAP
++	// n'a pas à voir des entrées que le compte n'a pas le droit de lire, et la
++	// borne `sizeLimit` doit compter ce qui est rendu, pas ce qui a été écarté.
++	//
++	// Le RootDSE et le sous-schéma passent à côté : ils n'appartiennent à aucun
++	// domaine et sont servis sans authentification (RFC 4512).
++	//
++	// La condition est `!isRootDSE`, la MÊME que celle qui a accordé la dispense
++	// plus haut — et non « si une portée a été lue ». La différence compte : si un
++	// chemin futur arrivait ici sans portée, `Filtrer` écarterait tout, ce qui se
++	// voit immédiatement. Tester le pointeur aurait, dans ce même cas, tout laissé
++	// passer.
++	if !isRootDSE {
++		retenues, écartées := portée.Filtrer(candidates)
++		if écartées > 0 {
++			logs.Write_Log("DEBUG", fmt.Sprintf(
++				"ldap: %d entrée(s) écartée(s) des droits de %s sur baseDN=%s, %d rendue(s)",
++				écartées, username, baseDN, len(retenues)))
++		}
++		candidates = retenues
++	}
++
++	// Le vidage détaillé, APRÈS le filtre.
++	//
++	// Il avait lieu dans le résolveur, donc avant : le journal DEBUG portait le
++	// contenu des entrées que le compte n'a pas le droit de lire. Corriger la
++	// fuite vers le client en la laissant vers le journal n'aurait rien corrigé.
++	if storage.Debug {
++		for _, e := range candidates {
++			logs.Write_Log("DEBUG", scope.DumpLDAPEntry(e, op.Attributes))
++		}
++	}
+ 	// for _, candidate := range candidates {
+ 	// 	scope.PrintLDAPEntry(candidate)
+ 	// }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go
+index 7d1a3d5..9a39e4f 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go
+@@ -3,6 +3,7 @@
+ import (
+ 	"database/sql"
+ 	"fmt"
++	"sort"
+ 	"strings"
+ 	dbdomains "vaultaire/core/database/db_domains"
+ 	dbldap "vaultaire/core/database/db_ldap"
+@@ -95,21 +96,71 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
+ 		return candidate.UserEntry{}, false
+ 	}
+ 
+-	baseDN := ldaptools.ConvertLDAPBaseToDomainName(expectedDN)
+-	if userID, err := dbusers.Get_User_ID_By_Username(db, username); err == nil {
+-		if domains, err := dbdomains.GetDomainsForUser(db, userID); err == nil && len(domains) > 0 {
+-			baseDN = domains[0]
++	domaineDuDN := ldaptools.ConvertLDAPBaseToDomainName(expectedDN)
++
++	rattachements, lus := domainesDuCompte(db, username)
++	if !lus {
++		// LECTURE EN ÉCHEC : on REFUSE, on ne retombe pas sur le domaine demandé.
++		//
++		// Le secours ci-dessous est réservé au compte qui n'a réellement aucun
++		// domaine. L'appliquer aussi à une panne de lecture rattacherait le compte
++		// au domaine que l'appelant vient de se voir autoriser — donc le filtre
++		// s'autoriserait lui-même, ce qui est exactement le défaut du point 120,
++		// reproduit sur un autre chemin et déclenchable par une erreur transitoire.
++		//
++		// Partout ailleurs dans ce correctif, une lecture de droits qui échoue
++		// refuse ; ici aussi.
++		logs.Write_Log("ERROR", "ldap: domaines de "+username+
++			" illisibles — entrée non rendue")
++		return candidate.UserEntry{}, false
++	}
++
++	baseDN := domaineDuDN
++	if len(rattachements) > 0 {
++		// Le domaine qui compose le DN : celui des rattachements qui redonne le DN
++		// demandé, et à défaut le premier dans l'ordre alphabétique.
++		//
++		// La version antérieure prenait `domains[0]` sans plus de façon, alors que
++		// `GetDomainsForUser` n'a AUCUN ORDER BY. Dans un même arbre cela ne se
++		// voyait pas — `ToRootDN` ne garde que les deux derniers labels, donc
++		// `admin.enov.local` et `enov.local` composent le même DN. Mais pour un
++		// compte membre de groupes dans DEUX arbres (`enov.local` et `acme.fr`), le
++		// DN construit tombait tantôt sur l'un tantôt sur l'autre : la comparaison
++		// finale échouait une fois sur deux et le compte devenait introuvable par
++		// intermittence — sur le chemin que JumpServer emprunte après CHAQUE
++		// authentification.
++		baseDN = rattachements[0]
++		for _, d := range rattachements {
++			if strings.EqualFold(ldaptools.ToRootDN(d), ldaptools.ToRootDN(domaineDuDN)) {
++				baseDN = d
++				break
++			}
+ 		}
+ 	}
+ 
++	// Compte sans aucun domaine : on retient celui du DN demandé.
++	//
++	// Il n'appartient à aucun groupe, donc à aucune délégation : le refuser ne
++	// protégerait personne, et le rendrait illisible alors qu'il l'est
++	// aujourd'hui. Le domaine du DN est par ailleurs celui que l'appelant vient de
++	// se voir autoriser à l'entrée, donc ce secours n'ouvre rien.
++	//
++	// Ce cas est celui du point 122 — un compte sans groupe est déjà introuvable
++	// par une recherche `one` ou `sub`, et n'est lisible que par son DN exact.
++	// C'est là qu'il faudra décider ce qu'un tel compte est censé être.
++	if len(rattachements) == 0 && domaineDuDN != "" {
++		rattachements = []string{domaineDuDN}
++	}
++
+ 	entry := candidate.UserEntry{
+-		User:        userObj,
+-		BaseDN:      baseDN,
+-		Groups:      memberOfForUser(db, username),
+-		DisplayName: userObj.Firstname + " " + userObj.Lastname,
+-		GivenName:   userObj.Firstname,
+-		Sn:          userObj.Lastname,
+-		Uid:         userObj.Username,
++		User:          userObj,
++		BaseDN:        baseDN,
++		Rattachements: rattachements,
++		Groups:        memberOfForUser(db, username),
++		DisplayName:   userObj.Firstname + " " + userObj.Lastname,
++		GivenName:     userObj.Firstname,
++		Sn:            userObj.Lastname,
++		Uid:           userObj.Username,
+ 	}
+ 	if strings.ToLower(entry.DN()) != expectedDN {
+ 		return candidate.UserEntry{}, false
+@@ -117,6 +168,29 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
+ 	return entry, true
+ }
+ 
++// domainesDuCompte rend les domaines d'un compte, triés, et dit si la LECTURE a
++// abouti.
++//
++// Le second retour distingue « ce compte n'a aucun domaine » de « je n'ai pas pu
++// savoir ». Les deux se ressemblaient — une liste vide dans les deux cas — et
++// c'est ce qui permettait à une panne de base de passer pour un compte sans
++// groupe, donc de déclencher un secours qui ouvre.
++func domainesDuCompte(db *sql.DB, username string) (domaines []string, lus bool) {
++	userID, err := dbusers.Get_User_ID_By_Username(db, username)
++	if err != nil {
++		return nil, false
++	}
++	domains, err := dbdomains.GetDomainsForUser(db, userID)
++	if err != nil {
++		return nil, false
++	}
++	domaines = append(domaines, domains...)
++	// Trié : `GetDomainsForUser` n'a aucun ORDER BY, et une liste dont l'ordre
++	// change d'une exécution à l'autre rend les journaux incomparables.
++	sort.Strings(domaines)
++	return domaines, true
++}
++
+ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.GroupEntry, bool) {
+ 	group, err := dbldap.GetGroupWithUsersByName(db, groupName)
+ 	if err != nil || group == nil {
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/legacy.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/legacy.go
+index a29c144..9095a10 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/legacy.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/legacy.go
+@@ -1,5 +1,13 @@
+ package scope
+ 
++// Ancienne version de loadGroupsAndUsers, conservée en commentaire.
++//
++// Elle appelle `security.IsAuthorizedToSearch`, qui n'existe plus : le contrôle
++// d'accès à la recherche est passé à `security.PorteeDeRecherche`, lue une fois
++// et consultée par entrée (point 120). Ne pas partir à la recherche de l'ancienne
++// fonction ; et noter que cette version-ci évaluait bien les droits PAR DOMAINE,
++// ce que la version en service avait perdu.
++
+ // loadGroupsAndUsers récupère pour chaque domaine/groupe les GroupEntry et les UserEntry correspondants
+ // avec gestion du scope pour éviter de retourner tous les groupes sous-jacents par défaut.
+ // Cette version enrichit les attributs LDAP pour compatibilité Nextcloud et autres clients.
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/rattachement_sentinelle_test.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/rattachement_sentinelle_test.go
+new file mode 100644
+index 0000000..7bfabb6
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/rattachement_sentinelle_test.go
+@@ -0,0 +1,193 @@
++package scope
++
++import (
++	"go/ast"
++	"go/parser"
++	"go/token"
++	"os"
++	"path/filepath"
++	"strings"
++	"testing"
++)
++
++// LA SENTINELLE DU POINT 120.
++//
++// Ce que la règle d'autorisation fait de `Rattachements` s'éprouve dans
++// newmodule/security ; ce que `Domaines()` en rend s'éprouve dans candidate. Mais
++// le défaut de la première version du correctif n'était ni l'un ni l'autre :
++// c'était le CÂBLAGE — quelle valeur est déposée dans ce champ, ici, au moment où
++// l'entrée est construite.
++//
++// `UserEntry.BaseDN` porte le domaine DEMANDÉ par le client. L'écrire dans
++// `Rattachements` autorise tout compte par construction : le filtre ne voit alors
++// que le domaine qui vient d'être autorisé. C'est passé une première fois, et
++// aucun test de comportement ne l'a vu — ceux de la règle passaient tous.
++//
++// Une sentinelle donc : elle lit le code de ce paquet et refuse les deux formes
++// du défaut. Elle est le seul test capable d'attraper un retour en arrière ici,
++// puisqu'éprouver le résolveur pour de bon demanderait une base.
++
++const champRattachements = "Rattachements"
++
++// Les identifiants qui portent, dans ce paquet, le domaine DEMANDÉ par le
++// client — donc ceux qu'un rattachement ne doit jamais valoir.
++var identifiantsInterdits = map[string]string{
++	"domain":       "variable de boucle sur les domaines DEMANDÉS",
++	"baseDN":       "domaine déduit du baseObject du client",
++	"baseObject":   "base demandée par le client",
++	"domaineDuDN":  "domaine reconstruit depuis le DN demandé",
++	"expectedDN":   "DN demandé par le client",
++	"groupDomain":  "domaine demandé, transmis au chargement",
++	"groupDomains": "domaines demandés, transmis au chargement",
++}
++
++func TestChaqueUserEntryRenseigneSesRattachements(t *testing.T) {
++	for chemin, fichier := range fichiersDuPaquet(t) {
++		ast.Inspect(fichier, func(n ast.Node) bool {
++			lit, ok := n.(*ast.CompositeLit)
++			if !ok || !estUneUserEntryConstruite(lit) {
++				return true
++			}
++
++			champs := champsAssignes(lit)
++			if _, présent := champs[champRattachements]; !présent {
++				t.Errorf("%s : une UserEntry est construite sans %s.\n"+
++					"Une entrée sans rattachement est ÉCARTÉE par le contrôle d'accès : "+
++					"le compte deviendrait invisible. Renseignez les domaines des groupes "+
++					"par lesquels le compte a été trouvé.", chemin, champRattachements)
++			}
++			return true
++		})
++	}
++}
++
++func TestUnRattachementNEstJamaisLeDomaineDemande(t *testing.T) {
++	for chemin, fichier := range fichiersDuPaquet(t) {
++		ast.Inspect(fichier, func(n ast.Node) bool {
++			lit, ok := n.(*ast.CompositeLit)
++			if !ok || !estUneUserEntryConstruite(lit) {
++				return true
++			}
++
++			valeur, présent := champsAssignes(lit)[champRattachements]
++			if !présent {
++				return true // signalé par le test précédent
++			}
++
++			for _, nom := range identifiantsUtilises(valeur) {
++				if raison, interdit := identifiantsInterdits[nom]; interdit {
++					t.Errorf("%s : %s vaut « %s » — %s.\n"+
++						"Le contrôle d'accès s'autoriserait lui-même : le filtre ne verrait "+
++						"que le domaine qui vient d'être autorisé à l'entrée, et tout compte "+
++						"d'un sous-domaine ressortirait. C'est le défaut du point 120.",
++						chemin, champRattachements, nom, raison)
++				}
++			}
++			return true
++		})
++	}
++}
++
++// Et le champ qui compose le DN, lui, reste distinct : si les deux finissaient
++// par recevoir la même chose, les deux tests ci-dessus passeraient encore.
++func TestLeDomaineDuDNEtLesRattachementsRestentDistincts(t *testing.T) {
++	for chemin, fichier := range fichiersDuPaquet(t) {
++		ast.Inspect(fichier, func(n ast.Node) bool {
++			lit, ok := n.(*ast.CompositeLit)
++			if !ok || !estUneUserEntryConstruite(lit) {
++				return true
++			}
++
++			champs := champsAssignes(lit)
++			base, aBase := champs["BaseDN"]
++			ratt, aRatt := champs[champRattachements]
++			if !aBase || !aRatt {
++				return true
++			}
++			if rendu(base) == rendu(ratt) {
++				t.Errorf("%s : BaseDN et %s reçoivent la même expression (« %s »).\n"+
++					"Le premier compose le DN, le second décide des droits, et ils "+
++					"diffèrent : ToRootDN ne garde que les deux derniers labels, donc un "+
++					"compte de admin.enov.local et un compte de enov.local ont le MÊME DN.",
++					chemin, champRattachements, rendu(base))
++			}
++			return true
++		})
++	}
++}
++
++func fichiersDuPaquet(t *testing.T) map[string]*ast.File {
++	t.Helper()
++
++	entrées, err := os.ReadDir(".")
++	if err != nil {
++		t.Fatalf("lecture du paquet : %v", err)
++	}
++
++	fset := token.NewFileSet()
++	fichiers := make(map[string]*ast.File)
++	for _, e := range entrées {
++		nom := e.Name()
++		if e.IsDir() || !strings.HasSuffix(nom, ".go") || strings.HasSuffix(nom, "_test.go") {
++			continue
++		}
++		f, err := parser.ParseFile(fset, filepath.Join(".", nom), nil, 0)
++		if err != nil {
++			t.Fatalf("analyse de %s : %v", nom, err)
++		}
++		fichiers[nom] = f
++	}
++	if len(fichiers) == 0 {
++		t.Fatal("aucun fichier analysé : la sentinelle ne garde rien")
++	}
++	return fichiers
++}
++
++// estUneUserEntryConstruite écarte les littéraux VIDES — `candidate.UserEntry{}`,
++// qui accompagne un « false » de retour et ne décrit aucune entrée. Les exiger
++// renseignés obligerait à écrire un rattachement bidon sur un chemin d'erreur,
++// c'est-à-dire exactement le genre de valeur de complaisance que cette sentinelle
++// existe pour empêcher.
++func estUneUserEntryConstruite(lit *ast.CompositeLit) bool {
++	return len(lit.Elts) > 0 && estUserEntry(lit.Type)
++}
++
++func estUserEntry(typ ast.Expr) bool {
++	sel, ok := typ.(*ast.SelectorExpr)
++	if !ok || sel.Sel.Name != "UserEntry" {
++		return false
++	}
++	paquet, ok := sel.X.(*ast.Ident)
++	return ok && paquet.Name == "candidate"
++}
++
++func champsAssignes(lit *ast.CompositeLit) map[string]ast.Expr {
++	champs := make(map[string]ast.Expr, len(lit.Elts))
++	for _, e := range lit.Elts {
++		kv, ok := e.(*ast.KeyValueExpr)
++		if !ok {
++			continue
++		}
++		if clé, ok := kv.Key.(*ast.Ident); ok {
++			champs[clé.Name] = kv.Value
++		}
++	}
++	return champs
++}
++
++// identifiantsUtilises rend tous les noms qui apparaissent dans une expression :
++// `domain`, `[]string{domain}` et `domainesDe(domain)` doivent être vus pareil.
++func identifiantsUtilises(e ast.Expr) []string {
++	var noms []string
++	ast.Inspect(e, func(n ast.Node) bool {
++		if id, ok := n.(*ast.Ident); ok {
++			noms = append(noms, id.Name)
++		}
++		return true
++	})
++	return noms
++}
++
++func rendu(e ast.Expr) string {
++	return strings.Join(identifiantsUtilises(e), ".")
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go
+index 655e5ac..a098980 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go
+@@ -3,6 +3,7 @@
+ import (
+ 	"database/sql"
+ 	"fmt"
++	"sort"
+ 	"strings"
+ 	dbldap "vaultaire/core/database/db_ldap"
+ 	domainpkg "vaultaire/core/domain"
+@@ -11,7 +12,6 @@
+ 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
+ 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
+ 	"vaultaire/core/logs"
+-	"vaultaire/core/storage"
+ )
+ 
+ // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
+@@ -105,6 +105,18 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
+ 	// appartenir à des groupes d'un autre, et un client comme Keycloak s'attend à
+ 	// les voir tous.
+ 	userMembershipMap := make(map[string][]string)
++	// Les DOMAINES où vit chaque compte, c'est-à-dire ceux des groupes par
++	// lesquels il a été trouvé. C'est ce qui sert au contrôle d'accès.
++	//
++	// Il ne peut pas être remplacé par `domain` : cette variable de boucle porte
++	// le domaine DEMANDÉ par le client, et la première version du point 120 s'en
++	// servait — ce qui autorisait tout compte par construction, puisque le filtre
++	// ne voyait jamais que le domaine qui venait d'être autorisé.
++	//
++	// Il ne peut pas non plus être déduit du DN : `ToRootDN` ne garde que les deux
++	// derniers labels, si bien qu'un compte de `admin.enov.local` et un compte de
++	// `enov.local` ont exactement le même DN.
++	rattachements := make(map[string]map[string]struct{})
+ 	// Les groupes chargés une seule fois, réutilisés pour construire les entrées.
+ 	groupesParDomaine := make(map[string][]ldapstorage.Group, len(domains))
+ 
+@@ -121,6 +133,10 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
+ 			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
+ 			for _, uname := range g.Users {
+ 				userMembershipMap[uname] = append(userMembershipMap[uname], groupDN)
++				if rattachements[uname] == nil {
++					rattachements[uname] = make(map[string]struct{}, 2)
++				}
++				rattachements[uname][g.DomainName] = struct{}{}
+ 			}
+ 		}
+ 
+@@ -204,13 +220,17 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
+ 				}
+ 
+ 				entries = append(entries, candidate.UserEntry{
+-					User:        userObj,
+-					BaseDN:      domain,
+-					Groups:      userMembershipMap[uname],
+-					DisplayName: userObj.Firstname + " " + userObj.Lastname,
+-					GivenName:   userObj.Firstname,
+-					Sn:          userObj.Lastname,
+-					Uid:         userObj.Username,
++					User: userObj,
++					// BaseDN compose le DN, Rattachements décide des droits. Les deux
++					// diffèrent, et c'est le fond du point 120 : le DN d'un compte de
++					// sous-domaine est identique à celui d'un compte du domaine parent.
++					BaseDN:        domain,
++					Rattachements: domainesDe(rattachements[uname]),
++					Groups:        userMembershipMap[uname],
++					DisplayName:   userObj.Firstname + " " + userObj.Lastname,
++					GivenName:     userObj.Firstname,
++					Sn:            userObj.Lastname,
++					Uid:           userObj.Username,
+ 				})
+ 				seenUsers[uname] = struct{}{}
+ 			}
+@@ -218,14 +238,34 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
+ 	}
+ 
+ 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: %d entrées construites", len(entries)))
+-	if storage.Debug {
+-		for _, e := range entries {
+-			logs.Write_Log("DEBUG", DumpLDAPEntry(e, attributes))
+-		}
+-	}
++
++	// Le vidage détaillé des entrées a été déplacé dans le gestionnaire, APRÈS le
++	// filtre d'autorisation.
++	//
++	// Il avait lieu ici, donc avant : le journal DEBUG portait le contenu des
++	// entrées que le compte n'a PAS le droit de lire — cn, mail, memberOf, uid des
++	// sous-domaines — écrit sur disque. Corriger la fuite vers le client en la
++	// laissant vers le journal n'aurait pas été une correction.
+ 	return entries, nil
+ }
+ 
++// domainesDe rend un ensemble de domaines sous forme de liste.
++//
++// Trié, pour que deux exécutions de la même recherche produisent la même chose :
++// une liste dont l'ordre dépend du parcours d'une table de hachage rend les
++// journaux incomparables et les tests intermittents.
++func domainesDe(ensemble map[string]struct{}) []string {
++	if len(ensemble) == 0 {
++		return nil
++	}
++	liste := make([]string, 0, len(ensemble))
++	for d := range ensemble {
++		liste = append(liste, d)
++	}
++	sort.Strings(liste)
++	return liste
++}
++
+ // DumpLDAPEntry rend une entrée sous forme lisible, pour le journal.
+ //
+ // Rend une CHAÎNE au lieu d'écrire sur la sortie standard : l'ancienne version
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/auth.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/auth.go
+index 31a4616..d1703ef 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/auth.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/auth.go
+@@ -1,23 +1,121 @@
+ package security
+ 
+ import (
++	"fmt"
+ 	"strings"
+ 	"vaultaire/core/database"
+ 	dbpermission "vaultaire/core/database/db_permission"
++	domainpkg "vaultaire/core/domain"
++	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
++	"vaultaire/core/logs"
+ 	"vaultaire/core/permission"
++	"vaultaire/core/storage"
+ )
+ 
+-func IsAuthorizedToSearch(username, baseDN string) bool {
+-	// Nom vide : refus immédiat.
++// PorteeDeRecherche porte les domaines qu'un compte a le droit de lire.
++//
++// # Le défaut qu'elle ferme
++//
++// Le contrôle d'accès à la recherche tenait en UN appel, sur le seul baseDN
++// demandé. Le résolveur, lui, charge le domaine ET tous ses sous-domaines
++// (`GetGroupsUnderDomain` retient `HasSuffix(dn, "."+cible)`), et aucun filtrage
++// ne suivait.
++//
++// Conséquence : un compte portant `search` en « custom SANS propagation » sur
++// `enov.local` passait le contrôle, puis recevait dans la même réponse les
++// comptes et les groupes de `admin.enov.local`. Le mode « sans propagation » —
++// dont c'est la seule raison d'être — n'avait aucun effet sur le chemin LDAP.
++//
++// # Pourquoi un objet, et non un appel par entrée
++//
++// `IsAuthorizedToSearch` lisait la base à chaque appel. L'appeler une fois par
++// entrée aurait ajouté une requête SQL par compte rendu, sur le chemin le plus
++// chaud du serveur — une recherche porte couramment sur des milliers d'entrées.
++//
++// Les permissions sont donc lues UNE fois, au début de la recherche, et la
++// décision par domaine est du pur travail de chaîne, mémorisé : un annuaire a
++// quelques domaines, pas quelques milliers.
++type PorteeDeRecherche struct {
++	// actions : les permissions ANALYSÉES, dont les domaines ont été normalisés.
+ 	//
+-	// C'est la valeur que porte une session anonyme. Interroger le RBAC avec elle
+-	// ne rendrait probablement rien, mais « probablement » n'est pas une garantie :
+-	// il suffirait d'une jointure permissive pour que l'anonyme hérite de droits.
++	// Analysées à la construction, et non à chaque interrogation : l'analyse
++	// découpe des chaînes, la décision ne fait plus que comparer.
++	actions []storage.PermissionAction
++	// decisions mémorise la réponse par domaine. Une recherche ramène des
++	// milliers d'entrées réparties sur une poignée de domaines : sans cela, la
++	// même liste d'actions serait re-parcourue à chaque entrée.
+ 	//
+-	// Le dispatcheur interdit déjà à un anonyme toute recherche autre que RootDSE.
+-	// Ce contrôle-ci est le second verrou, local à la décision.
++	// Sans verrou : une portée appartient à UNE recherche, et n'est jamais
++	// partagée. Elle devrait l'être si on se mettait un jour à la garder d'une
++	// recherche à l'autre.
++	decisions map[string]bool
++}
++
++// NouvellePortee construit la portée à partir de permissions déjà lues.
++//
++// Séparée de la lecture en base pour que la RÈGLE — ce qui est autorisé, et ce
++// qui ne l'est pas — s'éprouve sans base de données. C'est le cœur du point 120,
++// et il doit être testable directement.
++func NouvellePortee(permissions []string) *PorteeDeRecherche {
++	// Les permissions sont ANALYSÉES puis leurs domaines normalisés ; les domaines
++	// interrogés le sont de la même façon. C'est le point important.
++	//
++	// `GetGroupsUnderDomain` compare les domaines après `NormaliserDomaine` — c'est
++	// elle qui décide des groupes CHARGÉS. `permission.IsUserAuthorizedToSearch`,
++	// lui, compare octet à octet. Ne normaliser qu'un côté ferait charger un groupe
++	// dont `domain_name` vaut « Admin.Enov.Local », puis l'écarter au filtrage : un
++	// compte qui voyait ce groupe avant le correctif ne le verrait plus, sans que
++	// rien ne dise pourquoi.
++	//
++	// La normalisation porte sur les NOMS DE DOMAINE, jamais sur la chaîne de
++	// permission entière. Mettre celle-ci en minuscules paraissait équivalent — sa
++	// grammaire est faite de chiffres et de ponctuation — mais c'est faux : elle
++	// porte aussi les mots-clés « all » et « nil », comparés littéralement par
++	// `ParsePermissionAction`. Une valeur « ALL » écrite à la main en base était
++	// lue comme un « custom » sans aucun domaine, donc REFUSÉE ; mise en
++	// minuscules, elle serait devenue « tous les domaines ». Une normalisation ne
++	// doit jamais pouvoir élargir un droit.
++	actions := make([]storage.PermissionAction, 0, len(permissions))
++	for _, brut := range permissions {
++		pa := permission.ParsePermissionAction(brut)
++		pa.WithPropagation = normaliserListe(pa.WithPropagation)
++		pa.WithoutPropagation = normaliserListe(pa.WithoutPropagation)
++		actions = append(actions, pa)
++	}
++	return &PorteeDeRecherche{
++		actions:   actions,
++		decisions: make(map[string]bool, 8),
++	}
++}
++
++func normaliserListe(domaines []string) []string {
++	if len(domaines) == 0 {
++		return nil
++	}
++	out := make([]string, 0, len(domaines))
++	for _, d := range domaines {
++		if n := domainpkg.NormaliserDomaine(d); n != "" {
++			out = append(out, n)
++		}
++	}
++	return out
++}
++
++// PorteeDeRecherchePour lit les permissions « search » d'un compte.
++//
++// Une erreur de lecture rend une portée VIDE et non nil : une base en difficulté
++// doit refuser, pas ouvrir. L'appelant reçoit l'erreur et décide de la réponse
++// LDAP, mais même s'il l'ignorait, la portée rendue n'autorise rien.
++func PorteeDeRecherchePour(username string) (*PorteeDeRecherche, error) {
++	// Nom vide : c'est la valeur que porte une session anonyme. Interroger le
++	// RBAC avec elle ne rendrait probablement rien, mais « probablement » n'est
++	// pas une garantie : il suffirait d'une jointure permissive pour que
++	// l'anonyme hérite de droits.
++	//
++	// Le dispatcheur interdit déjà à un anonyme toute recherche autre que
++	// RootDSE. Ce contrôle-ci est le second verrou, local à la décision.
+ 	if strings.TrimSpace(username) == "" {
+-		return false
++		return NouvellePortee(nil), fmt.Errorf("recherche sans compte lié")
+ 	}
+ 
+ 	perms, err := dbpermission.GetUserPermissionsForAction(
+@@ -26,7 +124,122 @@ func IsAuthorizedToSearch(username, baseDN string) bool {
+ 		"search",
+ 	)
+ 	if err != nil {
++		return NouvellePortee(nil), err
++	}
++	return NouvellePortee(perms), nil
++}
++
++// Autorise dit si le compte a le droit de lire un domaine donné.
++func (p *PorteeDeRecherche) Autorise(domaine string) bool {
++	if p == nil {
+ 		return false
+ 	}
+-	return permission.IsUserAuthorizedToSearch(perms, baseDN)
++
++	domaine = normaliserDomaine(domaine)
++
++	// Domaine inconnu : REFUS.
++	//
++	// C'est ce que rend une entrée qui n'appartient à aucun domaine (RootDSE,
++	// sous-schéma) — servies par un chemin qui ne passe pas ici — et ce que
++	// rendrait un futur type d'entrée dont on aurait oublié de renseigner le
++	// domaine. Dans les deux cas, écarter est le comportement sûr : un oubli
++	// rend l'entrée invisible, il ne la diffuse pas.
++	if domaine == "" {
++		return false
++	}
++
++	if décision, connu := p.decisions[domaine]; connu {
++		return décision
++	}
++	décision := p.decider(domaine)
++	p.decisions[domaine] = décision
++	return décision
++}
++
++// decider applique la règle, sur des domaines déjà normalisés des deux côtés.
++//
++// C'est la règle de `permission.IsUserAuthorizedToSearch`, réécrite ici pour une
++// seule raison : celle-là prend des permissions BRUTES et les analyse elle-même,
++// donc elle ne peut pas comparer des domaines normalisés. Les deux doivent rendre
++// le même verdict sur des entrées déjà en minuscules, et un test le vérifie cas
++// par cas — voir portee_test.go.
++func (p *PorteeDeRecherche) decider(domaine string) bool {
++	for _, pa := range p.actions {
++		switch pa.Type {
++		case "all":
++			return true
++		case "custom":
++			for _, d := range pa.WithPropagation {
++				// Avec propagation : le domaine lui-même et ses sous-domaines. Le point
++				// est dans le motif — sans lui, « faux-enov.local » passerait pour un
++				// sous-domaine de « enov.local ».
++				if domaine == d || strings.HasSuffix(domaine, "."+d) {
++					return true
++				}
++			}
++			for _, d := range pa.WithoutPropagation {
++				if domaine == d {
++					return true
++				}
++			}
++		}
++	}
++	return false
++}
++
++// normaliserDomaine met un nom de domaine sous la forme employée pour comparer.
++//
++// Délègue à `domain.NormaliserDomaine`, qui décide des groupes CHARGÉS, au lieu
++// d'en recopier le contenu : deux normalisations qui se ressemblent finissent par
++// diverger, et la divergence se manifeste en entrée chargée puis écartée — donc
++// en compte qui disparaît sans raison lisible.
++func normaliserDomaine(domaine string) string {
++	return domainpkg.NormaliserDomaine(domaine)
++}
++
++// AutoriseUnDes dit si AU MOINS un des rattachements d'une entrée est autorisé.
++//
++// « Au moins un », parce qu'un compte appartient à des groupes qui peuvent vivre
++// dans des domaines différents : un compte membre d'un groupe de `enov.local` et
++// d'un groupe de `admin.enov.local` est légitimement visible d'un délégué de
++// `enov.local`, y compris sans propagation.
++//
++// Une liste VIDE est refusée. C'est ce que rendent le RootDSE et le sous-schéma —
++// servis par un chemin qui ne passe pas par ici — et ce que rendrait une entrée
++// construite sans renseigner ses rattachements. L'oubli rend l'entrée invisible,
++// il ne la diffuse pas.
++func (p *PorteeDeRecherche) AutoriseUnDes(domaines []string) bool {
++	if p == nil {
++		return false
++	}
++	for _, d := range domaines {
++		if p.Autorise(d) {
++			return true
++		}
++	}
++	return false
++}
++
++// Filtrer retient les entrées dont au moins un rattachement est autorisé.
++//
++// Rend aussi le nombre d'entrées écartées : c'est ce qui permet de distinguer,
++// dans le journal, une recherche qui ne trouve rien d'une recherche dont le
++// résultat a été réduit par les droits — deux causes que le client voit de la
++// même façon, puisqu'il reçoit dans les deux cas un succès et zéro entrée.
++func (p *PorteeDeRecherche) Filtrer(entrées []ldapinterface.LDAPEntry) (retenues []ldapinterface.LDAPEntry, écartées int) {
++	if p == nil {
++		return nil, len(entrées)
++	}
++
++	retenues = make([]ldapinterface.LDAPEntry, 0, len(entrées))
++	for _, e := range entrées {
++		if p.AutoriseUnDes(e.Domaines()) {
++			retenues = append(retenues, e)
++			continue
++		}
++		écartées++
++		logs.Write_Log("DEBUG", fmt.Sprintf(
++			"ldap: entrée écartée par les droits : %s (rattachements %v)", e.DN(), e.Domaines()))
++	}
++	return retenues, écartées
+ }
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/portee_test.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/portee_test.go
+new file mode 100644
+index 0000000..e689a7e
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security/portee_test.go
+@@ -0,0 +1,316 @@
++package security
++
++import (
++	"testing"
++
++	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
++	"vaultaire/core/permission"
++)
++
++// Le point 120 tient à une règle : une entrée n'est rendue que si l'un de SES
++// rattachements est autorisé, pas seulement le domaine qui a été demandé. La
++// règle s'éprouve sans base — c'est pour cela que NouvellePortee est séparée de
++// la lecture des permissions.
++
++// entrée est une entrée d'annuaire réduite à ce que le filtre regarde.
++type entrée struct {
++	dn       string
++	domaines []string
++}
++
++func (e entrée) DN() string         { return e.dn }
++func (e entrée) Domaines() []string { return e.domaines }
++func (e entrée) ObjectClasses() []string {
++	return []string{"inetOrgPerson"}
++}
++func (e entrée) GetAttribute(string) []string { return nil }
++func (e entrée) GetAttributes([]string, bool) map[string][]string {
++	return nil
++}
++
++const (
++	parent = "enov.local"
++	enfant = "admin.enov.local"
++	voisin = "autre.local"
++)
++
++func parentEtEnfant() []ldapinterface.LDAPEntry {
++	return []ldapinterface.LDAPEntry{
++		entrée{dn: "uid=alice,ou=users,dc=enov,dc=local", domaines: []string{parent}},
++		entrée{dn: "uid=bob,ou=users,dc=enov,dc=local", domaines: []string{enfant}},
++	}
++}
++
++// LE test du point : sans propagation, une entrée de sous-domaine ne sort pas.
++//
++// C'était le défaut. Le contrôle d'accès s'évaluait une seule fois, sur le
++// baseDN demandé ; le résolveur, lui, charge le domaine ET ses sous-domaines.
++// Un délégué autorisé sur enov.local SANS propagation passait le contrôle, puis
++// recevait les comptes de admin.enov.local — le mode « sans propagation » étant
++// alors sans aucun effet, alors que c'est sa seule raison d'être.
++//
++// Noter les DEUX DN du jeu d'essai : ils sont IDENTIQUES au nom près. `ToRootDN`
++// ne garde que les deux derniers labels, donc rien dans le DN ne distingue une
++// entrée de sous-domaine. Le rattachement est la seule chose qui les sépare.
++func TestSansPropagationUnSousDomaineNeSortPas(t *testing.T) {
++	p := NouvellePortee([]string{"(0:" + parent + ")"})
++
++	// Le contrôle d'entrée passe : c'est bien le domaine autorisé qui est demandé.
++	if !p.Autorise(parent) {
++		t.Fatalf("le domaine explicitement autorisé %q est refusé", parent)
++	}
++
++	retenues, écartées := p.Filtrer(parentEtEnfant())
++	if écartées != 1 {
++		t.Errorf("%d entrée(s) écartée(s), attendu 1", écartées)
++	}
++	if len(retenues) != 1 {
++		t.Fatalf("%d entrée(s) rendue(s), attendu 1", len(retenues))
++	}
++	if retenues[0].Domaines()[0] != parent {
++		t.Errorf("l'entrée rendue est rattachée à %q : une permission sans propagation "+
++			"ne doit pas donner accès à un sous-domaine", retenues[0].Domaines())
++	}
++}
++
++// AVEC propagation, le sous-domaine sort : c'est ce que « propagation » veut dire,
++// et le correctif ne doit pas le casser.
++//
++// Sans ce test, la façon la plus simple de faire passer le précédent serait de
++// refuser tout ce qui n'est pas exactement le domaine demandé — ce qui couperait
++// la recherche subtree de tous les délégués du produit.
++func TestAvecPropagationLeSousDomaineSort(t *testing.T) {
++	p := NouvellePortee([]string{"(1:" + parent + ")"})
++
++	retenues, écartées := p.Filtrer(parentEtEnfant())
++	if écartées != 0 {
++		t.Errorf("%d entrée(s) écartée(s) alors que la propagation est accordée", écartées)
++	}
++	if len(retenues) != 2 {
++		t.Errorf("%d entrée(s) rendue(s), attendu 2", len(retenues))
++	}
++}
++
++// UN COMPTE RATTACHÉ À PLUSIEURS DOMAINES sort dès que l'UN d'eux est autorisé.
++//
++// Un compte appartient à des groupes qui peuvent vivre dans des domaines
++// différents. Exiger que TOUS soient autorisés rendrait invisible, pour un
++// délégué de `enov.local`, un compte qui est pourtant membre d'un groupe de
++// `enov.local` — au seul motif qu'il est aussi membre d'un groupe ailleurs.
++func TestUnRattachementAutoriseSuffit(t *testing.T) {
++	p := NouvellePortee([]string{"(0:" + parent + ")"})
++
++	retenues, écartées := p.Filtrer([]ldapinterface.LDAPEntry{
++		entrée{dn: "uid=carol,ou=users,dc=enov,dc=local", domaines: []string{enfant, parent}},
++		entrée{dn: "uid=dave,ou=users,dc=enov,dc=local", domaines: []string{enfant, voisin}},
++	})
++	if len(retenues) != 1 || écartées != 1 {
++		t.Fatalf("%d rendue(s) et %d écartée(s), attendu 1 et 1", len(retenues), écartées)
++	}
++	if retenues[0].DN() != "uid=carol,ou=users,dc=enov,dc=local" {
++		t.Errorf("entrée rendue %q : c'est carol, membre d'un groupe du domaine autorisé, "+
++			"qui doit sortir", retenues[0].DN())
++	}
++}
++
++// « all » autorise tout, y compris un domaine sans rapport.
++func TestAllAutoriseTout(t *testing.T) {
++	p := NouvellePortee([]string{"all"})
++
++	entrées := append(parentEtEnfant(),
++		entrée{dn: "uid=carol,ou=users,dc=autre,dc=local", domaines: []string{voisin}})
++
++	retenues, écartées := p.Filtrer(entrées)
++	if écartées != 0 || len(retenues) != 3 {
++		t.Errorf("%d rendue(s) et %d écartée(s) pour « all », attendu 3 et 0",
++			len(retenues), écartées)
++	}
++}
++
++// Aucune permission : rien ne sort. C'est le cas d'un compte lié sans droit de
++// recherche, et celui d'une lecture de droits qui a échoué.
++func TestSansPermissionRienNeSort(t *testing.T) {
++	for nom, p := range map[string]*PorteeDeRecherche{
++		"portée vide":    NouvellePortee(nil),
++		"permission nil": NouvellePortee([]string{"nil"}),
++		"portée absente": nil,
++	} {
++		retenues, écartées := p.Filtrer(parentEtEnfant())
++		if len(retenues) != 0 {
++			t.Errorf("%s : %d entrée(s) rendue(s), attendu 0", nom, len(retenues))
++		}
++		if écartées != 2 {
++			t.Errorf("%s : %d écartée(s), attendu 2", nom, écartées)
++		}
++	}
++}
++
++// UN RATTACHEMENT ABSENT EST ÉCARTÉ, jamais laissé passer.
++//
++// C'est ce que rendrait une entrée construite sans renseigner ses rattachements —
++// une UserEntry oubliée dans un futur chemin de résolution, par exemple. L'oubli
++// doit rendre l'entrée invisible, pas la diffuser : c'est la différence entre un
++// bogue qu'on voit et une fuite qu'on ne voit pas.
++func TestUnRattachementAbsentEstEcarte(t *testing.T) {
++	p := NouvellePortee([]string{"all"})
++
++	if p.Autorise("") {
++		t.Fatal("un domaine vide est autorisé, même sous « all » : une entrée dont " +
++			"le rattachement n'a pas été renseigné serait diffusée à tous")
++	}
++	if p.AutoriseUnDes(nil) {
++		t.Fatal("une entrée sans aucun rattachement est autorisée sous « all »")
++	}
++
++	retenues, écartées := p.Filtrer([]ldapinterface.LDAPEntry{
++		entrée{dn: "cn=sans-rattachement", domaines: nil},
++		entrée{dn: "cn=rattachement-vide", domaines: []string{""}},
++	})
++	if len(retenues) != 0 || écartées != 2 {
++		t.Errorf("%d rendue(s), %d écartée(s) pour des entrées sans rattachement",
++			len(retenues), écartées)
++	}
++}
++
++// Un domaine voisin, qui n'est ni le domaine autorisé ni l'un de ses
++// sous-domaines, ne passe pas — y compris quand son nom se termine par le même
++// texte sans être un sous-domaine.
++//
++// « faux-enov.local » finit par « enov.local » : une comparaison par simple
++// suffixe, sans le point, l'accepterait. C'est l'erreur classique de ce genre de
++// règle, et elle donnerait accès à un domaine qu'il suffit de nommer pour
++// l'obtenir.
++func TestUnSuffixeNEstPasUnSousDomaine(t *testing.T) {
++	p := NouvellePortee([]string{"(1:" + parent + ")"})
++
++	for _, d := range []string{voisin, "faux-enov.local", "enov.local.attaquant.fr"} {
++		if p.Autorise(d) {
++			t.Errorf("le domaine %q est autorisé par une permission sur %q", d, parent)
++		}
++	}
++}
++
++// LA CASSE ET LE POINT FINAL ne doivent pas décider des droits.
++//
++// `GetGroupsUnderDomain`, qui décide des groupes CHARGÉS, compare après mise en
++// minuscules et retrait d'un point final. Si le filtre comparait octet à octet,
++// un groupe dont `domain_name` vaut « Admin.Enov.Local » serait chargé puis
++// écarté : un compte qui le voyait avant le correctif ne le verrait plus, sans
++// qu'aucun message ne dise pourquoi. Les deux comparaisons doivent s'accorder.
++func TestLaCasseNeDecidePasDesDroits(t *testing.T) {
++	p := NouvellePortee([]string{"(1:Enov.Local)"})
++
++	for _, d := range []string{"enov.local", "ENOV.LOCAL", "Enov.Local", "enov.local.",
++		"admin.enov.local", "Admin.Enov.Local"} {
++		if !p.Autorise(d) {
++			t.Errorf("%q refusé alors que la permission porte sur « Enov.Local »", d)
++		}
++	}
++
++	// Et cela ne doit rien ouvrir de plus : la règle reste la même, seule
++	// l'écriture est normalisée.
++	if p.Autorise("AUTRE.LOCAL") {
++		t.Error("« AUTRE.LOCAL » autorisé : la normalisation a élargi la règle")
++	}
++}
++
++// La décision est mémorisée par domaine, et la mémorisation ne la change pas.
++//
++// Une recherche ramène des milliers d'entrées réparties sur une poignée de
++// domaines : sans mémorisation, la liste des permissions serait ré-analysée à
++// chaque entrée. Ce qui compte ici est qu'elle rende la MÊME réponse aux appels
++// suivants — une mémorisation qui se trompe de clé ouvrirait un domaine sur la
++// foi d'un autre.
++func TestLaMemorisationNeChangePasLaDecision(t *testing.T) {
++	p := NouvellePortee([]string{"(0:" + parent + ")"})
++
++	for i := 0; i < 3; i++ {
++		if !p.Autorise(parent) {
++			t.Fatalf("appel %d : %q refusé alors qu'il est autorisé", i, parent)
++		}
++		if p.Autorise(enfant) {
++			t.Fatalf("appel %d : %q autorisé alors qu'il ne l'est pas", i, enfant)
++		}
++		// Deux écritures du même domaine doivent donner la même réponse, quel que
++		// soit l'ordre dans lequel elles arrivent.
++		if !p.Autorise("ENOV.LOCAL") {
++			t.Fatalf("appel %d : « ENOV.LOCAL » refusé après mémorisation de %q", i, parent)
++		}
++	}
++}
++
++// Plusieurs permissions se cumulent : c'est ce que rend la base pour un compte
++// membre de plusieurs groupes.
++func TestLesPermissionsSeCumulent(t *testing.T) {
++	p := NouvellePortee([]string{"(0:" + parent + ")", "(1:" + voisin + ")"})
++
++	if !p.Autorise(parent) {
++		t.Errorf("%q refusé", parent)
++	}
++	if p.Autorise(enfant) {
++		t.Errorf("%q autorisé : aucune des deux permissions ne le couvre", enfant)
++	}
++	if !p.Autorise("service." + voisin) {
++		t.Errorf("un sous-domaine de %q est refusé alors que la propagation est accordée", voisin)
++	}
++}
++
++// LA RÈGLE RESTE CELLE DU RBAC, et ce test est là pour l'y tenir.
++//
++// `decider` réécrit la règle de `permission.IsUserAuthorizedToSearch` — non par
++// goût, mais parce que celle-là prend des permissions BRUTES et les analyse
++// elle-même, donc ne peut pas comparer des domaines normalisés. Deux écritures
++// d'une même règle finissent par diverger ; ce test compare les deux verdicts,
++// cas par cas, sur des entrées déjà en minuscules où elles doivent s'accorder.
++func TestLaRegleEstCelleDuRBAC(t *testing.T) {
++	permissions := [][]string{
++		{"all"},
++		{"nil"},
++		{},
++		{"(0:enov.local)"},
++		{"(1:enov.local)"},
++		{"(1:enov.local)(0:autre.local)"},
++		{"(0:enov.local)", "(1:autre.local)"},
++		{"(1:a.b.c)"},
++		{"(0:enov.local,autre.local)"},
++	}
++	domaines := []string{
++		"enov.local", "admin.enov.local", "a.admin.enov.local",
++		"autre.local", "service.autre.local",
++		"faux-enov.local", "enov.local.attaquant.fr",
++		"a.b.c", "x.a.b.c", "b.c",
++	}
++
++	for _, perms := range permissions {
++		p := NouvellePortee(perms)
++		for _, d := range domaines {
++			nôtre := p.Autorise(d)
++			leur := permission.IsUserAuthorizedToSearch(perms, d)
++			if nôtre != leur {
++				t.Errorf("permissions %v, domaine %q : portée dit %v, le RBAC dit %v — "+
++					"les deux écritures de la règle ont divergé", perms, d, nôtre, leur)
++			}
++		}
++	}
++}
++
++// UNE NORMALISATION NE DOIT JAMAIS ÉLARGIR UN DROIT.
++//
++// La première version mettait la chaîne de permission entière en minuscules,
++// croyant sa grammaire faite de chiffres et de ponctuation. Elle porte aussi les
++// mots-clés « all » et « nil », comparés littéralement : une valeur « ALL »
++// écrite à la main en base était lue comme un « custom » sans domaine, donc
++// REFUSÉE — et serait devenue « tous les domaines ».
++func TestUneNormalisationNElargitAucunDroit(t *testing.T) {
++	for _, brut := range []string{"ALL", "All", "aLL"} {
++		p := NouvellePortee([]string{brut})
++		if p.Autorise(parent) {
++			t.Errorf("la permission %q autorise %q : la normalisation a transformé "+
++				"une valeur non reconnue en droit total", brut, parent)
++		}
++		// Et le verdict reste celui du RBAC, qui refuse lui aussi.
++		if permission.IsUserAuthorizedToSearch([]string{brut}, parent) {
++			t.Errorf("le RBAC accepte %q : ce test ne prouve plus rien", brut)
++		}
++	}
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_common.go b/src/vaultaire_serveur/core/ldap/LDAP_common.go
+index 02347c6..15571b9 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_common.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_common.go
+@@ -177,7 +177,7 @@ func handleLDAPSession(c net.Conn, protocol string) {
+ 			return
+ 		}
+ 
+-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet))
++		logs.Write_Log("DEBUG", traceDuPaquet(clientAddr, packet))
+ 
+ 		message, err := ldapparser.ParseLDAPMessage(packet)
+ 		if err != nil {
+@@ -220,6 +220,53 @@ func handleLDAPSession(c net.Conn, protocol string) {
+ 	}
+ }
+ 
++// traceDuPaquet rend la ligne de mise au point d'une trame reçue.
++//
++// # Ce que cette ligne faisait
++//
++// Elle vidait le paquet ENTIER en hexadécimal, avant toute analyse. Sur un
++// BindRequest simple, ce paquet porte le mot de passe en clair — et, quand le
++// second facteur est actif, le code à six chiffres qui lui est accolé (voir la
++// convention décrite dans LDAP_Limits.go). Le journal est un fichier : il tourne,
++// il part dans les sauvegardes.
++//
++// `debug: false` est livré depuis le point 99, ce qui limite la portée. Mais on
++// active DEBUG exactement quand on diagnostique un problème d'annuaire,
++// c'est-à-dire au moment où tous les clients LDAP du parc se lient en boucle.
++//
++// # Ce qui est gardé
++//
++// Le vidage reste, pour toutes les autres opérations : c'est lui qui permet de
++// comprendre une trame mal découpée, et c'est la raison d'être de cette ligne.
++// Seul le bind est masqué.
++func traceDuPaquet(clientAddr string, packet []byte) string {
++	if peutEtreUnBind(packet) {
++		return fmt.Sprintf("ldap: packet from %s: BindRequest de %d octets, contenu masqué",
++			clientAddr, len(packet))
++	}
++	return fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet)
++}
++
++// peutEtreUnBind répond à la seule question utile ici, et répond OUI quand elle
++// ne sait pas.
++//
++// Le nom dit l'asymétrie : un paquet qu'on n'arrive pas à découper PEUT être un
++// bind, et rien ne permet d'affirmer le contraire sans lire le corps — ce qu'il
++// s'agit précisément d'éviter. Masquer à tort ne coûte qu'une ligne de mise au
++// point, sur un chemin où l'erreur d'analyse est déjà journalisée avec son motif.
++// Se tromper dans l'autre sens coûte un mot de passe.
++//
++// DecodePacketErr et non DecodePacket : la seconde panique sur une entrée
++// forgée, et ce code s'exécute sur des octets venus d'inconnus.
++func peutEtreUnBind(packet []byte) bool {
++	p, err := ber.DecodePacketErr(packet)
++	if err != nil || p == nil || len(p.Children) < 2 {
++		return true
++	}
++	op := p.Children[1]
++	return op.ClassType == ber.ClassApplication && op.Tag == ldapstorage.AppBindRequest
++}
++
+ // messageIDOf extrait le messageID d'un paquet dont l'opération n'a pas pu être
+ // analysée.
+ //
+diff --git a/src/vaultaire_serveur/core/ldap/trace_paquet_test.go b/src/vaultaire_serveur/core/ldap/trace_paquet_test.go
+new file mode 100644
+index 0000000..23378f3
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/trace_paquet_test.go
+@@ -0,0 +1,141 @@
++package ldap
++
++import (
++	"strings"
++	"testing"
++
++	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
++
++	ber "github.com/go-asn1-ber/asn1-ber"
++)
++
++// Le point 121 tient à une ligne : le vidage hexadécimal du paquet reçu, écrit
++// AVANT toute analyse, portait le mot de passe du bind en clair dans le journal.
++
++const motDePasseDuTest = "MotDePasseTresReconnaissable42"
++
++// message construit un LDAPMessage complet autour d'une opération.
++func message(messageID int, op *ber.Packet) []byte {
++	m := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
++	m.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger,
++		uint64(messageID), "Message ID"))
++	m.AppendChild(op)
++	return m.Bytes()
++}
++
++// bindSimple forge un BindRequest tel qu'un client l'envoie.
++func bindSimple(dn, motDePasse string) []byte {
++	op := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapstorage.AppBindRequest, nil, "BindRequest")
++	op.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, 3, "Version"))
++	op.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, dn, "Name"))
++	op.AppendChild(ber.NewString(ber.ClassContext, ber.TypePrimitive, 0, motDePasse, "Password"))
++	return message(1, op)
++}
++
++// rechercheSimple forge un SearchRequest, qui lui doit rester lisible.
++func rechercheSimple(baseObject string) []byte {
++	op := ber.Encode(ber.ClassApplication, ber.TypeConstructed, ldapstorage.AppSearchRequest, nil, "SearchRequest")
++	op.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, baseObject, "BaseObject"))
++	op.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated, 2, "Scope"))
++	return message(2, op)
++}
++
++// LE test du point : le mot de passe ne part pas au journal.
++//
++// Il est cherché sous sa forme HEXADÉCIMALE, parce que c'est ainsi que la ligne
++// l'écrivait — chercher le texte en clair ne prouverait rien.
++func TestLeMotDePasseDuBindNeVaPasAuJournal(t *testing.T) {
++	paquet := bindSimple("uid=jdupont,ou=users,dc=vaultaire,dc=local", motDePasseDuTest)
++
++	trace := traceDuPaquet("10.0.0.5:44212", paquet)
++
++	if strings.Contains(hexSansEspaces(trace), hexDe(motDePasseDuTest)) {
++		t.Fatalf("le mot de passe est dans la trace de mise au point : %s", trace)
++	}
++	if strings.Contains(trace, motDePasseDuTest) {
++		t.Fatalf("le mot de passe est en clair dans la trace : %s", trace)
++	}
++}
++
++// Le masquage ne doit pas effacer l'événement : il faut encore voir qu'un bind
++// est arrivé, d'où, et de quelle taille. Sans cela, on aurait corrigé la fuite en
++// supprimant le moyen de diagnostiquer.
++func TestLaTraceDuBindDitQuandMemeCeQuiEstArrive(t *testing.T) {
++	paquet := bindSimple("uid=jdupont,ou=users,dc=vaultaire,dc=local", motDePasseDuTest)
++
++	trace := traceDuPaquet("10.0.0.5:44212", paquet)
++
++	for _, attendu := range []string{"10.0.0.5:44212", "BindRequest", "masqué"} {
++		if !strings.Contains(trace, attendu) {
++			t.Errorf("la trace ne porte pas %q : %s", attendu, trace)
++		}
++	}
++}
++
++// Les AUTRES opérations gardent leur vidage complet : c'est la raison d'être de
++// cette ligne, et elle sert à comprendre une trame mal découpée.
++func TestUneRechercheGardeSonVidageComplet(t *testing.T) {
++	paquet := rechercheSimple("ou=users,dc=vaultaire,dc=local")
++
++	trace := traceDuPaquet("10.0.0.5:44212", paquet)
++
++	if strings.Contains(trace, "masqué") {
++		t.Fatalf("un SearchRequest est masqué alors qu'il ne porte aucun secret : %s", trace)
++	}
++	if !strings.Contains(hexSansEspaces(trace), hexDe("ou=users")) {
++		t.Errorf("le vidage ne contient pas le contenu de la trame : %s", trace)
++	}
++}
++
++// UNE TRAME ILLISIBLE EST MASQUÉE, elle aussi.
++//
++// C'est le choix qui demande d'être justifié, parce qu'il coûte quelque chose :
++// un paquet qu'on n'arrive pas à découper est justement celui qu'on aimerait
++// voir en entier. Mais rien ne permet d'affirmer que ce n'est pas un bind sans
++// lire le corps — ce qu'il s'agit précisément d'éviter. Le motif de l'échec
++// d'analyse est journalisé à côté, lui.
++func TestUneTrameIllisibleEstMasquee(t *testing.T) {
++	for nom, paquet := range map[string][]byte{
++		"vide":               {},
++		"tronquée":           {0x30, 0x84, 0xff, 0xff},
++		"pas une séquence":   {0x02, 0x01, 0x05},
++		"séquence à un fils": {0x30, 0x03, 0x02, 0x01, 0x01},
++	} {
++		if !peutEtreUnBind(paquet) {
++			t.Errorf("%s : traitée comme sûrement pas un bind, donc vidée en entier", nom)
++		}
++	}
++}
++
++// Et le décodage ne doit pas faire tomber le serveur sur une trame forgée : ce
++// code s'exécute sur des octets venus d'inconnus, avant toute authentification.
++func TestUneTrameForgeeNeFaitPasPaniquer(t *testing.T) {
++	forgées := [][]byte{
++		{0x30, 0x84, 0x7f, 0xff, 0xff, 0xff},
++		{0x30, 0x80, 0x30, 0x80, 0x30, 0x80},
++		{0xff, 0xff, 0xff, 0xff},
++		{0x30, 0x02, 0x01},
++	}
++	for _, p := range forgées {
++		// Le test est l'appel lui-même : s'il panique, le test échoue. Rien d'autre
++		// à vérifier — la valeur rendue est éprouvée par les tests précédents.
++		trace := traceDuPaquet("10.0.0.5:44212", p)
++		if trace == "" {
++			t.Errorf("trace vide pour % X", p)
++		}
++	}
++}
++
++func hexDe(s string) string {
++	const chiffres = "0123456789ABCDEF"
++	var b strings.Builder
++	for _, o := range []byte(s) {
++		b.WriteByte(chiffres[o>>4])
++		b.WriteByte(chiffres[o&0x0f])
++	}
++	return b.String()
++}
++
++func hexSansEspaces(trace string) string {
++	return strings.ToUpper(strings.ReplaceAll(trace, " ", ""))
++}
+diff --git a/src/vaultaire_serveur/core/testrunner/run_ldap.go b/src/vaultaire_serveur/core/testrunner/run_ldap.go
+index aa6727f..229ebc1 100755
+--- a/src/vaultaire_serveur/core/testrunner/run_ldap.go
++++ b/src/vaultaire_serveur/core/testrunner/run_ldap.go
+@@ -48,8 +48,9 @@ func testLDAP() []Result {
+ 
+ // entreeTest implémente LDAPEntry sans base ni connexion.
+ type entreeTest struct {
+-	dn    string
+-	attrs map[string][]string
++	dn      string
++	domaine string
++	attrs   map[string][]string
+ }
+ 
+ func (e entreeTest) DN() string { return e.dn }
+@@ -75,9 +76,15 @@ func (e entreeTest) GetAttributes(attrs []string, typesOnly bool) map[string][]s
+ 
+ func (e entreeTest) ObjectClasses() []string { return []string{"inetOrgPerson"} }
+ 
++// Domaines — voir ldapinterface.LDAPEntry. Ces entrées ne servent qu'à éprouver
++// l'évaluation des filtres, qui ne regarde pas le rattachement ; il est
++// renseigné pour que le type reste une entrée valide, pas pour être lu.
++func (e entreeTest) Domaines() []string { return []string{e.domaine} }
++
+ func utilisateurTest() entreeTest {
+ 	return entreeTest{
+-		dn: "uid=jdupont,ou=users,dc=vaultaire,dc=local",
++		dn:      "uid=jdupont,ou=users,dc=vaultaire,dc=local",
++		domaine: "vaultaire.local",
+ 		attrs: map[string][]string{
+ 			"uid":         {"jdupont"},
+ 			"cn":          {"Jean Dupont"},
+-- 
+2.43.0
+

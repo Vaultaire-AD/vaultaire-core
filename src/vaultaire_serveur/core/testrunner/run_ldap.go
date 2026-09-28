@@ -48,8 +48,9 @@ func testLDAP() []Result {
 
 // entreeTest implémente LDAPEntry sans base ni connexion.
 type entreeTest struct {
-	dn    string
-	attrs map[string][]string
+	dn      string
+	domaine string
+	attrs   map[string][]string
 }
 
 func (e entreeTest) DN() string { return e.dn }
@@ -75,9 +76,15 @@ func (e entreeTest) GetAttributes(attrs []string, typesOnly bool) map[string][]s
 
 func (e entreeTest) ObjectClasses() []string { return []string{"inetOrgPerson"} }
 
+// Domaines — voir ldapinterface.LDAPEntry. Ces entrées ne servent qu'à éprouver
+// l'évaluation des filtres, qui ne regarde pas le rattachement ; il est
+// renseigné pour que le type reste une entrée valide, pas pour être lu.
+func (e entreeTest) Domaines() []string { return []string{e.domaine} }
+
 func utilisateurTest() entreeTest {
 	return entreeTest{
-		dn: "uid=jdupont,ou=users,dc=vaultaire,dc=local",
+		dn:      "uid=jdupont,ou=users,dc=vaultaire,dc=local",
+		domaine: "vaultaire.local",
 		attrs: map[string][]string{
 			"uid":         {"jdupont"},
 			"cn":          {"Jean Dupont"},

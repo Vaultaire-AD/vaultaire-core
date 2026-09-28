@@ -18,6 +18,16 @@ type UserEntry struct {
 	Uid         string   // Username
 	MemberOf    []string // Groupes
 
+	// Rattachements : les domaines où vit RÉELLEMENT le compte, c'est-à-dire ceux
+	// des groupes par lesquels il a été trouvé. Sert au contrôle d'accès, et à
+	// rien d'autre — voir Domaines().
+	//
+	// Distinct de BaseDN, qui est le domaine dont le DN est composé : `ToRootDN`
+	// ne garde que les deux derniers labels, si bien qu'un compte de
+	// « admin.enov.local » et un compte de « enov.local » portent le MÊME DN.
+	// Confondre les deux champs revient à n'avoir aucun contrôle.
+	Rattachements []string
+
 	// ServiceRights : clés RBAC de service (read:nexus…) accordées au compte.
 	// Renseigné par la recherche UNIQUEMENT quand l'attribut est demandé nommément et
 	// que le compte lié a le droit de le lire — voir newmodule/service_rights.go.
@@ -30,6 +40,22 @@ const AttrServiceRights = "vaultaireservicerights"
 
 func (u UserEntry) DN() string {
 	return fmt.Sprintf("uid=%s,ou=users,%s", u.User.Username, ldaptools.ToRootDN(u.BaseDN))
+}
+
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Rend `Rattachements`, et RIEN d'autre. Surtout pas `BaseDN` en secours :
+// BaseDN est le domaine qui compose le DN, et sur ce chemin c'est celui que le
+// client a DEMANDÉ, pas celui où vit le compte. S'en servir pour décider des
+// droits autoriserait tout compte par construction — le filtre ne verrait jamais
+// que le domaine qui vient d'être autorisé. C'était le défaut de la première
+// version de ce correctif.
+//
+// Une liste vide écarte l'entrée. C'est ce qui doit arriver à une UserEntry
+// construite sans renseigner ses rattachements : l'oubli rend le compte
+// invisible, il ne le diffuse pas.
+func (u UserEntry) Domaines() []string {
+	return u.Rattachements
 }
 
 func (u UserEntry) ObjectClasses() []string {

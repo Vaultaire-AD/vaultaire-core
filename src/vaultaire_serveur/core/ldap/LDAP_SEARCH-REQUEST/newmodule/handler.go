@@ -13,6 +13,7 @@ import (
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
 
 // HandleSearchRequest traite une requête LDAP Search
@@ -43,13 +44,48 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		isBound = session.IsBound
 	}
 
+	// La portée du compte : les domaines qu'il a le droit de lire.
+	//
+	// Lue UNE fois ici, puis consultée pour chaque entrée. Elle sert donc deux
+	// fois : à refuser la recherche d'emblée quand le baseDN n'est pas autorisé,
+	// et à écarter les entrées que le résolveur ramène hors de cette portée —
+	// voir security.PorteeDeRecherche pour ce que cela ferme.
+	var portée *security.PorteeDeRecherche
+
 	if !isRootDSE {
 		if !isBound {
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultStrongerAuthRequired, "authentication required")
 			return
 		}
-		if !security.IsAuthorizedToSearch(username, baseDN) {
+
+		var err error
+		portée, err = security.PorteeDeRecherchePour(username)
+		if err != nil {
+			// Une lecture de droits qui échoue REFUSE. Le message reste celui des
+			// droits insuffisants : dire au client que la base est en difficulté ne
+			// l'aide pas et renseigne qui sonde la porte. Le journal, lui, distingue.
+			logs.Write_LogCode("ERROR", logs.CodeAuthPermission, fmt.Sprintf(
+				"ldap: droits de recherche illisibles pour %s (%v) — refusé", username, err))
+			response.SendLDAPSearchFailureCode(conn, messageID,
+				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
+			return
+		}
+
+		if !portée.Autorise(baseDN) {
+			// Un baseObject dont on ne tire AUCUN domaine tombe ici, et ce n'est pas
+			// un refus de droits : c'est une base que le serveur ne sait pas situer,
+			// et qui n'est ni le RootDSE ni le sous-schéma. Le dire dans le journal,
+			// sans quoi l'administrateur cherchera une permission manquante.
+			//
+			// La réponse, elle, reste `insufficientAccessRights` : le code juste
+			// serait `noSuchObject` (32), qui n'est pas encore rendu — voir le
+			// point 124.
+			if baseDN == "" {
+				logs.Write_Log("WARNING", fmt.Sprintf(
+					"ldap: baseObject %q sans composant dc= — aucun domaine à autoriser",
+					op.BaseObject))
+			}
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
 			return
@@ -63,6 +99,45 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		return
 	}
 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolved %d candidates for baseDN=%s scope=%d", len(candidates), baseDN, op.Scope))
+
+	// LE FILTRE D'AUTORISATION, avant le filtre LDAP.
+	//
+	// `Resolve` charge le domaine demandé ET ses sous-domaines : c'est voulu pour
+	// une recherche subtree, et c'était jusqu'ici sans aucun contrôle. Un compte
+	// autorisé sur `enov.local` sans propagation recevait `admin.enov.local`.
+	//
+	// Placé ICI, et pas dans la boucle d'envoi, pour deux raisons : le filtre LDAP
+	// n'a pas à voir des entrées que le compte n'a pas le droit de lire, et la
+	// borne `sizeLimit` doit compter ce qui est rendu, pas ce qui a été écarté.
+	//
+	// Le RootDSE et le sous-schéma passent à côté : ils n'appartiennent à aucun
+	// domaine et sont servis sans authentification (RFC 4512).
+	//
+	// La condition est `!isRootDSE`, la MÊME que celle qui a accordé la dispense
+	// plus haut — et non « si une portée a été lue ». La différence compte : si un
+	// chemin futur arrivait ici sans portée, `Filtrer` écarterait tout, ce qui se
+	// voit immédiatement. Tester le pointeur aurait, dans ce même cas, tout laissé
+	// passer.
+	if !isRootDSE {
+		retenues, écartées := portée.Filtrer(candidates)
+		if écartées > 0 {
+			logs.Write_Log("DEBUG", fmt.Sprintf(
+				"ldap: %d entrée(s) écartée(s) des droits de %s sur baseDN=%s, %d rendue(s)",
+				écartées, username, baseDN, len(retenues)))
+		}
+		candidates = retenues
+	}
+
+	// Le vidage détaillé, APRÈS le filtre.
+	//
+	// Il avait lieu dans le résolveur, donc avant : le journal DEBUG portait le
+	// contenu des entrées que le compte n'a pas le droit de lire. Corriger la
+	// fuite vers le client en la laissant vers le journal n'aurait rien corrigé.
+	if storage.Debug {
+		for _, e := range candidates {
+			logs.Write_Log("DEBUG", scope.DumpLDAPEntry(e, op.Attributes))
+		}
+	}
 	// for _, candidate := range candidates {
 	// 	scope.PrintLDAPEntry(candidate)
 	// }
