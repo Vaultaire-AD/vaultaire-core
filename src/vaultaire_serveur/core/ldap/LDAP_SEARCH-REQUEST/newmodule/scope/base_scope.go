@@ -100,23 +100,40 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 
 	rattachements, lus := domainesDuCompte(db, username)
 	if !lus {
-		// LECTURE EN ÉCHEC : on REFUSE, on ne retombe pas sur le domaine demandé.
+		// LECTURE EN ÉCHEC : on refuse.
 		//
-		// Le secours ci-dessous est réservé au compte qui n'a réellement aucun
-		// domaine. L'appliquer aussi à une panne de lecture rattacherait le compte
-		// au domaine que l'appelant vient de se voir autoriser — donc le filtre
-		// s'autoriserait lui-même, ce qui est exactement le défaut du point 120,
+		// Une panne de lecture ne doit pas se confondre avec « ce compte n'a aucun
+		// domaine » : la version antérieure retombait dans ce cas sur le domaine
+		// DEMANDÉ, celui que l'appelant venait de se voir autoriser. Le contrôle
+		// d'accès se serait alors autorisé lui-même — le défaut du point 120,
 		// reproduit sur un autre chemin et déclenchable par une erreur transitoire.
-		//
-		// Partout ailleurs dans ce correctif, une lecture de droits qui échoue
-		// refuse ; ici aussi.
 		logs.Write_Log("ERROR", "ldap: domaines de "+username+
 			" illisibles — entrée non rendue")
 		return candidate.UserEntry{}, false
 	}
 
+	// UN COMPTE SANS AUCUN DOMAINE N'EST PAS RENDU — point 122.
+	//
+	// Un compte sans domaine est un compte sans groupe, donc sans aucun droit sur
+	// le parc. Il ne peut déjà pas se lier (voir LDAP_bind.go) et il est déjà
+	// introuvable par une recherche `one` ou `sub` — les comptes n'y sont
+	// découverts qu'à travers leurs groupes. Le laisser lisible par son DN exact
+	// était la seule brèche de cette règle ; elle est fermée.
+	//
+	// Le compte existe toujours, et se corrige depuis le portail ou `vlt` : c'est
+	// là qu'on le rattache à un groupe. Ce qui disparaît est sa présence dans
+	// l'annuaire, pas le compte.
+	//
+	// Le gestionnaire répondra `noSuchObject`, la même chose que pour un compte
+	// inexistant. C'est voulu : pour LDAP, il n'existe pas.
+	if len(rattachements) == 0 {
+		logs.Write_Log("DEBUG", "ldap: "+username+
+			" n'appartient à aucun domaine — non rendu (point 122)")
+		return candidate.UserEntry{}, false
+	}
+
 	baseDN := domaineDuDN
-	if len(rattachements) > 0 {
+	{
 		// Le domaine qui compose le DN : celui des rattachements qui redonne le DN
 		// demandé, et à défaut le premier dans l'ordre alphabétique.
 		//
@@ -136,20 +153,6 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 				break
 			}
 		}
-	}
-
-	// Compte sans aucun domaine : on retient celui du DN demandé.
-	//
-	// Il n'appartient à aucun groupe, donc à aucune délégation : le refuser ne
-	// protégerait personne, et le rendrait illisible alors qu'il l'est
-	// aujourd'hui. Le domaine du DN est par ailleurs celui que l'appelant vient de
-	// se voir autoriser à l'entrée, donc ce secours n'ouvre rien.
-	//
-	// Ce cas est celui du point 122 — un compte sans groupe est déjà introuvable
-	// par une recherche `one` ou `sub`, et n'est lisible que par son DN exact.
-	// C'est là qu'il faudra décider ce qu'un tel compte est censé être.
-	if len(rattachements) == 0 && domaineDuDN != "" {
-		rattachements = []string{domaineDuDN}
 	}
 
 	entry := candidate.UserEntry{
@@ -204,9 +207,11 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 	}
 
 	entry := candidate.GroupEntry{
-		Name:    group.GroupName,
-		BaseDN:  group.DomainName,
-		Members: memberDNs,
+		Name:        group.GroupName,
+		BaseDN:      group.DomainName,
+		Members:     memberDNs,
+		Created_at:  group.Created_at,
+		Modified_at: group.Modified_at,
 	}
 	if strings.ToLower(entry.DN()) != expectedDN {
 		return candidate.GroupEntry{}, false

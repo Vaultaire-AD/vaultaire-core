@@ -2,11 +2,13 @@ package newmodule
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"net"
 	"time"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	candidate "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/filter"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
 	scope "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/security"
@@ -78,9 +80,10 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 			// et qui n'est ni le RootDSE ni le sous-schéma. Le dire dans le journal,
 			// sans quoi l'administrateur cherchera une permission manquante.
 			//
-			// La réponse, elle, reste `insufficientAccessRights` : le code juste
-			// serait `noSuchObject` (32), qui n'est pas encore rendu — voir le
-			// point 124.
+			// La réponse, elle, reste `insufficientAccessRights` et non
+			// `noSuchObject` : le refus est prononcé AVANT qu'on sache si quoi que
+			// ce soit existe, et l'appelant connaît déjà sa propre absence de droits
+			// sur ce qu'il a demandé.
 			if baseDN == "" {
 				logs.Write_Log("WARNING", fmt.Sprintf(
 					"ldap: baseObject %q sans composant dc= — aucun domaine à autoriser",
@@ -88,6 +91,57 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 			}
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
+			return
+		}
+	}
+
+	// LE FILTRE EST VÉRIFIÉ AVANT D'ÊTRE APPLIQUÉ.
+	//
+	// Une seule fois par recherche, et non par entrée : le motif ne dépend pas de
+	// l'entrée, et le journaliser des milliers de fois noierait le journal.
+	//
+	// Ce qui n'est pas géré est REFUSÉ, avec le code qui convient. Auparavant, un
+	// filtre non géré faisait échouer toutes les entrées en silence : le client
+	// recevait « success » et zéro entrée, et croyait sa question posée.
+	if err := filter.Verifier(op.Filter); err != nil {
+		code := ldapstorage.ResultInappropriateMatching
+		var ef *filter.ErreurFiltre
+		if errors.As(err, &ef) {
+			code = ef.Code
+		}
+		// WARNING pour une session LIÉE, DEBUG sinon.
+		//
+		// Ce chemin s'exécute aussi sur une recherche RootDSE, c'est-à-dire avant
+		// toute authentification : un inconnu qui envoie des filtres malformés en
+		// boucle écrirait une ligne d'avertissement par paquet. La règle « une fois
+		// par recherche et non par entrée » ne protège de rien quand c'est
+		// l'attaquant qui choisit le nombre de recherches.
+		niveau := "DEBUG"
+		if isBound {
+			niveau = "WARNING"
+		}
+		logs.Write_Log(niveau, fmt.Sprintf(
+			"ldap: filtre refusé pour %s sur baseDN=%s : %s", username, baseDN, err.Error()))
+		response.SendLDAPSearchFailureCode(conn, messageID, code, err.Error())
+		return
+	}
+
+	// LA BASE EXISTE-T-ELLE.
+	//
+	// Vérifié AVANT de résoudre, pour deux raisons. La première est le point 124 :
+	// un baseObject qui ne désigne rien doit rendre `noSuchObject` (32), et non un
+	// succès sans entrée. La seconde est que le résolveur fabriquait des unités
+	// d'organisation `users` et `groups` pour n'importe quel domaine, existant ou
+	// non — une recherche sur un domaine inventé rendait donc deux entrées
+	// inventées.
+	ancetre := ""
+	if !isRootDSE {
+		var baseValide bool
+		ancetre, baseValide = scope.AncetreExistant(db, op.BaseObject)
+		if !baseValide {
+			logs.Write_Log("DEBUG", fmt.Sprintf(
+				"ldap: baseObject %q inexistant, matchedDN=%q", op.BaseObject, ancetre))
+			response.SendLDAPNoSuchObject(conn, messageID, ancetre)
 			return
 		}
 	}
@@ -141,9 +195,23 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// for _, candidate := range candidates {
 	// 	scope.PrintLDAPEntry(candidate)
 	// }
+	// AUCUN CANDIDAT : la base est structurellement valide, mais rien n'en sort.
+	//
+	// C'est `noSuchObject`, et la MÊME réponse que la feuille soit absente ou
+	// qu'elle existe sans que l'appelant ait le droit de la voir. C'est
+	// délibéré : distinguer les deux ferait de cette réponse un ORACLE — il
+	// suffirait de comparer 32 et « succès sans entrée » pour savoir si un compte
+	// existe dans un domaine qu'on n'a pas le droit de lire.
+	//
+	// Une recherche `one` ou `sub` sur un domaine existant rend toujours ses deux
+	// unités d'organisation : ce cas ne concerne donc en pratique que les
+	// recherches `base`, ce qui est exactement là où un client pose la question
+	// « ce DN existe-t-il ».
 	if len(candidates) == 0 {
-		logs.Write_Log("DEBUG", "ldap: aucun candidat resolu, envoi direct de SearchResultDone")
-		response.SendLDAPSearchResultDone(conn, messageID)
+		logs.Write_Log("DEBUG", fmt.Sprintf(
+			"ldap: %q ne rend aucune entrée (absente ou hors droits), matchedDN=%q",
+			op.BaseObject, ancetre))
+		response.SendLDAPNoSuchObject(conn, messageID, ancetre)
 		return
 	}
 

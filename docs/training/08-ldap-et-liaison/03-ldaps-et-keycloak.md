@@ -46,8 +46,23 @@ Deux causes font échouer LDAPS, avec le même message (`SSLHandshakeFailed`) :
    | Edit mode | `READ_ONLY` |
    | Users DN | `dc=acme,dc=lan` |
    | Username / RDN / UUID attribute | `uid` |
-   | User object classes | `inetOrgPerson, organizationalPerson, posixaccount, person, user` |
-   | Search scope | `One Level` |
+   | User object classes | `inetOrgPerson, organizationalPerson, person, user` |
+   | Search scope | `Subtree` |
+
+   > ⚠️ **`Search scope` était `One Level` dans la version précédente de ce
+   > support.** Le serveur élargissait alors silencieusement ces recherches à
+   > toute l'arborescence ; il ne le fait plus (point 127). Avec des comptes dans
+   > `dev.acme.lan` et `svc.acme.lan` sous un « Users DN » de `dc=acme,dc=lan`,
+   > `One Level` ne remonterait plus personne — sans erreur. `Subtree` est la
+   > façon juste de demander une arborescence.
+
+   > ⚠️ Si vous avez suivi ce support avant la 2.2, la ligne « User object
+   > classes » contenait `posixaccount`. Le serveur ne l'annonce plus : il ne
+   > servait aucun attribut POSIX (`uidNumber`, `gidNumber`…), et l'annoncer
+   > faisait chercher chez le client un défaut qui était côté serveur. Keycloak
+   > compose ces classes en **conjonction** — avec `posixaccount`, la
+   > synchronisation ne remonte plus aucun utilisateur. Retirez-le de la
+   > configuration avant de mettre le core à jour.
 
    Cliquez **Test connection** puis **Test authentication**.
 

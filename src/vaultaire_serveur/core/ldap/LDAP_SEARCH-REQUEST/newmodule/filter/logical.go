@@ -62,15 +62,37 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN s
 		// 	entry.DN(), f.Attribute, res, entry.GetAttribute(f.Attribute))
 		return res
 
-	case ldapstorage.FilterExtensible:
-		// Extensible match - typically used for DN-aware assertions
-		res := evalEquality(entry, f.Attribute, f.Value)
-		// Log attribute and DN value for troubleshooting
-		logs.Write_Log("DEBUG", fmt.Sprintf("Extensible match DN check for DN=%s attr=%s value=%s => %v", entry.DN(), f.Attribute, f.Value, res))
-		return res
+	case ldapstorage.FilterGreaterOrEqual:
+		return evalOrdre(entry, f.Attribute, f.Value, true)
+
+	case ldapstorage.FilterLessOrEqual:
+		return evalOrdre(entry, f.Attribute, f.Value, false)
+
+	case ldapstorage.FilterApprox:
+		return evalApproche(entry, f.Attribute, f.Value)
 
 	default:
-		// fmt.Printf("[WARN] Filtre LDAP inconnu Type=%v sur DN=%s\n", f.Type, entry.DN())
+		// ATTEINT seulement si Verifier a ACCEPTÉ un type sans cas ici.
+		//
+		// Ce `default` rendait `false` en silence — sa ligne d'avertissement était
+		// commentée — pour `greaterOrEqual`, `lessOrEqual` et `approxMatch`, que le
+		// parseur décode pourtant correctement. Le client recevait « success » et
+		// zéro entrée, sans qu'aucun des deux côtés ne voie quoi que ce soit
+		// d'anormal.
+		//
+		// Les types sont nommés et non numérotés à dessein : la numérotation
+		// INTERNE de LDAPFilterType n'est pas celle des étiquettes de la RFC 4511,
+		// et un numéro dans un commentaire ou un message enverrait lire la mauvaise
+		// ligne de la norme.
+		//
+		// Le refus est désormais prononcé UNE fois par recherche, par Verifier, qui
+		// rend le code de résultat qui convient. Un type qu'il refuse n'arrive jamais
+		// ici. Si l'on y passe malgré tout, c'est qu'il en a accepté un sans qu'un cas
+		// existe pour lui : un défaut de programmation, qui mérite une ligne à lui —
+		// et qu'un test interdit.
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"ldap: type de filtre %d non évalué sur %s — Verifier et Evaluate ont divergé",
+			f.Type, entry.DN()))
 		return false
 	}
 }

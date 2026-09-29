@@ -1,0 +1,2423 @@
+From fae6ef247c1f58e2a845778b56b7e5623b91f4cd Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 29 Sep 2026 21:56:00 +0000
+Subject: [PATCH] =?UTF-8?q?fix(ldap):=20points=20125,=20126=20et=20127=20?=
+ =?UTF-8?q?=E2=80=94=20sous-schema,=20horodatages,=20portee=20=C2=AB=20one?=
+ =?UTF-8?q?=20=C2=BB?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+125. Le sous-schema etait rejete en bloc par tout analyseur strict :
+« vaultaireServiceRights-oid » n'est pas un numericoid, et une seule ligne
+mal formee fait abandonner toute la liste. Trois OID etaient faux, dont
+memberOf qui portait celui de userAccountControl — un client qui range par OID
+lisait une liste de DN comme un masque de bits. Ce que Vaultaire invente, ou
+sert sous le nom d'un autre annuaire sans en servir la semantique, passe sous
+une branche privee marquee PROVISOIRE. Deux sentinelles : la fidelite (chaque
+classe annoncee et chaque attribut servi doit etre declare) et l'empreinte (la
+date du schema ne peut plus mentir).
+
+126. createTimestamp et modifyTimestamp par entree, ce dont depend la synchro
+incrementale de Keycloak. Migration fatale — les lectures LDAP nomment ces
+colonnes. Les deux moments ou l'annuaire change sans qu'une ligne d'annuaire
+soit ecrite sont bumpes a la main : les appartenances, et les suppressions en
+cascade qui laissaient des membres fantomes indefiniment. Les ecritures faites
+a CHAQUE authentification sont exemptees, sinon chaque connexion aurait
+reimporte le compte.
+
+127. La promotion silencieuse de scope=1 en scope=2 est remplacee par
+ldap.onelevel_subtree, livre a FALSE. C'est le choix inverse des autres reglages
+LDAP, et il a un cout : la procedure Keycloak du depot pose exactement le
+baseObject qui etait promu. Quatre documents portent desormais un avertissement
+et recommandent « Subtree ».
+
+Les relectures adverses ont trouve, ici encore : la procedure Keycloak cassee,
+l'OID de memberOf, les suppressions sans reveil des voisins, quatre regles de
+correspondance declarees avec la syntaxe de la valeur au lieu de celle de
+l'assertion, et deux classes structurelles par entree.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_018uaGGJR8wxcuBPzfnNRjUv
+---
+ deployments/configs/serveur_conf.yaml         |  14 +
+ docs/Developement/Audit_LDAP_2026-09-28.md    |  58 ++--
+ docs/Developement/DO/2.2/2.2.md               | 145 ++++++++++
+ docs/Developement/TO-DO.md                    | 102 ++-----
+ docs/Utilisation/MAN.md                       |   2 +-
+ docs/Utilisation/vaultaireLDAP.md             |   9 +-
+ docs/Version/2.0/2.2.md                       |  31 +++
+ docs/exploitation/A_TESTER.md                 | 139 +++++++++-
+ docs/exploitation/ldaps_keycloak.md           |  21 ++
+ .../03-ldaps-et-keycloak.md                   |   9 +-
+ .../core/configuration_file/ReadConfigFile.go |   5 +
+ .../db_authpolicy/backfill_password_dates.go  |  12 +-
+ .../db_authpolicy/consume_mfacounter.go       |  12 +-
+ .../db_authpolicy/start_mfaenrollment.go      |  12 +-
+ .../db_authpolicy/touch_password_changed.go   |  12 +-
+ .../database/db_groups/add_user_to_group.go   |  11 +
+ .../db_groups/delete_group_with_group_name.go |  23 ++
+ .../db_groups/remove_user_from_group.go       |   6 +
+ ...etch_group_and_users_data_by_group_name.go |   2 +-
+ .../database/db_ldap/get_user_by_username.go  |   4 +-
+ .../db_ldap/get_users_by_usernames.go         |   4 +-
+ .../process_group_rows_from_single_query.go   |  12 +-
+ .../database/db_schema/create_data_base.go    |  17 ++
+ .../db_schema/horodatages_annuaire.go         |  96 +++++++
+ .../db_users/delete_user_with_username.go     |   9 +
+ .../core/database/db_users/verify_password.go |  12 +-
+ .../core/database/schematools/toucher.go      | 152 +++++++++++
+ .../core/ldap/LDAP-TOOLS/horodatage.go        |  56 ++++
+ .../core/ldap/LDAP-TOOLS/horodatage_test.go   |  47 ++++
+ .../newmodule/candidate/SchemaEntry.go        | 249 +++++++++++++++--
+ .../newmodule/candidate/group.go              |  41 ++-
+ .../newmodule/candidate/schema_fidele_test.go | 252 ++++++++++++++++++
+ .../newmodule/candidate/user.go               |  24 +-
+ .../newmodule/scope/base_scope.go             |   8 +-
+ .../newmodule/scope/baseobject.go             |  11 +-
+ .../newmodule/scope/onelevel_test.go          |  57 ++++
+ .../newmodule/scope/resolver.go               |  43 ++-
+ .../core/ldap/LDAP_Storage/LDAP_Limits.go     |  35 +++
+ .../ldap/LDAP_Storage/LDAP_SEARCH_Struct.go   |   8 +
+ .../core/storage/ServeurConf.go               |   3 +
+ 40 files changed, 1581 insertions(+), 184 deletions(-)
+ create mode 100644 src/vaultaire_serveur/core/database/db_schema/horodatages_annuaire.go
+ create mode 100644 src/vaultaire_serveur/core/database/schematools/toucher.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage_test.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/schema_fidele_test.go
+ create mode 100644 src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/onelevel_test.go
+
+diff --git a/deployments/configs/serveur_conf.yaml b/deployments/configs/serveur_conf.yaml
+index 1cf6bc2..7e06cbb 100755
+--- a/deployments/configs/serveur_conf.yaml
++++ b/deployments/configs/serveur_conf.yaml
+@@ -54,6 +54,20 @@ ldap:
+   #
+   # Après modification : vlt certificate regenerate ldaps, puis redémarrage.
+   # Voir docs/exploitation/ldaps_keycloak.md
++  # Élargir une recherche « one » à toute l'arborescence.
++  #
++  # Par défaut (false), une recherche de portée « one » rend UN niveau, comme le
++  # veut la RFC 4511. C'est un changement de la 2.2 : le serveur promouvait
++  # silencieusement en « sub » toute recherche « one » dont le conteneur
++  # s'appelait « users ».
++  #
++  # true rétablit l'ancien comportement, pour TOUTE recherche « one » et non plus
++  # selon le nom du conteneur. Utile si un client attend les sous-domaines sans
++  # savoir demander « sub » — JumpServer est dans ce cas. Préférez, quand c'est
++  # possible, reconfigurer le client en « scope=sub » : c'est la façon juste de
++  # demander une arborescence.
++  onelevel_subtree: false
++
+   ldaps_tls_dns_names: []
+   #  - vaultaire-ad
+   #  - vaultaire-ad.interne.lan
+diff --git a/docs/Developement/Audit_LDAP_2026-09-28.md b/docs/Developement/Audit_LDAP_2026-09-28.md
+index b9bedfc..99a1eff 100644
+--- a/docs/Developement/Audit_LDAP_2026-09-28.md
++++ b/docs/Developement/Audit_LDAP_2026-09-28.md
+@@ -16,40 +16,46 @@ ### État au 29/09/2026
+ 
+ | Point | État |
+ |---|---|
+-| **119** — `>=`, `<=`, `~=` rendaient zéro entrée en silence | **traité** (2.2) — évalués ; `filter.Verifier` refuse d'avance ce qui n'est pas géré et le dit avec `inappropriateMatching` (18) ; l'extensible match est refusé au lieu d'être répondu à côté |
+-| **120** — RBAC évalué sur le seul baseDN | **traité** (2.2) — `security.PorteeDeRecherche` lue une fois, consultée par entrée ; `Domaines()` entre dans l'interface `LDAPEntry`, et une sentinelle AST garde le câblage |
+-| **121** — mot de passe du bind au journal DEBUG | **traité** (2.2) — masqué pour les `BindRequest` et pour toute trame qu'on ne sait pas découper ; l'ExtendedRequest ne journalise plus son contenu (RFC 3062) |
+-| **122** — compte sans groupe invisible | **traité** (2.2), **à l'inverse de ce que le constat proposait** — décision : un tel compte n'a aucun droit sur le parc, donc rien à faire dans l'annuaire, ni s'y lier ni y être trouvé |
+-| **123** — POSIX annoncé sans être servi | **traité** (2.2) — classes retirées, et les trois documents qui prescrivaient `posixaccount` à Keycloak corrigés |
+-| **124** — pas de `noSuchObject` | **traité** (2.2) — code 32 avec `matchedDN`, sans créer d'oracle entre « absent » et « caché par les droits » |
+-| 125 à 131 | ouverts |
+-| **132** — `memberOf` porte les groupes des sous-domaines | **ouvert**, relevé en traitant le 120 — la seule fuite restante |
+-
+-Les constats de **sécurité** de cet audit sont fermés, à l'exception du **132**,
+-découvert en corrigeant le 120 et laissé ouvert parce que sa correction demande
+-une décision de conception. Ce qui reste est de la conformité. Le détail de ce
+-qui a été fait, et de ce qui a été écarté, est dans `DO/2.2/2.2.md`.
+-
+-> **Sur la méthode.** Chacun des deux lots a été passé à deux relectures
+-> adverses, et **les quatre ont trouvé un défaut réel** — dont trois qui auraient
+-> coupé des clients en production.
++| **119** — `>=`, `<=`, `~=` rendaient zéro entrée en silence | **traité** (2.2) — évalués ; `filter.Verifier` refuse d'avance ce qui n'est pas géré avec `inappropriateMatching` (18) ; l'extensible match est refusé au lieu d'être répondu à côté |
++| **120** — RBAC évalué sur le seul baseDN | **traité** (2.2) — `PorteeDeRecherche` lue une fois, consultée par entrée ; `Domaines()` dans l'interface, sentinelle AST sur le câblage |
++| **121** — mot de passe du bind au journal DEBUG | **traité** (2.2) — masqué pour les `BindRequest` et les trames indécodables ; l'ExtendedRequest ne journalise plus son contenu (RFC 3062) |
++| **122** — compte sans groupe | **traité** (2.2), **à l'inverse du constat** — un tel compte n'a aucun droit sur le parc, donc rien à faire dans l'annuaire |
++| **123** — POSIX annoncé sans être servi | **traité** (2.2) — classes retirées, trois documents Keycloak corrigés |
++| **124** — pas de `noSuchObject` | **traité** (2.2) — code 32 avec `matchedDN`, sans oracle entre « absent » et « caché par les droits » |
++| **125** — sous-schéma inanalysable | **traité** (2.2) — OID corrigés, branche privée provisoire, sentinelle de fidélité et sentinelle d'empreinte |
++| **126** — horodatages par entrée | **traité** (2.2) — migration, bumps explicites sur les appartenances et les suppressions, écritures d'authentification exemptées |
++| **127** — `scope=1` promu en `scope=2` | **traité** (2.2) — réglage `ldap.onelevel_subtree`, livré à **false** ; quatre documents avertis |
++| 128, 130, 131 | ouverts |
++| **129** — identifiant d'entrée stable | **ouvert** — le 125 a montré qu'il bloque la déclaration d'`entryUUID` sous son vrai OID |
++| **132** — `memberOf` porte les groupes des sous-domaines | **ouvert** — la seule fuite restante |
++
++Tous les constats de **sécurité** de cet audit sont fermés, à l'exception du
++**132**, découvert en corrigeant le 120. Ce qui reste est de la conformité. Le
++détail de ce qui a été fait, et de ce qui a été écarté, est dans `DO/2.2/2.2.md`.
++
++> **Sur la méthode.** Chaque lot a été passé à des relectures adverses, et
++> **chacune a trouvé un défaut réel** — dont six qui auraient coupé des clients en
++> production.
+ >
+ > Lot 120/121 : le filtre ne couvrait que les groupes, les comptes portaient le
+ > domaine *demandé* et le filtre s'autorisait lui-même ; puis le secours prévu
+ > pour un compte sans domaine était aussi atteint par une panne de lecture.
+ >
+ > Lot 119/122/123/124 : le critère d'existence reposait sur une égalité alors que
+-> le serveur sert par suffixe — un parc dont les groupes vivent dans des
+-> sous-domaines aurait reçu `noSuchObject` pour la base que le RootDSE annonce ;
+-> seuls `ou=users` et `ou=groups` étaient acceptés comme conteneurs, ce qui
+-> coupait le préréglage AD de Keycloak ; le retrait de `posixAccount` cassait la
+-> procédure Keycloak que le dépôt lui-même documente ; et le refus « compte sans
+-> groupe », placé avant la vérification d'existence du compte, désarmait la
++> le serveur sert par suffixe ; seuls `ou=users` et `ou=groups` étaient acceptés
++> comme conteneurs ; le retrait de `posixAccount` cassait la procédure Keycloak
++> que le dépôt documente ; et le refus « compte sans groupe » désarmait la
+ > limitation de débit pour tous les noms inventés.
+ >
+-> Aucun de ces défauts n'était visible dans les tests de la règle, qui passaient.
+-> Ce qu'ils avaient en commun : la règle était juste, c'est ce qu'on lui donnait à
+-> manger qui ne l'était pas.
++> Lot 125/126/127 : le retrait de la promotion `one` cassait la procédure Keycloak
++> d'exploitation, qui emploie exactement le baseObject promu ; `memberOf` portait
++> l'OID de `userAccountControl` ; les suppressions laissaient des appartenances
++> fantômes ; quatre règles de correspondance portaient la syntaxe de la valeur au
++> lieu de celle de l'assertion.
++>
++> Ce que ces défauts ont en commun : aucun n'était visible dans les tests, parce
++> que la règle était juste à chaque fois — c'est ce qu'on lui donnait à manger,
++> ou ce que la documentation en disait, qui ne l'était pas.
+ 
+ ---
+ 
+diff --git a/docs/Developement/DO/2.2/2.2.md b/docs/Developement/DO/2.2/2.2.md
+index be153b1..7614a54 100644
+--- a/docs/Developement/DO/2.2/2.2.md
++++ b/docs/Developement/DO/2.2/2.2.md
+@@ -1,3 +1,148 @@
++125.[FAIT-IA] [LDAP] Le sous-schema n'etait analysable par aucun client strict
++       Audit LDAP du 28/09. Le sous-schema est ce qu'un client LIT pour savoir ce
++       que l'annuaire contient — donc ce que lisent les clients les plus stricts,
++       et ceux-la s'arretent a la premiere ligne qu'ils ne savent pas analyser.
++       Le notre en portait plusieurs.
++
++    -0 UN OID QUI N'EN ETAIT PAS UN. « vaultaireServiceRights-oid » n'est pas un
++       numericoid : un analyseur strict rejette alors TOUTE la liste
++       attributeTypes, pas seulement cette ligne. Le sous-schema entier devenait
++       inutilisable pour un caractere.
++    -1 UNE BRANCHE PRIVEE PROVISOIRE, 1.3.6.1.4.1.99999.1, et c'est ecrit dans le
++       code : 99999 n'est attribue a personne, c'est le numero des exemples. Le
++       jour ou Vaultaire obtient un numero IANA — la demande est gratuite — ces
++       OID changent, et les clients qui ont mis le schema en cache le reliront.
++    -2 LA REGLE DE RANGEMENT : on ne reprend l'OID d'un autre annuaire que
++       lorsqu'on en sert la SEMANTIQUE. objectGUID est un identifiant binaire chez
++       AD, ici une chaine derivee du nom ; entryUUID a la syntaxe UUID chez RFC
++       4530, ici le nom d'utilisateur (point 129) ; « user » et « group » sont
++       STRUCTURELLES chez AD. Les quatre partent sous la branche Vaultaire. Le nom
++       suffit aux clients — c'est par lui qu'ils cherchent — et l'OID dit la
++       verite.
++    -3 DEUX OID FAUX, corriges : subschema portait celui de top (2.5.6.0 au lieu
++       de 2.5.20.1), et groupOfNames portait 2.5.6.10, qui est residentialPerson.
++    -4 UN TROISIEME TROUVE A LA RELECTURE : memberOf portait 1.2.840.113556.1.4.8,
++       qui est userAccountControl — un ENTIER de drapeaux. Un client qui range par
++       OID lisait une liste de DN comme un masque de bits. Il avait ete recopie de
++       la version anterieure : « repris un par un » voulait dire relus, pas
++       verifies.
++    -5 QUATRE REGLES DE CORRESPONDANCE declaraient la syntaxe de la VALEUR au lieu
++       de celle de l'ASSERTION. caseIgnoreSubstringsMatch recoit « jo*n*doe », pas
++       une chaine ordinaire (RFC 4517 §4.2.6). caseIgnoreListMatch, cite par
++       personne, est retire ; uuidMatch aussi, avec entryUUID.
++    -6 DEUX CLASSES STRUCTURELLES PAR ENTREE. Un compte annoncait inetOrgPerson ET
++       user, un groupe groupOfNames ET group : la RFC 4512 §2.4.2 en veut
++       exactement une. Tant que les classes n'etaient pas declarees, aucun client
++       ne pouvait le voir ; les declarer rendait le defaut visible. « user » et
++       « group » sont donc AUXILIAIRES ici — l'entree redevient valide, et les
++       clients qui cherchent par ces noms les trouvent toujours.
++    -7 organizationalUnit RETIRE DES GROUPES : un groupe n'EST pas une unite
++       d'organisation, meme faute que posixGroup au point 123. Aucun client connu
++       ne cherche les groupes ainsi (Keycloak : groupOfNames, Nextcloud : group),
++       et les vraies unites d'organisation continuent de l'annoncer.
++    -8 L'HORODATAGE DU SCHEMA. Il etait FIGE au jour ou quelqu'un l'a tape : un
++       client qui s'en sert pour savoir si le schema a change lisait toujours la
++       meme reponse. La correction evidente — l'heure de demarrage — est PIRE :
++       deux noeuds du cluster serviraient des dates differentes pour un schema
++       identique, et le meme client relirait le schema a chaque bascule. C'est
++       donc une CONSTANTE, gardee par une sentinelle : un test calcule l'empreinte
++       du schema servi et echoue si elle bouge sans que la date bouge, en disant
++       quoi faire.
++    -9 UNE SENTINELLE DE FIDELITE : chaque objectClass annoncee par une entree, et
++       chaque attribut qu'elle sert, doit etre declare. Plus : les regles et
++       syntaxes CITEES doivent etre declarees, les OID doivent etre des
++       numericoid, et aucun ne doit apparaitre deux fois. Verifie : retirer
++       displayName du schema fait echouer le test.
++    -10 NON TRAITE : le sous-schema sert ses propres attributs operationnels sur
++       « * », alors que les entrees ordinaires ne le font plus. C'est l'entree que
++       les clients demandent explicitement, et la changer risquerait de casser la
++       lecture du schema pour un gain nul.
++
++126.[FAIT-IA] [LDAP] [BASE] createTimestamp et modifyTimestamp par entree
++       Ils n'etaient servis que sur cn=schema, et figes. Or c'est sur
++       modifyTimestamp que s'appuie la synchronisation INCREMENTALE de Keycloak :
++       sans lui, seule la synchronisation complete fonctionne, elle relit tout
++       l'annuaire a chaque passage et bute sur sizeLimitExceeded au-dela de dix
++       mille entrees.
++
++    -0 LES COLONNES N'EXISTAIENT PAS. users portait created_at, groups ne portait
++       rien, et aucune des deux n'avait de date de MODIFICATION. Migration :
++       updated_at sur users, created_at et updated_at sur groups.
++    -1 FATALE, et c'est un choix. La tentation etait de la rendre facultative —
++       « une base sans ces colonnes fonctionne comme avant » — mais c'est faux :
++       les requetes de lecture LDAP NOMMENT ces colonnes. Une migration
++       facultative ne rendrait pas le defaut inoffensif, elle le deplacerait a la
++       premiere recherche, en exploitation, en « Unknown column ».
++    -2 CE QUE LA MIGRATION FAIT AUX LIGNES DEJA LA : elles prennent l'instant de
++       la migration. Consequence a connaitre : au premier passage, tout l'annuaire
++       parait « modifie a l'instant », donc un client incremental fait UNE passe
++       complete, puis l'incremental fonctionne. L'inverse — dates a zero — ferait
++       paraitre l'annuaire anterieur a tout, et un client ne le resynchroniserait
++       JAMAIS.
++    -3 ON UPDATE CURRENT_TIMESTAMP : la base tient la colonne. Un bump explicite a
++       chaque point d'ecriture, il suffisait d'en oublier un pour qu'une date
++       cesse de bouger — et une date qui ne bouge pas est PIRE que pas de date du
++       tout : elle fait croire a une synchronisation qui n'a rien vu.
++    -4 CE QUE LA BASE NE PEUT PAS VOIR : un changement d'appartenance ecrit
++       users_group, pas les lignes du compte ni du groupe. Or les deux entrees
++       LDAP ont change — memberOf d'un cote, member de l'autre. Ces deux points
++       sont donc bumpes a la main.
++    -5 ET LES SUPPRESSIONS, trouvees a la relecture. ON DELETE CASCADE vide
++       users_group tout seul, silencieusement : les groupes d'un compte supprime,
++       et les comptes d'un groupe supprime, gardaient un member ou un memberOf
++       FANTOME indefiniment — un client incremental ne relirait jamais ces
++       entrees, puisque rien ne dit qu'elles ont change.
++       ToucherVoisinsAvantSuppression est appele AVANT la suppression : apres, la
++       jointure ne rend plus rien.
++    -6 CINQ ECRITURES EXEMPTEES, par « updated_at = updated_at ». La regle : sont
++       exemptees les ecritures qui ont lieu a CHAQUE authentification —
++       reencodage d'empreinte, compteur TOTP, date de dernier changement de mot de
++       passe. Rien de cela n'est visible d'un client LDAP, et laisser la date
++       bouger ferait REIMPORTER le compte a chaque connexion, ce qui vidait la
++       fonctionnalite de son sens. Les ecritures RARES bumpent, et c'est laisse
++       tel quel : sur-synchroniser vaut mieux que manquer un changement.
++    -7 FORMAT GeneralizedTime UTC. Servir l'heure locale, ou le format SQL,
++       donnerait des dates qu'un client range dans le desordre sans rien signaler.
++       Une date illisible ne devient RIEN — l'attribut n'est pas servi : une date
++       fausse est pire qu'une date absente ici.
++    -8 OPERATIONNELS : ils ne sortent que demandes nommement ou par « + ». C'est
++       ce que dit la RFC 4511 §4.5.1, et c'est ce que fait Keycloak, qui les
++       nomme. La branche « operationnel » des groupes, inerte jusqu'ici, devient
++       vivante — sa version inversee d'origine les aurait diffuses sur toutes les
++       recherches.
++
++127.[FAIT-IA] [LDAP] scope=1 etait silencieusement promu en scope=2
++       Une recherche de portee « one » sur un conteneur nomme « users » etait
++       promue en « sub ». Ecrit pour JumpServer, qui cherche ainsi et attend les
++       sous-domaines ; subi par tous les autres, dont un administrateur qui
++       croyait restreindre un perimetre en configurant scope=one. Ce qu'il lisait
++       dans sa configuration ne decrivait plus ce qui lui etait servi, et la RFC
++       4511 §4.5.1 dit exactement le contraire.
++
++    -0 UN REGLAGE, ldap.onelevel_subtree, a la place de l'exception. Explicite,
++       documente, journalise au demarrage quand il est actif.
++    -1 IL VAUT POUR TOUTE RECHERCHE « one », et non plus selon le nom du
++       conteneur. Un nom de conteneur n'a jamais ete une bonne raison de changer
++       la portee d'une recherche — deux recherches identiques a un nom pres
++       n'avaient pas la meme portee, et rien ne le disait.
++    -2 LIVRE A FAUX, decision de Lorens. C'est le choix INVERSE de MFABypass et
++       RequireTLSForBind, livres de facon a ne rien casser. Assume : « one » rend
++       enfin ce qu'il dit.
++    -3 LE COUT DE CE CHOIX, trouve a la relecture et le plus important de ce lot :
++       la procedure Keycloak du depot pose « Users DN = ou=users,dc=<domaine> » —
++       exactement le baseObject qui etait promu — et Keycloak livre « One Level ».
++       Toute instance montee avec cette page perdait donc les comptes des
++       sous-domaines au redemarrage, SANS erreur, et une synchronisation peut
++       alors supprimer les comptes.
++       Quatre documents portent desormais un avertissement et recommandent
++       « Subtree », qui est la facon juste de demander une arborescence et ne
++       depend d'aucun reglage serveur.
++    -4 LA REGLE EST ISOLEE dans porteeDeChargement, pour etre eprouvee sans base :
++       seul « one » peut etre elargi, jamais « base » ni « sub ». Elargir une
++       recherche « base » ferait d'un DN exact une arborescence.
++    -5 isUserContainerSearch SUPPRIMEE, avec un commentaire a sa place : c'est
++       elle qui lisait le nom du conteneur.
++
+ 119.[FAIT-IA] [LDAP] Trois types de filtres sur dix rendaient zero entree, en silence
+        Audit LDAP du 28/09. Le parseur decodait correctement greaterOrEqual,
+        lessOrEqual et approxMatch ; l'evaluation les laissait tomber dans un
+diff --git a/docs/Developement/TO-DO.md b/docs/Developement/TO-DO.md
+index 0badd3f..e301b17 100755
+--- a/docs/Developement/TO-DO.md
++++ b/docs/Developement/TO-DO.md
+@@ -32,8 +32,8 @@ ## Convention
+ **Audit LDAP du 28/09.** Relecture de `core/ldap` — sécurité, fonctionnalités et
+ compatibilité avec les clients LDAP du marché. Les constats sont détaillés dans
+ [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md), le travail est découpé
+-aux points **119 à 131**. **Traités dans la 2.2** : 119, 120, 121, 122, 123 et
+-124. **Restent ouverts** : 125 à 131, plus le **132**, relevé en traitant le 120.
++aux points **119 à 131**. **Traités dans la 2.2** : 119 à 127. **Restent
++ouverts** : 128 à 131, plus le **132**, relevé en traitant le 120.
+ 
+ **Le point 122 a été tranché à l'inverse de ce qu'il demandait** : il proposait de
+ rendre visible un compte sans groupe ; la décision a été qu'un tel compte n'a
+@@ -60,11 +60,8 @@ ## Vue d'ensemble
+ | 105 | DNS          | Nom de table construit par concaténation                    | À faire — sérieux                       |
+ | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
+ | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
+-| 125 | LDAP         | Sous-schéma inanalysable par un client strict               | À faire — moitié déblayée par le 123    |
+-| 126 | LDAP         | `createTimestamp` / `modifyTimestamp` par entrée            | À faire — synchro Keycloak              |
+-| 127 | LDAP         | `scope=1` promu en `scope=2` sur `ou=users`                 | À faire                                 |
+ | 128 | LDAP         | Bind non authentifié : le mauvais cas est refusé            | À faire — petit                         |
+-| 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire                                 |
++| 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire — débloque le sous-schéma        |
+ | 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
+ | 131 | LDAP         | Requête par groupe, et `isInScope` mort                     | À faire — petit                         |
+ | 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — **la seule fuite restante**   |
+@@ -359,87 +356,14 @@ ## Annuaire LDAP
+ > Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
+ > scénario.
+ >
+-> **Six points sont traités dans la 2.2** : 119 à 124. Ce qui reste est de la
+-> conformité — sous-schéma, horodatages, pagination — et deux fuites étroites,
+-> les points 129 et 132.
++> **Neuf points sont traités dans la 2.2** : 119 à 127. Ce qui reste : le
++> **132**, seule fuite restante et suite directe du 120 ; le **129**, identifiant
++> d'entrée stable, dont le 125 a montré qu'il empêche de déclarer `entryUUID`
++> sous son vrai OID ; le **130**, pagination ; et le **128**, petit.
+ >
+-> **Ordre.** 132 d'abord : c'est la suite directe du 120, et la seule fuite
+-> restante. 125 ensuite, parce que le point 123 en a déjà retiré une moitié.
+-
+-### 125. [LDAP] Le sous-schéma n'est pas analysable par un client strict
+-
+-**Constat** (`candidate/SchemaEntry.go`) :
+-
+-1. `2.5.6.0` est porté **deux fois**, par `top` et par `subschema` — dont l'OID
+-   est `2.5.20.1` ;
+-2. `( vaultaireServiceRights-oid NAME … )` n'est pas un `numericoid`. Un
+-   analyseur strict — Apache Directory Studio, python-ldap avec chargement de
+-   schéma, les outils OpenLDAP — rejette **toute** la liste `attributeTypes`,
+-   pas seulement cette ligne. Le constat le plus coûteux du lot, pour un
+-   caractère ;
+-3. ~~`posixAccount` déclaré `2.5.6.30`~~ — **retiré par le point 123**, avec la
+-   classe elle-même ;
+-4. classes annoncées par les entrées mais absentes du schéma : `inetOrgPerson`,
+-   `organizationalUnit`, `user`, `group`. Et `organizationalUnit` est annoncé par
+-   les **groupes**, ce qu'un groupe n'est pas : le point 123 l'a laissé faute de
+-   savoir si un client du parc s'en sert pour les trouver. À trancher ici ;
+-5. attributs servis mais non déclarés : `displayName`, `givenName`, `entryUUID`,
+-   `nsuniqueid`, `objectGUID`, `guid`, `ipaUniqueID` ;
+-6. `createTimestamp` / `modifyTimestamp` figés au `20260314210522Z`.
+-
+-**À faire.** Corriger les OID, déclarer ce qui est réellement servi, retirer ce
+-qui ne l'est plus après le point 123, et poser un OID de branche privée pour
+-`vaultaireServiceRights` — à défaut d'un numéro d'entreprise enregistré, une
+-branche sous `1.3.6.1.4.1.99999` documentée comme provisoire vaut mieux qu'une
+-chaîne qui casse l'analyse.
+-
+-Un test qui relit le sous-schéma produit et vérifie que chaque `objectClass`
+-annoncée par une entrée y est déclarée : sans lui, l'écart se recreusera au
+-premier attribut ajouté.
+-
+-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.8.
+-
+-### 126. [LDAP] `createTimestamp` et `modifyTimestamp` par entrée
+-
+-**Constat.** Ils ne sont servis que sur `cn=schema`, et figés. Aucune entrée
+-utilisateur ou groupe n'en porte.
+-
+-C'est sur eux que s'appuie la synchronisation **incrémentale** de Keycloak : sans
+-eux, seule la synchronisation complète fonctionne, ce qui relit tout l'annuaire à
+-chaque passage et bute sur `sizeLimitExceeded` au-delà de 10 000 entrées.
+-
+-**À faire.** Les servir depuis les colonnes de création et de modification des
+-comptes et des groupes, au format `GeneralizedTime` (`YYYYMMDDHHMMSSZ`, UTC). Ce
+-sont des attributs **opérationnels** : ils ne sortent que demandés nommément ou
+-par `+`, comme le fait déjà `vaultaireServiceRights` — la règle est écrite dans
+-`candidate/user.go`.
+-
+-Vérifier d'abord que les colonnes existent et sont tenues à jour : une date de
+-modification qui ne bouge pas est pire que pas de date du tout, puisqu'elle fait
+-croire à une synchronisation qui n'a rien vu.
+-
+-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
+-
+-### 127. [LDAP] `scope=1` est silencieusement promu en `scope=2` sur `ou=users`
+-
+-**Le 122 est traité, et il ne change rien ici** : il a été tranché dans l'autre
+-sens — un compte sans groupe n'existe pas pour LDAP — donc la promotion en
+-subtree ne compense plus rien, elle ne fait qu'élargir le périmètre.
+-
+-**Constat.** `scope/resolver.go:42` — `if isUserContainerSearch(baseObject) &&
+-scope == 1 { loadScope = 2 }`. Écrit pour JumpServer, qui cherche en one-level et
+-attend les sous-domaines.
+-
+-Conséquence plus large : un administrateur qui configure une application en
+-`scope=one` pour restreindre le périmètre obtient l'arbre entier. Ce qui est écrit
+-dans la configuration cliente ne décrit plus ce qui est servi. Écart à la
+-RFC 4511 §4.5.1, avec un effet de périmètre.
+-
+-**À faire.** Honorer `scope=1`. Si JumpServer doit rester servi, le faire par un
+-réglage nommé et documenté plutôt que par une exception silencieuse sur le nom du
+-conteneur.
+-
+-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.3.
++> **Ordre.** 132 d'abord, puis 129 — le 125 a laissé quatre attributs sous une
++> branche privée provisoire faute d'identifiants stables, et le 129 en libère
++> deux.
+ 
+ ### 128. [LDAP] Le bind non authentifié refusé n'est pas celui de la RFC
+ 
+@@ -471,6 +395,12 @@ ### 129. [LDAP] Un identifiant d'entrée stable, indépendant du nom
+ chez tout client qui s'appuie dessus — Keycloak crée un doublon au lieu de
+ renommer.
+ 
++**Ce que le point 125 a montré.** `entryUUID` ne peut pas être déclaré sous son
++OID standard tant que sa valeur n'en est pas un : la RFC 4530 attache à cet OID
++la syntaxe UUID, et un client strict attend 128 bits en hexadécimal. Il est donc
++déclaré sous la branche privée provisoire de Vaultaire, avec `objectGUID`,
++`nsUniqueId` et `ipaUniqueID`. Traiter ce point-ci en libère au moins un.
++
+ **À faire.** Un UUID posé à la création du compte, stocké, jamais réattribué,
+ servi en `entryUUID`. Les variantes propriétaires (`objectGUID`, `nsuniqueid`)
+ peuvent en dériver, ou disparaître : elles n'ont d'intérêt que pour un client qui
+diff --git a/docs/Utilisation/MAN.md b/docs/Utilisation/MAN.md
+index ad952fa..cdd7efd 100755
+--- a/docs/Utilisation/MAN.md
++++ b/docs/Utilisation/MAN.md
+@@ -156,7 +156,7 @@ ### 3.3 Exemple de configuration client (Keycloak)
+ | Username LDAP attribute     | `uid` |
+ | RDN / UUID LDAP attribute   | `uid` |
+ | User object classes         | `inetOrgPerson`, `organizationalPerson`, `person`, `user` |
+-| Search scope                | One Level |
++| Search scope                | `Subtree` — `One Level` ne remonte plus les sous-domaines (point 127) |
+ | Group member attribute      | `member` |
+ 
+ > ⚠️ **`posixaccount` a été retiré de cette liste** (point 123). Le serveur ne
+diff --git a/docs/Utilisation/vaultaireLDAP.md b/docs/Utilisation/vaultaireLDAP.md
+index 7b1f7da..5f51ad1 100755
+--- a/docs/Utilisation/vaultaireLDAP.md
++++ b/docs/Utilisation/vaultaireLDAP.md
+@@ -98,12 +98,19 @@ ## 👤 LDAP Searching and Updating (Utilisateurs)
+ | **RDN LDAP attribute**      | `uid`                                                                     |
+ | **UUID LDAP attribute**     | `uid`                                                                     |
+ | **User object classes**     | `inetOrgPerson`, `organizationalPerson`, `person`, `user`                 |
+-| **Search scope**            | `One Level` *(remontera aussi les sous-domaines)*                         |
++| **Search scope**            | `Subtree` *(voir l'avertissement ci-dessous)*                             |
+ | **Group member attribute**  | `member`                                                                  |
+ | **Group naming attribute**  | `group`                                                                   |
+ |                             |                                                                           |
+ 
+ 
++> ⚠️ **`One Level` ne remonte plus les sous-domaines** (point 127). Le serveur
++> promouvait silencieusement ces recherches en recherche d'arborescence quand le
++> conteneur s'appelait `users` ; ce n'est plus le cas, `One Level` rend un niveau.
++> Si vos comptes vivent dans des sous-domaines, mettez **`Subtree`** — ou
++> `onelevel_subtree: true` côté serveur, qui rétablit l'ancien comportement pour
++> toutes les recherches `One Level`.
++
+ > ⚠️ **`posixaccount` a été retiré de cette liste** (point 123). Le serveur ne
+ > l'annonce plus : il ne servait aucun attribut POSIX. Keycloak compose ces
+ > classes en **conjonction** — une instance encore configurée avec `posixaccount`
+diff --git a/docs/Version/2.0/2.2.md b/docs/Version/2.0/2.2.md
+index c3e7ab7..66c99fb 100755
+--- a/docs/Version/2.0/2.2.md
++++ b/docs/Version/2.0/2.2.md
+@@ -10,6 +10,37 @@ # Vaultaire — Alpha 2.2
+ 
+ ## 🚧 Non publié
+ 
++### 🧭 Trois points de l'audit LDAP du 28/09 *(TO-DO 125, 126 et 127)*
++
++> ⚠️ **Une vérification à faire AVANT la mise à jour.** Si vos comptes vivent dans
++> des sous-domaines, passez le *Search Scope* de vos clients LDAP de `One Level` à
++> `Subtree` — Keycloak en tête. Détaillé plus bas.
++
++**Les clients qui lisent le schéma peuvent enfin le lire** *(point 125)*
++
++- 📖 **Le sous-schéma était rejeté en bloc par les outils stricts.** Un seul identifiant mal formé suffit : l'analyseur abandonne toute la liste des attributs, pas seulement la ligne fautive. Apache Directory Studio, les outils OpenLDAP et python-ldap étaient dans ce cas - Lorens Viguie
++- 🔢 **Trois identifiants étaient faux**, dont deux qui désignaient autre chose : `groupOfNames` portait celui de « personne résidente », et `memberOf` celui d'un champ de drapeaux entier d'Active Directory. Un client qui range les attributs par identifiant lisait une liste de groupes comme un nombre - Lorens Viguie
++- 📝 **Le schéma décrit maintenant ce qui est réellement servi** : les classes que les entrées annoncent, les attributs qu'elles rendent, et les règles de comparaison qu'elles citent. La moitié manquait - Lorens Viguie
++- 🏷️ **Ce que Vaultaire invente porte désormais ses propres identifiants**, dans une branche privée marquée provisoire. La règle : on ne reprend l'identifiant d'un autre annuaire que si l'on en sert vraiment le contenu - Lorens Viguie
++- ✅ **Une entrée est enfin valide** au regard de la norme : elle n'annonce plus deux natures contradictoires à la fois. Les noms que cherchent Keycloak et Nextcloud n'ont pas bougé - Lorens Viguie
++- 🕰️ **La date du schéma suit le schéma.** Elle était figée au jour où quelqu'un l'avait tapée ; un client ne pouvait pas savoir que le schéma avait changé. Un contrôle automatique empêche désormais de modifier l'un sans l'autre - Lorens Viguie
++
++**Les synchronisations n'ont plus à tout relire** *(point 126)*
++
++- ⏱️ **Chaque compte et chaque groupe portent leur date de création et de dernière modification.** C'est ce qui permet à Keycloak de ne réimporter que ce qui a changé. Sans elles, seule la synchronisation complète fonctionnait — elle relit tout l'annuaire à chaque passage, et échoue au-delà de dix mille entrées - Lorens Viguie
++- 🔗 **Un changement d'appartenance compte comme une modification**, des deux côtés : le compte et le groupe. C'est le cas que la base ne peut pas voir toute seule, et c'est précisément ce que les clients synchronisent - Lorens Viguie
++- 🗑️ **Une suppression aussi.** Supprimer un compte ou un groupe laissait les entrées voisines inchangées : un client gardait alors un membre fantôme **indéfiniment**, puisque rien ne lui disait de relire - Lorens Viguie
++- 🤫 **Se connecter ne compte pas comme une modification.** Les écritures internes faites à chaque authentification — compteur du second facteur, date de mot de passe — ne bougent pas la date. Sinon chaque connexion aurait déclenché une réimportation du compte - Lorens Viguie
++- 📅 **Au premier démarrage après la mise à jour, tout l'annuaire paraît « modifié à l'instant »** : vos clients feront une passe complète, une fois. C'est voulu — l'inverse ferait paraître l'annuaire plus ancien que tout, et il ne serait jamais resynchronisé - Lorens Viguie
++
++**Une recherche « un niveau » rend un niveau** *(point 127)*
++
++- 🎯 **Le serveur élargissait silencieusement** toute recherche « un niveau » portant sur un conteneur nommé `users`. Un administrateur qui configurait cette portée pour restreindre le périmètre d'une application obtenait l'arborescence entière, sans le savoir - Lorens Viguie
++- ⚠️ **À faire avant la mise à jour** : la procédure Keycloak de ce dépôt utilise exactement ce cas. Si vos comptes vivent dans des sous-domaines et que Keycloak reste en `One Level`, **la synchronisation ne les remontera plus, sans erreur**, et Keycloak peut alors supprimer les comptes. Passez `Search Scope` à **`Subtree`** - Lorens Viguie
++- 🔧 **Un réglage permet de revenir en arrière** (`onelevel_subtree`), mais il élargit alors **toutes** les recherches « un niveau », plus seulement celles dont le conteneur s'appelle `users`. Préférez reconfigurer le client : c'est la façon juste de demander une arborescence - Lorens Viguie
++- 📚 **Quatre documents ont été mis à jour** : la procédure d'exploitation Keycloak, le manuel, le guide LDAP et le support de formation - Lorens Viguie
++
++
+ ### 🔎 Quatre points de l'audit LDAP du 28/09 *(TO-DO 119, 122, 123 et 124)*
+ 
+ > ⚠️ **Deux changements demandent une action AVANT la mise à jour.** Retirez
+diff --git a/docs/exploitation/A_TESTER.md b/docs/exploitation/A_TESTER.md
+index 58afb0f..faf8c87 100755
+--- a/docs/exploitation/A_TESTER.md
++++ b/docs/exploitation/A_TESTER.md
+@@ -1,4 +1,4 @@
+-# À tester — points 9, 10, 34, 38, 41, 44, 46, 47, 48, 50, 51, 61, 62 à 66, 68, 69, 72, 80, 81, 83, 85, 87, 88, 89, 91, 92, 93, 119 à 124
++# À tester — points 9, 10, 34, 38, 41, 44, 46, 47, 48, 50, 51, 61, 62 à 66, 68, 69, 72, 80, 81, 83, 85, 87, 88, 89, 91, 92, 93, 119 à 127
+ 
+ Avant tout : `./auto-compil.sh`, puis `go test ./...` dans les trois modules
+ touchés — `vaultaire_serveur`, `vaultaire_client`, `ducky-network-sdk-service`.
+@@ -1457,3 +1457,140 @@ ### 31e. `noSuchObject` *(point 124)*
+ |---|
+ | **code 32**, exactement comme pour un compte qui n'existe pas |
+ | surtout pas un succès sans entrée : la différence dirait que le compte existe |
++
++---
++
++## 32. Audit LDAP : sous-schéma, horodatages, portée « one » *(points 125, 126 et 127)*
++
++> ⚠️ **Deux actions AVANT de déployer.**
++>
++> 1. **Portée des clients** — si vos comptes vivent dans des sous-domaines,
++>    passez `Search Scope` de `One Level` à **`Subtree`** sur chaque client, à
++>    commencer par Keycloak. Sinon la synchronisation ne les remontera plus,
++>    **sans erreur**.
++> 2. **Sauvegarde de la base** — la migration des horodatages est **fatale au
++>    démarrage** si elle échoue, et elle modifie `users` et `groups`.
++
++### 32a. Le core démarre, et les clients ne perdent rien *(tous points)*
++
++À faire en premier, sur une base **existante** — une base neuve ne prouve rien.
++
++1. Démarrez le core sur une copie de la base de production.
++
++| Attendu |
++|---|
++| le démarrage aboutit ; en DEBUG : `horodatages de l'annuaire en place` |
++| `DESCRIBE users` montre `created_at` et `updated_at` ; `DESCRIBE groups` aussi |
++| aucune perte de compte ni de groupe |
++
++2. Relancez la synchronisation de chaque client LDAP.
++
++| Attendu |
++|---|
++| **le même nombre** d'utilisateurs et de groupes qu'avant |
++| la première synchronisation est **complète** — c'est normal, une fois |
++| les suivantes ne remontent que ce qui a changé |
++
++### 32b. Le sous-schéma se lit *(point 125)*
++
++Le test qui compte est celui d'un outil strict. Apache Directory Studio est le
++plus commode : il charge le schéma à la connexion et refuse tout si une ligne est
++mal formée.
++
++```
++ldapsearch ... -b "cn=schema" -s base "(objectClass=*)" objectClasses attributeTypes matchingRules ldapSyntaxes
++```
++
++| Attendu |
++|---|
++| Apache Directory Studio se connecte **sans avertissement de schéma** |
++| toutes les classes annoncées par une entrée figurent dans `objectClasses` |
++| `createTimestamp` et `modifyTimestamp` du schéma portent une vraie date, la même sur **tous les nœuds du cluster** |
++
++Ce dernier point mérite le détour : comparez `cn=schema` sur deux cores. Les
++dates doivent être **identiques** — une date par nœud ferait relire le schéma à
++chaque bascule.
++
++### 32c. Les horodatages par entrée *(point 126)*
++
++1. Lisez un compte en demandant les horodatages **nommément** — ils sont
++   opérationnels, ils ne sortent pas sur `*` :
++
++```
++ldapsearch ... -b "uid=<compte>,ou=users,dc=<...>" -s base "(objectClass=*)" createTimestamp modifyTimestamp
++ldapsearch ... -b "uid=<compte>,ou=users,dc=<...>" -s base "(objectClass=*)" +
++ldapsearch ... -b "uid=<compte>,ou=users,dc=<...>" -s base "(objectClass=*)" "*"
++```
++
++| Attendu |
++|---|
++| les deux premières commandes rendent les dates, au format `20260929143000Z` |
++| la **troisième ne les rend pas** — `*` désigne les attributs utilisateur |
++
++2. **Ce qui doit faire bouger la date** — relisez `modifyTimestamp` après chaque
++   geste :
++
++| Geste | `modifyTimestamp` du compte | du groupe |
++|---|---|---|
++| changer le nom ou l'adresse du compte | bouge | — |
++| ajouter le compte à un groupe | **bouge** | **bouge** |
++| retirer le compte du groupe | **bouge** | **bouge** |
++| supprimer un autre membre du groupe | — | **bouge** |
++| supprimer le groupe | **bouge** | — |
++
++3. **Ce qui ne doit PAS la faire bouger** — c'est le point qui vide la
++   fonctionnalité de son sens s'il est raté :
++
++| Geste | Attendu |
++|---|---|
++| ouvrir une session (SSH, portail, bind LDAP) | la date **ne bouge pas** |
++| s'authentifier avec un code à six chiffres | la date **ne bouge pas** |
++| changer son mot de passe | la date **ne bouge pas** |
++
++Faites-en vingt de suite et relisez : si la date bouge, chaque connexion déclenche
++une réimportation du compte chez tout client qui synchronise.
++
++4. Et le filtre du point 119 sur ces dates :
++
++```
++ldapsearch ... -b "dc=<...>" "(modifyTimestamp>=20260101000000Z)" modifyTimestamp
++```
++
++| Attendu |
++|---|
++| les entrées modifiées depuis, et elles seules |
++
++### 32d. La portée « un niveau » *(point 127)*
++
++1. Sur un domaine qui a des sous-domaines peuplés :
++
++```
++ldapsearch ... -b "ou=users,dc=<parent>" -s one  "(objectClass=*)" | grep -c "^dn:"
++ldapsearch ... -b "ou=users,dc=<parent>" -s sub  "(objectClass=*)" | grep -c "^dn:"
++```
++
++| Attendu |
++|---|
++| `one` rend **moins** d'entrées que `sub` : aucun compte de sous-domaine |
++| c'est un **changement** — avant, les deux rendaient la même chose |
++
++2. Posez `onelevel_subtree: true`, redémarrez, refaites les deux commandes.
++
++| Attendu |
++|---|
++| `one` et `sub` rendent désormais la même chose |
++| au démarrage : `ldap.onelevel_subtree activé : TOUTE recherche « one » rend l'arborescence` |
++
++3. Vérifiez que le réglage n'élargit **que** `one` :
++
++```
++ldapsearch ... -b "uid=<compte>,ou=users,dc=<...>" -s base "(objectClass=*)" | grep -c "^dn:"
++```
++
++| Attendu |
++|---|
++| **une seule** entrée, réglage activé ou non — une recherche `base` n'est jamais élargie |
++
++4. Remettez `onelevel_subtree: false` et reconfigurez plutôt vos clients en
++   `Subtree` : c'est la façon juste de demander une arborescence, et elle ne
++   dépend d'aucun réglage serveur.
+diff --git a/docs/exploitation/ldaps_keycloak.md b/docs/exploitation/ldaps_keycloak.md
+index 0a8c011..7ac5b82 100755
+--- a/docs/exploitation/ldaps_keycloak.md
++++ b/docs/exploitation/ldaps_keycloak.md
+@@ -238,11 +238,32 @@ ### 5. Configurer le fournisseur dans Keycloak
+ | Bind type | `simple` |
+ | Bind DN | `uid=<compte>,ou=users,dc=<domaine>` |
+ | Users DN | `ou=users,dc=<domaine>` |
++| Search Scope | **`Subtree`** si vos comptes vivent dans des sous-domaines |
+ | Username LDAP attribute | `uid` |
+ | RDN LDAP attribute | `uid` |
+ | UUID LDAP attribute | `entryUUID` |
+ | User Object Classes | `inetOrgPerson` |
+ 
++> ⚠️ **`Search Scope` : à vérifier AVANT de déployer la 2.2.**
++>
++> Keycloak livre `One Level`. Jusqu'ici, le serveur promouvait silencieusement
++> toute recherche `One Level` sur un conteneur nommé `users` en recherche
++> d'arborescence : une instance en `One Level` recevait donc aussi les comptes des
++> **sous-domaines**, sans le savoir.
++>
++> Ce n'est plus le cas (point 127) : `One Level` rend un niveau, comme le veut la
++> RFC. **Si vos comptes vivent dans des sous-domaines** — `dc=svc,dc=acme,dc=lan`
++> sous un `Users DN` de `dc=acme,dc=lan` — et que vous laissez `One Level`, la
++> synchronisation ne les remontera plus, **sans erreur**, et Keycloak peut alors
++> supprimer les comptes disparus.
++>
++> Deux réponses, dans cet ordre de préférence :
++>
++> 1. passer `Search Scope` à **`Subtree`** — c'est la façon juste de demander une
++>    arborescence, et elle ne dépend d'aucun réglage serveur ;
++> 2. ou poser `onelevel_subtree: true` dans `serveur_conf.yaml`, qui rétablit
++>    l'ancien comportement pour **toutes** les recherches `One Level` du serveur.
++
+ > **`Use Truststore SPI`** ne propose plus que `Always` et `Never`. La valeur
+ > `Only for ldaps` a été **supprimée en Keycloak 22** : les configurations qui
+ > l'utilisaient se comportent désormais comme `Always` pour les connexions
+diff --git a/docs/training/08-ldap-et-liaison/03-ldaps-et-keycloak.md b/docs/training/08-ldap-et-liaison/03-ldaps-et-keycloak.md
+index 7e8ae3c..e6cdec3 100755
+--- a/docs/training/08-ldap-et-liaison/03-ldaps-et-keycloak.md
++++ b/docs/training/08-ldap-et-liaison/03-ldaps-et-keycloak.md
+@@ -47,7 +47,14 @@ ## Étapes
+    | Users DN | `dc=acme,dc=lan` |
+    | Username / RDN / UUID attribute | `uid` |
+    | User object classes | `inetOrgPerson, organizationalPerson, person, user` |
+-   | Search scope | `One Level` |
++   | Search scope | `Subtree` |
++
++   > ⚠️ **`Search scope` était `One Level` dans la version précédente de ce
++   > support.** Le serveur élargissait alors silencieusement ces recherches à
++   > toute l'arborescence ; il ne le fait plus (point 127). Avec des comptes dans
++   > `dev.acme.lan` et `svc.acme.lan` sous un « Users DN » de `dc=acme,dc=lan`,
++   > `One Level` ne remonterait plus personne — sans erreur. `Subtree` est la
++   > façon juste de demander une arborescence.
+ 
+    > ⚠️ Si vous avez suivi ce support avant la 2.2, la ligne « User object
+    > classes » contenait `posixaccount`. Le serveur ne l'annonce plus : il ne
+diff --git a/src/vaultaire_serveur/core/configuration_file/ReadConfigFile.go b/src/vaultaire_serveur/core/configuration_file/ReadConfigFile.go
+index 49f387e..ecc1938 100755
+--- a/src/vaultaire_serveur/core/configuration_file/ReadConfigFile.go
++++ b/src/vaultaire_serveur/core/configuration_file/ReadConfigFile.go
+@@ -115,6 +115,11 @@ func LoadConfig(filePath string) error {
+ 	if ldapstorage.MFABypass {
+ 		logs.Write_Log("WARNING", "ldap.mfa_bypass activé : les comptes soumis au second facteur se lient par LDAP sans code")
+ 	}
++	// Élargissement des recherches `one` : refusé sauf réglage contraire explicite.
++	ldapstorage.OneLevelSubtree = config.Ldap.Ldap_OneLevel_Subtree != nil && *config.Ldap.Ldap_OneLevel_Subtree
++	if ldapstorage.OneLevelSubtree {
++		logs.Write_Log("WARNING", "ldap.onelevel_subtree activé : TOUTE recherche « one » rend l'arborescence, quel que soit le conteneur")
++	}
+ 	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
+ 	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
+ 	if config.Website.Website_Enable != nil {
+diff --git a/src/vaultaire_serveur/core/database/db_authpolicy/backfill_password_dates.go b/src/vaultaire_serveur/core/database/db_authpolicy/backfill_password_dates.go
+index 088199f..e77790f 100755
+--- a/src/vaultaire_serveur/core/database/db_authpolicy/backfill_password_dates.go
++++ b/src/vaultaire_serveur/core/database/db_authpolicy/backfill_password_dates.go
+@@ -21,7 +21,17 @@
+ // — ce qui est le comportement correct, et la raison pour laquelle la politique
+ // est désactivée par défaut (durée 0).
+ func backfillPasswordDates(db *sql.DB) error {
+-	res, err := db.Exec(`UPDATE users SET password_changed_at = created_at
++	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
++	//
++	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
++	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
++	// et sur-synchroniser vaut mieux que manquer un changement.
++	//
++	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
++	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
++	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
++	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
++	res, err := db.Exec(`UPDATE users SET password_changed_at = created_at, updated_at = updated_at
+ 		WHERE password_changed_at IS NULL`)
+ 	if err != nil {
+ 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+diff --git a/src/vaultaire_serveur/core/database/db_authpolicy/consume_mfacounter.go b/src/vaultaire_serveur/core/database/db_authpolicy/consume_mfacounter.go
+index 0f81843..731e9cf 100755
+--- a/src/vaultaire_serveur/core/database/db_authpolicy/consume_mfacounter.go
++++ b/src/vaultaire_serveur/core/database/db_authpolicy/consume_mfacounter.go
+@@ -18,7 +18,17 @@
+ // rejoué en parallèle de la connexion légitime. MySQL sérialise l'UPDATE
+ // conditionnel, donc une seule des deux voit RowsAffected à 1.
+ func ConsumeMFACounter(db *sql.DB, username string, counter int64) (bool, error) {
+-	res, err := db.Exec(`UPDATE users SET mfa_last_counter = ?
++	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
++	//
++	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
++	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
++	// et sur-synchroniser vaut mieux que manquer un changement.
++	//
++	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
++	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
++	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
++	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
++	res, err := db.Exec(`UPDATE users SET mfa_last_counter = ?, updated_at = updated_at
+ 		WHERE username = ? AND (mfa_last_counter IS NULL OR mfa_last_counter < ?)`,
+ 		counter, username, counter)
+ 	if err != nil {
+diff --git a/src/vaultaire_serveur/core/database/db_authpolicy/start_mfaenrollment.go b/src/vaultaire_serveur/core/database/db_authpolicy/start_mfaenrollment.go
+index b89c368..40eb298 100755
+--- a/src/vaultaire_serveur/core/database/db_authpolicy/start_mfaenrollment.go
++++ b/src/vaultaire_serveur/core/database/db_authpolicy/start_mfaenrollment.go
+@@ -16,7 +16,17 @@
+ // Écrase un enrôlement en cours, volontairement : recharger la page doit donner
+ // un secret utilisable, pas se heurter à un secret précédent abandonné.
+ func StartMFAEnrollment(db *sql.DB, username, secret string) error {
+-	res, err := db.Exec(`UPDATE users SET mfa_secret = ?, mfa_enabled = FALSE, mfa_last_counter = NULL
++	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
++	//
++	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
++	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
++	// et sur-synchroniser vaut mieux que manquer un changement.
++	//
++	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
++	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
++	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
++	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
++	res, err := db.Exec(`UPDATE users SET mfa_secret = ?, mfa_enabled = FALSE, mfa_last_counter = NULL, updated_at = updated_at
+ 		WHERE username = ? AND mfa_enabled = FALSE`, secret, username)
+ 	if err != nil {
+ 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+diff --git a/src/vaultaire_serveur/core/database/db_authpolicy/touch_password_changed.go b/src/vaultaire_serveur/core/database/db_authpolicy/touch_password_changed.go
+index 1a340bb..70e85c8 100755
+--- a/src/vaultaire_serveur/core/database/db_authpolicy/touch_password_changed.go
++++ b/src/vaultaire_serveur/core/database/db_authpolicy/touch_password_changed.go
+@@ -14,7 +14,17 @@
+ // expiré : l'utilisateur change son mot de passe et se retrouve renvoyé sur la
+ // même page, sans comprendre.
+ func TouchPasswordChanged(db *sql.DB, username string) error {
+-	if _, err := db.Exec(`UPDATE users SET password_changed_at = NOW() WHERE username = ?`, username); err != nil {
++	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
++	//
++	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
++	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
++	// et sur-synchroniser vaut mieux que manquer un changement.
++	//
++	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
++	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
++	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
++	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
++	if _, err := db.Exec(`UPDATE users SET password_changed_at = NOW(), updated_at = updated_at WHERE username = ?`, username); err != nil {
+ 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+ 			"authpolicy: mise à jour de password_changed_at pour "+username+" échouée : "+err.Error())
+ 		return fmt.Errorf("mise à jour de la date de mot de passe : %w", err)
+diff --git a/src/vaultaire_serveur/core/database/db_groups/add_user_to_group.go b/src/vaultaire_serveur/core/database/db_groups/add_user_to_group.go
+index 0b8662b..8d3d472 100755
+--- a/src/vaultaire_serveur/core/database/db_groups/add_user_to_group.go
++++ b/src/vaultaire_serveur/core/database/db_groups/add_user_to_group.go
+@@ -4,6 +4,7 @@
+ 	"database/sql"
+ 	"fmt"
+ 	database "vaultaire/core/database"
++	"vaultaire/core/database/schematools"
+ 	"vaultaire/core/logs"
+ )
+ 
+@@ -52,5 +53,15 @@ func Command_ADD_UserToGroup(db *sql.DB, username, groupName string) error {
+ 		return fmt.Errorf("erreur lors de l'ajout de l'utilisateur au groupe : %v", err)
+ 	}
+ 
++	// Les deux entrées LDAP ont changé sans qu'aucune de leurs lignes soit
++	// écrite : le compte a gagné un `memberOf`, le groupe a gagné un `member`.
++	// `ON UPDATE CURRENT_TIMESTAMP` ne voit que les écritures sur la table
++	// elle-même, et c'est `users_group` qui vient d'être touchée. Sans ces deux
++	// appels, une synchronisation incrémentale ne verrait jamais le changement
++	// d'appartenance — c'est-à-dire précisément ce que les clients LDAP
++	// synchronisent (point 126).
++	schematools.ToucherLigne(db, schematools.TableUtilisateurs, userID)
++	schematools.ToucherLigne(db, schematools.TableGroupes, groupID)
++
+ 	return nil
+ }
+diff --git a/src/vaultaire_serveur/core/database/db_groups/delete_group_with_group_name.go b/src/vaultaire_serveur/core/database/db_groups/delete_group_with_group_name.go
+index 8296b55..bd27a01 100755
+--- a/src/vaultaire_serveur/core/database/db_groups/delete_group_with_group_name.go
++++ b/src/vaultaire_serveur/core/database/db_groups/delete_group_with_group_name.go
+@@ -5,6 +5,7 @@
+ 	"fmt"
+ 	database "vaultaire/core/database"
+ 	guardprotected "vaultaire/core/database/guard_protected"
++	"vaultaire/core/database/schematools"
+ 	"vaultaire/core/logs"
+ )
+ 
+@@ -18,6 +19,16 @@ func Command_DELETE_GroupWithGroupName(db *sql.DB, groupName string) error {
+ 	if err := guardprotected.GuardProtectedGroupDeletion(groupName); err != nil {
+ 		return err
+ 	}
++	// Les comptes membres vont perdre un `memberOf` sans que leur ligne soit
++	// écrite — même raison que côté comptes, à l'autre bout (point 126).
++	if idGroupe, err := groupIDParNom(db, groupName); err == nil {
++		schematools.ToucherVoisinsAvantSuppression(db, schematools.TableGroupes, idGroupe)
++	} else {
++		logs.Write_Log("WARNING", "database: identifiant du groupe "+groupName+
++			" illisible avant suppression, ses membres garderont un memberOf fantôme "+
++			"dans les synchronisations incrémentales : "+err.Error())
++	}
++
+ 	query := `DELETE FROM groups WHERE group_name = ?`
+ 	_, err := db.Exec(query, groupName)
+ 	if err != nil {
+@@ -27,3 +38,15 @@ func Command_DELETE_GroupWithGroupName(db *sql.DB, groupName string) error {
+ 	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Groupe %s supprimé avec succès", groupName))
+ 	return nil
+ }
++
++// groupIDParNom rend l'identifiant d'un groupe.
++//
++// Une lecture de plus avant la suppression, uniquement pour pouvoir prévenir les
++// membres que leur appartenance a changé. Le groupe est supprimé même si elle
++// échoue : perdre une date de modification dégrade une synchronisation, refuser
++// la suppression casserait une opération d'administration.
++func groupIDParNom(db *sql.DB, groupName string) (int, error) {
++	var id int
++	err := db.QueryRow(`SELECT id_group FROM groups WHERE group_name = ?`, groupName).Scan(&id)
++	return id, err
++}
+diff --git a/src/vaultaire_serveur/core/database/db_groups/remove_user_from_group.go b/src/vaultaire_serveur/core/database/db_groups/remove_user_from_group.go
+index 9ffa16f..18af1de 100755
+--- a/src/vaultaire_serveur/core/database/db_groups/remove_user_from_group.go
++++ b/src/vaultaire_serveur/core/database/db_groups/remove_user_from_group.go
+@@ -5,6 +5,7 @@
+ 	"fmt"
+ 	database "vaultaire/core/database"
+ 	guardprotected "vaultaire/core/database/guard_protected"
++	"vaultaire/core/database/schematools"
+ 	"vaultaire/core/logs"
+ )
+ 
+@@ -61,6 +62,11 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error
+ 		return fmt.Errorf("erreur lors de la suppression de l'utilisateur du groupe : %v", err)
+ 	}
+ 
++	// Les deux entrées LDAP ont changé sans qu'aucune de leurs lignes soit
++	// écrite — voir add_user_to_group.go pour le raisonnement (point 126).
++	schematools.ToucherLigne(db, schematools.TableUtilisateurs, userID)
++	schematools.ToucherLigne(db, schematools.TableGroupes, groupID)
++
+ 	// Log de succès
+ 	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Utilisateur %s retiré du groupe %s", username, groupName))
+ 
+diff --git a/src/vaultaire_serveur/core/database/db_ldap/fetch_group_and_users_data_by_group_name.go b/src/vaultaire_serveur/core/database/db_ldap/fetch_group_and_users_data_by_group_name.go
+index 414ad72..33d0b8f 100755
+--- a/src/vaultaire_serveur/core/database/db_ldap/fetch_group_and_users_data_by_group_name.go
++++ b/src/vaultaire_serveur/core/database/db_ldap/fetch_group_and_users_data_by_group_name.go
+@@ -15,7 +15,7 @@ func fetchGroupAndUsersDataByGroupName(db *sql.DB, groupName string) (*sql.Rows,
+ 	}
+ 
+ 	query := `
+-    SELECT g.group_name, dg.domain_name, u.username
++    SELECT g.group_name, dg.domain_name, u.username, g.created_at, g.updated_at
+     FROM groups g
+     JOIN domain_group dg ON dg.d_id_group = g.id_group
+     JOIN users_group ug ON ug.d_id_group = g.id_group
+diff --git a/src/vaultaire_serveur/core/database/db_ldap/get_user_by_username.go b/src/vaultaire_serveur/core/database/db_ldap/get_user_by_username.go
+index 9a643c6..40506f5 100755
+--- a/src/vaultaire_serveur/core/database/db_ldap/get_user_by_username.go
++++ b/src/vaultaire_serveur/core/database/db_ldap/get_user_by_username.go
+@@ -22,6 +22,7 @@ func GetUserByUsername(username string, db *sql.DB) (ldapstorage.User, error) {
+ 			u.lastname,
+ 			u.email, 
+ 			u.created_at, 
++			u.updated_at,
+ 			MIN(dg.domain_name) as domain_name
+ 		FROM users u
+ 		JOIN users_group ug ON u.id_user = ug.d_id_user
+@@ -33,7 +34,8 @@ func GetUserByUsername(username string, db *sql.DB) (ldapstorage.User, error) {
+ 	`
+ 
+ 	row := db.QueryRow(query, username)
+-	err := row.Scan(&user.ID, &user.Username, &user.Firstname, &user.Lastname, &user.Email, &user.Created_at, &user.GroupDomain)
++	err := row.Scan(&user.ID, &user.Username, &user.Firstname, &user.Lastname, &user.Email,
++		&user.Created_at, &user.Modified_at, &user.GroupDomain)
+ 	if err != nil {
+ 		return ldapstorage.User{}, err
+ 	}
+diff --git a/src/vaultaire_serveur/core/database/db_ldap/get_users_by_usernames.go b/src/vaultaire_serveur/core/database/db_ldap/get_users_by_usernames.go
+index 6b67930..47d2704 100755
+--- a/src/vaultaire_serveur/core/database/db_ldap/get_users_by_usernames.go
++++ b/src/vaultaire_serveur/core/database/db_ldap/get_users_by_usernames.go
+@@ -69,6 +69,7 @@ func GetUsersByUsernames(db *sql.DB, usernames []string) (map[string]ldapstorage
+ 				u.lastname,
+ 				u.email,
+ 				u.created_at,
++				u.updated_at,
+ 				MIN(dg.domain_name) AS domain_name
+ 			FROM users u
+ 			JOIN users_group ug ON u.id_user = ug.d_id_user
+@@ -84,7 +85,8 @@ func GetUsersByUsernames(db *sql.DB, usernames []string) (map[string]ldapstorage
+ 		for rows.Next() {
+ 			var user ldapstorage.User
+ 			if err := rows.Scan(&user.ID, &user.Username, &user.Firstname,
+-				&user.Lastname, &user.Email, &user.Created_at, &user.GroupDomain); err != nil {
++				&user.Lastname, &user.Email, &user.Created_at, &user.Modified_at,
++				&user.GroupDomain); err != nil {
+ 				rows.Close()
+ 				return nil, fmt.Errorf("lecture d'une ligne utilisateur : %w", err)
+ 			}
+diff --git a/src/vaultaire_serveur/core/database/db_ldap/process_group_rows_from_single_query.go b/src/vaultaire_serveur/core/database/db_ldap/process_group_rows_from_single_query.go
+index 3fcb428..72bd35b 100755
+--- a/src/vaultaire_serveur/core/database/db_ldap/process_group_rows_from_single_query.go
++++ b/src/vaultaire_serveur/core/database/db_ldap/process_group_rows_from_single_query.go
+@@ -22,17 +22,19 @@ func processGroupRowsFromSingleQuery(rows *sql.Rows) (*ldapstorage.Group, error)
+ 	var currentGroup *ldapstorage.Group // Pointeur pour le groupe en cours de construction
+ 
+ 	for rows.Next() {
+-		var groupName, domainName, username string
+-		if err := rows.Scan(&groupName, &domainName, &username); err != nil {
++		var groupName, domainName, username, creeLe, modifieLe string
++		if err := rows.Scan(&groupName, &domainName, &username, &creeLe, &modifieLe); err != nil {
+ 			return nil, fmt.Errorf("failed to scan row for group data: %w", err)
+ 		}
+ 
+ 		// Initialise le groupe si c'est la première ligne
+ 		if currentGroup == nil {
+ 			currentGroup = &ldapstorage.Group{
+-				GroupName:  groupName,
+-				DomainName: domainName,
+-				Users:      []string{}, // Initialise la liste des utilisateurs
++				GroupName:   groupName,
++				DomainName:  domainName,
++				Created_at:  creeLe,
++				Modified_at: modifieLe,
++				Users:       []string{}, // Initialise la liste des utilisateurs
+ 			}
+ 		}
+ 		// S'assure que le groupe correspond bien (utile si la requête n'était pas assez ciblée, mais ici elle l'est)
+diff --git a/src/vaultaire_serveur/core/database/db_schema/create_data_base.go b/src/vaultaire_serveur/core/database/db_schema/create_data_base.go
+index 690180c..e917f95 100755
+--- a/src/vaultaire_serveur/core/database/db_schema/create_data_base.go
++++ b/src/vaultaire_serveur/core/database/db_schema/create_data_base.go
+@@ -461,6 +461,23 @@ func Create_DataBase(db *sql.DB) {
+ 		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
+ 	}
+ 
++	// Les horodatages de l'annuaire (TO-DO 126).
++	//
++	// FATALE, contrairement au dédoublonnage qui suit. La tentation était de la
++	// rendre facultative — « une base sans ces colonnes fonctionne comme avant » —
++	// mais c'est faux : les requêtes de lecture LDAP NOMMENT désormais ces
++	// colonnes. Une migration facultative ne rendrait pas le défaut inoffensif,
++	// elle le déplacerait à la première recherche, en exploitation, sous la forme
++	// d'un « Unknown column » qui casse l'annuaire entier.
++	//
++	// Un ALTER TABLE ADD COLUMN sur `users` et `groups` est par ailleurs
++	// l'opération la moins risquée de ce fichier.
++	if err := EnsureHorodatagesAnnuaire(db); err != nil {
++		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
++			"database: horodatages de l'annuaire non posés : "+err.Error())
++		log.Fatalf("Erreur lors de la pose des horodatages de l'annuaire : %v", err)
++	}
++
+ 	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
+ 	//
+ 	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue
+diff --git a/src/vaultaire_serveur/core/database/db_schema/horodatages_annuaire.go b/src/vaultaire_serveur/core/database/db_schema/horodatages_annuaire.go
+new file mode 100644
+index 0000000..6d6c50d
+--- /dev/null
++++ b/src/vaultaire_serveur/core/database/db_schema/horodatages_annuaire.go
+@@ -0,0 +1,96 @@
++package dbschema
++
++import (
++	"database/sql"
++	"fmt"
++
++	"vaultaire/core/database/schematools"
++	"vaultaire/core/logs"
++)
++
++// Les colonnes d'horodatage de l'annuaire — point 126.
++//
++// # Pourquoi elles n'existaient pas
++//
++// `users` portait déjà `created_at` ; `groups` ne portait rien du tout, et
++// aucune des deux tables n'avait de date de MODIFICATION. Or c'est sur
++// `modifyTimestamp` que s'appuie la synchronisation incrémentale de Keycloak :
++// sans elle, seule la synchronisation complète fonctionne, ce qui relit tout
++// l'annuaire à chaque passage et bute sur `sizeLimitExceeded` au-delà de dix
++// mille entrées.
++const (
++	ColonneCreeLe    = "created_at"
++	ColonneModifieLe = "updated_at"
++
++	// ON UPDATE CURRENT_TIMESTAMP : la base tient la colonne elle-même.
++	//
++	// C'est ce qui rend la chose fiable. Bump explicite à chaque point
++	// d'écriture, il suffisait d'en oublier un pour qu'une date de modification
++	// cesse de bouger — et une date qui ne bouge pas est PIRE que pas de date du
++	// tout : elle fait croire à une synchronisation qui n'a rien vu.
++	//
++	// Reste ce que la base ne peut pas voir : un changement d'appartenance touche
++	// `users_group`, pas les lignes du compte ni du groupe. Ces deux points-là
++	// sont bumpés à la main — voir db_groups/add_user_to_group.go.
++	//
++	// # Quelles écritures sont exemptées, et lesquelles ne le sont pas
++	//
++	// La règle : sont exemptées — par `updated_at = updated_at` — les écritures
++	// qui ont lieu à CHAQUE authentification. Le réencodage d'une empreinte, le
++	// compteur TOTP, la date de dernier changement de mot de passe : rien de cela
++	// n'est visible d'un client LDAP, et laisser la date bouger ferait réimporter
++	// le compte à chaque connexion.
++	//
++	// Les écritures RARES — activer un second facteur, le réinitialiser, marquer
++	// un mot de passe comme provisoire — bumpent la date, et c'est laissé tel
++	// quel. Elles coûtent une relecture d'une entrée, une fois. Sur-synchroniser
++	// vaut mieux que manquer un changement, et c'est le sens de tout ce réglage
++	// par défaut.
++	DefinitionModifieLe = "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP"
++	DefinitionCreeLe    = "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP"
++)
++
++// EnsureHorodatagesAnnuaire complète `users` et `groups` sur une base existante.
++//
++// # Ce que la migration fait aux lignes déjà là
++//
++// Elles prennent l'instant de la migration comme date de création et de
++// modification. C'est faux pour la création — l'information n'existe nulle part
++// pour `groups` — et cela a une conséquence à connaître : au premier passage
++// après la mise à jour, tout l'annuaire paraît « modifié à l'instant », donc un
++// client incrémental fait une passe complète. UNE fois, puis l'incrémental
++// fonctionne. L'inverse — laisser les dates à zéro — ferait paraître l'annuaire
++// entier antérieur à tout, et un client ne le resynchroniserait JAMAIS.
++//
++// L'appelant la traite comme FATALE, et c'est délibéré : les requêtes de lecture
++// LDAP nomment ces colonnes. Les rendre facultatives ne rendrait pas leur absence
++// inoffensive, elle la déplacerait à la première recherche — « Unknown column »,
++// en exploitation, sur un annuaire qui marchait la veille.
++func EnsureHorodatagesAnnuaire(db *sql.DB) error {
++	if db == nil {
++		return fmt.Errorf("connexion base indisponible")
++	}
++
++	colonnes := []struct {
++		table      string
++		colonne    string
++		definition string
++	}{
++		// `users.created_at` existe depuis toujours dans le texte de création —
++		// mais pas forcément dans une base assez ancienne, et EnsureColumn ne fait
++		// rien quand la colonne est là.
++		{"users", ColonneCreeLe, DefinitionCreeLe},
++		{"users", ColonneModifieLe, DefinitionModifieLe},
++		{"groups", ColonneCreeLe, DefinitionCreeLe},
++		{"groups", ColonneModifieLe, DefinitionModifieLe},
++	}
++
++	for _, c := range colonnes {
++		if err := schematools.EnsureColumn(db, "annuaire", c.table, c.colonne, c.definition); err != nil {
++			return fmt.Errorf("%s.%s : %w", c.table, c.colonne, err)
++		}
++	}
++
++	logs.Write_Log("DEBUG", "database: horodatages de l'annuaire en place (users, groups)")
++	return nil
++}
+diff --git a/src/vaultaire_serveur/core/database/db_users/delete_user_with_username.go b/src/vaultaire_serveur/core/database/db_users/delete_user_with_username.go
+index d916f97..fb52b16 100755
+--- a/src/vaultaire_serveur/core/database/db_users/delete_user_with_username.go
++++ b/src/vaultaire_serveur/core/database/db_users/delete_user_with_username.go
+@@ -5,6 +5,7 @@
+ 	"fmt"
+ 	database "vaultaire/core/database"
+ 	guardprotected "vaultaire/core/database/guard_protected"
++	"vaultaire/core/database/schematools"
+ 	"vaultaire/core/logs"
+ )
+ 
+@@ -29,6 +30,14 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
+ 		return fmt.Errorf("utilisateur %s introuvable", username)
+ 	}
+ 
++	// Les groupes dont ce compte est membre vont perdre un `member`, et leur ligne
++	// ne sera pas écrite : `ON DELETE CASCADE` vide `users_group` sans toucher au
++	// reste. Sans cet appel, un client qui synchronise en incrémental garderait ce
++	// membre indéfiniment — point 126.
++	//
++	// AVANT la suppression : après, la jointure ne rend plus rien.
++	schematools.ToucherVoisinsAvantSuppression(db, schematools.TableUtilisateurs, userID)
++
+ 	// Supprimer l'utilisateur (les contraintes ON DELETE CASCADE s'occupent du reste)
+ 	queryDelete := `DELETE FROM users WHERE id_user = ?`
+ 	_, err = db.Exec(queryDelete, userID)
+diff --git a/src/vaultaire_serveur/core/database/db_users/verify_password.go b/src/vaultaire_serveur/core/database/db_users/verify_password.go
+index 2e736e7..1f67a6d 100755
+--- a/src/vaultaire_serveur/core/database/db_users/verify_password.go
++++ b/src/vaultaire_serveur/core/database/db_users/verify_password.go
+@@ -69,7 +69,17 @@ func reencoder(db *sql.DB, userID int, motDePasse string) {
+ 		return
+ 	}
+ 
+-	_, err = db.Exec(`UPDATE users SET password = ?, salt = ? WHERE id_user = ?`,
++	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
++	//
++	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
++	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
++	// et sur-synchroniser vaut mieux que manquer un changement.
++	//
++	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
++	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
++	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
++	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
++	_, err = db.Exec(`UPDATE users SET password = ?, salt = ?, updated_at = updated_at WHERE id_user = ?`,
+ 		empreinte, selHex, userID)
+ 	if err != nil {
+ 		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+diff --git a/src/vaultaire_serveur/core/database/schematools/toucher.go b/src/vaultaire_serveur/core/database/schematools/toucher.go
+new file mode 100644
+index 0000000..782172e
+--- /dev/null
++++ b/src/vaultaire_serveur/core/database/schematools/toucher.go
+@@ -0,0 +1,152 @@
++package schematools
++
++import (
++	"database/sql"
++	"fmt"
++
++	"vaultaire/core/logs"
++)
++
++// Les tables de l'annuaire dont LDAP sert les horodatages, et la clé de chacune.
++//
++// Ici et pas dans `db_schema` : ces fonctions sont appelées depuis `db_groups`,
++// et `db_schema` dépend déjà de lui. Un paquet bas comme celui-ci est le seul
++// endroit d'où tout le monde peut appeler sans créer de cycle.
++const (
++	TableUtilisateurs = "users"
++	TableGroupes      = "groups"
++
++	// ColonneModifieLe est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —
++	// pour tout ce qui écrit la ligne. Ces fonctions servent au reste.
++	ColonneModifieLe = "updated_at"
++)
++
++// ToucherLigne marque une entrée de l'annuaire comme modifiée — point 126.
++//
++// # Quand l'appeler
++//
++// Quand ce qui change n'est PAS une colonne de la ligne. En pratique : une
++// appartenance. Ajouter un compte à un groupe écrit `users_group`, pas `users`
++// ni `groups` — `ON UPDATE CURRENT_TIMESTAMP` ne voit donc rien, alors que les
++// deux entrées LDAP ont changé : le compte a gagné un `memberOf`, le groupe un
++// `member`.
++//
++// Sans cet appel, une synchronisation incrémentale ne verrait jamais un
++// changement d'appartenance — c'est-à-dire précisément ce que les clients LDAP
++// synchronisent.
++//
++// # Pourquoi l'erreur n'est pas remontée
++//
++// Une date de modification manquée dégrade une synchronisation. Faire échouer
++// pour ce motif l'ajout au groupe, qui vient de réussir, échangerait un défaut
++// discret contre une panne visible — et laisserait la base dans un état où
++// l'appartenance existe mais l'appelant croit le contraire.
++//
++// La ligne de journal, elle, est indispensable : c'est la seule trace qu'une
++// synchronisation risque de manquer ce changement.
++func ToucherLigne(db *sql.DB, table string, id int) {
++	if db == nil || id <= 0 {
++		return
++	}
++	if !identifierPattern.MatchString(table) {
++		logs.Write_Log("ERROR", "schematools: table refusée pour l'horodatage : "+table)
++		return
++	}
++
++	// L'échec est journalisé, jamais remonté. La colonne EXISTE — la migration qui
++	// la pose est fatale au démarrage, justement parce que les lectures LDAP la
++	// nomment —, donc une erreur ici est autre chose : une base momentanément
++	// indisponible, un verrou, une ligne supprimée entre-temps.
++	requete := "UPDATE `" + table + "` SET `" + ColonneModifieLe +
++		"` = CURRENT_TIMESTAMP WHERE " + cleDe(table) + " = ?"
++	if _, err := db.Exec(requete, id); err != nil {
++		logs.Write_Log("WARNING", fmt.Sprintf(
++			"schematools: date de modification de %s #%d non mise à jour, une "+
++				"synchronisation incrémentale peut manquer ce changement : %v", table, id, err))
++	}
++}
++
++// cleDe rend le nom de la clé primaire d'une table de l'annuaire.
++//
++// Deux tables, deux conventions de nommage héritées : `id_user` et `id_group`.
++// Les énumérer ici plutôt que de les passer en paramètre évite qu'un appelant se
++// trompe de colonne — une mise à jour sur la mauvaise clé toucherait la mauvaise
++// ligne, en silence.
++func cleDe(table string) string {
++	switch table {
++	case TableGroupes:
++		return "id_group"
++	default:
++		return "id_user"
++	}
++}
++
++// ToucherVoisinsAvantSuppression marque comme modifiées les entrées qui perdront
++// une appartenance quand `id` sera supprimé.
++//
++// # Le trou qu'elle ferme
++//
++// `ON DELETE CASCADE` vide `users_group` tout seul, ce qui est bien — mais
++// silencieusement : les lignes des groupes et des comptes restants ne sont pas
++// écrites, donc leur date de modification ne bouge pas. Un client qui synchronise
++// en incrémental garde alors un `member` ou un `memberOf` FANTÔME, sans limite
++// de temps : il ne relira jamais ces entrées, puisque rien ne dit qu'elles ont
++// changé.
++//
++// C'est la même panne que celle des ajouts au groupe, à l'autre bout : ce sont
++// les deux seuls moments où l'annuaire change sans qu'une ligne d'annuaire soit
++// écrite.
++//
++// À appeler AVANT la suppression — après, la jointure ne rend plus rien.
++func ToucherVoisinsAvantSuppression(db *sql.DB, table string, id int) {
++	if db == nil || id <= 0 {
++		return
++	}
++
++	var requete, tableVoisine string
++	switch table {
++	case TableUtilisateurs:
++		// Les groupes dont ce compte est membre.
++		requete = `SELECT d_id_group FROM users_group WHERE d_id_user = ?`
++		tableVoisine = TableGroupes
++	case TableGroupes:
++		// Les comptes membres de ce groupe.
++		requete = `SELECT d_id_user FROM users_group WHERE d_id_group = ?`
++		tableVoisine = TableUtilisateurs
++	default:
++		logs.Write_Log("ERROR", "schematools: table sans voisins connue : "+table)
++		return
++	}
++
++	rows, err := db.Query(requete, id)
++	if err != nil {
++		logs.Write_Log("WARNING", fmt.Sprintf(
++			"schematools: voisins de %s #%d illisibles, leur date de modification ne "+
++				"bougera pas et une synchronisation incrémentale gardera une "+
++				"appartenance fantôme : %v", table, id, err))
++		return
++	}
++
++	// Les identifiants sont rassemblés AVANT d'écrire : une écriture pendant qu'un
++	// curseur est ouvert sur la même connexion est un piège classique de
++	// database/sql, et il se manifeste en « busy buffer » sous charge.
++	var voisins []int
++	for rows.Next() {
++		var voisin int
++		if err := rows.Scan(&voisin); err != nil {
++			logs.Write_Log("WARNING", "schematools: lecture d'un voisin : "+err.Error())
++			continue
++		}
++		voisins = append(voisins, voisin)
++	}
++	if err := rows.Err(); err != nil {
++		logs.Write_Log("WARNING", "schematools: parcours des voisins : "+err.Error())
++	}
++	if err := rows.Close(); err != nil {
++		logs.Write_Log("DEBUG", "schematools: fermeture du curseur : "+err.Error())
++	}
++
++	for _, voisin := range voisins {
++		ToucherLigne(db, tableVoisine, voisin)
++	}
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage.go b/src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage.go
+new file mode 100644
+index 0000000..b8139af
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage.go
+@@ -0,0 +1,56 @@
++package ldaptools
++
++import (
++	"strings"
++	"time"
++)
++
++// AttrCreeLe et AttrModifieLe sont les deux attributs opérationnels
++// d'horodatage, en minuscules — la forme sous laquelle les entrées rangent leurs
++// attributs.
++const (
++	AttrCreeLe    = "createtimestamp"
++	AttrModifieLe = "modifytimestamp"
++)
++
++// VersGeneralizedTime met une date lue en base au format LDAP — RFC 4517 §3.3.13.
++//
++// # Pourquoi ce format et pas un autre
++//
++// `YYYYMMDDHHMMSSZ`, en UTC. C'est ce qu'attendent les clients, et c'est ce qui
++// rend la comparaison de texte juste : le format est conçu pour que l'ordre des
++// caractères soit l'ordre du temps. Servir l'heure locale, ou le format SQL
++// `2026-03-15 12:00:00`, donnerait des dates qu'un client range dans le désordre
++// sans rien signaler.
++//
++// # Ce qu'une date illisible devient
++//
++// RIEN — la chaîne vide, et l'attribut n'est pas servi. Un attribut sans valeur
++// n'existe pas en LDAP (RFC 4512 §2.5), et surtout : une date fausse est pire
++// qu'une date absente sur ce chemin précis. Un client incrémental qui lit une
++// date aberrante saute des entrées ou les relit toutes, sans qu'aucune erreur ne
++// le dise.
++func VersGeneralizedTime(valeurSQL string) string {
++	valeurSQL = strings.TrimSpace(valeurSQL)
++	if valeurSQL == "" {
++		return ""
++	}
++
++	// Les formes que le pilote MySQL rend selon la colonne et la configuration de
++	// connexion. `DATETIME` arrive en texte, `parseTime` le rendrait en
++	// time.Time — les deux passent par ici sous forme de chaîne.
++	formes := []string{
++		"2006-01-02 15:04:05",
++		"2006-01-02T15:04:05Z",
++		"2006-01-02 15:04:05.999999",
++		"2006-01-02T15:04:05.999999Z",
++		"2006-01-02T15:04:05-07:00",
++		"2006-01-02",
++	}
++	for _, forme := range formes {
++		if t, err := time.Parse(forme, valeurSQL); err == nil {
++			return t.UTC().Format("20060102150405Z")
++		}
++	}
++	return ""
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage_test.go b/src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage_test.go
+new file mode 100644
+index 0000000..7b72604
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP-TOOLS/horodatage_test.go
+@@ -0,0 +1,47 @@
++package ldaptools
++
++import "testing"
++
++// Le point 126 tient à une conversion : la date que la base rend n'est pas celle
++// que LDAP attend, et une date fausse est pire qu'une date absente sur ce
++// chemin-là.
++
++func TestUneDateSQLDevientUnGeneralizedTime(t *testing.T) {
++	cas := map[string]string{
++		"2026-03-15 12:00:00":        "20260315120000Z",
++		"2026-03-15T12:00:00Z":       "20260315120000Z",
++		"2026-03-15 12:00:00.123456": "20260315120000Z",
++		"2026-03-15":                 "20260315000000Z",
++		// Un décalage explicite est ramené à UTC : 12h00 à UTC+2 est 10h00 UTC.
++		"2026-03-15T12:00:00+02:00": "20260315100000Z",
++	}
++	for sql, attendu := range cas {
++		if obtenu := VersGeneralizedTime(sql); obtenu != attendu {
++			t.Errorf("%q => %q, attendu %q", sql, obtenu, attendu)
++		}
++	}
++}
++
++// UNE DATE ILLISIBLE NE DEVIENT RIEN.
++//
++// Pas une date approchée, pas l'instant présent, pas le zéro de l'époque. Un
++// attribut sans valeur n'existe pas en LDAP (RFC 4512 §2.5), et c'est le bon
++// comportement ici : un client incrémental qui lit une date aberrante saute des
++// entrées ou les relit toutes, sans qu'aucune erreur ne le dise.
++func TestUneDateIllisibleNeDevientRien(t *testing.T) {
++	for _, sql := range []string{"", "   ", "0000-00-00 00:00:00", "hier", "15/03/2026"} {
++		if obtenu := VersGeneralizedTime(sql); obtenu != "" {
++			t.Errorf("%q => %q, attendu une chaîne vide", sql, obtenu)
++		}
++	}
++}
++
++// Le résultat s'ordonne comme du texte : c'est toute la raison de ce format, et
++// c'est ce dont dépend le filtre `>=` du point 119 sur une date.
++func TestLOrdreDuTexteEstLOrdreDuTemps(t *testing.T) {
++	avant := VersGeneralizedTime("2026-03-15 12:00:00")
++	apres := VersGeneralizedTime("2026-03-15 12:00:01")
++	if !(avant < apres) {
++		t.Errorf("%q n'est pas avant %q dans l'ordre du texte", avant, apres)
++	}
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go
+index c401af6..a29bed9 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/SchemaEntry.go
+@@ -83,48 +83,243 @@ func (s SchemaEntry) GetAttribute(attr string) []string {
+ // NewSchemaEntry construit l'entrée de schéma complète.
+ // Elle définit les règles de validation que les clients (Nextcloud, Windows, etc.)
+ // utiliseront pour interroger ton annuaire.
++// La branche d'OID privés de Vaultaire — point 125.
++//
++// # Pourquoi elle existe
++//
++// Un attribut servi doit être déclaré, et une déclaration doit porter un
++// `numericoid`. L'ancienne ligne écrivait `vaultaireServiceRights-oid`, qui n'en
++// est pas un : un analyseur strict — Apache Directory Studio, python-ldap avec
++// chargement de schéma, les outils OpenLDAP — rejette alors TOUTE la liste
++// `attributeTypes`, pas seulement cette ligne. Le sous-schéma entier devenait
++// inutilisable pour un caractère.
++//
++// # Pourquoi 99999, et ce qu'il faudra en faire
++//
++// 1.3.6.1.4.1 est la branche des numéros d'entreprise attribués par l'IANA.
++// 99999 n'est attribué à personne : c'est la valeur qu'on emploie dans les
++// exemples. Elle est donc PROVISOIRE, et c'est écrit ici pour que personne ne la
++// prenne pour définitive.
++//
++// Le jour où Vaultaire obtient un numéro — la demande est gratuite auprès de
++// l'IANA —, ces OID changent. Les clients qui ont mis le sous-schéma en cache
++// devront le relire ; c'est le seul coût, et il est moindre que celui d'un
++// sous-schéma qu'aucun outil ne sait lire.
++//
++// # Ce qui est rangé ici, et ce qui ne l'est pas
++//
++// Les attributs que Vaultaire invente, et ceux qu'il sert sous le NOM d'un autre
++// annuaire sans en servir la sémantique. `objectGUID` est un identifiant binaire
++// chez Active Directory ; ici c'est une chaîne dérivée du nom. Le déclarer sous
++// l'OID d'AD prétendrait servir ce qu'AD sert. Le nom suffit aux clients — c'est
++// par lui qu'ils cherchent — et l'OID dit la vérité.
++//
++// Les attributs dont la sémantique EST celle du standard — `cn`, `uid`, `mail`,
++// `member`, `memberOf`, `sAMAccountName`, les horodatages — gardent leur OID
++// officiel.
++const (
++	OIDBrancheVaultaire = "1.3.6.1.4.1.99999.1"
++
++	oidServiceRights = OIDBrancheVaultaire + ".1"
++	oidNsUniqueID    = OIDBrancheVaultaire + ".2"
++	oidObjectGUID    = OIDBrancheVaultaire + ".3"
++	oidGUID          = OIDBrancheVaultaire + ".4"
++	oidIPAUniqueID   = OIDBrancheVaultaire + ".5"
++	oidEntryUUID     = OIDBrancheVaultaire + ".6"
++
++	// Les classes de compatibilité, pour la même raison que les attributs
++	// ci-dessus : le NOM est celui d'Active Directory, la sémantique n'est pas la
++	// sienne — voir leur déclaration.
++	oidClasseUser  = OIDBrancheVaultaire + ".100"
++	oidClasseGroup = OIDBrancheVaultaire + ".101"
++)
++
++// Les syntaxes employées par les déclarations ci-dessous.
++const (
++	synChaine     = "1.3.6.1.4.1.1466.115.121.1.15" // Directory String
++	synIA5        = "1.3.6.1.4.1.1466.115.121.1.26" // IA5 String
++	synDN         = "1.3.6.1.4.1.1466.115.121.1.12" // DN
++	synOID        = "1.3.6.1.4.1.1466.115.121.1.38" // OID
++	synHorodatage = "1.3.6.1.4.1.1466.115.121.1.24" // Generalized Time
++	// La syntaxe d'une ASSERTION de sous-chaîne, qui n'est pas celle de la valeur
++	// comparée : `caseIgnoreSubstringsMatch` reçoit « jo*n*doe », pas une chaîne
++	// ordinaire (RFC 4517 §4.2.6). Les déclarer avec la syntaxe de la valeur était
++	// faux, et invisible tant que personne ne lisait le schéma.
++	synSousChaine = "1.3.6.1.4.1.1466.115.121.1.58"
++)
++
++// HorodatageDuSchema est la date du dernier changement de ce fichier.
++//
++// # Pourquoi une constante, et pas l'heure
++//
++// Les deux dates du sous-schéma étaient FIGÉES au 14 mars 2026 — le jour où
++// quelqu'un les a tapées. Un client qui s'en sert pour savoir si le schéma a
++// changé lisait donc toujours la même réponse, y compris après une mise à jour
++// qui le change vraiment.
++//
++// La correction évidente — l'instant du démarrage — est pire : deux nœuds du
++// cluster derrière le même nom serviraient des dates DIFFÉRENTES pour un schéma
++// identique, et le même client relirait le schéma à chaque bascule et à chaque
++// redémarrage. On remplacerait « ne change jamais » par « change tout le temps,
++// y compris quand rien n'a changé ».
++//
++// Le schéma est une constante de la compilation : sa date en est une aussi. Elle
++// est la même sur tous les nœuds, et elle ne bouge que lorsque le schéma bouge.
++//
++// # Ce qui empêche de l'oublier
++//
++// Un test calcule l'empreinte du schéma servi et la compare à une valeur
++// enregistrée. Modifier une déclaration sans toucher à cette date fait échouer
++// le test, en disant quoi faire — c'est la seule façon de tenir une date à jour
++// à la main.
++const HorodatageDuSchema = "20260929000000Z"
++
++// NewSchemaEntry construit l'entrée de sous-schéma.
++//
++// # Ce qu'elle doit être
++//
++// Le reflet exact de ce que les entrées annoncent et servent. Elle ne l'était
++// pas : elle déclarait `2.5.6.0` pour `top` ET pour `subschema`, donnait à
++// `groupOfNames` l'OID de `residentialPerson`, et passait sous silence la moitié
++// de ce qui est servi — `inetOrgPerson`, `displayName`, `givenName`, les
++// identifiants d'entrée.
++//
++// Un test interdit désormais l'écart : chaque `objectClass` annoncée par une
++// entrée, et chaque attribut qu'elle sert, doit être déclaré ici.
+ func NewSchemaEntry() SchemaEntry {
+ 	return SchemaEntry{
+ 		CN: "schema",
+ 
++		// Les classes que les entrées annoncent réellement — et elles seules.
++		//
++		// Les OID ont été repris un par un. Deux étaient faux : `subschema`
++		// portait celui de `top`, et `groupOfNames` portait `2.5.6.10`, qui est
++		// `residentialPerson`. Un client qui range les classes par OID en
++		// déduisait n'importe quoi.
+ 		ObjectClassDefs: []string{
+-			"( 2.5.6.0 NAME 'top' ABSTRACT )",
+-			"( 2.5.6.0 NAME 'subschema' AUXILIARY )",
++			"( 2.5.6.0 NAME 'top' ABSTRACT MUST objectClass )",
++			"( 2.5.20.1 NAME 'subschema' AUXILIARY )",
+ 			"( 2.5.6.6 NAME 'person' SUP top STRUCTURAL MUST ( sn $ cn ) )",
+ 			"( 2.5.6.7 NAME 'organizationalPerson' SUP person STRUCTURAL )",
+-			"( 2.5.6.10 NAME 'groupOfNames' SUP top STRUCTURAL MUST ( member $ cn ) )",
+-			"( 1.3.6.1.1.5.2 NAME 'groupOfUniqueNames' SUP top STRUCTURAL MUST ( uniqueMember $ cn ) )",
++			"( 2.16.840.1.113730.3.2.2 NAME 'inetOrgPerson' SUP organizationalPerson STRUCTURAL " +
++				"MAY ( uid $ mail $ displayName $ givenName ) )",
++			"( 2.5.6.9 NAME 'groupOfNames' SUP top STRUCTURAL MUST ( member $ cn ) )",
++			// `user` et `group` sont les noms d'Active Directory, servis pour les
++			// clients qui cherchent par eux.
++			//
++			// Déclarées AUXILIAIRES, et sous la branche Vaultaire, alors qu'elles
++			// sont STRUCTURELLES chez AD. Deux raisons, et la première est une
++			// contrainte : la RFC 4512 §2.4.2 veut qu'une entrée ait EXACTEMENT une
++			// classe structurelle. Un compte annonce déjà `inetOrgPerson`, un groupe
++			// `groupOfNames` — les déclarer structurelles rendrait chaque entrée
++			// invalide aux yeux du client strict qu'on cherche justement à servir.
++			//
++			// La seconde est la règle employée partout ici : on ne reprend l'OID
++			// d'un autre annuaire que lorsqu'on en sert la sémantique. Ce n'est pas
++			// le cas — ni la nature de la classe, ni les attributs obligatoires
++			// d'AD ne sont ceux-ci.
++			"( " + oidClasseUser + " NAME 'user' AUXILIARY MAY ( uid $ mail ) )",
++			"( " + oidClasseGroup + " NAME 'group' AUXILIARY MAY member )",
++			"( 2.5.6.5 NAME 'organizationalUnit' SUP top STRUCTURAL MUST ou )",
++			"( 0.9.2342.19200300.100.4.13 NAME 'domain' SUP top STRUCTURAL MUST dc )",
+ 		},
+ 
+ 		AttributeTypes: []string{
+-			"( 2.5.4.0 NAME 'objectClass' EQUALITY objectIdentifierMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.38 )",
+-			"( 2.5.4.3 NAME 'cn' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 2.5.4.4 NAME 'sn' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 0.9.2342.19200300.100.1.1 NAME 'uid' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 0.9.2342.19200300.100.1.3 NAME 'mail' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.26 )",
+-			"( 1.2.840.113556.1.4.221 NAME 'sAMAccountName' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 SINGLE-VALUE )",
+-			"( 1.2.840.113556.1.4.8 NAME 'memberOf' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 2.5.4.31 NAME 'member' EQUALITY distinguishedNameMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )",
+-			// Droits de service (Nexus…) accordés au compte. Opérationnel : ne sort
+-			// que demandé nommément ou par « + ». OID descriptif, faute de numéro
+-			// d'entreprise enregistré.
+-			"( vaultaireServiceRights-oid NAME 'vaultaireServiceRights' EQUALITY caseIgnoreMatch SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 NO-USER-MODIFICATION USAGE directoryOperation )",
++			"( 2.5.4.0 NAME 'objectClass' EQUALITY objectIdentifierMatch SYNTAX " + synOID + " )",
++			"( 2.5.4.3 NAME 'cn' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch " +
++				"SUBSTR caseIgnoreSubstringsMatch SYNTAX " + synChaine + " )",
++			"( 2.5.4.4 NAME 'sn' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch " +
++				"SUBSTR caseIgnoreSubstringsMatch SYNTAX " + synChaine + " )",
++			"( 2.5.4.42 NAME 'givenName' EQUALITY caseIgnoreMatch ORDERING caseIgnoreOrderingMatch " +
++				"SUBSTR caseIgnoreSubstringsMatch SYNTAX " + synChaine + " )",
++			"( 2.16.840.1.113730.3.1.241 NAME 'displayName' EQUALITY caseIgnoreMatch " +
++				"SUBSTR caseIgnoreSubstringsMatch SYNTAX " + synChaine + " SINGLE-VALUE )",
++			"( 2.5.4.11 NAME 'ou' EQUALITY caseIgnoreMatch SUBSTR caseIgnoreSubstringsMatch " +
++				"SYNTAX " + synChaine + " )",
++			"( 0.9.2342.19200300.100.1.1 NAME 'uid' EQUALITY caseIgnoreMatch " +
++				"ORDERING caseIgnoreOrderingMatch SUBSTR caseIgnoreSubstringsMatch SYNTAX " + synChaine + " )",
++			"( 0.9.2342.19200300.100.1.3 NAME 'mail' EQUALITY caseIgnoreIA5Match " +
++				"SUBSTR caseIgnoreIA5SubstringsMatch SYNTAX " + synIA5 + " )",
++			"( 0.9.2342.19200300.100.1.25 NAME 'dc' EQUALITY caseIgnoreIA5Match " +
++				"SUBSTR caseIgnoreIA5SubstringsMatch SYNTAX " + synIA5 + " SINGLE-VALUE )",
++			"( 1.2.840.113556.1.4.221 NAME 'sAMAccountName' EQUALITY caseIgnoreMatch SYNTAX " +
++				synChaine + " SINGLE-VALUE )",
++			// memberOf portait 1.2.840.113556.1.4.8, qui est `userAccountControl` —
++			// un ENTIER de drapeaux chez Active Directory. Un client qui range les
++			// attributs par OID lisait donc une liste de DN comme un masque de bits.
++			// L'OID était recopié de la version antérieure : « repris un par un »
++			// voulait dire relus, pas vérifiés.
++			"( 1.2.840.113556.1.2.102 NAME 'memberOf' EQUALITY distinguishedNameMatch SYNTAX " +
++				synDN + " )",
++			"( 2.5.4.31 NAME 'member' EQUALITY distinguishedNameMatch SYNTAX " + synDN + " )",
++			// `dn` n'est pas un type d'attribut : c'est le nom de l'entrée. Le
++			// serveur le sert malgré tout comme un attribut, parce que des clients
++			// le demandent ainsi. Il est donc déclaré sous le vrai type —
++			// `distinguishedName` — avec `dn` comme second nom, ce que la syntaxe
++			// d'une déclaration permet.
++			"( 2.5.4.49 NAME ( 'distinguishedName' 'dn' ) EQUALITY distinguishedNameMatch SYNTAX " +
++				synDN + " )",
++			// Les horodatages, point 126. Opérationnels : c'est ce que dit
++			// `USAGE directoryOperation`, et c'est pour cela qu'ils ne sortent que
++			// demandés.
++			"( 2.5.18.1 NAME 'createTimestamp' EQUALITY generalizedTimeMatch " +
++				"ORDERING generalizedTimeOrderingMatch SYNTAX " + synHorodatage +
++				" SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			"( 2.5.18.2 NAME 'modifyTimestamp' EQUALITY generalizedTimeMatch " +
++				"ORDERING generalizedTimeOrderingMatch SYNTAX " + synHorodatage +
++				" SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			// entryUUID sous la branche Vaultaire, et non sous 1.3.6.1.1.16.4.
++			//
++			// La RFC 4530 attache à cet OID la syntaxe UUID : un client strict
++			// attend donc 128 bits écrits en hexadécimal. Vaultaire y sert le nom
++			// d'utilisateur — ce n'est pas un identifiant stable, c'est le point
++			// 129 —, donc reprendre l'OID standard promettrait une syntaxe que la
++			// valeur ne respecte pas. Le nom suffit aux clients : c'est par lui que
++			// Keycloak le demande.
++			"( " + oidEntryUUID + " NAME 'entryUUID' EQUALITY caseIgnoreMatch SYNTAX " +
++				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			// Les alias de compatibilité, sous la branche Vaultaire : le nom est
++			// celui d'un autre annuaire, la sémantique n'est pas la sienne.
++			"( " + oidNsUniqueID + " NAME 'nsUniqueId' EQUALITY caseIgnoreMatch SYNTAX " +
++				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			"( " + oidObjectGUID + " NAME 'objectGUID' EQUALITY caseIgnoreMatch SYNTAX " +
++				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			"( " + oidGUID + " NAME 'guid' EQUALITY caseIgnoreMatch SYNTAX " +
++				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			"( " + oidIPAUniqueID + " NAME 'ipaUniqueID' EQUALITY caseIgnoreMatch SYNTAX " +
++				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
++			// Droits de service (Nexus…) accordés au compte.
++			"( " + oidServiceRights + " NAME 'vaultaireServiceRights' EQUALITY caseIgnoreMatch " +
++				"SYNTAX " + synChaine + " NO-USER-MODIFICATION USAGE directoryOperation )",
+ 		},
+ 
+-		CreateTimestamp: []string{"20260314210522Z"},
+-		ModifyTimestamp: []string{"20260314210522Z"},
++		CreateTimestamp: []string{HorodatageDuSchema},
++		ModifyTimestamp: []string{HorodatageDuSchema},
++
+ 		LdapSyntaxes: []string{
+-			"( 1.3.6.1.4.1.1466.115.121.1.15 DESC 'Directory String' )",
+-			"( 1.3.6.1.4.1.1466.115.121.1.26 DESC 'IA5 String' )",
+-			"( 1.3.6.1.4.1.1466.115.121.1.38 DESC 'OID' )",
+-			"( 1.3.6.1.4.1.1466.115.121.1.12 DESC 'DN' )",
++			"( " + synChaine + " DESC 'Directory String' )",
++			"( " + synIA5 + " DESC 'IA5 String' )",
++			"( " + synOID + " DESC 'OID' )",
++			"( " + synDN + " DESC 'DN' )",
++			"( " + synHorodatage + " DESC 'Generalized Time' )",
++			"( " + synSousChaine + " DESC 'Substring Assertion' )",
+ 		},
++
++		// Les règles que les déclarations ci-dessus NOMMENT. Une règle citée mais
++		// non déclarée est le même défaut que l'attribut servi et non déclaré :
++		// un analyseur strict s'arrête dessus.
+ 		MatchingRules: []string{
+-			"( 2.5.13.2 NAME 'caseIgnoreMatch' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 2.5.13.5 NAME 'caseExactMatch' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 1.3.6.1.1.16.3 NAME 'distinguishedNameMatch' SYNTAX 1.3.6.1.4.1.1466.115.121.1.12 )",
+-			"( 2.5.13.3 NAME 'caseIgnoreOrderingMatch' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
+-			"( 2.5.13.4 NAME 'caseIgnoreSubstringsMatch' SYNTAX 1.3.6.1.4.1.1466.115.121.1.15 )",
++			"( 2.5.13.2 NAME 'caseIgnoreMatch' SYNTAX " + synChaine + " )",
++			"( 2.5.13.3 NAME 'caseIgnoreOrderingMatch' SYNTAX " + synChaine + " )",
++			"( 2.5.13.4 NAME 'caseIgnoreSubstringsMatch' SYNTAX " + synSousChaine + " )",
++			"( 2.5.13.5 NAME 'caseExactMatch' SYNTAX " + synChaine + " )",
++			"( 2.5.13.0 NAME 'objectIdentifierMatch' SYNTAX " + synOID + " )",
++			"( 2.5.13.1 NAME 'distinguishedNameMatch' SYNTAX " + synDN + " )",
++			"( 2.5.13.27 NAME 'generalizedTimeMatch' SYNTAX " + synHorodatage + " )",
++			"( 2.5.13.28 NAME 'generalizedTimeOrderingMatch' SYNTAX " + synHorodatage + " )",
++			"( 1.3.6.1.4.1.1466.109.114.2 NAME 'caseIgnoreIA5Match' SYNTAX " + synIA5 + " )",
++			"( 1.3.6.1.4.1.1466.109.114.3 NAME 'caseIgnoreIA5SubstringsMatch' SYNTAX " +
++				synSousChaine + " )",
+ 		},
+ 
+ 		MatchingRuleUse:   []string{},
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go
+index c6ff468..26fe7ed 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/group.go
+@@ -10,6 +10,10 @@ type GroupEntry struct {
+ 	Name    string
+ 	BaseDN  string
+ 	Members []string
++	// Dates telles que la base les rend ; la mise au format LDAP se fait au
++	// moment de servir l'attribut — point 126.
++	Created_at  string
++	Modified_at string
+ }
+ 
+ func (g GroupEntry) DN() string {
+@@ -35,17 +39,16 @@ func (g GroupEntry) Domaines() []string {
+ // `memberUid` — ne soit servi. Les clients qui comptent restent servis :
+ // Keycloak cherche `groupOfNames`, Nextcloud cherche `group`.
+ //
+-// `organizationalUnit` reste, à contrecœur : un groupe n'EST pas une unité
+-// d'organisation, et c'est la même faute que celle qu'on vient de corriger. Le
+-// retirer demande de vérifier qu'aucun client du parc ne s'en sert pour trouver
+-// les groupes — c'est consigné au point 125, avec le reste de l'écart entre ce
+-// qui est déclaré et ce qui est servi.
++// `organizationalUnit` a été retiré à son tour (point 125) : un groupe n'EST pas
++// une unité d'organisation, et l'annoncer était exactement la même faute que
++// `posixGroup`. Aucun client connu ne cherche les groupes par cette classe —
++// Keycloak emploie `groupOfNames`, Nextcloud `group` — et les vraies unités
++// d'organisation, elles, continuent de l'annoncer (voir OUEntry).
+ func (g GroupEntry) ObjectClasses() []string {
+ 	return []string{
+ 		"top",
+ 		"groupOfNames",
+-		"group",              // <- ajouté pour Nextcloud
+-		"organizationalUnit", // voir le point 125
++		"group", // <- ajouté pour Nextcloud
+ 	}
+ }
+ 
+@@ -60,16 +63,30 @@ func (g GroupEntry) GetAttributes(requested []string, typesOnly bool) map[string
+ 		"objectclass": g.ObjectClasses(),
+ 	}
+ 
++	// Les horodatages — point 126, même raisonnement que côté comptes.
++	//
++	// Ils comptent autant ici : un groupe dont la composition change n'écrit pas
++	// sa propre ligne, l'appartenance vit dans une table à part. C'est pour cela
++	// que l'ajout et le retrait d'un membre marquent explicitement le groupe
++	// comme modifié (schematools.ToucherLigne).
++	if t := ldaptools.VersGeneralizedTime(g.Created_at); t != "" {
++		all[ldaptools.AttrCreeLe] = []string{t}
++	}
++	if t := ldaptools.VersGeneralizedTime(g.Modified_at); t != "" {
++		all[ldaptools.AttrModifieLe] = []string{t}
++	}
++
+ 	result := make(map[string][]string)
+ 	includeAll := len(requested) == 0 || contains(requested, "*")
+ 	includeOperational := contains(requested, "+")
+ 
+ 	for k, v := range all {
+-		// Aucun attribut opérationnel sur un groupe aujourd'hui : la branche est
+-		// donc inerte. Elle est alignée sur celle des utilisateurs quand même,
+-		// parce que la version inversée qui s'y trouvait aurait diffusé le premier
+-		// attribut opérationnel ajouté ici — silencieusement, et sur toutes les
+-		// recherches.
++		// Un attribut OPÉRATIONNEL ne sort que demandé, nommément ou par « + ».
++		//
++		// La branche était inerte tant qu'aucun attribut de groupe ne l'était ; les
++		// horodatages du point 126 le sont, et c'est ce qui la rend vivante. La
++		// version inversée qui s'y trouvait les aurait diffusés sur TOUTES les
++		// recherches, y compris « 1.1 », qui veut dire « aucun attribut ».
+ 		if isOperational(k) && !includeOperational && !contains(requested, k) {
+ 			continue
+ 		}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/schema_fidele_test.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/schema_fidele_test.go
+new file mode 100644
+index 0000000..14aff15
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/schema_fidele_test.go
+@@ -0,0 +1,252 @@
++package candidate
++
++import (
++	"crypto/sha256"
++	"encoding/hex"
++	"regexp"
++	"strings"
++	"testing"
++
++	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
++)
++
++// LA SENTINELLE DU POINT 125 : le sous-schéma doit être le reflet exact de ce
++// que les entrées annoncent et servent.
++//
++// Il ne l'était pas, et l'écart s'était creusé sans que rien ne le dise : cinq
++// classes annoncées mais non déclarées, sept attributs servis mais non déclarés,
++// deux OID faux et un qui n'en était pas un.
++//
++// Un sous-schéma ne sert qu'aux clients qui le LISENT, c'est-à-dire aux plus
++// stricts. Ceux-là s'arrêtent à la première ligne qu'ils ne savent pas analyser.
++
++// nomsDeclares extrait les NAME d'une liste de déclarations de schéma.
++//
++// Une déclaration porte soit `NAME 'x'`, soit `NAME ( 'x' 'y' )` — la seconde
++// forme donne plusieurs noms au même type, et c'est ainsi que `distinguishedName`
++// porte aussi `dn`.
++func nomsDeclares(declarations []string) map[string]bool {
++	nom := regexp.MustCompile(`NAME\s+(?:\(\s*((?:'[^']+'\s*)+)\)|'([^']+)')`)
++	simple := regexp.MustCompile(`'([^']+)'`)
++
++	noms := map[string]bool{}
++	for _, d := range declarations {
++		m := nom.FindStringSubmatch(d)
++		if m == nil {
++			continue
++		}
++		if m[2] != "" {
++			noms[strings.ToLower(m[2])] = true
++			continue
++		}
++		for _, n := range simple.FindAllStringSubmatch(m[1], -1) {
++			noms[strings.ToLower(n[1])] = true
++		}
++	}
++	return noms
++}
++
++// entreesDuDIT rend une de chaque sorte d'entrée que le serveur place dans
++// l'arborescence.
++//
++// Le RootDSE n'y est PAS, et ce n'est pas un oubli : il est hors de
++// l'arborescence (RFC 4512 §5.1), sa classe `LDAProotDSE` n'appartient à aucun
++// sous-schéma, et il est servi sans authentification par un chemin à part.
++func entreesDuDIT() map[string]ldapinterface.LDAPEntry {
++	u := UserEntry{BaseDN: "enov.local", Rattachements: []string{"enov.local"}}
++	u.User.Username = "alice"
++	u.User.Firstname = "Alice"
++	u.User.Lastname = "Martin"
++	u.User.Email = "alice@enov.local"
++	u.User.Created_at = "2026-03-15 12:00:00"
++	u.User.Modified_at = "2026-03-16 09:30:00"
++	u.Groups = []string{"cn=admins,ou=groups,dc=enov,dc=local"}
++	u.ServiceRights = []string{"read:nexus"}
++
++	return map[string]ldapinterface.LDAPEntry{
++		"compte": u,
++		"groupe": GroupEntry{
++			Name: "admins", BaseDN: "enov.local",
++			Members:    []string{"uid=alice,ou=users,dc=enov,dc=local"},
++			Created_at: "2026-03-15 12:00:00", Modified_at: "2026-03-16 09:30:00",
++		},
++		"unité d'organisation": OUEntry{Name: "users", BaseDN: "enov.local"},
++		"domaine":              DomainEntry{DNName: "enov.local"},
++		"sous-schéma":          NewSchemaEntry(),
++	}
++}
++
++func TestChaqueClasseAnnonceeEstDeclaree(t *testing.T) {
++	declarees := nomsDeclares(NewSchemaEntry().ObjectClassDefs)
++
++	for nom, e := range entreesDuDIT() {
++		for _, classe := range e.ObjectClasses() {
++			if !declarees[strings.ToLower(classe)] {
++				t.Errorf("%s annonce la classe %q, que le sous-schéma ne déclare pas — "+
++					"un client qui lit le schéma pour valider l'entrée la refusera",
++					nom, classe)
++			}
++		}
++	}
++}
++
++func TestChaqueAttributServiEstDeclare(t *testing.T) {
++	declares := nomsDeclares(NewSchemaEntry().AttributeTypes)
++
++	// « * » et « + » ensemble : tous les attributs utilisateur ET opérationnels.
++	// C'est la seule façon de voir ce que l'entrée est capable de servir.
++	for nom, e := range entreesDuDIT() {
++		if nom == "sous-schéma" {
++			// Le sous-schéma sert les attributs QUI DÉCRIVENT un schéma —
++			// `objectClasses`, `attributeTypes`, `matchingRules`… Ce sont des
++			// attributs opérationnels du serveur, définis par la RFC 4512 §4.2 et
++			// non par ce sous-schéma-ci. Les exiger ici reviendrait à demander au
++			// schéma de se décrire lui-même.
++			continue
++		}
++		for attr := range e.GetAttributes([]string{"*", "+"}, false) {
++			if !declares[strings.ToLower(attr)] {
++				t.Errorf("%s sert l'attribut %q, que le sous-schéma ne déclare pas — "+
++					"c'est le défaut du point 125 : servir ce qu'on ne déclare pas",
++					nom, attr)
++			}
++		}
++	}
++}
++
++// Les règles de correspondance et les syntaxes CITÉES doivent être déclarées.
++//
++// Une règle nommée dans un `EQUALITY` sans être déclarée arrête le même
++// analyseur que l'attribut manquant. C'est la moitié du problème qu'on ne voit
++// pas en relisant la liste des attributs.
++func TestChaqueRegleEtSyntaxeCiteeEstDeclaree(t *testing.T) {
++	sch := NewSchemaEntry()
++	regles := nomsDeclares(sch.MatchingRules)
++
++	citation := regexp.MustCompile(`(?:EQUALITY|ORDERING|SUBSTR)\s+(\w+)`)
++	syntaxe := regexp.MustCompile(`SYNTAX\s+([\d.]+)`)
++
++	syntaxesDeclarees := map[string]bool{}
++	oid := regexp.MustCompile(`\(\s*([\d.]+)`)
++	for _, s := range sch.LdapSyntaxes {
++		if m := oid.FindStringSubmatch(s); m != nil {
++			syntaxesDeclarees[m[1]] = true
++		}
++	}
++
++	for _, d := range sch.AttributeTypes {
++		for _, m := range citation.FindAllStringSubmatch(d, -1) {
++			if !regles[strings.ToLower(m[1])] {
++				t.Errorf("la règle %q est citée sans être déclarée : %s", m[1], d)
++			}
++		}
++		for _, m := range syntaxe.FindAllStringSubmatch(d, -1) {
++			if !syntaxesDeclarees[m[1]] {
++				t.Errorf("la syntaxe %q est citée sans être déclarée : %s", m[1], d)
++			}
++		}
++	}
++	for _, d := range sch.MatchingRules {
++		for _, m := range syntaxe.FindAllStringSubmatch(d, -1) {
++			if !syntaxesDeclarees[m[1]] {
++				t.Errorf("la syntaxe %q est citée sans être déclarée : %s", m[1], d)
++			}
++		}
++	}
++}
++
++// UN OID EST UN NUMERICOID, ET IL EST UNIQUE.
++//
++// Les deux défauts qui rendaient le sous-schéma inutilisable. `2.5.6.0` portait
++// `top` ET `subschema`, et `vaultaireServiceRights-oid` n'était pas un OID du
++// tout — sur cette seule ligne, un analyseur strict rejette TOUTE la liste des
++// attributs.
++func TestLesOIDSontValidesEtUniques(t *testing.T) {
++	numericoid := regexp.MustCompile(`^\d+(\.\d+)+$`)
++	tete := regexp.MustCompile(`^\(\s*([^\s)]+)`)
++
++	for nom, liste := range map[string][]string{
++		"classes":   NewSchemaEntry().ObjectClassDefs,
++		"attributs": NewSchemaEntry().AttributeTypes,
++		"règles":    NewSchemaEntry().MatchingRules,
++		"syntaxes":  NewSchemaEntry().LdapSyntaxes,
++	} {
++		vus := map[string]string{}
++		for _, d := range liste {
++			m := tete.FindStringSubmatch(strings.TrimSpace(d))
++			if m == nil {
++				t.Errorf("%s : déclaration sans OID de tête : %s", nom, d)
++				continue
++			}
++			if !numericoid.MatchString(m[1]) {
++				t.Errorf("%s : %q n'est pas un numericoid — un analyseur strict rejette "+
++					"TOUTE la liste sur cette seule ligne : %s", nom, m[1], d)
++				continue
++			}
++			if precedent, déjà := vus[m[1]]; déjà {
++				t.Errorf("%s : l'OID %s est porté deux fois — par %q et par %q",
++					nom, m[1], precedent, d)
++			}
++			vus[m[1]] = d
++		}
++	}
++}
++
++// LA DATE DU SCHÉMA SUIT LE SCHÉMA — la sentinelle qui l'y oblige.
++//
++// Les deux dates étaient figées au jour où quelqu'un les a tapées : un client qui
++// s'en sert pour savoir si le schéma a changé lisait toujours la même réponse.
++// Les remplacer par l'heure de démarrage aurait été pire — deux nœuds du cluster
++// auraient servi des dates différentes pour un schéma identique.
++//
++// Une constante, donc, et ce test pour qu'elle ne mente pas : il calcule
++// l'empreinte de ce qui est servi et la compare à une valeur enregistrée.
++// Modifier une déclaration sans toucher à la date fait échouer ce test.
++func TestLaDateDuSchemaSuitLeSchema(t *testing.T) {
++	// À METTRE À JOUR EN MÊME TEMPS QUE HorodatageDuSchema, et seulement avec lui.
++	const empreinteAttendue = "fd46988ec5fe36d744371b692d18cc89a4d872a667015c3ee698caab6ceef74e"
++
++	sch := NewSchemaEntry()
++	h := sha256.New()
++	for _, liste := range [][]string{
++		sch.ObjectClassDefs, sch.AttributeTypes, sch.MatchingRules, sch.LdapSyntaxes,
++	} {
++		for _, d := range liste {
++			h.Write([]byte(d))
++			h.Write([]byte{0})
++		}
++	}
++	empreinte := hex.EncodeToString(h.Sum(nil))
++
++	if empreinteAttendue == "" {
++		t.Fatalf("empreinte du schéma non enregistrée. Écrivez-la dans ce test :\n\n"+
++			"    const empreinteAttendue = %q\n\n"+
++			"et mettez HorodatageDuSchema à la date du jour.", empreinte)
++	}
++	if empreinte != empreinteAttendue {
++		t.Errorf("le sous-schéma a changé (%s) sans que HorodatageDuSchema bouge.\n"+
++			"Mettez la date du jour dans HorodatageDuSchema, et cette empreinte ici :\n\n"+
++			"    const empreinteAttendue = %q\n\n"+
++			"Sans quoi un client qui relit le schéma ne saura pas qu'il a changé.",
++			empreinte[:12], empreinte)
++	}
++}
++
++// Et la forme de la date, qui doit rester un GeneralizedTime UTC.
++func TestLaDateDuSchemaEstUnGeneralizedTime(t *testing.T) {
++	sch := NewSchemaEntry()
++	for nom, valeurs := range map[string][]string{
++		"createTimestamp": sch.CreateTimestamp,
++		"modifyTimestamp": sch.ModifyTimestamp,
++	} {
++		if len(valeurs) != 1 {
++			t.Fatalf("%s : %d valeur(s)", nom, len(valeurs))
++		}
++		if valeurs[0] == "20260314210522Z" {
++			t.Errorf("%s vaut encore la date figée d'origine", nom)
++		}
++		if !strings.HasSuffix(valeurs[0], "Z") || len(valeurs[0]) != 15 {
++			t.Errorf("%s = %q : ce n'est pas un GeneralizedTime UTC", nom, valeurs[0])
++		}
++	}
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go
+index e8ecbf9..fc4baf2 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/user.go
+@@ -112,6 +112,27 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
+ 		all[AttrServiceRights] = u.ServiceRights
+ 	}
+ 
++	// LES HORODATAGES — point 126.
++	//
++	// C'est sur `modifyTimestamp` que s'appuie la synchronisation INCRÉMENTALE de
++	// Keycloak. Sans lui, seule la synchronisation complète fonctionne : elle
++	// relit tout l'annuaire à chaque passage, et bute sur `sizeLimitExceeded`
++	// au-delà de dix mille entrées.
++	//
++	// Opérationnels, comme les identifiants ci-dessus : ils ne sortent que
++	// demandés nommément ou par « + ». C'est ce que dit la RFC 4511 §4.5.1, et
++	// c'est ce que fait Keycloak, qui les nomme.
++	//
++	// Absents si la base n'a pas su les rendre — une date fausse est pire qu'une
++	// date absente ici : un client incrémental qui lit une date aberrante saute
++	// des entrées ou les relit toutes, sans qu'aucune erreur ne le dise.
++	if t := ldaptools.VersGeneralizedTime(u.User.Created_at); t != "" {
++		all[ldaptools.AttrCreeLe] = []string{t}
++	}
++	if t := ldaptools.VersGeneralizedTime(u.User.Modified_at); t != "" {
++		all[ldaptools.AttrModifieLe] = []string{t}
++	}
++
+ 	result := make(map[string][]string)
+ 	includeAll := len(requested) == 0 || contains(requested, "*")
+ 	includeOperational := contains(requested, "+")
+@@ -165,7 +186,8 @@ func contains(list []string, s string) bool {
+ 
+ func isOperational(attr string) bool {
+ 	switch strings.ToLower(attr) {
+-	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights:
++	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights,
++		ldaptools.AttrCreeLe, ldaptools.AttrModifieLe:
+ 		return true
+ 	default:
+ 		return false
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go
+index a46f059..0ff099a 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/base_scope.go
+@@ -207,9 +207,11 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
+ 	}
+ 
+ 	entry := candidate.GroupEntry{
+-		Name:    group.GroupName,
+-		BaseDN:  group.DomainName,
+-		Members: memberDNs,
++		Name:        group.GroupName,
++		BaseDN:      group.DomainName,
++		Members:     memberDNs,
++		Created_at:  group.Created_at,
++		Modified_at: group.Modified_at,
+ 	}
+ 	if strings.ToLower(entry.DN()) != expectedDN {
+ 		return candidate.GroupEntry{}, false
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/baseobject.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/baseobject.go
+index 25644af..fefbbe3 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/baseobject.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/baseobject.go
+@@ -17,10 +17,13 @@ func ouFromBaseObject(baseObject string) (string, bool) {
+ 	return "", false
+ }
+ 
+-func isUserContainerSearch(baseObject string) bool {
+-	ou, ok := ouFromBaseObject(baseObject)
+-	return ok && strings.EqualFold(ou, "users")
+-}
++// isUserContainerSearch a été retirée avec le point 127.
++//
++// Elle servait à décider, sur le NOM du conteneur, qu'une recherche `one` devait
++// en réalité rendre toute l'arborescence. Un nom de conteneur n'est pas une bonne
++// raison de changer la portée d'une recherche : le réglage
++// `ldap.onelevel_subtree` l'a remplacée, et il vaut pour toutes les recherches
++// `one`, pas seulement celles dont le conteneur s'appelle « users ».
+ 
+ // FilterByBaseObject restreint les candidats au baseObject LDAP demandé (scope RFC 4511).
+ func FilterByBaseObject(entries []ldapinterface.LDAPEntry, baseObject string, scope int) []ldapinterface.LDAPEntry {
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/onelevel_test.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/onelevel_test.go
+new file mode 100644
+index 0000000..8ad6c7e
+--- /dev/null
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/onelevel_test.go
+@@ -0,0 +1,57 @@
++package scope
++
++import (
++	"testing"
++
++	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
++)
++
++// LE POINT 127 : une recherche `one` rend un niveau.
++//
++// Elle était silencieusement promue en `sub` quand le conteneur s'appelait
++// « users ». Écrit pour JumpServer ; subi par tous les autres, dont un
++// administrateur qui croyait restreindre un périmètre en configurant
++// `scope=one`. Ce qu'il lisait dans sa configuration ne décrivait plus ce qui lui
++// était servi.
++
++// Le réglage est livré à FAUX : `one` rend enfin ce qu'il dit.
++//
++// C'est le choix inverse de `MFABypass` et `RequireTLSForBind`, livrés de façon à
++// ne rien casser. Assumé, et documenté : un client qui dépendait de la promotion
++// voit moins d'entrées, sans erreur.
++func TestLeReglageDElargissementEstLivreAFaux(t *testing.T) {
++	if ldapstorage.OneLevelSubtree {
++		t.Error("ldap.onelevel_subtree est livré à vrai : une recherche « one » " +
++			"rendrait encore toute l'arborescence")
++	}
++}
++
++// SEULE LA PORTÉE DEMANDÉE ET LE RÉGLAGE ENTRENT DANS LA DÉCISION.
++//
++// Ni le nom du conteneur — c'était le défaut : `ou=users` élargissait,
++// `ou=people` non, et rien ne le disait — ni la forme du DN.
++func TestSeulLeReglageElargit(t *testing.T) {
++	original := ldapstorage.OneLevelSubtree
++	defer func() { ldapstorage.OneLevelSubtree = original }()
++
++	ldapstorage.OneLevelSubtree = false
++	for _, scope := range []int{0, 1, 2} {
++		if obtenu := porteeDeChargement(scope); obtenu != scope {
++			t.Errorf("réglage désactivé, scope=%d chargé comme %d", scope, obtenu)
++		}
++	}
++
++	ldapstorage.OneLevelSubtree = true
++	if obtenu := porteeDeChargement(1); obtenu != 2 {
++		t.Errorf("réglage activé, scope=1 chargé comme %d, attendu 2", obtenu)
++	}
++	// Et il n'élargit QUE `one` : une recherche `base` reste une recherche
++	// `base`, sans quoi le réglage ferait d'un DN exact une arborescence.
++	if obtenu := porteeDeChargement(0); obtenu != 0 {
++		t.Errorf("réglage activé, scope=0 chargé comme %d — une recherche « base » "+
++			"ne doit jamais être élargie", obtenu)
++	}
++	if obtenu := porteeDeChargement(2); obtenu != 2 {
++		t.Errorf("réglage activé, scope=2 chargé comme %d", obtenu)
++	}
++}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go
+index a098980..3da7d0a 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope/resolver.go
+@@ -35,11 +35,23 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
+ 
+ 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d baseObject=%s", baseDN, scope, baseObject))
+ 
+-	// JumpServer and similar clients search ou=users,dc=... with one-level scope but
+-	// expect users from all subdomains — use subtree group loading for user containers.
+-	loadScope := scope
+-	if isUserContainerSearch(baseObject) && scope == 1 {
+-		loadScope = 2
++	// UNE RECHERCHE `one` REND UN NIVEAU — sauf réglage contraire.
++	//
++	// La promotion en `sub` était silencieuse et déclenchée par le NOM du
++	// conteneur : une recherche `one` sur `ou=users` rendait l'arborescence
++	// entière, sous-domaines compris. Écrit pour JumpServer, qui cherche ainsi et
++	// attend les sous-domaines ; subi par tous les autres, dont un administrateur
++	// qui croyait restreindre un périmètre en configurant `scope=one`.
++	//
++	// Le réglage remplace l'exception : il est explicite, documenté, journalisé au
++	// démarrage, et il vaut pour TOUTE recherche `one`, pas seulement celles dont
++	// le conteneur s'appelle `users`. Un nom de conteneur n'a jamais été une bonne
++	// raison de changer la portée d'une recherche.
++	loadScope := porteeDeChargement(scope)
++	if loadScope != scope {
++		logs.Write_Log("DEBUG", fmt.Sprintf(
++			"ldap: recherche « one » sur %s élargie à l'arborescence (ldap.onelevel_subtree)",
++			baseObject))
+ 	}
+ 
+ 	switch scope {
+@@ -75,6 +87,19 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
+ 	}
+ }
+ 
++// porteeDeChargement rend la portée à employer pour charger les candidats.
++//
++// La RÈGLE du point 127, isolée pour être éprouvée sans base : seule une
++// recherche `one` peut être élargie, et seulement si le réglage le demande. Ni
++// le nom du conteneur, ni la forme du DN, ni quoi que ce soit d'autre n'entre
++// dans cette décision — c'était précisément le défaut.
++func porteeDeChargement(scope int) int {
++	if scope == 1 && ldapstorage.OneLevelSubtree {
++		return 2
++	}
++	return scope
++}
++
+ // loadGroupsAndUsers construit les entrées LDAP d'un ensemble de domaines.
+ //
+ // # Ce qui a changé, et pourquoi
+@@ -199,9 +224,11 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
+ 					memberDNs[i] = fmt.Sprintf("uid=%s,ou=users,%s", u, domainDN)
+ 				}
+ 				entries = append(entries, candidate.GroupEntry{
+-					Name:    g.GroupName,
+-					BaseDN:  g.DomainName,
+-					Members: memberDNs,
++					Name:        g.GroupName,
++					BaseDN:      g.DomainName,
++					Members:     memberDNs,
++					Created_at:  g.Created_at,
++					Modified_at: g.Modified_at,
+ 				})
+ 				seenGroups[groupKey] = struct{}{}
+ 			}
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_Limits.go b/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_Limits.go
+index d4462dd..39eab07 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_Limits.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_Limits.go
+@@ -51,4 +51,39 @@
+ 	// transmettre le code ; préférer, quand c'est possible, des comptes de
+ 	// service hors des groupes soumis au second facteur.
+ 	MFABypass = false
++
++	// OneLevelSubtree élargit TOUTE recherche `one` à l'arborescence,
++	// sous-domaines compris (`ldap.onelevel_subtree`).
++	//
++	// « Toute », et non plus « celles dont le conteneur s'appelle users » : le nom
++	// du conteneur ne décide plus de rien. Un réglage dont l'effet dépendrait du
++	// texte du baseObject reproduirait, en plus explicite, le défaut qu'il corrige.
++	//
++	// # Ce que le serveur faisait, sans le dire
++	//
++	// Une recherche de portée `one` sur un conteneur d'utilisateurs était
++	// silencieusement promue en `sub`. C'était écrit pour JumpServer, qui cherche
++	// en `one` et attend malgré tout les comptes des sous-domaines.
++	//
++	// L'effet dépassait ce client : un administrateur qui configurait une
++	// application en `scope=one` pour restreindre son périmètre obtenait
++	// l'arborescence entière. Ce qu'il lisait dans sa configuration ne décrivait
++	// plus ce qui lui était servi — et la RFC 4511 §4.5.1 dit exactement le
++	// contraire de ce que le serveur faisait.
++	//
++	// # Faux par défaut, contrairement aux deux réglages ci-dessus
++	//
++	// MFABypass et RequireTLSForBind sont livrés de façon à ne rien casser à la
++	// mise à jour, parce que le défaut « correct » couperait des clients. Ici le
++	// choix inverse a été fait : `one` rend enfin ce qu'il dit.
++	//
++	// Un client qui dépendait de la promotion voit donc moins d'entrées, SANS
++	// erreur — le mode de panne le plus désagréable à diagnostiquer. C'est pour
++	// cela que chaque recherche élargie par ce réglage est journalisée, et que la
++	// documentation nomme JumpServer.
++	//
++	// Deux façons de le servir : mettre ce réglage à true, ou — mieux —
++	// reconfigurer le client en `scope=sub`, qui est la manière juste de demander
++	// une arborescence.
++	OneLevelSubtree = false
+ )
+diff --git a/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_SEARCH_Struct.go b/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_SEARCH_Struct.go
+index 2b7c956..eda7a50 100755
+--- a/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_SEARCH_Struct.go
++++ b/src/vaultaire_serveur/core/ldap/LDAP_Storage/LDAP_SEARCH_Struct.go
+@@ -7,7 +7,12 @@ type User struct {
+ 	Firstname   string
+ 	Lastname    string
+ 	Email       string
++	// Created_at et Modified_at portent les dates telles que la BASE les rend.
++	// La mise au format LDAP est faite au moment de servir l'attribut, par
++	// ldaptools.VersGeneralizedTime — pas ici, pour que ces champs restent ce
++	// qu'ils sont : des valeurs de colonnes.
+ 	Created_at  string
++	Modified_at string
+ }
+ 
+ type LDAPUserResponse struct {
+@@ -25,6 +30,9 @@ type Group struct {
+ 	GroupName  string
+ 	DomainName string
+ 	Users      []string // liste des usernames ou DN selon ton usage
++	// Dates telles que la base les rend — voir User.
++	Created_at  string
++	Modified_at string
+ }
+ 
+ // LDAPFilterType représente les types RFC 4511
+diff --git a/src/vaultaire_serveur/core/storage/ServeurConf.go b/src/vaultaire_serveur/core/storage/ServeurConf.go
+index 337869b..2098df3 100755
+--- a/src/vaultaire_serveur/core/storage/ServeurConf.go
++++ b/src/vaultaire_serveur/core/storage/ServeurConf.go
+@@ -39,6 +39,9 @@ type Config struct {
+ 		// Laisse les comptes soumis au second facteur se lier avec leur seul
+ 		// mot de passe. Faux par défaut : voir ldapstorage.MFABypass.
+ 		Ldap_MFA_Bypass *bool `yaml:"mfa_bypass"`
++		// Élargit TOUTE recherche `one` à l'arborescence, quel que soit le
++		// conteneur. Faux par défaut : voir ldapstorage.OneLevelSubtree.
++		Ldap_OneLevel_Subtree *bool `yaml:"onelevel_subtree"`
+ 	} `yaml:"ldap"`
+ 	Dns struct {
+ 		Dns_Enable *bool `yaml:"dns_enable"`
+-- 
+2.43.0
+

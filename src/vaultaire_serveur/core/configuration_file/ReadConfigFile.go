@@ -115,6 +115,11 @@ func LoadConfig(filePath string) error {
 	if ldapstorage.MFABypass {
 		logs.Write_Log("WARNING", "ldap.mfa_bypass activé : les comptes soumis au second facteur se lient par LDAP sans code")
 	}
+	// Élargissement des recherches `one` : refusé sauf réglage contraire explicite.
+	ldapstorage.OneLevelSubtree = config.Ldap.Ldap_OneLevel_Subtree != nil && *config.Ldap.Ldap_OneLevel_Subtree
+	if ldapstorage.OneLevelSubtree {
+		logs.Write_Log("WARNING", "ldap.onelevel_subtree activé : TOUTE recherche « one » rend l'arborescence, quel que soit le conteneur")
+	}
 	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
 	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
 	if config.Website.Website_Enable != nil {

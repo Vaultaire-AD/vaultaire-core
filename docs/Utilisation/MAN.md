@@ -155,9 +155,16 @@ Toujours séparer chaque niveau avec `dc=` :
 | Users DN                    | `dc=it,dc=company,dc=com` |
 | Username LDAP attribute     | `uid` |
 | RDN / UUID LDAP attribute   | `uid` |
-| User object classes         | `inetOrgPerson`, `organizationalPerson`, `posixaccount`, `person`, `user` |
-| Search scope                | One Level |
+| User object classes         | `inetOrgPerson`, `organizationalPerson`, `person`, `user` |
+| Search scope                | `Subtree` — `One Level` ne remonte plus les sous-domaines (point 127) |
 | Group member attribute      | `member` |
+
+> ⚠️ **`posixaccount` a été retiré de cette liste** (point 123). Le serveur ne
+> l'annonce plus, parce qu'il ne servait aucun attribut POSIX. Keycloak compose
+> ces classes en conjonction : **une instance encore configurée avec
+> `posixaccount` ne trouvera plus aucun utilisateur**, et une synchronisation
+> peut alors supprimer les comptes. Retirez-le de la configuration Keycloak
+> **avant** de mettre le core à jour.
 
 **Groupes (Group Mapping)** :
 

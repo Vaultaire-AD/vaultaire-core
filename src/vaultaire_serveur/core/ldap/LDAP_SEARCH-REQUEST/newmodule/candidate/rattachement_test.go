@@ -127,3 +127,98 @@ func TestUnDomaineVideNeDevientPasUnRattachement(t *testing.T) {
 		}
 	}
 }
+
+// POINT 123 : une entrée ne déclare plus ce qu'elle ne sert pas.
+//
+// `posixAccount` et `posixGroup` étaient annoncés alors qu'aucun attribut POSIX
+// n'était servi — ni uidNumber, ni gidNumber, ni homeDirectory, ni loginShell,
+// ni memberUid. Un client RFC 2307 trouvait l'entrée puis échouait à construire
+// le compte : l'erreur apparaissait loin de sa cause.
+//
+// Ce test vérifie les deux moitiés de la règle : la classe est partie, ET aucun
+// attribut POSIX n'est apparu entre-temps. Si l'un des deux change, il faut que
+// l'autre change aussi — c'est le fond du point.
+func TestAucuneEntreeNAnnoncePosixSansLeServir(t *testing.T) {
+	attributsPosix := []string{
+		"uidnumber", "gidnumber", "homedirectory", "loginshell", "gecos", "memberuid",
+	}
+
+	u := UserEntry{BaseDN: "enov.local", Rattachements: []string{"enov.local"}}
+	g := GroupEntry{Name: "admins", BaseDN: "enov.local"}
+
+	for _, cas := range []struct {
+		nom    string
+		entrée ldapinterface.LDAPEntry
+		classe string
+	}{
+		{"compte", u, "posixaccount"},
+		{"groupe", g, "posixgroup"},
+	} {
+		sert := false
+		for _, a := range attributsPosix {
+			if len(cas.entrée.GetAttribute(a)) > 0 {
+				sert = true
+				break
+			}
+		}
+
+		annonce := false
+		for _, c := range cas.entrée.ObjectClasses() {
+			if strings.EqualFold(c, cas.classe) {
+				annonce = true
+				break
+			}
+		}
+
+		if annonce && !sert {
+			t.Errorf("%s : annonce %q sans servir un seul attribut POSIX — "+
+				"un client RFC 2307 trouvera l'entrée et ne pourra rien en faire",
+				cas.nom, cas.classe)
+		}
+		if sert && !annonce {
+			t.Errorf("%s : sert des attributs POSIX sans annoncer %q — "+
+				"aucun client RFC 2307 ne le trouvera", cas.nom, cas.classe)
+		}
+	}
+}
+
+// Les classes sur lesquelles les clients du parc filtrent RESTENT, elles.
+//
+// C'est la moitié rassurante du point 123 : retirer les classes POSIX ne devait
+// toucher que sssd, nslcd et les NAS en mode Unix. Keycloak cherche `person`,
+// `inetOrgPerson`, `user` et `groupOfNames` ; Nextcloud cherche `group`.
+func TestLesClassesDontLesClientsDependentRestent(t *testing.T) {
+	u := UserEntry{BaseDN: "enov.local", Rattachements: []string{"enov.local"}}
+	for _, attendue := range []string{"inetOrgPerson", "organizationalPerson", "person", "user"} {
+		if !contient(u.ObjectClasses(), attendue) {
+			t.Errorf("un compte n'annonce plus %q : Keycloak et Nextcloud ne le "+
+				"trouveront plus", attendue)
+		}
+	}
+
+	g := GroupEntry{Name: "admins", BaseDN: "enov.local"}
+	for _, attendue := range []string{"top", "groupOfNames", "group"} {
+		if !contient(g.ObjectClasses(), attendue) {
+			t.Errorf("un groupe n'annonce plus %q", attendue)
+		}
+	}
+}
+
+// Et le sous-schéma ne déclare plus posixAccount — il le faisait sous un OID qui
+// n'est pas le sien (RFC 2307 : 1.3.6.1.1.1.2.0).
+func TestLeSousSchemaNeDeclarePlusPosix(t *testing.T) {
+	for _, def := range NewSchemaEntry().ObjectClassDefs {
+		if strings.Contains(strings.ToLower(def), "posix") {
+			t.Errorf("le sous-schéma déclare encore une classe POSIX : %s", def)
+		}
+	}
+}
+
+func contient(liste []string, valeur string) bool {
+	for _, v := range liste {
+		if strings.EqualFold(v, valeur) {
+			return true
+		}
+	}
+	return false
+}

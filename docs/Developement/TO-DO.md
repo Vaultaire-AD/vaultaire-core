@@ -32,9 +32,13 @@ compte autant que ce qui a été retenu.
 **Audit LDAP du 28/09.** Relecture de `core/ldap` — sécurité, fonctionnalités et
 compatibilité avec les clients LDAP du marché. Les constats sont détaillés dans
 [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md), le travail est découpé
-aux points **119 à 131**. **Traités dans la 2.2** : 120 et 121, les deux constats
-de sécurité. **Restent ouverts** : 119, 122 à 131, plus le **132**, relevé en
-traitant le 120. Les entrées ci-dessous disent
+aux points **119 à 131**. **Traités dans la 2.2** : 119 à 127. **Restent
+ouverts** : 128 à 131, plus le **132**, relevé en traitant le 120.
+
+**Le point 122 a été tranché à l'inverse de ce qu'il demandait** : il proposait de
+rendre visible un compte sans groupe ; la décision a été qu'un tel compte n'a
+aucun droit sur le parc, donc rien à faire dans l'annuaire — ni s'y lier, ni y
+être trouvé. Le raisonnement est dans `DO/2.2/2.2.md`, point 122. Les entrées ci-dessous disent
 quoi faire ; le fichier d'audit dit ce que le code fait aujourd'hui, avec fichier
 et ligne — le lire avant d'ouvrir un point. Il porte aussi la section « ce qui est
 sain » : plusieurs de ces corrections touchent des fichiers voisins du chemin de
@@ -56,18 +60,11 @@ bind, qui vient d'être repris.
 | 105 | DNS          | Nom de table construit par concaténation                    | À faire — sérieux                       |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
-| 119 | LDAP         | `>=`, `<=`, `~=` rendent zéro entrée en silence             | À faire — **à faire en premier**        |
-| 122 | LDAP         | Un compte sans groupe est invisible en recherche            | À faire                                 |
-| 123 | LDAP         | POSIX annoncé sans être servi — trancher                    | À faire — à trancher d'abord            |
-| 124 | LDAP         | `noSuchObject` (32) sur un DN inexistant                    | À faire                                 |
-| 125 | LDAP         | Sous-schéma inanalysable par un client strict               | À faire                                 |
-| 126 | LDAP         | `createTimestamp` / `modifyTimestamp` par entrée            | À faire — synchro Keycloak              |
-| 127 | LDAP         | `scope=1` promu en `scope=2` sur `ou=users`                 | À faire — après 122                     |
 | 128 | LDAP         | Bind non authentifié : le mauvais cas est refusé            | À faire — petit                         |
-| 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire                                 |
+| 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire — débloque le sous-schéma        |
 | 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
 | 131 | LDAP         | Requête par groupe, et `isInScope` mort                     | À faire — petit                         |
-| 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — suite du 120                  |
+| 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — **la seule fuite restante**   |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
@@ -359,184 +356,14 @@ Un délégué `write:dns` peut vraisemblablement faire supprimer une table arbit
 > Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
 > scénario.
 >
-> **Les deux constats de sécurité — 120 et 121 — sont traités dans la 2.2.** Ce
-> qui reste est fonctionnel ou de conformité.
+> **Neuf points sont traités dans la 2.2** : 119 à 127. Ce qui reste : le
+> **132**, seule fuite restante et suite directe du 120 ; le **129**, identifiant
+> d'entrée stable, dont le 125 a montré qu'il empêche de déclarer `entryUUID`
+> sous son vrai OID ; le **130**, pagination ; et le **128**, petit.
 >
-> **Ordre.** 119 d'abord — c'est une panne silencieuse, et tant qu'elle dure,
-> tout diagnostic sur les autres points part sur une réponse vide dont on ne sait
-> pas si elle est vraie. 123 demande une décision avant du code. 127 dépend
-> de 122.
-
-### 119. [LDAP] Trois types de filtres sur dix rendent zéro entrée, en silence
-
-**À faire en premier.** C'est le pire mode de panne du paquet : le client reçoit
-`success` avec zéro entrée, le serveur n'écrit rien, et rien n'a l'air cassé
-d'aucun des deux côtés.
-
-**Constat.** `filter/logical.go` termine son `switch` par `default: return false`,
-et sa ligne d'avertissement est commentée. Le parseur décode pourtant
-`FilterGreaterOrEqual` (5), `FilterLessOrEqual` (6) et `FilterApprox` (8) : les
-trois y tombent. `(uidNumber>=1000)` et `(whenCreated>=20260101000000Z)` ne
-rendent donc jamais rien.
-
-`FilterExtensible` est traité dans le même fichier comme une **égalité simple** :
-la règle de correspondance et le marqueur `dn:` sont ignorés. La chaîne AD
-d'appartenance transitive `(memberOf:1.2.840.113556.1.4.1941:=…)` rend un
-résultat **faux**, ce qui est pire que de ne rien rendre.
-
-**À faire.**
-
-1. Journaliser tout type de filtre non géré, en WARNING, avec le type et le DN.
-   À faire même si rien d'autre n'est fait : c'est ce qui manquait pour que le
-   défaut se voie.
-2. `>=` et `<=` : comparaison d'ordre. Numérique quand les deux côtés le sont,
-   sinon lexicographique insensible à la casse — c'est ce que dit
-   `caseIgnoreOrderingMatch`, déjà déclaré dans le sous-schéma.
-3. `~=` : à défaut d'une vraie correspondance approchée, le traiter comme une
-   égalité insensible à la casse **et le dire dans le journal**. Un client qui
-   emploie `~=` accepte l'à-peu-près ; ce qu'il n'accepte pas, c'est zéro.
-4. `FilterExtensible` : refuser une règle de correspondance inconnue plutôt que
-   d'y répondre à côté.
-5. Un test par type, sur des entrées construites à la main — le paquet n'a besoin
-   d'aucune base pour cela.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.1 et 2.2.
-
-### 122. [LDAP] Un compte sans groupe est invisible en recherche
-
-**Constat.** `loadGroupsAndUsers` (`scope/resolver.go`) ne découvre les
-utilisateurs **que** par les membres des groupes : `àLire` est rempli depuis
-`g.Users`. Un compte sans groupe n'apparaît dans aucune recherche `one` ni `sub`.
-
-Il peut malgré tout se **lier** — le bind ne passe pas par là — et être lu en
-`scope=base` sur son DN exact, ce qui donne un symptôme déroutant : « il se
-connecte mais on ne le trouve pas ».
-
-Pour un client qui synchronise, c'est plus grave : retirer un compte de son
-dernier groupe le fait **disparaître** de l'annuaire, ce que Keycloak et Nextcloud
-lisent comme une suppression de compte.
-
-**À faire.** Charger les utilisateurs **du domaine**, indépendamment des groupes,
-et ne se servir des groupes que pour le `memberOf`. La lecture en lot existe déjà
-(`GetUsersByUsernames`) ; il manque la liste des comptes d'un domaine, que
-`db_domains` sait produire pour d'autres chemins.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.3.
-
-### 123. [LDAP] POSIX est annoncé sans être servi — à trancher avant d'écrire
-
-**Une décision d'abord, du code ensuite.**
-
-**Constat.** Les entrées déclarent `posixAccount` (`candidate/user.go:36`) et
-`posixGroup` (`candidate/group.go:19`), et ne servent **aucun** de `uidNumber`,
-`gidNumber`, `homeDirectory`, `loginShell`, `gecos`, `memberUid`. Un client
-RFC 2307 trouve l'entrée, puis ne peut pas construire le compte — et sa requête
-de plage rend zéro tant que le point 119 n'est pas fait.
-
-**Les deux issues, et il faut en choisir une.**
-
-1. **Servir POSIX.** Suppose une source **stable** pour `uidNumber` / `gidNumber` :
-   un compteur en base, avec une plage réservée. Jamais un hachage du nom — deux
-   comptes qui collisionnent partageraient l'UID, donc les fichiers.
-2. **Retirer les classes `posix*`.** Cohérent avec le produit : le poste Linux est
-   servi par le client Vaultaire et les modules PAM, pas par sssd. C'est
-   probablement le bon choix, mais il ferme la porte à un parc mixte.
-
-Annoncer sans servir est le seul choix à exclure : c'est ce qui fait chercher du
-côté du client un défaut qui est ici.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.4.
-
-### 124. [LDAP] `noSuchObject` (32) sur un baseObject inexistant
-
-**Constat.** `resolveBaseScope` rend `nil` quand le DN n'existe pas, et
-`handler.go:74` envoie un `SearchResultDone` de **succès** avec zéro entrée. Un
-client ne distingue plus « ce DN n'existe pas » de « ce DN existe et est vide ».
-
-C'est la distinction sur laquelle s'appuient les outils qui vérifient l'existence
-avant d'écrire ou de synchroniser.
-
-**À faire.** Renvoyer 32 quand le `baseObject` ne désigne aucune entrée, en
-`scope=base` comme aux autres scopes. Renseigner `matchedDN` avec le plus long
-préfixe qui existe, comme le prévoit la RFC 4511 §4.1.9 : c'est ce qui permet à un
-client de dire *où* le chemin se rompt.
-
-Attention au RootDSE et à `cn=schema`, qui ne sont pas des entrées de l'annuaire
-et ne doivent pas tomber dans ce cas.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.5.
-
-### 125. [LDAP] Le sous-schéma n'est pas analysable par un client strict
-
-**Constat** (`candidate/SchemaEntry.go`) :
-
-1. `2.5.6.0` est porté **deux fois**, par `top` et par `subschema` — dont l'OID
-   est `2.5.20.1` ;
-2. `( vaultaireServiceRights-oid NAME … )` n'est pas un `numericoid`. Un
-   analyseur strict — Apache Directory Studio, python-ldap avec chargement de
-   schéma, les outils OpenLDAP — rejette **toute** la liste `attributeTypes`,
-   pas seulement cette ligne. Le constat le plus coûteux du lot, pour un
-   caractère ;
-3. `posixAccount` est déclaré `2.5.6.30`, qui n'est pas son OID (RFC 2307 :
-   `1.3.6.1.1.1.2.0`) ;
-4. classes annoncées par les entrées mais absentes du schéma : `inetOrgPerson`,
-   `posixGroup`, `organizationalUnit`, `user`, `group` ;
-5. attributs servis mais non déclarés : `displayName`, `givenName`, `entryUUID`,
-   `nsuniqueid`, `objectGUID`, `guid`, `ipaUniqueID` ;
-6. `createTimestamp` / `modifyTimestamp` figés au `20260314210522Z`.
-
-**À faire.** Corriger les OID, déclarer ce qui est réellement servi, retirer ce
-qui ne l'est plus après le point 123, et poser un OID de branche privée pour
-`vaultaireServiceRights` — à défaut d'un numéro d'entreprise enregistré, une
-branche sous `1.3.6.1.4.1.99999` documentée comme provisoire vaut mieux qu'une
-chaîne qui casse l'analyse.
-
-Un test qui relit le sous-schéma produit et vérifie que chaque `objectClass`
-annoncée par une entrée y est déclarée : sans lui, l'écart se recreusera au
-premier attribut ajouté.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.8.
-
-### 126. [LDAP] `createTimestamp` et `modifyTimestamp` par entrée
-
-**Constat.** Ils ne sont servis que sur `cn=schema`, et figés. Aucune entrée
-utilisateur ou groupe n'en porte.
-
-C'est sur eux que s'appuie la synchronisation **incrémentale** de Keycloak : sans
-eux, seule la synchronisation complète fonctionne, ce qui relit tout l'annuaire à
-chaque passage et bute sur `sizeLimitExceeded` au-delà de 10 000 entrées.
-
-**À faire.** Les servir depuis les colonnes de création et de modification des
-comptes et des groupes, au format `GeneralizedTime` (`YYYYMMDDHHMMSSZ`, UTC). Ce
-sont des attributs **opérationnels** : ils ne sortent que demandés nommément ou
-par `+`, comme le fait déjà `vaultaireServiceRights` — la règle est écrite dans
-`candidate/user.go`.
-
-Vérifier d'abord que les colonnes existent et sont tenues à jour : une date de
-modification qui ne bouge pas est pire que pas de date du tout, puisqu'elle fait
-croire à une synchronisation qui n'a rien vu.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
-
-### 127. [LDAP] `scope=1` est silencieusement promu en `scope=2` sur `ou=users`
-
-**Après le 122** : c'est le même fichier, et la promotion sert aujourd'hui à
-compenser en partie ce que le 122 corrige proprement.
-
-**Constat.** `scope/resolver.go:42` — `if isUserContainerSearch(baseObject) &&
-scope == 1 { loadScope = 2 }`. Écrit pour JumpServer, qui cherche en one-level et
-attend les sous-domaines.
-
-Conséquence plus large : un administrateur qui configure une application en
-`scope=one` pour restreindre le périmètre obtient l'arbre entier. Ce qui est écrit
-dans la configuration cliente ne décrit plus ce qui est servi. Écart à la
-RFC 4511 §4.5.1, avec un effet de périmètre.
-
-**À faire.** Honorer `scope=1`. Si JumpServer doit rester servi, le faire par un
-réglage nommé et documenté plutôt que par une exception silencieuse sur le nom du
-conteneur — et vérifier d'abord si le besoin subsiste une fois le 122 fait.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.3.
+> **Ordre.** 132 d'abord, puis 129 — le 125 a laissé quatre attributs sous une
+> branche privée provisoire faute d'identifiants stables, et le 129 en libère
+> deux.
 
 ### 128. [LDAP] Le bind non authentifié refusé n'est pas celui de la RFC
 
@@ -567,6 +394,12 @@ nom d'utilisateur, ou ce nom préfixé (`candidate/user.go`). Ce ne sont donc pa
 des identifiants : renommer un compte le fait apparaître comme un compte **neuf**
 chez tout client qui s'appuie dessus — Keycloak crée un doublon au lieu de
 renommer.
+
+**Ce que le point 125 a montré.** `entryUUID` ne peut pas être déclaré sous son
+OID standard tant que sa valeur n'en est pas un : la RFC 4530 attache à cet OID
+la syntaxe UUID, et un client strict attend 128 bits en hexadécimal. Il est donc
+déclaré sous la branche privée provisoire de Vaultaire, avec `objectGUID`,
+`nsUniqueId` et `ipaUniqueID`. Traiter ce point-ci en libère au moins un.
 
 **À faire.** Un UUID posé à la création du compte, stocké, jamais réattribué,
 servi en `entryUUID`. Les variantes propriétaires (`objectGUID`, `nsuniqueid`)

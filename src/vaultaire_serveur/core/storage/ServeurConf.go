@@ -39,6 +39,9 @@ type Config struct {
 		// Laisse les comptes soumis au second facteur se lier avec leur seul
 		// mot de passe. Faux par défaut : voir ldapstorage.MFABypass.
 		Ldap_MFA_Bypass *bool `yaml:"mfa_bypass"`
+		// Élargit TOUTE recherche `one` à l'arborescence, quel que soit le
+		// conteneur. Faux par défaut : voir ldapstorage.OneLevelSubtree.
+		Ldap_OneLevel_Subtree *bool `yaml:"onelevel_subtree"`
 	} `yaml:"ldap"`
 	Dns struct {
 		Dns_Enable *bool `yaml:"dns_enable"`

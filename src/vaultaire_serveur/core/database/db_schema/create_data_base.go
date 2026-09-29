@@ -461,6 +461,23 @@ func Create_DataBase(db *sql.DB) {
 		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
 	}
 
+	// Les horodatages de l'annuaire (TO-DO 126).
+	//
+	// FATALE, contrairement au dédoublonnage qui suit. La tentation était de la
+	// rendre facultative — « une base sans ces colonnes fonctionne comme avant » —
+	// mais c'est faux : les requêtes de lecture LDAP NOMMENT désormais ces
+	// colonnes. Une migration facultative ne rendrait pas le défaut inoffensif,
+	// elle le déplacerait à la première recherche, en exploitation, sous la forme
+	// d'un « Unknown column » qui casse l'annuaire entier.
+	//
+	// Un ALTER TABLE ADD COLUMN sur `users` et `groups` est par ailleurs
+	// l'opération la moins risquée de ce fichier.
+	if err := EnsureHorodatagesAnnuaire(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: horodatages de l'annuaire non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des horodatages de l'annuaire : %v", err)
+	}
+
 	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
 	//
 	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue

@@ -97,14 +97,34 @@ dc=infra,dc=it,dc=company,dc=com
 | **Username LDAP attribute** | `uid`                                                                     |
 | **RDN LDAP attribute**      | `uid`                                                                     |
 | **UUID LDAP attribute**     | `uid`                                                                     |
-| **User object classes**     | `inetOrgPerson`, `organizationalPerson`, `posixaccount`, `person`, `user` |
-| **Search scope**            | `One Level` *(remontera aussi les sous-domaines)*                         |
+| **User object classes**     | `inetOrgPerson`, `organizationalPerson`, `person`, `user`                 |
+| **Search scope**            | `Subtree` *(voir l'avertissement ci-dessous)*                             |
 | **Group member attribute**  | `member`                                                                  |
 | **Group naming attribute**  | `group`                                                                   |
 |                             |                                                                           |
 
 
-## **WARNING** penser a activer la RFC 2307 quand c'est possible sinon vos user ne pourront pas se lier automatiquement a des groupes
+> ⚠️ **`One Level` ne remonte plus les sous-domaines** (point 127). Le serveur
+> promouvait silencieusement ces recherches en recherche d'arborescence quand le
+> conteneur s'appelait `users` ; ce n'est plus le cas, `One Level` rend un niveau.
+> Si vos comptes vivent dans des sous-domaines, mettez **`Subtree`** — ou
+> `onelevel_subtree: true` côté serveur, qui rétablit l'ancien comportement pour
+> toutes les recherches `One Level`.
+
+> ⚠️ **`posixaccount` a été retiré de cette liste** (point 123). Le serveur ne
+> l'annonce plus : il ne servait aucun attribut POSIX. Keycloak compose ces
+> classes en **conjonction** — une instance encore configurée avec `posixaccount`
+> ne trouvera plus aucun utilisateur, et une synchronisation peut alors supprimer
+> les comptes. Retirez-le **avant** de mettre le core à jour.
+
+> ⚠️ **N'activez PAS le mode RFC 2307.** L'avertissement qui figurait ici disait
+> le contraire ; il était faux et il l'a toujours été. Le serveur ne sert aucun
+> attribut POSIX — ni `uidNumber`, ni `gidNumber`, ni `memberUid` — et ne déclare
+> plus les classes correspondantes. Un client en mode RFC 2307 cherche les
+> appartenances par `memberUid` et n'en trouve aucune : les groupes ne se lient
+> pas. C'est **`member`** qui porte les appartenances, avec des DN, et c'est la
+> ligne « Group member attribute » ci-dessus qui le dit.
+
 ---
 
 ## 👥 LDAP Group Mapping

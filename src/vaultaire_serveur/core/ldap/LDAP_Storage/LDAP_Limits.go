@@ -51,4 +51,39 @@ var (
 	// transmettre le code ; préférer, quand c'est possible, des comptes de
 	// service hors des groupes soumis au second facteur.
 	MFABypass = false
+
+	// OneLevelSubtree élargit TOUTE recherche `one` à l'arborescence,
+	// sous-domaines compris (`ldap.onelevel_subtree`).
+	//
+	// « Toute », et non plus « celles dont le conteneur s'appelle users » : le nom
+	// du conteneur ne décide plus de rien. Un réglage dont l'effet dépendrait du
+	// texte du baseObject reproduirait, en plus explicite, le défaut qu'il corrige.
+	//
+	// # Ce que le serveur faisait, sans le dire
+	//
+	// Une recherche de portée `one` sur un conteneur d'utilisateurs était
+	// silencieusement promue en `sub`. C'était écrit pour JumpServer, qui cherche
+	// en `one` et attend malgré tout les comptes des sous-domaines.
+	//
+	// L'effet dépassait ce client : un administrateur qui configurait une
+	// application en `scope=one` pour restreindre son périmètre obtenait
+	// l'arborescence entière. Ce qu'il lisait dans sa configuration ne décrivait
+	// plus ce qui lui était servi — et la RFC 4511 §4.5.1 dit exactement le
+	// contraire de ce que le serveur faisait.
+	//
+	// # Faux par défaut, contrairement aux deux réglages ci-dessus
+	//
+	// MFABypass et RequireTLSForBind sont livrés de façon à ne rien casser à la
+	// mise à jour, parce que le défaut « correct » couperait des clients. Ici le
+	// choix inverse a été fait : `one` rend enfin ce qu'il dit.
+	//
+	// Un client qui dépendait de la promotion voit donc moins d'entrées, SANS
+	// erreur — le mode de panne le plus désagréable à diagnostiquer. C'est pour
+	// cela que chaque recherche élargie par ce réglage est journalisée, et que la
+	// documentation nomme JumpServer.
+	//
+	// Deux façons de le servir : mettre ce réglage à true, ou — mieux —
+	// reconfigurer le client en `scope=sub`, qui est la manière juste de demander
+	// une arborescence.
+	OneLevelSubtree = false
 )

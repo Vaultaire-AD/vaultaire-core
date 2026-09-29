@@ -12,28 +12,50 @@
 > Méthode : relecture du code, pas d'exécution. Chaque constat porte le fichier
 > et la ligne. Ce qui n'a pas été mesuré est marqué comme tel.
 
-### État au 28/09/2026
+### État au 29/09/2026
 
 | Point | État |
 |---|---|
-| **120** — RBAC évalué sur le seul baseDN | **traité** (2.2) — `security.PorteeDeRecherche` lue une fois, consultée par entrée ; `Domaines()` entre dans l'interface `LDAPEntry`, et une sentinelle AST garde le câblage |
-| **121** — mot de passe du bind au journal DEBUG | **traité** (2.2) — le vidage du paquet est masqué pour les `BindRequest` et pour toute trame qu'on ne sait pas découper ; l'ExtendedRequest ne journalise plus son contenu (RFC 3062) |
-| 119, 122 à 131 | ouverts |
-| **132** — `memberOf` porte les groupes des sous-domaines | **ouvert**, relevé en traitant le 120 |
+| **119** — `>=`, `<=`, `~=` rendaient zéro entrée en silence | **traité** (2.2) — évalués ; `filter.Verifier` refuse d'avance ce qui n'est pas géré avec `inappropriateMatching` (18) ; l'extensible match est refusé au lieu d'être répondu à côté |
+| **120** — RBAC évalué sur le seul baseDN | **traité** (2.2) — `PorteeDeRecherche` lue une fois, consultée par entrée ; `Domaines()` dans l'interface, sentinelle AST sur le câblage |
+| **121** — mot de passe du bind au journal DEBUG | **traité** (2.2) — masqué pour les `BindRequest` et les trames indécodables ; l'ExtendedRequest ne journalise plus son contenu (RFC 3062) |
+| **122** — compte sans groupe | **traité** (2.2), **à l'inverse du constat** — un tel compte n'a aucun droit sur le parc, donc rien à faire dans l'annuaire |
+| **123** — POSIX annoncé sans être servi | **traité** (2.2) — classes retirées, trois documents Keycloak corrigés |
+| **124** — pas de `noSuchObject` | **traité** (2.2) — code 32 avec `matchedDN`, sans oracle entre « absent » et « caché par les droits » |
+| **125** — sous-schéma inanalysable | **traité** (2.2) — OID corrigés, branche privée provisoire, sentinelle de fidélité et sentinelle d'empreinte |
+| **126** — horodatages par entrée | **traité** (2.2) — migration, bumps explicites sur les appartenances et les suppressions, écritures d'authentification exemptées |
+| **127** — `scope=1` promu en `scope=2` | **traité** (2.2) — réglage `ldap.onelevel_subtree`, livré à **false** ; quatre documents avertis |
+| 128, 130, 131 | ouverts |
+| **129** — identifiant d'entrée stable | **ouvert** — le 125 a montré qu'il bloque la déclaration d'`entryUUID` sous son vrai OID |
+| **132** — `memberOf` porte les groupes des sous-domaines | **ouvert** — la seule fuite restante |
 
-Les deux constats de **sécurité** de cet audit sont donc fermés ; ce qui reste
-est fonctionnel ou de conformité, à une exception près — le **132**, découvert en
-corrigeant le 120 et laissé ouvert parce que sa correction demande une décision
-de conception. Le détail de ce qui a été fait, et de ce qui a été écarté, est dans
-`DO/2.2/2.2.md`.
+Tous les constats de **sécurité** de cet audit sont fermés, à l'exception du
+**132**, découvert en corrigeant le 120. Ce qui reste est de la conformité. Le
+détail de ce qui a été fait, et de ce qui a été écarté, est dans `DO/2.2/2.2.md`.
 
-> Deux relectures ont été passées sur le correctif du 120. La première a trouvé
-> qu'il ne filtrait que les **groupes** : les comptes portaient le domaine
-> *demandé*, si bien que le filtre s'autorisait lui-même. La seconde a trouvé que
-> le secours prévu pour un compte sans domaine était aussi atteint par une panne
-> de lecture, ce qui reproduisait le même défaut. Les deux sont corrigés, et la
-> première est désormais gardée par une sentinelle — c'est le genre de défaut
-> qu'aucun test de la règle ne voit, puisque la règle, elle, était juste.
+> **Sur la méthode.** Chaque lot a été passé à des relectures adverses, et
+> **chacune a trouvé un défaut réel** — dont six qui auraient coupé des clients en
+> production.
+>
+> Lot 120/121 : le filtre ne couvrait que les groupes, les comptes portaient le
+> domaine *demandé* et le filtre s'autorisait lui-même ; puis le secours prévu
+> pour un compte sans domaine était aussi atteint par une panne de lecture.
+>
+> Lot 119/122/123/124 : le critère d'existence reposait sur une égalité alors que
+> le serveur sert par suffixe ; seuls `ou=users` et `ou=groups` étaient acceptés
+> comme conteneurs ; le retrait de `posixAccount` cassait la procédure Keycloak
+> que le dépôt documente ; et le refus « compte sans groupe » désarmait la
+> limitation de débit pour tous les noms inventés.
+>
+> Lot 125/126/127 : le retrait de la promotion `one` cassait la procédure Keycloak
+> d'exploitation, qui emploie exactement le baseObject promu ; `memberOf` portait
+> l'OID de `userAccountControl` ; les suppressions laissaient des appartenances
+> fantômes ; quatre règles de correspondance portaient la syntaxe de la valeur au
+> lieu de celle de l'assertion.
+>
+> Ce que ces défauts ont en commun : aucun n'était visible dans les tests, parce
+> que la règle était juste à chaque fois — c'est ce qu'on lui donnait à manger,
+> ou ce que la documentation en disait, qui ne l'était pas.
 
 ---
 

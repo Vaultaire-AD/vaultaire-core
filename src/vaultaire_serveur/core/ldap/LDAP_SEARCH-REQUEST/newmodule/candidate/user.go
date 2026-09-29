@@ -58,8 +58,32 @@ func (u UserEntry) Domaines() []string {
 	return u.Rattachements
 }
 
+// ObjectClasses — ce que l'entrée déclare ÊTRE.
+//
+// # posixAccount a été retiré — point 123
+//
+// Il était déclaré, et pas un seul attribut POSIX n'était servi : ni uidNumber,
+// ni gidNumber, ni homeDirectory, ni loginShell, ni gecos. Un client RFC 2307 —
+// sssd, nslcd, un NAS en mode « LDAP Unix » — trouvait donc l'entrée sur
+// `(objectClass=posixAccount)`, puis échouait à construire le compte. L'erreur
+// apparaissait loin de sa cause, et la cause était ici.
+//
+// Ce qui change pour les clients : SEULE la réponse à un filtre sur cette classe.
+// Aucun attribut ne disparaît, puisque aucun n'était servi. Un client qui filtre
+// sur `person`, `inetOrgPerson`, `user`, `objectClass=*`, ou simplement sur `uid`
+// / `cn` / `mail` ne voit aucune différence — c'est-à-dire Keycloak, Nextcloud,
+// JumpServer et les équipements réseau.
+//
+// Servir POSIX pour de bon reste possible ; ce serait un lot à part, avec une
+// source STABLE pour uidNumber et gidNumber — un compteur en base, jamais un
+// hachage du nom, deux comptes qui collisionnent partageraient l'UID donc les
+// fichiers. Et il faudrait accepter qu'un poste puisse alors s'authentifier par
+// sssd, hors du chemin Vaultaire : donc hors second facteur et hors révocation.
+//
+// Ce qu'il ne faut pas refaire, c'est annoncer sans servir : cela fait chercher
+// chez le client un défaut qui est ici.
 func (u UserEntry) ObjectClasses() []string {
-	return []string{"inetOrgPerson", "posixAccount", "organizationalPerson", "person", "user"}
+	return []string{"inetOrgPerson", "organizationalPerson", "person", "user"}
 }
 
 func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
@@ -86,6 +110,27 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 	// plutôt que vide.
 	if len(u.ServiceRights) > 0 {
 		all[AttrServiceRights] = u.ServiceRights
+	}
+
+	// LES HORODATAGES — point 126.
+	//
+	// C'est sur `modifyTimestamp` que s'appuie la synchronisation INCRÉMENTALE de
+	// Keycloak. Sans lui, seule la synchronisation complète fonctionne : elle
+	// relit tout l'annuaire à chaque passage, et bute sur `sizeLimitExceeded`
+	// au-delà de dix mille entrées.
+	//
+	// Opérationnels, comme les identifiants ci-dessus : ils ne sortent que
+	// demandés nommément ou par « + ». C'est ce que dit la RFC 4511 §4.5.1, et
+	// c'est ce que fait Keycloak, qui les nomme.
+	//
+	// Absents si la base n'a pas su les rendre — une date fausse est pire qu'une
+	// date absente ici : un client incrémental qui lit une date aberrante saute
+	// des entrées ou les relit toutes, sans qu'aucune erreur ne le dise.
+	if t := ldaptools.VersGeneralizedTime(u.User.Created_at); t != "" {
+		all[ldaptools.AttrCreeLe] = []string{t}
+	}
+	if t := ldaptools.VersGeneralizedTime(u.User.Modified_at); t != "" {
+		all[ldaptools.AttrModifieLe] = []string{t}
 	}
 
 	result := make(map[string][]string)
@@ -141,7 +186,8 @@ func contains(list []string, s string) bool {
 
 func isOperational(attr string) bool {
 	switch strings.ToLower(attr) {
-	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights:
+	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights,
+		ldaptools.AttrCreeLe, ldaptools.AttrModifieLe:
 		return true
 	default:
 		return false

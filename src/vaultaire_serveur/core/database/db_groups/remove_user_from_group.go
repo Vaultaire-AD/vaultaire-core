@@ -5,6 +5,7 @@ import (
 	"fmt"
 	database "vaultaire/core/database"
 	guardprotected "vaultaire/core/database/guard_protected"
+	"vaultaire/core/database/schematools"
 	"vaultaire/core/logs"
 )
 
@@ -60,6 +61,11 @@ func Command_Remove_UserFromGroup(db *sql.DB, username, groupName string) error 
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+fmt.Sprintf("Erreur lors de la suppression de l'utilisateur du groupe : %v", err))
 		return fmt.Errorf("erreur lors de la suppression de l'utilisateur du groupe : %v", err)
 	}
+
+	// Les deux entrées LDAP ont changé sans qu'aucune de leurs lignes soit
+	// écrite — voir add_user_to_group.go pour le raisonnement (point 126).
+	schematools.ToucherLigne(db, schematools.TableUtilisateurs, userID)
+	schematools.ToucherLigne(db, schematools.TableGroupes, groupID)
 
 	// Log de succès
 	logs.Write_LogCode("DEBUG", logs.CodeNone, fmt.Sprintf("database: Utilisateur %s retiré du groupe %s", username, groupName))

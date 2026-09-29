@@ -35,11 +35,23 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 
 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d baseObject=%s", baseDN, scope, baseObject))
 
-	// JumpServer and similar clients search ou=users,dc=... with one-level scope but
-	// expect users from all subdomains — use subtree group loading for user containers.
-	loadScope := scope
-	if isUserContainerSearch(baseObject) && scope == 1 {
-		loadScope = 2
+	// UNE RECHERCHE `one` REND UN NIVEAU — sauf réglage contraire.
+	//
+	// La promotion en `sub` était silencieuse et déclenchée par le NOM du
+	// conteneur : une recherche `one` sur `ou=users` rendait l'arborescence
+	// entière, sous-domaines compris. Écrit pour JumpServer, qui cherche ainsi et
+	// attend les sous-domaines ; subi par tous les autres, dont un administrateur
+	// qui croyait restreindre un périmètre en configurant `scope=one`.
+	//
+	// Le réglage remplace l'exception : il est explicite, documenté, journalisé au
+	// démarrage, et il vaut pour TOUTE recherche `one`, pas seulement celles dont
+	// le conteneur s'appelle `users`. Un nom de conteneur n'a jamais été une bonne
+	// raison de changer la portée d'une recherche.
+	loadScope := porteeDeChargement(scope)
+	if loadScope != scope {
+		logs.Write_Log("DEBUG", fmt.Sprintf(
+			"ldap: recherche « one » sur %s élargie à l'arborescence (ldap.onelevel_subtree)",
+			baseObject))
 	}
 
 	switch scope {
@@ -73,6 +85,19 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 	default:
 		return nil, fmt.Errorf("invalid scope: %d", scope)
 	}
+}
+
+// porteeDeChargement rend la portée à employer pour charger les candidats.
+//
+// La RÈGLE du point 127, isolée pour être éprouvée sans base : seule une
+// recherche `one` peut être élargie, et seulement si le réglage le demande. Ni
+// le nom du conteneur, ni la forme du DN, ni quoi que ce soit d'autre n'entre
+// dans cette décision — c'était précisément le défaut.
+func porteeDeChargement(scope int) int {
+	if scope == 1 && ldapstorage.OneLevelSubtree {
+		return 2
+	}
+	return scope
 }
 
 // loadGroupsAndUsers construit les entrées LDAP d'un ensemble de domaines.
@@ -199,9 +224,11 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					memberDNs[i] = fmt.Sprintf("uid=%s,ou=users,%s", u, domainDN)
 				}
 				entries = append(entries, candidate.GroupEntry{
-					Name:    g.GroupName,
-					BaseDN:  g.DomainName,
-					Members: memberDNs,
+					Name:        g.GroupName,
+					BaseDN:      g.DomainName,
+					Members:     memberDNs,
+					Created_at:  g.Created_at,
+					Modified_at: g.Modified_at,
 				})
 				seenGroups[groupKey] = struct{}{}
 			}

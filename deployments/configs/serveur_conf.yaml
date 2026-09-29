@@ -54,6 +54,20 @@ ldap:
   #
   # Après modification : vlt certificate regenerate ldaps, puis redémarrage.
   # Voir docs/exploitation/ldaps_keycloak.md
+  # Élargir une recherche « one » à toute l'arborescence.
+  #
+  # Par défaut (false), une recherche de portée « one » rend UN niveau, comme le
+  # veut la RFC 4511. C'est un changement de la 2.2 : le serveur promouvait
+  # silencieusement en « sub » toute recherche « one » dont le conteneur
+  # s'appelait « users ».
+  #
+  # true rétablit l'ancien comportement, pour TOUTE recherche « one » et non plus
+  # selon le nom du conteneur. Utile si un client attend les sous-domaines sans
+  # savoir demander « sub » — JumpServer est dans ce cas. Préférez, quand c'est
+  # possible, reconfigurer le client en « scope=sub » : c'est la façon juste de
+  # demander une arborescence.
+  onelevel_subtree: false
+
   ldaps_tls_dns_names: []
   #  - vaultaire-ad
   #  - vaultaire-ad.interne.lan
