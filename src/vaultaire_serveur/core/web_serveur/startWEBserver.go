@@ -92,6 +92,10 @@ func StartWebServer() {
 	http.HandleFunc("/admin/users", AdminUsersHandler)
 	http.HandleFunc("/admin/groups", AdminGroupsHandler)
 	http.HandleFunc("/admin/clients", AdminClientsHandler)
+	// Le téléchargement de l'identité d'une machine. Séparé de la page parce
+	// qu'il rend un fichier et non du HTML — et parce qu'un jeton à usage unique
+	// dans l'adresse n'a rien à faire dans un POST de formulaire.
+	http.HandleFunc("/admin/clients/archive", AdminClientArchiveHandler)
 	http.HandleFunc("/admin/permissions", AdminPermissionsHandler)
 	http.HandleFunc("/admin/gpo", AdminGPOHandler)
 	http.HandleFunc("/admin/gpo/restrictions", AdminGPORestrictionsHandler)

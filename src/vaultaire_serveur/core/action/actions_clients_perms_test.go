@@ -18,6 +18,9 @@ func TestActionsClientToutesEnregistrees(t *testing.T) {
 
 	attendues := map[string]string{
 		"client.create": "write:create:client",
+		// Même clé que la création : l'archive contient exactement ce que la
+		// création produit — identité et clé privée.
+		"client.export": "write:create:client",
 		"client.update": "write:update:client",
 		"client.delete": "write:delete:client",
 	}
@@ -311,8 +314,9 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// Il valait 37 — le total des seules écritures, à l'époque où le registre ne
 	// portait qu'elles — puis 80 quand les lots de lecture sont arrivés.
 	// Il vaut 89 depuis les lots 2.1/2.2 (conformité GPO, réglages de rétention,
-	// cluster, Nexus), 91 depuis log.list (journal commun, TO-DO 91), et 96
-	// depuis le second facteur sur le chemin Ducky (TO-DO 95, deux actions).
+	// cluster, Nexus), 91 depuis log.list (journal commun, TO-DO 91), 96
+	// depuis le second facteur sur le chemin Ducky (TO-DO 95, deux actions), et
+	// 97 depuis l'archive d'installation d'une machine (TO-DO 82).
 	//
 	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
 	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
@@ -323,7 +327,7 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// veut — ajouter une action sans s'en apercevoir est précisément ce qu'il
 	// empêche. Le laisser rouge des mois, en revanche, le rend inutile : on
 	// cesse de le lire.
-	const actionsAttendues = 96
+	const actionsAttendues = 97
 	if len(defs) != actionsAttendues {
 		t.Fatalf("%d actions au catalogue, attendu %d — "+
 			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée. "+

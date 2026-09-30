@@ -77,7 +77,6 @@ attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 133 | RÉVOCATION   | `kill -u` ne coupe aucune session ouverte                   | À faire — **l'aide affirme le contraire** |
 | 134 | RÉVOCATION   | Le rattrapage `06_04` n'est demandé qu'au démarrage         | À faire                                 |
-| 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 71  | CLIENT       | `-join` ne sait installer que Rocky                        | À faire                                 |
@@ -245,35 +244,6 @@ des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 **À faire.** Un `debian.sh` (apt, `/lib/x86_64-linux-gnu/security`) commun à
 Debian et Ubuntu, avec la même section 4 (liste des cores déposée par le core,
 repli sur `SSH_CONNECTION`).
-
-### 82. [ENRÔLEMENT] Archive d'enrôlement : identité de la machine et empreinte du core
-
-**Constat** (recette du 24/09). Récupérer l'identité d'une machine créée demande un `docker exec` sur le core ; récupérer l'empreinte du core demande d'aller la lire sur un poste déjà installé. Deux étapes manuelles au milieu d'une installation qui se veut simple — et l'empreinte finit recopiée dans la documentation d'installation, c'est-à-dire publiée.
-
-**Décision du 24/09.** Une **archive d'enrôlement**, produite par la CLI et téléchargeable depuis le portail. Le modèle de confiance ne change pas : un agent ne s'enrôle toujours pas seul, l'identité est créée sur le core et transportée. On rend seulement le transport praticable.
-
-**À faire.**
-
-1. `vlt create -c <nom> --export <chemin>`, et une commande d'export pour une machine déjà créée : une archive portant `client_software.yaml`, `private_key.pem` **et l'empreinte du core**.
-2. Page Machines du portail : téléchargement de cette archive, sous le droit qui crée la machine.
-3. `install.ps1` accepte l'archive et ne pose plus de question sur l'empreinte.
-4. Retirer de [`Installation/Client_Windows.md`](../Installation/Client_Windows.md) l'étape « relevez l'empreinte » : elle n'a plus lieu d'être — c'est la demande explicite du 24/09.
-
-**Attention.** L'archive porte une **clé privée de machine**. Validité courte du lien de téléchargement, trace dans le journal, aucune mise en cache côté portail, et un nom de fichier qui ne laisse aucun doute sur ce qu'il contient.
-
-**Ce que la recette du 30/09 ajoute.** Le besoin est confirmé sur un poste Windows, et l'analyse du code précise ce qu'il faut produire — ce n'était pas dans la décision du 24/09.
-
-- **Le portail appelle EXACTEMENT la même action que la CLI** (`create_client` → `client.create`, `web_action.go`). Il crée donc bien l'identité, et laisse ses trois fichiers dans `/opt/vaultaire/clientsoftware/<ID>/` sur le disque du core, où seul un `docker exec` les atteint. La page ne rend que « Machine créée, identifiant … ».
-- **Trois fichiers nécessaires ne sont produits QUE par `-join`** : `core_key_fingerprint`, `gpo_signing_key.pem` et `client_conf.json` (`Manage_AUTO_ADD.go`). Une création sans `-join` — celle du portail — n'en produit aucun. L'archive doit donc les fabriquer à la demande ; les trois fonctions existent déjà et prennent un simple répertoire en argument.
-- **`client_conf.json` est BLOQUANT pour l'agent Windows** et il est aujourd'hui saisi à la main par `install.ps1`. C'est le fichier dont l'absence de l'archive ruinerait tout le bénéfice.
-- **Le choix « Windows » à la création ne doit PAS toucher la colonne `os`.** Elle est écrite en dur à « Linux » à l'insertion, puis renseignée par l'inventaire que l'agent déclare — un commentaire du code interdit explicitement de la rendre éditable, pour qu'elle ne mente pas sur l'état réel. Le choix ne sert donc qu'à composer l'archive : quels fichiers, quel format, quel script.
-- **Réserver l'archive aux clients « basic ».** Leur clé privée naît sur le core et voyage déjà — l'archive ne change pas le modèle de confiance, seulement le canal. Celle d'un client SERVICE naît sur son propre hôte et ne doit jamais voyager : le code l'interdit en trois endroits, et la proposer pour un service inverserait un invariant du produit.
-- **Format** : préférer le `zip`, que Windows décompresse nativement. Rien n'est à réutiliser côté core (aucune fabrication d'archive en Go nulle part) ; le motif d'en-têtes est dans `src/vaultaire_nexus/internal/web/downloads.go`, et le précédent de gouvernance est `web_admin_enroll.go`, qui montre déjà un secret une seule fois, dans la réponse au POST qui l'a créé.
-- **Deux scories relevées en chemin** : `command_setup/setUpNewClient.go` est du code mort qui lirait un certificat `client_software_<id>` que rien n'écrit ; et le core produit `public_key.pem` là où `install.ps1` cherche `public.pem` — sans conséquence, ce fichier n'étant jamais lu, mais l'archive doit trancher.
-
----
-
-## GPO
 
 ### 135. [GPO] [CLIENT] Les fichiers du scope utilisateur n'entrent jamais dans l'inventaire
 

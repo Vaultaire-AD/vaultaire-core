@@ -19,7 +19,9 @@
 param(
     # Répertoire d'état. Le même que celui compilé dans l'agent.
     [string]$Racine = "C:\ProgramData\Vaultaire",
-    # Dossier d'identité fourni par le core (client_software.yaml + private_key.pem).
+    # Identité fournie par le core : soit l'ARCHIVE .zip telechargee depuis le
+    # portail ou produite par « vlt create -c … --export », soit le dossier
+    # decompresse. Les deux sont acceptes.
     [string]$Identite = "",
     # Cores joignables : « 10.0.0.10:6666,10.0.0.11:6666 ».
     [string]$Cores = "",
@@ -120,12 +122,66 @@ Info "accès restreint à SYSTEM et aux administrateurs"
 # le font, avec une clé d'enrôlement.
 Titre "Identité de la machine"
 if (-not $Identite) {
-    Info "Sur le core : vlt create -c <nom-du-poste>"
-    Info "Puis copiez le dossier clientsoftware\<id>\ sur ce poste."
-    $Identite = Demander "Chemin du dossier d'identité" ""
+    Info "Depuis le portail : page Clients, bouton « Identité » — une archive .zip."
+    Info "Ou sur le core : vlt create -c <oui|non> --os windows --export <fichier.zip>"
+    $Identite = Demander "Chemin de l'archive .zip ou du dossier d'identité" ""
 }
 if (-not $Identite -or -not (Test-Path $Identite)) {
-    Erreur "Dossier d'identité introuvable : sans lui, l'agent ne peut pas s'authentifier."
+    Erreur "Identité introuvable : sans elle, l'agent ne peut pas s'authentifier."
+}
+
+# Une ARCHIVE est acceptée directement.
+#
+# C'est tout l'intérêt du travail fait côté core : ce qu'on télécharge est ce
+# qu'on passe ici. Exiger une décompression manuelle d'abord remettrait une
+# étape entre les deux, et c'est cette étape-là qu'on retire.
+#
+# Décompressée dans un dossier TEMPORAIRE, pas à côté de l'archive : l'archive
+# arrive souvent dans le dossier des téléchargements, et y laisser une clé
+# privée décompressée est exactement ce que le lisez-moi demande d'éviter.
+$IdentiteTemporaire = ""
+if ((Test-Path $Identite -PathType Leaf) -and ($Identite -like "*.zip")) {
+    $IdentiteTemporaire = Join-Path ([System.IO.Path]::GetTempPath()) ("vaultaire-identite-" + [guid]::NewGuid().ToString("N"))
+    New-Item -ItemType Directory -Path $IdentiteTemporaire -Force | Out-Null
+    # Les noms d'entrées sont contrôlés AVANT extraction.
+    #
+    # Expand-Archive de PowerShell 5.1 — celui livré avec Windows — ne valide ni
+    # les « .. » ni les chemins absolus. Ce script tourne en administrateur :
+    # faire confiance au contenu d'un fichier parce qu'il vient « normalement »
+    # du core est exactement le raisonnement qu'on ne tient nulle part ailleurs
+    # dans ce dépôt.
+    try {
+        Add-Type -AssemblyName System.IO.Compression.FileSystem -ErrorAction SilentlyContinue
+        $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path $Identite))
+        try {
+            foreach ($entree in $zip.Entries) {
+                $n = $entree.FullName
+                if ($n -match '(^|[\\/])\.\.([\\/]|$)' -or $n -match '^([A-Za-z]:|[\\/])') {
+                    Erreur "archive refusee : elle contient un chemin suspect (« $n »)."
+                }
+            }
+        } finally {
+            $zip.Dispose()
+        }
+    } catch {
+        Erreur "archive illisible : $($_.Exception.Message)"
+    }
+
+    try {
+        Expand-Archive -Path $Identite -DestinationPath $IdentiteTemporaire -Force
+    } catch {
+        Erreur "archive illisible : $($_.Exception.Message)"
+    }
+    # L'archive porte un dossier racine nommé d'après la machine, pour ne pas
+    # écraser celle d'à côté quand on en décompresse deux. On y descend si c'est
+    # le seul élément, sans quoi rien ne serait trouvé un cran plus haut.
+    $racines = @(Get-ChildItem -Path $IdentiteTemporaire)
+    if ($racines.Count -eq 1 -and $racines[0].PSIsContainer) {
+        $Identite = $racines[0].FullName
+    } else {
+        $Identite = $IdentiteTemporaire
+    }
+    Info "archive décompressée"
 }
 foreach ($fichier in @("client_software.yaml", "private_key.pem")) {
     $chemin = Join-Path $Identite $fichier
@@ -137,13 +193,51 @@ foreach ($facultatif in @("public.pem", "core_key_fingerprint")) {
     $chemin = Join-Path $Identite $facultatif
     if (Test-Path $chemin) { Copy-Item $chemin (Join-Path $Cles $facultatif) -Force }
 }
+
+# La liste des cores voyage AVEC l'identité.
+#
+# Elle est produite par le core au moment de l'export, à partir du cluster : les
+# adresses exposées, dans l'ordre que l'agent recevra ensuite en 04_04. La
+# retaper à la main était la dernière question de cette installation, et la plus
+# facile à mal répondre — une adresse de core n'est pas une chose qu'on connaît
+# de tête.
+$ConfDepuisArchive = $false
+$confArchive = Join-Path $Identite "client_conf.json"
+if (Test-Path $confArchive) {
+    Copy-Item $confArchive $Config -Force
+    $ConfDepuisArchive = $true
+}
 Info "identité en place"
+
+# La copie décompressée s'efface ICI, pas en fin de script.
+#
+# Tout est copié à ce point : elle n'a plus aucun usage. La placer à la fin
+# paraissait plus propre et ne l'était pas — « Erreur » fait exit 1, et
+# $ErrorActionPreference vaut Stop : le moindre échec plus bas (service, secedit,
+# regsvr32, Ctrl-C) sautait le nettoyage et laissait private_key.pem EN CLAIR
+# dans %TEMP%, hors de l'ACL posée sur $Racine.
+if ($IdentiteTemporaire -and (Test-Path $IdentiteTemporaire)) {
+    Remove-Item -Path $IdentiteTemporaire -Recurse -Force -ErrorAction SilentlyContinue
+    if (Test-Path $IdentiteTemporaire) {
+        # Dit, et non supposé : annoncer un effacement qu'on n'a pas vérifié sur
+        # un dossier qui contient une clé privée serait pire que se taire.
+        Write-Host "[!] la copie temporaire n'a pas pu etre effacee : $IdentiteTemporaire" -ForegroundColor Yellow
+        Write-Host "    elle contient la cle privee de la machine — effacez-la a la main." -ForegroundColor Yellow
+    } else {
+        Info "copie temporaire de l'identité effacée"
+    }
+}
 
 # L'empreinte de la clé du core : facultative, mais c'est elle qui empêche un
 # faux core de se faire accepter au premier contact. Sans elle, l'agent fait
 # confiance à ce qui répond la première fois.
 $empreinte = Join-Path $Cles "core_key_fingerprint"
-if (-not (Test-Path $empreinte)) {
+if (Test-Path $empreinte) {
+    Info "empreinte du core fournie par l'identité : la première connexion sera vérifiée"
+} else {
+    # La question subsiste pour les identités d'AVANT l'archive, et pour le cas
+    # où le core n'a pas su la produire — il le dit alors dans le LISEZ-MOI de
+    # l'archive. Elle ne devrait plus se poser sur une installation ordinaire.
     Info "Aucune empreinte de core fournie : la première connexion fera confiance"
     Info "au serveur qui répond (sur le core : vlt certificate fingerprint)."
     $valeur = Demander "Empreinte du core (SHA256:... , vide pour passer)" ""
@@ -152,29 +246,35 @@ if (-not (Test-Path $empreinte)) {
 
 # --- 4. La configuration ---------------------------------------------------
 Titre "Cores joignables"
-if (-not $Cores) {
-    Info "Adresses des cores ou proxies, séparées par des virgules."
-    Info "L'agent apprendra les autres tout seul (trame 04_04) et les persistera."
-    $Cores = Demander "Cores (ip:port)" "127.0.0.1:6666"
-}
+if ($ConfDepuisArchive -and -not $Cores) {
+    # Déjà écrite, et par le core lui-même. La réécrire à partir d'une saisie
+    # serait remplacer la liste du cluster par ce dont quelqu'un se souvient.
+    Info "liste des cores fournie par l'identité : $Config"
+} else {
+    if (-not $Cores) {
+        Info "Adresses des cores ou proxies, séparées par des virgules."
+        Info "L'agent apprendra les autres tout seul (trame 04_04) et les persistera."
+        $Cores = Demander "Cores (ip:port)" "127.0.0.1:6666"
+    }
 
-$serveurs = @()
-foreach ($adresse in $Cores.Split(",")) {
-    $adresse = $adresse.Trim()
-    if (-not $adresse) { continue }
-    $morceaux = $adresse.Split(":")
-    $ip = $morceaux[0]
-    $port = if ($morceaux.Count -gt 1) { [int]$morceaux[1] } else { 6666 }
-    if ($port -lt 1 -or $port -gt 65535) { Erreur "port invalide dans « $adresse »" }
-    $serveurs += [pscustomobject]@{ ip = $ip; port = $port }
-}
-if ($serveurs.Count -eq 0) { Erreur "aucun core déclaré : l'agent ne saurait à qui parler." }
+    $serveurs = @()
+    foreach ($adresse in $Cores.Split(",")) {
+        $adresse = $adresse.Trim()
+        if (-not $adresse) { continue }
+        $morceaux = $adresse.Split(":")
+        $ip = $morceaux[0]
+        $port = if ($morceaux.Count -gt 1) { [int]$morceaux[1] } else { 6666 }
+        if ($port -lt 1 -or $port -gt 65535) { Erreur "port invalide dans « $adresse »" }
+        $serveurs += [pscustomobject]@{ ip = $ip; port = $port }
+    }
+    if ($serveurs.Count -eq 0) { Erreur "aucun core déclaré : l'agent ne saurait à qui parler." }
 
-# « servers » n'est jamais réécrite par l'agent : c'est le dernier recours,
-# celui qui reste quand tout ce qui a été appris est faux ou éteint.
-$contenu = [ordered]@{ servers = $serveurs }
-EcrireTexte $Config (($contenu | ConvertTo-Json -Depth 4) + "`n")
-Info "configuration écrite : $Config"
+    # « servers » n'est jamais réécrite par l'agent : c'est le dernier recours,
+    # celui qui reste quand tout ce qui a été appris est faux ou éteint.
+    $contenu = [ordered]@{ servers = $serveurs }
+    EcrireTexte $Config (($contenu | ConvertTo-Json -Depth 4) + "`n")
+    Info "configuration écrite : $Config"
+}
 
 # --- 5. Le service ---------------------------------------------------------
 Titre "Service Windows"

@@ -54,32 +54,58 @@ Un agent **ne s'enrôle pas seul** : seuls les services du cluster (proxy, Nexus
 le font avec une clé d'enrôlement. L'identité d'une machine est créée sur le
 core, et transportée.
 
+**Depuis le portail**, page *Clients* : choisissez « Windows » comme système,
+créez la machine, et téléchargez l'archive proposée. Le lien ne sert **qu'une
+fois** et expire en cinq minutes ; pour une machine déjà créée, le bouton
+« Identité » de la liste en produit un nouveau.
+
+**En ligne de commande**, si vous préférez :
+
 ```bash
-vlt create -c non
-#   → Machine créée, identifiant <ID>
-#   → <clientconfpath>/clientsoftware/<ID>/
-#        client_software.yaml
-#        private_key.pem
+vlt create -c non --os windows --export /tmp/poste01.zip
+# pour une machine déjà créée :
+vlt create -export <ID> /tmp/poste01.zip --os windows
 ```
 
-Copiez ce dossier sur le poste (partage, clé USB, `scp`). Il contient la **clé
-privée de la machine** : traitez-le comme tel, et effacez la copie de transport.
+L'archive contient tout ce dont l'agent a besoin :
 
-Relevez aussi l'empreinte de la clé du core (`vlt certificate fingerprint`) :
-sans elle, le poste fait confiance au premier serveur qui répond.
+| Fichier | À quoi il sert |
+|---|---|
+| `client_software.yaml` | l'identité : identifiant et type |
+| `private_key.pem` | la **clé privée de la machine** |
+| `core_key_fingerprint` | de quoi vérifier la clé du core au lieu de l'accepter sur parole |
+| `client_conf.json` | les cores à joindre, tels que le cluster les expose |
+| `LISEZ-MOI.txt` | ce que contient l'archive, et ce qui manque le cas échéant |
+
+> ⚠️ **Elle contient une clé privée.** Elle vaut l'identité de la machine sur le
+> parc : qui la détient peut se faire passer pour elle. Ne la laissez pas dans un
+> dossier de téléchargement, et effacez-la une fois l'agent installé.
+
+Il n'y a plus d'empreinte à relever ni à retaper : elle voyage dans l'archive.
+Si le core n'a pas su la produire — cluster en cours de démarrage, par exemple —
+le `LISEZ-MOI.txt` de l'archive le dit, et `install.ps1` repose alors la
+question.
 
 ## 2. Installer sur le poste
 
 Invite PowerShell **administrateur**, dans le dossier décompressé :
 
 ```powershell
-.\install.ps1
+.\install.ps1 -Identite C:\Users\...\Downloads\vaultaire-<ID>-windows.zip
 ```
 
-Le script demande, dans l'ordre : le dossier d'identité, les cores joignables,
-l'empreinte du core (facultative), s'il faut installer le service, et s'il faut
-enregistrer la tuile de l'écran de connexion. Il ferme aussi
-`C:\ProgramData\Vaultaire` à tout le monde sauf SYSTEM et les administrateurs.
+`-Identite` accepte **l'archive `.zip` directement** — pas besoin de la
+décompresser d'abord. Elle est extraite dans un dossier temporaire, effacé en fin
+de script : une clé privée décompressée n'a rien à faire dans le dossier des
+téléchargements. Un dossier déjà décompressé est accepté aussi.
+
+Le script demande alors seulement s'il faut installer le service, et s'il faut
+enregistrer la tuile de l'écran de connexion. L'identité, l'empreinte du core et
+la liste des cores viennent de l'archive — les trois questions qu'il posait
+auparavant ont disparu. Il ferme aussi `C:\ProgramData\Vaultaire` à tout le
+monde sauf SYSTEM et les administrateurs.
+
+Sans `-Identite`, il demande le chemin de l'archive.
 
 **Répondez NON à la tuile au premier passage.** On vérifie d'abord que
 l'authentification fonctionne.

@@ -336,7 +336,40 @@ create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
 create -c <oui|non>
 # Option : intégration automatique
 create -c <oui|non> -join <hôte[:port]> <Username>
+# Option : archive d'installation, à emporter sur le poste
+create -c <oui|non> --os <linux|windows> --export <fichier.zip>
+# Pour une machine déjà créée
+create -export <computeur_id> <fichier.zip> --os <linux|windows>
 ```
+
+#### L'archive d'installation
+
+`--export` écrit un zip portant **tout** ce dont l'agent a besoin :
+`client_software.yaml`, `private_key.pem`, `core_key_fingerprint`,
+`client_conf.json`, et `gpo_signing_key.pem` sous Linux seulement — l'agent
+Windows ignore les trames de politique. Un `LISEZ-MOI.txt` dit ce que l'archive
+contient, et nomme ce qui manque si le core n'a pas su le produire.
+
+Le fichier est écrit en **0600**, et il contient la **clé privée de la machine** :
+il vaut son identité sur le parc.
+
+`--os` ne décrit que l'archive — quels fichiers y mettre. Il ne renseigne pas la
+colonne « OS » de l'inventaire, que l'agent déclare lui-même une fois qu'il
+parle : elle doit dire ce qui tourne, pas ce qu'on a demandé.
+
+Les trois fichiers d'accompagnement étaient jusqu'ici produits **uniquement** par
+`-join`. Une machine créée autrement naissait donc sans empreinte du core, sans
+liste de cores et sans clé de signature — sans que rien ne le dise. Ils sont
+maintenant composés à chaque export, à partir de l'état courant du cluster.
+
+Un **client service** ne s'exporte pas : la commande le refuse en nommant son
+type. Sa paire naît sur son propre hôte à l'enrôlement, et sa clé privée ne doit
+exister nulle part ailleurs.
+
+Depuis le **portail**, page *Clients* : le système se choisit à la création, et le
+bouton « Identité » de la liste produit l'archive d'une machine existante. Le lien
+de téléchargement ne sert **qu'une fois** et expire en cinq minutes ; chaque
+téléchargement laisse une ligne `SECURITY` au journal, avec qui a pris quoi.
 
 Le paramètre `<oui|non>` indique si l'agent tourne sur un serveur membre. Ce
 n'est pas un type : c'est le même binaire, qui émet les mêmes trames et ouvre

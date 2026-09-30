@@ -26,6 +26,7 @@ import (
 	"vaultaire/core/permission"
 	"vaultaire/core/revocation"
 	"vaultaire/core/storage"
+	newclient "vaultaire/ducky-network/new_client"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
@@ -547,9 +548,17 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		Username  string
 		DnsEnable bool
 		Section   string
+
+		// Le lien de téléchargement de l'identité, produit par la création ou
+		// par un export, et valable une fois. Vide le reste du temps : il n'y a
+		// pas de page où l'on « retrouve » un lien, et c'est le but.
+		ArchiveLien    string
+		ArchiveMachine string
+		ArchiveSysteme string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 	if r.Method == http.MethodPost {
-		// Les actions client.create et client.delete portent leur clé RBAC.
+		// Les actions client.create, client.export et client.delete portent leur
+		// clé RBAC.
 		//
 		// Le type n'est pas saisi : ce formulaire ne crée qu'un client basic.
 		// Un client service s'enrôle lui-même avec sa propre paire de clés — sa
@@ -560,6 +569,49 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
+
+				// Le jeton est émis ICI, jamais dans l'action : c'est une notion
+				// de session web, et une commande en ligne n'en a que faire.
+				machine, systeme := "", r.FormValue("systeme")
+				switch d := res.Donnees.(type) {
+				case map[string]string:
+					// Création : la machine vient de naître, elle est
+					// exportable par construction.
+					machine = d["computeur_id"]
+				case act.ArchiveClient:
+					// Export : l'action a DÉJÀ composé l'archive, et l'a donc
+					// validée. Les octets sont jetés — le téléchargement les
+					// recomposera. C'est un aller-retour de plus, et c'est ce qui
+					// permet de refuser dans la PAGE, avec un message lisible,
+					// plutôt qu'au clic sur une erreur HTTP.
+					machine, systeme = d.ComputeurID, d.Systeme
+				}
+				// Le système est validé ICI aussi.
+				//
+				// Sur le chemin EXPORT, l'action l'a déjà fait. Sur le chemin
+				// CRÉATION, rien ne l'avait validé : « systeme=win » émettait un
+				// jeton, affichait le lien, et le clic rendait un 403 — en
+				// brûlant le jeton, qui est à usage unique. La machine était
+				// créée, et il fallait relancer un export pour la récupérer.
+				if machine != "" {
+					valide, errS := newclient.SystemeValide(systeme)
+					if errS != nil {
+						data.Error = errS.Error()
+						machine = ""
+					} else {
+						systeme = valide
+					}
+				}
+				if machine != "" {
+					if jeton, errJ := EmettreJetonArchive(username, machine, systeme); errJ == nil {
+						data.ArchiveLien = "/admin/clients/archive?jeton=" + jeton
+						data.ArchiveMachine = machine
+						data.ArchiveSysteme = systeme
+					} else {
+						logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+							"webadmin: jeton d'archive non émis pour "+machine+" : "+errJ.Error())
+					}
+				}
 			}
 		}
 	}

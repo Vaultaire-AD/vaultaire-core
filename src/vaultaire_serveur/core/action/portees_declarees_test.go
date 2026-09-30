@@ -56,9 +56,12 @@ func nomDeFonction(f PorteeFunc) string {
 // porteesAttendues : nom d'action → nom de la fonction de portée.
 var porteesAttendues = map[string]string{
 	// Créations : la cible n'existe pas encore, elle n'a aucun domaine.
-	"user.create":              "PorteeGlobale",
-	"group.create":             "PorteeGlobale",
-	"client.create":            "PorteeGlobale",
+	"user.create":   "PorteeGlobale",
+	"group.create":  "PorteeGlobale",
+	"client.create": "PorteeGlobale",
+	// Globale comme la création : l'archive ne dépend d'aucun domaine, et une
+	// machine fraîchement créée n'en a encore aucun.
+	"client.export":            "PorteeGlobale",
 	"permission.create":        "PorteeGlobale",
 	"client_permission.create": "PorteeGlobale",
 	"gpo.create":               "PorteeGlobale",
@@ -250,6 +253,10 @@ var clesAttendues = map[string]string{
 
 	// Machines.
 	"client.create": "write:create:client",
+	// MÊME clé que la création : l'archive contient exactement ce que la
+	// création produit. Un droit distinct laisserait croire qu'on peut donner
+	// l'un sans l'autre.
+	"client.export": "write:create:client",
 	"client.get":    "read:get:client",
 	"client.list":   "read:get:client",
 	"client.update": "write:update:client",

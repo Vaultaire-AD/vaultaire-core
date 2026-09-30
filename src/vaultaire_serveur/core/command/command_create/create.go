@@ -1,6 +1,9 @@
 package commandcreate
 
 import (
+	"os"
+	"strconv"
+
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
 	autoaddclientgo "vaultaire/ducky-network/new_client/AUTO_ADD_client.go"
@@ -39,6 +42,7 @@ var ActionsUtilisees = []string{
 	"user.create",
 	"group.create",
 	"client.create",
+	"client.export",
 	"permission.create",
 	"client_permission.create",
 }
@@ -77,6 +81,15 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 
 	case "-c":
 		return create_ClientSoftware(command_list, sender_groupsIDs, sender_Username)
+
+	case "-export":
+		// create -export <computeur_id> <fichier> [--os <linux|windows>]
+		//
+		// Sous « create » et non sous une commande à soi : c'est la même chose
+		// que « create -c --export », pour une machine née plus tôt. En faire
+		// une commande séparée aurait éloigné deux gestes qu'on apprend
+		// ensemble.
+		return exporter_ClientSoftware(command_list, sender_groupsIDs, sender_Username)
 
 	case "-p":
 		// create -p <nom> <oui/non> [--desc "texte"]
@@ -141,7 +154,27 @@ func create_ClientSoftware(command_list []string, groupIDs []int, sender string)
 		return "Requête invalide : create -c <yes/not> [-join <hôte[:port]> <user>]"
 	}
 
-	p := commandaction.ParamsDepuisPositionnels(command_list[1:], "is_serveur")
+	options, positionnels, errOpt := extraireOptionsClient(command_list[1:])
+	if errOpt != "" {
+		return errOpt
+	}
+
+	// `-join` et `--export` se CONTREDISENT, et il faut le dire.
+	//
+	// `-join` installe la machine à distance et lui dépose son identité par SSH ;
+	// `--export` produit la même identité dans un fichier à emporter. Demander
+	// les deux, c'est ne pas savoir laquelle des deux voies on emprunte. Une
+	// première version les acceptait toutes les deux et en exécutait une seule,
+	// laquelle dépendant de l'ORDRE des arguments — donc en abandonnant l'autre
+	// sans un mot.
+	joinDemande := len(positionnels) >= 2 && positionnels[1] == "-join"
+	if joinDemande && options["export"] != "" {
+		return "« -join » et « --export » ne vont pas ensemble : -join installe la machine à " +
+			"distance et lui dépose son identité, --export la met dans un fichier à emporter. " +
+			"Choisissez la voie."
+	}
+
+	p := commandaction.ParamsDepuisPositionnels(positionnels, "is_serveur")
 	res, err := action.Executer("client.create",
 		action.Appelant{Username: sender, GroupIDs: groupIDs}, p)
 	if err != nil {
@@ -161,10 +194,114 @@ func create_ClientSoftware(command_list []string, groupIDs []int, sender string)
 		return res.Message + " (identifiant illisible dans le résultat)"
 	}
 
-	if len(command_list) >= 4 && command_list[2] == "-join" {
-		return autoaddclientgo.Manage_Auto_ADD_client(command_list[4], command_list[3], computeurID)
+	if joinDemande {
+		// Sur les POSITIONNELS, et avec la bonne borne.
+		//
+		// La version précédente lisait command_list[4] après avoir vérifié
+		// « len >= 4 » : « create -c non -join hote », qui fait exactement quatre
+		// éléments, faisait PANIQUER le serveur. C'est le défaut que l'en-tête
+		// de ce fichier se félicite d'avoir corrigé sur « create -g », resté ici.
+		if len(positionnels) < 4 {
+			return "Requête invalide : create -c <oui|non> -join <hôte[:port]> <user>\n" +
+				"La machine " + computeurID + " a bien été créée : reprenez avec « -join » seul."
+		}
+		return autoaddclientgo.Manage_Auto_ADD_client(positionnels[3], positionnels[2], computeurID)
+	}
+
+	// L'export est tenté APRÈS la création, et son échec ne la défait pas : la
+	// machine existe, son identité est sur le core. Rendre une erreur sèche
+	// ferait recommencer, donc créerait une seconde identité pour rien.
+	if chemin := options["export"]; chemin != "" {
+		return res.Message + "\n" + ecrireArchive(sender, groupIDs, computeurID, options["systeme"], chemin)
 	}
 	return res.Message
+}
+
+// exporter_ClientSoftware compose l'archive d'une machine déjà créée.
+//
+//	create -export <computeur_id> <fichier> [--os <linux|windows>]
+func exporter_ClientSoftware(command_list []string, groupIDs []int, sender string) string {
+	options, positionnels, errOpt := extraireOptionsClient(command_list[1:])
+	if errOpt != "" {
+		return errOpt
+	}
+	if len(positionnels) < 2 {
+		return "Requête invalide : create -export <computeur_id> <fichier> [--os <linux|windows>]"
+	}
+	return ecrireArchive(sender, groupIDs, positionnels[0], options["systeme"], positionnels[1])
+}
+
+// ecrireArchive demande l'archive au registre et la pose sur le disque.
+func ecrireArchive(sender string, groupIDs []int, computeurID, systeme, chemin string) string {
+	res, err := action.Executer("client.export",
+		action.Appelant{Username: sender, GroupIDs: groupIDs},
+		action.Params{"computeur_id": computeurID, "systeme": systeme})
+	if err != nil {
+		return "archive non composée : " + commandaction.MessageDErreur(err)
+	}
+
+	archive, ok := res.Donnees.(action.ArchiveClient)
+	if !ok {
+		return "archive illisible dans le résultat"
+	}
+
+	// 0600, et le dire — mais pas par le seul WriteFile.
+	//
+	// Le fichier porte une clé privée de machine. Le laisser en 0644 dans un
+	// répertoire partagé reviendrait à publier l'identité du poste à tout compte
+	// du core — précisément ce que l'archive doit éviter, elle qui existe pour
+	// remplacer un « docker exec » dans un répertoire en 0700.
+	//
+	// Le Chmod n'est PAS redondant : le mode d'os.WriteFile ne s'applique qu'à la
+	// CRÉATION. Réexporter vers un chemin déjà là — un second essai, un fichier
+	// préparé à l'avance — laissait le mode existant tandis que le message
+	// affirmait 0600.
+	if err := os.WriteFile(chemin, archive.Contenu, 0600); err != nil {
+		return "archive non écrite dans " + chemin + " : " + err.Error()
+	}
+	if err := os.Chmod(chemin, 0600); err != nil {
+		return "archive écrite dans " + chemin + " mais ses droits n'ont pas pu être restreints : " +
+			err.Error() + "\nElle contient une CLÉ PRIVÉE : corrigez-les à la main (chmod 600)."
+	}
+	return "Archive écrite : " + chemin + " (" + archive.Systeme + ", " +
+		strconv.Itoa(len(archive.Contenu)) + " octets, mode 0600).\n" +
+		"Elle contient la CLÉ PRIVÉE de la machine : effacez-la une fois l'agent installé."
+}
+
+// extraireOptionsClient sépare « --export » et « --os » des positionnels.
+//
+// Le même motif qu'extraireOptions, et pas la même fonction : celle-là ne
+// connaît que « --desc », et lui ajouter des options d'un autre sujet en ferait
+// un fourre-tout où une faute de frappe sur « --desc » deviendrait un chemin
+// d'export silencieux.
+// Une option sans valeur est REFUSÉE, avec un message.
+//
+// Les avaler en silence — ce que fait extraireOptions pour « --desc » — rendait
+// « create -c non --export » identique à « create -c non » : la machine était
+// créée, aucune archive n'était écrite, et rien ne le disait. Sur une option
+// dont tout l'intérêt est le fichier produit, c'est le pire des deux mondes.
+func extraireOptionsClient(args []string) (map[string]string, []string, string) {
+	options := map[string]string{}
+	positionnels := make([]string, 0, len(args))
+
+	for i := 0; i < len(args); i++ {
+		var cle string
+		switch args[i] {
+		case "--export":
+			cle = "export"
+		case "--os":
+			cle = "systeme"
+		default:
+			positionnels = append(positionnels, args[i])
+			continue
+		}
+		if i+1 >= len(args) {
+			return nil, nil, "l'option « " + args[i] + " » attend une valeur"
+		}
+		options[cle] = args[i+1]
+		i++
+	}
+	return options, positionnels, ""
 }
 
 // extraireOptions sépare les options longues des arguments positionnels.
@@ -204,7 +341,8 @@ func aide() string {
 
   create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
   create -g <nom> <domaine>
-  create -c <oui|non> [-join <hôte[:port]> <user>]
+  create -c <oui|non> [-join <hôte[:port]> <user>] [--os <linux|windows>] [--export <fichier>]
+  create -export <computeur_id> <fichier> [--os <linux|windows>]
   create -p <nom> <oui|non> [--desc "texte"]
   create -pc <nom> <oui|non>
   create -gpo <nom> --scope <machine|user> [--desc "texte"]
