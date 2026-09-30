@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **133**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **138**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -44,6 +44,14 @@ et ligne — le lire avant d'ouvrir un point. Il porte aussi la section « ce qu
 sain » : plusieurs de ces corrections touchent des fichiers voisins du chemin de
 bind, qui vient d'être repris.
 
+**Recette du 30/09 (postes Windows et Linux).** Six constats, dont cinq ouvrent
+un point : **133** et **134** (révocation), **135** (dérive du scope
+utilisateur), **136** (le test 29d est contradictoire) et **137** (la DLL Windows
+manque en silence) — ces deux derniers **traités**, voir `DO/2.2/2.2.md`. Le sixième — récupérer l'identité d'une machine créée depuis
+le portail — n'est pas neuf : c'est le **82**, dont la section « À faire » a été
+complétée de ce que la recette a montré. Le Credential Provider reste en
+attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
+
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
 ---
@@ -65,7 +73,10 @@ bind, qui vient d'être repris.
 | 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
 | 131 | LDAP         | Requête par groupe, et `isInScope` mort                     | À faire — petit                         |
 | 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — **la seule fuite restante**   |
+| 135 | GPO          | Le scope utilisateur n'entre jamais dans l'inventaire       | À faire — **la conformité ment**        |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
+| 133 | RÉVOCATION   | `kill -u` ne coupe aucune session ouverte                   | À faire — **l'aide affirme le contraire** |
+| 134 | RÉVOCATION   | Le rattrapage `06_04` n'est demandé qu'au démarrage         | À faire                                 |
 | 82  | ENRÔLEMENT   | Archive d'enrôlement : identité machine et empreinte       | À faire                                 |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
@@ -250,9 +261,40 @@ repli sur `SSH_CONNECTION`).
 
 **Attention.** L'archive porte une **clé privée de machine**. Validité courte du lien de téléchargement, trace dans le journal, aucune mise en cache côté portail, et un nom de fichier qui ne laisse aucun doute sur ce qu'il contient.
 
+**Ce que la recette du 30/09 ajoute.** Le besoin est confirmé sur un poste Windows, et l'analyse du code précise ce qu'il faut produire — ce n'était pas dans la décision du 24/09.
+
+- **Le portail appelle EXACTEMENT la même action que la CLI** (`create_client` → `client.create`, `web_action.go`). Il crée donc bien l'identité, et laisse ses trois fichiers dans `/opt/vaultaire/clientsoftware/<ID>/` sur le disque du core, où seul un `docker exec` les atteint. La page ne rend que « Machine créée, identifiant … ».
+- **Trois fichiers nécessaires ne sont produits QUE par `-join`** : `core_key_fingerprint`, `gpo_signing_key.pem` et `client_conf.json` (`Manage_AUTO_ADD.go`). Une création sans `-join` — celle du portail — n'en produit aucun. L'archive doit donc les fabriquer à la demande ; les trois fonctions existent déjà et prennent un simple répertoire en argument.
+- **`client_conf.json` est BLOQUANT pour l'agent Windows** et il est aujourd'hui saisi à la main par `install.ps1`. C'est le fichier dont l'absence de l'archive ruinerait tout le bénéfice.
+- **Le choix « Windows » à la création ne doit PAS toucher la colonne `os`.** Elle est écrite en dur à « Linux » à l'insertion, puis renseignée par l'inventaire que l'agent déclare — un commentaire du code interdit explicitement de la rendre éditable, pour qu'elle ne mente pas sur l'état réel. Le choix ne sert donc qu'à composer l'archive : quels fichiers, quel format, quel script.
+- **Réserver l'archive aux clients « basic ».** Leur clé privée naît sur le core et voyage déjà — l'archive ne change pas le modèle de confiance, seulement le canal. Celle d'un client SERVICE naît sur son propre hôte et ne doit jamais voyager : le code l'interdit en trois endroits, et la proposer pour un service inverserait un invariant du produit.
+- **Format** : préférer le `zip`, que Windows décompresse nativement. Rien n'est à réutiliser côté core (aucune fabrication d'archive en Go nulle part) ; le motif d'en-têtes est dans `src/vaultaire_nexus/internal/web/downloads.go`, et le précédent de gouvernance est `web_admin_enroll.go`, qui montre déjà un secret une seule fois, dans la réponse au POST qui l'a créé.
+- **Deux scories relevées en chemin** : `command_setup/setUpNewClient.go` est du code mort qui lirait un certificat `client_software_<id>` que rien n'écrit ; et le core produit `public_key.pem` là où `install.ps1` cherche `public.pem` — sans conséquence, ce fichier n'étant jamais lu, mais l'archive doit trancher.
+
 ---
 
 ## GPO
+
+### 135. [GPO] [CLIENT] Les fichiers du scope utilisateur n'entrent jamais dans l'inventaire
+
+**Constat** (recette du 30/09). Une GPO de scope `user` dépose un fichier. L'utilisateur le supprime, ou le modifie. La dérive n'est **jamais** détectée : après plusieurs ouvertures de session, `vlt gpo status` et la page Conformité continuent d'annoncer que tout va bien.
+
+**Ce que le code fait.** Le scan lui-même est juste. `scanFromState` (`drift.go`) traite la modification, l'absence, le mode, et même le lien symbolique posé à la place du fichier ; `drift_absent_test.go` le couvre. Le point 33 a bien ajouté le déclenchement à l'ouverture de session, avec sa borne de cadence et son verrou par compte.
+
+**La rupture est en amont, et elle tient en une ligne.** L'inventaire est alimenté par `recordWrite` / `recordAbsent` (`manifest.go`), et ces deux fonctions ne sont appelées **que** par `writeSystemFile` / `removeSystemFile`, dans `appliers_machine.go`. Le chemin du scope utilisateur — `writeUserFile` (`appliers_user.go`) → `ecrireFichierUtilisateur` (`chemin_sur_linux.go`) — n'appelle **ni l'un ni l'autre**.
+
+Conséquence en chaîne : `outcome.Files` est vide → `state.Files` reste vide pour ce scope → `scanFromState` sort sur `len(scopeState.Files) == 0` → `report.Checked == 0` → `scanUserDrift` **renonce en silence, avant même d'émettre un rapport**. Le core ne reçoit donc rien, et la conformité affiche le dernier état connu : conforme.
+
+**Pourquoi les tests ne l'ont pas vu.** `TestLaDeriveEstDetecteeDansUnHome` construit le `ScopeState` **à la main**, en y injectant les entrées `Files` que le vrai chemin n'écrit jamais. Il vérifie donc la règle, pas ce qui la nourrit. C'est exactement le défaut du point 120 (LDAP) : la règle était juste, ce qui l'alimentait ne l'était pas.
+
+**À faire.**
+
+1. Appeler `recordWrite` depuis le chemin du scope utilisateur, avec le chemin **résolu** (le `%h` développé) — c'est celui que le scan relira.
+2. Prévoir l'équivalent de `recordAbsent` si un module utilisateur retire un fichier.
+3. Un test qui parte du **vrai** applicateur et non d'un état fabriqué : déposer, muter, scanner. Un test-sentinelle interdisant une écriture de fichier qui ne passerait pas par une fonction enregistrant l'inventaire serait mieux encore — c'est la classe d'erreur, pas l'occurrence, qu'il faut fermer.
+4. Distinguer, côté affichage, « aucune dérive constatée » de « aucun scan n'a eu lieu ». Aujourd'hui les deux se lisent « conforme », et c'est ce qui a rendu ce défaut invisible.
+
+---
 
 ### 86. [GPO] Le mode audit ne se distingue pas d'enforce, et une GPO modifiée ne semble pas repartir
 
@@ -265,6 +307,42 @@ Une piste pour le second symptôme : l'empreinte porte sur la **politique effect
 ---
 
 ## Sécurité et authentification
+
+### 133. [RÉVOCATION] [SÉCURITÉ] `kill -u` ne termine aucune session ouverte — et son aide affirme le contraire
+
+**Constat** (recette du 30/09). `kill -u <compte>` ne ferme pas les sessions SSH ouvertes, et n'en laisse aucune trace côté client. Le testeur admettait qu'une session GDM survive ; en réalité **aucune** session système n'est coupée, SSH comme GDM.
+
+**Ce que le code fait.** Le chemin est complet et branché — le gestionnaire `06` existe côté agent, la trame arrive, elle est appliquée et acquittée. Mais le mode par défaut (`soft`) se réduit à `lockAccount` (`src/vaultaire_client/revocation/apply.go`) : `usermod -L` puis `chage -E 1`. Deux écritures dans `/etc/shadow`, **aucune action sur un processus vivant**.
+
+C'est correct pour la PRÉVENTION : la phase `account` de PAM refusera toute connexion neuve, clé SSH comprise. C'est sans effet sur une session en cours : une fois `sshd` fourché et le shell lancé, plus rien ne relit `/etc/shadow`. La session survit jusqu'au `exit` — ou indéfiniment sous `tmux`. Le seul `pkill` du dépôt est dans `deleteAccount`, donc en `--hard` seulement, et sa motivation écrite est de laisser passer `userdel`, pas de couper une session.
+
+**Ce que le core ferme, lui**, ce sont les sessions Ducky, les sessions web, et des LIGNES D'AFFICHAGE en base — le commentaire de `FermerSessionsUtilisateurPartout` le dit sans détour. Le compteur « sessions fermées » affiché par la CLI ne compte donc jamais une session SSH, même quand il est non nul.
+
+**Deux obstacles de fond, à trancher avant d'écrire.**
+
+1. **Vaultaire ne sait pas identifier une session.** La table `user_sessions` a pour clé le couple *(compte, machine)*, avec une contrainte d'unicité qui **fusionne trois `ssh` simultanés en une seule ligne**. Ni PID, ni TTY, ni identifiant `logind`. Le module PAM n'en relève aucun non plus. Même en ajoutant demain une trame « tue la session X », rien nulle part ne sait remplir X : l'agent devra repartir du système local.
+2. **Les cibles ne viennent pas des sessions ouvertes** mais des GROUPES (`machines_sharing_group_with.go`). Une machine où la personne a une session SSH mais qui n'est dans aucun de ses groupes n'est **jamais visée**, et la CLI affiche quand même un succès.
+
+**À faire.**
+
+1. Dans `lockAccount`, après les deux verrous : `loginctl terminate-user <compte>` quand `systemd-logind` est là, avec repli `pkill -KILL -u`. **À trancher explicitement** : `pkill -u` emporte aussi les processus détachés (`tmux`, `cron`) — probablement voulu sur un compte compromis, mais ce doit être une décision, pas un effet de bord.
+2. Corriger le texte d'aide de `kill -h`, qui affirme aujourd'hui « ses sessions ouvertes sont fermées immédiatement » sous un titre « Ce que fait le mode par défaut (soft) ». C'est faux, et c'est l'endroit où un exploitant va chercher la vérité pendant un incident. Vérifier aussi `docs/training/09-…/02-incident-et-journaux.md` et `MAN.md`.
+3. Ajouter les sessions ouvertes aux cibles, en plus des groupes.
+4. Une recette qui vérifie qu'une session SSH **ouverte** est réellement coupée. Aucun scénario ne le demande aujourd'hui, et le répertoire `revocation/` n'a **aucun** test.
+
+---
+
+### 134. [RÉVOCATION] Le rattrapage `06_04` n'est demandé qu'au démarrage de l'agent
+
+**Constat.** Relevé en instruisant le 133, et probable explication du « aucune trace côté client ».
+
+`revocation.AskPending` n'a qu'un seul appelant dans tout le dépôt : une goroutine lancée par `bootstrapRevocation()`, lui-même appelé **une seule fois** au démarrage de l'agent. Trois commentaires du code et la documentation de conception affirment pourtant le contraire — « à chaque démarrage **et à chaque reconnexion du tunnel** », « une machine éteinte reçoit l'ordre à sa prochaine connexion ».
+
+**Conséquence.** Un ordre émis pendant que le tunnel machine est tombé reste en attente jusqu'au **redémarrage complet du service agent**. C'est exactement le scénario 3 de la recette (couper le réseau une minute, rétablir) : il ne peut pas passer.
+
+**À faire.** Rejouer `AskPending` à chaque rétablissement du tunnel, pas seulement à l'amorçage — ou corriger les trois commentaires et la documentation si l'on décide l'inverse. Ce qui ne doit pas rester, c'est l'écart entre les deux.
+
+---
 
 ### 98. [SÉCURITÉ] Les secrets sont en clair dans la base
 

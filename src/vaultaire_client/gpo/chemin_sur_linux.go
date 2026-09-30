@@ -77,6 +77,26 @@ import (
 // confondre avec un disque plein. Le module est abandonné, et le rapport le dit.
 var ErrCheminSuspect = errors.New("chemin suspect sous le repertoire personnel")
 
+// ErrProprietaireAutre distingue LA cause qu'on ne peut pas corriger seul.
+//
+// Un composant du chemin qui est un lien symbolique, c'est quelqu'un qui a posé
+// un piège : on refuse, on journalise, et il n'y a rien d'autre à faire.
+//
+// Un répertoire qui EXISTAIT DÉJÀ et appartient à un autre compte, c'est autre
+// chose : un `HOME` mal repris, un `chown` oublié, un compte recréé sous le même
+// nom avec un uid neuf. Le refus reste le bon réflexe — reprendre un répertoire
+// dont on ne sait pas d'où il vient, en root, est précisément ce que le point 97
+// a fermé — mais le remède n'est pas le même, et le message ne doit pas accuser
+// l'utilisateur d'avoir planté un lien quand il n'a rien fait.
+//
+// ATTENTION : elle n'enveloppe PAS ErrCheminSuspect — c'est une sentinelle nue.
+// Les deux ne cohabitent que parce que le site d'appel les joint par un DOUBLE
+// « %w ». Un futur site qui n'emploierait que celle-ci produirait une erreur que
+// « errors.Is(err, ErrCheminSuspect) » ne verrait pas, et qui passerait donc à
+// travers tout le traitement du cas général, en silence. Ne l'employer que
+// conjointement.
+var ErrProprietaireAutre = errors.New("repertoire preexistant appartenant a un autre compte")
+
 // racineOuverte tient le descripteur du répertoire personnel.
 type racineOuverte struct {
 	fd   int
@@ -129,8 +149,8 @@ func verifierRepertoireDe(fd int, quoi string, uid int) error {
 	// cible n'a rien à faire sous son `HOME`. C'est ce qui distingue un dossier
 	// qu'il a créé d'un dossier système atteint par un lien qu'il a planté.
 	if int(st.Uid) != uid {
-		return fmt.Errorf("%w : %s appartient a l'uid %d, attendu %d",
-			ErrCheminSuspect, quoi, st.Uid, uid)
+		return fmt.Errorf("%w : %s appartient a l'uid %d, attendu %d — %w",
+			ErrCheminSuspect, quoi, st.Uid, uid, ErrProprietaireAutre)
 	}
 	return nil
 }
@@ -203,13 +223,41 @@ func ouvrirOuCreerRepertoire(parent int, nom, pourMessage string, uid, gid int) 
 		return fd, nil
 	}
 
-	// ELOOP : le composant EST un lien symbolique. C'est le cas du point — on le
-	// nomme, plutôt que de le confondre avec une erreur d'accès.
-	if errors.Is(err, syscall.ELOOP) {
-		return -1, fmt.Errorf("%w : %s est un lien symbolique", ErrCheminSuspect, pourMessage)
-	}
+	// PAS de branche ELOOP : avec ces drapeaux, elle serait MORTE.
+	//
+	// Vérifié par programme : openat(O_RDONLY|O_DIRECTORY|O_NOFOLLOW) rend
+	// ENOTDIR pour TOUT lien symbolique — vers un répertoire, vers un fichier,
+	// vers un tube, cassé, ou bouclant sur lui-même. O_NOFOLLOW fait que le
+	// dernier composant résolu EST le lien, et le contrôle de répertoire tranche
+	// avant toute considération de lien. ELOOP ne sort que SANS O_DIRECTORY.
+	//
+	// Une branche ELOOP ici donnerait un diagnostic « propre » qui ne se
+	// déclenche jamais, et laisserait croire qu'un chemin de diagnostic existe.
 	if errors.Is(err, syscall.ENOTDIR) {
-		return -1, fmt.Errorf("%w : %s n'est pas un repertoire", ErrCheminSuspect, pourMessage)
+		// TOUT ce qui n'est pas un vrai répertoire arrive ici, lien symbolique
+		// COMPRIS — et le lien est le cas le plus courant du point 97. Le message
+		// se lisait « n'est pas un repertoire » : exact, et inutile à qui cherche
+		// ce qui se passe sur le poste.
+		//
+		// Les causes sont ÉNUMÉRÉES plutôt que départagées, et c'est un arbitrage :
+		//
+		//   - les départager demanderait un fstatat(AT_SYMLINK_NOFOLLOW), absent
+		//     de la bibliothèque standard. Un openat(O_PATH|O_NOFOLLOW) suivi d'un
+		//     Fstat le ferait avec la seule constante O_PATH écrite à la main —
+		//     c'est faisable, et c'est le premier candidat si ce message ne suffit
+		//     pas à l'usage ;
+		//   - retirer O_DIRECTORY rendrait ELOOP fiable, mais ouvrirait en
+		//     O_RDONLY ce que l'utilisateur a planté. Un FIFO déposé dans son
+		//     propre dossier BLOQUERAIT l'ouverture jusqu'à ce qu'un écrivain se
+		//     présente, c'est-à-dire la session PAM elle-même. On échangerait un
+		//     message imprécis contre un déni de service.
+		//
+		// L'énumération cite ce que l'utilisateur PEUT créer chez lui : un lien,
+		// un fichier, un tube, une socket. Pas un périphérique, qui demande
+		// CAP_MKNOD — le citer enverrait chercher du mauvais côté.
+		return -1, fmt.Errorf(
+			"%w : %s n'est pas un repertoire reel — lien symbolique, fichier, tube ou socket",
+			ErrCheminSuspect, pourMessage)
 	}
 	if !errors.Is(err, syscall.ENOENT) {
 		return -1, fmt.Errorf("%s inaccessible : %v", pourMessage, err)

@@ -315,6 +315,76 @@ func TestUnRepertoireDUnAutreProprietaireEstRefuse(t *testing.T) {
 	if !strings.Contains(err.Error(), "uid") {
 		t.Errorf("le message ne nomme pas le proprietaire : %v", err)
 	}
+	// La cause doit être NOMMÉE, pas seulement refusée : c'est elle qui décide
+	// du message d'exploitation, et le remède n'est pas celui d'un lien planté.
+	if !errors.Is(err, ErrProprietaireAutre) {
+		t.Errorf("la cause « autre proprietaire » n'est pas distinguee : %v", err)
+	}
+}
+
+// Le contrôle lui-même, sur un répertoire INTERMÉDIAIRE.
+//
+// Le test ci-dessus ne l'atteint pas, et c'est un piège dont il faut se méfier :
+// « ecrireFichierUtilisateur » refuse dès le `HOME`, qui n'appartient pas non
+// plus à l'uid cible, donc la descente ne commence jamais. Son montage — le
+// sous-répertoire — est décoratif : le retirer ne change pas son résultat.
+//
+// Or c'est le cas INTERMÉDIAIRE que décrit le cas 3 de la recette 29d
+// (« install -d -o root ~/.config/monapp »). On éprouve donc le contrôle
+// directement, sur un descripteur — ce qui ne demande pas root, là où fabriquer
+// un répertoire appartenant à quelqu'un d'autre l'exigerait.
+func TestLeControleRefuseUnRepertoireIntermediaireDUnAutreCompte(t *testing.T) {
+	uid, _ := moiMeme()
+	dir := t.TempDir()
+
+	fd, err := syscall.Open(dir, syscall.O_RDONLY|syscall.O_DIRECTORY|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = syscall.Close(fd) }()
+
+	// Le répertoire nous appartient ; on le vérifie au nom d'un AUTRE compte.
+	err = verifierRepertoireDe(fd, "~/.config/monapp", uid+1)
+	if err == nil {
+		t.Fatal("un repertoire intermediaire d'un autre compte a ete accepte")
+	}
+	if !errors.Is(err, ErrCheminSuspect) {
+		t.Errorf("le refus ne porte pas ErrCheminSuspect : %v", err)
+	}
+	if !errors.Is(err, ErrProprietaireAutre) {
+		t.Errorf("le refus ne nomme pas la cause « autre proprietaire » : %v", err)
+	}
+	if strings.Contains(err.Error(), "lien symbolique") {
+		t.Errorf("un probleme de proprietaire est rapporte comme un lien : %v", err)
+	}
+}
+
+// Les deux causes doivent rester SÉPARÉES.
+//
+// Sans ce test, faire porter ErrProprietaireAutre à tout ErrCheminSuspect
+// passerait les vérifications ci-dessus et rendrait la distinction inutile — le
+// journal se remettrait à donner le mauvais remède, sans qu'aucun test tombe.
+func TestUnLienNEstPasUnProblemeDeProprietaire(t *testing.T) {
+	uid, gid := moiMeme()
+	home := fauxHome(t)
+
+	if err := os.Symlink("/etc", filepath.Join(home, ".config")); err != nil {
+		t.Fatal(err)
+	}
+
+	err := ecrireFichierUtilisateur(home, filepath.Join(home, ".config", "a.conf"), "x", 0o644, uid, gid)
+	if err == nil || !errors.Is(err, ErrCheminSuspect) {
+		t.Fatalf("lien accepte : %v", err)
+	}
+	if errors.Is(err, ErrProprietaireAutre) {
+		t.Errorf("un lien symbolique est rapporte comme un probleme de proprietaire : %v", err)
+	}
+	// Le message doit NOMMER le lien. Avec O_DIRECTORY, ce cas sort en ENOTDIR
+	// et non en ELOOP : il se lisait « n'est pas un repertoire », ce qui est
+	// exact et n'apprend rien. Ce test tient la formulation.
+	if !strings.Contains(err.Error(), "lien symbolique") {
+		t.Errorf("le message ne nomme pas le lien : %v", err)
+	}
 }
 
 // La descente refuse ce qui n'est pas un composant.

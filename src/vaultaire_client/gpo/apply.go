@@ -225,7 +225,18 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 		// SECURITY, et le nom du compte : c'est la seule ligne qui nommera
 		// l'auteur, et le module échoue de toute façon — la trace est tout ce
 		// qu'il reste.
-		if errors.Is(err, ErrCheminSuspect) {
+		// Deux causes, deux messages, deux remèdes. Les confondre faisait
+		// accuser l'utilisateur d'avoir planté un lien symbolique alors que son
+		// `HOME` portait simplement un répertoire laissé à un autre compte — et
+		// laissait l'exploitant sans rien à faire de cette accusation.
+		switch {
+		case errors.Is(err, ErrProprietaireAutre):
+			logs.Write_log("SECURITY", fmt.Sprintf(
+				"GPO: module %s (%s) ABANDONNE pour %s — %s. L'agent ne reprend PAS un "+
+					"repertoire deja la : le faire en root, sans savoir d'ou il vient, est "+
+					"ce que le point 97 a ferme. Rendez-le a %s (chown) pour debloquer",
+				m.Type, m.StateKey, ctx.Username, outcome.Detail, ctx.Username))
+		case errors.Is(err, ErrCheminSuspect):
 			logs.Write_log("SECURITY", fmt.Sprintf(
 				"GPO: module %s (%s) ABANDONNE pour %s — %s. Un composant du chemin "+
 					"n'est pas un repertoire reel appartenant a ce compte : verifier le "+

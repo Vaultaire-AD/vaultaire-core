@@ -79,6 +79,16 @@ services:
       dockerfile: deployments/pre-prod/Dockerfile
     image: vaultaire-devcomp:latest
     container_name: vlt-dev-ad
+    # Le nom d'hôte n'est PAS cosmétique : le core s'inscrit dans cluster_nodes
+    # sous « @core:<hostname> », et c'est ce nom qu'affiche « vlt cluster list »
+    # et que prennent « vlt cluster expose | priority | affinity ».
+    #
+    # Laissé au hasard, il vaut l'identifiant du conteneur, donc une valeur
+    # neuve à chaque recréation : le nœud renaît sous une autre identité et
+    # abandonne sa ligne précédente, avec ses réglages d'exploitation. Le figer
+    # est ce qui rend le cluster de dev nommable — et donc utilisable dès qu'il
+    # compte plus d'un core.
+    hostname: vaultaire-ad
     restart: unless-stopped
     depends_on:
       - vaultaire-db
@@ -120,6 +130,11 @@ services:
       dockerfile: Dockerfile
     image: vlt-proxy-devcomp:latest
     container_name: vlt-dev-proxy
+    # Même raison que pour le core, à ceci près que le propriétaire d'un service
+    # est son identifiant de client : le nom d'hôte ne fait que le NOMMER dans
+    # le cluster. Un nom stable suffit à ce que « cluster expose » vise le même
+    # nœud d'un redémarrage à l'autre.
+    hostname: proxy1
     restart: unless-stopped
     depends_on:
       - vaultaire-ad

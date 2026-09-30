@@ -8,7 +8,7 @@
 #
 #   ./build.sh                    compile tout, fabrique l'archive
 #   ./build.sh --version 2.2.1    impose la version injectée dans les binaires
-#   ./build.sh --sans-dll         n'essaie pas de compiler le Credential Provider
+#   ./build.sh --sans-dll         archive SANS Credential Provider (sinon mingw-w64 est EXIGÉ)
 #   ./build.sh --sortie <dir>     répertoire de sortie (défaut : ./dist)
 #
 # # Pourquoi une archive .tar et pas un installeur MSI
@@ -47,6 +47,21 @@ erreur() { echo -e "\033[1;31m[windows]\033[0m $*" >&2; exit 1; }
 
 command -v go >/dev/null || erreur "go introuvable"
 
+# mingw-w64 est exigé ICI, avant la moindre compilation.
+#
+# Le contrôle était plus bas, après les deux binaires : l'échec laissait alors
+# un répertoire d'étape à moitié rempli, que rien ne nettoie et qu'on prend au
+# coup d'œil suivant pour une archive. Rien ne doit être produit d'une
+# fabrication qui ne peut pas aboutir.
+if [ "$AVEC_DLL" = 1 ]; then
+    command -v "${MINGW_CXX:-x86_64-w64-mingw32-g++}" >/dev/null || erreur \
+"mingw-w64 introuvable : l'archive n'aurait PAS de Credential Provider, donc pas
+  de tuile Vaultaire a l'ecran de connexion — et rien, ensuite, ne le signale.
+
+    Debian/Ubuntu : apt install mingw-w64
+    Sciemment sans la tuile : ./build.sh --sans-dll"
+fi
+
 # --- version ---------------------------------------------------------------
 #
 # Même règle que le reste du dépôt : la série vient du fichier VERSION, le
@@ -80,15 +95,39 @@ info "compilation de vaultaire_login"
 
 # --- le Credential Provider ------------------------------------------------
 #
-# Son absence n'arrête PAS la fabrication : l'agent et vaultaire_login suffisent
-# à éprouver toute la chaîne d'authentification, et c'est ce qu'on fait en
-# premier. L'archive dit alors clairement ce qui lui manque.
-if [ "$AVEC_DLL" = 1 ] && command -v "${MINGW_CXX:-x86_64-w64-mingw32-g++}" >/dev/null; then
+# L'absence de mingw-w64 est FATALE, et c'est un changement.
+#
+# Elle ne l'était pas : la fabrication réussissait avec un simple message, et
+# l'archive partait sans DLL. Or rien, ensuite, ne rattrape ce silence —
+# install.ps1 dit « DLL absente de l'archive » et poursuit, et l'écran de
+# connexion d'un poste sans tuile ne donne aucune erreur non plus : la tuile
+# n'apparaît simplement pas. Trois étapes muettes bout à bout, et un défaut
+# qu'on cherche du mauvais côté pendant une heure.
+#
+# Ne pas produire la DLL reste légitime — l'agent et vaultaire_login éprouvent
+# toute la chaîne d'authentification sans elle. Mais cela se DEMANDE, avec
+# --sans-dll, au lieu de se subir.
+if [ "$AVEC_DLL" = 1 ]; then
     info "compilation du Credential Provider"
     "$ICI/credential_provider/build-cp.sh" "$ETAPE" >/dev/null
     info "  $(basename "$ETAPE")/VaultaireCredentialProvider.dll"
 else
-    [ "$AVEC_DLL" = 1 ] && info "mingw-w64 absent : archive SANS Credential Provider"
+    # La marque part DANS l'archive : c'est le seul endroit où celui qui
+    # l'installe, des jours plus tard et sur une autre machine, peut encore
+    # apprendre ce qui lui manque.
+    cat > "$ETAPE/SANS_CREDENTIAL_PROVIDER.txt" <<'MARQUE'
+Cette archive a ete fabriquee avec --sans-dll.
+
+Elle ne contient PAS VaultaireCredentialProvider.dll : il n'y aura pas de tuile
+Vaultaire a l'ecran de connexion Windows. L'agent et vaultaire_login.exe
+fonctionnent normalement — toute la chaine d'authentification est eprouvable
+sans elle.
+
+Pour une archive complete : installer mingw-w64, puis relancer ./build.sh sans
+--sans-dll.
+MARQUE
+    info "--sans-dll : archive SANS Credential Provider (demande explicitement)"
+    info "  marque deposee : SANS_CREDENTIAL_PROVIDER.txt"
 fi
 
 # --- ce qui accompagne les binaires ----------------------------------------

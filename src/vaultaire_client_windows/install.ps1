@@ -284,12 +284,67 @@ if (-not (Test-Path $dll)) {
     Info "L'agent et vaultaire_login.exe fonctionnent quand même."
 } elseif (DemanderOuiNon "Enregistrer le Credential Provider (tuile Vaultaire a l'ecran de connexion)" $false) {
     Copy-Item $dll $Bin -Force
-    & regsvr32.exe /s (Join-Path $Bin "VaultaireCredentialProvider.dll")
-    if ($LASTEXITCODE -ne 0) { Erreur "regsvr32 a échoué (code $LASTEXITCODE)" }
-    Info "tuile Vaultaire enregistrée — elle apparaîtra au prochain verrouillage"
-    Write-Host "`n    ⚠ Gardez une session administrateur locale OUVERTE le temps de vérifier" -ForegroundColor Yellow
-    Write-Host "      que la connexion fonctionne : un fournisseur défaillant se retire avec" -ForegroundColor Yellow
-    Write-Host "      .\uninstall.ps1 -CredentialProviderSeulement, depuis cette session." -ForegroundColor Yellow
+    $cible = Join-Path $Bin "VaultaireCredentialProvider.dll"
+    # Start-Process -Wait, et non « & regsvr32 ».
+    #
+    # regsvr32.exe est une application GRAPHIQUE : PowerShell ne l'attend pas, et
+    # le $LASTEXITCODE qu'on lisait ensuite était celui d'une commande
+    # antérieure. Le contrôle était décoratif, et une inscription échouée
+    # s'annonçait comme réussie.
+    #
+    # -Wait donne les deux choses qui manquaient : l'attente — plus de course, ni
+    # de délai arbitraire à choisir — et le VRAI code de retour.
+    $proc = Start-Process -FilePath regsvr32.exe -ArgumentList '/s', "`"$cible`"" -Wait -PassThru
+    $code = $proc.ExitCode
+
+    # Puis les clés, en CONFIRMATION et non à la place.
+    #
+    # Le code seul ne suffit pas — il dit que l'appel a abouti, pas que LogonUI
+    # trouvera quelque chose. Et les clés seules ne suffisent pas non plus :
+    # celles d'une inscription PRÉCÉDENTE sont toujours là, donc une DLL
+    # remplacée par une version qui ne se charge plus passerait pour inscrite.
+    # C'est exactement la panne muette que ce point ferme.
+    $clsid  = "{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}"
+    $inproc = "HKLM:\SOFTWARE\Classes\CLSID\$clsid\InprocServer32"
+    $liste  = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\$clsid"
+
+    $motif = $null
+    if (-not [Environment]::Is64BitProcess) {
+        # Un regsvr32 32 bits ne peut pas charger une DLL 64 bits : il n'écrit
+        # AUCUNE clé, pas même sous WOW6432Node. Nommé à part parce que le
+        # remède — relancer depuis un PowerShell 64 bits — n'a rien à voir avec
+        # les autres causes.
+        $motif = "ce PowerShell est 32 bits : regsvr32 ne peut pas charger une DLL 64 bits"
+    } elseif ($code -ne 0) { $motif = "regsvr32 a rendu le code $code" }
+    elseif   (-not (Test-Path $liste))  { $motif = "la cle « Credential Providers\$clsid » est absente" }
+    elseif   (-not (Test-Path $inproc)) { $motif = "la cle InprocServer32 est absente" }
+    else {
+        $inscrit = (Get-ItemProperty -Path $inproc).'(default)'
+        if ($inscrit -ne $cible) { $motif = "InprocServer32 pointe sur « $inscrit » au lieu de « $cible »" }
+    }
+
+    if ($motif) {
+        # PAS « Erreur » : elle fait exit 1, et avorter ici laisserait un poste
+        # dont l'agent est installé et fonctionnel avec un script qui s'arrête
+        # en chemin. La tuile est un confort, pas la chaîne d'authentification.
+        Write-Host "[x] l'enregistrement du Credential Provider a ECHOUE : $motif" -ForegroundColor Red
+        Info "Pour voir la cause exacte, depuis une invite administrateur :"
+        Info "  regsvr32 $cible"
+        Info "  (sans /s : la boite de dialogue nomme la dependance ou l'export manquant)"
+        Info "Sans tuile, l'agent et vaultaire_login.exe fonctionnent normalement."
+    } else {
+        Info "tuile Vaultaire enregistrée — elle apparaîtra au prochain verrouillage"
+        Write-Host "`n    ⚠ Gardez une session administrateur locale OUVERTE le temps de vérifier" -ForegroundColor Yellow
+        Write-Host "      que la connexion fonctionne : un fournisseur défaillant se retire avec" -ForegroundColor Yellow
+        Write-Host "      .\uninstall.ps1 -CredentialProviderSeulement, depuis cette session." -ForegroundColor Yellow
+        # Chemin FIGÉ dans la DLL (vaultaire_pipe.cpp), indépendant de -Racine :
+        # l'annoncer sous $Journaux enverrait chercher un fichier qui n'existera
+        # jamais. Et le répertoire est créé ici, sinon l'ouverture échoue en
+        # silence côté DLL et il n'y a aucun journal du tout.
+        $jrnCP = "C:\ProgramData\Vaultaire\logs"
+        if (-not (Test-Path $jrnCP)) { New-Item -ItemType Directory -Path $jrnCP -Force | Out-Null }
+        Info "journal du fournisseur : $jrnCP\credential_provider.log"
+    }
 } else {
     Info "tuile non enregistrée (l'agent tourne, l'écran de connexion est inchangé)"
 }

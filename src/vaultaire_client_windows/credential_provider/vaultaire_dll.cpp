@@ -106,6 +106,32 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE module, DWORD raison, LPVOID) {
 
 extern "C" HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void** ppv) {
   if (ppv == nullptr) return E_POINTER;
+
+  // Une trace au premier usage RÉEL, et une seule.
+  //
+  // Le journal n'était écrit qu'à l'inscription. Son absence ne distinguait donc
+  // pas « pas inscrit » de « inscrit mais jamais chargé » — deux pannes
+  // différentes, l'une dans le registre, l'autre dans les dépendances de la DLL,
+  // et rien pour les séparer. Cette ligne est ce qui manquait : si elle est là,
+  // LogonUI a trouvé la DLL, l'a chargée et a résolu ses imports.
+  //
+  // Ici et NON dans DllMain : DllMain tourne sous le verrou du chargeur, où
+  // ouvrir un fichier est à proscrire. DllGetClassObject est appelée par COM,
+  // hors de ce verrou, et sa seule exécution prouve ce qu'on veut savoir.
+  // La course sur ce drapeau est bénigne, et on ne met pas de verrou pour elle :
+  // le pire effet est la ligne écrite deux fois. ThreadingModel = Apartment
+  // sérialise d'ailleurs l'activation, donc elle ne se produira pas.
+  static bool deja_dit = false;
+  if (!deja_dit) {
+    deja_dit = true;
+    wchar_t chemin[MAX_PATH] = {0};
+    if (GetModuleFileNameW(g_module, chemin, MAX_PATH) != 0) {
+      vaultaire::Journaliser(L"fournisseur charge : %s", chemin);
+    } else {
+      vaultaire::Journaliser(L"fournisseur charge (chemin indisponible)");
+    }
+  }
+
   if (rclsid != CLSID_VaultaireProvider) return CLASS_E_CLASSNOTAVAILABLE;
 
   CFabrique* fabrique = new (std::nothrow) CFabrique();

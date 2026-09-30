@@ -40,6 +40,18 @@ class CVaultaireProvider : public ICredentialProvider {
     return restantes;
   }
 
+  // Une ligne par CHANGEMENT de scénario, pas par appel.
+  //
+  // LogonUI appelle SetUsageScenario à chaque reconstruction de son interface —
+  // une frappe au clavier, un retour d'écran de veille. Journaliser à chaque
+  // fois ferait croître sans borne un fichier de C:\ProgramData, que rien ne
+  // fait tourner. Avant ce point, la DLL n'écrivait que sur action délibérée.
+  void JournaliserScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, const wchar_t* verdict) {
+    if (scenario == journalise_) return;
+    journalise_ = scenario;
+    Journaliser(L"scenario %u %s", (unsigned)scenario, verdict);
+  }
+
   // SetUsageScenario : Windows annonce POURQUOI il demande des identifiants.
   IFACEMETHODIMP SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, DWORD) override {
     switch (scenario) {
@@ -51,10 +63,16 @@ class CVaultaireProvider : public ICredentialProvider {
         // en est la source. Proposer la tuile ici laisserait croire qu'on peut
         // le changer depuis l'écran de connexion, ce qui ne changerait que le
         // compte local — donc rien, au prochain provisionnement.
+        JournaliserScenario(scenario, L"refuse (le mot de passe se change dans le portail)");
         return E_NOTIMPL;
       default:
+        // Journalisé, parce qu'un refus ici est INDISCERNABLE d'une DLL non
+        // chargée : dans les deux cas la tuile n'apparaît pas. La ligne dit
+        // lequel des deux on regarde.
+        JournaliserScenario(scenario, L"refuse (pas de tuile dans ce contexte)");
         return E_NOTIMPL;
     }
+    JournaliserScenario(scenario, L"accepte (la tuile doit apparaitre)");
 
     scenario_ = scenario;
     if (credential_ != nullptr) {
@@ -123,6 +141,11 @@ class CVaultaireProvider : public ICredentialProvider {
   }
 
  private:
+  // Dernier scénario journalisé. Initialisé à une valeur qu'aucun scénario ne
+  // prend, pour que le premier appel écrive toujours sa ligne.
+  CREDENTIAL_PROVIDER_USAGE_SCENARIO journalise_ =
+      static_cast<CREDENTIAL_PROVIDER_USAGE_SCENARIO>(0xFFFFFFFF);
+
   // Virtuel : détruit par « delete this » à travers un pointeur d'interface.
   virtual ~CVaultaireProvider() {
     if (credential_ != nullptr) credential_->Release();
