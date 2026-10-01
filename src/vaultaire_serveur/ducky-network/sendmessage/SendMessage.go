@@ -3,6 +3,7 @@ package sendmessage
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -16,11 +17,48 @@ func BuildServerTrame(action, dest, sessionKey string, contentLines ...string) s
 	return strings.Join(parts, "\n")
 }
 
-func CompileMessageSize(message []byte) []byte {
+// TailleMaxCorps est la plus grande taille de corps que le champ taille, sur
+// deux octets, peut annoncer. Même valeur que tramesmanager.TailleMaxCorps et
+// que le SDK : les trois doivent bouger ensemble, ou pas du tout.
+const TailleMaxCorps = math.MaxUint16
+
+// CompileMessageSize encode la taille du corps sur deux octets.
+//
+// # Une ERREUR, jamais une troncature
+//
+// Elle faisait `uint16(len(message))` : au-delà de 65535 octets, le corps
+// entier partait sur le socket, annoncé modulo 65536. Le pair lisait le
+// début, prenait la suite pour un nouvel en-tête, et le tunnel restait
+// désynchronisé jusqu'à sa fermeture. La trame 02_04 porte toutes les clés
+// SSH d'un compte : un compte trop garni cassait ainsi l'authentification
+// Ducky de tout le poste (TO-DO 101).
+//
+// Une trame trop grande n'a pas d'émission correcte possible. Le refus laisse
+// au moins le tunnel intact : la trame suivante partira, et arrivera.
+func CompileMessageSize(message []byte) ([]byte, error) {
+	if len(message) > TailleMaxCorps {
+		return nil, fmt.Errorf(
+			"trame de %d octets : dépasse la taille maximale du protocole Ducky (%d) — non émise",
+			len(message), TailleMaxCorps)
+	}
 	sizeBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(sizeBytes, uint16(len(message)))
 
-	return sizeBytes
+	return sizeBytes, nil
+}
+
+// CadrerTrame rend la trame prête à écrire : longueur du champ taille, taille,
+// corps. C'est le seul assemblage à employer — les trois copies qui
+// existaient faisaient la même conversion sans contrôle.
+func CadrerTrame(corps []byte) ([]byte, error) {
+	taille, err := CompileMessageSize(corps)
+	if err != nil {
+		return nil, err
+	}
+	trame := make([]byte, 0, 1+len(taille)+len(corps))
+	trame = append(trame, CompileHeaderSize(taille))
+	trame = append(trame, taille...)
+	return append(trame, corps...), nil
 }
 
 func CompileHeaderSize(messageSize []byte) byte {
@@ -56,10 +94,17 @@ func SendMessage(message string, clientSoftwareID string, duckysession *storage.
 		cipherMsg = string(cipherBytes)
 	}
 
-	// Prépare le header et la taille du message
-	messageSize := CompileMessageSize([]byte(cipherMsg))
-	headerSize := []byte{CompileHeaderSize(messageSize)}
-	data := append(append(headerSize, messageSize...), []byte(cipherMsg)...)
+	// Prépare le header et la taille du message.
+	//
+	// Une trame trop grande n'est PAS émise, et la connexion n'est pas fermée :
+	// rien n'est parti, le flux est intact. L'erreur nomme la taille, seul
+	// indice qui permette de remonter à la cause (des clés SSH trop
+	// nombreuses, typiquement).
+	data, err := CadrerTrame([]byte(cipherMsg))
+	if err != nil {
+		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, err.Error(), meta)
+		return err
+	}
 
 	// Envoi du message
 	if _, err := duckysession.Conn.Write(data); err != nil {

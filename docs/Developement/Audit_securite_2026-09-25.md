@@ -11,11 +11,12 @@
 > Méthode : relecture du code, pas d'exécution. Chaque constat porte le fichier
 > et la ligne. Ce qui n'a pas été vérifié est marqué « à confirmer ».
 
-### État au 26/09/2026
+### État au 01/10/2026
 
 | Point | État |
 |---|---|
-| 101, 102, 103, 104, 105 | ouverts |
+| **101** — cadrage des trames | **traité** (2.2) — premier octet ≠ 2 refusé avant toute allocation, `io.ReadFull` partout, refus au lieu de troncature à l'émission, garde-fou porté dans le SDK, 10 clés SSH par compte ; core ET SDK, chacun avec sa sentinelle contre `conn.Read` |
+| 102, 103, 104, 105 | ouverts |
 | 98 — secrets en clair dans la base | ouvert, à cadrer |
 | **106** — compte `vaultaire` | **traité** (2.2) — `03_01` et `08_01` refusent le compte d'amorçage, et un test-sentinelle interdit d'accorder un droit à partir du nom d'une session Ducky |
 | **107** — unicité de `did_login` | **traité** (2.2) — contrainte en base, dédoublonnage à la migration, écritures en `ON DUPLICATE KEY UPDATE` |

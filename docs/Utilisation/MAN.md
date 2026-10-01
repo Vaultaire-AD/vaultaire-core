@@ -689,6 +689,8 @@ Le **libellé** est obligatoire : c'est lui qui permettra de retirer la clé plu
 
 Une clé n'appartient qu'à **un seul compte** : la contrainte est globale, parce que l'API authentifie par signature SSH. Une clé partagée entre deux comptes permettrait à son porteur d'agir sous l'une ou l'autre identité, au choix, à chaque requête.
 
+**Dix clés au plus par compte, de 4 096 caractères au plus chacune** (une clé RSA de 16 384 bits, la plus longue qu'OpenSSH produise, en fait moins de 2 900). Toutes les clés d'un compte partent aux postes à chaque connexion, dans une seule trame Ducky dont la taille est bornée à 65 535 octets : sans ces bornes, un compte trop garni ne pouvait plus se connecter nulle part. La onzième est refusée, en ligne de commande comme depuis la page de profil ; il faut en retirer une d'abord.
+
 ---
 
 ## 10. remove — Retrait
