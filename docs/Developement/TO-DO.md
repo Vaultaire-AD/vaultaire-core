@@ -12,13 +12,13 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **138**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **139**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
 détaillés dans [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md).
-**Traités dans la 2.2** : 95, 96, 97, 99, 100, 106, 107 et 108. **Restent
-ouverts** : 98 (secrets au repos, à cadrer) et 101 à 105. Ce fichier porte :
+**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 106, 107 et 108. **Restent
+ouverts** : 98 (secrets au repos, à cadrer) et 102 à 105. Ce fichier porte :
 ce que le code fait, qui peut l'atteindre, ce qu'il obtient, et pourquoi la
 correction n'est pas triviale. Ce fichier porte aussi les constats laissés de
 côté, pour qu'ils ne soient pas redécouverts comme neufs.
@@ -61,13 +61,13 @@ attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 101 | DUCKY        | Cadrage des trames : taille, lectures courtes, SDK          | À faire — sérieux                       |
 | 102 | API          | Ni freinage ni borne de corps sur `/api/command`            | À faire — sérieux                       |
 | 103 | WEB          | Ni jeton CSRF ni en-tête de sécurité sur le portail         | À faire — sérieux                       |
 | 104 | RBAC         | « Deny » ne refuse pas                                      | À faire — sérieux, à trancher           |
 | 105 | DNS          | Nom de table construit par concaténation                    | À faire — sérieux                       |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
+| 138 | DUCKY        | Comptes déjà au-delà de 10 clés SSH                         | À faire — petit                         |
 | 128 | LDAP         | Bind non authentifié : le mauvais cas est refusé            | À faire — petit                         |
 | 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire — débloque le sous-schéma        |
 | 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
@@ -97,45 +97,23 @@ attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
 
 ## Réseau Ducky
 
-### 101. [DUCKY] Le cadrage des trames : taille, lectures courtes, garde-fou du SDK
+### 138. [DUCKY] Les comptes déjà au-delà de 10 clés SSH
 
-**Constat** (audit du 25/09). Trois défauts du même fichier de transport.
+**Constat** (relevé en traitant le 101). La borne de 10 clés par compte, de
+4 096 caractères chacune, ne s'applique qu'à l'AJOUT. Un compte qui en porte
+davantage depuis avant la 2.2 les garde. Si sa trame `02_04` dépasse 65 535
+octets une fois chiffrée, elle n'est plus émise : le tunnel reste sain — c'est
+l'objet du 101 —, mais ce compte ne peut plus ouvrir de session Ducky, et la
+seule trace est une ligne ERROR « trame de N octets » côté core, sans nom de
+compte.
 
-1. **Panique déclenchable sans authentification.** `Read_Header_Size`
-   (`trames_manager/ReadHeaderSize.go:7`) rend le **premier octet reçu**, sans
-   contrainte, et `Read_Message_Size` alloue un tampon de cette taille avant d'y
-   faire `binary.BigEndian.Uint16`. Deux octets — `\x01\xff` — suffisent à
-   paniquer. Le `recover` de `handleConnection` empêche l'arrêt du core, mais
-   chaque panique écrit une ligne **CRITICAL avec la pile complète** : quelques
-   octets par seconde noient le journal commun.
-2. **Lectures courtes.** `conn.Read` n'est jamais `io.ReadFull`, ni côté core ni
-   côté SDK. TCP a le droit de rendre moins d'octets que demandé : l'appelant lit
-   alors une taille fausse puis un corps tronqué, et la suite passe pour l'en-tête
-   suivant. **Cela arrive sans attaquant**, sur une liaison lente — défaut de
-   robustesse qui se manifeste en échec d'authentification intermittent.
-3. **Troncature silencieuse à l'émission.** `CompileMessageSize`
-   (`sendmessage/SendMessage.go:19`) fait `uint16(len(message))` : au-delà de
-   65535, le corps entier part mais est annoncé modulo 65536, et le tunnel est
-   désynchronisé définitivement. La trame `02_04` embarque **toutes** les clés
-   SSH de l'utilisateur, jointes par virgule, et rien ne borne leur nombre : un
-   utilisateur ordinaire peut donc casser l'authentification Ducky de toutes les
-   personnes du poste, à chacune de ses connexions. *(Seuil à confirmer par
-   mesure ; le mécanisme est certain.)*
+Peu probable (il faut une soixantaine de grosses clés RSA), mais silencieux
+pour l'utilisateur.
 
-**Et le garde-fou qui manque d'un seul côté.** Le core refuse une trame de moins
-de cinq lignes (`ReadMessageContent.go:16`, commentaire « SÉCURITÉ » et test
-dédié). Le SDK indexe `lines[1]`, `lines[2]`, `lines[3:]` **sans rien vérifier**
-(`ducky-network-sdk-service/.../ReadMessageContent.go:12`) — et ce SDK est
-partagé par l'agent, le proxy, Nexus et le client Windows. Le défaut a été
-identifié et corrigé d'un seul côté.
-
-**À faire.** Refuser tout `headerSize` différent de 2 avant d'allouer ;
-`io.ReadFull` partout ; **erreur** au lieu de troncature dans
-`CompileMessageSize` ; porter le garde-fou de `parseTrames` dans le SDK ; borner
-le nombre de clés SSH par compte. Une dizaine de lignes en tout — le piège est de
-corriger le core et d'oublier le SDK, comme la première fois.
-
-Détail : [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 101.
+**À faire.** Au démarrage du core, relever les comptes au-delà de la borne et
+l'écrire en WARNING, nommément ; et dans le chemin de la `02_04`, nommer le
+compte quand la trame est refusée. Ne PAS tronquer la liste de clés en silence :
+ce serait retirer un accès sans que personne l'ait décidé.
 
 ### 109. [CLUSTER] Un proxy oublié ne se réenregistre jamais
 

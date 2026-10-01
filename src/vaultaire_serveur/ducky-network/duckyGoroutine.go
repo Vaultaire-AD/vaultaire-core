@@ -95,8 +95,20 @@ func processIncomingMessage(duckysession *storage.DuckySession) bool {
 
 	sessionmgr.Sessions.Touch(duckysession.SessionID)
 
-	messageSize := tm.Read_Message_Size(duckysession.Conn, headerSize)
-	tm.MessageReader(duckysession, messageSize)
+	// Une erreur de lecture ici veut dire que la position dans le flux est
+	// perdue : on ferme, plutôt que de lire la suite comme un en-tête. C'est ce
+	// que faisait la boucle, et qui transformait un corps lu en deux fois en
+	// une série de trames fantômes (TO-DO 101).
+	messageSize, err := tm.Read_Message_Size(duckysession.Conn, headerSize)
+	if err != nil {
+		logs.Write_LogCodeMeta("WARNING", logs.CodeNone,
+			"ducky: lecture de la taille impossible, connexion fermée : "+err.Error(),
+			logs.WithMeta(duckysession.SessionID, ""))
+		return false
+	}
+	if err := tm.MessageReader(duckysession, messageSize); err != nil {
+		return false
+	}
 	return true
 }
 

@@ -10,10 +10,11 @@ import (
 )
 
 func AskServerKey(duckysession *storage.DuckySession) bool {
-	message := []byte("askkey")
-	messageSize := sendmessage.CompileMessageSize(message)
-	headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
-	data := append(append(headerSize, messageSize...), message...)
+	data, err := sendmessage.CadrerTrame([]byte("askkey"))
+	if err != nil {
+		logs.Write_log("ERROR", "askkey : "+err.Error())
+		return false
+	}
 	if _, err := duckysession.Conn.Write(data); err != nil {
 		defer func() {
 			if err := duckysession.Conn.Close(); err != nil {
@@ -37,10 +38,13 @@ func AskServerKey(duckysession *storage.DuckySession) bool {
 				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
 				return false
 			}
-			messageBuf := make([]byte, messagesize)
-			_, err = duckysession.Conn.Read(messageBuf)
+			// LireCorps et non Conn.Read : la clé du core fait plusieurs
+			// centaines d'octets, et un PEM tronqué par une lecture courte
+			// serait refusé à tort par VerifierCleCore (TO-DO 101).
+			messageBuf, err := tramesmanager.LireCorps(duckysession.Conn, messagesize)
 			if err != nil {
 				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
+				return false
 			}
 			lines := strings.Split(string(messageBuf), "\n")
 			if lines[0] == "getkey" {

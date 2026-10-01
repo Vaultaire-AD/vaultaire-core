@@ -1,20 +1,24 @@
 package tramesmanager
 
 import (
-	"encoding/binary"
+	"fmt"
 	"net"
-	"vaultaire/core/logs"
 )
 
-func Read_Message_Size(conn net.Conn, headerSize int) int {
-	messageSizeBuf := make([]byte, headerSize)
-
-	_, err := conn.Read(messageSizeBuf)
-	if err != nil {
-		logs.Write_Log("ERROR", "Error during the read of the message size: "+err.Error())
-		return 0
+// Read_Message_Size lit la taille du corps, sur exactement deux octets.
+//
+// headerSize est ce qu'a rendu Read_Header_Size. Il n'est plus utilisé pour
+// dimensionner un tampon — c'est ce qui permettait la panique du TO-DO 101 —,
+// seulement vérifié : un appelant qui l'aurait obtenu autrement est refusé.
+//
+// Une erreur veut dire « fermer la connexion » : la position dans le flux est
+// perdue.
+func Read_Message_Size(conn net.Conn, headerSize int) (int, error) {
+	if conn == nil {
+		return 0, fmt.Errorf("connexion absente")
 	}
-	size := int(binary.BigEndian.Uint16(messageSizeBuf))
-	return size
-
+	if headerSize != TailleChampTaille {
+		return 0, &ErreurCadrage{Motif: fmt.Sprintf("champ taille de %d octet(s), %d attendus", headerSize, TailleChampTaille)}
+	}
+	return lireTailleCorps(conn)
 }

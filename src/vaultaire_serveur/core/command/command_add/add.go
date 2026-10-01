@@ -137,5 +137,8 @@ func aide() string {
   add -gpo <gpo> -g <groupe>             lie une GPO à un groupe
 
 Note : rattacher une entité à un groupe exige désormais le droit sur les
-domaines de l'entité ET sur ceux du groupe. Les deux sont engagés.`
+domaines de l'entité ET sur ceux du groupe. Les deux sont engagés.
+
+Clés SSH : 10 au plus par compte, 4096 caractères au plus chacune. Toutes
+partent aux postes à chaque connexion, dans un message de taille bornée.`
 }

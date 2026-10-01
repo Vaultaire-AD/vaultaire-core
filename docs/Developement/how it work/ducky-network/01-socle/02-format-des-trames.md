@@ -6,6 +6,40 @@
 
 ---
 
+## Cadrage sur le socket
+
+Avant tout découpage en lignes, une trame voyage ainsi :
+
+```
+[1 octet : 0x02][2 octets : taille du corps, big-endian][corps, chiffré]
+```
+
+| Règle | Pourquoi |
+| --- | --- |
+| Le premier octet vaut **toujours 2** — toute autre valeur ferme la connexion, `0` compris | Il annonce la longueur du champ taille, qui fait deux octets chez tous les émetteurs. Lu comme une longueur libre, `\x01\xff` faisait paniquer le core sans authentification (TO-DO 101) |
+| Le corps fait de **1 à 65 535 octets** | Un corps vide n'a pas d'émetteur ; au-delà de 65 535, deux octets ne savent pas l'annoncer |
+| À l'émission, une trame trop grande est **refusée**, pas tronquée | `uint16(len)` l'annonçait modulo 65 536 : le pair prenait la fin pour un nouvel en-tête et le tunnel restait désynchronisé |
+| Toute lecture passe par `io.ReadFull` | TCP peut livrer une trame octet par octet, sans attaquant. `conn.Read` prenait un morceau pour le tout |
+| Une erreur de cadrage **ferme la connexion** ; un échec de déchiffrement, non | Après la première, on ne sait plus où commence la trame suivante. Après le second, le corps a été lu jusqu'au bout : le flux est intact |
+
+Le code vit dans **deux jumeaux** qui doivent rester identiques :
+`vaultaire_serveur/ducky-network/trames_manager/cadrage.go` (core) et
+`ducky-network-sdk-service/duckynetwork/trames_manager/cadrage.go` (SDK : agent,
+proxy, Nexus, client Windows). L'assemblage à l'émission est
+`sendmessage.CadrerTrame`, des deux côtés. Un test-sentinelle de chaque côté
+interdit tout `conn.Read` réintroduit.
+
+**Conséquence sur le contenu.** La trame `02_04` porte toutes les clés SSH du
+compte : c'est ce qui borne un compte à 10 clés de 4 096 caractères
+(`dbusers.MaxClesParCompte`, `dbusers.LongueurMaxCle`). Le pire cas, chiffré,
+fait environ 56 000 octets ; un test échoue si l'une des bornes est relevée sans
+refaire le calcul.
+
+Une fois déchiffré, le corps se découpe en lignes. Le minimum est de **cinq**
+lignes dans le sens client → serveur et de **trois** dans l'autre ; en dessous,
+la trame est ignorée des deux côtés (le SDK ne le vérifiait pas avant le TO-DO 101).
+
+## Format Client → Serveur
 
 ```go
 lines := strings.Split(trames, "\n")
