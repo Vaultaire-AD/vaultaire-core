@@ -286,6 +286,7 @@ func TestLesUnitesConvertissent(t *testing.T) {
 		{Secondes, 30, 30 * time.Second},
 		{Minutes, 2, 2 * time.Minute},
 		{Heures, 24, 24 * time.Hour},
+		{Jours, 30, 30 * 24 * time.Hour},
 		{Unite("inconnue"), 5, 0},
 	}
 	for _, c := range cas {

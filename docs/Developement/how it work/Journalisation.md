@@ -119,10 +119,64 @@ et le domaine manquant. C'est ce qu'on cherche dans un journal.
 | --- | --- |
 | `debug: true` dans `serveur_conf.yaml` | active `DEBUG` |
 | `VAULTAIRE_LOG_PATH` | répertoire des journaux de fichier |
+| `log_retention_days`, `log_purge_hours` | rétention et purge du journal commun (`settings`) |
 
 La sortie principale est **stdout**, au format RFC 5424 ou JSON — voir
 `core/logs/rfc5424.go`. `WriteLog` ne sert plus qu'aux quelques familles qui ont
 un fichier dédié : `date`, `SQL_Injection`.
+
+---
+
+## Le journal commun des cores (TO-DO 91)
+
+Chaque ligne émise par `writeEntry` part, en plus de la sortie standard et de
+la mémoire, vers une **sortie branchée** (`logs.BrancherSortie`). Le core y
+branche au démarrage l'écrivain de `core/database/db_journaux`, qui l'insère
+dans la table `server_logs`, **signée du nom du core** (`logs.NomDuCore()`, le
+même `os.Hostname()` que l'inscription au cluster).
+
+Pourquoi une base et pas un service de journalisation : la base est déjà le
+point de rendez-vous du cluster. Un service de plus serait à installer, à
+authentifier, à superviser — et tomberait au moment où l'on a besoin de lui.
+
+### Ce qu'il ne faut pas casser
+
+| Invariant | Pourquoi | Tenu par |
+| --- | --- | --- |
+| **La sortie ne bloque jamais** | appelée depuis toutes les goroutines, souvent au milieu d'une requête ; une base lente ralentirait chaque requête, une base arrêtée figerait le core | file bornée (`CapaciteFile`), `select` non bloquant — `TestUneFilePleineNeBloquePasEtCompte` |
+| **Le paquet `logs` n'importe pas la base** | la base importe `logs` : cycle | une fonction branchée par `main`, comme `permission.SetRevokedChecker` |
+| **Une perte se dit** | un trou dans le journal commun se lirait comme une période calme | `WARNING` `VLT-LOG001` au plus une fois par minute, avec le compte et la cause |
+| **Le DEBUG ne part pas en base** | c'est le niveau le plus bavard ; chaque séance de diagnostic ferait grossir la table | `dbjournaux.VaEnBase` |
+| **Filtre SQL = filtre mémoire** | le repli sur la mémoire du core doit rendre les mêmes lignes que la base | `TestLeFiltreSQLEtLeFiltreMemoireConcordent` |
+
+Le signalement des pertes passe par le journal ordinaire, donc revient dans la
+file : base rétablie, il est inséré à l'endroit du trou. Base toujours arrêtée,
+il est perdu à son tour et compté au suivant — une ligne par minute, pas une
+boucle.
+
+### Seuil : tout sauf DEBUG
+
+Un seuil plus haut rendrait le journal commun muet sur la question qu'on lui
+pose le plus : l'audit des écritures (« alice a fait group.add_user… ») est en
+`INFO`.
+
+### Ce qui n'y est pas
+
+- les lignes émises **avant** le branchement : lecture de la configuration,
+  ouverture de la base. Elles sont sur la sortie standard ;
+- les journaux des **agents**, du proxy et de Nexus : chacun a son propre
+  paquet de journalisation, hors de ce module.
+
+### Lecture et rétention
+
+Une seule action, `log.list` (`read:log`), sert `vlt logs` et la page
+`/admin/logs` — filtre par seuil de gravité, core, code et période, pagination
+sans `COUNT(*)` (une ligne témoin dit s'il y a une suite). Base injoignable :
+l'action se replie sur `logs.EntreesEnMemoire()` et le **dit**.
+
+La rétention est le réglage `log_retention_days` ; chaque core purge au
+démarrage puis à la cadence de `log_purge_hours`, par lots bornés
+(`dbjournaux.Purger`). Voir [`Reglages_de_duree.md`](./Reglages_de_duree.md).
 
 ---
 

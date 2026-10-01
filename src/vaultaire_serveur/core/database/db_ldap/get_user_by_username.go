@@ -22,6 +22,7 @@ func GetUserByUsername(username string, db *sql.DB) (ldapstorage.User, error) {
 			u.lastname,
 			u.email, 
 			u.created_at, 
+			u.updated_at,
 			MIN(dg.domain_name) as domain_name
 		FROM users u
 		JOIN users_group ug ON u.id_user = ug.d_id_user
@@ -33,7 +34,8 @@ func GetUserByUsername(username string, db *sql.DB) (ldapstorage.User, error) {
 	`
 
 	row := db.QueryRow(query, username)
-	err := row.Scan(&user.ID, &user.Username, &user.Firstname, &user.Lastname, &user.Email, &user.Created_at, &user.GroupDomain)
+	err := row.Scan(&user.ID, &user.Username, &user.Firstname, &user.Lastname, &user.Email,
+		&user.Created_at, &user.Modified_at, &user.GroupDomain)
 	if err != nil {
 		return ldapstorage.User{}, err
 	}

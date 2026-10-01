@@ -3,6 +3,7 @@ package scope
 import (
 	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	dbldap "vaultaire/core/database/db_ldap"
 	domainpkg "vaultaire/core/domain"
@@ -11,7 +12,6 @@ import (
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
-	"vaultaire/core/storage"
 )
 
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
@@ -35,11 +35,23 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 
 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d baseObject=%s", baseDN, scope, baseObject))
 
-	// JumpServer and similar clients search ou=users,dc=... with one-level scope but
-	// expect users from all subdomains — use subtree group loading for user containers.
-	loadScope := scope
-	if isUserContainerSearch(baseObject) && scope == 1 {
-		loadScope = 2
+	// UNE RECHERCHE `one` REND UN NIVEAU — sauf réglage contraire.
+	//
+	// La promotion en `sub` était silencieuse et déclenchée par le NOM du
+	// conteneur : une recherche `one` sur `ou=users` rendait l'arborescence
+	// entière, sous-domaines compris. Écrit pour JumpServer, qui cherche ainsi et
+	// attend les sous-domaines ; subi par tous les autres, dont un administrateur
+	// qui croyait restreindre un périmètre en configurant `scope=one`.
+	//
+	// Le réglage remplace l'exception : il est explicite, documenté, journalisé au
+	// démarrage, et il vaut pour TOUTE recherche `one`, pas seulement celles dont
+	// le conteneur s'appelle `users`. Un nom de conteneur n'a jamais été une bonne
+	// raison de changer la portée d'une recherche.
+	loadScope := porteeDeChargement(scope)
+	if loadScope != scope {
+		logs.Write_Log("DEBUG", fmt.Sprintf(
+			"ldap: recherche « one » sur %s élargie à l'arborescence (ldap.onelevel_subtree)",
+			baseObject))
 	}
 
 	switch scope {
@@ -75,6 +87,19 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 	}
 }
 
+// porteeDeChargement rend la portée à employer pour charger les candidats.
+//
+// La RÈGLE du point 127, isolée pour être éprouvée sans base : seule une
+// recherche `one` peut être élargie, et seulement si le réglage le demande. Ni
+// le nom du conteneur, ni la forme du DN, ni quoi que ce soit d'autre n'entre
+// dans cette décision — c'était précisément le défaut.
+func porteeDeChargement(scope int) int {
+	if scope == 1 && ldapstorage.OneLevelSubtree {
+		return 2
+	}
+	return scope
+}
+
 // loadGroupsAndUsers construit les entrées LDAP d'un ensemble de domaines.
 //
 // # Ce qui a changé, et pourquoi
@@ -105,6 +130,18 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 	// appartenir à des groupes d'un autre, et un client comme Keycloak s'attend à
 	// les voir tous.
 	userMembershipMap := make(map[string][]string)
+	// Les DOMAINES où vit chaque compte, c'est-à-dire ceux des groupes par
+	// lesquels il a été trouvé. C'est ce qui sert au contrôle d'accès.
+	//
+	// Il ne peut pas être remplacé par `domain` : cette variable de boucle porte
+	// le domaine DEMANDÉ par le client, et la première version du point 120 s'en
+	// servait — ce qui autorisait tout compte par construction, puisque le filtre
+	// ne voyait jamais que le domaine qui venait d'être autorisé.
+	//
+	// Il ne peut pas non plus être déduit du DN : `ToRootDN` ne garde que les deux
+	// derniers labels, si bien qu'un compte de `admin.enov.local` et un compte de
+	// `enov.local` ont exactement le même DN.
+	rattachements := make(map[string]map[string]struct{})
 	// Les groupes chargés une seule fois, réutilisés pour construire les entrées.
 	groupesParDomaine := make(map[string][]ldapstorage.Group, len(domains))
 
@@ -121,6 +158,10 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
 			for _, uname := range g.Users {
 				userMembershipMap[uname] = append(userMembershipMap[uname], groupDN)
+				if rattachements[uname] == nil {
+					rattachements[uname] = make(map[string]struct{}, 2)
+				}
+				rattachements[uname][g.DomainName] = struct{}{}
 			}
 		}
 
@@ -183,9 +224,11 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					memberDNs[i] = fmt.Sprintf("uid=%s,ou=users,%s", u, domainDN)
 				}
 				entries = append(entries, candidate.GroupEntry{
-					Name:    g.GroupName,
-					BaseDN:  g.DomainName,
-					Members: memberDNs,
+					Name:        g.GroupName,
+					BaseDN:      g.DomainName,
+					Members:     memberDNs,
+					Created_at:  g.Created_at,
+					Modified_at: g.Modified_at,
 				})
 				seenGroups[groupKey] = struct{}{}
 			}
@@ -204,13 +247,17 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 				}
 
 				entries = append(entries, candidate.UserEntry{
-					User:        userObj,
-					BaseDN:      domain,
-					Groups:      userMembershipMap[uname],
-					DisplayName: userObj.Firstname + " " + userObj.Lastname,
-					GivenName:   userObj.Firstname,
-					Sn:          userObj.Lastname,
-					Uid:         userObj.Username,
+					User: userObj,
+					// BaseDN compose le DN, Rattachements décide des droits. Les deux
+					// diffèrent, et c'est le fond du point 120 : le DN d'un compte de
+					// sous-domaine est identique à celui d'un compte du domaine parent.
+					BaseDN:        domain,
+					Rattachements: domainesDe(rattachements[uname]),
+					Groups:        userMembershipMap[uname],
+					DisplayName:   userObj.Firstname + " " + userObj.Lastname,
+					GivenName:     userObj.Firstname,
+					Sn:            userObj.Lastname,
+					Uid:           userObj.Username,
 				})
 				seenUsers[uname] = struct{}{}
 			}
@@ -218,12 +265,32 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 	}
 
 	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: %d entrées construites", len(entries)))
-	if storage.Debug {
-		for _, e := range entries {
-			logs.Write_Log("DEBUG", DumpLDAPEntry(e, attributes))
-		}
-	}
+
+	// Le vidage détaillé des entrées a été déplacé dans le gestionnaire, APRÈS le
+	// filtre d'autorisation.
+	//
+	// Il avait lieu ici, donc avant : le journal DEBUG portait le contenu des
+	// entrées que le compte n'a PAS le droit de lire — cn, mail, memberOf, uid des
+	// sous-domaines — écrit sur disque. Corriger la fuite vers le client en la
+	// laissant vers le journal n'aurait pas été une correction.
 	return entries, nil
+}
+
+// domainesDe rend un ensemble de domaines sous forme de liste.
+//
+// Trié, pour que deux exécutions de la même recherche produisent la même chose :
+// une liste dont l'ordre dépend du parcours d'une table de hachage rend les
+// journaux incomparables et les tests intermittents.
+func domainesDe(ensemble map[string]struct{}) []string {
+	if len(ensemble) == 0 {
+		return nil
+	}
+	liste := make([]string, 0, len(ensemble))
+	for d := range ensemble {
+		liste = append(liste, d)
+	}
+	sort.Strings(liste)
+	return liste
 }
 
 // DumpLDAPEntry rend une entrée sous forme lisible, pour le journal.

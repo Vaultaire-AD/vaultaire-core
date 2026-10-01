@@ -32,6 +32,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 21. [cluster — Nœuds du parc](#21-cluster--nœuds-du-parc)
 22. [settings — Durées d'exploitation](#22-settings--durées-dexploitation)
 23. [version — Version du core](#23-version--version-du-core)
+24. [logs — Journal commun des cores](#24-logs--journal-commun-des-cores)
 
 ---
 
@@ -95,14 +96,30 @@ api:
   api_enable: true
   api_port: 6643
 
-administreur:
+administrateur:
   enable: true
   username: admin
-  password: admin123
+  password: CHANGEZ_MOI
   public_key: "ssh-rsa ..."
 ```
 
-**À ne pas oublier** : en production, désactiver `debug` (section debug) et changer les mots de passe / clés.
+> ⚠️ **La configuration livrée ne fonctionne pas, et c'est voulu.** Le core
+> **refuse de démarrer** tant que `administrateur.password` vaut `CHANGEZ_MOI`
+> ou l'une des valeurs de démonstration publiées. Posez-y un vrai mot de passe,
+> ou la variable `VAULTAIRE_ADMIN_PASSWORD`.
+>
+> Il doit aussi tenir la règle de robustesse (12 caractères par défaut, voir
+> `mfa policy`), et il est **provisoire** : le portail en demandera un autre à la
+> première connexion.
+>
+> `administrateur` et non `administreur` : l'ancienne orthographe n'a jamais été
+> lue, et toute la section était ignorée en silence. Le core refuse maintenant de
+> démarrer dessus, en la nommant.
+
+**À ne pas oublier** : `debug: false` en production — les lignes DEBUG portent
+les DN des binds LDAP, les identifiants de groupe des décisions de permission et
+le détail des vérifications de signature ; aucun secret, mais la cartographie
+complète de l'annuaire et des droits.
 
 ---
 
@@ -138,9 +155,16 @@ Toujours séparer chaque niveau avec `dc=` :
 | Users DN                    | `dc=it,dc=company,dc=com` |
 | Username LDAP attribute     | `uid` |
 | RDN / UUID LDAP attribute   | `uid` |
-| User object classes         | `inetOrgPerson`, `organizationalPerson`, `posixaccount`, `person`, `user` |
-| Search scope                | One Level |
+| User object classes         | `inetOrgPerson`, `organizationalPerson`, `person`, `user` |
+| Search scope                | `Subtree` — `One Level` ne remonte plus les sous-domaines (point 127) |
 | Group member attribute      | `member` |
+
+> ⚠️ **`posixaccount` a été retiré de cette liste** (point 123). Le serveur ne
+> l'annonce plus, parce qu'il ne servait aucun attribut POSIX. Keycloak compose
+> ces classes en conjonction : **une instance encore configurée avec
+> `posixaccount` ne trouvera plus aucun utilisateur**, et une synchronisation
+> peut alors supprimer les comptes. Retirez-le de la configuration Keycloak
+> **avant** de mettre le core à jour.
 
 **Groupes (Group Mapping)** :
 
@@ -181,6 +205,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `version` | Version de ce core — voir [§23](#23-version--version-du-core) |
 | `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
 | `settings`| Durées d'exploitation du serveur — voir [§22](#22-settings--durées-dexploitation) |
+| `logs`   | Journal commun des cores, filtré et paginé — voir [§24](#24-logs--journal-commun-des-cores) |
 | `help`   | Liste les commandes. Chaque commande accepte `-h`. |
 
 > Chaque commande répond à `-h` avec sa syntaxe à jour. En cas de désaccord entre ce manuel et `vlt <commande> -h`, **c’est l’aide qui fait foi** : elle vit dans le même fichier que le code qui l’applique.
@@ -275,6 +300,19 @@ create -g "nom_du_groupe" "domain_name"
 
 Exemple : `create -g "IT_Group" "it.company.com"`
 
+- Le domaine est écrit en **minuscules**, avec au moins deux labels
+  (`acme.lan`, pas `lan`) ; il est normalisé à la création.
+- Les **domaines parents manquants** sont créés avec le groupe, jusqu’au domaine
+  principal (les deux derniers labels) : `create -g Web web.cloud.acme.lan`
+  crée aussi, s’ils n’existent pas, les groupes `acme.lan` et `cloud.acme.lan`,
+  sans membre ni permission. La réponse les nomme.
+- Le **dernier** groupe d’un domaine qui a des sous-domaines ne se supprime pas
+  (`delete -g`) : le domaine disparaîtrait sous ses enfants.
+
+> Le domaine principal d’un groupe est aussi le seul sous lequel ses membres se
+> **connectent** aux machines : un membre de `web.cloud.acme.lan` se connecte
+> comme `compte@acme.lan`. Voir [Lexique — domaine principal](./Lexique.md).
+
 ### 5.4 Utilisateur
 
 ```bash
@@ -298,7 +336,40 @@ create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
 create -c <oui|non>
 # Option : intégration automatique
 create -c <oui|non> -join <hôte[:port]> <Username>
+# Option : archive d'installation, à emporter sur le poste
+create -c <oui|non> --os <linux|windows> --export <fichier.zip>
+# Pour une machine déjà créée
+create -export <computeur_id> <fichier.zip> --os <linux|windows>
 ```
+
+#### L'archive d'installation
+
+`--export` écrit un zip portant **tout** ce dont l'agent a besoin :
+`client_software.yaml`, `private_key.pem`, `core_key_fingerprint`,
+`client_conf.json`, et `gpo_signing_key.pem` sous Linux seulement — l'agent
+Windows ignore les trames de politique. Un `LISEZ-MOI.txt` dit ce que l'archive
+contient, et nomme ce qui manque si le core n'a pas su le produire.
+
+Le fichier est écrit en **0600**, et il contient la **clé privée de la machine** :
+il vaut son identité sur le parc.
+
+`--os` ne décrit que l'archive — quels fichiers y mettre. Il ne renseigne pas la
+colonne « OS » de l'inventaire, que l'agent déclare lui-même une fois qu'il
+parle : elle doit dire ce qui tourne, pas ce qu'on a demandé.
+
+Les trois fichiers d'accompagnement étaient jusqu'ici produits **uniquement** par
+`-join`. Une machine créée autrement naissait donc sans empreinte du core, sans
+liste de cores et sans clé de signature — sans que rien ne le dise. Ils sont
+maintenant composés à chaque export, à partir de l'état courant du cluster.
+
+Un **client service** ne s'exporte pas : la commande le refuse en nommant son
+type. Sa paire naît sur son propre hôte à l'enrôlement, et sa clé privée ne doit
+exister nulle part ailleurs.
+
+Depuis le **portail**, page *Clients* : le système se choisit à la création, et le
+bouton « Identité » de la liste produit l'archive d'une machine existante. Le lien
+de téléchargement ne sert **qu'une fois** et expire en cinq minutes ; chaque
+téléchargement laisse une ligne `SECURITY` au journal, avec qui a pris quoi.
 
 Le paramètre `<oui|non>` indique si l'agent tourne sur un serveur membre. Ce
 n'est pas un type : c'est le même binaire, qui émet les mêmes trames et ouvre
@@ -453,6 +524,36 @@ status -u "username"
 status -u -g "group_name"
 ```
 
+| Colonne | Ce qu'elle dit |
+|---|---|
+| **Identifiant** | le compte — `vaultaire` est le tunnel de la machine, pas une personne |
+| **Machine** | le poste sur lequel la session est ouverte |
+| **Jeton valide jusqu'à** | quand la ligne disparaîtra si plus rien ne la prolonge |
+
+Une personne connectée sur trois postes donne **trois lignes** : une session,
+c'est « qui, et où ».
+
+**Ce qui fait vivre et mourir une ligne.** Elle naît à l'authentification
+(`03_01`), meurt à la déconnexion (`03_11`, émise par la fermeture PAM), et
+serait sinon effacée dix minutes après le dernier signe de vie. Ce signe de vie
+est le **battement de la machine** : une session utilisateur n'en a pas à elle.
+Une révocation (`vlt kill`) la retire aussi — un tableau de bord qui montre
+encore comme connecté un compte qu'on vient de couper est un tableau de bord qui
+ment.
+
+`status -u` et `status -c` lisent **deux tables différentes** : la première les
+sessions ouvertes par PAM, la seconde les tunnels Ducky. Une machine avec trois
+personnes connectées reste donc **une** ligne dans `status -c`.
+
+Conséquence à connaître : une machine éteinte voit ses sessions disparaître en
+une dizaine de minutes, mais une déconnexion dont la trame de fin s'est perdue
+reste affichée tant que le poste tourne. En cas de doute, `status -c` dit si la
+machine, elle, parle encore.
+
+> ⚠️ Un poste **Windows** n'émet pas de trame de fin de session : ses sessions
+> restent affichées jusqu'à l'extinction du poste. Voir
+> [`Installation/Client_Windows.md`](../Installation/Client_Windows.md).
+
 ### 6.2 Clients connectés
 
 ```bash
@@ -588,9 +689,17 @@ Le **libellé** est obligatoire : c'est lui qui permettra de retirer la clé plu
 
 Une clé n'appartient qu'à **un seul compte** : la contrainte est globale, parce que l'API authentifie par signature SSH. Une clé partagée entre deux comptes permettrait à son porteur d'agir sous l'une ou l'autre identité, au choix, à chaque requête.
 
+**Dix clés au plus par compte, de 4 096 caractères au plus chacune** (une clé RSA de 16 384 bits, la plus longue qu'OpenSSH produise, en fait moins de 2 900). Toutes les clés d'un compte partent aux postes à chaque connexion, dans une seule trame Ducky dont la taille est bornée à 65 535 octets : sans ces bornes, un compte trop garni ne pouvait plus se connecter nulle part. La onzième est refusée, en ligne de commande comme depuis la page de profil ; il faut en retirer une d'abord.
+
 ---
 
 ## 10. remove — Retrait
+
+Les retraits d’un groupe (10.1 à 10.5) exigent le droit **Détacher** de l’entité
+retirée — `write:remove:user`, `write:remove:client`, `write:remove:permission`,
+`write:remove:gpo` —, sur les domaines du groupe **et** de l’entité. Ils
+n’exigent plus le droit de la supprimer (`write:delete:*`), qu’ils empruntaient
+auparavant.
 
 ### 10.1 Utilisateur d’un groupe
 
@@ -687,8 +796,8 @@ update -pu <PermissionName> <ActionKey> <Arg> [ChildOrAll] [Domain]
 - **PermissionName** : nom de la permission (ex. LDAP_AdminPanel).
 - **ActionKey** : clé d’action (voir [§5.0](#50-modèle-des-permissions-user)).
   - **Legacy** : `none`, `web_admin`, `auth`, `compare`, `search`.
-  - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (et idem pour `group`, `client`, `permission`, `gpo`).
-  - **Spécial** : `write:dns`, `write:eyes`.
+  - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user`, `write:remove:user` (et idem pour `group`, `client`, `permission`, `gpo`). `add` rattache à un groupe, `remove` en détache.
+  - **Spécial** : voir [Actions et permissions](./Actions_et_Permissions.md) (`write:dns`, `read:cluster`, `write:mfa`…). `write:eyes` n'est plus vérifiée.
 - **Arg** :
   - `nil` — aucun accès.
   - `all` — tous les domaines.
@@ -885,6 +994,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Imposer le second facteur à un groupe | `mfa -g IT_Group --require` |
 | Émettre une clé d'enrôlement de service | `enroll create --type proxy --uses 1 --expires 30m` |
 | Machines en écart de conformité GPO | `gpo drift` |
+| Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --all` |
 | Voir les durées d'exploitation | `settings list` |
 | Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
 | Arborescence LDAP | `eyes -g` |
@@ -953,13 +1063,60 @@ mfa -u <user>                          # état du second facteur d'un compte
 mfa -u <user> --reset                  # efface son secret            (write:mfa)
 mfa -g <groupe> --require              # impose le second facteur     (write:mfa)
 mfa -g <groupe> --optional             # le rend facultatif           (write:mfa)
-mfa policy                             # lit la politique d'expiration
-mfa policy --max-age <j> --warn <j>    # l'écrit          (groupe vaultaire)
+mfa policy                             # lit la politique de mot de passe
+mfa policy --max-age <j> --warn <j>    # règle l'expiration       (groupe vaultaire)
+mfa policy --min-length <n>            # règle la longueur minimale (groupe vaultaire)
+mfa ducky                              # dit si un code est exigé à l'ouverture de session
+mfa ducky <on|off>                     # l'exige, ou non          (write:server)
 ```
 
 L’exigence se pose sur un **groupe**, pas sur un compte : elle s’applique à tous ses membres.
 
-> LDAP n’a aucun mécanisme standard de second facteur. Le bind d’un compte soumis au MFA est refusé, et non challengé — comportement désactivé par défaut (`RefuseBindWhenMFARequired`), pour ne pas couper un parc existant à la mise à jour.
+### Le second facteur à l'ouverture de session *(TO-DO 95)*
+
+Depuis la 2.2, SSH, GDM et la tuile Windows demandent un **code à 6 chiffres**
+après le mot de passe. Un compte qui n'a pas de second facteur tape `0000` — c'est
+ce que dit l'invite, et c'est la seule valeur que le core accepte pour lui.
+
+```bash
+mfa ducky            # état, et nombre de comptes ayant enrôlé un second facteur
+mfa ducky on         # tout agent doit envoyer un code
+mfa ducky off        # retire l'exigence
+```
+
+> ⚠️ **Mettez le parc à jour AVANT d'activer.** Un agent d'une version antérieure
+> n'envoie aucun code : avec `on`, ses machines ne peuvent plus ouvrir de session.
+> `off` retire l'exigence en une commande — c'est ce qui rend l'activation
+> réversible. La commande refuse `on` tant qu'aucun compte n'a enrôlé de second
+> facteur.
+>
+> Les comptes qui **ont** un second facteur doivent le fournir dans tous les cas,
+> que cette exigence soit active ou non.
+
+**SSH par clé publique** : sshd n'ouvre pas de conversation PAM, donc rien ne peut
+être demandé — l'agent envoie `0000`, et une connexion par clé sur un compte à
+second facteur est **refusée**. Pour qu'elle fonctionne avec un code :
+
+```
+AuthenticationMethods publickey,keyboard-interactive
+KbdInteractiveAuthentication yes
+```
+
+### La robustesse des mots de passe *(TO-DO 100)*
+
+`--min-length` fixe la longueur minimale d'un mot de passe **neuf** (12 par
+défaut, **plancher 8 non désactivable**). Sont aussi refusés : l'identifiant du
+compte, les libellés de son domaine, le nom du produit et une courte liste de
+classiques — comparés après normalisation, `P@ssw0rd` valant `password`.
+
+Aucune règle de complexité : elle produit `Password1!`, qui est dans toutes les
+listes. **Une phrase de passe est ce qu'on veut encourager.**
+
+La règle ne touche pas les mots de passe déjà en base : on ne peut pas recalculer
+ce qu'on refuserait, le mot de passe n'existant nulle part. Le parc s'y conforme
+au premier changement de chacun.
+
+> LDAP n’a aucun champ pour un second facteur. Au bind, un compte soumis au MFA fournit son mot de passe **suivi** du code à 6 chiffres (`MotDePasse123456`) ; le mot de passe seul est refusé. `ldap.mfa_bypass: true` (dans `serveur_conf.yaml`) lève cette exigence pour tout le parc — chaque bind concerné est journalisé. Voir [MFA et expiration](../Developement/how%20it%20work/MFA_et_Expiration.md).
 
 ---
 
@@ -976,6 +1133,16 @@ enroll types                     # catalogue des types de clients
 ```
 
 `--uses` borne le nombre d’enrôlements, `--expires` la durée de validité. Les deux limitent ce qu’une clé divulguée permet.
+
+Types de service : `vaultaire_proxy`, `vaultaire_web`, `vaultaire_nexus`. Exemple
+pour le dépôt de paquets :
+
+```bash
+enroll create --type vaultaire_nexus --uses 1 --expires 1h --label nexus-01
+```
+
+`enroll types` affiche aussi, pour chaque service qui vérifie des comptes, les
+**droits de service** qu'il apprend (`read:nexus`…).
 
 ### `--groups` — les groupes de naissance
 
@@ -1012,6 +1179,10 @@ gpo status                 # état d'application et de conformité du parc
 gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
 gpo drift                  # uniquement les machines en écart
 gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
+gpo refresh <computeur_id>           # cycle immédiat sur une machine
+gpo refresh --all                    # cycle immédiat sur tout le parc connecté
+gpo signature                        # les politiques non signées sont-elles refusées ?
+gpo signature <on|off>               # les refuser, ou non
 ```
 
 **Trois informations distinctes, à ne pas confondre :**
@@ -1024,13 +1195,104 @@ gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
 
 > « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
 
+**Les deux scopes sont vérifiés.** La machine l'est avant chaque cycle machine ;
+un compte l'est à son ouverture de session, au plus une fois par cadence GPO —
+PAM est sollicité à chaque `ssh` mais aussi à chaque `sudo`, et scanner à chaque
+passage aurait envoyé un rapport par commande privilégiée. `gpo status
+<computeur_id>` affiche donc une ligne de conformité par utilisateur, là où elle
+disait « jamais vérifiée » avant la 2.2.
+
+Un écart dans un `HOME` est corrigé **à la connexion suivante de ce compte**, pas
+au prochain cycle machine : le scan précède le cycle utilisateur, si bien que
+l'environnement est remis en état avant que le shell ne démarre.
+
+**« Depuis quand ? »** `gpo status <computeur_id>` termine par une section
+**Changements d'état** : une ligne par changement de statut ou d'empreinte, la
+plus récente en tête. Une machine saine et stable n'en produit qu'une, à son
+premier rapport ; une machine qui casse en produit une le jour où elle casse.
+C'est volontairement un historique des **changements** et non un journal des
+cycles — sur mille machines qui rapportent toutes les heures, le second ferait
+vingt-quatre mille lignes par jour pour dire toujours la même chose.
+
+La conservation se règle avec `gpo_history_retention_days` (90 jours par
+défaut). L'état courant, lui, n'est jamais purgé.
+
+### Signer les politiques — `gpo signature`
+
+```bash
+gpo signature          # état, et empreinte de la clé du cluster
+gpo signature on       # refuser les politiques NON signées
+gpo signature off      # les accepter de nouveau
+```
+
+Les politiques sont **signées par le cluster** avec une clé qui lui est propre,
+distincte de celle du tunnel. Une machine la reçoit à son installation
+(`create -c … --join` dépose `gpo_signing_key.pem` à côté de l'empreinte du
+core) et vérifie alors chaque politique avant de l'appliquer.
+
+| Machine | Ce qui se passe |
+|---|---|
+| **installée avant la 2.2** (pas de clé) | applique sans vérifier, même avec `gpo signature on` |
+| avec la clé, politique **signée** | la signature doit être valide, toujours — `on` ou `off` |
+| avec la clé, politique **non signée** | refusée si `on`, appliquée avec un avertissement si `off` |
+
+> `gpo signature on` ne casse donc **rien** sur un parc ancien : il n'agit que
+> sur les machines qui portent la clé. C'est ce qui permet de l'activer avant
+> d'avoir fini la migration, puis de vérifier machine par machine dans le
+> journal de l'agent.
+
+La commande est **refusée** si ce core n'a pas de clé de signature : l'activer
+ferait refuser toutes les politiques du parc, et le message d'erreur arriverait
+sur les machines et non devant vous.
+
+Droits : `read:log` pour lire, `write:server` pour régler — c'est un réglage de
+serveur, pas une écriture de GPO : il change ce que **tout le parc** accepte de
+recevoir.
+
 **La vue part de l’inventaire, pas des rapports.** Une machine créée mais jamais
 installée, ou dont l’agent est tombé, apparaît donc — en `jamais` ou en `en
 retard`. C’est volontaire : auparavant elle n’apparaissait pas du tout, et son
 silence se lisait comme une absence de problème.
 
-`en retard` se déclenche après **trois** cycles manqués, soit trois heures. Un
-redémarrage ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
+`en retard` se déclenche après **trois** cycles manqués. La durée d'un cycle est
+le réglage `gpo_refresh_minutes` (`settings`), soit trois heures avec sa valeur
+par défaut d'une heure — resserrez la cadence et le seuil suit. Un redémarrage
+ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
+
+### Déclencher un cycle tout de suite — `gpo refresh`
+
+```bash
+gpo refresh poste-42     # cette machine redemande sa politique maintenant
+gpo refresh --all        # toutes les machines connectées
+```
+
+Entre la correction d'une GPO et son application, il s'écoule sinon jusqu'à une
+cadence entière. `gpo refresh` supprime cette attente : le core pousse une
+demande de réveil, et la machine repart sur son cycle **ordinaire** — mêmes
+calculs, même empreinte, mêmes rapports. Rien n'est appliqué par un chemin
+différent.
+
+| | |
+|---|---|
+| Machine **hors ligne** | rien n'est mis en file : elle rafraîchira à sa reconnexion, qui déclenche déjà un cycle |
+| Machine **connectée, demande non remise** | le message le dit, avec l'erreur : réessayez. Ce n'est pas « hors ligne », la machine ne va pas se reconnecter d'elle-même |
+| Machine **en cours de cycle** | la demande est ignorée : un seul cycle machine à la fois |
+| `--all` | ne vise que les machines **connectées**, et seulement celles de votre périmètre ; le décompte annonce les deux |
+
+Le droit exigé est `write:update:client` sur les domaines de la machine — et non
+`write:update:gpo` : ce qu'on engage, c'est le poste et ses services, pas la
+politique. Un administrateur délégué rafraîchit donc ses machines, pas celles
+des autres.
+
+**Changer la cadence de tout le parc** relève de `settings` :
+
+```bash
+settings set gpo_refresh_minutes 10     # pendant un déploiement
+settings reset gpo_refresh_minutes      # retour à une heure
+```
+
+La nouvelle valeur part avec les réponses GPO : chaque machine l'applique à son
+cycle suivant, sans redémarrage d'agent ni de core.
 
 ### Corriger ou seulement constater — `gpo mode`
 
@@ -1094,13 +1356,20 @@ La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’int
 ```bash
 cluster list                  # tous les nœuds enregistrés
 cluster list <role>           # nœuds actifs d'un rôle
-cluster purge-delay           # délai avant suppression d'un service parti
+cluster purge-delay           # délai avant suppression d'un service ou d'un nœud parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
+
+cluster metrics-retention           # conservation des mesures remontées par les nœuds
+cluster metrics-retention <jours>   # la règle (0 conserve sans limite)
 
 cluster expose <noeud> <adresse> [port]   # par où les AGENTS joignent ce nœud
 cluster expose <noeud> --clear            # retire la déclaration
 cluster priority <noeud> <valeur>         # ordre de service
 cluster rotation <noeud> <in|out>         # annoncer ce nœud aux agents, ou non
+
+cluster refresh <computeur_id>            # la machine redemande la liste des nœuds
+cluster refresh -g <groupe>               # les machines d'un groupe
+cluster refresh --all                     # toutes les machines connectées
 ```
 
 ### Dire à un nœud par où on le joint
@@ -1130,6 +1399,35 @@ les agents. `cluster list` montre les deux : **ACCÈS AGENTS** est ce qui est
 distribué, **VU PAR LE NŒUD** ce que la machine rapporte — renseigné seulement
 quand il diffère, parce que c'est leur écart qu'on cherche quand une connexion ne
 passe pas.
+
+### Ce qu'un proxy relaie
+
+Les colonnes **RELAIS** et **TRAFIC** de `cluster list` portent ce que le nœud a
+remonté de lui-même, à la cadence de son battement (20 s).
+
+```
+RELAIS   3/128 ✗7     3 connexions en cours, 128 relayées depuis le démarrage
+                      du proxy, 7 qui ne sont pas passées
+TRAFIC   1,4 Gio      les deux sens confondus
+```
+
+Le compteur `✗` n'apparaît que s'il est non nul. Il additionne deux causes qui ne
+se règlent pas de la même façon — « aucune cible joignable » et « plafond
+atteint » : **Admin → Cluster**, fiche du nœud, les sépare et donne le détail
+**par relais** (Ducky, HTTPS, LDAPS), ce que l'agrégat ne peut pas dire.
+
+Les deux colonnes sont vides pour un core — il ne relaie rien — et pour un proxy
+qui n'a rien remonté depuis plus de trois minutes. C'est voulu : un compteur de
+connexions actives vieux d'une heure ne décrit plus rien, et l'afficher se lirait
+comme l'état courant.
+
+> **Ces mesures sont montrées, elles n'ordonnent rien.** Un nœud décide de ce
+> qu'il déclare : faire dépendre l'ordre de la liste servie aux agents d'un
+> chiffre qu'il choisit lui-même reviendrait à le laisser attirer le parc vers
+> lui. L'ordre reste celui de l'affinité, de la priorité et de l'état.
+
+La conservation de ces mesures se règle avec `cluster metrics-retention`
+(30 jours par défaut).
 
 ### Affinité — quel nœud sert quel site
 
@@ -1175,9 +1473,48 @@ tous les autres.
 > désenregistrer — ce qui le ferait disparaître des vues de supervision au moment
 > précis où on le surveille.
 
+### Faire prendre en compte un changement tout de suite
+
+```bash
+cluster refresh poste-042        # une machine
+cluster refresh -g paris         # les machines d'un groupe
+cluster refresh --all            # toutes les machines connectées
+```
+
+Chaque machine redemande la liste des nœuds **toutes les 30 minutes** par défaut
+(réglage `node_list_refresh_minutes`, `settings set`). C'est le délai maximal
+entre un `cluster expose`, `priority` ou `rotation` fait ici et sa prise en
+compte par un poste. Acceptable en régime normal, beaucoup trop long pendant une
+bascule de cluster : `cluster refresh` demande l'actualisation **maintenant**.
+
+Si le nœud que la machine utilise n'est plus le mieux placé, elle **rouvre son
+tunnel** sur celui qui l'est. À priorité égale elle ne bouge pas : basculer entre
+deux nœuds équivalents ne gagne rien et coûte une coupure.
+
+> **Une machine hors ligne n'est pas une erreur.** Elle ne reçoit rien et rien
+> n'est mis en attente pour elle : elle relira sa liste à sa reconnexion. Le
+> compte-rendu de `--all` et `-g` distingue les machines jointes, hors ligne, et
+> hors de votre périmètre.
+
+Ce droit est celui de la **machine** (`write:update:client` sur ses domaines),
+et non `write:cluster` : l'action ne modifie rien du cluster, elle engage un
+poste. Un délégué peut donc rafraîchir les machines qu'il administre, et
+seulement celles-là. Même raisonnement que `gpo refresh`.
+
 Ces trois réglages sont des **décisions d'administrateur** : un nœud qui
 redémarre ne les écrase pas. Ils exigent `write:cluster` et laissent une trace
-`SECURITY`. Les mêmes champs sont éditables depuis **Admin → Cluster**.
+`SECURITY`. Les mêmes champs sont éditables depuis **Admin → Cluster** : cliquez
+un nœud de la liste pour ouvrir sa fiche.
+
+**Ils survivent à une absence.** Un nœud muet passe **hors ligne** au bout d'une
+minute — il quitte la liste servie aux agents — mais sa ligne et ses réglages
+restent. Il n'est **oublié** qu'après le délai de `cluster purge-delay` (24 h par
+défaut, 0 = jamais) ; ses réglages partent alors avec lui. Jusqu'au TO-DO 85,
+cet oubli intervenait au bout de **cinq minutes** : une veille ou un redémarrage
+lent suffisait à perdre l'adresse publique, le port et la priorité.
+
+Un **core** dont la ligne a disparu (oubli, base réinitialisée) se réenregistre
+de lui-même au battement suivant, et le journal le dit.
 
 La colonne **VERSION** porte ce que le nœud déclare de lui-même. Elle contenait
 auparavant le TYPE du programme, écrit en dur côté serveur — que la colonne
@@ -1211,6 +1548,11 @@ settings reset <clé>           # la ramène à son défaut codé
 | `web_session_minutes` | min | 30 | durée d'une session du portail |
 | `web_session_purge_minutes` | min | 5 | purge des sessions web expirées |
 | `group_sync_minutes` | min | 60 | synchronisation des groupes du domaine sur les machines |
+| `gpo_refresh_minutes` | min | 60 | rafraîchissement des GPO sur les machines — voir [§20](#20-gpo--application-et-conformité) |
+| `node_list_refresh_minutes` | min | 30 | rafraîchissement de la liste des cores et proxies sur les machines — voir [§21](#21-cluster--nœuds-du-parc) |
+| `log_retention_days` | j | 30 | conservation du journal commun en base — voir [§24](#24-logs--journal-commun-des-cores) |
+| `gpo_history_retention_days` | j | 90 | conservation des changements d'état d'application GPO — voir [§20](#20-gpo--application-et-conformité) |
+| `log_purge_hours` | h | 24 | purge des lignes du journal plus anciennes que la conservation |
 
 **Les valeurs vivent en base ; les défauts sont codés dans le serveur.** Un
 changement prend effet au **prochain tour** de la boucle concernée — aucun
@@ -1286,3 +1628,83 @@ et l'inventer serait pire que se taire.
 Une règle de comparaison de versions se trompe sur les cas limites, et se
 tromper ici voudrait dire fermer la porte à un parc dont le seul outil de
 réparation est l'agent qu'on vient de refuser.
+
+---
+
+## 24. logs — Journal commun des cores
+
+Tous les cores écrivent leur journal dans **une même table de la base**, chaque
+ligne signée du core qui l'a émise. Une seule commande — et une seule page du
+portail, **Admin → Logs** — suffit donc pour lire tout le cluster, sans
+deviner quel core a traité la requête.
+
+```bash
+logs --level WARNING --since 2h                  # ce qui ne va pas depuis deux heures
+logs --core core-2 --since 2026-09-24            # un seul core, depuis minuit
+logs --code VLT-AUTH001 --since 3j               # un code précis, trois jours
+logs --since "2026-09-24 08:00" --until "2026-09-24 12:00"
+logs --per-page 200 --page 2                     # la page suivante, plus ancienne
+```
+
+| Option | Rôle |
+|---|---|
+| `--level` | **seuil** : `WARNING` rend WARNING, ERROR et CRITICAL |
+| `--core` | un seul core, par son nom — celui de `cluster list` |
+| `--code` | un code d'erreur, ex. `VLT-DB001` |
+| `--since` | début, **inclus** : `30m`, `2h`, `3j`, `2026-09-24`, `2026-09-24 14:30` |
+| `--until` | fin, **exclue**, mêmes formes |
+| `--page` | 1 = la plus récente |
+| `--per-page` | 50 par défaut, 500 au plus |
+
+`logs` tapé seul affiche l'aide, comme toutes les commandes : pour la dernière
+page sans filtre, `logs --page 1`.
+
+La ligne **la plus récente est en haut**. Quand une suite existe, la réponse
+donne la commande exacte pour l'afficher. Les dates absolues de la ligne de
+commande sont à l'heure **du core** ; le portail, lui, envoie l'heure du
+navigateur avec son fuseau.
+
+Une option inconnue est **refusée**, pas ignorée : `--sinec 2h` rendrait sinon
+tout le journal en laissant croire qu'il a été filtré.
+
+**Droit** : `read:log` — le même que la page du portail et `settings list`. Il ne
+se délègue pas par domaine : une ligne de journal n'appartient à aucun domaine.
+
+### Ce qui est en base, et ce qui n'y est pas
+
+- **Tout sauf DEBUG.** Le DEBUG reste sur la sortie standard du core (mode
+  `debug`) : c'est le niveau le plus bavard, et on ne l'allume que pour un
+  diagnostic.
+- Les toutes premières lignes du démarrage — lecture de la configuration,
+  ouverture de la base — sont émises avant que le core ne sache écrire en base.
+  Elles ne sont que sur sa sortie standard.
+- Une ligne met **au plus une seconde** à apparaître : les cores écrivent par
+  lots.
+
+### Quand la base ne répond pas
+
+La commande le **dit** en tête de réponse, et montre à la place la mémoire du
+core qui répond : ses 10 000 dernières lignes, **lui seul**. Le filtre et la
+pagination s'y appliquent de la même façon.
+
+Un core qui n'arrive pas à écrire en base — base arrêtée, emballement — perd ces
+lignes pour la base et les garde sur sa sortie standard. Il le signale une fois
+par minute par un `WARNING` de code `VLT-LOG001`, qui dit combien de lignes
+manquent : un trou dans le journal commun se lit comme un trou, pas comme une
+période calme.
+
+### Conservation
+
+```bash
+settings set log_retention_days 90    # garder trois mois
+settings set log_purge_hours 6        # purger toutes les six heures
+```
+
+Chaque core purge au **démarrage**, puis à la cadence de `log_purge_hours`. La
+conservation va de 1 à 365 jours, 30 par défaut. Pas de « garder tout » : une
+table de journaux sans borne remplit le disque de la base, et emporte
+l'annuaire avec elle.
+
+La sortie standard des cores (`docker logs`, `journalctl`) et les fichiers de
+`/var/log/vaultaire/` ne sont **pas** concernés : ils gardent leur propre
+rétention.

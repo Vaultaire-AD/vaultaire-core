@@ -286,6 +286,10 @@ func EnregistrerTout() {
 	EnregistrerActionsLectureEtat(Catalogue)
 	EnregistrerActionsServeur(Catalogue)
 	EnregistrerActionsConformiteGPO(Catalogue)
+	EnregistrerActionsRafraichissementGPO(Catalogue)
+	EnregistrerActionsRafraichissementCluster(Catalogue)
+	EnregistrerActionsSignatureGPO(Catalogue)
+	EnregistrerActionsMFADucky(Catalogue)
 	EnregistrerActionsArborescence(Catalogue)
 	EnregistrerActionsReglages(Catalogue)
 	EnregistrerActionsCertificat(Catalogue)
@@ -293,6 +297,7 @@ func EnregistrerTout() {
 	EnregistrerActionsDNS(Catalogue)
 	EnregistrerActionsPolitiqueMotDePasse(Catalogue)
 	EnregistrerActionsDuree(Catalogue)
+	EnregistrerActionsJournaux(Catalogue)
 }
 
 // Executer applique une action du registre partagé.

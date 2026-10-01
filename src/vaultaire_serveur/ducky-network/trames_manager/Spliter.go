@@ -14,6 +14,7 @@ import (
 	hosthandler "vaultaire/ducky-network/host_handler"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
 	"vaultaire/ducky-network/sendmessage"
+	"vaultaire/ducky-network/serviceauth"
 	"vaultaire/ducky-network/sessionmgr"
 )
 
@@ -163,14 +164,20 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			msg, err := hosthandler.HandleHostTrame(database.GetDatabase(), trames_content, duckysession)
 			if err != nil {
 				logs.Write_Log("ERROR", "host_handler: "+err.Error())
-				message = ""
-			} else {
-				message = msg
 			}
+			// Le message est envoyé MÊME en erreur quand le gestionnaire en a
+			// composé un : c'est le refus explicite (04_02 « refus »). Sans
+			// lui, un nœud écarté ne l'apprenait jamais et battait dans le
+			// vide, invisible du cluster (TO-DO 73).
+			message = msg
 		case "05":
 			message = gpomanager.GPO_Trame_Manager(trames_content, duckysession)
 		case "06":
 			message = revocationmanager.Revocation_Trame_Manager(trames_content, duckysession)
+		case "08":
+			// Vérification d'un compte pour le compte d'un service (Nexus…).
+			// Le catalogue de types a déjà filtré qui peut l'émettre.
+			message = serviceauth.Trame_Manager(trames_content, duckysession)
 		default:
 			logs.Write_Log("WARNING", "Unknown service: "+service[0])
 		}

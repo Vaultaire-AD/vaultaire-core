@@ -36,14 +36,16 @@ func AskServerAuthentification(duckysession *storage.DuckySession) []byte {
 				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
 				return nil
 			}
-			messageBuf := make([]byte, messagesize)
-			_, err = duckysession.Conn.Read(messageBuf)
+			messageBuf, err := tramesmanager.LireCorps(duckysession.Conn, messagesize)
 			if err != nil {
 				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture du message : %v", err))
+				return nil
 			}
 			message, _ := keyencodedecode.DecryptMessageWithPrivate(keymanagement.Get_Client_Private_Key(), messageBuf)
 			lines := strings.Split(string(message), "\n")
-			if lines[0] == "01_02" {
+			// Trois lignes au moins avant d'indexer lines[2] : une 01_02
+			// tronquée paniquait ici (TO-DO 101, même garde-fou que ParseTrames).
+			if lines[0] == "01_02" && len(lines) >= 3 {
 				sessionIntegritykey := lines[2]
 
 				data := strings.Join(lines[3:], "\n")

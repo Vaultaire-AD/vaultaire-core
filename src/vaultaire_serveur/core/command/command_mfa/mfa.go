@@ -6,7 +6,7 @@
 //	vlt mfa -g <groupe> --require       impose le second facteur au groupe (write:mfa)
 //	vlt mfa -g <groupe> --optional      le rend facultatif (write:mfa)
 //	vlt mfa policy                      lit la politique d'expiration
-//	vlt mfa policy --max-age N --warn N l'écrit (groupe vaultaire uniquement)
+//	vlt mfa policy --max-age N --warn N --min-length N   l'écrit (groupe vaultaire)
 //
 // CE QUI N'EST PAS ICI, ET POURQUOI. L'enrôlement n'a pas de commande. Il
 // suppose d'afficher un secret puis d'en valider un code : dans un terminal, le
@@ -44,6 +44,8 @@ func MFA_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 		return helpText()
 	case "policy":
 		return handlePolicy(commandList[1:], senderGroupIDs, senderUsername)
+	case "ducky":
+		return handleDucky(commandList[1:], senderGroupIDs, senderUsername)
 	case "-u":
 		return handleUser(commandList[1:], senderGroupIDs, senderUsername)
 	case "-g":
@@ -134,11 +136,17 @@ func handlePolicy(args []string, senderGroupIDs []int, senderUsername string) st
 
 	if len(args) == 0 {
 		p := dbauthpolicy.GetPasswordPolicy(db)
+		expiration := fmt.Sprintf("%d jours\n  Préavis    : %d jours", p.MaxAgeDays, p.WarnDays)
 		if p.MaxAgeDays <= 0 {
-			return "Politique de mot de passe : expiration désactivée."
+			expiration = "désactivée"
 		}
-		return fmt.Sprintf("Politique de mot de passe\n  Expiration : %d jours\n  Préavis    : %d jours",
-			p.MaxAgeDays, p.WarnDays)
+		// La longueur minimale s'affiche TOUJOURS, y compris quand l'expiration
+		// est désactivée : elle, ne se désactive pas, et une vue qui s'arrêtait
+		// à « expiration désactivée » laissait croire qu'aucune règle ne
+		// s'appliquait aux mots de passe.
+		return fmt.Sprintf("Politique de mot de passe\n  Expiration : %s\n"+
+			"  Longueur minimale d'un mot de passe neuf : %d caractères (plancher %d)",
+			expiration, p.MinLength, dbauthpolicy.MinLengthPlancher)
 	}
 
 	// La politique n'appartient à aucun domaine : elle engage tout l'annuaire.
@@ -156,18 +164,21 @@ func handlePolicy(args []string, senderGroupIDs []int, senderUsername string) st
 	next := current
 	for i := 0; i < len(args); i++ {
 		switch strings.ToLower(args[i]) {
-		case "--max-age", "--warn":
+		case "--max-age", "--warn", "--min-length":
 			if i+1 >= len(args) {
 				return "Option " + args[i] + " : valeur manquante."
 			}
 			value, err := strconv.Atoi(strings.TrimSpace(args[i+1]))
 			if err != nil {
-				return fmt.Sprintf("Option %s : « %s » n'est pas un nombre de jours.", args[i], args[i+1])
+				return fmt.Sprintf("Option %s : « %s » n'est pas un nombre.", args[i], args[i+1])
 			}
-			if strings.ToLower(args[i]) == "--max-age" {
+			switch strings.ToLower(args[i]) {
+			case "--max-age":
 				next.MaxAgeDays = value
-			} else {
+			case "--warn":
 				next.WarnDays = value
+			default:
+				next.MinLength = value
 			}
 			i++
 		default:
@@ -184,7 +195,30 @@ func handlePolicy(args []string, senderGroupIDs []int, senderUsername string) st
 		action.Params{
 			"max_age_days": strconv.Itoa(next.MaxAgeDays),
 			"warn_days":    strconv.Itoa(next.WarnDays),
+			"min_length":   strconv.Itoa(next.MinLength),
 		}, senderGroupIDs, senderUsername)
+}
+
+// handleDucky lit ou règle l'exigence de second facteur sur le chemin Ducky.
+//
+// Verbe séparé de « policy », qui porte l'expiration et la robustesse : celui-ci
+// n'est pas une politique de mot de passe, c'est un interrupteur de migration.
+// Les mêler aurait fait d'une commande de réglage courant une commande qui peut
+// couper l'accès au parc.
+func handleDucky(args []string, senderGroupIDs []int, senderUsername string) string {
+	if len(args) == 0 {
+		return commandaction.ExecuterAction("mfa.get_ducky_policy",
+			action.Params{}, senderGroupIDs, senderUsername)
+	}
+	valeur := strings.ToLower(strings.TrimSpace(args[0]))
+	if valeur != "on" && valeur != "off" {
+		return "Usage : mfa ducky [on|off]"
+	}
+	// Le contrôle des droits et le garde-fou (aucun compte enrôlé) vivent dans
+	// l'action : les recopier ici ferait deux règles à tenir, dont une seule
+	// couvrirait l'interface web.
+	return commandaction.ExecuterAction("mfa.set_ducky_policy",
+		action.Params{"required": valeur}, senderGroupIDs, senderUsername)
 }
 
 func activeLabel(on bool) string {
@@ -208,8 +242,11 @@ func helpText() string {
   mfa -u <user> --reset                  efface son secret            (write:mfa)
   mfa -g <groupe> --require              impose le second facteur     (write:mfa)
   mfa -g <groupe> --optional             le rend facultatif           (write:mfa)
-  mfa policy                             lit la politique d'expiration
-  mfa policy --max-age <j> --warn <j>    l'écrit          (groupe vaultaire)
+  mfa policy                             lit la politique de mot de passe
+  mfa policy --max-age <j> --warn <j>    règle l'expiration       (groupe vaultaire)
+  mfa policy --min-length <n>            règle la longueur minimale (groupe vaultaire)
+  mfa ducky                              dit si un code est exigé à l'ouverture de session
+  mfa ducky <on|off>                     l'exige, ou non            (write:server)
 
 L'exigence porte sur le GROUPE, jamais sur un compte : un nouvel arrivant y est
 soumis du seul fait de son entrée, sans liste à tenir à jour.
@@ -217,5 +254,18 @@ soumis du seul fait de son entrée, sans liste à tenir à jour.
 L'enrôlement n'a pas de commande, volontairement : afficher un secret dans un
 terminal le déposerait dans l'historique du shell. Il se fait sur /profil/mfa.
 
-  --max-age 0    désactive l'expiration des mots de passe.`
+« mfa ducky on » exige qu'un agent envoie un code À CHAQUE ouverture de session,
+« 0000 » pour un compte qui n'a pas de second facteur. Une machine dont l'agent
+est trop ancien pour l'envoyer ne pourra plus ouvrir de session : mettez le parc
+à jour AVANT d'activer. « mfa ducky off » retire l'exigence en une commande.
+
+Les comptes qui ONT un second facteur doivent le fournir dans tous les cas, que
+cette exigence soit active ou non. LDAP n'est pas concerné : le protocole n'a pas
+de place pour un second facteur, et le code s'y accole au mot de passe.
+
+  --max-age 0      désactive l'expiration des mots de passe.
+  --min-length     ne se désactive PAS : la valeur est bornée au plancher.
+                   La longueur ne s'applique qu'aux mots de passe NEUFS — on ne
+                   peut pas recalculer ce qu'on refuserait d'un mot de passe
+                   déjà en base, il n'existe nulle part.`
 }

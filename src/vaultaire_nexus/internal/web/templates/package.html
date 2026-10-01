@@ -1,0 +1,48 @@
+{{define "content"}}
+{{$r := .Data.Repo}}
+<p class="crumbs"><a href="/ui/repos">Dépôts</a> › <a href="/ui/repos/{{$r.Name}}">{{$r.Name}}</a> ›</p>
+<h1>{{.Data.Name}}</h1>
+{{if .Data.Latest.Summary}}<p class="muted">{{.Data.Latest.Summary}}</p>{{end}}
+
+<div class="kpis">
+  <div class="kpi"><span>Dernière version</span><b>{{.Data.Latest.Version}}</b></div>
+  <div class="kpi"><span>Versions</span><b>{{len .Data.Versions}}</b></div>
+  <div class="kpi"><span>Téléchargements</span><b>{{.Data.Counter.Downloads}}</b><small>{{bytes .Data.Counter.Bytes}}</small></div>
+  <div class="kpi"><span>Comptes distincts</span><b>{{len .Data.Users}}</b><small>dernier : {{ago .Data.Counter.Last}}</small></div>
+</div>
+
+{{if .Data.Fields}}
+<section class="card">
+  <h2>Informations</h2>
+  <dl class="fields">{{range .Data.Fields}}<dt>{{.K}}</dt><dd>{{.V}}</dd>{{end}}</dl>
+</section>
+{{end}}
+
+<section class="card">
+  <h2>Versions</h2>
+  <table>
+    <thead><tr><th>Version</th><th>Arch.</th><th>Fichier</th><th class="num">Taille</th><th>SHA-256</th><th class="num">Téléch.</th><th>Publiée</th>{{if .Data.CanWrite}}<th></th>{{end}}</tr></thead>
+    <tbody>{{range .Data.Versions}}
+    <tr>
+      <td><code>{{.Version}}</code></td><td>{{.Arch}}</td>
+      <td><a href="{{.URL}}?download=1">{{.Filename}}</a> <button class="copy-btn" data-copy="{{.URL}}" title="Copier l'URL">⧉</button></td>
+      <td class="num">{{bytes .Size}}</td>
+      <td><code class="copy" data-copy="{{.Digest}}" title="{{.Digest}}">{{short .Digest}}</code></td>
+      <td class="num">{{.Downloads}}</td>
+      <td title="{{date .UploadedAt}}">{{ago .UploadedAt}}<br><small class="muted">{{.UploadedBy}}</small></td>
+      {{if $.Data.CanWrite}}<td>
+        <form method="post" action="/ui/repos/{{$r.Name}}/package/delete" data-confirm="Supprimer {{.Filename}} ? Les clients qui l'épinglent ne pourront plus l'installer.">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="id" value="{{.ID}}"><input type="hidden" name="name" value="{{.Name}}">
+          <button class="danger small">Supprimer</button>
+        </form></td>{{end}}
+    </tr>
+    {{end}}</tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Activité récente</h2>
+  {{template "events" .Data.Events}}
+  {{if .Data.Users}}<p class="muted">Récupéré par : {{join .Data.Users ", "}}</p>{{end}}
+</section>
+{{end}}

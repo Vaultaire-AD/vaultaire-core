@@ -22,17 +22,19 @@ func processGroupRowsFromSingleQuery(rows *sql.Rows) (*ldapstorage.Group, error)
 	var currentGroup *ldapstorage.Group // Pointeur pour le groupe en cours de construction
 
 	for rows.Next() {
-		var groupName, domainName, username string
-		if err := rows.Scan(&groupName, &domainName, &username); err != nil {
+		var groupName, domainName, username, creeLe, modifieLe string
+		if err := rows.Scan(&groupName, &domainName, &username, &creeLe, &modifieLe); err != nil {
 			return nil, fmt.Errorf("failed to scan row for group data: %w", err)
 		}
 
 		// Initialise le groupe si c'est la première ligne
 		if currentGroup == nil {
 			currentGroup = &ldapstorage.Group{
-				GroupName:  groupName,
-				DomainName: domainName,
-				Users:      []string{}, // Initialise la liste des utilisateurs
+				GroupName:   groupName,
+				DomainName:  domainName,
+				Created_at:  creeLe,
+				Modified_at: modifieLe,
+				Users:       []string{}, // Initialise la liste des utilisateurs
 			}
 		}
 		// S'assure que le groupe correspond bien (utile si la requête n'était pas assez ciblée, mais ici elle l'est)

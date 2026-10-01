@@ -57,6 +57,12 @@ services:
     environment:
       - TZ=Europe/Paris
       - VAULTAIRE_ENV=preprod
+      # Le fichier de configuration livre porte CHANGEZ_MOI, et le core REFUSE
+      # de demarrer dessus (TO-DO 99). Les piles de developpement posent donc
+      # leurs valeurs ici : elles sont visibles, versionnees, et personne ne
+      # peut les prendre pour un secret.
+      - VAULTAIRE_DB_PASSWORD=root
+      - VAULTAIRE_ADMIN_PASSWORD=${VAULTAIRE_ADMIN_PASSWORD:-correcte agrafe batterie}
     volumes:
       # Binaires serveur et CLI
       - ../../cmd/vaultaire_server:/opt/vaultaire/bin:ro

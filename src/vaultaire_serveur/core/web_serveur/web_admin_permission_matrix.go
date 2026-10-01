@@ -51,6 +51,9 @@ type permissionCell struct {
 	// n'y propose pas de domaines, parce qu'en ajouter revient à refuser
 	// l'action au lieu de la restreindre.
 	GlobalOnly bool
+	// Label est le libellé lisible d'une action hors modèle ; vide pour les
+	// cases de la matrice, que la ligne et la colonne nomment déjà.
+	Label string
 }
 
 // permissionMatrixVerb est une colonne de la matrice.
@@ -102,6 +105,31 @@ var rbacVerbLabels = map[string]string{
 	"delete": "Supprimer",
 	"update": "Modifier",
 	"add":    "Rattacher",
+	"remove": "Détacher",
+}
+
+// specialActionLabels traduit les actions hors modèle. Même principe de repli :
+// une clé absente s'affiche sous son nom technique, elle ne disparaît pas.
+//
+// Les clés des services (Nexus…) y figurent parce qu'elles ne disent pas à qui
+// elles s'adressent : « write:nexus » ne se comprend qu'en connaissant le
+// dépôt. Le libellé nomme le service.
+var specialActionLabels = map[string]string{
+	"write:dns":                       "DNS — modifier",
+	"write:eyes":                      "Obsolète — n'est plus vérifiée (l'arborescence exige read:get:group)",
+	permission.ActionKillSwitch:       "Révocation d'urgence (kill switch)",
+	permission.ActionReadLog:          "Journaux — consulter",
+	permission.ActionManageMFA:        "Second facteur — gérer",
+	permission.ActionReadCluster:      "Cluster — consulter",
+	permission.ActionWriteCluster:     "Cluster — régler",
+	permission.ActionReadCertificate:  "Certificats — consulter",
+	permission.ActionWriteCertificate: "Certificats — régénérer",
+	permission.ActionReadDNS:          "DNS — consulter",
+	permission.ActionReadEnrollment:   "Clés d'enrôlement — consulter",
+	permission.ActionWriteServer:      "Réglages du serveur",
+	permission.ActionReadNexus:        "Nexus (dépôt de paquets) — lire les dépôts privés",
+	permission.ActionWriteNexus:       "Nexus (dépôt de paquets) — publier et supprimer",
+	permission.ActionAdminNexus:       "Nexus (dépôt de paquets) — administrer",
 }
 
 // labelOr retourne la traduction si elle existe, sinon la clé technique.
@@ -215,6 +243,7 @@ func buildPermissionMatrix(db *sql.DB, perm *storage.UserPermission) permissionM
 	}
 	for _, key := range permission.SpecialActionKeys() {
 		cell := buildPermissionCell(key, read(key))
+		cell.Label = specialActionLabels[key]
 		view.Special = append(view.Special, cell)
 		view.CellByID[key] = cell
 	}

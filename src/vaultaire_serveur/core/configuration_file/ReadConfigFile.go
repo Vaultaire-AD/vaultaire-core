@@ -3,6 +3,7 @@ package configuration_file
 import (
 	"os"
 	"vaultaire/core/auth/ratelimit"
+	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 
@@ -27,24 +28,29 @@ func ReadConfigUser[T any](filePath string) (*T, error) {
 }
 
 func LoadConfig(filePath string) error {
-	// Ouvrir le fichier
-	file, err := os.Open(filePath)
+	// Le fichier est lu EN ENTIER puis décodé, au lieu d'être décodé au fil de
+	// l'ouverture.
+	//
+	// C'est ce qui permet d'inspecter son TEXTE avant décodage — et il faut
+	// l'inspecter : une clé qu'aucune étiquette ne réclame ne laisse aucune
+	// trace après décodage, par construction. C'est exactement ce qui a rendu la
+	// section « administreur: » invisible pendant toute la vie du produit
+	// (TO-DO 99, voir SignalerCleMalOrthographiee).
+	contenu, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeFileConfig, "config: file close failed: "+err.Error())
-		}
-	}()
+
+	if err := SignalerCleMalOrthographiee(contenu); err != nil {
+		logs.Write_LogCode("CRITICAL", logs.CodeFileConfig, "config: "+err.Error())
+		return err
+	}
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config storage.Config
 
 	// Décoder le fichier YAML dans la structure Config
-	decoder := yaml.NewDecoder(file)
-	err = decoder.Decode(&config)
-	if err != nil {
+	if err := yaml.Unmarshal(contenu, &config); err != nil {
 		return err
 	}
 
@@ -104,6 +110,16 @@ func LoadConfig(filePath string) error {
 	}
 	// Les SAN sont recopiés même vides : une liste vidée dans le fichier doit
 	// pouvoir revenir à la seule détection automatique.
+	// Second facteur au bind LDAP : exigé sauf réglage contraire explicite.
+	ldapstorage.MFABypass = config.Ldap.Ldap_MFA_Bypass != nil && *config.Ldap.Ldap_MFA_Bypass
+	if ldapstorage.MFABypass {
+		logs.Write_Log("WARNING", "ldap.mfa_bypass activé : les comptes soumis au second facteur se lient par LDAP sans code")
+	}
+	// Élargissement des recherches `one` : refusé sauf réglage contraire explicite.
+	ldapstorage.OneLevelSubtree = config.Ldap.Ldap_OneLevel_Subtree != nil && *config.Ldap.Ldap_OneLevel_Subtree
+	if ldapstorage.OneLevelSubtree {
+		logs.Write_Log("WARNING", "ldap.onelevel_subtree activé : TOUTE recherche « one » rend l'arborescence, quel que soit le conteneur")
+	}
 	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
 	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
 	if config.Website.Website_Enable != nil {

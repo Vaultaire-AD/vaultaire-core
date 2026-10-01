@@ -91,7 +91,7 @@ mais sous forme **structurée et flexible** :
 -   `auth` → autorisation d'authentification (si désactivé, l'utilisateur ne peut pas se connecter ; à utiliser avec un groupe de quarantaine dédié).
 -   `compare` → comparaison LDAP/ressource (authentification).
 -   `search` → recherche d'objets (LDAP, base de données, etc.).
--   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (idem pour `group`, `client`, `permission`, `gpo`).
+-   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user`, `write:remove:user` (idem pour `group`, `client`, `permission`, `gpo`). `add` / `remove` rattachent à un groupe et en détachent.
 -   Exemples (CLI) : `vlt update -pu Inspecteur read:get:user all` ; `vlt update -pu DevApp write:create:client -a 1 apps.interne`.
 
 #### Ce que donne un droit sur un domaine précis

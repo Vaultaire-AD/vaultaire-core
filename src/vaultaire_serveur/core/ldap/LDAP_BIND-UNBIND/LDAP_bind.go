@@ -8,7 +8,6 @@ import (
 	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/auth/ratelimit"
 	"vaultaire/core/database"
-	dbauthpolicy "vaultaire/core/database/db_authpolicy"
 	dbusers "vaultaire/core/database/db_users"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	ldapresponse "vaultaire/core/ldap/LDAP_RESPONSE"
@@ -206,13 +205,101 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
+	// UN COMPTE SANS AUCUN GROUPE NE SE LIE PAS — point 122.
+	//
+	// C'était déjà le cas, mais par accident : sans groupe il n'y a aucune
+	// permission à consulter, donc la vérification de droits, tout en bas,
+	// échouait. Le refus était juste et son motif illisible — le journal disait
+	// « permission denied » et envoyait chercher une permission manquante là où
+	// c'est l'appartenance qui manque.
+	//
+	// # Pourquoi ici, et pas plus haut ni plus bas
+	//
+	// APRÈS la vérification d'existence du compte, et c'est essentiel. Placé
+	// avant, ce contrôle attrapait aussi les comptes INEXISTANTS — une recherche
+	// de groupes sur un nom inconnu rend une liste vide, pas une erreur. Ils
+	// sortaient alors par ce chemin, qui ne compte pas d'échec : la limitation de
+	// débit ne montait plus sur un balayage de noms inventés, et un attaquant
+	// pouvait distinguer un compte réel d'un compte imaginaire en observant quel
+	// nom finit par être freiné. Un refus qui ne compte pas doit rester réservé à
+	// un compte qui existe.
+	//
+	// AVANT la comparaison du mot de passe, pour la raison exacte du KILL SWITCH
+	// plus haut : un refus prononcé après elle fait dépendre le temps de réponse
+	// de la justesse du mot de passe, ce qui dit à un attaquant qu'il a trouvé
+	// celui d'un compte qui ne sert à rien. Un compte détaché de son dernier
+	// groupe n'est pas marqué révoqué : il ne passe pas par le kill switch.
+	//
+	// # Pourquoi sans compter d'échec
+	//
+	// `refuser` alimente des compteurs PARTAGÉS avec le portail web. Un client
+	// dont la configuration pointe un compte sans groupe rejoue sa liaison en
+	// boucle : le compter bannirait ce compte du portail, c'est-à-dire du seul
+	// endroit où on peut le rattacher à un groupe. Ce n'est pas un échec
+	// d'identification mais un état de configuration — et la limitation posée en
+	// tête de fonction, elle, s'applique toujours.
+	//
+	// Le compte reste visible et corrigeable depuis le portail et `vlt`. Ce qui
+	// disparaît est sa présence dans l'annuaire, pas le compte.
+	groupIDsDuCompte, err := permission.GetGroupIDsForUser(user)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"ldap bind: groupes de %s illisibles (%v) — refusé", user, err))
+		refuser(conn, messageID, source, user)
+		return
+	}
+	if len(groupIDsDuCompte) == 0 {
+		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf(
+			"ldap bind: refusé, le compte %s n'appartient à aucun groupe — il n'a aucun "+
+				"droit sur le parc (rattachez-le depuis le portail ou « vlt »)", user))
+		ldapsessionmanager.ResetBindInfo(conn)
+		respondInvalidCredentials(messageID, conn)
+		return
+	}
+
+	// 🔑 SECOND FACTEUR — ce que le bind doit exiger, AVANT le mot de passe.
+	//
+	// Un compte soumis au second facteur fournit `motdepasse` suivi du code à
+	// six chiffres : il faut donc savoir où couper avant de vérifier quoi que
+	// ce soit. Voir ldapstorage.MFABypass.
+	//
+	// Un état illisible REFUSE : laisser passer « dans le doute » rouvrirait le
+	// contournement que ce contrôle ferme, sur une simple panne de lecture.
+	motDePasse := string(op.Authentication)
+	code := ""
+	mfa, err := lireEtatMFA(user)
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"ldap bind: état du second facteur illisible pour %s (%v) — refusé", user, err))
+		refuser(conn, messageID, source, user)
+		return
+	}
+	if mfa.Lie && !ldapstorage.MFABypass {
+		if mfa.Secret == "" {
+			// Imposé par un groupe, jamais enrôlé : aucun code ne peut être
+			// valide. Le compte doit enrôler sur le portail.
+			logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+				"ldap bind: refusé, second facteur imposé à %s mais non enrôlé", user))
+			refuser(conn, messageID, source, user)
+			return
+		}
+		mdp, c, ok := separerCode(motDePasse)
+		if !ok {
+			logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf(
+				"ldap bind: refusé, %s est soumis au second facteur et le mot de passe ne se termine pas par un code à 6 chiffres", user))
+			refuser(conn, messageID, source, user)
+			return
+		}
+		motDePasse, code = mdp, c
+	}
+
 	// 🔐 Vérification du mot de passe
 	//
 	// VerifierMotDePasse réencode au passage l'empreinte des comptes restés en
 	// SHA-256. Le bind LDAP compte parmi les portes qui doivent le faire : sur
 	// une installation où l'annuaire ne sert qu'à des applications, c'est peut-être
 	// la SEULE par laquelle un compte donné se connecte jamais.
-	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), userID, string(op.Authentication))
+	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), userID, motDePasse)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf("ldap bind: password lookup failed for user=%s: %v", user, err))
 		respondProtocolError(messageID, conn, "password lookup failed")
@@ -254,37 +341,36 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
-	// SECOND FACTEUR — après la vérification du mot de passe.
-	//
-	// LDAP n'a aucun mécanisme standard de second facteur : on ne peut pas le
-	// demander, seulement refuser. Le contrôle vient APRÈS le mot de passe pour la
-	// même raison que l'expiration : qui voit ce refus connaît déjà un mot de
-	// passe valide, l'information ne lui apprend rien.
-	//
-	// Désactivé par défaut — voir ldapstorage.RefuseBindWhenMFARequired.
-	if ldapstorage.RefuseBindWhenMFARequired {
-		if requis, err := dbauthpolicy.IsMFARequired(database.GetDatabase(), user); err != nil {
-			// Illisible : on laisse passer plutôt que de bloquer tout le monde sur
-			// une panne de base. L'incident est journalisé.
-			logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
-				"ldap bind: état MFA illisible pour %s (%v) — connexion autorisée", user, err))
-		} else if requis {
+	// SECOND FACTEUR — le code, APRÈS le mot de passe : qui voit ce refus
+	// connaît déjà un mot de passe valide, l'information ne lui apprend rien.
+	if code != "" {
+		if raison := verifierCode(user, mfa.Secret, code); raison != "" {
 			logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-				"ldap bind: refusé, le second facteur est imposé à %s et LDAP ne sait pas le porter", user))
+				"ldap bind: refusé pour %s depuis %s : %s", user, conn.RemoteAddr().String(), raison))
 			refuser(conn, messageID, source, user)
 			return
 		}
+	} else if mfa.Lie {
+		// ldap.mfa_bypass : le bind passe sans code. Journalisé pour que le
+		// contournement reste visible à l'audit.
+		logs.Write_LogCode("SECURITY", logs.CodeNone, fmt.Sprintf(
+			"ldap bind: second facteur de %s contourné (ldap.mfa_bypass activé)", user))
 	}
 
 	// ✅ Authentification réussie — maintenant vérification de la permission
-	groupIDs, normalizedAction, err := permission.PrePermissionCheck(user, "auth")
-	if err != nil {
-		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("ldap bind: pre-permission failed user=%s: %v", user, err))
+	//
+	// Les groupes ont déjà été lus plus haut, pour le contrôle du point 122 :
+	// PrePermissionCheck les relirait à l'identique. Seule la validation du nom
+	// d'action reste à faire.
+	normalizedAction, actionValide := permission.IsValidAction("auth")
+	if !actionValide {
+		logs.Write_LogCode("ERROR", logs.CodeAuthPermission,
+			"ldap bind: l'action « auth » n'est pas reconnue du registre")
 		refuser(conn, messageID, source, user)
 		return
 	}
 
-	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, normalizedAction, []string{domain})
+	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDsDuCompte, normalizedAction, []string{domain})
 	if !ok {
 		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("ldap bind: permission denied user=%s domain=%s reason=%s", user, domain, msg))
 		refuser(conn, messageID, source, user)

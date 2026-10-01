@@ -137,6 +137,45 @@ func Create_DataBase(db *sql.DB) {
 			session_key BLOB NOT NULL,
 			key_time_validity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			d_id_logiciel INT NOT NULL,
+			-- L'unicité (compte, machine), portée par la BASE depuis le TO-DO 107.
+			--
+			-- Elle était tenue par le code : SELECT EXISTS puis INSERT d'un côté,
+			-- COUNT(*) puis UPDATE de l'autre. Deux séquences non atomiques, donc
+			-- deux courses — et deux authentifications simultanées de la même paire
+			-- faisaient apparaître la machine DEUX FOIS dans « status -c ».
+			--
+			-- Le même nom d'index est posé sur une base existante par
+			-- EnsureDidLoginUnicite, après dédoublonnage.
+			UNIQUE KEY uq_did_login (d_id_user, d_id_logiciel),
+			FOREIGN KEY (d_id_user) REFERENCES users(id_user) ON DELETE CASCADE,
+			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
+		);`,
+
+		// Sessions UTILISATEUR ouvertes par PAM.
+		//
+		// # Pourquoi une table à elle, et pas une ligne de did_login
+		//
+		// `did_login` vaut « une ligne = une session Ducky », et `status -c` la
+		// lit pour énumérer les machines connectées. Y écrire les sessions PAM
+		// — ce qu'a fait le point 68 — faisait apparaître une machine deux fois
+		// dès que quelqu'un s'y connectait, alors qu'un seul tunnel existe.
+		//
+		// Les deux objets n'ont ni le même cycle de vie, ni la même clé, ni le
+		// même lecteur. Une colonne d'origine aurait suffi à les distinguer,
+		// mais aurait laissé deux natures dans la même table et un filtre à ne
+		// pas oublier : la prochaine lecture de `did_login` serait retombée
+		// dans le piège.
+		//
+		// L'unicité (compte, machine) est portée par la BASE cette fois, et non
+		// par le code comme dans did_login : deux ouvertures de session
+		// successives doivent mettre à jour une ligne, pas en empiler deux.
+		`CREATE TABLE IF NOT EXISTS user_sessions (
+			id_user_session INT AUTO_INCREMENT PRIMARY KEY,
+			d_id_user INT NOT NULL,
+			d_id_logiciel INT NOT NULL,
+			opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			key_time_validity TIMESTAMP NULL DEFAULT NULL,
+			UNIQUE KEY uq_user_session (d_id_user, d_id_logiciel),
 			FOREIGN KEY (d_id_user) REFERENCES users(id_user) ON DELETE CASCADE,
 			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
 		);`,
@@ -420,6 +459,36 @@ func Create_DataBase(db *sql.DB) {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"database: complément du schéma cluster_nodes échoué : "+err.Error())
 		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
+	}
+
+	// Les horodatages de l'annuaire (TO-DO 126).
+	//
+	// FATALE, contrairement au dédoublonnage qui suit. La tentation était de la
+	// rendre facultative — « une base sans ces colonnes fonctionne comme avant » —
+	// mais c'est faux : les requêtes de lecture LDAP NOMMENT désormais ces
+	// colonnes. Une migration facultative ne rendrait pas le défaut inoffensif,
+	// elle le déplacerait à la première recherche, en exploitation, sous la forme
+	// d'un « Unknown column » qui casse l'annuaire entier.
+	//
+	// Un ALTER TABLE ADD COLUMN sur `users` et `groups` est par ailleurs
+	// l'opération la moins risquée de ce fichier.
+	if err := EnsureHorodatagesAnnuaire(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: horodatages de l'annuaire non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des horodatages de l'annuaire : %v", err)
+	}
+
+	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
+	//
+	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue
+	// laisse une base qui fonctionne exactement comme avant, avec le défaut
+	// qu'elle avait déjà. Arrêter le core sur ce motif transformerait une
+	// correction en panne de démarrage — et sur la base d'un parc en service,
+	// c'est le genre de migration qu'on veut pouvoir reprendre au tour suivant.
+	if err := EnsureDidLoginUnicite(db); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+			"database: unicité de did_login non posée, les doublons de « status -c » "+
+				"restent possibles : "+err.Error())
 	}
 
 	logs.Write_Log("INFO", "database: all tables and relations created successfully")

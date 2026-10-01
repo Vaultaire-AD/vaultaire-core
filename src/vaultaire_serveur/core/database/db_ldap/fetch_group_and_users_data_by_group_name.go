@@ -15,7 +15,7 @@ func fetchGroupAndUsersDataByGroupName(db *sql.DB, groupName string) (*sql.Rows,
 	}
 
 	query := `
-    SELECT g.group_name, dg.domain_name, u.username
+    SELECT g.group_name, dg.domain_name, u.username, g.created_at, g.updated_at
     FROM groups g
     JOIN domain_group dg ON dg.d_id_group = g.id_group
     JOIN users_group ug ON ug.d_id_group = g.id_group

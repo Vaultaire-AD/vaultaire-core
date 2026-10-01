@@ -5,8 +5,7 @@
 
 Document de développement. Pour l'usage des commandes, voir
 [MAN.md](../../Utilisation/MAN.md) §5.6. Pour le protocole réseau, voir
-[Protocole_Ducky.md](./Protocole_Ducky.md), section
-« Détail du transport GPO ».
+[le chapitre 5 du protocole](./ducky-network/05-gpo/README.md).
 
 ---
 
@@ -184,7 +183,7 @@ Trames `05_01` à `05_14`. Manifeste puis fragments de 32 Kio — la couche de
 transport annonce la taille sur 2 octets, ce qui plafonne une trame à ~48 Kio
 utiles alors qu'un seul `file_deploy` accepte 256 Kio.
 
-Détail complet dans [Protocole_Ducky.md](./Protocole_Ducky.md).
+Détail complet dans [le chapitre 5 du protocole](./ducky-network/05-gpo/README.md).
 
 ### 4.5 Application
 
@@ -192,7 +191,8 @@ Deux moments :
 
 | Moment | Scope | Où |
 |--------|-------|-----|
-| Démarrage du service, puis toutes les heures | machine | `cycle.go`, `StartMachineRefresh` |
+| Démarrage du service, puis à la cadence du core | machine | `cycle.go`, `StartMachineRefresh` |
+| Reconnexion du tunnel, ou demande du core (`05_18`) | machine | `cycle.go`, `cadence.go` |
 | Après authentification PAM, avant octroi de la connexion | user | `PAM_Handler.go`, `applyUserGPO` |
 
 Le cycle user est lancé depuis la goroutine PAM et **non** depuis le
@@ -224,12 +224,12 @@ Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 
 | Ordre | Type | Scope | Ce qu'il fait |
 |-------|------|-------|---------------|
-| 10 | `directory_manage` | both | Répertoire avec permissions et propriétaire |
-| 11 | `file_deploy` | both | Fichier avec contenu, permissions, propriétaire |
+| 10 | `directory_manage` | both | Répertoire avec ses permissions (propriétaire : scope machine seulement) |
+| 11 | `file_deploy` | both | Fichier avec contenu et permissions (propriétaire : scope machine seulement) |
 | 12 | `templated_file_deploy` | both | Idem, avec `{{hostname}}` `{{fqdn}}` `{{username}}` `{{domain}}` |
 | 13 | `file_acl` | both | ACL POSIX (`setfacl`), avec héritage si récursif |
-| 14 | `trusted_ca` | machine | CA interne dans le magasin de confiance |
-| 20 | `dns_resolver` | machine | Serveurs DNS (`resolved.conf.d/`) |
+| 14 | `trusted_ca` | machine | CA interne dans le magasin de confiance — la famille de distribution est reconnue à sa **commande** de régénération |
+| 20 | `dns_resolver` | machine | Serveurs DNS, chez ce qui tient la résolution : `resolved.conf.d/` (systemd-resolved actif), `[global-dns]` de NetworkManager (RHEL/Rocky 9), sinon `/etc/resolv.conf` |
 | 21 | `package_repository` | machine | Dépôt de paquets autorisé |
 | 30 | `package` | machine | Présence, absence, version épinglée |
 | 40 | `sysctl` | machine | Un fichier par clé dans `/etc/sysctl.d/` |
@@ -343,6 +343,43 @@ Déclarés dans `core/gpo/types.go`, chacun avec son validateur dans
 | `ident` | identifiant POSIX | champ texte |
 | `cron` | expression à 5 champs | champ texte |
 | `env_name` | nom de variable, hors liste interdite | champ texte |
+
+### Un champ peut être restreint à un scope
+
+`ModuleSchema.Scope` dit dans quelle GPO un module a le droit de figurer.
+`FieldSchema.Scope` fait la même chose pour un **champ**, à l'intérieur d'un
+module qui vit dans les deux — vide, le champ vaut partout, ce qui est le cas de
+presque tous.
+
+Un seul cas aujourd'hui : **propriétaire et groupe**, sur `file_deploy`,
+`directory_manage` et `templated_file_deploy`. En scope user, le propriétaire
+est l'utilisateur cible et l'agent le pose lui-même (`writeUserFile`) — le champ
+ne changeait rien, et affichait le contraire. Quelqu'un y a saisi `root` en
+recette ; le dossier a bien été créé au nom de l'utilisateur.
+
+> **Un champ qui ne change rien à ce qui se passe est pire qu'un champ absent :**
+> il se remplit, il se relit, et on lui prête un effet qu'il n'a pas. C'est le
+> même raisonnement que pour un réglage qui s'affiche sans agir.
+
+Le filtre s'applique en quatre endroits, et les quatre comptent :
+
+| Où | Pourquoi |
+|---|---|
+| `FieldsForScope` à la construction du formulaire | le champ n'est plus proposé |
+| `ParametresDeModule` à la collecte du POST | sinon il serait réécrit vide en base à chaque modification, et survivrait à son propre retrait |
+| `ValidateModule` à la normalisation | le champ n'est plus recopié dans les paramètres retenus |
+| `moduleSummary` au résumé | une GPO ancienne n'affiche plus « Propriétaire = root » |
+
+**Un paramètre hors scope trouvé en base est ignoré, jamais refusé.** Les GPO
+écrites avant le retrait portent encore la clé ; or `ValidateModule` est
+rappelée sur les modules **voisins** à chaque modification d'une GPO. La
+refuser rendrait ces politiques immodifiables tant que personne n'aurait
+nettoyé la base à la main. Un paramètre qui n'existe nulle part au schéma, lui,
+reste refusé : c'est ce qui empêche une faute de frappe de passer pour un
+réglage.
+
+L'empreinte de la politique change une fois, puisque les clés disparaissent des
+paramètres retenus : le parc user réapplique une fois, puis se tait.
 
 ### Ce que le catalogue produit dans l'interface
 
@@ -929,9 +966,43 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 
 ### Forcer un cycle
 
-Il n'existe pas encore d'équivalent de `gpupdate /force` (TO-DO 50). Pour
-l'instant : redémarrer le service client, ou attendre le rafraîchissement horaire
-(`MachineRefreshInterval` dans `vaultaire_client/gpo/cycle.go`).
+```bash
+vlt gpo refresh <computeur_id>
+vlt gpo refresh --all
+```
+
+Le core pousse une trame `05_18` à la machine, qui repart sur son cycle
+**ordinaire** — mêmes calculs, même empreinte, mêmes rapports. Une trame de
+réveil n'est pas un second chemin d'application.
+
+**À quelle session la pousser** (TO-DO 89). Une machine a souvent plusieurs
+sessions sous son identifiant : son tunnel (compte `vaultaire`), les connexions
+de quelques secondes du `--fetch-key` de sshd, les sessions de ses
+utilisateurs, et des sessions encore en poignée de main — l'identité est posée
+dès la `01_01`. La première venue, prise au hasard, faisait répondre « hors
+ligne » à une machine connectée, ou envoyait la trame dans la session d'un
+utilisateur. `sessionmgr.SessionsMachine` ne rend que les sessions
+authentifiées du compte machine, les récemment vues d'abord (un tunnel mort
+après une coupure reste inscrit jusqu'au balayage), puis la plus ancienne (le
+tunnel dure) ; l'envoi est essayé dans cet ordre. L'ordre de révocation
+(`pushToOnline`) passe par la même fonction.
+
+La commande distingue **hors ligne** (aucun tunnel) de **non remise** (un tunnel,
+mais aucun envoi n'a abouti) : les confondre faisait attendre une reconnexion
+qui n'aurait pas lieu.
+
+Trois autres déclenchements existent, sans intervention :
+
+| Quand | Ce qui se passe |
+|---|---|
+| Le tunnel est rétabli | un cycle part dans les secondes qui suivent (`surveillerReconnexion`) |
+| Un cycle a échoué | nouvel essai dégressif, plafonné à la cadence (paquet `backoff`) |
+| La cadence change | la boucle se réarme sans faire de cycle — un changement de réglage ne doit pas rafraîchir tout le parc d'un coup |
+
+**La cadence est le réglage `gpo_refresh_minutes` du core** (une heure par
+défaut), envoyé aux agents en queue de `05_02` et `05_03`. `MachineRefreshInterval`
+n'est plus qu'un défaut de démarrage : voir
+[`Reglages_de_duree.md` § 6 bis](./Reglages_de_duree.md).
 
 ---
 
@@ -941,13 +1012,6 @@ Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
 
 | Sujet | État | TO-DO |
 |-------|------|-------|
-| **Scan de dérive du scope utilisateur** | Non implémenté — seul le scope machine est scanné | 33 |
-| Signature des politiques par le serveur central | Champ prévu, non rempli ni vérifié | 52 |
-| Forçage d'un cycle depuis le serveur | Non implémenté | 50 |
-| Cycle déclenché à la reconnexion du tunnel | Non implémenté — attend le tour horaire | 50 |
-| Retentative rapprochée après un cycle en échec | Non implémenté — attend le tour horaire | 50 |
-| Intervalle de rafraîchissement configurable | Constante d'une heure dans le code | 51 |
-| Persistance des rapports d'application en base | Journalisés seulement | 53 |
 | `user_cron/command_id` en définition à contenu | Reste une liste simple ; une tâche custom exige une implémentation dans l'agent | — |
 
 
@@ -957,9 +1021,10 @@ Chaque point ouvert a son entrée dans `docs/Developement/TO-DO.md`.
 
 Trois inventaires, tenus pendant l'application et relus à chaque scan.
 
-> ⚠️ **Scope machine uniquement.** Le scan tourne avant chaque cycle machine
-> (`scanMachineDrift`). Les GPO du scope utilisateur sont appliquées à
-> l'ouverture de session mais leur dérive n'est **pas** vérifiée (TO-DO 33).
+Le scan tourne avant chaque cycle — avant le cycle machine
+(`scanMachineDrift`) et, depuis la 2.2 (TO-DO 33), avant le cycle utilisateur
+(`scanUserDrift`). Voir [Le scope utilisateur](#le-scan-du-scope-utilisateur)
+pour ce qui lui est propre.
 
 | Inventaire | Ce qu'il contient | Écart détecté |
 |---|---|---|
@@ -1062,6 +1127,30 @@ source est intacte et **aucune connexion TLS ne fait confiance à cette autorit�
 L'empreinte porte sur le **DER**, pas sur le texte : `update-ca-trust` réécrit ce
 qu'il agrège — longueur de ligne, ordre, en-têtes — et chercher le texte déposé
 échouerait sur une machine parfaitement conforme.
+
+#### Quelle famille de distribution, et à quoi on la reconnaît
+
+| Famille | Répertoire d'ancrage | Commande | Suffixe |
+|---|---|---|---|
+| Debian/Ubuntu | `/usr/local/share/ca-certificates` | `update-ca-certificates` | `.crt` |
+| RHEL/Rocky | `/etc/pki/ca-trust/source/anchors` | `update-ca-trust extract` | `.pem` |
+
+**C'est la COMMANDE qui identifie la famille, pas le répertoire.** La détection
+retenait le premier répertoire existant, Debian en tête de liste — or
+`/usr/local/share/ca-certificates` est un répertoire ordinaire sous
+`/usr/local`, que n'importe quel paquet peut créer. Une Rocky 9 était alors
+prise pour une Debian et l'agent lançait `update-ca-certificates`, qui n'y
+existe pas (recette du 24/09).
+
+Le raisonnement tient au-delà du symptôme : un magasin n'est utilisable que si
+le programme qui le **compile** est là, puisque déposer le fichier ne suffit pas
+à rendre la CA effective. Un répertoire, lui, ne prouve rien.
+
+Le répertoire garde un rôle — départager deux familles dont les deux commandes
+sont installées — et, s'il manque alors que la commande est là, il est créé :
+c'est un emplacement documenté de la distribution, pas un chemin inventé.
+Lorsque aucune commande n'est trouvée, l'échec **nomme ce qui a été cherché**,
+ce qui manquait au message d'origine.
 
 Deux précautions, dans les deux cas :
 
@@ -1175,6 +1264,211 @@ Comme pour les fichiers : l'empreinte du module est oubliée, le cycle suivant l
 réapplique. La correction n'est jamais immédiate — réappliquer peut relancer un
 service, et le faire à l'instant de la détection reviendrait à redémarrer sshd
 pendant qu'un administrateur débogue.
+
+---
+
+## Le scan du scope utilisateur
+
+*(2.2, TO-DO 33.)* Jusque-là, le scan n'existait que pour la machine : les GPO
+utilisateur étaient appliquées à l'ouverture de session et **plus jamais
+vérifiées**. Un fichier posé dans le `HOME` puis modifié, supprimé ou rendu
+illisible y restait aussi longtemps que l'empreinte de politique ne bougeait
+pas — c'est-à-dire indéfiniment sur un parc stable.
+
+C'est pourtant le scope où la dérive est la **plus probable**. Le `HOME` est le
+seul endroit où l'utilisateur écrit librement sans être root : il n'a besoin
+d'aucun privilège pour défaire ce que la politique a posé, et il n'a même pas
+besoin de le vouloir — un `.bashrc` réécrit par un outil tiers suffit.
+
+### Ce qui n'a rien demandé de neuf
+
+Côté core, **rien**. `05_15` porte déjà le scope et le nom d'utilisateur, la
+table `gpo_drift` a sa colonne `target_user`, et l'unicité de `gpo_compliance`
+porte les trois colonnes. Le rapport utilisateur remonte par le chemin existant
+et s'affiche là où s'affiche celui de la machine.
+
+Sur le **mode** non plus : il est un attribut de la GPO, hérité par ses modules
+(section suivante). `EnforceDrift` le lit module par module sans savoir de quel
+scope il s'agit. Une GPO utilisateur qu'on préfère ne pas voir corriger dans les
+`HOME` se met en audit comme n'importe quelle autre.
+
+### Avant le cycle, pour la même raison que la machine
+
+Le scan oublie l'empreinte des modules dérivés ; le cycle qui suit les réapplique
+dans la foulée. L'utilisateur trouve donc son environnement remis en état **à
+l'ouverture de session**, avant que son shell ne démarre.
+
+Scanner après aurait reporté la correction au cycle suivant — et le cycle suivant
+d'un scope utilisateur n'est pas dans une heure, c'est à la **prochaine
+connexion**. Quelqu'un qui se connecte une fois par semaine aurait gardé son
+`HOME` dérivé une semaine, signalé non conforme tout du long.
+
+### Une vérification par cadence, pas une par `sudo`
+
+Le scope machine a une boucle qui décide quand elle tourne. Le scope utilisateur
+n'en a pas : il est déclenché par PAM, sollicité à chaque `ssh` **et à chaque
+`sudo`**. Scanner à chaque passage aurait fait, sur un poste d'administration, un
+hachage de tout l'inventaire et une trame `05_15` par commande privilégiée.
+
+Le scan est donc borné à un par compte et par cadence GPO (`gpo_refresh_minutes`,
+la valeur en vigueur — resserrer le rafraîchissement du parc resserre aussi les
+vérifications). La borne vit en mémoire : un agent qui redémarre refait un scan
+de trop, ce qui est le sens sûr de l'erreur.
+
+### Deux connexions du même compte
+
+Le cycle utilisateur est désormais **sérialisé par compte**. Deux connexions
+simultanées — deux terminaux, ou un `sudo` pendant une session `ssh` — lançaient
+deux cycles en parallèle sur le même `HOME` et le même état local ; tant que le
+cycle ne faisait qu'appliquer, les modules étant idempotents, cela passait. Le
+scan ajoute une lecture suivie d'une écriture, et deux exécutions entrelacées y
+perdraient l'une des deux corrections.
+
+La seconde connexion **attend**, là où un second cycle machine abandonne : elle a
+besoin que son environnement soit en place avant que la main ne soit rendue à
+PAM.
+
+> ⚠️ **Ce qui reste assumé.** Une seconde connexion pendant qu'une première
+> travaille peut faire réécrire un fichier que l'utilisateur vient d'éditer. La
+> politique est la source de vérité, et l'agent n'a aucun moyen fiable de savoir
+> qu'une autre session est ouverte : compter les ouvertures et les fermetures PAM
+> laisserait un compteur faussé par la première session tuée, et désarmerait la
+> correction en silence — un défaut permissif invisible, exactement ce que
+> `DefaultDriftMode` refuse par ailleurs. Un parc où ces interventions sont
+> légitimes met les GPO concernées en audit.
+
+---
+
+## La signature des politiques *(2.2, TO-DO 52)*
+
+Le champ `signature` du document existait depuis longtemps, vide. Il l'est
+resté : la signature voyage en **queue du manifeste**, sur la ligne `sig:`.
+
+### Pourquoi pas dans le document
+
+On signe un document, on y insère la signature, et le document n'est plus celui
+qui a été signé. Il aurait fallu une **forme canonique** — donc une seconde
+implémentation du hachage côté agent, exactement ce que ce paquet refuse par
+ailleurs pour l'empreinte de politique : *« deux implémentations du même hachage
+dans deux modules Go finiraient par diverger »*. La ligne de manifeste l'évite,
+et suit la recette déjà éprouvée par `refresh:` et `sync:`.
+
+### Ce qui est signé
+
+```
+vaultaire-gpo-v1
+<computeur_id>
+<scope>
+<username>
+<empreinte>
+<somme de contrôle>
+```
+
+Trois décisions tiennent dans ces six lignes :
+
+- **`vaultaire-gpo-v1`** est une séparation de domaine. La même clé ne pourra
+  jamais signer autre chose qui soit pris pour une politique, et la version
+  permet de changer la composition un jour sans qu'une signature ancienne reste
+  valable pour la nouvelle règle.
+- **`computeur_id`, `scope`, `username`** lient la politique à son
+  **destinataire**. Signer les seuls octets du document aurait laissé une
+  politique valide rejouable d'une machine à l'autre : une politique de scope
+  machine ne nomme pas la machine.
+- **la somme de contrôle** couvre le document. L'agent la vérifie contre les
+  octets qu'il a réassemblés *avant* de vérifier la signature : signer la somme
+  revient donc à signer le document, sans lui faire recalculer une empreinte
+  canonique.
+
+RSA-PSS SHA-256, bibliothèque standard des deux côtés. Pas de format SSH : le
+lire aurait coûté à l'agent une dépendance entière — `golang.org/x/crypto` — pour
+une seule fonction d'analyse, et l'agent n'a aujourd'hui que deux dépendances.
+
+### La clé : `gpo_signing`, et pourquoi pas `server_main`
+
+C'est la question qui décide de la valeur de la fonctionnalité.
+
+`server_main` est la clé de **transport**. L'agent l'obtient du core au moment de
+se connecter et la confronte à une **liste** d'empreintes de confiance — une
+liste qui peut s'allonger, puisqu'un core déjà de confiance peut en annoncer
+d'autres dans la `04_04` (*« tout core de confiance peut ajouter de la
+confiance »*). Signer avec elle n'aurait donc rien prouvé de plus que le
+tunnel : un nœud entré par transitivité aurait signé ses propres politiques.
+
+`gpo_signing` est **posée à l'installation** (`create -c … --join` dépose
+`gpo_signing_key.pem` à côté de `core_key_fingerprint`) et **ne s'apprend
+jamais** en route. La confiance de transport peut s'étendre ; celle des
+politiques, non.
+
+Elle vit dans la table `certificates`, dont le nom est unique : les cores d'un
+cluster partagent une base, donc la clé, sans aucun travail de réplication.
+
+> ⚠️ **Ce que la signature ne couvre pas.** Un core dont la base est compromise
+> détient cette clé comme toutes les autres. Seul un secret hors de la base
+> protégerait de cela, avec un autre coût d'exploitation. Ce qu'elle apporte :
+> la politique porte sa preuve **avec elle**, indépendamment du canal — un
+> document réassemblé, mis en cache, rejoué, ou servi par un nœud entré dans la
+> confiance de transport ne s'applique plus sans la clé du cluster.
+
+### La migration
+
+Quatre cas, et le premier décide de tout :
+
+| Machine | Signature | Exigence | Résultat |
+|---|---|---|---|
+| **sans clé** | — | quelconque | appliquée. Elle ne peut rien vérifier ; refuser couperait les GPO d'un parc installé avant cette version |
+| avec clé | présente | quelconque | **doit être valide**. Une signature fausse n'est pas une signature absente |
+| avec clé | absente | posée | **refus** (`signature_invalide`) |
+| avec clé | absente | non posée | appliquée, avec un WARNING — c'est l'état de migration, et il doit se voir |
+
+L'exigence est un réglage du **core**, poussé sur la ligne `sigreq:` de chaque
+manifeste : `vlt gpo signature on`. Décidée par l'agent (« qui a la clé exige »),
+elle aurait été **irréversible** — revenir en arrière aurait demandé de repasser
+sur chaque machine. Poussée, elle s'active et se retire en une commande.
+
+`vlt gpo signature` sans argument dit l'état et l'empreinte de la clé du
+cluster ; `on` est **refusé** si le core n'a pas de clé de signature, parce que
+le message d'erreur arriverait sinon sur les machines et non devant celui qui
+tape la commande.
+
+---
+
+## L'historique des applications *(2.2, TO-DO 53)*
+
+`gpo_compliance` et `gpo_module_report` sont **écrasées** à chaque rapport :
+elles répondent à « où en est-on maintenant ». Devant une machine en `partial`,
+la question suivante est pourtant toujours la même — **« depuis quand ? »** —, et
+la réponse était dans le journal, mêlée à tout le reste.
+
+`gpo_apply_history` y répond. Une ligne par **changement**, pas par cycle :
+
+- écrire une ligne par rapport aurait fait, sur mille machines qui rapportent
+  toutes les heures, vingt-quatre mille lignes par jour pour dire vingt-quatre
+  mille fois « toujours pareil » ;
+- la table aurait grossi au rythme du **parc**, pas à celui des **événements**,
+  et « depuis quand » aurait demandé de parcourir des milliers de lignes
+  identiques.
+
+Une ligne est donc écrite quand le **statut** ou l'**empreinte** diffère du
+dernier enregistrement. Une machine saine et stable en produit une, à son
+premier rapport, et plus rien. Une machine qui casse en produit une le jour où
+elle casse : c'est exactement celle qu'on cherche.
+
+L'écriture se fait dans la **même transaction** que l'état courant : à part, une
+panne entre les deux laisserait un historique qui affirme un changement que
+l'état courant ne montre pas.
+
+Le champ `modules_en_echec` retient les clés fautives, **bornées à 20** — une
+machine hors service fait échouer tous ses modules à la fois. Le détail complet
+du dernier rapport reste dans `gpo_module_report`.
+
+Rétention : `gpo_history_retention_days`, 90 jours par défaut, purgée à la
+cadence des journaux (`log_purge_hours`). Plus longue que celle des journaux, et
+c'est voulu : la table ne grossit qu'aux changements, et « depuis quand cette
+machine échoue » se demande souvent des mois après.
+
+Affichage : `vlt gpo status <machine>`, section « Changements d'état », et la
+fiche de conformité du portail. La fiche machine (**Admin → Machines**) y
+renvoie.
 
 ---
 

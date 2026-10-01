@@ -1,6 +1,7 @@
 package ldap
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,8 @@ import (
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/netguard"
+	"vaultaire/core/proxiesconnus"
+	"vaultaire/core/proxyproto"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -27,8 +30,59 @@ import (
 // web.
 var ldapLimiter = netguard.NewLimiter("ldap", 500, 20)
 
-// Fonction générique utilisée par LDAP et LDAPS
-func handleLDAPConnections(listener net.Listener, protocol string) {
+// PlafondLDAPParProxy est le plafond par adresse d'un PROXY du cluster.
+//
+// Toutes les applications d'un site relayées par un proxy arrivent de son
+// adresse (TO-DO 72) : au plafond ordinaire de vingt, le site entier serait
+// coupé à la vingt-et-unième connexion. Même motif que PlafondParProxy pour
+// Ducky, à la taille d'un annuaire. Le plafond global, lui, reste commun.
+const PlafondLDAPParProxy = 200
+
+func plafondLDAPPourSource(source string) int {
+	if proxiesconnus.EstUnProxy(source) {
+		return PlafondLDAPParProxy
+	}
+	return 0
+}
+
+// preparerConnexion lit un éventuel en-tête PROXY v2, puis pose TLS pour LDAPS.
+//
+// La place au limiteur a été prise sur l'adresse du PAIR — le proxy, s'il y en
+// a un. C'est voulu : c'est lui qui consomme les descripteurs. Ce qui compte
+// par CLIENT, la limitation des échecs de bind, lit RemoteAddr, qui rend
+// désormais l'adresse d'origine.
+func preparerConnexion(conn net.Conn, protocol string, tlsConfig *tls.Config) (net.Conn, error) {
+	c, err := proxyproto.Lire(conn, proxiesconnus.EstUnProxy, netguard.HandshakeReadTimeout)
+	if err != nil {
+		niveau := "WARNING"
+		if errors.Is(err, proxyproto.ErrNonDeConfiance) {
+			// Quelqu'un qui envoie un en-tête PROXY sans être un proxy du
+			// cluster essaie de choisir l'adresse sous laquelle il est compté.
+			niveau = "SECURITY"
+		}
+		logs.Write_LogCode(niveau, logs.CodeLDAPListen, fmt.Sprintf(
+			"ldap: connexion %s de %s refusée : %v", protocol, netguard.SourceAddr(conn), err))
+		return nil, err
+	}
+	if c.Relais != nil {
+		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: connexion %s de %s relayée par le proxy %s",
+			protocol, c.RemoteAddr(), c.Relais))
+	}
+	if tlsConfig != nil {
+		return tls.Server(c, tlsConfig), nil
+	}
+	return c, nil
+}
+
+// Fonction générique utilisée par LDAP et LDAPS.
+//
+// tlsConfig non nul : LDAPS. TLS est posé APRÈS la lecture d'un éventuel
+// en-tête PROXY, dans la goroutine de la connexion — jamais dans la boucle
+// d'acceptation, qu'un pair lent bloquerait pour tout le monde.
+func handleLDAPConnections(listener net.Listener, protocol string, tlsConfig *tls.Config) {
+	ldapLimiter.DefinirPlafondPour(plafondLDAPPourSource)
+	proxiesconnus.Demarrer()
+
 	defer func() {
 		if err := listener.Close(); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: listener close failed: "+err.Error())
@@ -60,7 +114,14 @@ func handleLDAPConnections(listener net.Listener, protocol string) {
 
 		go func() {
 			defer release()
-			handleLDAPSession(conn, protocol)
+			session, err := preparerConnexion(conn, protocol, tlsConfig)
+			if err != nil {
+				if cerr := conn.Close(); cerr != nil {
+					logs.Write_Log("DEBUG", "ldap: fermeture après refus : "+cerr.Error())
+				}
+				return
+			}
+			handleLDAPSession(session, protocol)
 		}()
 	}
 }
@@ -116,7 +177,7 @@ func handleLDAPSession(c net.Conn, protocol string) {
 			return
 		}
 
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet))
+		logs.Write_Log("DEBUG", traceDuPaquet(clientAddr, packet))
 
 		message, err := ldapparser.ParseLDAPMessage(packet)
 		if err != nil {
@@ -157,6 +218,53 @@ func handleLDAPSession(c net.Conn, protocol string) {
 
 		ldapparser.DispatchLDAPOperation(message, message.MessageID, c)
 	}
+}
+
+// traceDuPaquet rend la ligne de mise au point d'une trame reçue.
+//
+// # Ce que cette ligne faisait
+//
+// Elle vidait le paquet ENTIER en hexadécimal, avant toute analyse. Sur un
+// BindRequest simple, ce paquet porte le mot de passe en clair — et, quand le
+// second facteur est actif, le code à six chiffres qui lui est accolé (voir la
+// convention décrite dans LDAP_Limits.go). Le journal est un fichier : il tourne,
+// il part dans les sauvegardes.
+//
+// `debug: false` est livré depuis le point 99, ce qui limite la portée. Mais on
+// active DEBUG exactement quand on diagnostique un problème d'annuaire,
+// c'est-à-dire au moment où tous les clients LDAP du parc se lient en boucle.
+//
+// # Ce qui est gardé
+//
+// Le vidage reste, pour toutes les autres opérations : c'est lui qui permet de
+// comprendre une trame mal découpée, et c'est la raison d'être de cette ligne.
+// Seul le bind est masqué.
+func traceDuPaquet(clientAddr string, packet []byte) string {
+	if peutEtreUnBind(packet) {
+		return fmt.Sprintf("ldap: packet from %s: BindRequest de %d octets, contenu masqué",
+			clientAddr, len(packet))
+	}
+	return fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet)
+}
+
+// peutEtreUnBind répond à la seule question utile ici, et répond OUI quand elle
+// ne sait pas.
+//
+// Le nom dit l'asymétrie : un paquet qu'on n'arrive pas à découper PEUT être un
+// bind, et rien ne permet d'affirmer le contraire sans lire le corps — ce qu'il
+// s'agit précisément d'éviter. Masquer à tort ne coûte qu'une ligne de mise au
+// point, sur un chemin où l'erreur d'analyse est déjà journalisée avec son motif.
+// Se tromper dans l'autre sens coûte un mot de passe.
+//
+// DecodePacketErr et non DecodePacket : la seconde panique sur une entrée
+// forgée, et ce code s'exécute sur des octets venus d'inconnus.
+func peutEtreUnBind(packet []byte) bool {
+	p, err := ber.DecodePacketErr(packet)
+	if err != nil || p == nil || len(p.Children) < 2 {
+		return true
+	}
+	op := p.Children[1]
+	return op.ClassType == ber.ClassApplication && op.Tag == ldapstorage.AppBindRequest
 }
 
 // messageIDOf extrait le messageID d'un paquet dont l'opération n'a pas pu être

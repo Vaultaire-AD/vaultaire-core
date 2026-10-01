@@ -353,6 +353,25 @@ func applyFileDeploy(ctx Context, m Module) (string, error) {
 // ---------------------------------------------------------------------------
 
 // writeUserFile écrit un fichier appartenant à l'utilisateur cible.
+//
+// # Ce que cette fonction faisait, et pourquoi c'était une élévation vers root
+//
+// Elle appelait `os.MkdirAll`, `chownTree` puis `os.Chown` — trois fonctions qui
+// DÉRÉFÉRENCENT les liens symboliques —, et `chownTree` vérifiait l'appartenance
+// au `HOME` par `strings.HasPrefix` sur la chaîne non résolue.
+//
+// Elle tourne EN ROOT, lancée par PAM, sur un dossier que l'utilisateur
+// contrôle. Il lui suffisait de remplacer un répertoire intermédiaire par un
+// lien vers `/etc` pour que root chowne `/etc` à son nom. Voir TO-DO 97 et
+// chemin_sur_linux.go, qui porte le détail complet du chemin d'attaque.
+//
+// La traversée passe désormais par des DESCRIPTEURS : chaque composant est
+// ouvert relativement au précédent avec `O_NOFOLLOW`, et l'écriture comme le
+// changement de propriétaire se font sur le descripteur, jamais sur un chemin
+// qu'il faudrait résoudre une seconde fois.
+//
+// `chownTree` a disparu : la descente pose elle-même le propriétaire des
+// répertoires qu'elle crée, ce qui était sa seule raison d'être.
 func writeUserFile(ctx Context, path, content string, mode os.FileMode) error {
 	if ctx.Username == "" {
 		return fmt.Errorf("utilisateur cible non defini")
@@ -361,39 +380,7 @@ func writeUserFile(ctx Context, path, content string, mode os.FileMode) error {
 	if err != nil {
 		return err
 	}
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creation de %s impossible : %v", dir, err)
-	}
-	// Les répertoires intermédiaires créés sous le home doivent eux aussi
-	// appartenir à l'utilisateur, sinon il ne peut rien y écrire ensuite.
-	if err := chownTree(ctx.HomeDir, dir, uid, gid); err != nil {
-		return err
-	}
-
-	if err := writeSystemFile(path, content, mode); err != nil {
-		return err
-	}
-	if err := os.Chown(path, uid, gid); err != nil {
-		return fmt.Errorf("proprietaire de %s non applique : %v", path, err)
-	}
-	return nil
-}
-
-// chownTree rattache à l'utilisateur les répertoires créés sous son home.
-func chownTree(homeDir, dir string, uid, gid int) error {
-	if homeDir == "" || !strings.HasPrefix(dir, homeDir) {
-		return nil
-	}
-	current := dir
-	for len(current) > len(homeDir) {
-		if err := os.Chown(current, uid, gid); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("proprietaire de %s non applique : %v", current, err)
-		}
-		current = filepath.Dir(current)
-	}
-	return nil
+	return ecrireFichierUtilisateur(ctx.HomeDir, path, content, mode, uid, gid)
 }
 
 // shellQuote protège une valeur destinée à un fichier sourcé par le shell.

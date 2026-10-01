@@ -23,6 +23,17 @@ func (r RootDSEEntry) DN() string {
 	return "" // La racine a un DN vide, c'est la règle RFC
 }
 
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Le RootDSE n'appartient à AUCUN domaine : c'est la racine, hors de
+// l'arborescence. La chaîne vide vaut donc « écartée par le filtre
+// d'autorisation », et c'est le bon comportement — cette entrée est servie par
+// le chemin qui court-circuite le filtre, parce qu'elle doit rester lisible sans
+// authentification (RFC 4512).
+func (r RootDSEEntry) Domaines() []string {
+	return nil
+}
+
 func (r RootDSEEntry) ObjectClasses() []string {
 	return []string{"top", "LDAProotDSE"}
 }

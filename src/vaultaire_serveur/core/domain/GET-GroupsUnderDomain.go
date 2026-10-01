@@ -7,11 +7,22 @@ import (
 	dbdomains "vaultaire/core/database/db_domains"
 )
 
-// normalizeDomain normalise un nom de domaine : minuscules, trim espaces et point final
-func normalizeDomain(s string) string {
+// NormaliserDomaine met un nom de domaine sous sa forme de comparaison :
+// minuscules, sans espaces de bord ni point final.
+//
+// EXPORTÉE parce qu'elle décide de ce qui est chargé, et que le contrôle d'accès
+// LDAP doit décider de ce qui est RENDU avec exactement la même règle
+// (`security.PorteeDeRecherche`, point 120). Deux normalisations qui se
+// ressemblent finissent par diverger, et la divergence se manifeste alors en
+// entrée chargée puis écartée — ou l'inverse.
+func NormaliserDomaine(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimSuffix(s, ".")
 	return strings.ToLower(s)
+}
+
+func normalizeDomain(s string) string {
+	return NormaliserDomaine(s)
 }
 
 // GetGroupsUnderDomain retourne tous les noms de groupes appartenant à un domaine

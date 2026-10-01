@@ -14,5 +14,5 @@ func HandleLDAPserveur() {
 		logs.Write_Log("ERROR", fmt.Sprintf("[LDAP] Erreur lors de l'écoute: %s", err))
 		return
 	}
-	handleLDAPConnections(listener, "LDAP")
+	handleLDAPConnections(listener, "LDAP", nil)
 }

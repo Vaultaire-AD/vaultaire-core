@@ -26,6 +26,19 @@ ldap:
   ldap_port: 389
   ldaps_port: 636
 
+  # Second facteur au bind LDAP.
+  #
+  # Par défaut (false), un compte dont le second facteur est posé — ou imposé
+  # par un de ses groupes — se lie avec son mot de passe SUIVI du code à 6
+  # chiffres : « MonMotDePasse123456 ». Un compte imposé mais pas encore enrôlé
+  # est refusé.
+  #
+  # true laisse ces comptes se lier avec le seul mot de passe, pour des
+  # applications incapables de transmettre le code. Chaque bind concerné est
+  # journalisé (SECURITY). Préférez des comptes de service hors des groupes
+  # soumis au second facteur.
+  mfa_bypass: false
+
   # Noms et adresses que le certificat LDAPS doit couvrir.
   #
   # Le nom de la machine et ses adresses sont détectés automatiquement. Ne
@@ -41,6 +54,20 @@ ldap:
   #
   # Après modification : vlt certificate regenerate ldaps, puis redémarrage.
   # Voir docs/exploitation/ldaps_keycloak.md
+  # Élargir une recherche « one » à toute l'arborescence.
+  #
+  # Par défaut (false), une recherche de portée « one » rend UN niveau, comme le
+  # veut la RFC 4511. C'est un changement de la 2.2 : le serveur promouvait
+  # silencieusement en « sub » toute recherche « one » dont le conteneur
+  # s'appelait « users ».
+  #
+  # true rétablit l'ancien comportement, pour TOUTE recherche « one » et non plus
+  # selon le nom du conteneur. Utile si un client attend les sous-domaines sans
+  # savoir demander « sub » — JumpServer est dans ce cas. Préférez, quand c'est
+  # possible, reconfigurer le client en « scope=sub » : c'est la façon juste de
+  # demander une arborescence.
+  onelevel_subtree: false
+
   ldaps_tls_dns_names: []
   #  - vaultaire-ad
   #  - vaultaire-ad.interne.lan
@@ -52,7 +79,11 @@ dns:
 
 database:
   username: root
-  password: root
+  # REMPLACEZ CETTE VALEUR. Le marqueur ne fonctionne pas : c'est voulu.
+  # Un fichier livré avec un mot de passe QUI MARCHE est un mot de passe publié
+  # dans le dépôt Git du produit, et il reste en place sur toute installation
+  # que personne n'a retouchée.
+  password: CHANGEZ_MOI
   ip_database: "vaultaire-db"
   port_database: "3306"
   databaseName: "vaultaire"
@@ -105,10 +136,27 @@ api:
   api_port: 6643
 
 debug:
-  debug: true
+  # FAUX par défaut. Les lignes DEBUG portent les DN des binds LDAP, les
+  # identifiants de groupe des décisions de permission et le détail des
+  # vérifications de signature : aucun secret, mais la cartographie complète de
+  # l'annuaire et des droits, dans un fichier lisible localement et sans
+  # bornage. À n'activer que le temps d'un diagnostic.
+  debug: false
 
-administreur:
+# « administrateur » et non « administreur ».
+#
+# L'ancienne orthographe n'a JAMAIS été lue : l'étiquette de la structure Go dit
+# « administrateur », et un décodeur YAML apparie sur l'étiquette exacte. Toute
+# cette section était donc ignorée en silence, et le compte d'amorçage naissait
+# avec les valeurs par défaut du code quoi que contienne ce fichier.
+# Le core refuse maintenant de démarrer sur l'ancienne clé, en la nommant.
+administrateur:
   enable: true
   username: admin
-  password: admin123 
+  # REMPLACEZ CETTE VALEUR, le core refuse de démarrer tant qu'elle est là.
+  # Ce compte entre dans le groupe « vaultaire » : tous les droits, sur tous les
+  # domaines. Son mot de passe est PROVISOIRE — il devra être changé sur le
+  # portail à la première connexion — et doit tenir la règle de robustesse
+  # (12 caractères par défaut, « vlt mfa policy »).
+  password: CHANGEZ_MOI
   public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJnFvZ8sfvIGVc0gB5oQEv2Vh1A6lqGNK/CrcgZj5ybNoEwxdbkQyRYkJ6NmtxDs1zLyRUr5GCGtjX44JNNnTDdL+E00Aiw8nFBJRlHkV78ehG62p2DeeVLUydnlnT5ey3KJtmY+Tc0dq5AqWdnAsLbZ/JHw/EuZTeifYJ6wmpxp69oHnsvRxBomH2wSp7CjeYTaBpVFF4KChBSXm/gO4quWQT0JBsDyNmPhZ/QwRJKqujh1B5OX6bbKAl5MOC3OoPXfYkyhilaMku9lK5E6i3wLdP08FQ6Op/Psy7ukTTvMduhqsauxZMMx+x12RAT72LFySZ6RSkLKQXhwkO8pG4laNKFQbDoTULC973AKy0le2Jyb7SnNBL+I+KviMojItYCc6QmQ39TVowy6VQimHiPPs6UPTDt8KROm1SEtPSXj7QvtwJU5hbAG9uFVH/udX7y6BhNPkOgCmrH9s5fh0= root@NTFS"

@@ -16,6 +16,7 @@ import (
 	commandget "vaultaire/core/command/command_get"
 	commandgpo "vaultaire/core/command/command_gpo"
 	commandkill "vaultaire/core/command/command_kill"
+	commandlogs "vaultaire/core/command/command_logs"
 	commandmfa "vaultaire/core/command/command_mfa"
 	commandremove "vaultaire/core/command/command_remove"
 	commandsettings "vaultaire/core/command/command_settings"
@@ -61,6 +62,7 @@ func ExecuteCommand(input, sender string) string {
 		"gpo":         commandgpo.GPO_Command,
 		"certificate": commandcertificate.Certificate_Command,
 		"settings":    commandsettings.Settings_Command,
+		"logs":        commandlogs.Logs_Command,
 	}
 
 	// `version` est traitée AVANT la table des commandes, comme `clear` et
@@ -95,6 +97,7 @@ func ExecuteCommand(input, sender string) string {
   gpo    [OPTIONS] : état d'application et de conformité des GPO. Voir gpo -h.
   certificate      : certificats TLS du serveur (LDAPS). Voir certificate -h.
   settings         : durées d'exploitation du serveur. Voir settings -h.
+  logs   [OPTIONS] : journal commun des cores, filtré et paginé. Voir logs -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.

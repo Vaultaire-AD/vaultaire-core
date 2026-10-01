@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"vaultaire/core/logs"
 )
@@ -48,10 +49,21 @@ const (
 
 // racineWeb rend la racine des ressources du portail.
 //
-// Résolue une fois, à la première demande : le répertoire de travail ne change
-// pas en cours d'exécution, et relire l'environnement à chaque requête coûterait
-// sans rien apporter.
-var racineWeb = resoudreRacineWeb()
+// Résolue une fois, à la PREMIÈRE DEMANDE — et non au chargement du paquet.
+// Le répertoire de travail ne change pas en cours d'exécution, et relire
+// l'environnement à chaque requête ne coûterait rien d'utile ; mais une
+// résolution au chargement fige la valeur avant qu'un test ait pu poser
+// VAULTAIRE_WEB_PACKET, et les tests du portail cherchaient alors les gabarits
+// sous `core/web_serveur/`, où ils ne sont évidemment pas.
+func racineWeb() string {
+	racineUneFois.Do(func() { racineResolue = resoudreRacineWeb() })
+	return racineResolue
+}
+
+var (
+	racineUneFois sync.Once
+	racineResolue string
+)
 
 func resoudreRacineWeb() string {
 	if v := strings.TrimSpace(os.Getenv(VariableRacineWeb)); v != "" {
@@ -62,17 +74,17 @@ func resoudreRacineWeb() string {
 
 // CheminGabarit rend le chemin d'un gabarit.
 func CheminGabarit(nom string) string {
-	return filepath.Join(racineWeb, "templates", nom)
+	return filepath.Join(racineWeb(), "templates", nom)
 }
 
 // RepertoireGabarits rend le répertoire des gabarits.
 func RepertoireGabarits() string {
-	return filepath.Join(racineWeb, "templates")
+	return filepath.Join(racineWeb(), "templates")
 }
 
 // RepertoireStatiques rend le répertoire des CSS, JS et images.
 func RepertoireStatiques() string {
-	return filepath.Join(racineWeb, "static")
+	return filepath.Join(racineWeb(), "static")
 }
 
 // VerifierRessourcesWeb contrôle au démarrage que les ressources sont là.

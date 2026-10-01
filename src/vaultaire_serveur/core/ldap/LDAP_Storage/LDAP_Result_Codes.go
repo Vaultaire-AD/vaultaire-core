@@ -25,9 +25,23 @@ const (
 	ResultAuthMethodNotSupported       = 7
 	ResultStrongerAuthRequired         = 8
 	ResultUnavailableCriticalExtension = 12
-	ResultInvalidCredentials           = 49
-	ResultInsufficientAccessRights     = 50
-	ResultUnwillingToPerform           = 53
+	// ResultInappropriateMatching — la règle de correspondance demandée dans le
+	// filtre n'est pas gérée pour cet attribut.
+	//
+	// Ce que reçoit un client qui emploie un extensible match : son filtre était
+	// auparavant évalué comme une simple égalité, donc répondu à côté.
+	ResultInappropriateMatching = 18
+	// ResultNoSuchObject — le baseObject ne désigne aucune entrée.
+	//
+	// Distinct d'une recherche qui aboutit sans résultat : le serveur rendait un
+	// succès et zéro entrée dans les deux cas, si bien qu'un client ne pouvait
+	// plus distinguer « ce DN n'existe pas » de « ce DN existe et est vide ».
+	// C'est la distinction sur laquelle s'appuient les outils qui vérifient une
+	// existence avant d'écrire ou de synchroniser.
+	ResultNoSuchObject             = 32
+	ResultInvalidCredentials       = 49
+	ResultInsufficientAccessRights = 50
+	ResultUnwillingToPerform       = 53
 )
 
 // Étiquettes d'application des réponses LDAP — RFC 4511 §4.

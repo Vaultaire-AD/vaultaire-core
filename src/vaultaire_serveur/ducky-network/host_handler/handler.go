@@ -15,10 +15,33 @@ import (
 	clusterstorage "vaultaire/cluster/cluster_storage"
 	"vaultaire/core/clienttype"
 	"vaultaire/core/logs"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/trame"
 )
+
+// RefusEnregistrement compose le 04_02 d'un enregistrement REFUSÉ.
+//
+// Un refus silencieux était le défaut du point 73 : le core écartait le nœud et
+// ne répondait rien, le nœud journalisait « enregistré » et battait dans le
+// vide. Il ne figurait ni dans la liste servie aux agents, ni dans l'exemption
+// de plafond du limiteur — et rien, de son côté, ne le disait.
+//
+// Le motif est renvoyé au nœud parce qu'il est le seul à pouvoir le corriger :
+// c'est sa configuration (hostname, port, empreinte, type) qui est en cause. Il
+// ne révèle rien qu'il ne sache déjà — jamais l'état d'un AUTRE nœud : une
+// usurpation de hostname répond « nom déjà pris », et non par qui.
+func RefusEnregistrement(tramesContent storage.Trames_struct_client, motif string) string {
+	if strings.TrimSpace(motif) == "" {
+		motif = "refusé"
+	}
+	// Une seule ligne : un motif multiligne décalerait la lecture côté nœud.
+	motif = strings.ReplaceAll(strings.ReplaceAll(motif, "\n", " "), "\r", " ")
+	return trame.ReponseClient("04_02",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
+		"refus", motif)
+}
 
 // HandleHostTrame traite les trames 04_xx (Cluster / Service discovery) et retourne la réponse à envoyer.
 func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duckysession *storage.DuckySession) (string, error) {
@@ -46,6 +69,11 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 		return handleServiceHeartbeat(db, tramesContent, duckysession)
 	case "14":
 		return handleDeregisterService(db, tramesContent, duckysession)
+
+	// Services d'un type, pour le relais HTTPS d'un proxy (TO-DO 72). Voir
+	// services_du_cluster.go.
+	case "15":
+		return handleListServices(db, tramesContent, content)
 	default:
 		return "", fmt.Errorf("sous-trame 04_%s non gérée", sub)
 	}
@@ -84,7 +112,7 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
 	if err != nil {
 		logs.Write_Log("SECURITY", "register_host refusé : "+err.Error())
-		return "", fmt.Errorf("register_host: %w", err)
+		return RefusEnregistrement(tramesContent, "propriétaire introuvable pour cette session"), fmt.Errorf("register_host: %w", err)
 	}
 
 	// Le RÔLE aussi vient du type de programme, et non du contenu.
@@ -101,12 +129,14 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		logs.Write_Log("SECURITY", fmt.Sprintf(
 			"register_host refusé : %q est de type %q, qui ne prend aucun rôle de nœud",
 			proprietaire, duckysession.BoundClientType))
-		return "", fmt.Errorf("register_host: ce type de client ne s'enregistre pas comme nœud du cluster")
+		return RefusEnregistrement(tramesContent, "ce type de client ne s'enregistre pas comme nœud du cluster"),
+			fmt.Errorf("register_host: ce type de client ne s'enregistre pas comme nœud du cluster")
 	}
 
 	lines := strings.Split(content, "\n")
 	if len(lines) < 5 {
-		return "", fmt.Errorf("register_host: contenu invalide (attendu hostname, fqdn, ip, role, domain)")
+		return RefusEnregistrement(tramesContent, "contenu invalide (attendu hostname, fqdn, ip, role, domain)"),
+			fmt.Errorf("register_host: contenu invalide (attendu hostname, fqdn, ip, role, domain)")
 	}
 	hostname := strings.TrimSpace(lines[0])
 	fqdn := strings.TrimSpace(lines[1])
@@ -121,7 +151,8 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	}
 	domain := strings.TrimSpace(lines[4])
 	if hostname == "" || ip == "" {
-		return "", fmt.Errorf("register_host: hostname et ip requis")
+		return RefusEnregistrement(tramesContent, "hostname et ip requis"),
+			fmt.Errorf("register_host: hostname et ip requis")
 	}
 	if fqdn == "" {
 		fqdn = hostname
@@ -132,7 +163,8 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		if texte := strings.TrimSpace(lines[5]); texte != "" {
 			p, err := strconv.Atoi(texte)
 			if err != nil || p < 1 || p > 65535 {
-				return "", fmt.Errorf("register_host: port invalide (%q)", texte)
+				return RefusEnregistrement(tramesContent, fmt.Sprintf("port invalide (%q)", texte)),
+					fmt.Errorf("register_host: port invalide (%q)", texte)
 			}
 			port = p
 		}
@@ -146,7 +178,8 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 	if len(lines) > 6 {
 		empreinte = strings.TrimSpace(lines[6])
 		if empreinte != "" && !strings.HasPrefix(empreinte, "SHA256:") {
-			return "", fmt.Errorf("register_host: empreinte de forme inattendue (%q)", empreinte)
+			return RefusEnregistrement(tramesContent, fmt.Sprintf("empreinte de forme inattendue (%q)", empreinte)),
+				fmt.Errorf("register_host: empreinte de forme inattendue (%q)", empreinte)
 		}
 	}
 	if empreinte == "" {
@@ -206,7 +239,11 @@ func handleRegisterHost(db *sql.DB, tramesContent storage.Trames_struct_client, 
 		if errors.Is(err, clusterdatabase.ErrNoeudAppartientAUnAutre) {
 			logs.Write_Log("SECURITY", "register_host refusé : "+err.Error())
 		}
-		return "", fmt.Errorf("register_host: %w", err)
+		motif := "enregistrement refusé par la base"
+		if errors.Is(err, clusterdatabase.ErrNoeudAppartientAUnAutre) {
+			motif = "ce nom de nœud appartient déjà à un autre client"
+		}
+		return RefusEnregistrement(tramesContent, motif), fmt.Errorf("register_host: %w", err)
 	}
 	logs.Write_Log("INFO", "host registered: "+hostname+" role="+role+" ip="+ip+
 		" port="+strconv.Itoa(port))
@@ -325,9 +362,44 @@ func handleListCores(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 	if body != "" {
 		contenu = append(contenu, body)
 	}
+	if cadence := ligneCadenceDecouverte(); cadence != "" {
+		contenu = append(contenu, cadence)
+	}
 	return trame.ReponseClient("04_04",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
 		contenu...), nil
+}
+
+// PrefixeCadenceDecouverte ouvre la ligne de cadence de la trame 04_04.
+//
+// # Pourquoi elle est ajoutée en QUEUE, et reconnue à son préfixe
+//
+// Les lignes de nœud de 04_04 sont lues PAR POSITION — six champs séparés par
+// « | » —, contrairement à 03_09 et 05_02 qui se lisent par préfixe. Une ligne
+// de plus au milieu casserait donc l'analyse ; en queue et préfixée, un agent
+// qui ne la connaît pas la rejette comme une ligne fautive et garde le reste.
+//
+// Elle n'entre pas dans le NOMBRE annoncé en première ligne : ce nombre compte
+// des nœuds, et l'agent le vérifie contre ce qu'il a lu. L'y ajouter ferait
+// croire à une trame tronquée à chaque envoi.
+//
+// # Pourquoi la cadence vient du core
+//
+// La boucle tourne sur l'agent, mais c'est ici qu'on sait si le cluster bouge.
+// Une constante côté agent aurait obligé à redéployer le parc pour changer un
+// nombre — même raisonnement que `group_sync_minutes` (03_09) et
+// `gpo_refresh_minutes` (05_02).
+const PrefixeCadenceDecouverte = "disco:"
+
+// ligneCadenceDecouverte rend « disco:<minutes> », ou une chaîne vide si la
+// valeur est aberrante — auquel cas l'agent garde la sienne, ce qui vaut mieux
+// que de lui faire appliquer un zéro.
+func ligneCadenceDecouverte() string {
+	minutes := reglages.Valeur(reglages.CleListeDesNoeuds)
+	if minutes <= 0 {
+		return ""
+	}
+	return PrefixeCadenceDecouverte + strconv.Itoa(minutes)
 }
 
 // semerAffiniteDuNoeud reporte les groupes du client sur sa ligne de nœud.
@@ -383,12 +455,23 @@ func groupesDuClient(db *sql.DB, computeurID string) ([]int, error) {
 // # Le hostname du contenu est IGNORÉ
 //
 // Il servait de clé d'insertion. N'importe quel nœud pouvait donc écrire des
-// métriques sous le nom d'un autre — et ces métriques alimentent le tri de la
-// liste servie aux agents : fabriquer les chiffres d'un pair revenait à décider
-// vers qui le parc se dirige.
+// métriques sous le nom d'un autre — c'est-à-dire décrire l'état d'un pair dans
+// les vues de supervision.
 //
 // Le nom retenu est celui de la ligne du DEMANDEUR. La première ligne du contenu
 // n'est plus lue que pour signaler un écart.
+//
+// # Ces mesures sont VUES, elles ne décident de rien (TO-DO 108)
+//
+// Une version antérieure de ce commentaire disait qu'elles « alimentent le tri
+// de la liste servie aux agents ». C'était faux, et la confusion avait de la
+// valeur pour un attaquant : elle laissait croire qu'un nœud qui ment sur sa
+// charge détourne le parc. Le tri de `noeuds_pour_agents.go` n'a jamais lu
+// `proxy_metrics` — il ordonne par priorité, affinité de groupe et état.
+//
+// C'est volontaire et cela doit le rester : une 04_05 est DÉCLARATIVE. Faire
+// dépendre l'acheminement du parc d'un chiffre que chaque nœud choisit lui-même
+// est un autre lot, qui devra d'abord répondre à cette question-là.
 func handleProxyMetrics(db *sql.DB, tramesContent storage.Trames_struct_client, content string, duckysession *storage.DuckySession) (string, error) {
 	proprietaire, err := clusterdatabase.ProprietaireDepuisSession(duckysession.BoundClientSoftwareID)
 	if err != nil {

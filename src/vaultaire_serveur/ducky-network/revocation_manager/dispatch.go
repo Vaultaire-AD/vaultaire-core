@@ -17,6 +17,7 @@ import (
 
 	"vaultaire/core/database"
 	dbrevocation "vaultaire/core/database/db_revocation"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/domain"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
@@ -181,6 +182,21 @@ func killSessions(username string) int {
 		sessionmgr.Sessions.RemoveSession(sess.SessionID)
 	}
 
+	// Les sessions PAM affichées par `status -u`.
+	//
+	// Elles ne se « ferment » pas d'ici : une session ouverte sur un poste est
+	// fermée par l'ordre de révocation lui-même (trames 06), pas par une ligne
+	// de base. Ce qu'on retire, c'est l'AFFICHAGE — un tableau de bord qui
+	// montre encore comme connecté un compte qu'on vient de couper est un
+	// tableau de bord qui ment, et c'est précisément au moment d'un kill switch
+	// qu'on le regarde.
+	if n, err := dbsessions.FermerSessionsUtilisateurPartout(database.GetDatabase(), username); err != nil {
+		logs.Write_Log("WARNING", "revocation: sessions utilisateur de "+username+" non retirées : "+err.Error())
+	} else if n > 0 {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: %d session(s) utilisateur de %s retirée(s) de l'affichage", n, username))
+	}
+
 	web := websession.DeleteSessionsOf(username)
 	if web > 0 {
 		logs.Write_Log("WARNING", fmt.Sprintf(
@@ -212,17 +228,21 @@ func killSessions(username string) int {
 func pushToOnline(order revocation.Order, targets []string) int {
 	pushed := 0
 	for _, computeurID := range targets {
-		sess, ok := sessionmgr.Sessions.GetByClientSoftwareID(computeurID)
-		if !ok || sess.DuckySession == nil {
-			continue
+		// Même choix de session que le rafraîchissement GPO (TO-DO 89) : la
+		// « première session portant l'identifiant » pouvait être une poignée
+		// de main ou la session d'un utilisateur, et l'ordre restait en
+		// attente sur une machine pourtant connectée.
+		for _, sess := range sessionmgr.Sessions.SessionsMachine(computeurID, sessionmgr.FraicheurTunnel()) {
+			msg := buildOrderFrame(sess.SessionID, order)
+			if err := sendmessage.SendMessage(msg, sess.ClientSoftwareID, sess.DuckySession); err != nil {
+				logs.Write_Log("WARNING", fmt.Sprintf(
+					"revocation: ordre %d non remis à %s par la session %s : %v",
+					order.ID, computeurID, sess.SessionID, err))
+				continue
+			}
+			pushed++
+			break
 		}
-		msg := buildOrderFrame(sess.SessionID, order)
-		if err := sendmessage.SendMessage(msg, computeurID, sess.DuckySession); err != nil {
-			logs.Write_Log("WARNING", fmt.Sprintf(
-				"revocation: ordre %d non remis à %s (sera rejoué) : %v", order.ID, computeurID, err))
-			continue
-		}
-		pushed++
 	}
 	return pushed
 }

@@ -108,8 +108,8 @@
               {{ end }}
               {{ range .Matrix.Special }}
               <a class="perm-flat-item{{ if eq .Field $.Editor.Field }} perm-flat-selected{{ end }}"
-                 href="/admin/permissions?perm={{ $.Perm.Name }}&amp;field={{ .Field }}#matrix">
-                <code>{{ .Field }}</code>
+                 href="/admin/permissions?perm={{ $.Perm.Name }}&amp;field={{ .Field }}#matrix"{{ if .Label }} title="{{ .Label }}"{{ end }}>
+                <code>{{ .Field }}</code>{{ if .Label }} <span class="muted small">{{ .Label }}</span>{{ end }}
                 <span class="perm-chip perm-chip-{{ .State }}">{{ .Summary }}</span>
               </a>
               {{ end }}

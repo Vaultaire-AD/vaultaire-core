@@ -203,7 +203,10 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 		// aucun des contrôles qui suivent — hachage, mode — n'a de sens sur un
 		// fichier qui ne doit pas exister.
 		if attendu.Absent {
-			if _, err := os.Stat(path); err == nil {
+			// Lstat et non Stat : un lien symbolique EXISTE, même s'il pointe
+			// vers rien. Avec Stat, un lien cassé posé à l'emplacement d'un
+			// fichier que la politique retire passait pour « toujours absent ».
+			if _, err := os.Lstat(path); err == nil {
 				report.Items = append(report.Items, DriftItem{
 					Path: path, StateKey: attendu.StateKey, Kind: DriftReappeared,
 					Detail: "fichier recree alors que la politique le retire",
@@ -214,6 +217,34 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 			// alors rien affirmer, et déclarer une dérive sur une incertitude
 			// ferait réappliquer un module sans motif.
 			continue
+		}
+
+		// UN LIEN SYMBOLIQUE À LA PLACE DU FICHIER EST UNE DÉRIVE — TO-DO 97.
+		//
+		// Le scan tourne EN ROOT, et les chemins du scope utilisateur vivent dans
+		// un dossier que l'utilisateur contrôle. Avec `os.Stat`, qui suit les
+		// liens, planter « ~/.config/app.conf -> /etc/shadow » faisait LIRE
+		// /etc/shadow par root pour en calculer une empreinte.
+		//
+		// Le contenu ne sortait pas — seule l'empreinte est calculée, et elle
+		// n'est pas transmise — mais faire lire un fichier arbitraire à root sur
+		// commande d'un utilisateur est le genre de porte qu'une évolution
+		// ultérieure ouvre sans s'en apercevoir.
+		//
+		// Et c'est de toute façon PLUS JUSTE : la politique a déposé un fichier
+		// ordinaire ; s'il est devenu un lien, il a bien dérivé.
+		//
+		// Scope UTILISATEUR seulement. En scope machine, des fichiers gérés par
+		// une politique sont légitimement des liens — /etc/resolv.conf vers
+		// systemd-resolved — et les signaler ferait réappliquer en boucle.
+		if scope == ScopeUser {
+			if lst, errL := os.Lstat(path); errL == nil && lst.Mode()&os.ModeSymlink != 0 {
+				report.Items = append(report.Items, DriftItem{
+					Path: path, StateKey: attendu.StateKey, Kind: DriftModified,
+					Detail: "remplace par un lien symbolique",
+				})
+				continue
+			}
 		}
 
 		info, err := os.Stat(path)

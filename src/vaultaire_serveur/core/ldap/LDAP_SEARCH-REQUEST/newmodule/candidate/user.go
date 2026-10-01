@@ -17,14 +17,73 @@ type UserEntry struct {
 	Sn          string   // Lastname
 	Uid         string   // Username
 	MemberOf    []string // Groupes
+
+	// Rattachements : les domaines où vit RÉELLEMENT le compte, c'est-à-dire ceux
+	// des groupes par lesquels il a été trouvé. Sert au contrôle d'accès, et à
+	// rien d'autre — voir Domaines().
+	//
+	// Distinct de BaseDN, qui est le domaine dont le DN est composé : `ToRootDN`
+	// ne garde que les deux derniers labels, si bien qu'un compte de
+	// « admin.enov.local » et un compte de « enov.local » portent le MÊME DN.
+	// Confondre les deux champs revient à n'avoir aucun contrôle.
+	Rattachements []string
+
+	// ServiceRights : clés RBAC de service (read:nexus…) accordées au compte.
+	// Renseigné par la recherche UNIQUEMENT quand l'attribut est demandé nommément et
+	// que le compte lié a le droit de le lire — voir newmodule/service_rights.go.
+	ServiceRights []string
 }
+
+// AttrServiceRights est le nom (en minuscules) de l'attribut opérationnel qui
+// porte les droits de service d'un compte.
+const AttrServiceRights = "vaultaireservicerights"
 
 func (u UserEntry) DN() string {
 	return fmt.Sprintf("uid=%s,ou=users,%s", u.User.Username, ldaptools.ToRootDN(u.BaseDN))
 }
 
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Rend `Rattachements`, et RIEN d'autre. Surtout pas `BaseDN` en secours :
+// BaseDN est le domaine qui compose le DN, et sur ce chemin c'est celui que le
+// client a DEMANDÉ, pas celui où vit le compte. S'en servir pour décider des
+// droits autoriserait tout compte par construction — le filtre ne verrait jamais
+// que le domaine qui vient d'être autorisé. C'était le défaut de la première
+// version de ce correctif.
+//
+// Une liste vide écarte l'entrée. C'est ce qui doit arriver à une UserEntry
+// construite sans renseigner ses rattachements : l'oubli rend le compte
+// invisible, il ne le diffuse pas.
+func (u UserEntry) Domaines() []string {
+	return u.Rattachements
+}
+
+// ObjectClasses — ce que l'entrée déclare ÊTRE.
+//
+// # posixAccount a été retiré — point 123
+//
+// Il était déclaré, et pas un seul attribut POSIX n'était servi : ni uidNumber,
+// ni gidNumber, ni homeDirectory, ni loginShell, ni gecos. Un client RFC 2307 —
+// sssd, nslcd, un NAS en mode « LDAP Unix » — trouvait donc l'entrée sur
+// `(objectClass=posixAccount)`, puis échouait à construire le compte. L'erreur
+// apparaissait loin de sa cause, et la cause était ici.
+//
+// Ce qui change pour les clients : SEULE la réponse à un filtre sur cette classe.
+// Aucun attribut ne disparaît, puisque aucun n'était servi. Un client qui filtre
+// sur `person`, `inetOrgPerson`, `user`, `objectClass=*`, ou simplement sur `uid`
+// / `cn` / `mail` ne voit aucune différence — c'est-à-dire Keycloak, Nextcloud,
+// JumpServer et les équipements réseau.
+//
+// Servir POSIX pour de bon reste possible ; ce serait un lot à part, avec une
+// source STABLE pour uidNumber et gidNumber — un compteur en base, jamais un
+// hachage du nom, deux comptes qui collisionnent partageraient l'UID donc les
+// fichiers. Et il faudrait accepter qu'un poste puisse alors s'authentifier par
+// sssd, hors du chemin Vaultaire : donc hors second facteur et hors révocation.
+//
+// Ce qu'il ne faut pas refaire, c'est annoncer sans servir : cela fait chercher
+// chez le client un défaut qui est ici.
 func (u UserEntry) ObjectClasses() []string {
-	return []string{"inetOrgPerson", "posixAccount", "organizationalPerson", "person", "user"}
+	return []string{"inetOrgPerson", "organizationalPerson", "person", "user"}
 }
 
 func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
@@ -46,6 +105,32 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 		"objectguid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"guid":        {fmt.Sprintf("vaultaire-%s", u.User.Username)},
 		"ipauniqueid": {fmt.Sprintf("vaultaire-%s", u.User.Username)},
+	}
+	// Un attribut sans valeur n'existe pas en LDAP (RFC 4512 §2.5) : absent
+	// plutôt que vide.
+	if len(u.ServiceRights) > 0 {
+		all[AttrServiceRights] = u.ServiceRights
+	}
+
+	// LES HORODATAGES — point 126.
+	//
+	// C'est sur `modifyTimestamp` que s'appuie la synchronisation INCRÉMENTALE de
+	// Keycloak. Sans lui, seule la synchronisation complète fonctionne : elle
+	// relit tout l'annuaire à chaque passage, et bute sur `sizeLimitExceeded`
+	// au-delà de dix mille entrées.
+	//
+	// Opérationnels, comme les identifiants ci-dessus : ils ne sortent que
+	// demandés nommément ou par « + ». C'est ce que dit la RFC 4511 §4.5.1, et
+	// c'est ce que fait Keycloak, qui les nomme.
+	//
+	// Absents si la base n'a pas su les rendre — une date fausse est pire qu'une
+	// date absente ici : un client incrémental qui lit une date aberrante saute
+	// des entrées ou les relit toutes, sans qu'aucune erreur ne le dise.
+	if t := ldaptools.VersGeneralizedTime(u.User.Created_at); t != "" {
+		all[ldaptools.AttrCreeLe] = []string{t}
+	}
+	if t := ldaptools.VersGeneralizedTime(u.User.Modified_at); t != "" {
+		all[ldaptools.AttrModifieLe] = []string{t}
 	}
 
 	result := make(map[string][]string)
@@ -101,7 +186,8 @@ func contains(list []string, s string) bool {
 
 func isOperational(attr string) bool {
 	switch strings.ToLower(attr) {
-	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid":
+	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights,
+		ldaptools.AttrCreeLe, ldaptools.AttrModifieLe:
 		return true
 	default:
 		return false

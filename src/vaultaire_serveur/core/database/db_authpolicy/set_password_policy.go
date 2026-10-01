@@ -24,10 +24,19 @@ func SetPasswordPolicy(db *sql.DB, policy PasswordPolicySettings, updatedBy stri
 		return fmt.Errorf("le préavis (%d j) ne peut pas dépasser la durée de validité (%d j)",
 			policy.WarnDays, policy.MaxAgeDays)
 	}
+	// Zéro est REFUSÉ, il ne retombe pas sur le défaut : contrairement à
+	// l'expiration, la longueur minimale n'a pas de valeur « désactivé ». Qui
+	// écrit 0 croit désactiver la règle ; le lui dire vaut mieux que de le
+	// laisser repartir en pensant l'avoir fait.
+	if policy.MinLength < MinLengthPlancher || policy.MinLength > minLengthLimit {
+		return fmt.Errorf("longueur minimale hors bornes (%d à %d caractères ; "+
+			"le plancher ne se désactive pas)", MinLengthPlancher, minLengthLimit)
+	}
 
 	values := map[string]int{
 		SettingPasswordMaxAgeDays: policy.MaxAgeDays,
 		SettingPasswordWarnDays:   policy.WarnDays,
+		SettingPasswordMinLength:  policy.MinLength,
 	}
 	for key, value := range values {
 		if _, err := db.Exec(`INSERT INTO server_settings (setting_key, setting_value, updated_by)
@@ -48,7 +57,8 @@ func SetPasswordPolicy(db *sql.DB, policy PasswordPolicySettings, updatedBy stri
 	settingsMu.Unlock()
 
 	logs.Write_Log("SECURITY", fmt.Sprintf(
-		"authpolicy: politique de mot de passe modifiée par %s — validité %d j, préavis %d j",
-		updatedBy, policy.MaxAgeDays, policy.WarnDays))
+		"authpolicy: politique de mot de passe modifiée par %s — validité %d j, "+
+			"préavis %d j, longueur minimale %d",
+		updatedBy, policy.MaxAgeDays, policy.WarnDays, policy.MinLength))
 	return nil
 }

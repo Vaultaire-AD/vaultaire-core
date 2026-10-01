@@ -305,10 +305,9 @@ func isKeyError(err error) bool {
 // secret, seulement un code.
 func replyDenied(duckysession *storage.DuckySession, code string) {
 	message := "01_09\nserver_central\n\n" + code
-	data := []byte(message)
-	size := sendmessage.CompileMessageSize(data)
-	header := []byte{sendmessage.CompileHeaderSize(size)}
-	if _, err := duckysession.Conn.Write(append(append(header, size...), data...)); err != nil {
+	if trame, err := sendmessage.CadrerTrame([]byte(message)); err != nil {
+		logs.Write_Log("ERROR", "enrôlement: refus non émis : "+err.Error())
+	} else if _, err := duckysession.Conn.Write(trame); err != nil {
 		logs.Write_Log("ERROR", "enrôlement: envoi du refus échoué : "+err.Error())
 	}
 	// L'état d'enrôlement est effacé et la connexion fermée : sans cela, un

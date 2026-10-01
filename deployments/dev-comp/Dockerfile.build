@@ -1,0 +1,37 @@
+# ====================================================================
+# dev-comp — image de COMPILATION
+# ====================================================================
+#
+# Compile le dépôt tel qu'il est sur le poste (modifications non commitées
+# comprises), avec la MÊME recette que la CI de release :
+# rockylinux:9, gcc, pam-devel, libcurl-devel, libxcrypt-devel, Go épinglé.
+#
+# Pourquoi Rocky 9 et pas l'hôte : compilés ailleurs, le serveur (cgo) et les
+# modules PAM seraient liés à une autre glibc que celle de l'image d'exécution
+# et des machines du parc — et refuseraient de se charger.
+#
+# L'image ne contient PAS les sources : le dépôt est monté sur /src. Elle ne se
+# reconstruit que si ce fichier change.
+
+FROM rockylinux:9
+
+ARG GO_VERSION=1.26.5
+
+RUN dnf install -y --setopt=install_weak_deps=False \
+        git gcc tar gzip findutils which \
+        pam-devel libcurl-devel libxcrypt-devel \
+    && dnf clean all \
+    && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
+        | tar -C /usr/local -xz
+
+ENV PATH=/usr/local/go/bin:$PATH \
+    GOTOOLCHAIN=local \
+    GOPATH=/go \
+    GOCACHE=/go/cache \
+    GOMODCACHE=/go/mod
+
+# Le dépôt monté appartient à l'utilisateur de l'hôte : sans cela, git refuse
+# de le lire et le commit injecté dans les binaires vaut « dev ».
+RUN git config --global --add safe.directory /src
+
+WORKDIR /src

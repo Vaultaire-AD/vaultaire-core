@@ -1,6 +1,7 @@
 package gpo
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -213,6 +214,35 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	if err != nil {
 		outcome.Result = ResultFailed
 		outcome.Detail = sanitizeDetail(err.Error())
+
+		// UN CHEMIN SUSPECT N'EST PAS UNE PANNE — TO-DO 97.
+		//
+		// C'est le signal qu'un poste a été PRÉPARÉ : un lien symbolique planté
+		// sous un dossier personnel, à l'endroit précis qu'une politique va
+		// emprunter, par quelqu'un qui savait laquelle. Le confondre avec un
+		// disque plein dans le journal reviendrait à ne pas le voir.
+		//
+		// SECURITY, et le nom du compte : c'est la seule ligne qui nommera
+		// l'auteur, et le module échoue de toute façon — la trace est tout ce
+		// qu'il reste.
+		// Deux causes, deux messages, deux remèdes. Les confondre faisait
+		// accuser l'utilisateur d'avoir planté un lien symbolique alors que son
+		// `HOME` portait simplement un répertoire laissé à un autre compte — et
+		// laissait l'exploitant sans rien à faire de cette accusation.
+		switch {
+		case errors.Is(err, ErrProprietaireAutre):
+			logs.Write_log("SECURITY", fmt.Sprintf(
+				"GPO: module %s (%s) ABANDONNE pour %s — %s. L'agent ne reprend PAS un "+
+					"repertoire deja la : le faire en root, sans savoir d'ou il vient, est "+
+					"ce que le point 97 a ferme. Rendez-le a %s (chown) pour debloquer",
+				m.Type, m.StateKey, ctx.Username, outcome.Detail, ctx.Username))
+		case errors.Is(err, ErrCheminSuspect):
+			logs.Write_log("SECURITY", fmt.Sprintf(
+				"GPO: module %s (%s) ABANDONNE pour %s — %s. Un composant du chemin "+
+					"n'est pas un repertoire reel appartenant a ce compte : verifier le "+
+					"poste, un lien symbolique a pu y etre pose deliberement",
+				m.Type, m.StateKey, ctx.Username, outcome.Detail))
+		}
 		return outcome
 	}
 	outcome.Result = ResultApplied

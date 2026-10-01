@@ -32,17 +32,58 @@ var (
 	// faire du LDAPS sur 636.
 	RequireTLSForBind = false
 
-	// RefuseBindWhenMFARequired refuse le bind LDAP aux comptes dont un groupe
-	// impose le second facteur.
+	// MFABypass laisse un compte soumis au second facteur se lier par LDAP avec
+	// son SEUL mot de passe (`ldap.mfa_bypass` dans serveur_conf.yaml).
 	//
-	// DÉSACTIVÉ par défaut, pour la même raison : un compte MFA qui utilise LDAP
-	// aujourd'hui perdrait l'accès sans préavis.
+	// DÉSACTIVÉ par défaut : un compte dont le second facteur est posé (ou
+	// imposé par un groupe) doit fournir, au bind, son mot de passe SUIVI du
+	// code à 6 chiffres — `motdepasse123456`. C'est la convention des annuaires
+	// qui portent un second facteur (FreeIPA, par exemple) : LDAP n'a pas de
+	// champ pour le code, on l'accole donc au mot de passe.
 	//
-	// # Ce que le réglage ferme
+	// Avant, c'était l'inverse : LDAP contournait le second facteur par défaut,
+	// et le seul réglage possible — `RefuseBindWhenMFARequired`, jamais branché
+	// sur la configuration — refusait le bind sans offrir de moyen de le passer.
+	// La contrainte posée dans l'interface web se contournait donc en passant
+	// par LDAP.
 	//
-	// LDAP n'a aucun mécanisme standard de second facteur. Sans ce contrôle, la
-	// contrainte posée dans l'interface web est contournable en se connectant
-	// par un autre protocole — la politique s'applique alors sur un chemin et
-	// pas sur l'autre.
-	RefuseBindWhenMFARequired = false
+	// À activer seulement pour un parc d'applications qui ne savent pas
+	// transmettre le code ; préférer, quand c'est possible, des comptes de
+	// service hors des groupes soumis au second facteur.
+	MFABypass = false
+
+	// OneLevelSubtree élargit TOUTE recherche `one` à l'arborescence,
+	// sous-domaines compris (`ldap.onelevel_subtree`).
+	//
+	// « Toute », et non plus « celles dont le conteneur s'appelle users » : le nom
+	// du conteneur ne décide plus de rien. Un réglage dont l'effet dépendrait du
+	// texte du baseObject reproduirait, en plus explicite, le défaut qu'il corrige.
+	//
+	// # Ce que le serveur faisait, sans le dire
+	//
+	// Une recherche de portée `one` sur un conteneur d'utilisateurs était
+	// silencieusement promue en `sub`. C'était écrit pour JumpServer, qui cherche
+	// en `one` et attend malgré tout les comptes des sous-domaines.
+	//
+	// L'effet dépassait ce client : un administrateur qui configurait une
+	// application en `scope=one` pour restreindre son périmètre obtenait
+	// l'arborescence entière. Ce qu'il lisait dans sa configuration ne décrivait
+	// plus ce qui lui était servi — et la RFC 4511 §4.5.1 dit exactement le
+	// contraire de ce que le serveur faisait.
+	//
+	// # Faux par défaut, contrairement aux deux réglages ci-dessus
+	//
+	// MFABypass et RequireTLSForBind sont livrés de façon à ne rien casser à la
+	// mise à jour, parce que le défaut « correct » couperait des clients. Ici le
+	// choix inverse a été fait : `one` rend enfin ce qu'il dit.
+	//
+	// Un client qui dépendait de la promotion voit donc moins d'entrées, SANS
+	// erreur — le mode de panne le plus désagréable à diagnostiquer. C'est pour
+	// cela que chaque recherche élargie par ce réglage est journalisée, et que la
+	// documentation nomme JumpServer.
+	//
+	// Deux façons de le servir : mettre ce réglage à true, ou — mieux —
+	// reconfigurer le client en `scope=sub`, qui est la manière juste de demander
+	// une arborescence.
+	OneLevelSubtree = false
 )

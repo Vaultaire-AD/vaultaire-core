@@ -3,6 +3,7 @@ package action
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"vaultaire/core/database"
 	dbclients "vaultaire/core/database/db_clients"
@@ -33,6 +34,31 @@ func EnregistrerActionsClient(r *Registre) {
 		Portee:   PorteeGlobale,
 		Resume:   "génère l'identité d'une nouvelle machine",
 		Executer: creerClient,
+	})
+
+	r.MustEnregistrer(Definition{
+		Nom: "client.export",
+		// Même clé que la création, parce que la décision du 82 le demande — et
+		// ce n'est PAS parce que les deux gestes se valent.
+		//
+		// La création produit une identité NEUVE : aucun groupe, aucune GPO,
+		// aucun tunnel. L'export produit l'identité d'une machine EXISTANTE et
+		// provisionnée — rattachée à des groupes, destinataire de politiques, et
+		// porteuse d'un tunnel machine si elle est serveur. Se faire passer pour
+		// un serveur du parc n'est pas « ce que la création produit ».
+		//
+		// Conséquence à connaître : on ne peut pas accorder « créer une machine »
+		// sans accorder « exporter l'identité de n'importe laquelle ». Ce qui
+		// borne le risque aujourd'hui, c'est la PORTÉE GLOBALE ci-dessous — la
+		// clé est exigée sur « * », donc un délégué de domaine ne peut pas
+		// exporter. Une clé propre (write:export:client) est la bonne suite si
+		// ce couplage devient gênant.
+		CleRBAC: "write:create:client",
+		// Globale, comme la création : l'archive ne dépend d'aucun domaine, et
+		// une machine fraîchement créée n'en a encore aucun.
+		Portee:   PorteeGlobale,
+		Resume:   "compose l'archive d'installation d'une machine",
+		Executer: exporterClient,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -75,6 +101,54 @@ func creerClient(_ Appelant, p Params) (Resultat, error) {
 	return Resultat{
 		Message: fmt.Sprintf("Machine créée, identifiant %s.", computeurID),
 		Donnees: map[string]string{"computeur_id": computeurID},
+	}, nil
+}
+
+// ArchiveClient porte l'archive composée, hors du message.
+//
+// Hors du message PARCE QUE le message d'exécution est recopié dans les
+// journaux : une archive — donc une clé privée — n'a rien à y faire. Même
+// règle que le secret d'enrôlement, pour la même raison.
+type ArchiveClient struct {
+	ComputeurID string
+	Systeme     string
+	NomFichier  string
+	Contenu     []byte
+}
+
+// exporterClient compose l'archive d'installation d'une machine existante.
+//
+// Ne crée rien : la machine doit exister. Ce qui est produit à chaque appel, ce
+// sont les fichiers COMPAGNONS — empreinte du core, liste des cores, clé de
+// signature —, parce qu'ils suivent l'état du cluster et qu'une copie figée
+// vieillirait mal.
+func exporterClient(_ Appelant, p Params) (Resultat, error) {
+	cible := p.Get("computeur_id")
+	if cible == "" {
+		return Resultat{}, fmt.Errorf("computeur_id est requis")
+	}
+
+	contenu, nomFichier, err := newclient.ConstruireArchive(
+		database.GetDatabase(), cible, p.Get("systeme"))
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	systeme, _ := newclient.SystemeValide(p.Get("systeme"))
+	return Resultat{
+		// Le message dit la taille et le système, jamais le contenu. Ce n'est
+		// pas lui qui part aux journaux — le registre y écrit sa propre ligne,
+		// « <qui> a fait client.export sur <cible> » — mais il s'affiche, et une
+		// archive n'a pas plus à s'afficher qu'à se journaliser.
+		Message: fmt.Sprintf("Archive composée pour %s (%s, %d octets).", cible, systeme, len(contenu)),
+		Donnees: ArchiveClient{
+			// Normalisé, comme ce qu'a reçu ConstruireArchive : sinon le jeton,
+			// le nom de fichier et la ligne SECURITY divergent d'un espace.
+			ComputeurID: strings.TrimSpace(cible),
+			Systeme:     systeme,
+			NomFichier:  nomFichier,
+			Contenu:     contenu,
+		},
 	}, nil
 }
 

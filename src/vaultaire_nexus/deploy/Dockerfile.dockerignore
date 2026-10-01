@@ -1,0 +1,7 @@
+# Contexte = src/ : n'envoyer au démon que ce que l'image utilise.
+# (BuildKit lit ce fichier parce qu'il porte le nom du Dockerfile.)
+*
+!ducky-network-sdk-service/
+!vaultaire_nexus/
+vaultaire_nexus/dist/
+vaultaire_nexus/deploy/*.yml

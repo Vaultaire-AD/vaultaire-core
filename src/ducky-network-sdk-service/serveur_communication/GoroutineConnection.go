@@ -32,13 +32,17 @@ func handleConnection(user string, duckysession *storage.DuckySession) {
 		// Si on a lu quelque chose, on rafraîchit le LastSeen pour le cleanupLoop
 		stosession.SessionsUser.Touch(duckysession.SessionID)
 
-		if headerSize != 0 {
-			messagesize, err := tramesmanager.Read_Message_Size(duckysession.Conn, headerSize)
-			if err != nil {
-				logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
-				return
-			}
-			tramesmanager.MessageReader(duckysession, messagesize)
+		// Read_Header_Size ne rend plus jamais 0 sans erreur : un premier
+		// octet autre que 2 est refusé, et la connexion fermée (TO-DO 101).
+		messagesize, err := tramesmanager.Read_Message_Size(duckysession.Conn, headerSize)
+		if err != nil {
+			logs.Write_log("ERROR", fmt.Sprintf("Erreur lors de la lecture de la taille du message : %v", err))
+			return
+		}
+		// Un corps lu à moitié laisse le flux à une position inconnue : on
+		// ferme, plutôt que de lire la suite comme un en-tête.
+		if err := tramesmanager.MessageReader(duckysession, messagesize); err != nil {
+			return
 		}
 	}
 }

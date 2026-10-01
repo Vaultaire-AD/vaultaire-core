@@ -120,5 +120,9 @@ func StartDuckyServer() {
 
 	logs.Write_Log("INFO", "ducky: server ready and listening on port "+storage.ServeurLisetenPort)
 
+	// Les proxies du cluster ont leur propre plafond de connexions : voir
+	// proxies_connus.go.
+	demarrerSuiviProxies()
+
 	acceptConnections(listener)
 }

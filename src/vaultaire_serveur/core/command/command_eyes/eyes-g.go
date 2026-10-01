@@ -36,14 +36,14 @@ func eyes_by_domain(command_list []string, sender_groupsIDs []int, _ string, sen
 		if err != nil {
 			return commandaction.MessageDErreur(err)
 		}
-		groupes, ok := res.Donnees.([]string)
+		groupes, ok := res.Donnees.([]storage.GroupDomain)
 		if !ok || len(groupes) == 0 {
 			return res.Message
 		}
 		var sb strings.Builder
-		sb.WriteString("Groupes sous " + command_list[1] + " :\n")
+		sb.WriteString(res.Message + "\n")
 		for _, g := range groupes {
-			sb.WriteString("  - " + g + "\n")
+			sb.WriteString("  - " + g.GroupName + "  (" + g.DomainName + ")\n")
 		}
 		return sb.String()
 	}

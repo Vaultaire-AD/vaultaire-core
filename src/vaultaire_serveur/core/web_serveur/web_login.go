@@ -13,7 +13,13 @@ import (
 )
 
 func LoginPageHandler(w http.ResponseWriter, r *http.Request) {
-	err := rendreGabarit(w, templates, nil)
+	gabarit, err := ChargerGabaritConnexion()
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "Gabarit de connexion illisible : "+err.Error())
+		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)
+		return
+	}
+	err = rendreGabarit(w, gabarit, nil)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebTemplate, "Erreur lors de l'exécution du template de la page de connexion : "+err.Error())
 		http.Error(w, "Erreur interne du serveur", http.StatusInternalServerError)

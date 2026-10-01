@@ -95,8 +95,20 @@ func processIncomingMessage(duckysession *storage.DuckySession) bool {
 
 	sessionmgr.Sessions.Touch(duckysession.SessionID)
 
-	messageSize := tm.Read_Message_Size(duckysession.Conn, headerSize)
-	tm.MessageReader(duckysession, messageSize)
+	// Une erreur de lecture ici veut dire que la position dans le flux est
+	// perdue : on ferme, plutôt que de lire la suite comme un en-tête. C'est ce
+	// que faisait la boucle, et qui transformait un corps lu en deux fois en
+	// une série de trames fantômes (TO-DO 101).
+	messageSize, err := tm.Read_Message_Size(duckysession.Conn, headerSize)
+	if err != nil {
+		logs.Write_LogCodeMeta("WARNING", logs.CodeNone,
+			"ducky: lecture de la taille impossible, connexion fermée : "+err.Error(),
+			logs.WithMeta(duckysession.SessionID, ""))
+		return false
+	}
+	if err := tm.MessageReader(duckysession, messageSize); err != nil {
+		return false
+	}
 	return true
 }
 
@@ -200,6 +212,10 @@ func dropStaleSession(stale sessionmgr.StaleSession) {
 		"ducky: session authentifiée de %s fermée après %s d'inactivité",
 		stale.ClientSoftwareID, stale.Idle.Round(time.Second)), meta)
 
+	if sessionmgr.Sessions.AutreSessionAuthentifiee(stale.Username, stale.ClientSoftwareID, stale.SessionID) {
+		// Voir closeSession : un autre tunnel de la machine tient la ligne.
+		return
+	}
 	if err := dbsessions.DeleteDidLogin(db.GetDatabase(), stale.Username, stale.ClientSoftwareID); err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
 			"Error deleting session for "+stale.ClientSoftwareID+": "+err.Error(), meta)

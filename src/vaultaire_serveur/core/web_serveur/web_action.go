@@ -94,6 +94,7 @@ var actionsFormulaire = map[string]string{
 
 	// machines
 	"create_client": "client.create",
+	"export_client": "client.export",
 	"update_client": "client.update",
 	"delete_client": "client.delete",
 

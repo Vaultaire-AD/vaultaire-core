@@ -1,0 +1,181 @@
+# ====================================================================
+# dev-comp — pile de test COMPILÉE LOCALEMENT
+# ====================================================================
+#
+# Comme la préprod, mais avec les binaires compilés depuis le dépôt local —
+# modifications non commitées comprises — au lieu d'une release GitHub. C'est ce
+# que faisait la préprod avant les releases automatiques : tester une version en
+# cours de développement sans en publier une.
+#
+# Ne pas lancer à la main : ./deployments/dev-comp/dev-comp.sh compile, puis
+# démarre. Détail : README.md.
+#
+# Binaires : ./build/ (sortie de auto-compil.sh, ignorée par git). Ils ne
+# touchent PAS à cmd/, qui reste la sortie de la release installée par la
+# préprod : les deux piles peuvent coexister sur un même dépôt.
+
+name: dev-comp
+
+networks:
+  devcomp:
+    driver: bridge
+
+volumes:
+  devcomp_db:
+  devcomp_gocache:
+  devcomp_proxy_keys:
+  devcomp_nexus:
+
+services:
+  # --- Compilation (lancée par dev-comp.sh, jamais par « up ») ---
+  builder:
+    profiles: ["build"]
+    build:
+      context: .
+      dockerfile: Dockerfile.build
+    image: vaultaire-devcomp-builder:latest
+    working_dir: /src
+    environment:
+      - VAULTAIRE_ROOT=/src
+      - VAULTAIRE_BUILD_DIR=/src/deployments/dev-comp/build
+      - VAULTAIRE_VERSION=${VAULTAIRE_VERSION:-}
+      - HOST_UID=${HOST_UID:-0}
+      - HOST_GID=${HOST_GID:-0}
+    volumes:
+      - ../..:/src
+      - devcomp_gocache:/go
+    # La sortie est rendue à l'utilisateur de l'hôte : compilée en root, elle
+    # ne serait plus effaçable sans sudo.
+    command: >
+      bash -c './auto-compil.sh &&
+               chown -R "$${HOST_UID}:$${HOST_GID}" /src/deployments/dev-comp/build'
+
+  # --- Base ---
+  vaultaire-db:
+    image: mariadb:latest
+    container_name: vlt-dev-db
+    restart: unless-stopped
+    environment:
+      - MARIADB_ROOT_PASSWORD=root
+      - MARIADB_DATABASE=vaultaire
+      - TZ=Europe/Paris
+    volumes:
+      - devcomp_db:/var/lib/mysql
+      - ../pre-prod/scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+      - ../pre-prod/scripts/init-web-user.sh:/docker-entrypoint-initdb.d/init-web-user.sh:ro
+    ports:
+      - "${DEVCOMP_PORT_DB:-3307}:3306"
+    networks:
+      - devcomp
+
+  # --- Core ---
+  #
+  # Même image d'exécution que la préprod (deployments/pre-prod/Dockerfile) :
+  # ce qui est testé ici est ce qui tournera là-bas, seuls les binaires
+  # diffèrent.
+  vaultaire-ad:
+    build:
+      context: ../..
+      dockerfile: deployments/pre-prod/Dockerfile
+    image: vaultaire-devcomp:latest
+    container_name: vlt-dev-ad
+    # Le nom d'hôte n'est PAS cosmétique : le core s'inscrit dans cluster_nodes
+    # sous « @core:<hostname> », et c'est ce nom qu'affiche « vlt cluster list »
+    # et que prennent « vlt cluster expose | priority | affinity ».
+    #
+    # Laissé au hasard, il vaut l'identifiant du conteneur, donc une valeur
+    # neuve à chaque recréation : le nœud renaît sous une autre identité et
+    # abandonne sa ligne précédente, avec ses réglages d'exploitation. Le figer
+    # est ce qui rend le cluster de dev nommable — et donc utilisable dès qu'il
+    # compte plus d'un core.
+    hostname: vaultaire-ad
+    restart: unless-stopped
+    depends_on:
+      - vaultaire-db
+    environment:
+      - TZ=Europe/Paris
+      - VAULTAIRE_ENV=dev-comp
+      # Le fichier de configuration livre porte CHANGEZ_MOI, et le core REFUSE
+      # de demarrer dessus (TO-DO 99). Les piles de developpement posent donc
+      # leurs valeurs ici : elles sont visibles, versionnees, et personne ne
+      # peut les prendre pour un secret.
+      - VAULTAIRE_DB_PASSWORD=root
+      - VAULTAIRE_ADMIN_PASSWORD=${VAULTAIRE_ADMIN_PASSWORD:-correcte agrafe batterie}
+    volumes:
+      - ./build/vaultaire_server:/opt/vaultaire/bin:ro
+      - ./build/vaultaire_client:/opt/vaultaire/vaultaire_client:ro
+      # Templates et statiques du DÉPÔT : une page modifiée se voit au
+      # rechargement, sans recompiler.
+      - ../../web_packet:/opt/vaultaire/web_packet:ro
+      - ../pre-prod/scripts:/opt/vaultaire/scripts:ro
+    ports:
+      - "${DEVCOMP_PORT_DUCKY:-6666}:6666"
+      - "${DEVCOMP_PORT_WEB:-4443}:4443"
+      - "${DEVCOMP_PORT_API:-6643}:6643"
+      - "${DEVCOMP_PORT_LDAP:-389}:389"
+      - "${DEVCOMP_PORT_LDAPS:-636}:636"
+    networks:
+      - devcomp
+
+  # --- Proxy (facultatif : dev-comp.sh --proxy) ---
+  #
+  # Son IMAGE est construite à chaque lancement de dev-comp.sh, même sans
+  # --proxy : une image qui ne se construit qu'au moment où l'on en a besoin
+  # casse au pire moment, et rien ne dit alors si c'est le Dockerfile ou le
+  # binaire du jour. Seul le CONTENEUR dépend du profil.
+  vlt-proxy:
+    profiles: ["proxy"]
+    build:
+      context: ../pre-prod/vlt-proxy
+      dockerfile: Dockerfile
+    image: vlt-proxy-devcomp:latest
+    container_name: vlt-dev-proxy
+    # Même raison que pour le core, à ceci près que le propriétaire d'un service
+    # est son identifiant de client : le nom d'hôte ne fait que le NOMMER dans
+    # le cluster. Un nom stable suffit à ce que « cluster expose » vise le même
+    # nœud d'un redémarrage à l'autre.
+    hostname: proxy1
+    restart: unless-stopped
+    depends_on:
+      - vaultaire-ad
+    environment:
+      - TZ=Europe/Paris
+      - VAULTAIRE_IP_CORE=vaultaire-ad:6666
+      - VAULTAIRE_ENROLL_KEY=${DEVCOMP_PROXY_ENROLL_KEY:-}
+      - VAULTAIRE_ENROLL_LABEL=proxy-dev-comp
+      - VAULTAIRE_LISTEN_PORT=6666
+    volumes:
+      - ./build/vaultaire_proxy:/opt/vaultaire/bin:ro
+      - devcomp_proxy_keys:/var/lib/vaultaire_proxy/keys
+    ports:
+      - "${DEVCOMP_PORT_PROXY:-6667}:6666"
+    networks:
+      - devcomp
+
+  # --- Nexus (facultatif : dev-comp.sh --nexus) ---
+  #
+  # Image construite à chaque lancement, comme le proxy. Elle ne compile RIEN :
+  # le binaire monté est celui du dépôt local (build/vaultaire_nexus), pas une
+  # compilation refaite depuis Docker Hub comme dans
+  # src/vaultaire_nexus/deploy/Dockerfile.
+  vaultaire-nexus:
+    profiles: ["nexus"]
+    build:
+      context: .
+      dockerfile: Dockerfile.nexus
+    image: vlt-nexus-devcomp:latest
+    container_name: vlt-dev-nexus
+    restart: unless-stopped
+    environment:
+      - TZ=Europe/Paris
+      # L'adresse que les clients (dnf, docker, navigateur) utiliseront.
+      - NEXUS_PUBLIC_URL=${DEVCOMP_NEXUS_PUBLIC_URL:-https://localhost:8843}
+      - NEXUS_ADMIN_PASSWORD=${DEVCOMP_NEXUS_ADMIN_PASSWORD:-}
+    volumes:
+      - ./build/vaultaire_nexus:/opt/vaultaire/bin:ro
+      - ./nexus:/etc/vaultaire_nexus:ro
+      - devcomp_nexus:/var/lib/vaultaire_nexus
+    ports:
+      - "${DEVCOMP_PORT_NEXUS:-8843}:8843"
+    networks:
+      - devcomp

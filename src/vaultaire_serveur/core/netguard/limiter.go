@@ -37,6 +37,19 @@ type Limiter struct {
 	mu            sync.Mutex
 	total         int
 	parAdresse    map[string]int
+
+	// plafondPour donne, pour une source, un plafond propre (0 = celui par
+	// défaut). Sert aux PROXIES du cluster : tous les agents qu'un proxy relaie
+	// arrivent de SON adresse, et le plafond d'un poste le couperait au
+	// vingt-et-unième agent.
+	plafondPour func(source string) int
+}
+
+// DefinirPlafondPour installe une exception de plafond par source.
+func (l *Limiter) DefinirPlafondPour(f func(source string) int) {
+	l.mu.Lock()
+	l.plafondPour = f
+	l.mu.Unlock()
 }
 
 // NewLimiter construit un limiteur.
@@ -67,7 +80,13 @@ func (l *Limiter) Acquire(conn net.Conn) (func(), bool, string) {
 		return func() {}, false, fmt.Sprintf(
 			"plafond global atteint (%d connexions %s en cours)", l.total, l.nom)
 	}
-	if l.maxParAdresse > 0 && l.parAdresse[source] >= l.maxParAdresse {
+	maxSource := l.maxParAdresse
+	if l.plafondPour != nil {
+		if p := l.plafondPour(source); p > 0 {
+			maxSource = p
+		}
+	}
+	if maxSource > 0 && l.parAdresse[source] >= maxSource {
 		return func() {}, false, fmt.Sprintf(
 			"plafond par adresse atteint pour %s (%d connexions %s)",
 			source, l.parAdresse[source], l.nom)

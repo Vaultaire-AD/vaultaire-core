@@ -31,7 +31,20 @@ func respond(conn net.Conn, messageID, resultCode int, diagnostic, responseName,
 }
 
 func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn net.Conn) {
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: extended request name=%s value=%s", op.RequestName, op.RequestValue))
+	// Le NOM de l'opération, sa taille — pas son contenu.
+	//
+	// Même défaut que celui du point 121, sur une autre opération : `RequestValue`
+	// était rendu en `%s`, donc écrit en clair dans le journal. Or le Password
+	// Modify de la RFC 3062 (1.3.6.1.4.1.4203.1.11.1) y transporte l'ancien ET le
+	// nouveau mot de passe. Le refus prononcé plus bas n'y changeait rien : la
+	// ligne était déjà écrite.
+	//
+	// Le nom de l'extension suffit à diagnostiquer « un client tente telle
+	// opération et le serveur ne la gère pas », qui est la seule chose que cette
+	// ligne ait jamais servi à savoir.
+	logs.Write_Log("DEBUG", fmt.Sprintf(
+		"ldap: extended request name=%s, %d octet(s) de contenu (non journalisé)",
+		op.RequestName, len(op.RequestValue)))
 
 	// --- 🔐 Étape 1 : Identification de l’utilisateur
 	session, ok := ldapsessionmanager.GetLDAPSession(conn)

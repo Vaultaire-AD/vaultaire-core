@@ -14,6 +14,7 @@ import (
 	dbusers "vaultaire/core/database/db_users"
 
 	clusterdatabase "vaultaire/cluster/cluster_database"
+	clusterstorage "vaultaire/cluster/cluster_storage"
 	act "vaultaire/core/action"
 	"vaultaire/core/database"
 	dbauthpolicy "vaultaire/core/database/db_authpolicy"
@@ -25,6 +26,7 @@ import (
 	"vaultaire/core/permission"
 	"vaultaire/core/revocation"
 	"vaultaire/core/storage"
+	newclient "vaultaire/ducky-network/new_client"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
@@ -179,7 +181,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 
 			if traite {
 				if errAction != nil {
-					detailData.Message = MessageDActionPourAffichage(res, errAction)
+					detailData.Error = MessageDActionPourAffichage(res, errAction)
 				} else {
 					detailData.Message = res.Message
 
@@ -229,6 +231,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		Username  string
 		Users     []storage.GetUsers
 		Message   string
+		Error     string
 		DnsEnable bool
 		Section   string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
@@ -240,7 +243,7 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -341,7 +344,8 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			//
 			//   - « remove_permission » exigeait write:delete:group, ce qui
 			//     paraît être une faute de recopie — retirer une permission
-			//     n'est pas supprimer le groupe. C'est write:delete:permission ;
+			//     n'est pas supprimer le groupe. C'est write:remove:permission
+			//     (Détacher) — ni suppression du groupe, ni de la permission ;
 			//   - les rattachements exigent maintenant le droit sur les domaines
 			//     du groupe ET de l'entité rattachée. La ligne de commande ne
 			//     contrôlait que l'un des deux, et pas toujours le même.
@@ -352,7 +356,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 
 			if traite {
 				if errAction != nil {
-					detailData.Message = MessageDActionPourAffichage(res, errAction)
+					detailData.Error = MessageDActionPourAffichage(res, errAction)
 				} else {
 					detailData.Message = res.Message
 
@@ -409,6 +413,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Groups    []storage.GroupDetails
 		Message   string
+		Error     string
 		Username  string
 		DnsEnable bool
 		Section   string
@@ -423,7 +428,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 			act.Params{"group": r.FormValue("group_name")})
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -464,6 +469,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		detailData := struct {
 			Client    *storage.Software
 			Message   string
+			Error     string
 			Username  string
 			DnsEnable bool
 			Section   string
@@ -475,10 +481,10 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 			// poste ne joint pas le bon proxy doit lire l'état du cluster, les
 			// groupes du poste et les affinités de chaque nœud, puis refaire le
 			// tri de tête — refaire à la main le calcul dont il cherche l'erreur.
-			Cibles          []clusterdatabase.CibleClient
-			SansGroupe      bool
-			NoeudsEcartes   []string
-			CiblesLisibles  bool
+			Cibles         []clusterdatabase.CibleClient
+			SansGroupe     bool
+			NoeudsEcartes  []string
+			CiblesLisibles bool
 		}{Client: client, Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 
 		// La vue des cibles exige read:cluster, la fiche read:get:client.
@@ -513,7 +519,7 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 
 			if traite {
 				if err != nil {
-					detailData.Message = MessageDActionPourAffichage(res, err)
+					detailData.Error = MessageDActionPourAffichage(res, err)
 				} else {
 					detailData.Message = res.Message
 
@@ -538,12 +544,21 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Clients   []storage.GetClientsByPermission
 		Message   string
+		Error     string
 		Username  string
 		DnsEnable bool
 		Section   string
+
+		// Le lien de téléchargement de l'identité, produit par la création ou
+		// par un export, et valable une fois. Vide le reste du temps : il n'y a
+		// pas de page où l'on « retrouve » un lien, et c'est le but.
+		ArchiveLien    string
+		ArchiveMachine string
+		ArchiveSysteme string
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
 	if r.Method == http.MethodPost {
-		// Les actions client.create et client.delete portent leur clé RBAC.
+		// Les actions client.create, client.export et client.delete portent leur
+		// clé RBAC.
 		//
 		// Le type n'est pas saisi : ce formulaire ne crée qu'un client basic.
 		// Un client service s'enrôle lui-même avec sa propre paire de clés — sa
@@ -551,9 +566,52 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
+
+				// Le jeton est émis ICI, jamais dans l'action : c'est une notion
+				// de session web, et une commande en ligne n'en a que faire.
+				machine, systeme := "", r.FormValue("systeme")
+				switch d := res.Donnees.(type) {
+				case map[string]string:
+					// Création : la machine vient de naître, elle est
+					// exportable par construction.
+					machine = d["computeur_id"]
+				case act.ArchiveClient:
+					// Export : l'action a DÉJÀ composé l'archive, et l'a donc
+					// validée. Les octets sont jetés — le téléchargement les
+					// recomposera. C'est un aller-retour de plus, et c'est ce qui
+					// permet de refuser dans la PAGE, avec un message lisible,
+					// plutôt qu'au clic sur une erreur HTTP.
+					machine, systeme = d.ComputeurID, d.Systeme
+				}
+				// Le système est validé ICI aussi.
+				//
+				// Sur le chemin EXPORT, l'action l'a déjà fait. Sur le chemin
+				// CRÉATION, rien ne l'avait validé : « systeme=win » émettait un
+				// jeton, affichait le lien, et le clic rendait un 403 — en
+				// brûlant le jeton, qui est à usage unique. La machine était
+				// créée, et il fallait relancer un export pour la récupérer.
+				if machine != "" {
+					valide, errS := newclient.SystemeValide(systeme)
+					if errS != nil {
+						data.Error = errS.Error()
+						machine = ""
+					} else {
+						systeme = valide
+					}
+				}
+				if machine != "" {
+					if jeton, errJ := EmettreJetonArchive(username, machine, systeme); errJ == nil {
+						data.ArchiveLien = "/admin/clients/archive?jeton=" + jeton
+						data.ArchiveMachine = machine
+						data.ArchiveSysteme = systeme
+					} else {
+						logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+							"webadmin: jeton d'archive non émis pour "+machine+" : "+errJ.Error())
+					}
+				}
 			}
 		}
 	}
@@ -853,6 +911,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		detailData := struct {
 			Certificate *storage.Certificate
 			Message     string
+			Error       string
 			Username    string
 			DnsEnable   bool
 			Section     string
@@ -868,7 +927,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 				act.Params{"certificate_id": strconv.Itoa(certID)})
 			if traite {
 				if err != nil {
-					detailData.Message = MessageDActionPourAffichage(res, err)
+					detailData.Error = MessageDActionPourAffichage(res, err)
 				} else {
 					http.Redirect(w, r, "/admin/certificates", http.StatusSeeOther)
 					return
@@ -882,6 +941,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	data := struct {
 		Certificates []storage.Certificate
 		Message      string
+		Error        string
 		Username     string
 		DnsEnable    bool
 		Section      string
@@ -893,7 +953,7 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaire(r, username, groupIDs)
 		if traite {
 			if err != nil {
-				data.Message = MessageDActionPourAffichage(res, err)
+				data.Error = MessageDActionPourAffichage(res, err)
 			} else {
 				data.Message = res.Message
 			}
@@ -931,9 +991,12 @@ func AdminCertificatesHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminLogsHandler affiche la page des logs avec filtres.
+// AdminLogsHandler affiche la page du journal commun des cores.
 // Access: web_admin + read:log. Les journaux couvrent tous les domaines, ils ne
 // se rattachent donc à aucun droit de lecture par entité.
+//
+// La page ne porte aucune ligne : elle les demande à AdminLogsAPIHandler, qui
+// passe par l'action `log.list` — la même que `vlt logs`.
 func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
 	if !ok {
@@ -954,12 +1017,12 @@ func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 		Username  string
 		DnsEnable bool
 		Section   string
-		Stats     map[string]interface{}
+		CeCore    string
 	}{
 		Username:  username,
 		DnsEnable: storage.Dns_Enable,
 		Section:   "logs",
-		Stats:     logs.GetLogsStats(),
+		CeCore:    logs.NomDuCore(),
 	}
 
 	if err := executeAdminPage(w, "admin_logs.html", data); err != nil {
@@ -968,7 +1031,14 @@ func AdminLogsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// AdminLogsAPIHandler retourne les logs filtrés en JSON.
+// parametresJournal sont les paramètres de `log.list` recopiés depuis l'URL.
+//
+// Une liste fermée plutôt que toute la requête : un paramètre ajouté à l'URL
+// par la page ou par un curieux ne doit pas atteindre l'action sans avoir été
+// déclaré ici.
+var parametresJournal = []string{"level", "core", "code", "since", "until", "page", "per_page"}
+
+// AdminLogsAPIHandler rend une page du journal commun, en JSON.
 // Access: web_admin + read:log, revérifié ici et pas seulement sur la page.
 func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	username, groupIDs, ok := requireWebAdminWithGroupIDs(w, r)
@@ -979,36 +1049,56 @@ func AdminLogsAPIHandler(w http.ResponseWriter, r *http.Request) {
 	// Même droit que la page, vérifié séparément : l'API est appelée
 	// directement par le navigateur et doit se défendre seule. S'en remettre au
 	// contrôle de la page laisserait l'endpoint ouvert à qui connaît son URL.
+	//
+	// L'action le revérifie : cette garde-ci n'existe que pour répondre 403
+	// sans solliciter la base.
 	if !permission.HasActionAnywhere(groupIDs, permission.ActionReadLog) {
 		logs.Write_Log("SECURITY", "webadmin: "+username+" tente de lire les journaux sans le droit "+permission.ActionReadLog)
 		http.Error(w, "Permission refusée", http.StatusForbidden)
 		return
 	}
 
-	levelFilter := r.URL.Query().Get("level")
-	codeFilter := r.URL.Query().Get("code")
-	limitStr := r.URL.Query().Get("limit")
-
-	limit := 100
-	if limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 1000 {
-			limit = l
+	p := act.Params{}
+	for _, nom := range parametresJournal {
+		if v := r.URL.Query().Get(nom); v != "" {
+			p[nom] = v
 		}
 	}
 
-	entries, err := logs.GetLogsForWebUI(levelFilter, codeFilter, limit)
+	w.Header().Set("Content-Type", "application/json")
+	// Des journaux ne se mettent pas en cache : un navigateur ou un
+	// intermédiaire qui garderait la page montrerait un incident déjà passé
+	// comme l'état présent — et garderait sur disque des lignes qui nomment
+	// des comptes.
+	w.Header().Set("Cache-Control", "no-store")
+
+	res, err := act.Executer("log.list", act.Appelant{Username: username, GroupIDs: groupIDs}, p)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin: logs retrieval failed: "+err.Error())
-		http.Error(w, "Erreur récupération logs", http.StatusInternalServerError)
+		// Hors refus de droit, la cause est une saisie illisible — une date mal
+		// tapée : 400 et le message de l'action, qui dit la forme attendue.
+		statut := http.StatusBadRequest
+		var refus *act.ErrRefusee
+		if errors.As(err, &refus) {
+			statut = http.StatusForbidden
+		}
+		w.WriteHeader(statut)
+		json.NewEncoder(w).Encode(map[string]string{"erreur": MessageDActionPourAffichage(res, err)})
 		return
 	}
+	json.NewEncoder(w).Encode(res.Donnees)
+}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"logs":  entries,
-		"count": len(entries),
-		"stats": logs.GetLogsStats(),
-	})
+// noeudChoisi rend le nœud dont le hostname est demandé, ou nil.
+func noeudChoisi(nodes []clusterstorage.Node, hostname string) *clusterstorage.Node {
+	if hostname == "" {
+		return nil
+	}
+	for i := range nodes {
+		if nodes[i].Hostname == hostname {
+			return &nodes[i]
+		}
+	}
+	return nil
 }
 
 // joindreValeursMultiples réunit les valeurs d'un champ multi-valué en une
@@ -1047,9 +1137,11 @@ func joindreValeursMultiples(r *http.Request, champ string) {
 //
 // # Lecture et écriture n'exigent pas la même clé
 //
-// La lecture reste sur `read:get:client`, comme avant. L'ÉCRITURE passe par
-// l'action `cluster.set_node_exposure`, qui porte `write:cluster` — et c'est
-// elle qui contrôle, pas cette fonction.
+// La LECTURE exige `read:cluster` — la clé que portent les actions de lecture
+// du cluster (`cluster.list_nodes`…). Elle était restée sur `read:get:client`,
+// l'ancienne clé : quiconque lisait une seule machine ouvrait la carte des
+// nœuds. L'ÉCRITURE passe par les actions `cluster.set_node_*`, qui portent
+// `write:cluster` — et ce sont elles qui contrôlent, pas cette fonction.
 //
 // La distinction compte : l'adresse déclarée ici est distribuée à toutes les
 // machines du parc par la trame 04_04. Voir l'état du cluster et décider par où
@@ -1059,12 +1151,12 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if !checkWebAdminRBAC(w, r, groupIDs, "read:get:client") {
+	if !checkWebAdminRBAC(w, r, groupIDs, permission.ActionReadCluster) {
 		return
 	}
 
 	db := database.GetDatabase()
-	message := ""
+	message, errMsg := "", ""
 
 	// Le POST est traité AVANT la lecture, pour que la page rendue montre l'état
 	// d'après. L'ordre inverse afficherait l'ancienne adresse à côté du message
@@ -1075,7 +1167,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs, act.Params{})
 		switch {
 		case err != nil:
-			message = err.Error()
+			errMsg = MessageDActionPourAffichage(res, err)
 		case traite:
 			message = res.Message
 		}
@@ -1083,7 +1175,7 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 
 	nodes, err := clusterdatabase.GetAllNodes(db)
 	if err != nil {
-		message = "Erreur récupération nœuds: " + err.Error()
+		errMsg = "Erreur récupération nœuds: " + err.Error()
 	}
 
 	// Les groupes affins, pour l'affichage et pour cocher le formulaire.
@@ -1100,6 +1192,10 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		nodes[i].GroupesAffins = groupes
 	}
 
+	// Les compteurs de relais remontés par les nœuds (04_05, TO-DO 108). Même
+	// tolérance : une colonne vide plutôt qu'une page d'état indisponible.
+	clusterdatabase.GarnirMetriquesRelais(db, nodes)
+
 	// La liste complète des groupes garnit le sélecteur du formulaire. Sans
 	// elle, l'administrateur devrait taper les noms de mémoire — et une faute de
 	// frappe est refusée par l'action, ce qui est juste mais pénible.
@@ -1110,18 +1206,39 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// La FICHE d'un nœud, au clic (TO-DO 85).
+	//
+	// La page dépliait les formulaires de TOUS les nœuds les uns sous les
+	// autres : avec le cluster, il fallait faire défiler pour trouver celui
+	// qu'on voulait régler. La liste reste courte ; la configuration ne
+	// s'affiche que pour le nœud choisi — par le lien de la liste, ou parce
+	// qu'on vient d'enregistrer un de ses formulaires, pour voir le résultat à
+	// côté du message.
+	choisi := strings.TrimSpace(r.URL.Query().Get("noeud"))
+	if choisi == "" && r.Method == http.MethodPost {
+		choisi = strings.TrimSpace(r.PostFormValue("node"))
+	}
+	selection := noeudChoisi(nodes, choisi)
+	if choisi != "" && selection == nil && errMsg == "" {
+		errMsg = "Nœud « " + choisi + " » introuvable : il a peut-être été oublié après une longue absence."
+	}
+
 	data := struct {
 		Username  string
-		Nodes     interface{}
+		Nodes     []clusterstorage.Node
+		Selection *clusterstorage.Node
 		AllGroups []string
 		Message   string
+		Error     string
 		DnsEnable bool
 		Section   string
 	}{
 		Username:  username,
 		Nodes:     nodes,
+		Selection: selection,
 		AllGroups: tousGroupes,
 		Message:   message,
+		Error:     errMsg,
 		DnsEnable: storage.Dns_Enable,
 		Section:   "cluster",
 	}

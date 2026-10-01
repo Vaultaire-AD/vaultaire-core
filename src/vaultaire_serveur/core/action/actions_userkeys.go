@@ -144,6 +144,12 @@ func ValiderCleSSH(cle string) error {
 	if strings.ContainsAny(cle, "\n\r") {
 		return fmt.Errorf("clé publique invalide : elle contient un saut de ligne")
 	}
+	// Contrôlée ici aussi, et pas seulement à l'insertion, pour que le refus
+	// arrive avant de chercher le compte : c'est un défaut de la clé, pas du
+	// compte (TO-DO 101 ; la borne est expliquée dans dbusers.AddUserKey).
+	if len(cle) > dbusers.LongueurMaxCle {
+		return fmt.Errorf("clé publique invalide : %d caractères, au-delà de %d", len(cle), dbusers.LongueurMaxCle)
+	}
 	if !typeDeCleAccepte(cle) {
 		return fmt.Errorf(
 			"clé publique invalide : type non reconnu. Types acceptés : %s",

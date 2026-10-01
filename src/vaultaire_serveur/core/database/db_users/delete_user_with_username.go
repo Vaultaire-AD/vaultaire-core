@@ -5,6 +5,7 @@ import (
 	"fmt"
 	database "vaultaire/core/database"
 	guardprotected "vaultaire/core/database/guard_protected"
+	"vaultaire/core/database/schematools"
 	"vaultaire/core/logs"
 )
 
@@ -28,6 +29,14 @@ func Command_DELETE_UserWithUsername(db *sql.DB, username string) error {
 		logs.Write_LogCode("WARNING", logs.CodeDBUserNotFound, fmt.Sprintf("database: Utilisateur %s introuvable", username))
 		return fmt.Errorf("utilisateur %s introuvable", username)
 	}
+
+	// Les groupes dont ce compte est membre vont perdre un `member`, et leur ligne
+	// ne sera pas écrite : `ON DELETE CASCADE` vide `users_group` sans toucher au
+	// reste. Sans cet appel, un client qui synchronise en incrémental garderait ce
+	// membre indéfiniment — point 126.
+	//
+	// AVANT la suppression : après, la jointure ne rend plus rien.
+	schematools.ToucherVoisinsAvantSuppression(db, schematools.TableUtilisateurs, userID)
 
 	// Supprimer l'utilisateur (les contraintes ON DELETE CASCADE s'occupent du reste)
 	queryDelete := `DELETE FROM users WHERE id_user = ?`

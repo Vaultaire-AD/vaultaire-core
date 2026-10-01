@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	database "vaultaire/core/database"
+	"vaultaire/core/database/schematools"
 	"vaultaire/core/logs"
 )
 
@@ -51,6 +52,16 @@ func Command_ADD_UserToGroup(db *sql.DB, username, groupName string) error {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors de l'ajout de l'utilisateur au groupe : "+err.Error())
 		return fmt.Errorf("erreur lors de l'ajout de l'utilisateur au groupe : %v", err)
 	}
+
+	// Les deux entrées LDAP ont changé sans qu'aucune de leurs lignes soit
+	// écrite : le compte a gagné un `memberOf`, le groupe a gagné un `member`.
+	// `ON UPDATE CURRENT_TIMESTAMP` ne voit que les écritures sur la table
+	// elle-même, et c'est `users_group` qui vient d'être touchée. Sans ces deux
+	// appels, une synchronisation incrémentale ne verrait jamais le changement
+	// d'appartenance — c'est-à-dire précisément ce que les clients LDAP
+	// synchronisent (point 126).
+	schematools.ToucherLigne(db, schematools.TableUtilisateurs, userID)
+	schematools.ToucherLigne(db, schematools.TableGroupes, groupID)
 
 	return nil
 }

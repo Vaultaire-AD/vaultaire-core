@@ -5,9 +5,10 @@ import (
 	"strings"
 	"time"
 
+	"vaultaire/core/auth/passwordpolicy"
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
-	"vaultaire/core/global/security"
+	"vaultaire/core/logs"
 	"vaultaire/core/tools"
 )
 
@@ -131,7 +132,7 @@ func creerUtilisateur(_ Appelant, p Params) (Resultat, error) {
 		}
 	}
 
-	saltHex, hashHex, err := hacherMotDePasse(password)
+	saltHex, hashHex, err := hacherMotDePasse(username+"@"+domain, password)
 	if err != nil {
 		return Resultat{}, err
 	}
@@ -147,8 +148,40 @@ func creerUtilisateur(_ Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("erreur lors de la création : %w", err)
 	}
 
+	// LE MOT DE PASSE D'UN COMPTE NEUF EST PROVISOIRE — TO-DO 99.
+	//
+	// Par défaut, et c'est le point : celui qui crée le compte a choisi ce mot de
+	// passe, donc il le connaît. Tant qu'il n'a pas été remplacé par son
+	// titulaire, ce n'est pas un secret — c'est un laissez-passer partagé entre
+	// deux personnes, et la seule chose qui le distingue d'un mot de passe volé
+	// est l'intention.
+	//
+	// La dérogation existe pour les comptes qu'aucune personne n'ouvrira jamais
+	// — automatisation, comptes de service — parce que pour eux, « changez-le à
+	// la première connexion » n'a pas de titulaire à qui s'adresser.
+	provisoire := !estNon(p.Get("temporary"))
+	if provisoire {
+		if err := passwordpolicy.MarquerProvisoire(database.GetDatabase(),
+			username, passwordpolicy.DureeProvisoireDefaut); err != nil {
+			// NON BLOQUANT : le compte existe, et le refaire échouerait. Mais
+			// c'est un SECURITY, pas un WARNING — un compte censé porter un mot
+			// de passe provisoire qui n'en porte pas est exactement ce que ce
+			// point corrige.
+			logs.Write_Log("SECURITY", fmt.Sprintf(
+				"user.create: %s créé mais le drapeau de changement obligatoire n'a pas pu "+
+					"être posé (%v) — son mot de passe reste celui choisi par son créateur",
+				username, err))
+		}
+	}
+
+	message := fmt.Sprintf("Utilisateur %s@%s créé.", username, domain)
+	if provisoire {
+		message += " Son mot de passe est PROVISOIRE : il devra être changé sur le portail" +
+			" sous " + passwordpolicy.DureeProvisoireDefaut.String() + "."
+	}
+
 	return Resultat{
-		Message: fmt.Sprintf("Utilisateur %s@%s créé.", username, domain),
+		Message: message,
 		Donnees: map[string]string{
 			"username":  username,
 			"email":     username + "@" + domain,
@@ -156,6 +189,19 @@ func creerUtilisateur(_ Appelant, p Params) (Resultat, error) {
 			"lastname":  lastname,
 		},
 	}, nil
+}
+
+// estNon reconnaît une dérogation explicite.
+//
+// La valeur par défaut — champ absent — vaut NON : un formulaire qui n'envoie
+// pas la case doit produire un compte provisoire, pas l'inverse. Un réglage de
+// sécurité dont l'absence ouvre finit toujours par être absent.
+func estNon(v string) bool {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "non", "no", "false", "0", "aucun":
+		return true
+	}
+	return false
 }
 
 // deduireIdentite sépare « jean.dupont » en prénom et nom.
@@ -177,17 +223,23 @@ func deduireIdentite(username string) (prenom, nom string) {
 	return parts[0], parts[1]
 }
 
-// hacherMotDePasse produit le sel et l'empreinte stockés en base.
+// hacherMotDePasse contrôle la robustesse puis produit le sel et l'empreinte.
 //
-// Délègue à security.Hacher — argon2id — et ne recopie plus le calcul.
+// Délègue à passwordpolicy.PreparerNouveauMotDePasse, qui enveloppe
+// security.Hacher — argon2id — et n'a jamais recopié le calcul.
 //
 // Le SHA-256 qui vivait ici était l'un des TROIS endroits qui produisaient une
 // empreinte, avec le bootstrap de l'administrateur et le changement de mot de
 // passe. Trois copies du même calcul, qu'il fallait faire évoluer ensemble sous
 // peine de créer des comptes illisibles par les autres chemins. Il n'en reste
-// qu'une définition, dans security.
-func hacherMotDePasse(motDePasse string) (selHex, hacheHex string, err error) {
-	empreinte, sel, err := security.Hacher(motDePasse)
+// qu'une définition, et elle porte désormais aussi la règle de robustesse
+// (TO-DO 100) : un compte ne peut plus NAÎTRE avec « 1234 ».
+//
+// Le nom du compte est passé parce qu'il fait partie de la règle — un mot de
+// passe qui contient l'identifiant est le deuxième que l'attaquant essaie.
+func hacherMotDePasse(username, motDePasse string) (selHex, hacheHex string, err error) {
+	empreinte, sel, err := passwordpolicy.PreparerNouveauMotDePasse(
+		database.GetDatabase(), username, motDePasse)
 	if err != nil {
 		return "", "", err
 	}
@@ -297,5 +349,25 @@ func changerMotDePasse(_ Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("erreur lors du changement de mot de passe : %w", err)
 	}
 
-	return Resultat{Message: fmt.Sprintf("Mot de passe de %s changé.", cible)}, nil
+	// RÉINITIALISATION PAR UN TIERS : le mot de passe est provisoire (TO-DO 99).
+	//
+	// C'est le cas d'usage le plus courant du drapeau, et le plus nécessaire :
+	// après un dépannage, l'administrateur connaît le mot de passe de quelqu'un
+	// d'autre. Sans échéance ni changement obligatoire, il le connaîtrait
+	// indéfiniment, et rien ne le dirait au titulaire.
+	//
+	// Un administrateur qui réinitialise SON PROPRE mot de passe par cette
+	// action se marque lui-même — c'est voulu : l'action n'est pas le chemin de
+	// changement personnel, qui est le portail et qui lève le drapeau.
+	if err := passwordpolicy.MarquerProvisoire(db, cible,
+		passwordpolicy.DureeProvisoireDefaut); err != nil {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"user.change_password: mot de passe de %s réinitialisé mais le drapeau de "+
+				"changement obligatoire n'a pas pu être posé (%v)", cible, err))
+	}
+
+	return Resultat{Message: fmt.Sprintf(
+		"Mot de passe de %s changé. Il est PROVISOIRE : %s devra le remplacer sur le "+
+			"portail sous %s, après quoi ce mot de passe cesse de fonctionner.",
+		cible, cible, passwordpolicy.DureeProvisoireDefaut)}, nil
 }

@@ -403,6 +403,29 @@ func applySystemdService(ctx Context, m Module) (string, error) {
 // ---------------------------------------------------------------------------
 
 // writeSystemFile écrit un fichier système de façon atomique.
+// writeSystemFile écrit un fichier du SCOPE MACHINE.
+//
+// # Pourquoi ce chemin ne passe pas par la descente sûre du point 97
+//
+// Le scope utilisateur a dû abandonner la traversée par chemin : ses fichiers
+// vivent sous un dossier que l'utilisateur contrôle, et il pouvait y planter un
+// lien vers `/etc` au moment précis où root allait l'emprunter.
+//
+// Ici, les chemins sont `/etc`, `/usr/lib/systemd` et leurs voisins. Planter un
+// lien à l'un de ces emplacements demande déjà d'être root — donc de détenir ce
+// que l'attaque du point 97 cherchait à obtenir. Il n'y a rien à gagner à s'en
+// protéger, et la descente composant par composant sous une racine n'aurait de
+// toute façon pas de racine à laquelle s'accrocher.
+//
+// Ce qui EST fait, et qui suffit ici : l'écriture passe par un fichier
+// temporaire créé avec `O_CREAT|O_EXCL` — donc jamais à travers un lien
+// existant — puis renommé, et `rename` remplace un lien au lieu de le suivre.
+// Un `/etc/resolv.conf` qui est un lien vers systemd-resolved est donc
+// REMPLACÉ, ce qui est exactement ce que le module `dns_resolver` veut.
+//
+// Le seul appel qui suive encore les liens est le `MkdirAll` du répertoire
+// parent. C'est assumé, et c'est écrit ici pour que ce ne soit pas redécouvert
+// comme un oubli.
 func writeSystemFile(path, content string, mode os.FileMode) error {
 	dir := path[:strings.LastIndex(path, "/")]
 	if err := os.MkdirAll(dir, 0o755); err != nil {
