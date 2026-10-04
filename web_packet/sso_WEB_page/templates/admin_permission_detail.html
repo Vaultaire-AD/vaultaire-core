@@ -249,7 +249,7 @@
               correspondants. Irréversible.
             </p>
             <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}"
-                  onsubmit="return confirm('Supprimer la permission {{ .Perm.Name }} ?');">
+                  data-confirm="Supprimer la permission {{ .Perm.Name }} ?">
               <input type="hidden" name="action" value="delete_permission">
               <input type="hidden" name="active_tab" value="settings">
               <input type="hidden" name="target_perm" value="{{ .Perm.Name }}">

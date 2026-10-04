@@ -64,7 +64,7 @@
             <td>{{.DateNaissance}}</td>
             <td>{{.CreatedAt}}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer {{.Username}} ?');">
+              <form method="post" style="display:inline" data-confirm="Supprimer {{.Username}} ?">
                 <input type="hidden" name="action" value="delete_user">
                 <input type="hidden" name="username" value="{{.Username}}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>

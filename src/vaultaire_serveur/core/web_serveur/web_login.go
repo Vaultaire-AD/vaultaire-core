@@ -122,11 +122,16 @@ func LoginHandler(w http.ResponseWriter, r *http.Request) {
 // SameSite=Strict est le point ajouté. Sans attribut déclaré, la protection
 // dépendait entièrement du défaut du navigateur — « Lax » sur les versions
 // récentes, ce qui bloque effectivement un POST inter-site, mais par la grâce du
-// client et non par décision de l'application. Toutes les actions
-// d'administration sont des POST simples sans jeton anti-CSRF : créer un
-// utilisateur, lier une GPO, déclencher un kill switch. La déclaration explicite
-// ferme le sujet quel que soit le navigateur.
+// client et non par décision de l'application.
+//
+// Ce n'est plus la seule défense : chaque POST porte désormais un jeton CSRF
+// dérivé de ce cookie (TO-DO 103, voir securite.go). SameSite ne couvre ni un
+// sous-domaine du même site tenu par un tiers, ni un navigateur qui ignore
+// l'attribut.
 func setSessionCookie(w http.ResponseWriter, token string) {
+	// La page rendue dans la même réponse doit porter le jeton CSRF du
+	// NOUVEAU cookie (TO-DO 103).
+	renouvelerJeton(w, token)
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_token",
 		Value:    token,

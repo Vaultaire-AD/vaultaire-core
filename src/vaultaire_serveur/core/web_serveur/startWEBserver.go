@@ -126,7 +126,10 @@ func StartWebServer() {
 	// Les valeurs sont larges à dessein : l'envoi d'une clé publique ou d'une
 	// GPO volumineuse doit passer sans être coupé.
 	server := &http.Server{
-		Handler:           nil, // DefaultServeMux, où les routes ci-dessus sont posées
+		// DefaultServeMux, où les routes ci-dessus sont posées, derrière le
+		// jeton CSRF et les en-têtes de sécurité (TO-DO 103). Devant TOUTES
+		// les routes : une route ajoutée demain est protégée sans y penser.
+		Handler:           Proteger(http.DefaultServeMux),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		WriteTimeout:      60 * time.Second,

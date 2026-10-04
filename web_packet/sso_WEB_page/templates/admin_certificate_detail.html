@@ -66,7 +66,7 @@
     <hr>
     <section class="section">
       <h2>Actions</h2>
-      <form method="post" onsubmit="return confirm('Supprimer le certificat {{ .Certificate.Name }} ? Cette action est irréversible.');">
+      <form method="post" data-confirm="Supprimer le certificat {{ .Certificate.Name }} ? Cette action est irréversible.">
         <input type="hidden" name="action" value="delete_certificate">
         <button type="submit" class="btn btn-danger">Supprimer ce certificat</button>
       </form>

@@ -155,7 +155,7 @@
     </section>
 
     <section class="section">
-      <form method="post" action="/admin/clients?client={{ .Client.ComputeurID }}" onsubmit="return confirm('Supprimer ce client ?');">
+      <form method="post" action="/admin/clients?client={{ .Client.ComputeurID }}" data-confirm="Supprimer ce client ?">
         <input type="hidden" name="action" value="delete_client">
         <input type="hidden" name="target_client" value="{{ .Client.ComputeurID }}">
         <button type="submit" class="btn btn-danger">Supprimer le client</button>

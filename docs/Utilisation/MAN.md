@@ -118,6 +118,17 @@ administrateur:
 > lue, et toute la section était ignorée en silence. Le core refuse maintenant de
 > démarrer dessus, en la nommant.
 
+**Le portail se protège lui-même** *(2.2, TO-DO 103)*. Chaque formulaire porte
+un jeton anti-CSRF, et chaque réponse ces en-têtes : `Content-Security-Policy`
+(aucun script en ligne), `X-Frame-Options: DENY`, `X-Content-Type-Options`,
+`Referrer-Policy`, `Strict-Transport-Security`. Deux conséquences :
+
+- derrière un **reverse proxy**, laissez passer ces en-têtes tels quels ; un
+  proxy qui pose sa propre CSP plus large affaiblit celle du portail ;
+- une page restée ouverte après un **changement de mot de passe** ou une
+  reconnexion refuse son prochain envoi (« jeton de formulaire absent ou
+  expiré ») : rechargez-la.
+
 **À ne pas oublier** : `debug: false` en production, et aucun sous-système réglé
 dans `debug.detail` — les lignes DEBUG portent
 les DN des binds LDAP, les identifiants de groupe des décisions de permission et

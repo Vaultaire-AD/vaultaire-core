@@ -92,7 +92,7 @@
             <td>{{ .Hostname }}</td>
             <td>{{ .OS }}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Produire l\'identité de {{ .ComputeurID }} ?\n\nL\'archive contient sa CLÉ PRIVÉE : qui la détient peut se faire passer pour cette machine.');">
+              <form method="post" style="display:inline" data-confirm="Produire l'identité de {{ .ComputeurID }} ?&#10;&#10;L'archive contient sa CLÉ PRIVÉE : qui la détient peut se faire passer pour cette machine.">
                 <input type="hidden" name="action" value="export_client">
                 <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
                 <select name="systeme">
@@ -101,7 +101,7 @@
                 </select>
                 <button type="submit" class="btn">Identité</button>
               </form>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer client {{ .ComputeurID }} ?');">
+              <form method="post" style="display:inline" data-confirm="Supprimer client {{ .ComputeurID }} ?">
                 <input type="hidden" name="action" value="delete_client">
                 <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>

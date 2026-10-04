@@ -56,7 +56,9 @@ func rendreDansTampon(w http.ResponseWriter, tmpl *template.Template, nom string
 		return err
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, err := tampon.WriteTo(w)
+	// Le jeton CSRF entre dans chaque formulaire POST ici, une fois pour
+	// toutes les pages (TO-DO 103, voir securite.go).
+	_, err := w.Write(injecterJetonCSRF(tampon.Bytes(), jetonDeLaReponse(w)))
 	return err
 }
 
@@ -74,7 +76,7 @@ func rendreGabarit(w http.ResponseWriter, tmpl *template.Template, data interfac
 		return err
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, err := tampon.WriteTo(w)
+	_, err := w.Write(injecterJetonCSRF(tampon.Bytes(), jetonDeLaReponse(w)))
 	return err
 }
 

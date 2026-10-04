@@ -17,8 +17,8 @@ Trois gestes, dans le même passage que le code :
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
 détaillés dans [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md).
-**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 102, 104, 105, 106, 107 et
-108. **Restent ouverts** : 98 (secrets au repos, à cadrer) et 103. Ce fichier porte :
+**Traités dans la 2.2** : 95 à 97, 99 à 108. **Reste ouvert** : 98 (secrets au
+repos, à cadrer). Ce fichier porte :
 ce que le code fait, qui peut l'atteindre, ce qu'il obtient, et pourquoi la
 correction n'est pas triviale. Ce fichier porte aussi les constats laissés de
 côté, pour qu'ils ne soient pas redécouverts comme neufs.
@@ -79,7 +79,6 @@ confirmé, et complété de ce que la recette a montré.
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 103 | WEB          | Ni jeton CSRF ni en-tête de sécurité sur le portail         | À faire — sérieux                       |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
 | 138 | DUCKY        | Comptes déjà au-delà de 10 clés SSH                         | À faire — petit                         |
@@ -513,16 +512,6 @@ Une sauvegarde qui traîne, un réplica mal protégé, une lecture SQL, ou le co
 Une fois tranché : chiffrement d'enveloppe des colonnes `private_key_data` et `mfa_secret`, migration des lignes existantes, et surtout une procédure de **rotation** et de **restauration** — une base dont on a perdu la clé maîtresse est une base perdue.
 
 **Ne pas commencer par le code.** Ce point demande une décision d'exploitation, pas une implémentation.
-
-### 103. [WEB] Ni jeton CSRF ni en-tête de sécurité sur le portail
-
-**Constat** (audit du 25/09). Recherche exhaustive dans `vaultaire_serveur` : **zéro** occurrence de `csrf`, `Content-Security-Policy`, `X-Frame-Options`, `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`. La seule mention de CSRF est un commentaire de `web_login.go:126` qui **constate l'absence**.
-
-La défense repose entièrement sur `SameSite=Strict`. Les actions d'administration sont des POST simples : créer un compte, lier une GPO, déclencher un **kill switch**.
-
-**À faire.** Porter le dispositif de Nexus (`vaultaire_nexus/internal/web/ui.go:212`), qui a déjà de vrais jetons CSRF — il s'agit de le reprendre, pas de l'inventer. Ajouter les en-têtes, et sortir le JavaScript en ligne des gabarits pour qu'une `Content-Security-Policy` stricte tienne.
-
-**Attention.** Un jeton par formulaire veut dire toucher **tous** les gabarits d'administration et tous les gestionnaires POST. Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 103.
 
 ### 22. [EN COURS] [SELINUX] Politique pour les clients
 

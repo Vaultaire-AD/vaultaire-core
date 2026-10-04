@@ -171,3 +171,25 @@
     });
   });
 })();
+
+/* Un champ dont les valeurs sont des définitions affiche le contenu de la
+   SEULE valeur sélectionnée. Le serveur pré-affiche déjà la bonne (attribut
+   hidden), ce script ne fait que suivre les changements de sélection — la
+   page reste donc correcte sans JavaScript. Venu d'un script en ligne de
+   admin_gpo_detail.html (TO-DO 103). */
+(function () {
+  'use strict';
+  document.querySelectorAll('.gpo-field').forEach(function (field) {
+    var select = field.querySelector('select');
+    var group = field.querySelector('[data-gpo-def-group]');
+    if (!select || !group) { return; }
+    var blocks = group.querySelectorAll('[data-gpo-def-value]');
+    function sync() {
+      blocks.forEach(function (block) {
+        block.hidden = block.getAttribute('data-gpo-def-value') !== select.value;
+      });
+    }
+    select.addEventListener('change', sync);
+    sync();
+  });
+})();

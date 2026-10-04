@@ -123,20 +123,5 @@
   <script src="/static/app.js"></script>
   <script src="/static/vlt_picker.js"></script>
   <script src="/static/admin_sidebar.js"></script>
-  <script>
-    document.querySelectorAll('.chat-code-copy[data-copy-target]').forEach(function(btn) {
-      btn.addEventListener('click', function() {
-        var el = document.getElementById(this.getAttribute('data-copy-target'));
-        if (!el) return;
-        var text = el.textContent || el.innerText;
-        navigator.clipboard.writeText(text).then(function() {
-          var lbl = btn.textContent;
-          btn.textContent = 'Copié';
-          btn.classList.add('chat-code-copied');
-          setTimeout(function() { btn.textContent = lbl; btn.classList.remove('chat-code-copied'); }, 2000);
-        });
-      });
-    });
-  </script>
 </body>
 </html>

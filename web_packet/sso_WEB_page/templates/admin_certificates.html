@@ -45,7 +45,7 @@
             <td>{{ .CreatedAt.Format "2006-01-02 15:04" }}</td>
             <td>{{ .UpdatedAt.Format "2006-01-02 15:04" }}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer le certificat {{ .Name }} ?');">
+              <form method="post" style="display:inline" data-confirm="Supprimer le certificat {{ .Name }} ?">
                 <input type="hidden" name="action" value="delete_certificate">
                 <input type="hidden" name="certificate_id" value="{{ .ID }}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>
