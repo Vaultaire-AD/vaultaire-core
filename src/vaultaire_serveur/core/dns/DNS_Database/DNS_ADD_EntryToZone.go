@@ -40,7 +40,11 @@ func AddDNSRecordSmart(db *sql.DB, fqdn, recordType string, ttl int, data string
 		relativeName = "@" // racine de la zone
 	}
 
-	tableName := selectedZone.TableName
+	// Relu dans dns_zones, donc revérifié avant usage (TO-DO 105).
+	tableName, err := identifiantTable(selectedZone.TableName)
+	if err != nil {
+		return err
+	}
 
 	// ✅ Vérifier si une entrée A avec ce nom existe déjà
 	if strings.ToUpper(recordType) == "A" {

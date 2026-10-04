@@ -294,6 +294,25 @@ proxy_metrics (
 - **Rien ne s'en sert pour décider.** Le tri de la liste servie aux agents ne lit
   pas cette table, et c'est volontaire : une `04_05` est déclarative.
 
+## Tables de zone DNS — base `<base>_dns`
+
+Une table par zone, nommée `zone_` + le nom de zone, points remplacés par des
+soulignés (`acme.lan` → `zone_acme_lan`), et enregistrée dans `dns_zones`.
+
+Ce nom entre dans des requêtes SQL **comme identifiant**, donc il ne peut pas être
+un paramètre lié. Depuis le TO-DO 105, il ne passe que par
+`core/dns/DNS_Database/nom_de_table.go` :
+
+- le nom de zone est validé par **liste blanche** (`ValiderNomDeZone`), la même
+  pour l'action `dns.*` et pour la base ;
+- l'identifiant est **cité** et revérifié à chaque usage (`identifiantTable`),
+  y compris quand il est relu dans `dns_zones` ;
+- un test relit les sources du paquet et refuse toute requête qui insère un nom
+  de table sans passer par là.
+
+Les requêtes **TXT** et **NS** reçues du réseau y arrivent avec le nom demandé :
+c'est pour elles, surtout, que la règle ne souffre pas d'exception.
+
 ## Notes rapides / observations
 
 * Les tables **d'association** (`users_group`, `logiciel_group`, `group_user_permission`, `group_permission_logiciel`, `group_linux_gpo`, `users_logiciel`) implémentent des relations N-N et ont des PK composites — c'est correct pour l'intégrité.

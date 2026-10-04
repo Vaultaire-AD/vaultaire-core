@@ -82,7 +82,6 @@ confirmé, et complété de ce que la recette a montré.
 | 102 | API          | Ni freinage ni borne de corps sur `/api/command`            | À faire — sérieux                       |
 | 103 | WEB          | Ni jeton CSRF ni en-tête de sécurité sur le portail         | À faire — sérieux                       |
 | 104 | RBAC         | « Deny » ne refuse pas                                      | À faire — sérieux, à trancher           |
-| 105 | DNS          | Nom de table construit par concaténation                    | À faire — sérieux                       |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
 | 138 | DUCKY        | Comptes déjà au-delà de 10 clés SSH                         | À faire — petit                         |
@@ -551,17 +550,6 @@ Un exploitant qui croit retirer un droit en posant un refus ne retire **rien** t
 - **renommer** : si ce n'est pas un refus, cela ne doit pas s'appeler `Deny`.
 
 Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 104.
-
-### 105. [DNS] Le nom de table est construit par concaténation
-
-**Constat** (audit du 25/09). Cinq fichiers de `core/dns/DNS_Database/` font `safeTableName := "zone_" + strings.ReplaceAll(zoneName, ".", "_")` puis l'interpolent dans la requête (`DNS_DELETE_Zone.go:11`). La variable s'appelle `safeTableName` ; seuls les points ont été remplacés.
-
-`nomDNSAcceptable` (`actions_dns.go:361`) refuse les espaces, `/`, `\` et les sauts de ligne — mais **laisse passer l'apostrophe inverse et la virgule**. Or `DROP TABLE` accepte une liste séparée par des virgules, et MySQL cite les identifiants avec des apostrophes inverses.
-
-Un délégué `write:dns` peut vraisemblablement faire supprimer une table arbitraire. `multiStatements` n'étant pas activé dans le DSN, il n'y a pas de requête empilée — la portée est la destruction, pas l'exécution. **À confirmer par un essai réel.**
-
-**À faire.** Valider le nom de zone par une **liste blanche** (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`) et citer l'identifiant, dans les **cinq** fichiers. Allonger la liste de caractères interdits serait la mauvaise correction.
-
 
 ### 22. [EN COURS] [SELINUX] Politique pour les clients
 

@@ -354,23 +354,18 @@ func ttlDepuis(p Params) (int, error) {
 
 // nomDNSAcceptable écarte ce qui ne peut pas être un nom de zone.
 //
-// Contrôle volontairement minimal : la base et le serveur DNS valident ensuite.
-// Ce qui est écarté ici est ce qui rendrait la suite incompréhensible — un nom
-// contenant une barre oblique ou un saut de ligne n'échouera pas avec un
-// message parlant plus bas dans la pile.
+// LISTE BLANCHE, et la même que celle de la base (TO-DO 105) :
+// dnsdatabase.ValiderNomDeZone. La version antérieure énumérait des caractères
+// interdits — espaces, barres, sauts de ligne — et laissait passer tout le
+// reste, dont des caractères qui ont un sens pour SQL : le nom de zone devient
+// un nom de table. Une liste de caractères interdits se complète toujours trop
+// tard ; une liste blanche n'a rien à compléter.
+//
+// Une seule règle pour l'action et pour la base : deux validations différentes
+// laisseraient passer ici ce que la base refuse, avec un message qui ne
+// désignerait plus la vraie cause.
 func nomDNSAcceptable(nom string) error {
-	if len(nom) > 253 {
-		// RFC 1035 §2.3.4 : 255 octets pour le nom encodé, soit 253 en
-		// représentation textuelle.
-		return fmt.Errorf("%d caractères, maximum 253", len(nom))
-	}
-	if strings.ContainsAny(nom, " /\\\n\r\t") {
-		return fmt.Errorf("caractères interdits (espaces, barres, sauts de ligne)")
-	}
-	if strings.HasPrefix(nom, ".") || strings.HasSuffix(nom, "..") {
-		return fmt.Errorf("point mal placé")
-	}
-	return nil
+	return dnsdatabase.ValiderNomDeZone(nom)
 }
 
 // verifierActionDNSConnue garde une trace du fait que « write:dns » doit rester

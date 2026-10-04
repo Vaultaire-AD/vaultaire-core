@@ -928,6 +928,10 @@ dns zone create example.com
 dns zone show example.com
 ```
 
+**Nom de zone** : lettres, chiffres et tirets, étiquettes séparées par des points
+(`acme.lan`, `mon-site.fr`, `10.in-addr.arpa`), 59 caractères au plus. Tout autre
+caractère est refusé : le nom devient celui d'une table en base.
+
 ⚠️ `zone delete` emporte tous les enregistrements de la zone. Les noms qu’elle résolvait cessent de l’être, et il n’y a pas de retour en arrière : la zone se recrée, son contenu non.
 
 ### 14.3 Enregistrements
