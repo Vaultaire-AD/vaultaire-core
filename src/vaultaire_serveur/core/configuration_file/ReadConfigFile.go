@@ -175,6 +175,21 @@ func LoadConfig(filePath string) error {
 	if config.Api.API_Port != nil {
 		storage.API_Port = *config.Api.API_Port
 	}
+	// Refusées plutôt que corrigées : une limite à zéro ou négative ne veut
+	// rien dire, et la ramener en silence à une valeur choisie ici ferait
+	// tourner le core sur un barème que personne n'a écrit.
+	if v := config.Api.API_Limite_Rafale; v != nil {
+		if *v < 1 {
+			return &ErreurDeValeur{Cause: fmt.Errorf("api.limite_rafale vaut %d : un entier d'au moins 1 est attendu", *v)}
+		}
+		storage.API_Limite_Rafale = *v
+	}
+	if v := config.Api.API_Limite_Par_Seconde; v != nil {
+		if *v <= 0 {
+			return &ErreurDeValeur{Cause: fmt.Errorf("api.limite_par_seconde vaut %g : un nombre strictement positif est attendu", *v)}
+		}
+		storage.API_Limite_Par_Seconde = *v
+	}
 	if config.Debug.Debug != nil {
 		storage.Debug = *config.Debug.Debug
 	}

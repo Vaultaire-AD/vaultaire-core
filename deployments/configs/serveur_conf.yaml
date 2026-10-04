@@ -180,6 +180,16 @@ automatisation:
 api:
   api_enable: true
   api_port: 6643
+  # Débit par adresse source sur /api/command, appliqué AVANT toute
+  # authentification : l'authentification de l'API EST la signature, et la
+  # vérifier coûte au core deux lectures en base et un calcul par clé du compte
+  # visé. Un seau de « limite_rafale » requêtes, rempli de « limite_par_seconde »
+  # par seconde : un script qui envoie cent commandes d'un coup passe, un flot
+  # soutenu est ramené au débit de remplissage. Au-delà : 429 et Retry-After.
+  # Derrière un relais, voir web_trusted_proxies : sans lui toutes les requêtes
+  # portent l'adresse du relais et partagent un seul seau.
+  limite_rafale: 100
+  limite_par_seconde: 20
 
 debug:
   # FAUX par défaut. Les lignes DEBUG portent les DN des binds LDAP, les

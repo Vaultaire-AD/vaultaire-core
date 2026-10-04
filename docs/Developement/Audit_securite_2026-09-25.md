@@ -16,7 +16,8 @@
 | Point | État |
 |---|---|
 | **101** — cadrage des trames | **traité** (2.2) — premier octet ≠ 2 refusé avant toute allocation, `io.ReadFull` partout, refus au lieu de troncature à l'émission, garde-fou porté dans le SDK, 10 clés SSH par compte ; core ET SDK, chacun avec sa sentinelle contre `conn.Read` |
-| 102, 103, 104 | ouverts |
+| **102** — API de commande | **traité** (2.2) — corps borné à 64 Kio, débit par source (seau à jetons, réglable) et échecs répétés freinés AVANT la base ; un seul message et un seul parcours pour compte inconnu, révoqué, sans clé ou signature fausse, avec une clé-leurre du type de la signature |
+| 103, 104 | ouverts |
 | **105** — nom de table DNS | **traité** (2.2) — liste blanche et identifiant cité dans les **douze** requêtes ; le défaut était aussi atteignable **sans compte**, par les requêtes TXT et NS reçues du réseau |
 | 98 — secrets en clair dans la base | ouvert, à cadrer |
 | **106** — compte `vaultaire` | **traité** (2.2) — `03_01` et `08_01` refusent le compte d'amorçage, et un test-sentinelle interdit d'accorder un droit à partir du nom d'une session Ducky |

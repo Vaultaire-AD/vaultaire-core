@@ -17,8 +17,8 @@ Trois gestes, dans le même passage que le code :
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
 détaillés dans [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md).
-**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 106, 107 et 108. **Restent
-ouverts** : 98 (secrets au repos, à cadrer) et 102 à 105. Ce fichier porte :
+**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 102, 105, 106, 107 et 108.
+**Restent ouverts** : 98 (secrets au repos, à cadrer), 103 et 104. Ce fichier porte :
 ce que le code fait, qui peut l'atteindre, ce qu'il obtient, et pourquoi la
 correction n'est pas triviale. Ce fichier porte aussi les constats laissés de
 côté, pour qu'ils ne soient pas redécouverts comme neufs.
@@ -79,7 +79,6 @@ confirmé, et complété de ce que la recette a montré.
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 102 | API          | Ni freinage ni borne de corps sur `/api/command`            | À faire — sérieux                       |
 | 103 | WEB          | Ni jeton CSRF ni en-tête de sécurité sur le portail         | À faire — sérieux                       |
 | 104 | RBAC         | « Deny » ne refuse pas                                      | À faire — sérieux, à trancher           |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
@@ -515,18 +514,6 @@ Une sauvegarde qui traîne, un réplica mal protégé, une lecture SQL, ou le co
 Une fois tranché : chiffrement d'enveloppe des colonnes `private_key_data` et `mfa_secret`, migration des lignes existantes, et surtout une procédure de **rotation** et de **restauration** — une base dont on a perdu la clé maîtresse est une base perdue.
 
 **Ne pas commencer par le code.** Ce point demande une décision d'exploitation, pas une implémentation.
-
-### 102. [API] Ni freinage ni borne de corps sur `/api/command`
-
-**Constat** (audit du 25/09). `core/api/api.go` n'importe pas `ratelimit`, et `commandHandler` (l. 130) décode le corps JSON **avant toute authentification**, sans `http.MaxBytesReader`.
-
-Chaque requête anonyme coûte donc au core deux lectures en base puis une vérification RSA **par clé enregistrée** sur le compte visé. Le port est ouvert à tous, puisque l'authentification *est* la signature.
-
-Trois conséquences : un amplificateur de déni de service ; une énumération de l'annuaire par chronométrage (« utilisateur introuvable » sort avant la lecture des clés) ; et plusieurs gigaoctets en mémoire par requête en vol, avec un `ReadTimeout` de 30 s.
-
-**À faire.** Freiner **sur la source seule**, avant de savoir de quel compte il s'agit — le freinage existant raisonne sur un couple (compte, source) après échec, il ne convient pas tel quel. Borner le corps avec `http.MaxBytesReader`. Égaliser le temps de réponse entre compte inconnu et signature invalide.
-
-**Attention.** Un intégrateur légitime pilote le parc en rafale : le barème par source doit le laisser travailler. Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 102.
 
 ### 103. [WEB] Ni jeton CSRF ni en-tête de sécurité sur le portail
 

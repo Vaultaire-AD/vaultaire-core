@@ -95,6 +95,8 @@ website:
 api:
   api_enable: true
   api_port: 6643
+  limite_rafale: 100       # débit par source, voir vaultairectl.md § Refus et freinage
+  limite_par_seconde: 20
 
 administrateur:
   enable: true
@@ -1614,8 +1616,10 @@ question qu'on se pose devant un serveur qu'on ne connaît pas.
 ### Ce qui n'est pas ici
 
 Les délais de **protocole** et de **sécurité** — échéances de lecture réseau,
-fenêtre anti-rejeu de l'API, barème de la limitation de débit — restent des
-constantes du serveur. Ce ne sont pas des préférences d'exploitation mais des
+fenêtre anti-rejeu de l'API, barème de la limitation des échecs
+d'authentification — restent des constantes du serveur. Seul le **débit par
+source de l'API** (`api.limite_rafale`, `api.limite_par_seconde`) se règle, dans
+le fichier YAML : il dépend de la cadence des intégrateurs du parc. Ce ne sont pas des préférences d'exploitation mais des
 propriétés du protocole : une échéance trop longue ouvre un déni de service,
 trop courte casse les connexions lentes.
 
