@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"vaultaire/core/domainname"
+	"vaultaire/core/identifiant"
 	"vaultaire/core/logs"
 )
 
@@ -164,7 +165,13 @@ func creerParentsManquants(tx *sql.Tx, domaine string) ([]string, error) {
 
 // insererGroupe écrit le groupe et son domaine.
 func insererGroupe(tx *sql.Tx, groupName, domainName string) (int64, error) {
-	result, err := tx.Exec(`INSERT INTO groups (group_name) VALUES (?)`, groupName)
+	// L'identifiant stable du groupe, posé à la création (point 129) — même
+	// raison que pour un compte, voir dbusers.Create_New_User.
+	entryUUID, err := identifiant.NouvelUUID()
+	if err != nil {
+		return 0, fmt.Errorf("identifiant du groupe %s: %v", groupName, err)
+	}
+	result, err := tx.Exec(`INSERT INTO groups (group_name, entry_uuid) VALUES (?, ?)`, groupName, entryUUID)
 	if err != nil {
 		return 0, fmt.Errorf("erreur lors de l'insertion du groupe %s: %v", groupName, err)
 	}

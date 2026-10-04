@@ -13,6 +13,10 @@ type User struct {
 	// qu'ils sont : des valeurs de colonnes.
 	Created_at  string
 	Modified_at string
+	// EntryUUID est l'identifiant STABLE du compte (point 129) : la colonne
+	// `entry_uuid`, posée à la création et jamais réattribuée. Vide si la base
+	// n'en porte pas — l'attribut n'est alors pas servi.
+	EntryUUID string
 }
 
 type LDAPUserResponse struct {
@@ -33,6 +37,8 @@ type Group struct {
 	// Dates telles que la base les rend — voir User.
 	Created_at  string
 	Modified_at string
+	// EntryUUID : identifiant stable du groupe — voir User.
+	EntryUUID string
 }
 
 // LDAPFilterType représente les types RFC 4511

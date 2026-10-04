@@ -142,7 +142,9 @@ passe en clair du site jusqu'au core, et le core n'implémente pas StartTLS —
 employez « ldaps »
 ```
 
-Le core accepte le bind en clair tant que `RequireTLSForBind` n'est pas posé,
+Le core accepte le bind en clair tant que `ldap.require_tls_for_bind` n'est pas
+posé dans `serveur_conf.yaml` (voir
+[`../exploitation/ldap_bornes.md`](../exploitation/ldap_bornes.md)),
 mais un relais le ferait passer sur le lien le plus long — du site au core —,
 celui qu'on protège le moins bien.
 

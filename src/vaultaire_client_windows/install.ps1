@@ -415,12 +415,37 @@ if (-not (Test-Path $dll)) {
         # remède — relancer depuis un PowerShell 64 bits — n'a rien à voir avec
         # les autres causes.
         $motif = "ce PowerShell est 32 bits : regsvr32 ne peut pas charger une DLL 64 bits"
-    } elseif ($code -ne 0) { $motif = "regsvr32 a rendu le code $code" }
+    } elseif ($code -ne 0) {
+        # Les codes de regsvr32 sont stables et disent OÙ il a échoué. « Code 3 »
+        # ne dit rien à qui installe ; « la DLL ne se charge pas » l'envoie
+        # regarder ses dépendances au lieu du registre (TO-DO 139).
+        $motif = switch ($code) {
+            3 { "la DLL ne se charge pas (regsvr32, code 3) : une bibliotheque dont elle depend est introuvable, ou son architecture n'est pas celle de ce Windows" }
+            4 { "la DLL ne porte pas DllRegisterServer (regsvr32, code 4) : fichier incomplet ou remplace" }
+            5 { "DllRegisterServer a echoue (regsvr32, code 5) : ecriture refusee sous HKLM" }
+            default { "regsvr32 a rendu le code $code" }
+        }
+    }
     elseif   (-not (Test-Path $liste))  { $motif = "la cle « Credential Providers\$clsid » est absente" }
     elseif   (-not (Test-Path $inproc)) { $motif = "la cle InprocServer32 est absente" }
     else {
         $inscrit = (Get-ItemProperty -Path $inproc).'(default)'
         if ($inscrit -ne $cible) { $motif = "InprocServer32 pointe sur « $inscrit » au lieu de « $cible »" }
+    }
+
+    # Les clés « { » : la trace d'une DLL d'avant le TO-DO 140.
+    #
+    # Elle composait ses chemins de registre avec un format qui tronquait le
+    # GUID à son premier caractère, et s'inscrivait sous CLSID\{ — où l'écran
+    # de connexion ne cherche rien. Une DLL corrigée les retire elle-même à
+    # l'inscription ; si elles sont encore là, c'est soit que la DLL de cette
+    # archive est ancienne, soit qu'elles ne sont pas à Vaultaire.
+    $tronquees = @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers\{",
+        "HKLM:\SOFTWARE\Classes\CLSID\{"
+    ) | Where-Object { Test-Path -LiteralPath $_ }
+    if ($motif -and $tronquees) {
+        $motif += " — et une inscription tronquee existe sous « { » : cette DLL date d'avant le correctif du CLSID, refabriquez l'archive"
     }
 
     if ($motif) {
@@ -434,6 +459,10 @@ if (-not (Test-Path $dll)) {
         Info "Sans tuile, l'agent et vaultaire_login.exe fonctionnent normalement."
     } else {
         Info "tuile Vaultaire enregistrée — elle apparaîtra au prochain verrouillage"
+        foreach ($cle in $tronquees) {
+            Info "une ancienne cle subsiste, sans effet sur la tuile : $cle"
+            Info "  (.\uninstall.ps1 la retire si elle porte le libelle Vaultaire)"
+        }
         Write-Host "`n    ⚠ Gardez une session administrateur locale OUVERTE le temps de vérifier" -ForegroundColor Yellow
         Write-Host "      que la connexion fonctionne : un fournisseur défaillant se retire avec" -ForegroundColor Yellow
         Write-Host "      .\uninstall.ps1 -CredentialProviderSeulement, depuis cette session." -ForegroundColor Yellow

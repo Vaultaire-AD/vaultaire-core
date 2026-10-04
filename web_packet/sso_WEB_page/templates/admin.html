@@ -31,7 +31,7 @@
 
           <section class="section">
             <h2>Mode debug</h2>
-            <p class="small muted">Active ou désactive les logs de niveau DEBUG (tous composants). État actuel : <strong>{{if .Debug}}activé{{else}}désactivé{{end}}</strong></p>
+            <p class="small muted">Active ou désactive les logs de niveau DEBUG pour tout le serveur. État actuel : <strong>{{if .Debug}}activé{{else}}désactivé{{end}}</strong></p>
             <form method="post" action="/admin">
               <input type="hidden" name="action" value="set_debug">
               <label class="checkbox-label">
@@ -40,6 +40,35 @@
               </label>
               <div style="margin-top:0.5rem"><button type="submit" class="btn btn-secondary">Appliquer</button></div>
             </form>
+
+            <h3 style="margin-top:1.25rem">Détail par sous-système</h3>
+            <p class="small muted">Règle un sous-système à part du réglage ci-dessus : le debug partout sauf l'annuaire, ou l'annuaire seul. <strong>trace</strong> ajoute le déroulé pas à pas (pour LDAP : le contenu des entrées rendues). Le réglage vaut pour ce core, jusqu'à son redémarrage ; pour le rendre durable, section <code>debug.detail</code> de <code>serveur_conf.yaml</code>.</p>
+            <table class="table">
+              <thead>
+                <tr><th>Sous-système</th><th>Écrit actuellement</th><th>Réglage</th><th></th></tr>
+              </thead>
+              <tbody>
+                {{range .Detail}}
+                <tr>
+                  <td><code>{{.Nom}}</code></td>
+                  <td>{{.Effectif}}{{if not .Regle}} <span class="muted small">(suit le mode debug)</span>{{end}}</td>
+                  <td>
+                    <form method="post" action="/admin" id="detail-{{.Nom}}">
+                      <input type="hidden" name="action" value="set_debug">
+                      <input type="hidden" name="sous_systeme" value="{{.Nom}}">
+                      <select name="niveau" aria-label="Niveau de détail de {{.Nom}}">
+                        <option value="defaut" {{if not .Regle}}selected{{end}}>suit le mode debug</option>
+                        <option value="off" {{if eq .Regle "off"}}selected{{end}}>off</option>
+                        <option value="debug" {{if eq .Regle "debug"}}selected{{end}}>debug</option>
+                        <option value="trace" {{if eq .Regle "trace"}}selected{{end}}>trace</option>
+                      </select>
+                    </form>
+                  </td>
+                  <td><button type="submit" form="detail-{{.Nom}}" class="btn btn-secondary">Appliquer</button></td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
           </section>
 
           <section class="section">

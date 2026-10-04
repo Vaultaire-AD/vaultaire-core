@@ -42,6 +42,17 @@ type Config struct {
 		// Élargit TOUTE recherche `one` à l'arborescence, quel que soit le
 		// conteneur. Faux par défaut : voir ldapstorage.OneLevelSubtree.
 		Ldap_OneLevel_Subtree *bool `yaml:"onelevel_subtree"`
+		// Refuse un bind avec mot de passe hors TLS, donc sur le port 389. Faux
+		// par défaut : voir ldapstorage.RequireTLSForBind.
+		Ldap_Require_TLS_For_Bind *bool `yaml:"require_tls_for_bind"`
+		// Bornes de recherche et de pagination (TO-DO 152).
+		//
+		// Une TABLE et non une structure, à dessein : une structure ignore en
+		// silence une clé qu'elle ne connaît pas, et une borne mal orthographiée
+		// se lirait dans le fichier sans rien régler. La table laisse
+		// ldapstorage.AppliquerLimites voir toutes les clés écrites, et refuser
+		// celles qu'il ne connaît pas.
+		Ldap_Limites map[string]int `yaml:"limites"`
 	} `yaml:"ldap"`
 	Dns struct {
 		Dns_Enable *bool `yaml:"dns_enable"`
@@ -84,6 +95,10 @@ type Config struct {
 	} `yaml:"automatisation"`
 	Debug struct {
 		Debug *bool `yaml:"debug"`
+		// Détail par sous-système (TO-DO 145) : « ldap: trace », « ducky: off ».
+		// Une table pour la même raison que ldap.limites — un sous-système mal
+		// orthographié doit se voir, pas s'ignorer. Voir logs.ReglerDetail.
+		Detail map[string]string `yaml:"detail"`
 	} `yaml:"debug"`
 	Administrateur struct {
 		Enable    *bool   `yaml:"enable"`

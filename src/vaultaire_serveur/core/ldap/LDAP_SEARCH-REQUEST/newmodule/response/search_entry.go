@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"net"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -46,6 +47,9 @@ func SendLDAPSearchResultEntry(conn net.Conn, messageID int, entry ldap_types.Se
 	if err != nil {
 		return fmt.Errorf("failed to send SearchResultEntry: %v", err)
 	}
+	// Comptée APRÈS l'écriture : le nombre porté par la ligne de l'opération
+	// est celui des entrées que le client a reçues, pas celui des tentatives.
+	ldapjournal.EntreeEnvoyee(conn)
 
 	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 )
 
@@ -22,6 +23,9 @@ type entrée struct {
 
 func (e entrée) DN() string         { return e.dn }
 func (e entrée) Domaines() []string { return []string{"enov.local"} }
+func (e entrée) Restreinte(func(string) bool) ldapinterface.LDAPEntry {
+	return e
+}
 func (e entrée) ObjectClasses() []string {
 	if e.classe == nil {
 		return []string{"inetOrgPerson"}

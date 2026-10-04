@@ -41,7 +41,12 @@ const (
 	ResultNoSuchObject             = 32
 	ResultInvalidCredentials       = 49
 	ResultInsufficientAccessRights = 50
-	ResultUnwillingToPerform       = 53
+	// ResultBusy — le serveur ne peut pas servir cette requête MAINTENANT, et
+	// l'invite à la rejouer. Émis quand trop de recherches paginées tiennent
+	// déjà leurs entrées en mémoire (point 130) : c'est un état passager, à
+	// distinguer d'un refus.
+	ResultBusy               = 51
+	ResultUnwillingToPerform = 53
 )
 
 // Étiquettes d'application des réponses LDAP — RFC 4511 §4.

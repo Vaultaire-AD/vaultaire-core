@@ -2,7 +2,6 @@ package filter
 
 import (
 	"fmt"
-	"strings"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
@@ -95,35 +94,4 @@ func Evaluate(entry ldapinterface.LDAPEntry, f *ldapstorage.LDAPFilter, baseDN s
 			f.Type, entry.DN()))
 		return false
 	}
-}
-
-func isInScope(entryDN, baseDN string, scope int) bool {
-	entryDN = strings.ToLower(entryDN)
-	baseDN = strings.ToLower(baseDN)
-
-	// 1. Si c'est un match parfait (ou=users,dc=vaultaire,dc=local)
-	if strings.HasSuffix(entryDN, baseDN) {
-		return true
-	}
-
-	// 2. LOGIQUE SPÉCIFIQUE VAULTAIRE (Le "Saut" de sous-domaine)
-	// On veut autoriser : ou=users,dc=admin,dc=vaultaire,dc=local
-	// Pour une base :    ou=users,dc=vaultaire,dc=local
-
-	if scope == 2 { // Subtree
-		// On sépare la base demandée pour isoler "ou=users" et "dc=vaultaire,dc=local"
-		parts := strings.SplitN(baseDN, ",", 2)
-		if len(parts) < 2 {
-			return strings.HasSuffix(entryDN, baseDN)
-		}
-
-		prefix := parts[0] // ex: "ou=users"
-		suffix := parts[1] // ex: "dc=vaultaire,dc=local"
-
-		// L'entrée est valide si elle commence par le préfixe (ou=users)
-		// ET finit par le suffixe racine (dc=vaultaire,dc=local)
-		return strings.HasPrefix(entryDN, prefix) && strings.HasSuffix(entryDN, suffix)
-	}
-
-	return false
 }

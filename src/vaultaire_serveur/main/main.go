@@ -3,6 +3,7 @@ package main
 import (
 	"time"
 
+	"errors"
 	"log"
 	"net"
 	"os"
@@ -84,6 +85,13 @@ func main() {
 	// dépôt cloné, dans un conteneur qui range sa configuration autrement.
 	cheminConfig, consultes := configurationfile.CheminConfig()
 	if err := configurationfile.LoadConfig(cheminConfig); err != nil {
+		// Une VALEUR refusée n'est pas un fichier introuvable : le message
+		// ci-dessous propose de recopier le fichier de référence, ce qui
+		// écraserait une configuration dont une seule ligne est à corriger.
+		var valeur *configurationfile.ErreurDeValeur
+		if errors.As(err, &valeur) {
+			log.Fatalf("configuration refusée (%s) : %v", cheminConfig, err)
+		}
 		// Le message dit OÙ l'on a cherché et QUOI faire. L'erreur brute de
 		// os.Open — « no such file or directory » — est vraie et inutile : elle
 		// ne dit ni ce que le fichier doit contenir, ni où en trouver un modèle.

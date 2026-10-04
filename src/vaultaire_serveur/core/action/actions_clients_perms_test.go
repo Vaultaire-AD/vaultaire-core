@@ -316,7 +316,8 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// Il vaut 89 depuis les lots 2.1/2.2 (conformité GPO, réglages de rétention,
 	// cluster, Nexus), 91 depuis log.list (journal commun, TO-DO 91), 96
 	// depuis le second facteur sur le chemin Ducky (TO-DO 95, deux actions), et
-	// 97 depuis l'archive d'installation d'une machine (TO-DO 82).
+	// 97 depuis l'archive d'installation d'une machine (TO-DO 82), et 98 depuis
+	// la lecture du détail du journal, `server.get_debug` (TO-DO 145).
 	//
 	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
 	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
@@ -327,7 +328,7 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// veut — ajouter une action sans s'en apercevoir est précisément ce qu'il
 	// empêche. Le laisser rouge des mois, en revanche, le rend inutile : on
 	// cesse de le lire.
-	const actionsAttendues = 97
+	const actionsAttendues = 98
 	if len(defs) != actionsAttendues {
 		t.Fatalf("%d actions au catalogue, attendu %d — "+
 			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée. "+

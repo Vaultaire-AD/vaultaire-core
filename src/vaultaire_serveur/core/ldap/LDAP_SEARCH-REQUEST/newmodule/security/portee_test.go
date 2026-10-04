@@ -16,6 +16,12 @@ import (
 type entrée struct {
 	dn       string
 	domaines []string
+
+	// nomme : les domaines de ce que l'entrée désigne par ses attributs.
+	nomme []string
+	// Renseignés par Restreinte.
+	restreinte bool
+	lisibles   []string
 }
 
 func (e entrée) DN() string         { return e.dn }
@@ -24,6 +30,19 @@ func (e entrée) ObjectClasses() []string {
 	return []string{"inetOrgPerson"}
 }
 func (e entrée) GetAttribute(string) []string { return nil }
+
+// Restreinte note qu'elle a été appelée : c'est ce qui permet d'éprouver que
+// `Filtrer` restreint bien ce qu'il retient (TO-DO 132), sans dépendre des
+// types du paquet candidate.
+func (e entrée) Restreinte(lisible func(string) bool) ldapinterface.LDAPEntry {
+	e.restreinte = true
+	for _, d := range e.nomme {
+		if lisible(d) {
+			e.lisibles = append(e.lisibles, d)
+		}
+	}
+	return e
+}
 func (e entrée) GetAttributes([]string, bool) map[string][]string {
 	return nil
 }
@@ -312,5 +331,61 @@ func TestUneNormalisationNElargitAucunDroit(t *testing.T) {
 		if permission.IsUserAuthorizedToSearch([]string{brut}, parent) {
 			t.Errorf("le RBAC accepte %q : ce test ne prouve plus rien", brut)
 		}
+	}
+}
+
+// TO-DO 132 : ce que `Filtrer` RETIENT, il le rend restreint aux droits du
+// compte — et avec SA règle, pas une autre.
+//
+// Le point 120 décidait si une entrée sort. Il ne disait rien de ce qu'elle
+// contient : `memberOf` nommait les groupes des sous-domaines. Les deux
+// contrôles sont faits dans le même passage, pour qu'aucun chemin ne fasse
+// l'un sans l'autre — et c'est exactement ce que ce test garde.
+func TestCeQuiEstRetenuEstRestreintAuxDroitsDuCompte(t *testing.T) {
+	p := NouvellePortee([]string{"(0:" + parent + ")"})
+
+	retenues, _ := p.Filtrer([]ldapinterface.LDAPEntry{
+		entrée{dn: "uid=carol,ou=users,dc=enov,dc=local", domaines: []string{parent, enfant},
+			nomme: []string{parent, enfant, voisin}},
+	})
+	if len(retenues) != 1 {
+		t.Fatalf("%d entrée(s) rendue(s), attendu 1", len(retenues))
+	}
+	vue := retenues[0].(entrée)
+	if !vue.restreinte {
+		t.Fatal("l'entrée retenue n'a pas été restreinte : ses attributs nomment encore " +
+			"ce que le compte n'a pas le droit de lire")
+	}
+	if len(vue.lisibles) != 1 || vue.lisibles[0] != parent {
+		t.Errorf("domaines jugés lisibles = %v, attendu le seul %q : la restriction "+
+			"n'applique pas la règle du compte", vue.lisibles, parent)
+	}
+}
+
+// AVEC propagation, ce que nomme l'entrée dans le sous-domaine reste lisible :
+// la restriction suit le droit, elle n'en invente pas un plus étroit.
+func TestLaRestrictionSuitLaPropagation(t *testing.T) {
+	p := NouvellePortee([]string{"(1:" + parent + ")"})
+
+	retenues, _ := p.Filtrer([]ldapinterface.LDAPEntry{
+		entrée{dn: "uid=carol,ou=users,dc=enov,dc=local", domaines: []string{parent},
+			nomme: []string{parent, enfant, voisin}},
+	})
+	vue := retenues[0].(entrée)
+	if len(vue.lisibles) != 2 || vue.lisibles[0] != parent || vue.lisibles[1] != enfant {
+		t.Errorf("domaines jugés lisibles = %v, attendu [%s %s]", vue.lisibles, parent, enfant)
+	}
+}
+
+// Une entrée ÉCARTÉE n'est pas restreinte : elle ne sort pas, il n'y a rien à
+// en retirer — et l'appeler coûterait une copie par entrée refusée.
+func TestUneEntreeEcarteeNEstPasRestreinte(t *testing.T) {
+	p := NouvellePortee([]string{"(0:" + parent + ")"})
+
+	retenues, écartées := p.Filtrer([]ldapinterface.LDAPEntry{
+		entrée{dn: "uid=bob,ou=users,dc=enov,dc=local", domaines: []string{enfant}, nomme: []string{parent}},
+	})
+	if len(retenues) != 0 || écartées != 1 {
+		t.Fatalf("%d rendue(s) et %d écartée(s), attendu 0 et 1", len(retenues), écartées)
 	}
 }

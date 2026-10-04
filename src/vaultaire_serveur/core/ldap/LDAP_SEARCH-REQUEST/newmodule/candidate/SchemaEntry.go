@@ -110,8 +110,8 @@ func (s SchemaEntry) GetAttribute(attr string) []string {
 //
 // Les attributs que Vaultaire invente, et ceux qu'il sert sous le NOM d'un autre
 // annuaire sans en servir la sémantique. `objectGUID` est un identifiant binaire
-// chez Active Directory ; ici c'est une chaîne dérivée du nom. Le déclarer sous
-// l'OID d'AD prétendrait servir ce qu'AD sert. Le nom suffit aux clients — c'est
+// chez Active Directory ; ici c'est un UUID en texte. Le déclarer sous l'OID
+// d'AD prétendrait servir ce qu'AD sert. Le nom suffit aux clients — c'est
 // par lui qu'ils cherchent — et l'OID dit la vérité.
 //
 // Les attributs dont la sémantique EST celle du standard — `cn`, `uid`, `mail`,
@@ -124,8 +124,11 @@ const (
 	oidNsUniqueID    = OIDBrancheVaultaire + ".2"
 	oidObjectGUID    = OIDBrancheVaultaire + ".3"
 	oidGUID          = OIDBrancheVaultaire + ".4"
-	oidIPAUniqueID   = OIDBrancheVaultaire + ".5"
-	oidEntryUUID     = OIDBrancheVaultaire + ".6"
+	// .5 et .6 ont porté `ipaUniqueID` et `entryUUID` tant que leur valeur était
+	// le nom du compte. Depuis le point 129 ils servent un vrai UUID et sont
+	// déclarés sous leur OID d'origine. Ces deux numéros sont RETIRÉS : ne pas
+	// les réattribuer — un client qui a gardé l'ancien sous-schéma en cache y
+	// lirait un autre attribut.
 
 	// Les classes de compatibilité, pour la même raison que les attributs
 	// ci-dessus : le NOM est celui d'Active Directory, la sémantique n'est pas la
@@ -141,6 +144,7 @@ const (
 	synDN         = "1.3.6.1.4.1.1466.115.121.1.12" // DN
 	synOID        = "1.3.6.1.4.1.1466.115.121.1.38" // OID
 	synHorodatage = "1.3.6.1.4.1.1466.115.121.1.24" // Generalized Time
+	synUUID       = "1.3.6.1.1.16.1"                // UUID — RFC 4530 §2.1
 	// La syntaxe d'une ASSERTION de sous-chaîne, qui n'est pas celle de la valeur
 	// comparée : `caseIgnoreSubstringsMatch` reçoit « jo*n*doe », pas une chaîne
 	// ordinaire (RFC 4517 §4.2.6). Les déclarer avec la syntaxe de la valeur était
@@ -172,7 +176,7 @@ const (
 // enregistrée. Modifier une déclaration sans toucher à cette date fait échouer
 // le test, en disant quoi faire — c'est la seule façon de tenir une date à jour
 // à la main.
-const HorodatageDuSchema = "20260929000000Z"
+const HorodatageDuSchema = "20261003000000Z"
 
 // NewSchemaEntry construit l'entrée de sous-schéma.
 //
@@ -268,25 +272,33 @@ func NewSchemaEntry() SchemaEntry {
 			"( 2.5.18.2 NAME 'modifyTimestamp' EQUALITY generalizedTimeMatch " +
 				"ORDERING generalizedTimeOrderingMatch SYNTAX " + synHorodatage +
 				" SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
-			// entryUUID sous la branche Vaultaire, et non sous 1.3.6.1.1.16.4.
+			// entryUUID, sous son OID et avec sa syntaxe — RFC 4530 §2.3, mot pour
+			// mot.
 			//
-			// La RFC 4530 attache à cet OID la syntaxe UUID : un client strict
-			// attend donc 128 bits écrits en hexadécimal. Vaultaire y sert le nom
-			// d'utilisateur — ce n'est pas un identifiant stable, c'est le point
-			// 129 —, donc reprendre l'OID standard promettrait une syntaxe que la
-			// valeur ne respecte pas. Le nom suffit aux clients : c'est par lui que
-			// Keycloak le demande.
-			"( " + oidEntryUUID + " NAME 'entryUUID' EQUALITY caseIgnoreMatch SYNTAX " +
+			// Il vivait sous la branche Vaultaire tant que sa valeur était le nom
+			// du compte : la RFC attache à cet OID la syntaxe UUID, et reprendre
+			// l'OID aurait promis une syntaxe que la valeur ne respectait pas. Le
+			// point 129 lui donne un vrai UUID, tiré à la création de l'entrée —
+			// il peut donc porter son vrai nom.
+			"( 1.3.6.1.1.16.4 NAME 'entryUUID' EQUALITY uuidMatch ORDERING uuidOrderingMatch " +
+				"SYNTAX " + synUUID + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
+			// ipaUniqueID sous l'OID de FreeIPA : sa valeur est, comme là-bas, un
+			// UUID en texte. Il reste opérationnel ici — il ne sort que demandé —
+			// alors qu'il est un attribut ordinaire chez FreeIPA : c'est le seul
+			// écart, et il va dans le sens de la retenue.
+			"( 2.16.840.1.113730.3.8.3.1 NAME 'ipaUniqueID' EQUALITY caseIgnoreMatch SYNTAX " +
 				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
-			// Les alias de compatibilité, sous la branche Vaultaire : le nom est
-			// celui d'un autre annuaire, la sémantique n'est pas la sienne.
+			// Les alias de compatibilité qui RESTENT sous la branche Vaultaire : le
+			// nom est celui d'un autre annuaire, la forme de la valeur n'est pas la
+			// sienne. `objectGUID` est binaire chez Active Directory, `nsUniqueId`
+			// s'écrit en quatre groupes de huit chez 389-ds, `guid` est binaire
+			// chez eDirectory. Ici les trois portent le même UUID qu'`entryUUID`,
+			// en texte canonique.
 			"( " + oidNsUniqueID + " NAME 'nsUniqueId' EQUALITY caseIgnoreMatch SYNTAX " +
 				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
 			"( " + oidObjectGUID + " NAME 'objectGUID' EQUALITY caseIgnoreMatch SYNTAX " +
 				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
 			"( " + oidGUID + " NAME 'guid' EQUALITY caseIgnoreMatch SYNTAX " +
-				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
-			"( " + oidIPAUniqueID + " NAME 'ipaUniqueID' EQUALITY caseIgnoreMatch SYNTAX " +
 				synChaine + " SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
 			// Droits de service (Nexus…) accordés au compte.
 			"( " + oidServiceRights + " NAME 'vaultaireServiceRights' EQUALITY caseIgnoreMatch " +
@@ -302,6 +314,7 @@ func NewSchemaEntry() SchemaEntry {
 			"( " + synOID + " DESC 'OID' )",
 			"( " + synDN + " DESC 'DN' )",
 			"( " + synHorodatage + " DESC 'Generalized Time' )",
+			"( " + synUUID + " DESC 'UUID' )",
 			"( " + synSousChaine + " DESC 'Substring Assertion' )",
 		},
 
@@ -317,6 +330,9 @@ func NewSchemaEntry() SchemaEntry {
 			"( 2.5.13.1 NAME 'distinguishedNameMatch' SYNTAX " + synDN + " )",
 			"( 2.5.13.27 NAME 'generalizedTimeMatch' SYNTAX " + synHorodatage + " )",
 			"( 2.5.13.28 NAME 'generalizedTimeOrderingMatch' SYNTAX " + synHorodatage + " )",
+			// Les deux règles d'`entryUUID` — RFC 4530 §2.2.
+			"( 1.3.6.1.1.16.2 NAME 'uuidMatch' SYNTAX " + synUUID + " )",
+			"( 1.3.6.1.1.16.3 NAME 'uuidOrderingMatch' SYNTAX " + synUUID + " )",
 			"( 1.3.6.1.4.1.1466.109.114.2 NAME 'caseIgnoreIA5Match' SYNTAX " + synIA5 + " )",
 			"( 1.3.6.1.4.1.1466.109.114.3 NAME 'caseIgnoreIA5SubstringsMatch' SYNTAX " +
 				synSousChaine + " )",

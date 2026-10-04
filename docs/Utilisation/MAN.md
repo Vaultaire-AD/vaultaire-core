@@ -116,7 +116,8 @@ administrateur:
 > lue, et toute la section était ignorée en silence. Le core refuse maintenant de
 > démarrer dessus, en la nommant.
 
-**À ne pas oublier** : `debug: false` en production — les lignes DEBUG portent
+**À ne pas oublier** : `debug: false` en production, et aucun sous-système réglé
+dans `debug.detail` — les lignes DEBUG portent
 les DN des binds LDAP, les identifiants de groupe des décisions de permission et
 le détail des vérifications de signature ; aucun secret, mais la cartographie
 complète de l'annuaire et des droits.
@@ -778,12 +779,45 @@ Le mot de passe occupe **tous les arguments restants** : les espaces qu’il con
 
 > ⚠️ Ce manuel documentait `update -u "username" -uu "new_username"`. Le renommage **n’existe pas en ligne de commande** ; il se fait depuis la page profil ou l’administration web, qui reporte le nom sur les sessions ouvertes et émet un jeton neuf — ce qu’un simple `UPDATE` ne ferait pas.
 
-### 12.2 Mode debug
+### 12.2 Mode debug et détail du journal
 
 ```bash
-update -debug true
+update -debug                       # affiche l'état
+update -debug true                  # tout le serveur
 update -debug false
+update -debug ldap debug            # un sous-système à part
+update -debug ldap trace
+update -debug ldap off
+update -debug ldap defaut           # le rend au réglage général
 ```
+
+Sous-systèmes : `ldap`, `ducky`, `gpo`, `base`. Chacun suit le mode debug, sauf
+s'il est réglé à part :
+
+| Niveau | Effet |
+| --- | --- |
+| `off` | n'écrit rien sous `INFO`, même en mode debug |
+| `debug` | écrit ses lignes `DEBUG`, même hors mode debug |
+| `trace` | `DEBUG`, plus le déroulé pas à pas |
+| `defaut` | retire le réglage : le sous-système suit de nouveau le mode debug |
+
+```text
+Mode debug : false.
+Détail par sous-système :
+  ldap   debug  (réglé à debug)
+  ducky  off    (suit le mode debug)
+  gpo    off    (suit le mode debug)
+  base   off    (suit le mode debug)
+```
+
+Régler exige `write:server` ; relire l'état, `read:log`. Le réglage vaut pour
+**ce core, jusqu'à son redémarrage** : pour le rendre durable, section
+`debug.detail` de `serveur_conf.yaml`. Un nom ou un niveau inconnu est refusé.
+
+Le cas d'usage : le mode debug allumé pour suivre autre chose, et un client LDAP
+bavard qui noie le journal — `update -debug ldap off`. Ou l'inverse : comprendre
+ce que demande une application sans allumer le reste — `update -debug ldap
+debug`, voir [`vaultaireLDAP.md`](./vaultaireLDAP.md).
 
 ### 12.3 Mise à jour des actions d'une permission utilisateur (-pu)
 

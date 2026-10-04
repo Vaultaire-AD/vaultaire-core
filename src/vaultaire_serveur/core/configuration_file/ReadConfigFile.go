@@ -1,7 +1,9 @@
 package configuration_file
 
 import (
+	"fmt"
 	"os"
+	"sort"
 	"vaultaire/core/auth/ratelimit"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
@@ -26,6 +28,20 @@ func ReadConfigUser[T any](filePath string) (*T, error) {
 
 	return &config, nil
 }
+
+// ErreurDeValeur : le fichier a été trouvé et lu, mais une valeur qu'il porte
+// est refusée.
+//
+// Un type à part pour que l'appelant ne confonde pas ce cas avec un fichier
+// introuvable : le message de `ErreurConfigIntrouvable` propose de recopier le
+// fichier de référence, ce qui écraserait une configuration dont une seule
+// ligne est à corriger.
+type ErreurDeValeur struct {
+	Cause error
+}
+
+func (e *ErreurDeValeur) Error() string { return e.Cause.Error() }
+func (e *ErreurDeValeur) Unwrap() error { return e.Cause }
 
 func LoadConfig(filePath string) error {
 	// Le fichier est lu EN ENTIER puis décodé, au lieu d'être décodé au fil de
@@ -120,6 +136,22 @@ func LoadConfig(filePath string) error {
 	if ldapstorage.OneLevelSubtree {
 		logs.Write_Log("WARNING", "ldap.onelevel_subtree activé : TOUTE recherche « one » rend l'arborescence, quel que soit le conteneur")
 	}
+	// Bind avec mot de passe hors TLS : accepté sauf réglage contraire explicite
+	// (TO-DO 152). Le commentaire de la variable disait « à activer une fois
+	// vérifié que le parc sait faire du LDAPS » ; rien ne permettait de le faire
+	// sans recompiler.
+	ldapstorage.RequireTLSForBind = config.Ldap.Ldap_Require_TLS_For_Bind != nil && *config.Ldap.Ldap_Require_TLS_For_Bind
+	if ldapstorage.RequireTLSForBind {
+		logs.Write_Log("INFO", "ldap.require_tls_for_bind activé : un bind avec mot de passe sur le port en clair est refusé (strongerAuthRequired)")
+	}
+	// Bornes de recherche et de pagination. Une valeur refusée ARRÊTE le
+	// démarrage : voir ldapstorage.AppliquerLimites pour le pourquoi.
+	if err := ldapstorage.AppliquerLimites(config.Ldap.Ldap_Limites); err != nil {
+		return &ErreurDeValeur{Cause: err}
+	}
+	if len(config.Ldap.Ldap_Limites) > 0 {
+		logs.Write_Log("INFO", "ldap.limites : bornes en vigueur — "+ldapstorage.LimitesEnVigueur())
+	}
 	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
 	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
 	if config.Website.Website_Enable != nil {
@@ -145,6 +177,9 @@ func LoadConfig(filePath string) error {
 	}
 	if config.Debug.Debug != nil {
 		storage.Debug = *config.Debug.Debug
+	}
+	if err := appliquerDetail(config.Debug.Detail); err != nil {
+		return &ErreurDeValeur{Cause: err}
 	}
 	// servercheckonlinetimer a quitté le fichier pour la base.
 	//
@@ -181,5 +216,54 @@ func LoadConfig(filePath string) error {
 	}
 
 	// Retourner la configuration lue
+	return nil
+}
+
+// appliquerDetail règle le détail du journal par sous-système — section
+// `debug.detail` (TO-DO 145).
+//
+// Un sous-système ou un niveau inconnu est une ERREUR, pas une ligne ignorée.
+// On écrit cette section pour diagnostiquer : une faute de frappe laisserait le
+// détail éteint, et l'on chercherait pendant une heure pourquoi la panne
+// n'écrit rien.
+//
+// Les réglages sont posés tous ensemble ou pas du tout, et un sous-système
+// absent de la section revient à son état d'origine : la configuration décrit
+// l'état voulu, elle ne s'ajoute pas à ce qu'une commande aurait réglé avant.
+func appliquerDetail(detail map[string]string) error {
+	type reglage struct {
+		sous   logs.SousSysteme
+		niveau logs.Detail
+		herite bool
+	}
+
+	noms := make([]string, 0, len(detail))
+	for nom := range detail {
+		noms = append(noms, nom)
+	}
+	sort.Strings(noms)
+
+	voulus := make([]reglage, 0, len(noms))
+	for _, nom := range noms {
+		sous, connu := logs.SousSystemeNomme(nom)
+		if !connu {
+			return fmt.Errorf("debug.detail.%s : sous-système inconnu (admis : %s)",
+				nom, logs.NomsDesSousSystemes())
+		}
+		niveau, herite, err := logs.LireDetail(detail[nom])
+		if err != nil {
+			return fmt.Errorf("debug.detail.%s : %w", nom, err)
+		}
+		voulus = append(voulus, reglage{sous, niveau, herite})
+	}
+
+	for _, s := range logs.SousSystemes() {
+		logs.LaisserDetail(s)
+	}
+	for _, r := range voulus {
+		if !r.herite {
+			logs.ReglerDetail(r.sous, r.niveau)
+		}
+	}
 	return nil
 }

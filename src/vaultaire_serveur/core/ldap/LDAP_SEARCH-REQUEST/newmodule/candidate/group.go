@@ -3,7 +3,9 @@ package candidate
 import (
 	"fmt"
 	"strings"
+	"vaultaire/core/identifiant"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 )
 
 type GroupEntry struct {
@@ -14,6 +16,9 @@ type GroupEntry struct {
 	// moment de servir l'attribut — point 126.
 	Created_at  string
 	Modified_at string
+	// EntryUUID : l'identifiant stable du groupe, colonne `entry_uuid` — point
+	// 129. Vide, l'attribut n'est pas servi.
+	EntryUUID string
 }
 
 func (g GroupEntry) DN() string {
@@ -30,6 +35,34 @@ func (g GroupEntry) Domaines() []string {
 		return nil
 	}
 	return []string{g.BaseDN}
+}
+
+// Restreinte — voir ldapinterface.LDAPEntry.
+//
+// # `member` n'a rien à retirer, et ce n'est pas un oubli — TO-DO 132
+//
+// `member` nomme des comptes, et la question est la même que pour `memberOf` :
+// l'appelant pourrait-il lire chacun d'eux comme entrée ? Oui, par
+// construction, et voici pourquoi.
+//
+// Un compte est rendu si l'un AU MOINS de ses rattachements est lisible, et ses
+// rattachements sont les domaines des groupes dont il est membre. Tout membre de
+// CE groupe a donc le domaine de ce groupe parmi les siens. Or ce groupe n'est
+// arrivé jusqu'ici que parce que son domaine est lisible — c'est `Domaines()`,
+// ci-dessus, qui en a décidé. Chaque DN de `member` désigne ainsi un compte que
+// l'appelant peut lire.
+//
+// Ce raisonnement tient à UNE chose : que `BaseDN` soit le domaine PROPRE du
+// groupe, lu en base, et jamais celui que le client a demandé. Un test de
+// sentinelle du paquet scope le vérifie sur chaque GroupEntry construite
+// (`TestLeDomaineDUnGroupeEstLeSien`).
+//
+// Si la règle de visibilité d'un compte devenait un jour plus stricte — « tous
+// ses rattachements » au lieu d'« au moins un » —, c'est ICI qu'il faudrait
+// filtrer, en portant le rattachement de chaque membre comme `Appartenance`
+// porte le domaine de chaque groupe.
+func (g GroupEntry) Restreinte(func(domaine string) bool) ldapinterface.LDAPEntry {
+	return g
 }
 
 // ObjectClasses — ce que l'entrée déclare ÊTRE.
@@ -74,6 +107,14 @@ func (g GroupEntry) GetAttributes(requested []string, typesOnly bool) map[string
 	}
 	if t := ldaptools.VersGeneralizedTime(g.Modified_at); t != "" {
 		all[ldaptools.AttrModifieLe] = []string{t}
+	}
+
+	// L'identifiant stable — point 129, même règle que côté comptes : servi
+	// seulement s'il a la forme d'un UUID, absent sinon. Un groupe supprimé puis
+	// recréé sous le même nom en porte un autre : pour un client qui tient un
+	// cache, ce sont bien deux groupes.
+	if identifiant.EstUnUUID(g.EntryUUID) {
+		all[AttrEntryUUID] = []string{g.EntryUUID}
 	}
 
 	result := make(map[string][]string)

@@ -8,6 +8,7 @@ import (
 	dbldap "vaultaire/core/database/db_ldap"
 	domainpkg "vaultaire/core/domain"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
@@ -15,7 +16,11 @@ import (
 )
 
 // Resolve récupère tous les LDAPEntry (GroupEntry + UserEntry) pour un BaseDN et un scope donné
-func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
+//
+// `j` est le journal de l'opération en cours (TO-DO 145) : ce que le résolveur
+// a à dire s'écrit sous l'identifiant de la connexion qui l'a demandé. Nil est
+// accepté — un test, un appel hors connexion.
+func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
 	var err error
 
@@ -25,15 +30,12 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 	switch {
 	case strings.TrimSpace(baseObject) == "":
 		entries = append(entries, candidate.NewRootDSE())
-		logs.Write_Log("DEBUG", fmt.Sprintf("RootDSE struct: %+v", entries))
 		return entries, nil
 	case strings.EqualFold(strings.TrimSpace(baseObject), ldaptools.SchemaDN),
 		strings.EqualFold(strings.TrimSpace(baseObject), ldaptools.SubschemaDN):
 		entries = append(entries, candidate.NewSchemaEntry())
 		return entries, nil
 	}
-
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolve baseDN=%s scope=%d baseObject=%s", baseDN, scope, baseObject))
 
 	// UNE RECHERCHE `one` REND UN NIVEAU — sauf réglage contraire.
 	//
@@ -49,36 +51,34 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 	// raison de changer la portée d'une recherche.
 	loadScope := porteeDeChargement(scope)
 	if loadScope != scope {
-		logs.Write_Log("DEBUG", fmt.Sprintf(
-			"ldap: recherche « one » sur %s élargie à l'arborescence (ldap.onelevel_subtree)",
-			baseObject))
+		// Sur la ligne de l'opération, pas en déroulé : c'est ce qui explique
+		// qu'une recherche « one » rende des sous-domaines, et on ne pense pas à
+		// demander le déroulé pour le découvrir.
+		j.Noter("élargie", "sub(ldap.onelevel_subtree)")
 	}
 
 	switch scope {
 	case 0:
-		if exact := resolveBaseScope(db, baseObject); exact != nil {
+		if exact := resolveBaseScope(db, baseObject, j); exact != nil {
 			return exact, nil
 		}
 		return nil, nil
 
 	case 1:
 		groupDomain := []string{baseDN}
-		entries, err = loadGroupsAndUsers(db, groupDomain, loadScope, attributes, username, baseObject)
+		entries, err = loadGroupsAndUsers(db, groupDomain, loadScope, attributes, username, baseObject, j)
 		if err != nil {
 			return nil, err
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: one-level loaded %d entries", len(entries)))
 		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
 		return entries, nil
 
 	case 2:
 		groupDomains := []string{baseDN}
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree scope base domains=%v", groupDomains))
-		entries, err = loadGroupsAndUsers(db, groupDomains, loadScope, attributes, username, baseObject)
+		entries, err = loadGroupsAndUsers(db, groupDomains, loadScope, attributes, username, baseObject, j)
 		if err != nil {
 			return nil, err
 		}
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: subtree loaded %d entries", len(entries)))
 		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
 		return entries, nil
 
@@ -118,18 +118,24 @@ func porteeDeChargement(scope int) int {
 //
 // Désormais : un chargement des groupes, une lecture des utilisateurs en lot, et
 // toute erreur remonte.
-func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string) ([]ldapinterface.LDAPEntry, error) {
+//
+// « Un chargement des groupes » n'a été vrai qu'au point 131 :
+// GetGroupsWithUsersByNames, appelée ici, faisait encore une requête par
+// groupe. Elle lit maintenant par lots de 500 noms.
+func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []string, username string, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
 	seenUsers := make(map[string]struct{})
 	seenGroups := make(map[string]struct{})
 	seenOUs := make(map[string]struct{})
 
-	// memberOf complet, tous domaines confondus.
+	// memberOf, pour tous les groupes chargés — le domaine demandé ET ses
+	// sous-domaines.
 	//
-	// Il faut la vue d'ensemble : un utilisateur découvert dans un domaine peut
-	// appartenir à des groupes d'un autre, et un client comme Keycloak s'attend à
-	// les voir tous.
-	userMembershipMap := make(map[string][]string)
+	// Chaque groupe y entre avec SON domaine (TO-DO 132) : c'est ce qui permet
+	// au contrôle d'accès de retirer ensuite, compte par compte, ceux que
+	// l'appelant n'a pas le droit de lire. Le résolveur, lui, ne trie rien : il
+	// ne connaît pas les droits, et ne doit pas les connaître.
+	userMembershipMap := make(map[string][]candidate.Appartenance)
 	// Les DOMAINES où vit chaque compte, c'est-à-dire ceux des groupes par
 	// lesquels il a été trouvé. C'est ce qui sert au contrôle d'accès.
 	//
@@ -157,7 +163,8 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 		for _, g := range groupsData {
 			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
 			for _, uname := range g.Users {
-				userMembershipMap[uname] = append(userMembershipMap[uname], groupDN)
+				userMembershipMap[uname] = append(userMembershipMap[uname],
+					candidate.Appartenance{DN: groupDN, Domaine: g.DomainName})
 				if rattachements[uname] == nil {
 					rattachements[uname] = make(map[string]struct{}, 2)
 				}
@@ -229,6 +236,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					Members:     memberDNs,
 					Created_at:  g.Created_at,
 					Modified_at: g.Modified_at,
+					EntryUUID:   g.EntryUUID,
 				})
 				seenGroups[groupKey] = struct{}{}
 			}
@@ -242,7 +250,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					// Membre d'un groupe sans compte correspondant : incohérence de
 					// données, pas une panne. On la journalise et on continue plutôt
 					// que de faire échouer toute la recherche.
-					logs.Write_Log("WARNING", "ldap: membre "+uname+" du groupe "+g.GroupName+" sans compte")
+					j.Ecrire("WARNING", logs.CodeNone, "membre "+uname+" du groupe "+g.GroupName+" sans compte")
 					continue
 				}
 
@@ -263,8 +271,6 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 			}
 		}
 	}
-
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: %d entrées construites", len(entries)))
 
 	// Le vidage détaillé des entrées a été déplacé dans le gestionnaire, APRÈS le
 	// filtre d'autorisation.

@@ -17,6 +17,7 @@
 #include <credentialprovider.h>
 #include <new>
 #include <stdio.h>
+#include <string>
 
 namespace vaultaire {
 HRESULT CreerFournisseur(REFIID riid, void** ppv);
@@ -76,9 +77,42 @@ class CFabrique : public IClassFactory {
   LONG references_;
 };
 
-// TexteGUID rend « {XXXXXXXX-...} ».
-bool TexteGUID(wchar_t* tampon, size_t taille) {
-  return StringFromGUID2(CLSID_VaultaireProvider, tampon, (int)taille) > 0;
+// Longueur d'un GUID en texte, accolades comprises :
+// {6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}.
+const size_t kLongueurGUID = 38;
+
+const wchar_t kRacineCOM[] = L"SOFTWARE\\Classes\\CLSID\\";
+const wchar_t kRacineFournisseurs[] =
+    L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\Credential Providers\\";
+
+// TexteGUID rend « {XXXXXXXX-...} », ou échoue.
+//
+// # Le contrôle de forme n'est pas décoratif (TO-DO 140)
+//
+// Ce texte devient un nom de clé, que DllRegisterServer crée et que
+// DllUnregisterServer EFFACE avec tout son sous-arbre. Les chemins étaient
+// composés par swprintf, format large et `%s` : sous MinGW, `%s` dans un format large
+// désigne une chaîne ÉTROITE, et le GUID était lu octet par octet jusqu'au
+// premier zéro de l'UTF-16 — il n'en restait que « { ». Le fournisseur
+// s'inscrivait donc sous CLSID\{, où LogonUI ne le cherche pas.
+//
+// Si le texte avait été VIDE au lieu de « { », le retrait aurait effacé
+// HKLM\SOFTWARE\Classes\CLSID\ en entier. D'où la règle : aucune écriture
+// ni aucun effacement sans un GUID de 38 caractères entre accolades.
+bool TexteGUID(std::wstring* guid) {
+  wchar_t tampon[64] = {0};
+  if (StringFromGUID2(CLSID_VaultaireProvider, tampon, 64) <= 0) return false;
+  if (wcslen(tampon) != kLongueurGUID) return false;
+  if (tampon[0] != L'{' || tampon[kLongueurGUID - 1] != L'}') return false;
+  guid->assign(tampon);
+  return true;
+}
+
+// Les chemins sont CONCATÉNÉS, pas formatés : aucune famille printf n'entre
+// plus dans la composition d'un nom de clé.
+std::wstring CleCOM(const std::wstring& guid) { return std::wstring(kRacineCOM) + guid; }
+std::wstring CleFournisseur(const std::wstring& guid) {
+  return std::wstring(kRacineFournisseurs) + guid;
 }
 
 LONG EcrireCle(HKEY racine, const wchar_t* chemin, const wchar_t* valeur, const wchar_t* donnee) {
@@ -90,6 +124,35 @@ LONG EcrireCle(HKEY racine, const wchar_t* chemin, const wchar_t* valeur, const 
                      (DWORD)((wcslen(donnee) + 1) * sizeof(wchar_t)));
   RegCloseKey(cle);
   return r;
+}
+
+// EstANous dit si la valeur par défaut d'une clé est le libellé de Vaultaire.
+bool EstANous(const std::wstring& chemin) {
+  wchar_t valeur[128] = {0};
+  DWORD taille = sizeof(valeur) - sizeof(wchar_t);
+  LONG r = RegGetValueW(HKEY_LOCAL_MACHINE, chemin.c_str(), nullptr, RRF_RT_REG_SZ,
+                        nullptr, valeur, &taille);
+  return r == ERROR_SUCCESS && wcscmp(valeur, VAULTAIRE_CP_NOM) == 0;
+}
+
+// RetirerInscriptionTronquee efface les clés « { » laissées par les versions
+// antérieures au TO-DO 140.
+//
+// Elles ne gênent pas LogonUI, qui ignore un nom qui n'est pas un GUID. Mais
+// elles restent dans le registre d'un poste déjà installé, et font croire à
+// qui les trouve que l'inscription a encore échoué.
+//
+// Une clé n'est retirée que si elle porte NOTRE libellé : « { » n'est le nom
+// de rien d'autre, mais on n'efface pas un sous-arbre de HKLM sur la foi d'un
+// nom.
+void RetirerInscriptionTronquee() {
+  const std::wstring tronque = L"{";
+  for (const std::wstring& chemin : {CleFournisseur(tronque), CleCOM(tronque)}) {
+    if (!EstANous(chemin)) continue;
+    if (RegDeleteTreeW(HKEY_LOCAL_MACHINE, chemin.c_str()) == ERROR_SUCCESS) {
+      vaultaire::Journaliser(L"ancienne inscription tronquee retiree : %ls", chemin.c_str());
+    }
+  }
 }
 
 }  // namespace
@@ -126,7 +189,7 @@ extern "C" HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void**
     deja_dit = true;
     wchar_t chemin[MAX_PATH] = {0};
     if (GetModuleFileNameW(g_module, chemin, MAX_PATH) != 0) {
-      vaultaire::Journaliser(L"fournisseur charge : %s", chemin);
+      vaultaire::Journaliser(L"fournisseur charge : %ls", chemin);
     } else {
       vaultaire::Journaliser(L"fournisseur charge (chemin indisponible)");
     }
@@ -146,56 +209,48 @@ extern "C" HRESULT WINAPI DllCanUnloadNow() {
 }
 
 extern "C" HRESULT WINAPI DllRegisterServer() {
-  wchar_t guid[64] = {0};
-  if (!TexteGUID(guid, 64)) return E_FAIL;
+  std::wstring guid;
+  if (!TexteGUID(&guid)) return E_FAIL;
 
   wchar_t chemin[MAX_PATH] = {0};
   if (GetModuleFileNameW(g_module, chemin, MAX_PATH) == 0) {
     return HRESULT_FROM_WIN32(GetLastError());
   }
 
-  wchar_t cle[512];
+  const std::wstring com = CleCOM(guid);
+  const std::wstring inproc = com + L"\\InprocServer32";
+  const std::wstring fournisseur = CleFournisseur(guid);
 
-  swprintf(cle, 512, L"SOFTWARE\\Classes\\CLSID\\%s", guid);
-  if (EcrireCle(HKEY_LOCAL_MACHINE, cle, nullptr, VAULTAIRE_CP_NOM) != ERROR_SUCCESS) {
+  if (EcrireCle(HKEY_LOCAL_MACHINE, com.c_str(), nullptr, VAULTAIRE_CP_NOM) != ERROR_SUCCESS) {
     return E_ACCESSDENIED;
   }
-
-  swprintf(cle, 512, L"SOFTWARE\\Classes\\CLSID\\%s\\InprocServer32", guid);
-  if (EcrireCle(HKEY_LOCAL_MACHINE, cle, nullptr, chemin) != ERROR_SUCCESS) {
+  if (EcrireCle(HKEY_LOCAL_MACHINE, inproc.c_str(), nullptr, chemin) != ERROR_SUCCESS) {
     return E_ACCESSDENIED;
   }
   // Apartment : le modèle de threads de LogonUI. « Both » laisserait COM
   // appeler le fournisseur depuis n'importe quel thread, ce que l'interface
   // n'attend pas.
-  if (EcrireCle(HKEY_LOCAL_MACHINE, cle, L"ThreadingModel", L"Apartment") != ERROR_SUCCESS) {
+  if (EcrireCle(HKEY_LOCAL_MACHINE, inproc.c_str(), L"ThreadingModel", L"Apartment") != ERROR_SUCCESS) {
+    return E_ACCESSDENIED;
+  }
+  if (EcrireCle(HKEY_LOCAL_MACHINE, fournisseur.c_str(), nullptr, VAULTAIRE_CP_NOM) != ERROR_SUCCESS) {
     return E_ACCESSDENIED;
   }
 
-  swprintf(cle, 512,
-           L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\"
-           L"Credential Providers\\%s", guid);
-  if (EcrireCle(HKEY_LOCAL_MACHINE, cle, nullptr, VAULTAIRE_CP_NOM) != ERROR_SUCCESS) {
-    return E_ACCESSDENIED;
-  }
+  // Après la bonne inscription, pas avant : si elle échoue, on n'a rien retiré.
+  RetirerInscriptionTronquee();
 
-  vaultaire::Journaliser(L"fournisseur inscrit : %s", chemin);
+  vaultaire::Journaliser(L"fournisseur inscrit : %ls sous %ls", chemin, guid.c_str());
   return S_OK;
 }
 
 extern "C" HRESULT WINAPI DllUnregisterServer() {
-  wchar_t guid[64] = {0};
-  if (!TexteGUID(guid, 64)) return E_FAIL;
+  std::wstring guid;
+  if (!TexteGUID(&guid)) return E_FAIL;
 
-  wchar_t cle[512];
-
-  swprintf(cle, 512,
-           L"SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Authentication\\"
-           L"Credential Providers\\%s", guid);
-  RegDeleteTreeW(HKEY_LOCAL_MACHINE, cle);
-
-  swprintf(cle, 512, L"SOFTWARE\\Classes\\CLSID\\%s", guid);
-  RegDeleteTreeW(HKEY_LOCAL_MACHINE, cle);
+  RegDeleteTreeW(HKEY_LOCAL_MACHINE, CleFournisseur(guid).c_str());
+  RegDeleteTreeW(HKEY_LOCAL_MACHINE, CleCOM(guid).c_str());
+  RetirerInscriptionTronquee();
 
   vaultaire::Journaliser(L"fournisseur retiré");
   return S_OK;

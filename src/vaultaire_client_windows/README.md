@@ -96,6 +96,18 @@ Conséquences assumées en V1 :
 Depuis Linux, sans Windows : `GOOS=windows go build` suffit (aucun CGO), et la
 DLL se compile avec MinGW (`apt install mingw-w64`).
 
+`credential_provider/build-cp.sh` fait trois choses en plus de compiler, et
+chacune ferme un défaut qui ne se voyait qu'à l'écran de connexion d'un poste :
+
+| Contrôle | Ce qu'il empêche |
+|---|---|
+| lien **entièrement statique** (`-static`) | une DLL qui dépend de `libwinpthread-1.dll` selon le MinGW qui la compile (modèle de threads posix ou win32) — LogonUI ne la charge pas, sans message (TO-DO 139) |
+| **imports vérifiés** après la compilation | toute dépendance hors des DLL système de Windows arrête la fabrication, en la nommant |
+| **aucun `%s` dans un format large** `L"…"` | MinGW y lit une chaîne étroite : le texte s'arrête après un caractère. Le fournisseur s'inscrivait sous le CLSID `{` (TO-DO 140). Écrire `%ls` |
+
+Le troisième vaut aussi sous MSVC, où `%s` large « marche » : le code doit se
+compiler à l'identique avec les deux chaînes.
+
 ### Compiler la DLL avec MSVC
 
 Si vous préférez la chaîne Microsoft (Visual Studio, SDK Windows) :
@@ -221,7 +233,7 @@ réellement le compte.
 
 | Symptôme | Cause probable |
 |---|---|
-| La tuile n'apparaît pas | DLL non enregistrée (`regsvr32`), ou dépendance manquante — elle doit être liée en statique |
+| La tuile n'apparaît pas | Lire `credential_provider.log`. **Aucune ligne « fournisseur inscrit »** : `regsvr32` a échoué — code 3, la DLL ne se charge pas (dépendance manquante : archive d'avant le TO-DO 139). **« inscrit » mais jamais « charge »** : la clé n'est pas celle que LogonUI lit — `reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers"` doit montrer `{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}` ; une clé nommée `{` est la trace d'une DLL d'avant le TO-DO 140, refaire l'archive |
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` ; le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu, ou `servers` faux dans `client_conf.json` |
 | Refus alors que le mot de passe est bon | le compte a-t-il le droit sur cette machine ? le motif exact est dans le journal du **core** |
