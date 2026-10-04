@@ -107,9 +107,11 @@ var porteesAttendues = map[string]string{
 	"client.delete": "PorteeClient",
 
 	// Permissions : les domaines de la permission visée.
-	"permission.get":           "porteePermissionUtilisateur",
-	"permission.delete":        "porteePermissionUtilisateur",
-	"permission.update_action": "porteePermissionUtilisateur",
+	"permission.get":    "porteePermissionUtilisateur",
+	"permission.delete": "porteePermissionUtilisateur",
+	// Globale pour poser ou lever un « deny » : il franchit les domaines
+	// (TO-DO 104).
+	"permission.update_action": "porteeReglageActionPermission",
 	"client_permission.get":    "porteePermissionClient",
 	"client_permission.update": "porteePermissionClient",
 	"client_permission.delete": "porteePermissionClient",

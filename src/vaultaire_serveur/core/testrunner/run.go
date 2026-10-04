@@ -194,12 +194,19 @@ func testSplitArgs() []Result {
 
 func testPermissionParser() []Result {
 	var out []Result
-	// nil
+	// nil : rien d'accordé, ce n'est PAS un refus (TO-DO 104)
 	p := permission.ParsePermissionContent("nil")
-	if !p.Deny {
-		out = append(out, Result{"ParsePermission(nil)", false, "Deny pas mis"})
+	if !p.Aucun || p.Refus {
+		out = append(out, Result{"ParsePermission(nil)", false, "Aucun pas mis, ou lu comme un refus"})
 	} else {
 		out = append(out, Result{"ParsePermission(nil)", true, ""})
+	}
+	// deny : refus explicite
+	p = permission.ParsePermissionContent("deny")
+	if !p.Refus {
+		out = append(out, Result{"ParsePermission(deny)", false, "Refus pas mis"})
+	} else {
+		out = append(out, Result{"ParsePermission(deny)", true, ""})
 	}
 	// all
 	p = permission.ParsePermissionContent("all")

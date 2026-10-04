@@ -41,8 +41,9 @@ type permissionCell struct {
 	Field   string // clé complète, ex. « write:create:user »
 	Value   string // valeur brute en base
 	Summary string // résumé court affiché dans la case
-	// State pilote la couleur : "nil" (refus), "all" (tous domaines),
-	// "custom" (domaines énumérés). Décidé en Go pour que le template n'ait pas
+	// State pilote la couleur : "nil" (rien d'accordé), "deny" (refus
+	// explicite, TO-DO 104), "all" (tous domaines), "custom" (domaines
+	// énumérés). Décidé en Go pour que le template n'ait pas
 	// à interpréter la syntaxe des valeurs.
 	State     string
 	Domains   []permissionDomainView
@@ -154,6 +155,10 @@ func buildPermissionCell(field, value string) permissionCell {
 		cell.State = "all"
 		cell.Summary = "tous"
 		return cell
+	case permission.ValeurRefus:
+		cell.State = permission.ValeurRefus
+		cell.Summary = "refus"
+		return cell
 	case "custom":
 		for _, d := range parsed.WithPropagation {
 			cell.Domains = append(cell.Domains, permissionDomainView{Name: d, Propagation: "1", Inherited: true})
@@ -165,8 +170,8 @@ func buildPermissionCell(field, value string) permissionCell {
 
 	if len(cell.Domains) == 0 {
 		// Une valeur « custom » sans aucun domaine accorde en pratique la même
-		// chose que nil. L'afficher comme un refus évite de laisser croire à un
-		// droit partiel qui n'existe pas.
+		// chose que nil : rien. L'afficher comme nil évite de laisser croire à
+		// un droit partiel qui n'existe pas.
 		cell.State = "nil"
 		cell.Summary = "—"
 		return cell
@@ -222,7 +227,9 @@ func buildPermissionMatrix(db *sql.DB, perm *storage.UserPermission) permissionM
 				continue
 			}
 			cell := buildPermissionCell(field, read(field))
-			if cell.State != "nil" {
+			// Un refus n'est pas un accord : le compter gonflerait le nombre
+			// de droits affiché sur la ligne.
+			if cell.State == "all" || cell.State == "custom" {
 				row.GrantCount++
 			}
 			view.CellByID[field] = cell

@@ -17,8 +17,8 @@ Trois gestes, dans le même passage que le code :
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
 détaillés dans [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md).
-**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 102, 105, 106, 107 et 108.
-**Restent ouverts** : 98 (secrets au repos, à cadrer), 103 et 104. Ce fichier porte :
+**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 102, 104, 105, 106, 107 et
+108. **Restent ouverts** : 98 (secrets au repos, à cadrer) et 103. Ce fichier porte :
 ce que le code fait, qui peut l'atteindre, ce qu'il obtient, et pourquoi la
 correction n'est pas triviale. Ce fichier porte aussi les constats laissés de
 côté, pour qu'ils ne soient pas redécouverts comme neufs.
@@ -80,7 +80,6 @@ confirmé, et complété de ce que la recette a montré.
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
 | 103 | WEB          | Ni jeton CSRF ni en-tête de sécurité sur le portail         | À faire — sérieux                       |
-| 104 | RBAC         | « Deny » ne refuse pas                                      | À faire — sérieux, à trancher           |
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
 | 138 | DUCKY        | Comptes déjà au-delà de 10 clés SSH                         | À faire — petit                         |
@@ -524,19 +523,6 @@ La défense repose entièrement sur `SameSite=Strict`. Les actions d'administrat
 **À faire.** Porter le dispositif de Nexus (`vaultaire_nexus/internal/web/ui.go:212`), qui a déjà de vrais jetons CSRF — il s'agit de le reprendre, pas de l'inventer. Ajouter les en-têtes, et sortir le JavaScript en ligne des gabarits pour qu'une `Content-Security-Policy` stricte tienne.
 
 **Attention.** Un jeton par formulaire veut dire toucher **tous** les gabarits d'administration et tous les gestionnaires POST. Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 103.
-
-### 104. [RBAC] « Deny » ne refuse pas
-
-**Constat** (audit du 25/09). `permission-manager.go:82` et `permission-manager-strict.go`, même motif : `if parsedPermission.Deny { continue }`. Un refus explicite fait **sauter ce groupe** ; si un autre groupe accorde, c'est accordé.
-
-Un exploitant qui croit retirer un droit en posant un refus ne retire **rien** tant que la cible appartient à un autre groupe permissif. Un mot qui dit l'inverse de ce qu'il fait, sur un contrôle d'accès.
-
-**À trancher avant d'écrire.** Le comportement est **délibéré** : le commentaire de `DomainsWhereAllowed` l'assume, pour que « ce qu'on voit » et « ce qu'on peut » restent cohérents. Deux issues, et le choix n'est pas technique :
-
-- rendre `Deny` prioritaire — la sémantique attendue, celle d'AD —, au risque de retirer des droits en service à la mise à jour ;
-- **renommer** : si ce n'est pas un refus, cela ne doit pas s'appeler `Deny`.
-
-Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 104.
 
 ### 22. [EN COURS] [SELINUX] Politique pour les clients
 

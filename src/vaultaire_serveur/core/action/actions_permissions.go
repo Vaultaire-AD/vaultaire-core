@@ -171,7 +171,7 @@ func creerPermissionUtilisateur(a Appelant, p Params) (Resultat, error) {
 	} else {
 		message += "Elle n'accorde encore AUCUN droit.\n"
 	}
-	message += "  régler un droit  : update -pu " + nom + " <clé> nil|all|-a|-r [propagation] [domaine]\n" +
+	message += "  régler un droit  : update -pu " + nom + " <clé> nil|all|deny|-a|-r [propagation] [domaine]\n" +
 		"  consulter        : get -p -u " + nom + "\n" +
 		"  rattacher        : add -gu <groupe> -p " + nom
 

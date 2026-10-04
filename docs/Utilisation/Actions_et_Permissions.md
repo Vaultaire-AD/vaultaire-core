@@ -745,7 +745,7 @@ action du registre** : aucune commande `vlt` ne les exige. Le core les
 | `write:nexus` | publieur : publier, supprimer une version, `docker push` |
 | `write:nexus_admin` | administrateur : dépôts, import GitHub, jetons de tous, nettoyage |
 
-Elles s'accordent comme toute clé spéciale — `all` ou `nil` :
+Elles s'accordent comme toute clé spéciale — `all`, `nil` ou `deny` (voir [MAN §5.0](./MAN.md#50-modèle-des-permissions-user)) :
 
 ```bash
 vlt create -p depot-publication non --desc "Publier dans Nexus"

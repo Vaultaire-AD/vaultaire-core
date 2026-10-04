@@ -47,8 +47,9 @@
           <!-- ================= Onglet : droits ================= -->
           <section class="gpo-panel" data-gpo-panel="matrix">
             <p class="muted small">
-              Chaque case croise un objet et un verbe. <code>—</code> refuse, <code>tous</code> accorde sur
-              l'ensemble des domaines, <code>n dom.</code> énumère les domaines. Cliquez une case pour la modifier ;
+              Chaque case croise un objet et un verbe. <code>—</code> n'accorde rien (un autre groupe peut
+              accorder), <code>refus</code> retire l'action quoi qu'accordent les autres groupes,
+              <code>tous</code> accorde sur l'ensemble des domaines, <code>n dom.</code> énumère les domaines. Cliquez une case pour la modifier ;
               l'éditeur s'ouvre sous la matrice.
             </p>
 
@@ -134,7 +135,8 @@
                   <input type="hidden" name="action" value="update_permission_action">
                   <input type="hidden" name="active_tab" value="matrix">
                   <input type="hidden" name="field" value="{{ .Editor.Field }}">
-                  <button type="submit" name="op" value="nil" class="btn btn-ghost btn-sm">Tout refuser (nil)</button>
+                  <button type="submit" name="op" value="nil" class="btn btn-ghost btn-sm"
+                          title="Cette permission n'accorde plus rien pour cette action. Un autre groupe du compte peut encore l'accorder.">Aucun droit (nil)</button>
                 </form>
                 <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}">
                   <input type="hidden" name="action" value="update_permission_action">
@@ -142,12 +144,24 @@
                   <input type="hidden" name="field" value="{{ .Editor.Field }}">
                   <button type="submit" name="op" value="all" class="btn btn-ghost btn-sm">Tous domaines (all)</button>
                 </form>
+                <form method="post" action="/admin/permissions?perm={{ .Perm.Name }}">
+                  <input type="hidden" name="action" value="update_permission_action">
+                  <input type="hidden" name="active_tab" value="matrix">
+                  <input type="hidden" name="field" value="{{ .Editor.Field }}">
+                  <button type="submit" name="op" value="deny" class="btn btn-ghost btn-danger btn-sm"
+                          title="Refus explicite : retire cette action aux membres, même si un autre de leurs groupes l'accorde. Exige le droit global.">Refus explicite (deny)</button>
+                </form>
               </div>
+              <p class="muted small">
+                <code>nil</code> n'accorde rien mais ne retire rien : un autre groupe du compte peut accorder.
+                <code>deny</code> retire l'action <strong>sur tous les domaines</strong>, quoi qu'accordent les
+                autres groupes — sauf aux membres du groupe protégé. Le poser ou le lever exige le droit global.
+              </p>
 
               {{ if .Editor.GlobalOnly }}
               <p class="muted small">
                 Cette action est toujours contrôlée sur l'ensemble des domaines : elle n'accepte que
-                <code>nil</code> ou <code>all</code>. Lui donner une liste de domaines ne la restreindrait pas,
+                <code>nil</code>, <code>all</code> ou <code>deny</code>. Lui donner une liste de domaines ne la restreindrait pas,
                 cela la refuserait — pour <code>web_admin</code>, cela retirerait l'accès à cette interface,
                 y compris à vous. Les boutons de domaine sont donc absents, et le serveur refuse l'opération
                 même si la requête est forgée.
@@ -181,8 +195,14 @@
               </ul>
               {{ else if eq .Editor.State "all" }}
               <p class="muted small">Tous les domaines sont couverts. Retirez <code>all</code> pour énumérer.</p>
+              {{ else if eq .Editor.State "deny" }}
+              <p class="muted small"><strong>Refus explicite.</strong> Les membres des groupes qui portent cette
+                permission n'ont cette action sur aucun domaine, même si un autre de leurs groupes l'accorde.
+                Ajouter un domaine remplace le refus.</p>
               {{ else }}
-              <p class="muted small">Aucun domaine accordé — cette action est refusée.</p>
+              <p class="muted small">Aucun domaine accordé — cette permission n'accorde rien pour cette action.
+                Un autre groupe du compte peut encore l'accorder ; pour la retirer quoi qu'il arrive, c'est
+                <code>deny</code>.</p>
               {{ end }}
 
               <h4>Ajouter un domaine</h4>

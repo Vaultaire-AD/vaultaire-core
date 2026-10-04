@@ -221,7 +221,27 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 
 Les **permissions utilisateur** contrôlent l’accès aux ressources (SSO, API, LDAP, etc.). Chaque permission possède un ensemble d’**actions** configurables par domaine :
 
-- **Valeur par action** : `nil` (refusé), `all` (tous les domaines), ou une liste de domaines avec ou sans propagation.
+- **Valeur par action** : `nil` (aucun droit), `all` (tous les domaines), `deny` (refus explicite), ou une liste de domaines avec ou sans propagation.
+
+**`nil` et `deny` ne disent pas la même chose** *(2.2, TO-DO 104)*. Un compte
+reçoit les droits de **tous** ses groupes :
+
+| Valeur sur un groupe | Si un autre groupe du compte accorde |
+|---|---|
+| `nil` | **accordé** : `nil` n'accorde rien, il ne retire rien non plus. C'est la valeur de toute action jamais réglée. |
+| `deny` | **refusé**, sur tous les domaines, même face à `all`. |
+
+Deux règles encadrent `deny` :
+
+- **Le groupe protégé (`vaultaire`) n'y est jamais soumis.** Sans cela, un
+  `deny` sur `write:update:permission` porté par tous les administrateurs ne
+  pourrait plus être levé par personne.
+- **Poser ou lever un `deny` exige le droit global** (`write:update:permission`
+  à `all`). Un refus franchit les domaines — il retire aussi ce qu'un autre
+  groupe accorde ailleurs —, il ne relève donc pas d'un délégué.
+
+Le refus est journalisé en `WARNING` avec le groupe qui le pose :
+`refus explicite (deny) posé par le groupe N`.
 - **Format des domaines** : `(1:domaine.fr)(0:sous.domaine.fr)` — `1:` = avec propagation (sous-domaines inclus), `0:` = sans propagation.
 
 **Actions disponibles** :
@@ -835,8 +855,9 @@ update -pu <PermissionName> <ActionKey> <Arg> [ChildOrAll] [Domain]
   - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user`, `write:remove:user` (et idem pour `group`, `client`, `permission`, `gpo`). `add` rattache à un groupe, `remove` en détache.
   - **Spécial** : voir [Actions et permissions](./Actions_et_Permissions.md) (`write:dns`, `read:cluster`, `write:mfa`…). `write:eyes` n'est plus vérifiée.
 - **Arg** :
-  - `nil` — aucun accès.
+  - `nil` — aucun droit accordé par cette permission (un autre groupe peut accorder).
   - `all` — tous les domaines.
+  - `deny` — refus explicite, prioritaire sur les autres groupes. Exige le droit global.
   - `-a` — ajouter un domaine (nécessite ChildOrAll et Domain).
   - `-r` — retirer un domaine (nécessite ChildOrAll et Domain).
 - **ChildOrAll** (avec -a ou -r) : `0` = sans propagation, `1` = avec propagation (sous-domaines inclus).

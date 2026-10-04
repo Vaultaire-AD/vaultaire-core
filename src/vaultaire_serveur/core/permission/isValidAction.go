@@ -232,7 +232,7 @@ var globalOnlyActions = []string{
 }
 
 // IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte
-// donc que nil ou all.
+// donc que nil, all ou deny.
 func IsGlobalOnlyAction(key string) bool {
 	for _, a := range globalOnlyActions {
 		if a == key {

@@ -12,6 +12,8 @@ func ConvertPermissionActionToString(pa storage.PermissionAction) string {
 		return "nil"
 	case "all":
 		return "all"
+	case ValeurRefus:
+		return ValeurRefus
 	case "custom":
 		var parts []string
 		if len(pa.WithPropagation) > 0 {

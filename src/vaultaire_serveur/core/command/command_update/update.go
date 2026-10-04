@@ -74,7 +74,7 @@ func aide() string {
 	return `update — modifie une entité existante.
 
   update -u <username> -p <nouveau mot de passe>
-  update -pu <permission> <clé d'action> nil|all|-a|-r [portée] [domaine]
+  update -pu <permission> <clé d'action> nil|all|deny|-a|-r [portée] [domaine]
   update -debug                                     affiche l'état du journal de détail
   update -debug <true|false>                        tout le serveur
   update -debug <sous-système> <off|debug|trace|defaut>
