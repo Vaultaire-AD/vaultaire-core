@@ -178,6 +178,7 @@ var porteesAttendues = map[string]string{
 	"dns.list_records":      "PorteeGlobale",
 	"enroll.list_keys":      "PorteeGlobale",
 	"server.set_debug":      "PorteeGlobale",
+	"server.get_debug":      "PorteeGlobale",
 	"server.clear_sessions": "PorteeGlobale",
 
 	// Sans domaine par nature.
@@ -333,6 +334,7 @@ var clesAttendues = map[string]string{
 	"dns.list_records":              "read:dns",
 	"enroll.list_keys":              "read:enrollment",
 	"server.set_debug":              "write:server",
+	"server.get_debug":              "read:log",
 	"server.clear_sessions":         "write:server",
 
 	// Enrôlement, écriture : reste sur write:create:client, et délibérément.

@@ -179,7 +179,9 @@ La désinstallation **ne supprime pas** ces comptes : ils portent les profils.
 
 | Symptôme | Cause probable |
 |---|---|
-| La tuile n'apparaît pas | DLL non enregistrée : `regsvr32 C:\ProgramData\Vaultaire\bin\VaultaireCredentialProvider.dll` |
+| La tuile n'apparaît pas | DLL non enregistrée : `regsvr32 C:\ProgramData\Vaultaire\bin\VaultaireCredentialProvider.dll` (sans `/s`, la boîte de dialogue nomme la cause). Le journal de la tuile doit porter « fournisseur inscrit : … sous `{6F2A1B74-…}` » puis « fournisseur charge » |
+| `install.ps1` annonce « la DLL ne se charge pas (regsvr32, code 3) » | une bibliothèque dont la DLL dépend manque (`libwinpthread-1.dll`) : l'archive date d'avant le correctif du point 139. Refaire l'archive avec `build.sh`, ne pas poser la bibliothèque à la main |
+| Une clé nommée `{` sous `…\Authentication\Credential Providers` | inscription tronquée par une DLL ancienne. Sans effet, et retirée par la réinstallation ou par `uninstall.ps1` |
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` — le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu sortant, ou `servers` faux dans `client_conf.json` |
 | Mot de passe accepté, Windows refuse la session | compte local non inscrit dans Utilisateurs, ou stratégie « Interdire l'ouverture de session locale » |

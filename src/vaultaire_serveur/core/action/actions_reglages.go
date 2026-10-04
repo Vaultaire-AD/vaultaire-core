@@ -94,8 +94,32 @@ func EnregistrerActionsReglages(r *Registre) {
 		Nom:      "server.set_debug",
 		CleRBAC:  permission.ActionWriteServer,
 		Portee:   PorteeGlobale,
-		Resume:   "active ou coupe le mode debug",
+		Resume:   "active ou coupe le mode debug, pour tout le serveur ou un sous-système",
 		Executer: reglerDebug,
+	})
+
+	// La LECTURE du réglage (TO-DO 145).
+	//
+	// Elle n'existait pas en ligne de commande : le mode debug se posait par
+	// `update -debug` et ne se relisait que sur le portail. Avec un réglage par
+	// sous-système, « dans quel état est le journal ? » devient une vraie
+	// question — et un réglage qu'on ne peut pas relire là où on l'a posé est
+	// un réglage qu'on repose « au cas où ».
+	//
+	// `read:log`, la clé du journal : savoir ce que le journal contient relève
+	// de qui a le droit de le lire. C'est aussi celle des autres lectures de
+	// réglages du serveur (signature des GPO, second facteur Ducky).
+	r.MustEnregistrer(Definition{
+		Nom:     "server.get_debug",
+		CleRBAC: permission.ActionReadLog,
+		Portee:  PorteeGlobale,
+		// Inerte sous PorteeGlobale, déclaré pour l'invariant : toute lecture
+		// le déclare.
+		UnDomaineSuffit: true,
+		FiltreInutile: "le détail du journal est un réglage du serveur ; il " +
+			"n'appartient à aucun domaine",
+		Resume:   "affiche le détail du journal : mode debug et réglage par sous-système",
+		Executer: lireDebug,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -159,7 +183,71 @@ func listerClesEnrolement(_ Appelant, _ Params) (Resultat, error) {
 
 // --- réglages ----------------------------------------------------------------
 
+// EtatDuDebug est ce que rend `server.get_debug`.
+type EtatDuDebug struct {
+	// Debug : le réglage général, celui de `debug: true|false`.
+	Debug bool `json:"debug"`
+	// SousSystemes : un par sous-système réglable, dans l'ordre d'affichage.
+	SousSystemes []DetailDeSousSysteme `json:"sous_systemes"`
+}
+
+// DetailDeSousSysteme décrit le détail d'un sous-système.
+type DetailDeSousSysteme struct {
+	Nom string `json:"nom"`
+	// Regle : le réglage PROPRE, « off », « debug » ou « trace » ; vide quand
+	// le sous-système suit le réglage général.
+	Regle string `json:"regle"`
+	// Effectif : ce que le sous-système écrit réellement.
+	Effectif string `json:"effectif"`
+}
+
+// LireEtatDuDebug compose l'état, pour l'action et pour la page d'accueil de
+// l'administration — qui l'affiche à tout administrateur web, comme elle
+// affichait déjà le booléen.
+func LireEtatDuDebug() EtatDuDebug {
+	etat := EtatDuDebug{Debug: storage.Debug}
+	for _, s := range logs.SousSystemes() {
+		d := DetailDeSousSysteme{Nom: string(s), Effectif: logs.DetailDe(s).String()}
+		if propre, regle := logs.DetailRegle(s); regle {
+			d.Regle = propre.String()
+		}
+		etat.SousSystemes = append(etat.SousSystemes, d)
+	}
+	return etat
+}
+
+// Texte rend l'état sous la forme affichée en ligne de commande.
+func (e EtatDuDebug) Texte() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Mode debug : %v.\n", e.Debug)
+	b.WriteString("Détail par sous-système :\n")
+	for _, s := range e.SousSystemes {
+		regle := "suit le mode debug"
+		if s.Regle != "" {
+			regle = "réglé à " + s.Regle
+		}
+		fmt.Fprintf(&b, "  %-6s %-6s (%s)\n", s.Nom, s.Effectif, regle)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func lireDebug(_ Appelant, _ Params) (Resultat, error) {
+	etat := LireEtatDuDebug()
+	return Resultat{Message: etat.Texte(), Donnees: etat}, nil
+}
+
+// reglerDebug règle le détail du journal.
+//
+// Deux formes, une seule action — c'est le même réglage, gardé par le même
+// droit :
+//
+//	debug=true|false                    tout le serveur, comme toujours
+//	sous_systeme=ldap niveau=trace      un sous-système (TO-DO 145)
 func reglerDebug(a Appelant, p Params) (Resultat, error) {
+	if strings.TrimSpace(p.Get("sous_systeme")) != "" {
+		return reglerDetail(a, p)
+	}
+
 	brut := strings.ToLower(strings.TrimSpace(p.Get("debug")))
 	if brut == "" {
 		return Resultat{}, fmt.Errorf("valeur requise : true ou false")
@@ -189,7 +277,45 @@ func reglerDebug(a Appelant, p Params) (Resultat, error) {
 	logs.Write_Log("SECURITY", fmt.Sprintf(
 		"%s a réglé le mode debug à %v", a.Username, actif))
 
-	return Resultat{Message: fmt.Sprintf("Mode debug : %v.", actif)}, nil
+	etat := LireEtatDuDebug()
+	return Resultat{Message: etat.Texte(), Donnees: etat}, nil
+}
+
+// reglerDetail règle le détail d'UN sous-système.
+//
+// Le réglage vit en mémoire, sur CE core, comme le mode debug : il sert à un
+// diagnostic et ne survit pas à un redémarrage. Pour le rendre durable, la
+// section `debug.detail` de serveur_conf.yaml.
+func reglerDetail(a Appelant, p Params) (Resultat, error) {
+	sous, connu := logs.SousSystemeNomme(p.Get("sous_systeme"))
+	if !connu {
+		return Resultat{}, fmt.Errorf("sous-système %q inconnu : attendu %s",
+			p.Get("sous_systeme"), logs.NomsDesSousSystemes())
+	}
+	if strings.TrimSpace(p.Get("niveau")) == "" {
+		return Resultat{}, fmt.Errorf("niveau requis : off, debug, trace ou defaut")
+	}
+	niveau, herite, err := logs.LireDetail(p.Get("niveau"))
+	if err != nil {
+		return Resultat{}, err
+	}
+
+	dit := niveau.String()
+	if herite {
+		logs.LaisserDetail(sous)
+		dit = "defaut (suit le mode debug)"
+	} else {
+		logs.ReglerDetail(sous, niveau)
+	}
+
+	// SECURITY, comme le mode debug et pour la même raison : ce réglage change
+	// ce que le journal contient. Le niveau trace, en particulier, y écrit le
+	// contenu des entrées de l'annuaire.
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"%s a réglé le détail du journal de %s à %s", a.Username, sous, dit))
+
+	etat := LireEtatDuDebug()
+	return Resultat{Message: etat.Texte(), Donnees: etat}, nil
 }
 
 func purgerSessionsExpirees(a Appelant, _ Params) (Resultat, error) {

@@ -68,6 +68,52 @@ ldap:
   # demander une arborescence.
   onelevel_subtree: false
 
+  # Refuser un bind avec mot de passe sur le port en clair.
+  #
+  # Par défaut (false), un bind est accepté sur 389 comme sur 636. Sur 389, le
+  # mot de passe traverse le réseau en clair.
+  #
+  # true refuse tout bind avec mot de passe hors TLS (strongerAuthRequired) : le
+  # client doit se lier en LDAPS, sur 636. Les recherches sans bind — RootDSE,
+  # sous-schéma — restent servies sur 389.
+  #
+  # À n'activer qu'après avoir vérifié que TOUS les clients savent faire du
+  # LDAPS : l'activer coupe aussitôt ceux qui sont configurés sur 389. Les
+  # lignes « ouverte LDAP depuis … » du journal disent lesquels le sont encore.
+  require_tls_for_bind: false
+
+  # Bornes de recherche et de pagination.
+  #
+  # Les valeurs ci-dessous sont celles du code : cette section ne change rien
+  # tant qu'on n'y touche pas. Elles conviennent à un annuaire de quelques
+  # dizaines de milliers d'entrées.
+  #
+  # AUCUNE borne ne se désactive d'ici : zéro, une valeur négative ou un ordre
+  # de grandeur aberrant ARRÊTENT le démarrage, en nommant la clé. Une clé mal
+  # orthographiée aussi. Comment les choisir, et ce que coûte une entrée tenue
+  # en mémoire : docs/exploitation/ldap_bornes.md
+  limites:
+    # Entrées qu'une recherche NON paginée peut rendre (1 à 1 000 000). Au-delà,
+    # le client reçoit sizeLimitExceeded : il doit paginer.
+    max_search_entries: 10000
+    # Temps laissé à l'envoi d'une réponse, en secondes (1 à 3600).
+    max_search_duration_seconds: 30
+    # Taille maximale d'une page (1 à 100 000). Le client propose, le serveur
+    # peut rendre moins.
+    max_page_size: 1000
+    # Entrées qu'UNE recherche paginée peut rendre, toutes pages confondues
+    # (1 à 10 000 000). Jamais moins que max_search_entries.
+    max_paged_search_entries: 200000
+    # Entrées tenues en mémoire par TOUTES les recherches paginées en cours
+    # (1 à 50 000 000). Au-delà, une nouvelle recherche paginée reçoit « busy ».
+    # Jamais moins que max_paged_search_entries.
+    max_paged_entries_held: 500000
+    # Recherches paginées ouvertes en même temps sur une connexion (1 à 64).
+    max_paged_cursors_per_connection: 4
+    # Temps laissé au client pour demander la page suivante, en secondes
+    # (10 à 86 400). Passé ce délai, la recherche est à refaire.
+    paged_cursor_ttl_seconds: 300
+
   ldaps_tls_dns_names: []
   #  - vaultaire-ad
   #  - vaultaire-ad.interne.lan
@@ -142,6 +188,30 @@ debug:
   # l'annuaire et des droits, dans un fichier lisible localement et sans
   # bornage. À n'activer que le temps d'un diagnostic.
   debug: false
+
+  # Détail par sous-système : ldap, ducky, gpo, base.
+  #
+  # Chaque sous-système suit « debug » ci-dessus, sauf s'il est réglé ici :
+  #
+  #   off     n'écrit rien sous INFO, même avec debug: true
+  #   debug   écrit ses lignes DEBUG, même avec debug: false
+  #   trace   DEBUG, plus le déroulé pas à pas
+  #
+  # Deux usages : le debug partout SAUF l'annuaire (debug: true, ldap: off) —
+  # un client LDAP bavard noie sinon tout le reste —, ou l'annuaire SEUL
+  # (debug: false, ldap: debug).
+  #
+  # En « debug », l'annuaire écrit UNE ligne par opération : connexion, message,
+  # demande, code de résultat, nombre d'entrées, durée. « trace » y ajoute les
+  # paquets reçus et le CONTENU des entrées rendues : à réserver à un
+  # diagnostic, sur un core dont le journal n'est lu par personne d'autre.
+  #
+  # Se règle aussi à chaud, sans redémarrer : vlt update -debug ldap trace
+  # (jusqu'au redémarrage du core). Un nom ou un niveau inconnu arrête le
+  # démarrage. Voir docs/Developement/how it work/Journalisation.md
+  detail: {}
+  #  ldap: debug
+  #  ducky: off
 
 # « administrateur » et non « administreur ».
 #

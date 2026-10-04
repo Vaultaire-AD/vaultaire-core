@@ -7,7 +7,9 @@ import (
 	"net"
 	"time"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	candidate "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/filter"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/response"
 	scope "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/scope"
@@ -15,13 +17,19 @@ import (
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
-	"vaultaire/core/storage"
 )
 
 // HandleSearchRequest traite une requête LDAP Search
 func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int, conn net.Conn) {
 	baseDN := ldaptools.ConvertLDAPBaseToDomainName(op.BaseObject)
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: search request baseObject=%s baseDomain=%s scope=%d attributes=%v", op.BaseObject, baseDN, op.Scope, op.Attributes))
+
+	// Le journal de l'opération (TO-DO 145). La demande — base, portée, filtre,
+	// attributs — y est déjà : elle a été écrite par la boucle de lecture, et
+	// sortira sur UNE ligne avec le résultat, quand la recherche sera finie. Ce
+	// gestionnaire n'y ajoute que ce qui explique le résultat : combien de
+	// candidats, combien écartés par les droits. Le reste est du déroulé, en
+	// TRACE. `j` vaut nil hors d'une connexion suivie ; ses méthodes l'acceptent.
+	j := ldapjournal.EnCours(conn)
 
 	// Bases spéciales : RootDSE et sous-schéma. Elles ne désignent aucune entrée
 	// de l'annuaire et sont interrogeables sans authentification — c'est ainsi
@@ -67,8 +75,8 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 			// Une lecture de droits qui échoue REFUSE. Le message reste celui des
 			// droits insuffisants : dire au client que la base est en difficulté ne
 			// l'aide pas et renseigne qui sonde la porte. Le journal, lui, distingue.
-			logs.Write_LogCode("ERROR", logs.CodeAuthPermission, fmt.Sprintf(
-				"ldap: droits de recherche illisibles pour %s (%v) — refusé", username, err))
+			ldapjournal.Ecrire(conn, "ERROR", logs.CodeAuthPermission, fmt.Sprintf(
+				"droits de recherche illisibles pour %s (%v) — refusé", username, err))
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
 			return
@@ -85,14 +93,30 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 			// ce soit existe, et l'appelant connaît déjà sa propre absence de droits
 			// sur ce qu'il a demandé.
 			if baseDN == "" {
-				logs.Write_Log("WARNING", fmt.Sprintf(
-					"ldap: baseObject %q sans composant dc= — aucun domaine à autoriser",
+				ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+					"baseObject %q sans composant dc= — aucun domaine à autoriser",
 					op.BaseObject))
 			}
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultInsufficientAccessRights, "insufficient access rights")
 			return
 		}
+	}
+
+	// LA SUITE D'UNE RECHERCHE PAGINÉE — point 130.
+	//
+	// Une requête qui porte un cookie ne lance PAS de recherche : elle réclame la
+	// page suivante d'un jeu figé à la première requête. Rien n'est donc résolu
+	// ni filtré ici.
+	//
+	// Placée APRÈS le contrôle des droits, et c'est voulu : la session doit
+	// toujours être liée, et le compte toujours autorisé sur cette base. Le jeu a
+	// été calculé avec les droits de la première requête ; les relire à chaque
+	// page coûte une lecture, et ferme la fenêtre pendant laquelle un compte dont
+	// on vient de retirer les droits continuerait de lire la suite.
+	if op.Page != nil && len(op.Page.Cookie) > 0 {
+		servirPageSuivante(conn, messageID, op, username, baseDN)
+		return
 	}
 
 	// LE FILTRE EST VÉRIFIÉ AVANT D'ÊTRE APPLIQUÉ.
@@ -109,19 +133,22 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		if errors.As(err, &ef) {
 			code = ef.Code
 		}
-		// WARNING pour une session LIÉE, DEBUG sinon.
+		// WARNING pour une session LIÉE seulement.
 		//
 		// Ce chemin s'exécute aussi sur une recherche RootDSE, c'est-à-dire avant
 		// toute authentification : un inconnu qui envoie des filtres malformés en
 		// boucle écrirait une ligne d'avertissement par paquet. La règle « une fois
 		// par recherche et non par entrée » ne protège de rien quand c'est
 		// l'attaquant qui choisit le nombre de recherches.
-		niveau := "DEBUG"
+		//
+		// Pour une session non liée, le refus se lit sur la ligne de l'opération —
+		// le filtre et le code de résultat y sont — et le motif en déroulé.
 		if isBound {
-			niveau = "WARNING"
+			ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+				"filtre refusé pour %s sur baseDN=%s : %s", username, baseDN, err.Error()))
+		} else {
+			j.Trace("filtre refusé : %s", err.Error())
 		}
-		logs.Write_Log(niveau, fmt.Sprintf(
-			"ldap: filtre refusé pour %s sur baseDN=%s : %s", username, baseDN, err.Error()))
 		response.SendLDAPSearchFailureCode(conn, messageID, code, err.Error())
 		return
 	}
@@ -139,20 +166,23 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 		var baseValide bool
 		ancetre, baseValide = scope.AncetreExistant(db, op.BaseObject)
 		if !baseValide {
-			logs.Write_Log("DEBUG", fmt.Sprintf(
-				"ldap: baseObject %q inexistant, matchedDN=%q", op.BaseObject, ancetre))
+			j.Noter("matchedDN", fmt.Sprintf("%q", ancetre))
 			response.SendLDAPNoSuchObject(conn, messageID, ancetre)
 			return
 		}
 	}
 
 	// 1. Résoudre le scope → candidats
-	candidates, err := scope.Resolve(db, baseDN, op.Scope, op.Attributes, username, op.BaseObject)
+	candidates, err := scope.Resolve(db, baseDN, op.Scope, op.Attributes, username, op.BaseObject, j)
 	if err != nil {
+		// La cause part au journal : le client ne reçoit qu'un
+		// `operationsError`, et sans cette ligne rien ne disait, côté serveur,
+		// qu'une recherche venait d'échouer sur une lecture de la base.
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeDBQuery, "résolution de la recherche : "+err.Error())
 		response.SendLDAPSearchFailure(conn, messageID, err.Error())
 		return
 	}
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: resolved %d candidates for baseDN=%s scope=%d", len(candidates), baseDN, op.Scope))
+	j.Noter("candidats", len(candidates))
 
 	// LE FILTRE D'AUTORISATION, avant le filtre LDAP.
 	//
@@ -173,28 +203,21 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// voit immédiatement. Tester le pointeur aurait, dans ce même cas, tout laissé
 	// passer.
 	if !isRootDSE {
+		// `Filtrer` fait deux choses d'un seul passage : il écarte les entrées
+		// hors des droits du compte, et rend les autres RESTREINTES — privées de
+		// ce que leurs attributs nomment et que le compte ne peut pas lire
+		// (TO-DO 132 : `memberOf` portait les groupes des sous-domaines).
 		retenues, écartées := portée.Filtrer(candidates)
 		if écartées > 0 {
-			logs.Write_Log("DEBUG", fmt.Sprintf(
-				"ldap: %d entrée(s) écartée(s) des droits de %s sur baseDN=%s, %d rendue(s)",
-				écartées, username, baseDN, len(retenues)))
+			// Sur la ligne de l'opération : c'est ce qui distingue une recherche
+			// qui ne trouve rien d'une recherche réduite par les droits.
+			j.Noter("hors-droits", écartées)
+			if ldapjournal.TraceActive() {
+				tracerLesEntreesHorsDroits(j, candidates, portée)
+			}
 		}
 		candidates = retenues
 	}
-
-	// Le vidage détaillé, APRÈS le filtre.
-	//
-	// Il avait lieu dans le résolveur, donc avant : le journal DEBUG portait le
-	// contenu des entrées que le compte n'a pas le droit de lire. Corriger la
-	// fuite vers le client en la laissant vers le journal n'aurait rien corrigé.
-	if storage.Debug {
-		for _, e := range candidates {
-			logs.Write_Log("DEBUG", scope.DumpLDAPEntry(e, op.Attributes))
-		}
-	}
-	// for _, candidate := range candidates {
-	// 	scope.PrintLDAPEntry(candidate)
-	// }
 	// AUCUN CANDIDAT : la base est structurellement valide, mais rien n'en sort.
 	//
 	// C'est `noSuchObject`, et la MÊME réponse que la feuille soit absente ou
@@ -208,9 +231,7 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// recherches `base`, ce qui est exactement là où un client pose la question
 	// « ce DN existe-t-il ».
 	if len(candidates) == 0 {
-		logs.Write_Log("DEBUG", fmt.Sprintf(
-			"ldap: %q ne rend aucune entrée (absente ou hors droits), matchedDN=%q",
-			op.BaseObject, ancetre))
+		j.Noter("matchedDN", fmt.Sprintf("%q", ancetre))
 		response.SendLDAPNoSuchObject(conn, messageID, ancetre)
 		return
 	}
@@ -218,33 +239,64 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// 2. Évaluer le filtre
 	matched := candidate.Filtre(candidates, op.Filter, baseDN, op.Scope)
 
+	// Le déroulé, APRÈS le filtre d'autorisation — et seulement s'il est demandé.
+	//
+	// Il avait lieu dans le résolveur, donc avant : le journal portait le contenu
+	// des entrées que le compte n'a pas le droit de lire. Corriger la fuite vers
+	// le client en la laissant vers le journal n'aurait rien corrigé. Ce qui est
+	// vidé ici est ce que le compte PEUT lire, tel qu'il le lira.
+	if ldapjournal.TraceActive() {
+		tracerLeFiltrage(j, candidates, matched, op.Attributes)
+	}
+
 	// 3. Construire et envoyer les réponses, dans les limites.
 	//
 	// sizeLimit et timeLimit étaient décodés puis IGNORÉS. Un client qui demandait
 	// une entrée recevait l'annuaire entier — et rien n'empêchait de le demander
 	// en boucle.
-	limite := effectiveSizeLimit(op.SizeLimit)
-	délai := effectiveTimeLimit(op.TimeLimit)
 	début := time.Now()
 
+	if taille, paginée := taillePage(op, isBound); paginée {
+		servirPremierePage(conn, messageID, op, username, baseDN, matched, taille, début)
+		return
+	}
+
+	limite := effectiveSizeLimit(op.SizeLimit)
+	tronquée := limite > 0 && len(matched) > limite
+	if tronquée {
+		matched = matched[:limite]
+	}
+	if !envoyerEntrees(conn, messageID, op, username, baseDN, matched, début) {
+		return
+	}
+	if tronquée {
+		j.Noter("tronquée-à", fmt.Sprintf("%d(demandé %d, borne serveur %d)",
+			len(matched), op.SizeLimit, ldapstorage.MaxSearchEntries))
+		response.SendLDAPSearchFailureCode(conn, messageID,
+			ldapstorage.ResultSizeLimitExceeded, "size limit exceeded")
+		return
+	}
+
+	response.SendLDAPSearchResultDone(conn, messageID)
+}
+
+// envoyerEntrees écrit les entrées d'une réponse, ou d'une page.
+//
+// Rend false quand l'envoi s'est arrêté avant la fin : le délai est dépassé —
+// le code d'erreur est alors déjà parti — ou le client n'est plus là. Dans les
+// deux cas l'appelant n'a plus rien à envoyer.
+func envoyerEntrees(conn net.Conn, messageID int, op ldapstorage.SearchRequest, username, baseDN string,
+	entrees []ldapinterface.LDAPEntry, début time.Time) bool {
+	délai := effectiveTimeLimit(op.TimeLimit)
 	avecDroits := droitsServiceDemandes(op.Attributes)
 
-	envoyées := 0
-	for _, entry := range matched {
-		if limite > 0 && envoyées >= limite {
-			logs.Write_Log("DEBUG", fmt.Sprintf(
-				"ldap: recherche tronquée à %d entrées (demandé %d, borne serveur %d)",
-				envoyées, op.SizeLimit, ldapstorage.MaxSearchEntries))
-			response.SendLDAPSearchFailureCode(conn, messageID,
-				ldapstorage.ResultSizeLimitExceeded, "size limit exceeded")
-			return
-		}
+	for _, entry := range entrees {
 		if délai > 0 && time.Since(début) > délai {
-			logs.Write_Log("WARNING", fmt.Sprintf(
-				"ldap: recherche interrompue après %s sur baseDN=%s", délai, baseDN))
+			ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+				"recherche interrompue après %s sur baseDN=%s", délai, baseDN))
 			response.SendLDAPSearchFailureCode(conn, messageID,
 				ldapstorage.ResultTimeLimitExceeded, "time limit exceeded")
-			return
+			return false
 		}
 
 		// Droits de service : calculés entrée par entrée, et seulement si
@@ -259,13 +311,66 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 			// L'écriture a échoué : le client est probablement parti. Insister sur
 			// les entrées suivantes ne ferait qu'occuper une goroutine à écrire
 			// dans le vide.
-			logs.Write_Log("WARNING", err.Error())
+			ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, "envoi d'une entrée en échec : "+err.Error())
+			return false
+		}
+	}
+	return true
+}
+
+// EntreesTracees borne le nombre d'entrées que le déroulé d'UNE opération
+// détaille.
+//
+// Le déroulé sert à comprendre pourquoi une recherche rend ce qu'elle rend, et
+// les premières entrées suffisent à le voir. Sans borne, une lecture complète
+// d'un annuaire de dix mille comptes écrirait dix mille vidages par recherche —
+// le journal noyé que le TO-DO 145 corrige, revenu par le niveau TRACE.
+const EntreesTracees = 20
+
+// tracerLesEntreesHorsDroits nomme les entrées que le contrôle d'accès a
+// écartées : le DN et les rattachements, PAS le contenu — ce sont précisément
+// celles que le compte n'a pas le droit de lire, et les vider dans le journal
+// ne ferait que déplacer la fuite.
+func tracerLesEntreesHorsDroits(j *ldapjournal.Operation, candidats []ldapinterface.LDAPEntry, portée *security.PorteeDeRecherche) {
+	écrites, tues := 0, 0
+	for _, e := range candidats {
+		if portée.AutoriseUnDes(e.Domaines()) {
+			continue
+		}
+		if écrites == EntreesTracees {
+			tues++
+			continue
+		}
+		j.Trace("écartée par les droits : %q (rattachements %v)", e.DN(), e.Domaines())
+		écrites++
+	}
+	if tues > 0 {
+		j.Trace("… et %d autre(s) entrée(s) écartée(s) par les droits", tues)
+	}
+}
+
+// tracerLeFiltrage vide les entrées que le filtre a retenues, telles que le
+// compte les lira.
+//
+// C'est ce qui reste du déroulé que `candidate.Filtre` écrivait à chaque
+// recherche — trois lignes par candidat. Il ne sort plus que sur demande
+// (`ldap: trace`), sous l'identifiant de l'opération, et pour les
+// EntreesTracees premières entrées.
+//
+// Les entrées ÉCARTÉES par le filtre ne sont pas nommées une à une : sur une
+// recherche d'un compte dans un annuaire de dix mille, cela faisait dix mille
+// lignes pour dire « pas celui-ci ». Leur nombre se lit sur la ligne de
+// l'opération — candidats, moins entrées rendues.
+func tracerLeFiltrage(j *ldapjournal.Operation, candidats, retenues []ldapinterface.LDAPEntry, attributs []string) {
+	j.Trace("filtre : %d candidat(s), %d retenue(s), %d écartée(s)",
+		len(candidats), len(retenues), len(candidats)-len(retenues))
+	for i, e := range retenues {
+		if i == EntreesTracees {
+			j.Trace("… et %d autre(s) entrée(s) retenue(s)", len(retenues)-EntreesTracees)
 			return
 		}
-		envoyées++
+		j.Trace("retenue par le filtre : %s", scope.DumpLDAPEntry(e, attributs))
 	}
-
-	response.SendLDAPSearchResultDone(conn, messageID)
 }
 
 // effectiveSizeLimit combine la demande du client et la borne du serveur.

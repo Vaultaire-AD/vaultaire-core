@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"net"
 
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
@@ -48,7 +49,12 @@ func BuildResult(messageID, appTag, resultCode int, matchedDN, diagnostic string
 }
 
 // SendResult envoie un LDAPResult.
+//
+// Le code est noté au journal de l'opération AVANT l'écriture : c'est ce que
+// le serveur a décidé de répondre, que le client soit encore là pour le lire
+// ou non (TO-DO 145).
 func SendResult(conn net.Conn, messageID, appTag, resultCode int, matchedDN, diagnostic string) error {
+	ldapjournal.Resultat(conn, messageID, resultCode)
 	if _, err := conn.Write(BuildResult(messageID, appTag, resultCode, matchedDN, diagnostic)); err != nil {
 		return fmt.Errorf("envoi de la réponse LDAP : %w", err)
 	}
@@ -89,6 +95,7 @@ func BuildExtendedResult(messageID, resultCode int, matchedDN, diagnostic, respo
 
 // SendExtendedResult envoie une ExtendedResponse.
 func SendExtendedResult(conn net.Conn, messageID, resultCode int, matchedDN, diagnostic, responseName, responseValue string) error {
+	ldapjournal.Resultat(conn, messageID, resultCode)
 	if _, err := conn.Write(BuildExtendedResult(messageID, resultCode, matchedDN, diagnostic, responseName, responseValue)); err != nil {
 		return fmt.Errorf("envoi de l'ExtendedResponse : %w", err)
 	}

@@ -3,20 +3,46 @@ package candidate
 import (
 	"fmt"
 	"strings"
+	"vaultaire/core/identifiant"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 )
+
+// Appartenance est un groupe dont un compte est membre : son DN, et le domaine
+// où il vit.
+//
+// # Pourquoi le domaine voyage avec le DN — TO-DO 132
+//
+// `memberOf` était une liste de DN. Or un DN ne dit pas de quel domaine vient le
+// groupe : `ToRootDN` ne garde que les deux derniers labels, si bien qu'un
+// groupe de « admin.enov.local » et un groupe de « enov.local » portent
+// exactement le même suffixe. Écarter du `memberOf` les groupes que l'appelant
+// n'a pas le droit de lire suppose de savoir d'où vient chacun — et cela ne se
+// reconstruit pas, cela se porte.
+//
+// Une STRUCTURE, et non une seconde liste tenue en parallèle de la première :
+// deux tranches à garder alignées finissent décalées, et ici un décalage
+// attribuerait à un groupe le domaine de son voisin — donc ses droits.
+//
+// Un domaine VIDE écarte l'appartenance (voir Restreinte) : un oubli rend le
+// groupe invisible dans `memberOf`, il ne le diffuse pas.
+type Appartenance struct {
+	DN      string
+	Domaine string
+}
 
 type UserEntry struct {
 	User   ldapstorage.User
 	BaseDN string
-	Groups []string
+	// Groups : les groupes du compte, chacun avec son domaine. C'est ce qui
+	// compose `memberOf`, après Restreinte.
+	Groups []Appartenance
 	// Nouveaux champs pour compatibilité Nextcloud
-	DisplayName string   // Firstname + Lastname
-	GivenName   string   // Firstname
-	Sn          string   // Lastname
-	Uid         string   // Username
-	MemberOf    []string // Groupes
+	DisplayName string // Firstname + Lastname
+	GivenName   string // Firstname
+	Sn          string // Lastname
+	Uid         string // Username
 
 	// Rattachements : les domaines où vit RÉELLEMENT le compte, c'est-à-dire ceux
 	// des groupes par lesquels il a été trouvé. Sert au contrôle d'accès, et à
@@ -33,6 +59,16 @@ type UserEntry struct {
 	// que le compte lié a le droit de le lire — voir newmodule/service_rights.go.
 	ServiceRights []string
 }
+
+// AttrEntryUUID est le nom (en minuscules) de l'identifiant stable d'une entrée
+// — RFC 4530.
+const AttrEntryUUID = "entryuuid"
+
+// attributsIdentifiant liste les noms sous lesquels l'identifiant d'un compte
+// est servi : le standard d'abord, puis ceux de 389-ds, d'Active Directory,
+// d'eDirectory et de FreeIPA. C'est aussi l'ordre dans lequel Nextcloud les
+// essaie ; il s'arrête au premier qui répond, donc à `entryUUID`.
+var attributsIdentifiant = []string{AttrEntryUUID, "nsuniqueid", "objectguid", "guid", "ipauniqueid"}
 
 // AttrServiceRights est le nom (en minuscules) de l'attribut opérationnel qui
 // porte les droits de service d'un compte.
@@ -56,6 +92,38 @@ func (u UserEntry) DN() string {
 // invisible, il ne le diffuse pas.
 func (u UserEntry) Domaines() []string {
 	return u.Rattachements
+}
+
+// Restreinte — voir ldapinterface.LDAPEntry.
+//
+// Ne garde de `memberOf` que les groupes dont l'appelant a le droit de lire le
+// domaine, c'est-à-dire ceux qu'il recevrait comme entrées. Les autres ne sont
+// ni rendus ni comparables par un filtre.
+//
+// La tranche est RECONSTRUITE, jamais filtrée sur place : la même liste est
+// partagée par toutes les copies de l'entrée, y compris celles qu'une recherche
+// paginée garde pour un autre appel.
+func (u UserEntry) Restreinte(lisible func(domaine string) bool) ldapinterface.LDAPEntry {
+	gardées := make([]Appartenance, 0, len(u.Groups))
+	for _, g := range u.Groups {
+		if g.Domaine != "" && lisible(g.Domaine) {
+			gardées = append(gardées, g)
+		}
+	}
+	u.Groups = gardées
+	return u
+}
+
+// memberOf rend les DN des groupes du compte.
+func (u UserEntry) memberOf() []string {
+	if len(u.Groups) == 0 {
+		return nil
+	}
+	dns := make([]string, len(u.Groups))
+	for i, g := range u.Groups {
+		dns[i] = g.DN
+	}
+	return dns
 }
 
 // ObjectClasses — ce que l'entrée déclare ÊTRE.
@@ -96,15 +164,48 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 		"givenname":      {u.User.Firstname},
 		"sn":             {u.User.Lastname},
 		"mail":           {u.User.Email},
-		"memberof":       u.Groups,
 		"dn":             {u.DN()},
 		// "ou":             {"users"},
 		"objectclass": u.ObjectClasses(),
-		"entryuuid":   {fmt.Sprintf("%s", u.User.Username)},
-		"nsuniqueid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
-		"objectguid":  {fmt.Sprintf("vaultaire-%s", u.User.Username)},
-		"guid":        {fmt.Sprintf("vaultaire-%s", u.User.Username)},
-		"ipauniqueid": {fmt.Sprintf("vaultaire-%s", u.User.Username)},
+	}
+
+	// `memberOf` : absent plutôt que vide, comme tout attribut sans valeur (RFC
+	// 4512 §2.5). Il ne l'était jamais tant que la liste portait tous les groupes
+	// du compte ; restreinte aux groupes lisibles (TO-DO 132), elle peut l'être.
+	if groupes := u.memberOf(); len(groupes) > 0 {
+		all["memberof"] = groupes
+	}
+
+	// L'IDENTIFIANT STABLE — point 129.
+	//
+	// Ces cinq attributs valaient le NOM du compte — « alice », ou
+	// « vaultaire-alice ». Ce n'étaient donc pas des identifiants : renommer un
+	// compte le faisait apparaître comme un compte neuf chez tout client qui s'y
+	// fie, et Keycloak créait un doublon au lieu de renommer.
+	//
+	// Ils portent désormais l'UUID de la colonne `entry_uuid`, posé à la création
+	// du compte et jamais réattribué : il survit au renommage, et un compte
+	// supprimé puis recréé sous le même nom en reçoit un autre.
+	//
+	// # Cinq noms, une valeur
+	//
+	// `entryUUID` est le standard (RFC 4530). Les quatre autres sont les noms
+	// sous lesquels d'autres annuaires rangent le leur ; ils sont gardés parce
+	// qu'un client peut avoir été configuré sur l'un d'eux, et que le retirer le
+	// laisserait sans identifiant du tout. Ils portent tous la MÊME valeur, en
+	// texte — y compris `objectGUID`, qui est binaire chez Active Directory et
+	// ne l'est pas ici : c'est écrit dans le sous-schéma, voir SchemaEntry.go.
+	//
+	// # Absents plutôt que faux
+	//
+	// Si la base n'a pas rendu un UUID bien formé, AUCUN des cinq n'est servi. La
+	// syntaxe d'`entryUUID` est contrainte : une valeur qui ne la respecte pas
+	// fait rejeter l'entrée entière par un client strict. Et retomber sur le nom
+	// « en attendant » referait exactement le défaut qu'on corrige.
+	if identifiant.EstUnUUID(u.User.EntryUUID) {
+		for _, nom := range attributsIdentifiant {
+			all[nom] = []string{u.User.EntryUUID}
+		}
 	}
 	// Un attribut sans valeur n'existe pas en LDAP (RFC 4512 §2.5) : absent
 	// plutôt que vide.
@@ -186,7 +287,7 @@ func contains(list []string, s string) bool {
 
 func isOperational(attr string) bool {
 	switch strings.ToLower(attr) {
-	case "entryuuid", "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights,
+	case AttrEntryUUID, "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights,
 		ldaptools.AttrCreeLe, ldaptools.AttrModifieLe:
 		return true
 	default:

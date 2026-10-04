@@ -116,6 +116,88 @@ func TestLeDomaineDuDNEtLesRattachementsRestentDistincts(t *testing.T) {
 	}
 }
 
+// LA SENTINELLE DU POINT 132.
+//
+// `memberOf` n'est filtré que si chaque groupe y entre avec SON domaine ; et
+// `member` n'a rien à filtrer que parce qu'un groupe est jugé sur son domaine
+// PROPRE (voir candidate.GroupEntry.Restreinte). Les deux tiennent à la même
+// chose : que le domaine déposé soit celui que la BASE a rendu pour le groupe
+// — un champ `DomainName` —, jamais celui que le client a demandé.
+//
+// Avec le domaine demandé, tout groupe porterait le domaine qui vient d'être
+// autorisé : rien ne serait retiré de `memberOf`, et un groupe de sous-domaine
+// passerait le contrôle d'accès. C'est le défaut du point 120, par un autre
+// champ, et aucun test de comportement ne le verrait.
+
+func estUnLitteral(typ ast.Expr, nom string) bool {
+	sel, ok := typ.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != nom {
+		return false
+	}
+	paquet, ok := sel.X.(*ast.Ident)
+	return ok && paquet.Name == "candidate"
+}
+
+// vientDeLaBase dit si une expression est un champ `DomainName` — `g.DomainName`,
+// `group.DomainName`.
+func vientDeLaBase(e ast.Expr) bool {
+	sel, ok := e.(*ast.SelectorExpr)
+	return ok && sel.Sel.Name == "DomainName"
+}
+
+func TestLeDomaineDUneAppartenanceEstCeluiDuGroupe(t *testing.T) {
+	vues := 0
+	for chemin, fichier := range fichiersDuPaquet(t) {
+		ast.Inspect(fichier, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok || len(lit.Elts) == 0 || !estUnLitteral(lit.Type, "Appartenance") {
+				return true
+			}
+			vues++
+			valeur, présent := champsAssignes(lit)["Domaine"]
+			switch {
+			case !présent:
+				t.Errorf("%s : une Appartenance est construite sans Domaine.\n"+
+					"Elle sera écartée de memberOf pour tout le monde : le groupe "+
+					"disparaîtrait de l'annuaire de ses propres membres.", chemin)
+			case !vientDeLaBase(valeur):
+				t.Errorf("%s : le Domaine d'une Appartenance vaut « %s », pas le DomainName "+
+					"du groupe lu en base.\nAvec le domaine demandé par le client, rien ne "+
+					"serait retiré de memberOf — le défaut du point 132.", chemin, rendu(valeur))
+			}
+			return true
+		})
+	}
+	if vues == 0 {
+		t.Fatal("aucune Appartenance construite dans ce paquet : la sentinelle ne garde rien")
+	}
+}
+
+func TestLeDomaineDUnGroupeEstLeSien(t *testing.T) {
+	vues := 0
+	for chemin, fichier := range fichiersDuPaquet(t) {
+		ast.Inspect(fichier, func(n ast.Node) bool {
+			lit, ok := n.(*ast.CompositeLit)
+			if !ok || len(lit.Elts) == 0 || !estUnLitteral(lit.Type, "GroupEntry") {
+				return true
+			}
+			vues++
+			valeur, présent := champsAssignes(lit)["BaseDN"]
+			if !présent || !vientDeLaBase(valeur) {
+				t.Errorf("%s : le BaseDN d'une GroupEntry n'est pas le DomainName du groupe "+
+					"lu en base.\nC'est sur lui que le contrôle d'accès juge le groupe, et "+
+					"c'est ce qui rend `member` lisible sans filtrage : avec le domaine "+
+					"demandé, un groupe de sous-domaine sortirait avec la liste de ses membres.",
+					chemin)
+			}
+			return true
+		})
+	}
+	if vues == 0 {
+		t.Fatal("aucune GroupEntry construite dans ce paquet : la sentinelle ne garde rien")
+	}
+}
+
 func fichiersDuPaquet(t *testing.T) map[string]*ast.File {
 	t.Helper()
 

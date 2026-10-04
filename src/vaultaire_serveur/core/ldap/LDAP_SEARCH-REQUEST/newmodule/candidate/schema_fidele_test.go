@@ -60,7 +60,10 @@ func entreesDuDIT() map[string]ldapinterface.LDAPEntry {
 	u.User.Email = "alice@enov.local"
 	u.User.Created_at = "2026-03-15 12:00:00"
 	u.User.Modified_at = "2026-03-16 09:30:00"
-	u.Groups = []string{"cn=admins,ou=groups,dc=enov,dc=local"}
+	// Sans identifiant, les cinq attributs d'identification ne sont pas servis
+	// (point 129) — et ce test ne vérifierait plus qu'ils sont déclarés.
+	u.User.EntryUUID = "597ae2f6-16a6-4027-98f4-d28b5365dc14"
+	u.Groups = []Appartenance{{DN: "cn=admins,ou=groups,dc=enov,dc=local", Domaine: "enov.local"}}
 	u.ServiceRights = []string{"read:nexus"}
 
 	return map[string]ldapinterface.LDAPEntry{
@@ -69,6 +72,7 @@ func entreesDuDIT() map[string]ldapinterface.LDAPEntry {
 			Name: "admins", BaseDN: "enov.local",
 			Members:    []string{"uid=alice,ou=users,dc=enov,dc=local"},
 			Created_at: "2026-03-15 12:00:00", Modified_at: "2026-03-16 09:30:00",
+			EntryUUID: "0c7e2f1a-9b3d-4e55-8a61-3f2b9d4c7e10",
 		},
 		"unité d'organisation": OUEntry{Name: "users", BaseDN: "enov.local"},
 		"domaine":              DomainEntry{DNName: "enov.local"},
@@ -204,7 +208,7 @@ func TestLesOIDSontValidesEtUniques(t *testing.T) {
 // Modifier une déclaration sans toucher à la date fait échouer ce test.
 func TestLaDateDuSchemaSuitLeSchema(t *testing.T) {
 	// À METTRE À JOUR EN MÊME TEMPS QUE HorodatageDuSchema, et seulement avec lui.
-	const empreinteAttendue = "fd46988ec5fe36d744371b692d18cc89a4d872a667015c3ee698caab6ceef74e"
+	const empreinteAttendue = "3502e8a6fcec5fa7e7b6ee715fa095fed8533b18fef6c0d120677ebb1aae6d9c"
 
 	sch := NewSchemaEntry()
 	h := sha256.New()

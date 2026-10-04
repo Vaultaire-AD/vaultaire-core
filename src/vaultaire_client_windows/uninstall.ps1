@@ -29,8 +29,50 @@ function Info($texte) { Write-Host "    $texte" }
 
 # --- 1. L'écran de connexion, d'abord --------------------------------------
 $dll = Join-Path $Bin "VaultaireCredentialProvider.dll"
-if (Test-Path $dll) {
-    & regsvr32.exe /u /s $dll
+$dllPresente = Test-Path $dll
+if ($dllPresente) {
+    # Start-Process -Wait, comme dans install.ps1 : regsvr32 est une application
+    # graphique, « & regsvr32 » rend la main avant qu'il ait fini — et la DLL est
+    # supprimée quelques lignes plus bas.
+    Start-Process -FilePath regsvr32.exe -ArgumentList '/u', '/s', "`"$dll`"" -Wait | Out-Null
+}
+
+# Puis le registre, DIRECTEMENT — que la DLL soit là ou non.
+#
+# Le retrait ne reposait que sur regsvr32 /u, donc sur la DLL : une DLL effacée
+# à la main, ou qui ne se charge plus, laissait ses clés en place et ce script
+# annonçait « aucun Credential Provider enregistré ».
+#
+# « { » est le nom sous lequel s'inscrivaient les DLL d'avant le TO-DO 140, qui
+# tronquaient leur GUID au premier caractère. Ces clés sont sans effet sur
+# l'écran de connexion, mais elles restent sur les postes déjà installés.
+#
+# Une clé n'est retirée que si elle porte le LIBELLÉ de Vaultaire : on n'efface
+# pas un sous-arbre de HKLM sur la foi de son seul nom.
+$libelleCP = "Vaultaire Credential Provider"
+$clesRetirees = 0
+foreach ($id in @("{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}", "{")) {
+    foreach ($racineCle in @(
+        "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers",
+        "HKLM:\SOFTWARE\Classes\CLSID")) {
+        $cle = "$racineCle\$id"
+        if (-not (Test-Path -LiteralPath $cle)) { continue }
+        $libelle = (Get-ItemProperty -LiteralPath $cle -ErrorAction SilentlyContinue).'(default)'
+        if ($libelle -ne $libelleCP) {
+            Info "clé laissée en place, elle ne porte pas le libellé Vaultaire : $cle"
+            continue
+        }
+        Remove-Item -LiteralPath $cle -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path -LiteralPath $cle) {
+            Info "clé NON retirée (droits ?) : $cle"
+        } else {
+            $clesRetirees++
+            Info "clé retirée : $cle"
+        }
+    }
+}
+
+if ($dllPresente -or $clesRetirees -gt 0) {
     Info "Credential Provider retiré de l'écran de connexion"
 } else {
     Info "aucun Credential Provider enregistré"

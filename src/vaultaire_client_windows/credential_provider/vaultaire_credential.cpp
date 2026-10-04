@@ -283,7 +283,7 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
       default:
         break;
     }
-    Journaliser(L"refus pour %s (statut %d)", utilisateur_.c_str(), (int)verdict.statut);
+    Journaliser(L"refus pour %ls (statut %d)", utilisateur_.c_str(), (int)verdict.statut);
     EffacerMotDePasse();
     // Le code aussi : un code refusé reste valide quelques dizaines de secondes,
     // et l'anti-rejeu ne protège que d'un SECOND usage réussi.
@@ -296,7 +296,7 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
     // Acceptation sans compte local : l'agent n'a rien provisionné, il n'y a
     // donc personne à qui ouvrir la session. Mieux vaut le dire que rendre un
     // bloc que Windows refusera ensuite sans expliquer pourquoi.
-    Journaliser(L"acceptation sans compte local pour %s", utilisateur_.c_str());
+    Journaliser(L"acceptation sans compte local pour %ls", utilisateur_.c_str());
     EffacerMotDePasse();
     EffacerCode();
     *icone = CPSI_ERROR;
@@ -314,7 +314,7 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
 
   serialisation->clsidCredentialProvider = CLSID_VaultaireProvider;
   *reponse = CPGSR_RETURN_CREDENTIAL_FINISHED;
-  Journaliser(L"session ouverte pour %s (compte local %s)", utilisateur_.c_str(),
+  Journaliser(L"session ouverte pour %ls (compte local %ls)", utilisateur_.c_str(),
               verdict.compte_local.c_str());
   return S_OK;
 }

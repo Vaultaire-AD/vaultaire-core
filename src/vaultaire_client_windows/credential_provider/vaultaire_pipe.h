@@ -71,6 +71,15 @@ Reponse Etat();
 // Fichier séparé de celui de l'agent : les deux processus n'ont ni le même
 // cycle de vie ni les mêmes droits, et mélanger leurs lignes rendrait
 // illisible la seule trace qu'on ait de l'écran de connexion.
+//
+// # Une chaîne large s'écrit %ls, JAMAIS %s (TO-DO 140)
+//
+// Le format est large (L"…"), et MinGW y lit `%s` comme une chaîne ÉTROITE —
+// l'inverse de MSVC. Une chaîne large passée à `%s` s'arrête à son premier
+// octet nul, c'est-à-dire après UN caractère : le journal disait « fournisseur
+// charge : C » et « session ouverte pour a ». `%ls` a le même sens dans les
+// deux compilateurs. GCC ne vérifie pas les formats larges : c'est
+// build-cp.sh qui refuse un `%s` dans un littéral L"…".
 void Journaliser(const wchar_t* format, ...);
 
 }  // namespace vaultaire

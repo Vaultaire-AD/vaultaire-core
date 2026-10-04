@@ -11,17 +11,19 @@ import (
 //
 // # Ce qui reste ici
 //
-// « -pu » et « -debug » ne passent pas encore par le registre : le premier
-// manipule la structure interne des permissions RBAC — une grammaire à part
-// entière, qui mérite ses propres actions plutôt qu'une traduction hâtive ; le
-// second est un réglage du serveur, pas une entité de l'annuaire.
+// « -pu » ne passe pas encore par le registre : il manipule la structure
+// interne des permissions RBAC — une grammaire à part entière, qui mérite ses
+// propres actions plutôt qu'une traduction hâtive. Il garde donc son contrôle
+// de droits.
 //
-// Ils gardent donc leur contrôle de droits. La distinction est explicite dans
-// le code plutôt que laissée à deviner.
+// « -debug » y passe (`server.get_debug`, `server.set_debug`) ; il a son
+// fichier parce que c'est un réglage du serveur, pas une entité de l'annuaire.
 
 // ActionsUtilisees liste les actions du registre appelées ici.
 var ActionsUtilisees = []string{
 	"user.change_password",
+	"server.get_debug",
+	"server.set_debug",
 }
 
 // Update_Command traite « update … ».
@@ -59,8 +61,9 @@ func Update_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		return update_UserPermission_Command_Parser(command_list, sender_groupsIDs, "write:update:permission", sender_Username)
 
 	case "-debug":
-		// Réglage du serveur, pas une entité de l'annuaire.
-		return update_Debug_Command_Parser(command_list, sender_groupsIDs, "write:update:user", sender_Username)
+		// Réglage du serveur, pas une entité de l'annuaire. Le droit est celui
+		// de l'action appelée ; le troisième argument n'est plus lu.
+		return update_Debug_Command_Parser(command_list, sender_groupsIDs, "", sender_Username)
 
 	default:
 		return "Requête invalide. Essayez « update -h »."
@@ -72,7 +75,10 @@ func aide() string {
 
   update -u <username> -p <nouveau mot de passe>
   update -pu <permission> <clé d'action> nil|all|-a|-r [portée] [domaine]
-  update -debug <true|false>
+  update -debug                                     affiche l'état du journal de détail
+  update -debug <true|false>                        tout le serveur
+  update -debug <sous-système> <off|debug|trace|defaut>
+                                                    un sous-système : ldap, ducky, gpo, base
 
 Note : le mot de passe peut contenir des espaces, ils sont conservés.`
 }

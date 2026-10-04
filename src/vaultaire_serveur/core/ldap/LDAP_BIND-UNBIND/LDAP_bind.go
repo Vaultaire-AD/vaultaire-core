@@ -10,6 +10,7 @@ import (
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	ldapresponse "vaultaire/core/ldap/LDAP_RESPONSE"
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
@@ -26,7 +27,7 @@ import (
 func respond(conn net.Conn, messageID, resultCode int, diagnostic string) {
 	if err := ldapresponse.SendResult(conn, messageID, ldapstorage.AppBindResponse,
 		resultCode, "", diagnostic); err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap bind: "+err.Error())
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeLDAPListen, "bind: "+err.Error())
 	}
 }
 
@@ -74,6 +75,42 @@ func refuser(conn net.Conn, messageID int, source, compte string) {
 	respondInvalidCredentials(messageID, conn)
 }
 
+// Les quatre formes d'un bind simple, selon ce qui est fourni.
+type formeDeBind int
+
+const (
+	// bindAnonyme : DN vide ET mot de passe vide — RFC 4513 §5.1.1.
+	bindAnonyme formeDeBind = iota
+	// bindNonAuthentifie : DN fourni, mot de passe VIDE — RFC 4513 §5.1.2,
+	// « unauthenticated bind ». À refuser par défaut.
+	bindNonAuthentifie
+	// bindSansNom : DN vide, mot de passe fourni. Hors RFC ; refusé.
+	bindSansNom
+	// bindNomEtMotDePasse : les deux fournis — RFC 4513 §5.1.3. Le seul qui
+	// identifie quelqu'un.
+	bindNomEtMotDePasse
+)
+
+// natureDuBind classe un bind simple par ce qu'il fournit, et par rien d'autre.
+//
+// Une fonction à part pour que la table des quatre cas soit écrite UNE fois et
+// éprouvée telle quelle : le défaut du TO-DO 128 était un commentaire qui
+// nommait un cas et un code qui en traitait un autre.
+func natureDuBind(op ldapstorage.BindRequest) formeDeBind {
+	nom := op.Name != ""
+	motDePasse := len(op.Authentication) > 0
+	switch {
+	case nom && motDePasse:
+		return bindNomEtMotDePasse
+	case nom:
+		return bindNonAuthentifie
+	case motDePasse:
+		return bindSansNom
+	default:
+		return bindAnonyme
+	}
+}
+
 func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn) {
 	user, domain, ou := ldaptools.ExtractUsernameAndDomain(op.Name)
 	source := ratelimit.SourceConn(conn)
@@ -88,8 +125,8 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// web et le canal Ducky. Le compte de cette limitation vivait auparavant ici
 	// seul : un attaquant freiné sur le bind repartait de zéro sur le portail.
 	if autorisé, reste := ratelimit.Autorise(user, source); !autorisé {
-		logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-			"ldap bind: trop de tentatives depuis %s pour %s, encore %s",
+		ldapjournal.Ecrire(conn, "SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+			"bind: trop de tentatives depuis %s pour %s, encore %s",
 			source, user, reste.Round(time.Second)))
 		ldapsessionmanager.ResetBindInfo(conn)
 		// unwillingToPerform et non invalidCredentials : le refus ne porte pas
@@ -103,8 +140,8 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// est désactivé par défaut pour ne pas couper un parc existant à la mise à
 	// jour ; l'activer impose LDAPS sur 636.
 	if ldapstorage.RequireTLSForBind && len(op.Authentication) > 0 && !isTLS(conn) {
-		logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-			"ldap bind: refusé hors TLS depuis %s", conn.RemoteAddr()))
+		ldapjournal.Ecrire(conn, "SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+			"bind: refusé hors TLS depuis %s", conn.RemoteAddr()))
 		ldapsessionmanager.ResetBindInfo(conn)
 		respond(conn, messageID, ldapstorage.ResultStrongerAuthRequired,
 			"TLS is required for password authentication")
@@ -117,8 +154,8 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// référence ; accepter silencieusement, c'est promettre un comportement qu'on
 	// ne tient pas.
 	if op.Version != 3 {
-		logs.Write_Log("WARNING", fmt.Sprintf(
-			"ldap bind: version %d refusée depuis %s (seul LDAPv3 est géré)",
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+			"bind: version %d refusée depuis %s (seul LDAPv3 est géré)",
 			op.Version, conn.RemoteAddr()))
 		respondProtocolError(messageID, conn, "only LDAPv3 is supported")
 		return
@@ -132,33 +169,63 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// message qui envoie chercher du côté du mot de passe alors que c'est la
 	// méthode qui n'est pas gérée.
 	if !op.SimpleAuth {
-		logs.Write_Log("WARNING", fmt.Sprintf(
-			"ldap bind: mécanisme non simple refusé depuis %s", conn.RemoteAddr()))
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+			"bind: mécanisme non simple refusé depuis %s", conn.RemoteAddr()))
 		respondAuthMethodNotSupported(messageID, conn, "only simple authentication is supported")
 		return
 	}
 
-	// Bind « non authentifié » : DN vide AVEC un mot de passe.
+	// Les deux formes de bind SANS identité prouvée — RFC 4513 §5.1.
 	//
-	// RFC 4513 §5.1.2 : à refuser par défaut. Le cas vient presque toujours d'une
-	// configuration cliente incomplète — un DN oublié — et l'accepter en anonyme
-	// laisse l'application croire qu'elle est authentifiée alors qu'elle n'a que
-	// les droits d'un inconnu. L'incident se manifeste bien plus tard, sur une
-	// lecture vide.
-	if op.Name == "" && len(op.Authentication) > 0 {
-		logs.Write_Log("WARNING", fmt.Sprintf(
-			"ldap bind: bind non authentifié refusé depuis %s (DN vide, mot de passe fourni)",
+	// Le classement est fait par natureDuBind, et refusé ICI : avant toute
+	// lecture de la base, et sans compter d'échec. Ce n'est pas une tentative
+	// d'identification ratée, c'est une requête que le serveur ne veut pas
+	// servir ; un client mal configuré qui la rejoue en boucle doit recevoir un
+	// refus de protocole immédiat, pas épuiser le compteur d'échecs du compte
+	// qu'il nomme — compteur partagé avec le portail.
+	switch natureDuBind(op) {
+	case bindNonAuthentifie:
+		// §5.1.2 : DN fourni, mot de passe de longueur nulle.
+		//
+		// Ce cas descendait jusqu'à la vérification du mot de passe avec une
+		// chaîne vide. Il n'était pas exploitable — aucune empreinte ne correspond
+		// à une chaîne vide — mais le commentaire qui se trouvait ici citait ce
+		// paragraphe pour le cas d'à côté, et laissait croire celui-ci couvert
+		// (TO-DO 128).
+		//
+		// Pourquoi la RFC demande de le refuser : des applications s'authentifient
+		// en tentant un bind avec ce que l'utilisateur a saisi. Si un mot de passe
+		// VIDE réussit — fût-ce en anonyme —, l'application conclut que
+		// l'utilisateur est authentifié sous le DN qu'elle a envoyé.
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+			"bind: bind non authentifié refusé depuis %s (DN fourni, mot de passe vide)",
 			conn.RemoteAddr()))
 		ldapsessionmanager.ResetBindInfo(conn)
 		respondUnwillingToPerform(messageID, conn, "unauthenticated bind is not allowed")
 		return
+	case bindSansNom:
+		// DN vide AVEC un mot de passe : aucune des formes de la RFC. Ni
+		// l'anonymat de §5.1.1, qui veut les deux vides, ni un bind nom / mot de
+		// passe, qui veut les deux fournis. Le cas vient d'une configuration
+		// cliente incomplète — un DN oublié — et l'accepter en anonyme laisserait
+		// l'application croire qu'elle est authentifiée alors qu'elle n'a que les
+		// droits d'un inconnu. L'incident se manifesterait bien plus tard, sur une
+		// lecture vide.
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf(
+			"bind: bind sans nom refusé depuis %s (DN vide, mot de passe fourni)",
+			conn.RemoteAddr()))
+		ldapsessionmanager.ResetBindInfo(conn)
+		respondUnwillingToPerform(messageID, conn, "a password was sent without a bind DN")
+		return
 	}
 
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: bind request messageID=%d dn=%s user=%s ou=%s domain=%s", messageID, op.Name, user, ou, domain))
+	// Le découpage du DN, en déroulé : la demande elle-même est sur la ligne de
+	// l'opération. Jamais le mot de passe — voir ldapjournal.Decrire.
+	ldapjournal.Trace(conn, "bind : dn=%q découpé en compte=%q ou=%q domaine=%q", op.Name, user, ou, domain)
 
 	// 🔒 Interdiction d'utiliser le compte système Vaultaire
 	if user == "vaultaire" {
-		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: system user rejected from %s", conn.RemoteAddr().String()))
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthFailed, fmt.Sprintf("bind: system user rejected from %s", conn.RemoteAddr().String()))
 		// ResetBindInfo et non ClearSession : la connexion vit encore.
 		//
 		// Supprimer la session sous une connexion ouverte laissait le
@@ -168,9 +235,13 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		return
 	}
 
-	// Selon la RFC 4511, un bind avec un DN vide est une demande d'anonymat.
-	if op.Name == "" || op.Anonymous {
-		logs.Write_Log("INFO", fmt.Sprintf("ldap: anonymous bind request from %s", conn.RemoteAddr().String()))
+	// L'anonymat — RFC 4513 §5.1.1 : DN vide ET mot de passe vide, les deux.
+	//
+	// La condition était « DN vide, ou drapeau d'anonymat » : exacte seulement
+	// parce que le DN vide avec mot de passe venait d'être refusé au-dessus. Elle
+	// dit maintenant ce qu'elle veut dire, sans dépendre de l'ordre des blocs.
+	if natureDuBind(op) == bindAnonyme {
+		ldapjournal.Ecrire(conn, "INFO", logs.CodeNone, fmt.Sprintf("bind: anonymous bind request from %s", conn.RemoteAddr().String()))
 
 		// On marque la session comme "Bound" mais sans utilisateur (Anonymous)
 		ldapsessionmanager.SetAnonymousBindInfo(conn)
@@ -191,8 +262,8 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// Le chemin Ducky coupe avant, et pour cette raison précise. Les deux sont
 	// désormais alignés.
 	if permission.IsRevoked(user) {
-		logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-			"ldap bind: tentative sur le compte révoqué %s depuis %s", user, conn.RemoteAddr()))
+		ldapjournal.Ecrire(conn, "SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+			"bind: tentative sur le compte révoqué %s depuis %s", user, conn.RemoteAddr()))
 		refuser(conn, messageID, source, user)
 		return
 	}
@@ -200,7 +271,7 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// 🔍 Vérification que l'utilisateur existe
 	userID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), user)
 	if err != nil {
-		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: unknown user=%s from %s", user, conn.RemoteAddr().String()))
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthFailed, fmt.Sprintf("bind: unknown user=%s from %s", user, conn.RemoteAddr().String()))
 		refuser(conn, messageID, source, user)
 		return
 	}
@@ -243,14 +314,14 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// disparaît est sa présence dans l'annuaire, pas le compte.
 	groupIDsDuCompte, err := permission.GetGroupIDsForUser(user)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
-			"ldap bind: groupes de %s illisibles (%v) — refusé", user, err))
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"bind: groupes de %s illisibles (%v) — refusé", user, err))
 		refuser(conn, messageID, source, user)
 		return
 	}
 	if len(groupIDsDuCompte) == 0 {
-		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf(
-			"ldap bind: refusé, le compte %s n'appartient à aucun groupe — il n'a aucun "+
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthPermission, fmt.Sprintf(
+			"bind: refusé, le compte %s n'appartient à aucun groupe — il n'a aucun "+
 				"droit sur le parc (rattachez-le depuis le portail ou « vlt »)", user))
 		ldapsessionmanager.ResetBindInfo(conn)
 		respondInvalidCredentials(messageID, conn)
@@ -269,8 +340,8 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	code := ""
 	mfa, err := lireEtatMFA(user)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
-			"ldap bind: état du second facteur illisible pour %s (%v) — refusé", user, err))
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"bind: état du second facteur illisible pour %s (%v) — refusé", user, err))
 		refuser(conn, messageID, source, user)
 		return
 	}
@@ -278,15 +349,15 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 		if mfa.Secret == "" {
 			// Imposé par un groupe, jamais enrôlé : aucun code ne peut être
 			// valide. Le compte doit enrôler sur le portail.
-			logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-				"ldap bind: refusé, second facteur imposé à %s mais non enrôlé", user))
+			ldapjournal.Ecrire(conn, "SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+				"bind: refusé, second facteur imposé à %s mais non enrôlé", user))
 			refuser(conn, messageID, source, user)
 			return
 		}
 		mdp, c, ok := separerCode(motDePasse)
 		if !ok {
-			logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf(
-				"ldap bind: refusé, %s est soumis au second facteur et le mot de passe ne se termine pas par un code à 6 chiffres", user))
+			ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthFailed, fmt.Sprintf(
+				"bind: refusé, %s est soumis au second facteur et le mot de passe ne se termine pas par un code à 6 chiffres", user))
 			refuser(conn, messageID, source, user)
 			return
 		}
@@ -301,13 +372,13 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// la SEULE par laquelle un compte donné se connecte jamais.
 	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), userID, motDePasse)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf("ldap bind: password lookup failed for user=%s: %v", user, err))
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeDBQuery, fmt.Sprintf("bind: password lookup failed for user=%s: %v", user, err))
 		respondProtocolError(messageID, conn, "password lookup failed")
 		return
 	}
 
 	if !valide {
-		logs.Write_LogCode("WARNING", logs.CodeAuthFailed, fmt.Sprintf("ldap bind: invalid password user=%s from %s", user, conn.RemoteAddr().String()))
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthFailed, fmt.Sprintf("bind: invalid password user=%s from %s", user, conn.RemoteAddr().String()))
 		refuser(conn, messageID, source, user)
 		return
 	}
@@ -331,11 +402,11 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// verrait une vague de « invalid password » le jour où la politique prend
 	// effet et chercherait une attaque là où il n'y a qu'une expiration.
 	if status, err := passwordpolicy.Check(database.GetDatabase(), user); err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, fmt.Sprintf(
-			"ldap bind: état d'expiration illisible pour user=%s (%v) — connexion autorisée", user, err))
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeDBQuery, fmt.Sprintf(
+			"bind: état d'expiration illisible pour user=%s (%v) — connexion autorisée", user, err))
 	} else if status.IsExpired() {
-		logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-			"ldap bind: refusé, mot de passe expiré depuis %d jour(s) user=%s from %s",
+		ldapjournal.Ecrire(conn, "SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+			"bind: refusé, mot de passe expiré depuis %d jour(s) user=%s from %s",
 			-status.DaysUntilExpiry, user, conn.RemoteAddr().String()))
 		refuser(conn, messageID, source, user)
 		return
@@ -345,16 +416,16 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// connaît déjà un mot de passe valide, l'information ne lui apprend rien.
 	if code != "" {
 		if raison := verifierCode(user, mfa.Secret, code); raison != "" {
-			logs.Write_LogCode("SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
-				"ldap bind: refusé pour %s depuis %s : %s", user, conn.RemoteAddr().String(), raison))
+			ldapjournal.Ecrire(conn, "SECURITY", logs.CodeAuthFailed, fmt.Sprintf(
+				"bind: refusé pour %s depuis %s : %s", user, conn.RemoteAddr().String(), raison))
 			refuser(conn, messageID, source, user)
 			return
 		}
 	} else if mfa.Lie {
 		// ldap.mfa_bypass : le bind passe sans code. Journalisé pour que le
 		// contournement reste visible à l'audit.
-		logs.Write_LogCode("SECURITY", logs.CodeNone, fmt.Sprintf(
-			"ldap bind: second facteur de %s contourné (ldap.mfa_bypass activé)", user))
+		ldapjournal.Ecrire(conn, "SECURITY", logs.CodeNone, fmt.Sprintf(
+			"bind: second facteur de %s contourné (ldap.mfa_bypass activé)", user))
 	}
 
 	// ✅ Authentification réussie — maintenant vérification de la permission
@@ -364,25 +435,38 @@ func HandleBindRequest(op ldapstorage.BindRequest, messageID int, conn net.Conn)
 	// d'action reste à faire.
 	normalizedAction, actionValide := permission.IsValidAction("auth")
 	if !actionValide {
-		logs.Write_LogCode("ERROR", logs.CodeAuthPermission,
-			"ldap bind: l'action « auth » n'est pas reconnue du registre")
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeAuthPermission,
+			"bind: l'action « auth » n'est pas reconnue du registre")
 		refuser(conn, messageID, source, user)
 		return
 	}
 
 	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDsDuCompte, normalizedAction, []string{domain})
 	if !ok {
-		logs.Write_LogCode("WARNING", logs.CodeAuthPermission, fmt.Sprintf("ldap bind: permission denied user=%s domain=%s reason=%s", user, domain, msg))
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthPermission, fmt.Sprintf("bind: permission denied user=%s domain=%s reason=%s", user, domain, msg))
 		refuser(conn, messageID, source, user)
 		return
 	}
 
 	ratelimit.Reussite(user, source)
 	ldapsessionmanager.SetBindInfo(conn, user, op.Name)
-	logs.Write_LogCodeMeta("INFO", logs.CodeNone, fmt.Sprintf("ldap bind: success user=%s domain=%s from %s", user, domain, conn.RemoteAddr().String()), logs.UserMeta(userID))
+	// Le protocole figure sur la ligne : « qui s'est lié, et par quel canal »
+	// est la question qu'on pose à cette ligne-là, et LDAP en clair ne se lisait
+	// pas différemment de LDAPS.
+	ldapjournal.EcrireMeta(conn, "INFO", logs.CodeNone, fmt.Sprintf(
+		"bind: success user=%s domain=%s from %s (%s)",
+		user, domain, conn.RemoteAddr().String(), canal(conn)), logs.UserMeta(userID))
 
 	// ✅ Réponse LDAP
 	respondBindSuccess(messageID, conn)
+}
+
+// canal rend « LDAPS » ou « LDAP » pour le journal.
+func canal(conn net.Conn) string {
+	if isTLS(conn) {
+		return "LDAPS"
+	}
+	return "LDAP"
 }
 
 // isTLS dit si la connexion est chiffrée.

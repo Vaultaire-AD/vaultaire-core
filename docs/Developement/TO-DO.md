@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **139**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **156**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -32,8 +32,12 @@ compte autant que ce qui a été retenu.
 **Audit LDAP du 28/09.** Relecture de `core/ldap` — sécurité, fonctionnalités et
 compatibilité avec les clients LDAP du marché. Les constats sont détaillés dans
 [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md), le travail est découpé
-aux points **119 à 131**. **Traités dans la 2.2** : 119 à 127. **Restent
-ouverts** : 128 à 131, plus le **132**, relevé en traitant le 120.
+aux points **119 à 131**. **Tous sont traités dans la 2.2**, 119 à 131, ainsi que
+le **132**, relevé en traitant le 120 — le dernier constat de sécurité de
+l'audit. Quatre points en sont sortis en les traitant : **150** (la suite
+`--test`), **151** (les mots de passe de la formation), **152** (les bornes
+LDAP ne se réglaient pas — **traité**) et **155** (`memberOf` dépend de la base
+de recherche).
 
 **Le point 122 a été tranché à l'inverse de ce qu'il demandait** : il proposait de
 rendre visible un compte sans groupe ; la décision a été qu'un tel compte n'a
@@ -52,6 +56,20 @@ le portail — n'est pas neuf : c'est le **82**, dont la section « À faire » 
 complétée de ce que la recette a montré. Le Credential Provider reste en
 attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
 
+**Recette du 03/10 (retours de Lorens sur `A_TESTER.md`).** Dix points ouverts,
+**139 à 148** : Windows (**139** la DLL dépend de `libwinpthread-1.dll`, **140**
+le fournisseur s'inscrit sous le CLSID `{` — **traités** le jour même, voir
+`DO/2.2/2.2.md` ; le **149** en est la suite),
+proxy (**141** la configuration des relais se pilote depuis le core), GPO
+(**142** cadence de la vérification utilisateur, **143** une ligne par machine
+dans la page Conformité), comptes et LDAP (**144** créer un compte sans mot de
+passe provisoire, **145** journal LDAP illisible en debug — **traité**, voir
+`DO/2.2/2.2.md` ; les **153** et **154** en sont la suite) et cluster (**146**
+retirer un nœud à la main, **147** maintenance et purge, **148** sessions
+actives par core). Le retour sur le § 26 — une suppression ou une modification
+dans un `HOME` n'est pas détectée — n'ouvre pas de point : c'est le **135**,
+confirmé, et complété de ce que la recette a montré.
+
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
 ---
@@ -68,15 +86,23 @@ attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
 | 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
 | 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
 | 138 | DUCKY        | Comptes déjà au-delà de 10 clés SSH                         | À faire — petit                         |
-| 128 | LDAP         | Bind non authentifié : le mauvais cas est refusé            | À faire — petit                         |
-| 129 | LDAP         | Identifiant d'entrée stable, indépendant du nom             | À faire — débloque le sous-schéma        |
-| 130 | LDAP         | Pagination `1.2.840.113556.1.4.319`                         | À faire — au-delà de 10 000 entrées     |
-| 131 | LDAP         | Requête par groupe, et `isInScope` mort                     | À faire — petit                         |
-| 132 | LDAP         | `memberOf` porte les groupes des sous-domaines              | À faire — **la seule fuite restante**   |
-| 135 | GPO          | Le scope utilisateur n'entre jamais dans l'inventaire       | À faire — **la conformité ment**        |
+| 141 | CLUSTER      | Piloter les relais d'un proxy depuis le core (web + CLI)    | À faire — gros chantier, à cadrer       |
+| 146 | CLUSTER      | Retirer à la main un nœud hors ligne                        | À faire — petit                         |
+| 147 | CLUSTER      | Maintenance et purge d'un nœud                              | À faire — après le 148                  |
+| 148 | CLUSTER      | Sessions actives par core, en page et en commande           | À faire                                 |
+| 155 | LDAP         | `memberOf` dépend de la base de recherche                   | À faire — un client synchronisé sur un sous-domaine perd des groupes |
+| 150 | TESTS        | La suite `--test` échoue sur dix points                     | À faire — **un échec masque les autres** |
+| 151 | DOC          | Les mots de passe d'exemple sont refusés par la politique   | À faire — petit, bloque la formation    |
+| 144 | COMPTES      | Créer un compte de service sans mot de passe provisoire     | À faire — petit, l'action le sait déjà  |
+| 153 | JOURNAL      | Dix-huit écritures directes sur la sortie standard          | À faire — petit                         |
+| 154 | JOURNAL      | Le tampon mémoire est recopié à chaque ligne une fois plein | À faire — petit, **2,4 ms par ligne de journal** |
+| 135 | GPO          | Le scope utilisateur n'entre jamais dans l'inventaire       | À faire — **la conformité ment**, confirmé le 03/10 |
+| 142 | GPO          | Cadence propre à la vérification du scope utilisateur       | À faire — après le 135                  |
+| 143 | GPO          | Page Conformité : une seule ligne par machine               | À faire — moins urgent                  |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
 | 133 | RÉVOCATION   | `kill -u` ne coupe aucune session ouverte                   | À faire — **l'aide affirme le contraire** |
 | 134 | RÉVOCATION   | Le rattrapage `06_04` n'est demandé qu'au démarrage         | À faire                                 |
+| 149 | WINDOWS      | Éprouver la DLL du fournisseur dans la fabrication (wine)   | À faire — petit                         |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 71  | CLIENT       | `-join` ne sait installer que Rocky                        | À faire                                 |
@@ -161,6 +187,128 @@ autres. Et un test qui pose la cadence à son maximum et vérifie qu'aucune sess
 saine n'est coupée.
 
 
+### 141. [CLUSTER] [PROXY] [WEB] Piloter les relais d'un proxy depuis le core
+
+**Constat** (recette du 03/10, § 22a). Rien n'explique comment gérer la
+configuration des relais d'un proxy, et surtout elle ne se gère **que** dans le
+fichier YAML du proxy (`relais:` — nom, type, écoute, cibles). Le core n'en sait
+que ce que le proxy lui remonte : la page Cluster affiche, au clic sur un proxy,
+un tableau de **compteurs** par relais (nom, type, écoute, connexions, trafic —
+TO-DO 108). Elle ne dit pas vers quoi chaque relais redirige, et ne permet de
+rien changer.
+
+**Demande de Lorens.** « Qui expose quoi » — LDAP, HTTP, HTTPS, Ducky — doit se
+gérer depuis la page Cluster des cores **et** en ligne de commande. Au clic sur
+un proxy, **toute** sa configuration remonte proprement. Et une commande avec un
+suivi visuel de l'état.
+
+**Ce qu'il faut trancher avant d'écrire.**
+
+- **Où vit la vérité** : aujourd'hui le fichier du proxy. Si le core pilote, il
+  faut une table des relais par nœud et une trame qui la pousse (famille `04`,
+  comme la `04_15`/`04_16` qui sert déjà les cibles). Que devient alors le YAML :
+  amorçage seulement, ou repli quand le core est injoignable ? Un proxy isolé de
+  ses cores doit continuer de relayer avec sa dernière configuration connue.
+- **Ce qui reste local par nature** : le port d'écoute dépend de la machine
+  (ports bas interdits en UID 10001, port déjà pris). Le core peut le demander,
+  seul le proxy sait s'il l'a obtenu : il faut un état **demandé / appliqué /
+  refusé** par relais, et c'est lui le « suivi visuel ».
+- **Les types** : `ducky`, `https`, `ldaps` existent. Le LDAP en clair est
+  **refusé** par décision (voir `docs/proxy/https-et-ldaps.md`) ; « HTTP » est-il
+  demandé en clair, ou est-ce l'HTTPS relayé sans terminaison TLS ?
+- **Le droit** : changer ce qu'un proxy expose déplace un point d'entrée du
+  réseau. Clé RBAC dédiée, portée globale, ligne d'audit.
+
+**À faire**, une fois tranché.
+
+1. La fiche d'un proxy affiche sa configuration complète : chaque relais avec
+   son type, son écoute, sa **source de cibles** et les cibles résolues en ce
+   moment, à côté des compteurs existants.
+2. Les mêmes informations en commande (`vlt cluster relais <proxy>`), et les
+   écritures des deux côtés par la même action du registre (invariant § 6.1).
+3. La page d'exploitation manquante dans `docs/proxy/` : comment on ajoute, on
+   change et on retire un relais — c'est le manque que la recette a relevé en
+   premier — et un jalon dans la formation, chapitre 10.
+
+Lié au **67** (ce qu'un proxy voit des cores) : les deux touchent à ce que le
+core dit à un proxy, et gagneraient à partager leur trame.
+
+### 148. [CLUSTER] Les sessions actives d'un core, en page et en commande
+
+**Demande de Lorens** (recette du 03/10). Voir le nombre de sessions actives sur
+chaque core, dans la page Cluster et par une commande.
+
+**Aujourd'hui.** Les proxies remontent leurs compteurs par relais ; un **core**
+ne publie rien de tel. Ses sessions Ducky vivent dans son registre en mémoire
+(`sessionmgr.Sessions`), que les autres cores ne voient pas — *à vérifier* : la
+table `user_sessions` a pour clé (compte, machine), sans le core qui porte la
+session.
+
+**À faire.** Chaque core publie avec son battement le nombre de ses sessions —
+au moins : tunnels machine, sessions utilisateur authentifiées, connexions en
+cours de poignée de main — dans les métriques de nœud (`metriques_noeud.go`,
+déjà là pour les proxies). Affichage dans la liste et la fiche de la page
+Cluster, et dans `vlt cluster list` / une fiche `vlt cluster show <nœud>`.
+Mesure **déclarative**, comme celles des proxies : elle s'affiche, elle n'ordonne
+pas la liste servie aux agents.
+
+**Préalable du 147** : on ne purge pas un nœud sans voir son compteur descendre.
+
+### 147. [CLUSTER] Mettre un nœud en maintenance, et le purger de ses sessions
+
+**Demande de Lorens** (recette du 03/10). Deux gestes distincts :
+
+- **maintenance** — le nœud reste dans le cluster, mais il est retiré de la
+  liste de tout le monde : plus personne ne doit l'utiliser ;
+- **purge** — le nœud se vide de toutes ses sessions.
+
+**Ce qui existe déjà.** `vlt cluster rotation <nœud> out` retire un nœud de la
+liste servie aux agents (`expose_aux_agents`), et la page Cluster porte le même
+réglage. C'est la moitié de la maintenance. Ce qui manque :
+
+- les sessions **déjà ouvertes** sur le nœud y restent : sortir de la rotation
+  n'en ferme aucune, et un agent ne redemande la liste qu'à son rythme
+  (`cluster refresh` le force, à la main) ;
+- *à vérifier* : que « out » retire bien le nœud de **toutes** les listes — la
+  `04_04` des agents, celle que reçoivent les proxies, les cibles `source: cores`
+  des relais LDAPS, la `04_16` pour un Nexus — et pas seulement de la première ;
+- aucun état nommé « maintenance » : un nœud sorti de la rotation ne se
+  distingue pas, dans la liste, d'un nœud qu'on a oublié d'y remettre.
+
+**À faire.**
+
+1. Un état **maintenance** explicite, visible dans la liste et la fiche, posé et
+   levé par un bouton et par `vlt cluster maintenance <nœud> <on|off>`. Il
+   implique la sortie de toutes les listes.
+2. La **purge** : le nœud en maintenance ferme ses sessions pour que les agents
+   se reconnectent ailleurs. À trancher : fermeture immédiate, ou échelonnée
+   pour ne pas faire reconnecter tout un site dans la même seconde ; et le sort
+   des sessions web d'administration ouvertes sur ce core — on ne doit pas se
+   couper la branche depuis laquelle on purge.
+3. **Garde-fou** : refuser de mettre en maintenance le **dernier** core en
+   rotation, ou l'exiger avec une confirmation explicite. C'est la commande qui
+   coupe le parc.
+4. Le suivi : le compteur du **148** descend à zéro, et la fiche le dit.
+
+### 146. [CLUSTER] Retirer à la main un nœud hors ligne
+
+**Demande de Lorens** (recette du 03/10). Un bouton pour supprimer du cluster un
+service hors ligne, sans attendre.
+
+**Aujourd'hui.** Un nœud absent n'est oublié que par `CleanupStaleNodes`, au
+terme de `cluster purge-delay` (24 h par défaut). Aucune action, ni en page ni
+en commande, ne le retire avant. Un proxy de test démonté reste donc un jour
+entier dans la liste.
+
+**À faire.** Une action `cluster.forget` — bouton sur la fiche du nœud et
+`vlt cluster forget <nœud>` — **réservée aux nœuds hors ligne** : retirer un
+nœud vivant ne sert à rien, il se réinscrit au battement suivant s'il est un
+core, et **jamais** s'il est un proxy (c'est le défaut du **109**, qu'un bouton
+rendrait facile à déclencher). Traiter le 109 avant, ou refuser franchement un
+nœud dont le dernier battement est récent. Ligne d'audit, et rappel de ce qui
+part avec la ligne : ses réglages d'exposition, de priorité et d'affinité
+(TO-DO 85 les fait survivre à l'absence, pas à l'oubli).
+
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
 **Demande de Lorens** (point 15 de la liste du 21/09) : « la liste des services
@@ -193,6 +341,25 @@ qui lui est propre — les services d'un type, par la `04_15` réservée aux pro
 des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
+
+### 149. [WINDOWS] [TESTS] Éprouver la DLL du fournisseur dans la fabrication
+
+**Constat** (relevé en traitant les 139 et 140). Les deux défauts — une
+dépendance manquante, une inscription sous le mauvais CLSID — n'ont été vus qu'à
+l'écran de connexion d'un vrai Windows Server, alors qu'un essai de vingt lignes
+les montre tous les deux : `regsvr32` sous **wine**, lecture des clés créées,
+puis un `CoCreateInstance` du CLSID. C'est ce qui a servi à les reproduire et à
+valider le correctif, à la main.
+
+Le contrôle des imports et celui des formats sont désormais dans `build-cp.sh` :
+ils ferment ces deux défauts-là. Rien n'éprouve encore que la DLL **s'inscrit et
+s'active**.
+
+**À faire.** Un script `credential_provider/essai-wine.sh`, lancé par `build.sh`
+quand `wine` est présent (et sauté, en le disant, quand il ne l'est pas) :
+inscription, GUID attendu sous les deux clés, activation par COM, retrait, plus
+rien dans le registre. À brancher dans `tests.yaml` si l'image de CI peut porter
+wine. Ce n'est pas LogonUI — la tuile elle-même reste une recette manuelle.
 
 ### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
 
@@ -227,6 +394,8 @@ repli sur `SSH_CONNECTION`).
 
 **Constat** (recette du 30/09). Une GPO de scope `user` dépose un fichier. L'utilisateur le supprime, ou le modifie. La dérive n'est **jamais** détectée : après plusieurs ouvertures de session, `vlt gpo status` et la page Conformité continuent d'annoncer que tout va bien.
 
+**Confirmé en recette le 03/10**, et sous une seconde forme : après une déconnexion puis une reconnexion du compte, le scope utilisateur **n'est pas réappliqué**. C'est la même cause. `RunUserCycle` enchaîne bien le scan puis le cycle à chaque ouverture de session ; mais le scan ne voit rien (inventaire vide), donc n'oublie aucune empreinte, et le cycle reçoit « politique inchangée » — il sort sans rien poser. Le scope machine, lui, détecte et corrige : le défaut est propre au chemin utilisateur.
+
 **Ce que le code fait.** Le scan lui-même est juste. `scanFromState` (`drift.go`) traite la modification, l'absence, le mode, et même le lien symbolique posé à la place du fichier ; `drift_absent_test.go` le couvre. Le point 33 a bien ajouté le déclenchement à l'ouverture de session, avec sa borne de cadence et son verrou par compte.
 
 **La rupture est en amont, et elle tient en une ligne.** L'inventaire est alimenté par `recordWrite` / `recordAbsent` (`manifest.go`), et ces deux fonctions ne sont appelées **que** par `writeSystemFile` / `removeSystemFile`, dans `appliers_machine.go`. Le chemin du scope utilisateur — `writeUserFile` (`appliers_user.go`) → `ecrireFichierUtilisateur` (`chemin_sur_linux.go`) — n'appelle **ni l'un ni l'autre**.
@@ -243,6 +412,44 @@ Conséquence en chaîne : `outcome.Files` est vide → `state.Files` reste vide 
 4. Distinguer, côté affichage, « aucune dérive constatée » de « aucun scan n'a eu lieu ». Aujourd'hui les deux se lisent « conforme », et c'est ce qui a rendu ce défaut invisible.
 
 ---
+
+### 142. [GPO] [CLIENT] Une cadence propre à la vérification du scope utilisateur
+
+**Demande de Lorens** (recette du 03/10). Qu'un compte qui se déconnecte et se
+reconnecte retrouve sa politique réappliquée — « mais pas avant cinq minutes, il
+faut trouver le bon équilibre ».
+
+**Aujourd'hui.** La vérification d'un `HOME` est bornée par
+`intervalleScanUtilisateur()` (`drift_user.go`), qui rend la cadence **machine**
+(`gpo_refresh_minutes`, de 5 minutes à 24 heures). Le choix était délibéré : PAM
+est sollicité à chaque `ssh` et à chaque `sudo`, et scanner à chaque passage
+coûterait un hachage de l'inventaire et une trame `05_15` par commande
+privilégiée. Mais sur un parc réglé à une heure, un `HOME` dérivé n'est donc
+revérifié qu'une fois par heure, quel que soit le nombre de reconnexions.
+
+**À trancher.** Un réglage distinct pour le scope utilisateur (cinq minutes par
+défaut, annoncé par le core comme l'autre, même recette que `refresh:`), ou un
+plafond fixe « au plus la cadence machine, au moins cinq minutes ». Et
+distinguer une **ouverture de session** d'un `sudo` : c'est la première qui doit
+vérifier, le second n'a rien à remettre en état.
+
+**Après le 135** : tant que l'inventaire du scope utilisateur est vide, aucune
+cadence ne détectera rien.
+
+### 143. [GPO] [WEB] Page Conformité : une seule ligne par machine
+
+**Constat** (recette du 03/10, moins urgent). La page Conformité liste une ligne
+par **couple** (machine, scope) : le scope machine, puis une ligne par
+utilisateur passé sur le poste. Toutes ouvrent pourtant la **même** page de
+détail, qui montre déjà tous les scopes de la machine.
+
+**À faire.** Une ligne par machine, portant l'état du scope **machine**. Les
+scopes utilisateur vont dans la page de détail — et remontent dans la liste
+**seulement en cas d'écart** : une machine dont un `HOME` a dérivé ne doit pas
+s'afficher conforme parce que son scope machine l'est. Le résumé du parc
+(`ResumerParc`) et le tri (`TrierConformite`) comptent aujourd'hui des lignes :
+les faire compter des machines, sans perdre « le pire état l'emporte ».
+`vlt gpo status` doit suivre la même règle (invariant § 6.1).
 
 ### 86. [GPO] Le mode audit ne se distingue pas d'enforce, et une GPO modifiée ne semble pas repartir
 
@@ -382,133 +589,194 @@ Un délégué `write:dns` peut vraisemblablement faire supprimer une table arbit
 > Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
 > scénario.
 >
-> **Neuf points sont traités dans la 2.2** : 119 à 127. Ce qui reste : le
-> **132**, seule fuite restante et suite directe du 120 ; le **129**, identifiant
-> d'entrée stable, dont le 125 a montré qu'il empêche de déclarer `entryUUID`
-> sous son vrai OID ; le **130**, pagination ; et le **128**, petit.
->
-> **Ordre.** 132 d'abord, puis 129 — le 125 a laissé quatre attributs sous une
-> branche privée provisoire faute d'identifiants stables, et le 129 en libère
-> deux.
+> **Tous les points de l'audit sont traités dans la 2.2** : 119 à 132. Ce qui
+> reste ici en est sorti en chemin.
 
-### 128. [LDAP] Le bind non authentifié refusé n'est pas celui de la RFC
+### 155. [LDAP] `memberOf` dépend de la base de recherche
 
-**Petit, et à faire pour ce qu'il évite de croire.**
+**Constat** (relevé en traitant le 132, mesuré sur un core lancé). Le même
+compte, lu par le même compte de service, ne porte pas le même `memberOf` selon
+la base de la recherche :
 
-**Constat.** `LDAP_bind.go:148` refuse `op.Name == "" && len(op.Authentication) > 0`
-sous un commentaire qui cite la RFC 4513 §5.1.2. Or §5.1.2 vise l'inverse : DN
-**non vide** et mot de passe **de longueur nulle**. Ce cas-là descend jusqu'à
-`VerifierMotDePasse` avec une chaîne vide.
+| Recherche | `memberOf` d'alice |
+|---|---|
+| `sub` sur `dc=acme,dc=lan` | `Equipe`, `Dev`, `Secrets` |
+| `sub` sur `dc=dev,dc=acme,dc=lan` | `Dev`, `Secrets` — **`Equipe` manque** |
+| `base` sur le DN d'alice | `Equipe`, `Dev`, `Secrets` |
 
-**Ce n'est pas exploitable** : argon2id d'une chaîne vide ne correspond à aucune
-empreinte, et les mots de passe vides sont refusés à la création depuis le point
-100. Ce qui doit être corrigé, c'est que le commentaire affirme une protection qui
-n'existe pas — la prochaine personne le croira couvert — et qu'un client mal
-configuré consomme du rate-limit au lieu d'un refus de protocole immédiat.
+**Pourquoi.** `loadGroupsAndUsers` (`scope/resolver.go`) compose `memberOf` à
+partir des groupes qu'il vient de **charger**, c'est-à-dire ceux du domaine
+demandé et de ses sous-domaines. Les groupes du compte qui vivent **au-dessus**
+ou **à côté** de la base n'y sont pas. La recherche `base`, elle, passe par
+`memberOfForUser`, qui lit tous les groupes du compte.
 
-**À faire.** Refuser aussi `op.Name != "" && len(op.Authentication) == 0`, avec
-`invalidCredentials` ou `unwillingToPerform`, **avant** toute lecture de base, et
-corriger les deux commentaires pour qu'ils nomment §5.1.1 et §5.1.2 chacun à sa
-place.
+Ce n'est pas une fuite — il manque des valeurs, il n'en sort pas de trop, et le
+132 filtre de la même façon sur les deux chemins. C'est une réponse **fausse par
+omission** : une application synchronisée sur un sous-domaine croit qu'un compte
+a quitté un groupe du domaine parent, et peut lui retirer les droits qui vont
+avec.
 
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 1.4.
-
-### 129. [LDAP] Un identifiant d'entrée stable, indépendant du nom
-
-**Constat.** `entryuuid`, `objectguid`, `nsuniqueid` et `ipauniqueid` valent le
-nom d'utilisateur, ou ce nom préfixé (`candidate/user.go`). Ce ne sont donc pas
-des identifiants : renommer un compte le fait apparaître comme un compte **neuf**
-chez tout client qui s'appuie dessus — Keycloak crée un doublon au lieu de
-renommer.
-
-**Ce que le point 125 a montré.** `entryUUID` ne peut pas être déclaré sous son
-OID standard tant que sa valeur n'en est pas un : la RFC 4530 attache à cet OID
-la syntaxe UUID, et un client strict attend 128 bits en hexadécimal. Il est donc
-déclaré sous la branche privée provisoire de Vaultaire, avec `objectGUID`,
-`nsUniqueId` et `ipaUniqueID`. Traiter ce point-ci en libère au moins un.
-
-**À faire.** Un UUID posé à la création du compte, stocké, jamais réattribué,
-servi en `entryUUID`. Les variantes propriétaires (`objectGUID`, `nsuniqueid`)
-peuvent en dériver, ou disparaître : elles n'ont d'intérêt que pour un client qui
-croit parler à AD ou à 389-ds.
-
-Prévoir la migration des comptes existants, et le fait qu'un client déjà
-synchronisé verra ses comptes changer d'identifiant **une fois**.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
-
-### 130. [LDAP] Pagination `1.2.840.113556.1.4.319`
-
-**Constat.** Le contrôle n'est ni annoncé ni supporté, et un contrôle critique
-est refusé avec `unavailableCriticalExtension` (12). **C'est le bon comportement
-en l'état** — mieux qu'un client qui boucle indéfiniment sur la même page.
-
-La limite est ailleurs : au-delà de `MaxSearchEntries = 10000`, la réponse est
-`sizeLimitExceeded` et il n'existe aucun moyen d'obtenir la suite. Un annuaire qui
-dépasse ce seuil n'est plus énumérable par aucun client.
-
-**À faire, quand le besoin se présentera.** Le contrôle « simple paged results » :
-cookie opaque côté serveur, jeu ordonné stable entre deux pages — c'est cette
-stabilité qui est le vrai travail, pas l'encodage du contrôle. Et l'annoncer dans
-le RootDSE **seulement** une fois implémenté : il y était annoncé sans l'être, et
-c'est précisément ce qui avait été retiré.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.6.
-
-### 131. [LDAP] Une requête SQL par groupe, et du code mort trompeur
-
-**Deux petites choses du même passage.**
-
-1. `GetGroupsWithUsersByNames`
-   (`db_ldap/get_groups_with_users_by_names.go:18`) boucle et fait **une requête
-   par groupe**, alors que le commentaire du résolveur annonce une lecture en lot.
-   Le N+1 par **utilisateur** a bien été supprimé ; celui par groupe demeure. Sur
-   500 groupes, c'est 500 allers-retours par recherche.
-2. `isInScope` (`filter/logical.go`) n'est appelé par personne. Le point 120 étant
-   traité, plus rien ne retient : il décrit la règle du « saut de sous-domaine »
-   et peut faire croire qu'elle est appliquée au filtrage, alors que le contrôle
-   d'accès vit désormais dans `security.PorteeDeRecherche`. Le retirer.
-
-Détail : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md) § 2.9.
-
-### 132. [LDAP] [SÉCURITÉ] `memberOf` porte les groupes des sous-domaines
-
-**Relevé en traitant le point 120**, et laissé ouvert à dessein : la correction
-demande une décision de conception, pas une rustine glissée dans ce lot-là.
-
-**Constat.** Le point 120 écarte bien les entrées de groupe qu'un compte n'a pas
-le droit de lire. Mais `userMembershipMap` (`scope/resolver.go`) et
-`memberOfForUser` (`scope/base_scope.go`) construisent l'attribut `memberOf` à
-partir de **tous** les groupes du compte, sous-domaines compris.
-
-Un délégué de `enov.local` **sans propagation** reçoit donc un compte dont le
-`memberOf` nomme des groupes de `admin.enov.local`. Les entrées de ces groupes ne
-sortent pas ; leurs **noms**, si. Et comme `ToRootDN` ne garde que les deux
-derniers labels, le DN porté par `memberOf` ne dit même pas que le groupe vient
-d'ailleurs — il est indistinguable d'un groupe du domaine parent.
-
-C'est plus étroit que le 120 — des noms de groupes, pas des comptes — mais c'est
-la même fuite, et elle rend les groupes d'un sous-domaine énumérables.
-
-**Ce qu'il faut décider avant d'écrire.** Filtrer `memberOf` suppose de savoir à
-quel domaine appartient chaque groupe listé, donc de porter ce domaine à côté de
-son DN. Trois formes possibles, et ce n'est pas indifférent :
-
-1. une liste parallèle dans `UserEntry` — simple, mais deux tranches à tenir
-   alignées, ce qui finit toujours mal ;
-2. `Groups` devenant une liste de structures `{DN, Domaine}` — propre, mais
-   `GetAttributes` et tous ses appelants s'en ressentent ;
-3. le filtrage fait dans le résolveur, qui connaît déjà les domaines — le moins
-   de code, mais il faudrait y faire remonter la portée, donc mêler le contrôle
-   d'accès à la résolution, ce que le point 120 a précisément séparé.
-
-**Et ne pas oublier `member`** : l'attribut symétrique d'une `GroupEntry` liste
-les DN de ses membres, y compris des comptes que l'appelant n'a pas le droit de
-voir. Même question, même réponse à trouver.
-
-Détail : `DO/2.2/2.2.md`, point 120, alinéa -13.
+**À faire.** Composer `memberOf` de la même façon sur les deux chemins : lire les
+appartenances de tous les comptes rendus en **une** requête — le pendant, en lot,
+de `GetMemberOfByUsername` —, puis laisser `Restreinte` retirer ce que
+l'appelant ne peut pas lire. Le lot 131 a montré comment faire sans requête par
+compte. À éprouver par les trois recherches du tableau, qui doivent rendre la
+même chose.
 
 ---
+
+### 144. [COMPTES] [LDAP] Créer un compte de service sans mot de passe provisoire
+
+**Constat** (recette du 03/10). Tout compte créé naît avec un mot de passe
+**provisoire**, valable 24 heures (TO-DO 99). C'est le bon défaut pour une
+personne. Pour un compte de service — celui qu'on donne à Keycloak ou à GitLab
+pour se lier à l'annuaire — c'est une panne programmée : le lendemain, le bind
+est refusé, et personne n'est là pour « changer le mot de passe à la première
+connexion ».
+
+**Ce que le code fait.** La dérogation existe déjà dans l'action : `user.create`
+lit le paramètre `temporary` et ne pose pas le drapeau s'il vaut `non`
+(`core/action/actions_users.go`). Mais **rien ne le transmet** — ni `create -u`
+en ligne de commande, ni le formulaire du portail. Elle est donc inatteignable.
+Et la réinitialisation par un tiers (`update -u … -p`) marque **toujours**
+provisoire, sans dérogation : renouveler le secret d'un compte de service le
+recasse.
+
+**À faire.**
+
+1. Une option sur `create -u` (`--service`, ou `--permanent`) et sur
+   `update -u -p`, qui passe `temporary=non`.
+2. Le même choix dans le formulaire du portail — un `<select>` à deux valeurs,
+   pas une case à cocher (piège § 6.4) — avec le défaut sur **provisoire**.
+3. Le défaut ne bouge pas : l'absence du champ doit continuer de produire un
+   compte provisoire. Une ligne d'audit dit qu'un compte a été créé **sans**
+   provisoire, et par qui : c'est une dérogation de sécurité.
+4. Mettre à jour le jalon 8.1 de la formation (« Un compte de service LDAP ») et
+   `MAN.md` § 5 : ce sont eux qui font créer le compte qui cassera le lendemain.
+
+### 150. [TESTS] La suite `--test` échoue sur dix points
+
+**Constat** (relevé en traitant les 128 à 130). `vaultaire_serveur --test` rend
+**306 sur 316**. Les dix échecs existaient avant ce lot — même liste sur le
+commit précédent, 304 sur 314 — et aucun ne touche LDAP. Mais une suite qui
+échoue « comme d'habitude » ne signale plus rien : le prochain vrai défaut s'y
+perdra.
+
+Les dix, en trois familles :
+
+- **un ordre d'initialisation** — `Filtrage.LExecuteurApplique` : « catalogue
+  d'actions vide : `action.EnregistrerTout()` n'a pas été appelé ». `main()`
+  lance `testrunner.RunFromMain()` **avant** `EnregistrerTout()`. Il est
+  probable que plusieurs des échecs RBAC et GPO ci-dessous en découlent, ou au
+  contraire qu'ils soient masqués par lui : à vérifier en premier ;
+- **des invariants RBAC et GPO** — `RBAC.RefusHorsDomaine` (`client.list`),
+  `RBAC.LectureVoitSonPerimetre`, `RBAC.AucuneEcritureNeSeContenteDUnDomaine`,
+  `GPO.CleSpecifiqueAuxGPO` et `GPO.LectureResteDeleguee`
+  (`gpo.get_signature_policy`, contrôlée par `read:log`), `GPO.EcrituresStrictes`
+  et `GPO.PorteeNonExtensible` (`gpo.refresh`), `Filtrage.ChaqueFiltreEstEprouve`.
+  Le README de `how it work` § 6.2 en annonce un comme « défaut connu » ; les
+  autres ne sont écrits nulle part ;
+- **un chemin** — `Empreinte/nom partagé (agent)` lit un fichier du module
+  `vaultaire_client` par un chemin relatif : il échoue dès que le binaire n'est
+  pas lancé depuis l'endroit attendu.
+
+**À faire.** Appeler `EnregistrerTout()` avant la suite, relancer, et trier ce
+qui reste : chaque échec est soit un défaut à corriger — et alors c'est une
+entrée de sécurité, `gpo.refresh` qui se contente d'un domaine en est une —,
+soit un test à corriger. Puis brancher `--test` dans `tests.yaml` : aujourd'hui
+rien ne lance cette suite, c'est pour cela qu'elle a dérivé.
+
+### 151. [DOC] Les mots de passe d'exemple de la formation sont refusés
+
+**Constat** (relevé en montant une pile d'essai pour le 130). Trois commandes
+données en exemple échouent telles quelles, sur la politique de mots de passe :
+
+| Où | Commande | Refus |
+|---|---|---|
+| `README.md`, démarrage rapide | `create -u alice.martin … 'Ch4ngeMe!'` | 9 caractères, il en faut 12 |
+| formation, jalon 2.2 | `'Alice-2026!'`, `'David-2026!'` | 11 caractères |
+| formation, jalon 8.1 | `create -u svc_keycloak … 'Svc-Keycloak-2026!'` | « il contient keycloak, trop prévisible » |
+
+Le premier geste de la formation échoue donc, et le lecteur ne sait pas si c'est
+lui ou le produit.
+
+**À faire.** Remplacer les exemples par des mots de passe que la politique
+accepte, et les **éprouver** : un test qui extrait les `create -u` de `README.md`
+et de `docs/training/` et les passe à la politique, pour que le prochain
+durcissement ne recasse pas la formation en silence. À traiter avec le **144** :
+le jalon 8.1 crée justement le compte de service qui cassera le lendemain.
+
+### 153. [JOURNAL] Dix-huit écritures directes sur la sortie standard
+
+**Constat** (relevé en traitant le 145). Le serveur écrit encore sur la sortie
+standard **hors du journal** : dix-huit `fmt.Print…` dans dix fichiers, sans
+compter les commandes — dont c'est le rôle — ni la rotation des journaux, qui ne
+peut pas se journaliser elle-même.
+
+| Fichier | Lignes | Ce qu'elles écrivent |
+|---|---:|---|
+| `core/global/security/keymanagement/GenerateKeyPair.go` | 5 | création de paire de clés, y compris ses erreurs |
+| `ducky-network/new_client/AUTO_ADD_client.go/send_file_to_client.go` | 3 | « 📦 Envoi du fichier avec SCP… » |
+| `ducky-network/new_client/AUTO_ADD_client.go/execute_list_of_command_on_client.go` | 3 | détection de l'OS d'un poste |
+| `core/dns/DNS_Database/` (`DNS_CHECK_Domain`, `DNS_DELETE_Reccord`, `DNS_ADD_EntryToZone`) | 3 | **des erreurs** : « ❌ Erreur lors de la vérification du domaine » |
+| `core/database/db_permission/add_user_permission_to_group.go`, `add_permission_to_software_group.go` | 2 | « ✅ La permission … a été ajoutée » |
+| `core/global/security/generateCert.go` | 1 | certificat déjà présent |
+| `ducky-network/authentification/client/GenerateChallenge.go` | 1 | **une erreur** brute : `fmt.Println(err)` |
+
+Ces lignes n'ont ni horodatage ni niveau, ne partent pas dans le journal commun
+des cores, et ne s'éteignent pas. Plusieurs sont des **erreurs** — les trois du
+DNS, celle du défi d'authentification, deux de la création de clés : elles ne
+figurent donc dans aucun journal consultable, ni `vlt logs` ni la page Logs.
+
+Le 145 en a retiré une dix-neuvième, qui était la pire :
+`GetGroupsDirectlyUnderDomainExact` écrivait « DEBUG: checking… » une fois **par
+groupe de l'annuaire**, à chaque recherche LDAP de portée `one`.
+
+**À faire.** Chacune devient une ligne de journal au niveau qui convient —
+`ERROR` pour les erreurs, `INFO` ou `DEBUG` pour le reste — ou disparaît.
+Puis un test de sentinelle : aucun `fmt.Print` hors de `core/command`,
+`core/testrunner`, `core/logs/rotation.go` et `main`.
+
+### 154. [JOURNAL] Le tampon mémoire est recopié à chaque ligne une fois plein
+
+**Constat** (relevé en traitant le 145, en mesurant l'ancien journal LDAP).
+`LogBuffer.addEntry` (`core/logs/rfc5424.go`) garde les 10 000 dernières lignes
+pour le repli de `vlt logs` quand la base ne répond pas. Une fois ce nombre
+atteint, **chaque** ligne ajoutée alloue une tranche neuve et y recopie les
+10 000 entrées :
+
+```go
+if len(b.entries) > b.maxSize {
+	keep := b.entries[len(b.entries)-b.maxSize:]
+	b.entries = make([]LogEntry, len(keep), b.maxSize)
+	copy(b.entries, keep)
+}
+```
+
+Sous le verrou du tampon, donc en série pour toutes les goroutines qui
+journalisent.
+
+**Mesuré** (sortie standard vers `/dev/null`, pour ne compter que le tampon) :
+
+| | Par ligne de journal |
+|---|---:|
+| tampon pas encore plein | **1,6 µs** |
+| tampon plein | **2,4 ms** — mille cinq cents fois plus |
+
+Le tampon se remplit une fois pour toutes : un core qui a écrit dix mille lignes
+depuis son démarrage paie ensuite 2,4 ms **à chaque ligne**, `INFO` comprises.
+Un bind LDAP réussi en écrit deux. Le core entier ne peut donc pas journaliser
+plus de quatre cents lignes par seconde environ, et tout ce qui journalise
+attend son tour.
+
+C'est aussi ce qui faisait durer plus de deux minutes, en mode debug, une
+conversation LDAP de trois recherches. Le 145 a retiré la cause du volume, pas
+ce coût.
+
+**À faire.** Un tampon circulaire : un tableau fixe et un indice d'écriture,
+sans allocation ni recopie. `recentes()` le déroule à la lecture. Un test de
+performance simple suffit à le garder : dix mille lignes au-delà du plein ne
+doivent pas coûter dix mille recopies.
 
 ## Idées à cadrer
 

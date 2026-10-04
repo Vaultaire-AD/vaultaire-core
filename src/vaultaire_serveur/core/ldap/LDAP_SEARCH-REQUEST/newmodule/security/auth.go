@@ -7,7 +7,6 @@ import (
 	dbpermission "vaultaire/core/database/db_permission"
 	domainpkg "vaultaire/core/domain"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
@@ -220,12 +219,29 @@ func (p *PorteeDeRecherche) AutoriseUnDes(domaines []string) bool {
 	return false
 }
 
-// Filtrer retient les entrées dont au moins un rattachement est autorisé.
+// Filtrer retient les entrées dont au moins un rattachement est autorisé, et
+// les rend RESTREINTES à ce que le compte a le droit de lire.
+//
+// # Deux contrôles, un seul passage — TO-DO 132
+//
+// Le premier décide si l'entrée SORT (point 120). Le second retire de l'entrée
+// retenue ce que ses attributs NOMMENT et que le compte ne peut pas lire :
+// `memberOf` portait les groupes des sous-domaines qu'un délégué sans
+// propagation n'a pas le droit de voir. Voir ldapinterface.LDAPEntry.Restreinte.
+//
+// Les deux sont faits ICI, ensemble, pour qu'il n'existe aucun chemin qui fasse
+// l'un sans l'autre : une entrée qui a passé ce filtre est lisible telle quelle
+// par le compte, entièrement.
 //
 // Rend aussi le nombre d'entrées écartées : c'est ce qui permet de distinguer,
 // dans le journal, une recherche qui ne trouve rien d'une recherche dont le
 // résultat a été réduit par les droits — deux causes que le client voit de la
 // même façon, puisqu'il reçoit dans les deux cas un succès et zéro entrée.
+//
+// Elle n'écrit plus de ligne par entrée écartée (TO-DO 145) : le gestionnaire
+// porte le compte sur la ligne de l'opération, et déroule les entrées en TRACE
+// sous l'identifiant de la connexion — ce que ce paquet, qui ne voit pas la
+// connexion, ne pouvait pas faire.
 func (p *PorteeDeRecherche) Filtrer(entrées []ldapinterface.LDAPEntry) (retenues []ldapinterface.LDAPEntry, écartées int) {
 	if p == nil {
 		return nil, len(entrées)
@@ -234,12 +250,10 @@ func (p *PorteeDeRecherche) Filtrer(entrées []ldapinterface.LDAPEntry) (retenue
 	retenues = make([]ldapinterface.LDAPEntry, 0, len(entrées))
 	for _, e := range entrées {
 		if p.AutoriseUnDes(e.Domaines()) {
-			retenues = append(retenues, e)
+			retenues = append(retenues, e.Restreinte(p.Autorise))
 			continue
 		}
 		écartées++
-		logs.Write_Log("DEBUG", fmt.Sprintf(
-			"ldap: entrée écartée par les droits : %s (rattachements %v)", e.DN(), e.Domaines()))
 	}
 	return retenues, écartées
 }

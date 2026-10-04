@@ -49,7 +49,7 @@ class CVaultaireProvider : public ICredentialProvider {
   void JournaliserScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, const wchar_t* verdict) {
     if (scenario == journalise_) return;
     journalise_ = scenario;
-    Journaliser(L"scenario %u %s", (unsigned)scenario, verdict);
+    Journaliser(L"scenario %u %ls", (unsigned)scenario, verdict);
   }
 
   // SetUsageScenario : Windows annonce POURQUOI il demande des identifiants.

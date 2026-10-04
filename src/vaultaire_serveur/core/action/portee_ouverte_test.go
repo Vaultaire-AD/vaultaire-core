@@ -285,7 +285,7 @@ func TestDroitsBooleensRestentGlobaux(t *testing.T) {
 		"enroll.list_keys",
 		"cluster.list_nodes", "cluster.get_purge_delay", "cluster.set_purge_delay",
 		"certificate.list", "certificate.get", "certificate.regenerate",
-		"server.set_debug", "server.clear_sessions",
+		"server.set_debug", "server.get_debug", "server.clear_sessions",
 	} {
 		d, ok := r.Definition(nom)
 		if !ok {

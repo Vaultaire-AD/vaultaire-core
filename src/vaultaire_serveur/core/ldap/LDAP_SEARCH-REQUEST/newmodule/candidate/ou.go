@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 )
 
 // OUEntry représente une Organizational Unit fictive
@@ -25,6 +26,12 @@ func (ou OUEntry) Domaines() []string {
 		return nil
 	}
 	return []string{ou.BaseDN}
+}
+
+// Restreinte — voir ldapinterface.LDAPEntry. Une unité d'organisation ne nomme
+// qu'elle-même : rien à retirer.
+func (ou OUEntry) Restreinte(func(domaine string) bool) ldapinterface.LDAPEntry {
+	return ou
 }
 
 func (ou OUEntry) ObjectClasses() []string {

@@ -1,10 +1,8 @@
 package response
 
 import (
-	"fmt"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
-	"vaultaire/core/logs"
 )
 
 // ResolveAttributes récupère les attributs demandés pour une entrée
@@ -44,10 +42,6 @@ func ResolveAttributes(entry ldapinterface.LDAPEntry, requested []string, typesO
 		Vals: entry.ObjectClasses(),
 	})
 
-	logs.Write_Log("DEBUG", "Attributs résolus pour l'entrée "+entry.DN()+":")
-	for _, a := range attrs {
-		logs.Write_Log("DEBUG", "  "+a.Type+": "+fmt.Sprintf("%v", a.Vals))
-	}
 	return attrs
 }
 

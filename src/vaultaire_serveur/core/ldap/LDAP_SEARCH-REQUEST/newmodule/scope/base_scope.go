@@ -11,6 +11,7 @@ import (
 	"vaultaire/core/logs"
 
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 )
@@ -18,12 +19,12 @@ import (
 // resolveBaseScope gère les recherches LDAP scope=base (0).
 // JumpServer/django-auth-ldap relit les attributs utilisateur (cn, uid, mail)
 // via une recherche BASE sur le DN exact après authentification.
-func resolveBaseScope(db *sql.DB, baseObject string) []ldapinterface.LDAPEntry {
+func resolveBaseScope(db *sql.DB, baseObject string, j *ldapjournal.Operation) []ldapinterface.LDAPEntry {
 	baseObject = strings.TrimSpace(baseObject)
 	baseLower := strings.ToLower(baseObject)
 
 	if uid, ok := firstRDNValue(baseObject, "uid="); ok && dnHasOU(baseObject, "users") {
-		if entry, ok := buildUserEntryForDN(db, uid, baseLower); ok {
+		if entry, ok := buildUserEntryForDN(db, uid, baseLower, j); ok {
 			return []ldapinterface.LDAPEntry{entry}
 		}
 		return nil
@@ -90,7 +91,7 @@ func isDomainOnlyDN(dn string) bool {
 	return true
 }
 
-func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.UserEntry, bool) {
+func buildUserEntryForDN(db *sql.DB, username, expectedDN string, j *ldapjournal.Operation) (candidate.UserEntry, bool) {
 	userObj, err := dbldap.GetUserByUsername(username, db)
 	if err != nil {
 		return candidate.UserEntry{}, false
@@ -107,7 +108,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 		// DEMANDÉ, celui que l'appelant venait de se voir autoriser. Le contrôle
 		// d'accès se serait alors autorisé lui-même — le défaut du point 120,
 		// reproduit sur un autre chemin et déclenchable par une erreur transitoire.
-		logs.Write_Log("ERROR", "ldap: domaines de "+username+
+		j.Ecrire("ERROR", logs.CodeDBQuery, "domaines de "+username+
 			" illisibles — entrée non rendue")
 		return candidate.UserEntry{}, false
 	}
@@ -127,8 +128,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 	// Le gestionnaire répondra `noSuchObject`, la même chose que pour un compte
 	// inexistant. C'est voulu : pour LDAP, il n'existe pas.
 	if len(rattachements) == 0 {
-		logs.Write_Log("DEBUG", "ldap: "+username+
-			" n'appartient à aucun domaine — non rendu (point 122)")
+		j.Trace("%s n'appartient à aucun domaine — non rendu (point 122)", username)
 		return candidate.UserEntry{}, false
 	}
 
@@ -159,7 +159,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string) (candidate.Use
 		User:          userObj,
 		BaseDN:        baseDN,
 		Rattachements: rattachements,
-		Groups:        memberOfForUser(db, username),
+		Groups:        memberOfForUser(db, username, j),
 		DisplayName:   userObj.Firstname + " " + userObj.Lastname,
 		GivenName:     userObj.Firstname,
 		Sn:            userObj.Lastname,
@@ -212,6 +212,7 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 		Members:     memberDNs,
 		Created_at:  group.Created_at,
 		Modified_at: group.Modified_at,
+		EntryUUID:   group.EntryUUID,
 	}
 	if strings.ToLower(entry.DN()) != expectedDN {
 		return candidate.GroupEntry{}, false
@@ -219,7 +220,13 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 	return entry, true
 }
 
-// memberOfForUser rend les DN des groupes d'un utilisateur.
+// memberOfForUser rend les groupes d'un utilisateur : leur DN, et leur domaine.
+//
+// TOUS ses groupes, quel que soit leur domaine — et chacun avec le sien
+// (TO-DO 132). Ce chemin est celui d'une recherche `base` sur le DN d'un
+// compte : il rendait le `memberOf` complet à quiconque pouvait lire le compte,
+// y compris les groupes de domaines qu'il n'a pas le droit de lire. Le tri est
+// fait par le contrôle d'accès, sur le domaine porté ici.
 //
 // # Ce qui a changé
 //
@@ -229,17 +236,17 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 // qu'emprunte JumpServer après CHAQUE authentification.
 //
 // Une jointure répond à la même question en une requête.
-func memberOfForUser(db *sql.DB, username string) []string {
+func memberOfForUser(db *sql.DB, username string, j *ldapjournal.Operation) []candidate.Appartenance {
 	groupes, err := dbldap.GetMemberOfByUsername(db, username)
 	if err != nil {
 		// Journalisé plutôt que silencieux : sans cela, une base en difficulté
 		// rend un utilisateur sans aucun groupe, ce qu'un client lit comme une
 		// perte d'appartenance — et non comme une panne.
-		logs.Write_Log("ERROR", "ldap: lecture des groupes de "+username+" : "+err.Error())
+		j.Ecrire("ERROR", logs.CodeDBQuery, "lecture des groupes de "+username+" : "+err.Error())
 		return nil
 	}
 
-	var memberOf []string
+	var memberOf []candidate.Appartenance
 	vus := make(map[string]struct{}, len(groupes))
 	for _, g := range groupes {
 		dn := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
@@ -247,7 +254,7 @@ func memberOfForUser(db *sql.DB, username string) []string {
 			continue
 		}
 		vus[dn] = struct{}{}
-		memberOf = append(memberOf, dn)
+		memberOf = append(memberOf, candidate.Appartenance{DN: dn, Domaine: g.DomainName})
 	}
 	return memberOf
 }

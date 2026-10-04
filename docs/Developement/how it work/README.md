@@ -75,7 +75,7 @@ Colonne « doc » = la page à lire **avant** de toucher au code.
 | Base de données | `core/database/` (un sous-paquet `db_*` par table) | [`Base_de_donnees.md`](./Base_de_donnees.md) |
 | GPO (côté serveur) | `core/gpo/`, `core/database/db_gpo/`, `ducky-network/gpo_manager/` | [`GPO.md`](./GPO.md) |
 | MFA / TOTP / expiration | `core/global/security/totp/`, `core/auth/passwordpolicy/`, `core/database/db_authpolicy/` | [`MFA_et_Expiration.md`](./MFA_et_Expiration.md) |
-| Journalisation, journal commun des cores | `core/logs/`, `core/database/db_journaux/` | [`Journalisation.md`](./Journalisation.md) |
+| Journalisation, détail par sous-système, journal commun des cores | `core/logs/`, `core/ldap/LDAP_Journal/`, `core/database/db_journaux/` | [`Journalisation.md`](./Journalisation.md) |
 | Tests | `*_test.go`, `core/testrunner/` | [`Tests.md`](./Tests.md) |
 | Durées de boucle | `core/reglages/`, `core/database/db_settings/` | [`Reglages_de_duree.md`](./Reglages_de_duree.md) |
 | Versions | `core/version/` | [`Versions.md`](./Versions.md) |
@@ -85,7 +85,7 @@ Colonne « doc » = la page à lire **avant** de toucher au code.
 | Commandes `vlt` | `core/command/command_*/` | [`../../Utilisation/MAN.md`](../../Utilisation/MAN.md) |
 | Portail web | `core/web_serveur/` + `web_packet/sso_WEB_page/` | — *(pas de page ; lire `startWEBserver.go`)* |
 | API REST | `core/api/` | [`../../Utilisation/vaultairectl.md`](../../Utilisation/vaultairectl.md) *(vue client)* |
-| LDAP / LDAPS | `core/ldap/` | [`../../Utilisation/vaultaireLDAP.md`](../../Utilisation/vaultaireLDAP.md), [`../../exploitation/ldaps_keycloak.md`](../../exploitation/ldaps_keycloak.md) |
+| LDAP / LDAPS | `core/ldap/` | [`../../Utilisation/vaultaireLDAP.md`](../../Utilisation/vaultaireLDAP.md), [`../../exploitation/ldaps_keycloak.md`](../../exploitation/ldaps_keycloak.md), [`../../exploitation/ldap_bornes.md`](../../exploitation/ldap_bornes.md) ; son journal : [`Journalisation.md`](./Journalisation.md) |
 | DNS | `core/dns/` | — *(pas de page ; lire `DNS_Parser/`)* |
 | Cluster | `cluster/` | [chapitre 4](./ducky-network/04-cluster/README.md) — *détail dans le tableau ci-dessous* |
 | Types de client | `core/clienttype/` | [`../../migrations/clienttype_catalogue.md`](../../migrations/clienttype_catalogue.md) |
@@ -161,7 +161,7 @@ Point d'entrée : `src/vaultaire_client/main.go`.
 | Donner des droits à un service | [`Permissions_RBAC.md`](./Permissions_RBAC.md) § 5 |
 | Ajouter une colonne SQL | [`Base_de_donnees.md`](./Base_de_donnees.md), puis **§ 6.3 ci-dessous** — le `CREATE` ne suffit jamais |
 | Changer une cadence de boucle | [`Reglages_de_duree.md`](./Reglages_de_duree.md) § 7 |
-| Ajouter un journal | [`Journalisation.md`](./Journalisation.md) — *une consultation n'écrit rien* |
+| Ajouter un journal | [`Journalisation.md`](./Journalisation.md) — *une consultation n'écrit rien* ; dans `core/ldap`, passer par `ldapjournal` pour que la ligne porte sa connexion |
 | Ajouter un formulaire web | **§ 6.4 ci-dessous** — trois pièges qui échouent en silence |
 | Comprendre un mot du domaine | [`../../Utilisation/Lexique.md`](../../Utilisation/Lexique.md) |
 | Savoir ce qui reste à faire | [`../TO-DO.md`](../TO-DO.md) |

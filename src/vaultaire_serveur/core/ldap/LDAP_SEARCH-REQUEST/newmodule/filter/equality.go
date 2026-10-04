@@ -1,10 +1,8 @@
 package filter
 
 import (
-	"fmt"
 	"strings"
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
-	"vaultaire/core/logs"
 )
 
 func evalEquality(entry ldapinterface.LDAPEntry, attr, value string) bool {
@@ -16,16 +14,7 @@ func evalEquality(entry ldapinterface.LDAPEntry, attr, value string) bool {
 		return evalPresent(entry, attr)
 	}
 
-	vals := entry.GetAttribute(attr)
-
-	// LOG DE DIAGNOSTIC
-	if attr == "uid" || attr == "cn" {
-		logs.Write_Log("DEBUG", fmt.Sprintf("Equality filter check for DN=%s attr=%s value='%s' entry values=%v",
-			entry.DN(), attr, value, vals))
-
-	}
-
-	for _, v := range vals {
+	for _, v := range entry.GetAttribute(attr) {
 		if strings.EqualFold(strings.TrimSpace(v), value) {
 			return true
 		}

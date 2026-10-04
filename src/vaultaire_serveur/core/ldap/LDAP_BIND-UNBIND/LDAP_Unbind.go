@@ -1,10 +1,9 @@
 package ldapbindunbind
 
 import (
-	"fmt"
 	"net"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
-	"vaultaire/core/logs"
 )
 
 // func parseUnbindRequestManual(data []byte) error {
@@ -42,11 +41,10 @@ import (
 // client n'envoie pas toujours — une connexion, et sa goroutine, immobilisées
 // jusqu'à expiration TCP.
 func HandleUnbindRequest(messageID int, conn net.Conn) {
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: unbind messageID=%d depuis %s",
-		messageID, conn.RemoteAddr()))
-
+	// Sans ligne propre : l'unbind est une opération comme une autre, et sa
+	// ligne est écrite par la boucle de lecture (« UNBIND → sans réponse »).
 	ldapsessionmanager.ClearSession(conn)
 	if err := conn.Close(); err != nil {
-		logs.Write_Log("DEBUG", "ldap: fermeture après unbind : "+err.Error())
+		ldapjournal.Trace(conn, "fermeture après unbind : %v", err)
 	}
 }

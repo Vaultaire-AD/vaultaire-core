@@ -2,7 +2,6 @@ package domain
 
 import (
 	"database/sql"
-	"fmt"
 	"strings"
 	dbdomains "vaultaire/core/database/db_domains"
 )
@@ -155,8 +154,12 @@ func GetGroupsDirectlyUnderDomainExact(domainPath string, db *sql.DB, returnDoma
 	target := normalizeDomain(domainPath)
 	result := []string{}
 
+	// Sans écriture sur la sortie standard (TO-DO 145). Un `fmt.Printf` de mise
+	// au point était resté ici : une ligne « DEBUG: checking… » par groupe de
+	// l'annuaire, à CHAQUE recherche LDAP de portée `one`, mode debug actif ou
+	// non — hors du journal, donc sans horodatage, sans niveau et sans moyen de
+	// l'éteindre.
 	for _, g := range allGroups {
-		fmt.Printf("DEBUG: checking g.DomainName='%s', normalized='%s', target='%s'\n", g.DomainName, normalizeDomain(g.DomainName), target)
 		if g.DomainName == "" || g.GroupName == "" {
 			continue
 		}

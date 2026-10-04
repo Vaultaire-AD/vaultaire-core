@@ -47,7 +47,7 @@ func rechercheSimple(baseObject string) []byte {
 func TestLeMotDePasseDuBindNeVaPasAuJournal(t *testing.T) {
 	paquet := bindSimple("uid=jdupont,ou=users,dc=vaultaire,dc=local", motDePasseDuTest)
 
-	trace := traceDuPaquet("10.0.0.5:44212", paquet)
+	trace := traceDuPaquet(paquet)
 
 	if strings.Contains(hexSansEspaces(trace), hexDe(motDePasseDuTest)) {
 		t.Fatalf("le mot de passe est dans la trace de mise au point : %s", trace)
@@ -58,14 +58,17 @@ func TestLeMotDePasseDuBindNeVaPasAuJournal(t *testing.T) {
 }
 
 // Le masquage ne doit pas effacer l'événement : il faut encore voir qu'un bind
-// est arrivé, d'où, et de quelle taille. Sans cela, on aurait corrigé la fuite en
+// est arrivé, et de quelle taille. Sans cela, on aurait corrigé la fuite en
 // supprimant le moyen de diagnostiquer.
+//
+// L'adresse du client n'est plus dans cette ligne (TO-DO 145) : elle s'écrit
+// sous l'identifiant de sa connexion, et l'adresse est sur la ligne d'ouverture.
 func TestLaTraceDuBindDitQuandMemeCeQuiEstArrive(t *testing.T) {
 	paquet := bindSimple("uid=jdupont,ou=users,dc=vaultaire,dc=local", motDePasseDuTest)
 
-	trace := traceDuPaquet("10.0.0.5:44212", paquet)
+	trace := traceDuPaquet(paquet)
 
-	for _, attendu := range []string{"10.0.0.5:44212", "BindRequest", "masqué"} {
+	for _, attendu := range []string{"BindRequest", "octets", "masqué"} {
 		if !strings.Contains(trace, attendu) {
 			t.Errorf("la trace ne porte pas %q : %s", attendu, trace)
 		}
@@ -77,7 +80,7 @@ func TestLaTraceDuBindDitQuandMemeCeQuiEstArrive(t *testing.T) {
 func TestUneRechercheGardeSonVidageComplet(t *testing.T) {
 	paquet := rechercheSimple("ou=users,dc=vaultaire,dc=local")
 
-	trace := traceDuPaquet("10.0.0.5:44212", paquet)
+	trace := traceDuPaquet(paquet)
 
 	if strings.Contains(trace, "masqué") {
 		t.Fatalf("un SearchRequest est masqué alors qu'il ne porte aucun secret : %s", trace)
@@ -119,7 +122,7 @@ func TestUneTrameForgeeNeFaitPasPaniquer(t *testing.T) {
 	for _, p := range forgées {
 		// Le test est l'appel lui-même : s'il panique, le test échoue. Rien d'autre
 		// à vérifier — la valeur rendue est éprouvée par les tests précédents.
-		trace := traceDuPaquet("10.0.0.5:44212", p)
+		trace := traceDuPaquet(p)
 		if trace == "" {
 			t.Errorf("trace vide pour % X", p)
 		}

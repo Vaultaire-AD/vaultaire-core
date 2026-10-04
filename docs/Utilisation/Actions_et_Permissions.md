@@ -160,6 +160,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `group.set_mfa_required` | `write:mfa` | Groupe | — | Registre — `mfa -g --require/--optional` | **Registre** |
 | **Machines** |
 | `client.create` | `write:create:client` | Globale | — | Registre — `create -c` | **Registre** |
+| `client.export` | `write:create:client` | Globale | — | **Registre** — `create -export`, `create -c --export` | **Registre** |
 | `client.update` | `write:update:client` | Machine | — | — | **Registre** |
 | `client.delete` | `write:delete:client` | Machine | — | Registre — `delete -c` | **Registre** |
 | **Permissions** |
@@ -234,18 +235,24 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `dns.list_zones` | `read:dns` | Globale | — | **Registre** — `dns zone list` | — |
 | `dns.list_records` | `read:dns` | Globale | — | **Registre** — `dns zone show` | — |
 | `enroll.list_keys` | `read:enrollment` | Globale | — | **Registre** — `enroll list`, `show` | — |
-| `server.set_debug` | `write:server` | Globale | — | **Registre** — `update -debug` | — |
+| `server.set_debug` | `write:server` | Globale | — | **Registre** — `update -debug <true\|false>`, `update -debug <sous-système> <niveau>` | **Registre** — accueil de l'administration |
+| `server.get_debug` | `read:log` | Globale | — | **Registre** — `update -debug` | — *(l'accueil de l'administration affiche l'état)* |
 | `server.clear_sessions` | `write:server` | Globale | — | **Registre** — `clear` | — |
 | `settings.list` | `read:log` | Globale | — | **Registre** — `settings list` | **Registre** — `/admin/settings` |
 | `settings.set` | `write:server` | Globale | — | **Registre** — `settings set` | **Registre** — `/admin/settings` |
 | `settings.reset` | `write:server` | Globale | — | **Registre** — `settings reset` | **Registre** — `/admin/settings` |
 | `log.list` | `read:log` | Globale | — | **Registre** — `logs` | **Registre** — `/admin/logs` |
+| `mfa.get_ducky_policy` | `read:log` | Globale | — | **Registre** — `mfa ducky` | — |
+| `mfa.set_ducky_policy` | `write:server` | Globale | — | **Registre** — `mfa ducky <on\|off>` | — |
 | **Certificats et politique** |
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**94 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
-ligne de commande.**
+**98 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+ligne de commande.** *(Le compte valait 94 ici alors que le registre en portait
+97 : `client.export`, `mfa.get_ducky_policy` et `mfa.set_ducky_policy` manquaient
+au tableau. Il est tenu par un test — `TestCatalogueCompletNaPasDeDoublon` — qui,
+lui, n'avait pas dérivé.)*
 
 ³ **Sept clés RBAC nouvelles** — voir ci-dessous.
 
@@ -286,7 +293,8 @@ empruntaient donc celle des machines :
 | `certificate regenerate` | `write:create:client` sur `*` | `write:certificate` |
 | `dns zone list` / `show` | `write:dns` — un droit d'**écriture** | `read:dns` |
 | `enroll list` / `show` | `read:get:client` sur `*` | `read:enrollment` |
-| `update -debug` | `write:update:user` | `write:server` |
+| `update -debug <valeur>` | `write:update:user` | `write:server` |
+| `update -debug` (lecture de l'état) | *(n'existait pas)* | `read:log` |
 | `clear` (sessions expirées) | `write:update:user` | `write:server` |
 | `settings list` | *(commande neuve)* | `read:log` |
 | `settings set` / `reset` | *(commande neuve)* | `write:server` |

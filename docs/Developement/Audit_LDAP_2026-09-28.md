@@ -3,7 +3,7 @@
 > Ce fichier porte ce qu'une entrée de `TO-DO.md` ne peut pas porter : ce que le
 > code fait aujourd'hui, le scénario concret, et ce qui rend la correction
 > délicate. Chaque constat a son entrée dans [`TO-DO.md`](./TO-DO.md), aux points
-> **119 à 131**.
+> **119 à 132**.
 >
 > Périmètre : `src/vaultaire_serveur/core/ldap` (75 fichiers, ~6 600 lignes) et
 > ce qu'il appelle — `core/permission`, `core/domain`, `core/database/db_ldap`,
@@ -12,7 +12,7 @@
 > Méthode : relecture du code, pas d'exécution. Chaque constat porte le fichier
 > et la ligne. Ce qui n'a pas été mesuré est marqué comme tel.
 
-### État au 29/09/2026
+### État au 03/10/2026
 
 | Point | État |
 |---|---|
@@ -25,13 +25,17 @@
 | **125** — sous-schéma inanalysable | **traité** (2.2) — OID corrigés, branche privée provisoire, sentinelle de fidélité et sentinelle d'empreinte |
 | **126** — horodatages par entrée | **traité** (2.2) — migration, bumps explicites sur les appartenances et les suppressions, écritures d'authentification exemptées |
 | **127** — `scope=1` promu en `scope=2` | **traité** (2.2) — réglage `ldap.onelevel_subtree`, livré à **false** ; quatre documents avertis |
-| 128, 130, 131 | ouverts |
-| **129** — identifiant d'entrée stable | **ouvert** — le 125 a montré qu'il bloque la déclaration d'`entryUUID` sous son vrai OID |
-| **132** — `memberOf` porte les groupes des sous-domaines | **ouvert** — la seule fuite restante |
+| **128** — bind non authentifié | **traité** (2.2) — les quatre formes de bind classées en un endroit ; §5.1.2 (DN fourni, mot de passe vide) refusé avant toute lecture de la base, sans compter d'échec |
+| **129** — identifiant d'entrée stable | **traité** (2.2) — colonne `entry_uuid` sur `users` et `groups`, UUID tiré à la création, migration au démarrage ; `entryUUID` et `ipaUniqueID` reprennent leur OID d'origine |
+| **130** — pagination | **traité** (2.2) — RFC 2696 par instantané, cookie à usage unique lié à la connexion, au compte et à la recherche ; annoncée dans le RootDSE par la liste même que le dispatcheur consulte |
+| **131** — une requête SQL par groupe, `isInScope` mort | **traité** (2.2) — lecture par lots de 500 noms (544 `SELECT` → 41 pour une recherche sur 506 groupes) ; `isInScope` retiré |
+| **132** — `memberOf` porte les groupes des sous-domaines | **traité** (2.2) — chaque groupe voyage avec son domaine (`Appartenance`) ; `Restreinte` dans l'interface des entrées, appliquée par le contrôle d'accès **avant** le filtre de la recherche ; `member` lisible par construction, sentinelle AST sur le câblage |
 
-Tous les constats de **sécurité** de cet audit sont fermés, à l'exception du
-**132**, découvert en corrigeant le 120. Ce qui reste est de la conformité. Le
-détail de ce qui a été fait, et de ce qui a été écarté, est dans `DO/2.2/2.2.md`.
+**Tous les constats de cet audit sont fermés**, y compris le **132**, découvert
+en corrigeant le 120. Le détail de ce qui a été fait, et de ce qui a été écarté,
+est dans `DO/2.2/2.2.md`. Deux suites en sont sorties : le **152** (les bornes ne
+se réglaient pas — traité aussi) et le **155** (`memberOf` dépend de la base de
+recherche), qui reste ouvert dans [`TO-DO.md`](./TO-DO.md).
 
 > **Sur la méthode.** Chaque lot a été passé à des relectures adverses, et
 > **chacune a trouvé un défaut réel** — dont six qui auraient coupé des clients en
@@ -361,11 +365,12 @@ précisément les plus stricts.
 - **`GetGroupsWithUsersByNames` fait toujours une requête SQL par groupe**
   (`core/database/db_ldap/get_groups_with_users_by_names.go:18`), alors que le
   commentaire du résolveur annonce une lecture en lot. Le N+1 **par
-  utilisateur** a bien été supprimé ; celui par groupe demeure. Point 131.
+  utilisateur** a bien été supprimé ; celui par groupe demeure. Point 131 —
+  **traité** : la lecture se fait par lots.
 - **`isInScope`** (`filter/logical.go`) n'est appelé par personne. C'est du code
   mort — mais il décrit la règle du « saut de sous-domaine » et peut faire croire
   qu'elle est appliquée au filtrage, ce qui est trompeur au moment de traiter le
-  point 120. Point 131.
+  point 120. Point 131 — **traité** : la fonction est retirée.
 - **Les noms d'attributs renvoyés sont les clés minuscules** de la carte
   (`displayname`, `memberof`, `samaccountname`). La RFC rend les descriptions
   d'attributs insensibles à la casse et tous les clients courants le respectent ;
@@ -426,7 +431,9 @@ sous-schéma non analysable (2.8), filtres `>=` sur les dates qui rendent zéro
 
 Ces clients ne font qu'un bind simple et une lecture de `memberOf`. Réserve : le
 port 389 est en clair et `RequireTLSForBind` est désactivé par défaut. Sur un
-parc qui sait faire du LDAPS, l'activer est la première chose à faire.
+parc qui sait faire du LDAPS, l'activer est la première chose à faire —
+`ldap.require_tls_for_bind: true` depuis le point 152 ; la variable existait
+sans qu'aucun réglage ne permette de la poser.
 
 ### Clients configurés « StartTLS obligatoire »
 

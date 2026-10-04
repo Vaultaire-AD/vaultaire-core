@@ -159,6 +159,12 @@ bases existantes les reçoivent sans script de migration à lancer à la main.
 | `users` | `mfa_last_counter` | `BIGINT NULL` | Dernier pas de temps consommé (anti-rejeu). En base et non en mémoire : un code vaut 90 s, un registre volatil le rendrait rejouable à chaque redémarrage |
 | `users` | `password_changed_at` | `DATETIME NULL` | Base du calcul d'expiration. Posé à la création et dans la même requête que tout changement de mot de passe |
 | `groups` | `mfa_required` | `BOOLEAN NOT NULL DEFAULT FALSE` | Le groupe impose le second facteur à ses membres |
+| `users`, `groups` | `entry_uuid` | `CHAR(36) NULL DEFAULT NULL`, index unique `uniq_<table>_entry_uuid` | **Identifiant stable** de l'entrée, servi en LDAP sous `entryUUID` (point 129). Tiré en Go à la création — UUID de version 4, jamais celui du moteur, qui porte l'adresse matérielle du serveur de base. Jamais réécrit : il survit au renommage. `NULL` n'existe que le temps de la migration ; `dbschema.EnsureIdentifiantsAnnuaire` remplit à **chaque** démarrage ce qui est vide |
+
+> **Toute insertion dans `users` ou `groups` doit nommer `entry_uuid`.** La
+> colonne admet `NULL`, donc l'oubli ne se voit pas : l'entrée est servie sans
+> identifiant jusqu'au redémarrage suivant, puis en change. Un test de
+> `db_schema` relit les `INSERT` du dépôt et échoue sur celui qui l'oublie.
 
 ```sql
 CREATE TABLE IF NOT EXISTS server_settings (

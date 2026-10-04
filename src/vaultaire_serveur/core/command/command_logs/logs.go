@@ -124,7 +124,10 @@ func ligne(l logs.LogEntry, largeurCore int) string {
 	if l.Code != "" {
 		s += "  " + l.Code
 	}
-	return s + "  " + l.Message
+	// Les lignes de suite sont décalées : un message qui reprend ce qu'un
+	// client a envoyé ne doit pas pouvoir écrire ici une fausse ligne de
+	// journal. Voir logs.SurUneSeuleEntree.
+	return s + "  " + logs.SurUneSeuleEntree(l.Message)
 }
 
 // argumentsPourPage recompose la commande avec un autre numéro de page, pour

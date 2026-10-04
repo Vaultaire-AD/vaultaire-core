@@ -119,9 +119,13 @@ func VerifierValeursLivrees() error {
 	// et le détail des vérifications de signature. Aucun secret, mais la
 	// cartographie complète de l'annuaire et des droits, dans un fichier lisible
 	// localement et sans bornage.
-	if storage.Debug {
+	//
+	// Le détail d'un seul sous-système le déclenche aussi (TO-DO 145) : la
+	// question est ce que le journal contient, pas la clé qui l'a allumé.
+	if logs.UnDetailEstActif() {
 		logs.Write_Log("SECURITY",
-			"configuration: le journal DEBUG est actif. Il écrit les DN des binds LDAP, "+
+			"configuration: le journal de détail est actif ("+logs.EtatDuDetail()+"). "+
+				"Il écrit les DN des binds LDAP, "+
 				"les identifiants de groupe des décisions de permission et le détail des "+
 				"vérifications de signature — la cartographie de l'annuaire et des droits. "+
 				"À n'activer que le temps d'un diagnostic.")

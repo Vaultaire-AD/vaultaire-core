@@ -478,6 +478,15 @@ func Create_DataBase(db *sql.DB) {
 		log.Fatalf("Erreur lors de la pose des horodatages de l'annuaire : %v", err)
 	}
 
+	// L'identifiant stable des entrées (point 129). FATALE pour la même raison
+	// que les horodatages : les requêtes de lecture LDAP nomment la colonne.
+	// Après les insertions initiales plus haut, qui reçoivent ici le leur.
+	if err := EnsureIdentifiantsAnnuaire(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: identifiants de l'annuaire non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des identifiants de l'annuaire : %v", err)
+	}
+
 	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
 	//
 	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue

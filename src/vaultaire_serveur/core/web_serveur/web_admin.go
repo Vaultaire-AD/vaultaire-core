@@ -187,6 +187,24 @@ func checkWebAdminRBACOnDomains(groupIDs []int, actionKey string, domains []stri
 // de plus : il exige le droit GLOBAL au lieu de laisser une liste vide, ce qui
 // ne dépend plus de la façon dont le vérificateur traite le vide.
 
+// donneesAccueilAdmin est ce que reçoit le gabarit `admin.html`.
+//
+// Un type NOMMÉ, et non une structure anonyme dans le gestionnaire : un champ
+// renommé ici sans que le gabarit suive ne se voit ni à la compilation ni à
+// l'analyse du gabarit, seulement à son exécution — donc à la première visite.
+// Le test `TestLAccueilAdminSeRend` exécute le gabarit avec ce type-ci.
+type donneesAccueilAdmin struct {
+	Username  string
+	Output    string
+	DnsEnable bool
+	Section   string
+	Debug     bool
+	// Detail : le détail du journal par sous-système (TO-DO 145).
+	Detail                  []act.DetailDeSousSysteme
+	LoginClientPublicKey    string
+	LoginClientAddKeyScript string
+}
+
 // AdminIndexHandler serves the admin dashboard and executes CLI-style commands via POST.
 func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 	username, ok := requireWebAdmin(w, r)
@@ -194,15 +212,8 @@ func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := struct {
-		Username                string
-		Output                  string
-		DnsEnable               bool
-		Section                 string
-		Debug                   bool
-		LoginClientPublicKey    string
-		LoginClientAddKeyScript string
-	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "dashboard", Debug: storage.Debug}
+	data := donneesAccueilAdmin{Username: username, DnsEnable: storage.Dns_Enable, Section: "dashboard",
+		Debug: storage.Debug, Detail: act.LireEtatDuDebug().SousSystemes}
 
 	// Load login client public key for "client -join" copy-paste
 	if cert, err := dbcertificates.GetCertificateByName(duckykey.ServerLoginClientKeyName); err == nil && cert.PublicKeyData != nil {
@@ -229,10 +240,20 @@ func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 			if err != nil {
 				data.Output = "Erreur de permission : " + err.Error()
 			} else {
-				actif := r.FormValue("debug") == "on" || r.FormValue("debug") == "1"
+				// Deux formulaires, une action (TO-DO 145) : le réglage général, et
+				// le détail d'un sous-système. Le second se reconnaît à son champ
+				// `sous_systeme` ; l'action refuse elle-même un nom ou un niveau
+				// inconnu, rien n'est interprété ici.
+				params := act.Params{}
+				if sous := strings.TrimSpace(r.FormValue("sous_systeme")); sous != "" {
+					params["sous_systeme"] = sous
+					params["niveau"] = r.FormValue("niveau")
+				} else {
+					actif := r.FormValue("debug") == "on" || r.FormValue("debug") == "1"
+					params["debug"] = strconv.FormatBool(actif)
+				}
 				res, err := act.Executer("server.set_debug",
-					act.Appelant{Username: username, GroupIDs: groupIDs},
-					act.Params{"debug": strconv.FormatBool(actif)})
+					act.Appelant{Username: username, GroupIDs: groupIDs}, params)
 				data.Output = MessageDActionPourAffichage(res, err)
 			}
 		} else {
@@ -250,6 +271,7 @@ func AdminIndexHandler(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		data.Debug = storage.Debug
+		data.Detail = act.LireEtatDuDebug().SousSystemes
 	}
 
 	if err := executeAdminPage(w, "admin.html", data); err != nil {

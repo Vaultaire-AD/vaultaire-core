@@ -3,6 +3,7 @@ package ldapextendedrequest
 import (
 	"fmt"
 	"net"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	ldapresponse "vaultaire/core/ldap/LDAP_RESPONSE"
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
@@ -26,7 +27,7 @@ const OIDWhoAmI = "1.3.6.1.4.1.4203.1.11.3"
 func respond(conn net.Conn, messageID, resultCode int, diagnostic, responseName, responseValue string) {
 	if err := ldapresponse.SendExtendedResult(conn, messageID, resultCode, "",
 		diagnostic, responseName, responseValue); err != nil {
-		logs.Write_Log("ERROR", "ldap extended: "+err.Error())
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeNone, "extended: "+err.Error())
 	}
 }
 
@@ -42,9 +43,10 @@ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn n
 	// Le nom de l'extension suffit à diagnostiquer « un client tente telle
 	// opération et le serveur ne la gère pas », qui est la seule chose que cette
 	// ligne ait jamais servi à savoir.
-	logs.Write_Log("DEBUG", fmt.Sprintf(
-		"ldap: extended request name=%s, %d octet(s) de contenu (non journalisé)",
-		op.RequestName, len(op.RequestValue)))
+	//
+	// La ligne n'est plus écrite ici (TO-DO 145) : c'est celle de l'opération,
+	// composée par ldapjournal.Decrire, qui obéit à la même règle — le nom et
+	// la taille, jamais `RequestValue`.
 
 	// --- 🔐 Étape 1 : Identification de l’utilisateur
 	session, ok := ldapsessionmanager.GetLDAPSession(conn)
@@ -67,21 +69,20 @@ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn n
 
 	groupIDs, action, err := permission.PrePermissionCheck(username, action)
 	if err != nil {
-		logs.Write_Log("ERROR", fmt.Sprintf("Erreur permission préliminaire pour %s : %v", username, err))
+		ldapjournal.Ecrire(conn, "ERROR", logs.CodeAuthPermission, fmt.Sprintf("extended: erreur de permission préliminaire pour %s : %v", username, err))
 		respond(conn, messageID, ldapstorage.ResultInsufficientAccessRights, "permission check failed", "", "")
 		return
 	}
 
 	ok, msg := permission.CheckPermissionsMultipleDomains(groupIDs, action, []string{"*"})
 	if !ok {
-		logs.Write_Log("WARNING", fmt.Sprintf("Permission refusée pour %s : %s", username, msg))
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeAuthPermission, fmt.Sprintf("extended: permission refusée pour %s : %s", username, msg))
 		respond(conn, messageID, ldapstorage.ResultInsufficientAccessRights, "insufficient access rights", "", "")
 		return
 	}
 
 	// --- ✅ Étape 3 : Exécution de la requête autorisée
 	if op.RequestName == OIDWhoAmI {
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: WHOAMI messageID=%d", messageID))
 		authzID := fmt.Sprintf("dn:uid=%s,ou=system", username)
 		respond(conn, messageID, ldapstorage.ResultSuccess, "", "", authzID)
 		return
@@ -90,6 +91,6 @@ func HandleExtendedRequest(op ldapstorage.ExtendedRequest, messageID int, conn n
 	// StartTLS (1.3.6.1.4.1.1466.20037) tombe ici, et c'est correct tant qu'il
 	// n'est pas implémenté : le RootDSE ne l'annonce plus, et le refus porte
 	// désormais un code que le client sait lire. Pour du chiffrement, LDAPS.
-	logs.Write_Log("WARNING", fmt.Sprintf("ExtendedRequest non supportée : %s", op.RequestName))
+	ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, fmt.Sprintf("extended: opération non supportée %q", op.RequestName))
 	respond(conn, messageID, ldapstorage.ResultProtocolError, "extended operation not supported", "", "")
 }

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"vaultaire/core/storage"
 )
 
 // RFC 5424 Syslog Protocol
@@ -132,7 +130,9 @@ func levelToSeverity(level string) int {
 		return SeverityNotice
 	case "INFO", "INFORMATIONAL":
 		return SeverityInformational
-	case "DEBUG":
+	case "DEBUG", "TRACE":
+		// TRACE n'a pas de sévérité à lui : la RFC 5424 s'arrête à 7. Il porte
+		// celle du DEBUG, et se distingue par son nom de niveau — voir detail.go.
 		return SeverityDebug
 	default:
 		return SeverityInformational
@@ -149,7 +149,7 @@ func levelToSeverity(level string) int {
 func SeveriteDe(niveau string) (int, bool) {
 	switch strings.ToUpper(strings.TrimSpace(niveau)) {
 	case "EMERGENCY", "EMERG", "ALERT", "CRITICAL", "CRIT", "ERROR", "ERR",
-		"WARNING", "WARN", "SECURITY", "NOTICE", "INFO", "INFORMATIONAL", "DEBUG":
+		"WARNING", "WARN", "SECURITY", "NOTICE", "INFO", "INFORMATIONAL", "DEBUG", "TRACE":
 		return levelToSeverity(niveau), true
 	}
 	return 0, false
@@ -174,6 +174,8 @@ func canonicalLevel(level string) string {
 		return "INFO"
 	case "DEBUG":
 		return "DEBUG"
+	case "TRACE":
+		return "TRACE"
 	default:
 		return "INFO"
 	}
@@ -213,7 +215,41 @@ func formatHumanReadable(level string, message string) string {
 	} else if len(lvl) > 8 {
 		lvl = lvl[:8]
 	}
-	return ts + " [" + lvl + "] " + message
+	return ts + " [" + lvl + "] " + SurUneSeuleEntree(message)
+}
+
+// SurUneSeuleEntree met un message en forme pour un affichage LIGNE À LIGNE :
+// ses lignes de suite sont décalées d'une tabulation, et un retour chariot est
+// écrit en clair.
+//
+// # Le défaut que cela ferme — relevé en traitant le TO-DO 145
+//
+// Un message de journal reprend souvent ce qu'un client a envoyé : le nom d'un
+// compte tiré d'un DN de bind, par exemple. Un DN portant un retour à la ligne
+// suivi d'une date et d'un niveau écrivait donc, sur la sortie du core, une
+// ligne que rien ne distinguait d'une vraie :
+//
+//	2026-10-03 13:17:26 [WARNING ] ldap bind: tentative sur le compte révoqué x
+//	2026-10-03 13:00:00 [INFO    ] ldap bind: success user=admin …
+//
+// La seconde est forgée — par un inconnu, sans authentification. Qui lit le
+// journal après un incident y trouve une connexion qui n'a pas eu lieu.
+//
+// Une vraie ligne commence par une date, en première colonne. Décalée, une
+// ligne de suite ne peut plus passer pour telle, et les messages légitimement
+// sur plusieurs lignes — la pile d'une panique, le vidage d'une entrée —
+// restent lisibles.
+//
+// Le format JSON n'est pas concerné : l'encodeur y échappe les retours à la
+// ligne. La table du journal commun non plus : un message y est UNE ligne de
+// base, quel que soit son contenu. C'est à l'AFFICHAGE qu'il faut le faire —
+// ici, et dans `vlt logs`.
+func SurUneSeuleEntree(message string) string {
+	if !strings.ContainsAny(message, "\n\r") {
+		return message
+	}
+	message = strings.ReplaceAll(message, "\r", `\r`)
+	return strings.ReplaceAll(message, "\n", "\n\t")
 }
 
 // formatJSONLine emits one JSON object per line (structured logging); no extra allocation for message.
@@ -271,14 +307,24 @@ func writeEntry(level string, code string, content string, meta *LogMeta) {
 }
 
 // Write_Log writes a log to stdout and buffer (no error code, no metadata).
+//
+// Elle n'appelle PAS Write_LogCode, et c'est voulu : le sous-système d'une
+// ligne DEBUG ou TRACE est déduit du fichier de l'appelant, à une profondeur de
+// pile fixe (voir detail.go). Passer par une sœur ajouterait un cadre, et la
+// ligne serait rangée avec ce paquet au lieu de celui qui l'a écrite.
 func Write_Log(level string, content string) {
-	Write_LogCode(level, CodeNone, content)
+	if !emissionPermise(level, 2) {
+		return
+	}
+	writeEntry(level, CodeNone, content, nil)
 }
 
 // Write_LogCode writes a log with RFC 5424 severity and optional error code.
-// DEBUG logs are emitted only when storage.Debug is true.
+//
+// Les lignes DEBUG et TRACE ne sortent que si le détail du sous-système qui les
+// écrit le demande : le réglage `debug`, ou son réglage propre (detail.go).
 func Write_LogCode(level string, code string, content string) {
-	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
+	if !emissionPermise(level, 2) {
 		return
 	}
 	writeEntry(level, code, content, nil)
@@ -287,7 +333,7 @@ func Write_LogCode(level string, code string, content string) {
 // Write_LogCodeMeta writes a log with optional request_id and user_id for critical paths (auth, API, transactions).
 // Never pass passwords or tokens in content or meta.
 func Write_LogCodeMeta(level string, code string, content string, meta *LogMeta) {
-	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
+	if !emissionPermise(level, 2) {
 		return
 	}
 	writeEntry(level, code, content, meta)

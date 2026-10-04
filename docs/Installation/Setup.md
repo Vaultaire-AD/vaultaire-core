@@ -257,7 +257,8 @@ ldap:
   ldaps_enable: true
   Ldap_Port: 389
   Ldaps_Port: 636
-  # Logs DEBUG (LDAP, etc.) : utiliser la section debug: debug: true
+  # Logs DEBUG : section « debug: debug: true » pour tout le serveur, ou
+  # « debug: detail: {ldap: debug} » pour l'annuaire seul.
 website:
   website_enable: true
   Website_Port: 443

@@ -8,6 +8,11 @@ Pour utiliser Vaultaire LDAP sur un de vos outils externes, vous devez **configu
 
 Commencez par créer le compte LDAP **qui sera utilisé par votre applicatif** pour interroger l'annuaire.
 
+> ⚠️ Le compte se lie avec son **DN et son mot de passe**, les deux. Un mot de
+> passe vide est refusé d'emblée (`unwillingToPerform`), comme un mot de passe
+> sans DN : si votre application reçoit ce code, c'est sa configuration qui est
+> incomplète, pas le mot de passe qui est faux.
+
 > ⚠️ Ce compte ne doit appartenir à **aucun groupe soumis au second facteur** :
 > au bind, un compte MFA doit fournir son mot de passe suivi du code à 6
 > chiffres, ce qu'une application ne sait pas faire. Le réglage
@@ -96,7 +101,7 @@ dc=infra,dc=it,dc=company,dc=com
 | **Users DN**                | `dc=it,dc=company,dc=com`                                                 |
 | **Username LDAP attribute** | `uid`                                                                     |
 | **RDN LDAP attribute**      | `uid`                                                                     |
-| **UUID LDAP attribute**     | `uid`                                                                     |
+| **UUID LDAP attribute**     | `entryUUID` *(voir « L'identifiant d'une entrée » plus bas)*              |
 | **User object classes**     | `inetOrgPerson`, `organizationalPerson`, `person`, `user`                 |
 | **Search scope**            | `Subtree` *(voir l'avertissement ci-dessous)*                             |
 | **Group member attribute**  | `member`                                                                  |
@@ -140,6 +145,123 @@ dc=infra,dc=it,dc=company,dc=com
 | **Membership User LDAP Attribute**| `uid`                              |
 | **Mode**                          | `READ_ONLY`                        |
 | **Member-Of LDAP Attribute**      | `memberOf`                         |
+
+---
+
+# 🪪 L'identifiant d'une entrée : `entryUUID`
+
+Chaque compte et chaque groupe porte un **identifiant stable** : un UUID tiré à
+sa création, qui ne change **jamais** — ni quand le compte est renommé, ni quand
+il change de groupe. Un compte supprimé puis recréé sous le même nom en reçoit
+un autre : ce sont bien deux comptes.
+
+```
+dn: uid=alice.dupont,ou=users,dc=acme,dc=lan
+entryuuid: 40a84997-8698-4b14-9579-06f3b8d5496b
+```
+
+| Règle | Détail |
+|---|---|
+| Attribut **opérationnel** | il ne sort que demandé par son nom, ou par `+` |
+| Sur un compte | servi aussi sous `nsUniqueId`, `objectGUID`, `guid` et `ipaUniqueID`, avec la **même** valeur en texte — pour les clients réglés sur l'un de ces noms |
+| Sur un groupe | `entryUUID` seulement |
+| Recherche | `(entryUUID=40a84997-…)` retrouve le compte, quel que soit son nom du moment |
+
+**C'est l'attribut à donner à une application qui synchronise**, à la place de
+`uid` : avec `uid`, renommer un compte dans Vaultaire en crée un second dans
+l'application, et l'ancien y reste avec ses droits.
+
+> ⚠️ **À la mise à jour vers la 2.2, cet identifiant change UNE fois.** Il valait
+> jusque-là le nom du compte (`alice`, ou `vaultaire-alice` pour les variantes).
+> Une application déjà synchronisée **sur `entryUUID`** ne reconnaît donc plus
+> ses comptes au premier passage, et doit être resynchronisée — pour Keycloak,
+> voir [`ldaps_keycloak.md`](../exploitation/ldaps_keycloak.md). Une application
+> réglée sur `uid` ne voit rien changer ; elle garde le défaut du renommage.
+
+---
+
+# 📄 Lire un grand annuaire : la pagination
+
+Une recherche ordinaire rend au plus **10 000 entrées**, puis s'arrête sur
+`sizeLimitExceeded`. Au-delà, le client doit **paginer** : le contrôle
+`1.2.840.113556.1.4.319` (RFC 2696), que le serveur annonce dans son RootDSE.
+
+```bash
+ldapsearch -H ldaps://vaultaire.acme.lan -D 'uid=svc_app,ou=users,dc=acme,dc=lan' -W \
+  -b 'dc=acme,dc=lan' -E pr=1000/noprompt '(objectClass=inetOrgPerson)' uid mail
+```
+
+| Règle | Détail |
+|---|---|
+| Taille de page | celle que le client demande, **plafonnée à 1 000** — le serveur peut rendre moins que demandé, tous les clients le gèrent |
+| Ce qui est lu | l'annuaire **tel qu'il était à la première page** : un compte créé pendant la lecture n'y figure pas, un compte supprimé y figure encore. Chaque entrée est servie une fois |
+| Délai entre deux pages | **5 minutes**. Au-delà, la recherche est à refaire |
+| Limite | 200 000 entrées par recherche ; au-delà, la dernière page porte `sizeLimitExceeded` |
+| Le cookie | vaut une fois, sur la connexion qui l'a reçu, pour le même compte et la même recherche. Changer de filtre en route, ou rejouer une page, est refusé (`unwillingToPerform`) |
+| `busy` (51) | trop de lectures paginées en cours sur le serveur : rejouer la recherche un peu plus tard |
+
+Dans Keycloak : **Pagination = On**. Nextcloud pagine de lui-même dès que le
+serveur l'annonce.
+
+Ces limites sont les valeurs livrées. Elles se règlent dans `serveur_conf.yaml`,
+section `ldap.limites` — comment les choisir, et ce qu'elles coûtent en
+mémoire : [`../exploitation/ldap_bornes.md`](../exploitation/ldap_bornes.md).
+
+---
+
+# 👥 `memberOf` : les groupes qu'un compte peut lire
+
+L'attribut `memberOf` d'un utilisateur ne nomme que les groupes que **le compte
+de connexion a le droit de lire** — ceux qu'il recevrait en cherchant les
+groupes.
+
+Un compte autorisé sur `acme.lan` **sans propagation** ne voit donc, dans le
+`memberOf` d'un utilisateur, que ses groupes de `acme.lan` : ceux de
+`dev.acme.lan` n'y figurent pas, et un filtre `(memberOf=…)` qui nomme l'un
+d'eux ne trouve rien. Avec la propagation, tous y sont.
+
+Si une application ne retrouve pas les groupes d'un sous-domaine, c'est ce
+droit qu'il faut regarder : `get -p -u <permission>`, ligne `search`.
+
+---
+
+# 🔎 Comprendre ce que fait un client : le journal
+
+Pour voir ce qu'une application demande réellement, allumez le détail de
+l'annuaire **seul** — sans le reste du mode debug :
+
+```text
+vlt update -debug ldap debug     # une ligne par opération
+vlt update -debug ldap off       # quand c'est fini
+```
+
+Chaque opération écrit **une** ligne sur la sortie du core, sous le numéro de sa
+connexion :
+
+```
+ldap conn=17 ouverte LDAPS depuis 10.0.0.5:51234
+ldap conn=17 msg=1 BIND dn="uid=svc_app,ou=users,dc=acme,dc=lan" → 0 success, 38 ms
+ldap conn=17 msg=2 SEARCH base="dc=acme,dc=lan" scope=sub filtre="(uid=alice)" attrs="uid mail" → 0 success, 1 entrée(s), 4 ms ; candidats=214
+ldap conn=17 msg=3 UNBIND → sans réponse, 0 ms
+ldap conn=17 fermée (unbind) après 52 ms : 3 opération(s), 1 entrée(s), compte svc_app
+```
+
+| Ce qu'on y lit | |
+|---|---|
+| `conn=17` | la connexion : `grep 'conn=17 '` rend toute la conversation, refus compris |
+| `msg=2` | le numéro du message, celui que le client écrit dans ses propres journaux |
+| `filtre="…"` | le filtre **tel que le serveur l'a reçu** — à rejouer avec `ldapsearch` |
+| `→ 0 success` | le code rendu au client (`32 noSuchObject`, `49 invalidCredentials`, `50 insufficientAccessRights`…) |
+| `candidats=`, `hors-droits=` | combien d'entrées étaient dans la portée, combien ont été écartées par les droits du compte |
+
+Zéro entrée avec `hors-droits=` renseigné : la recherche est juste, c'est le
+droit `search` du compte qui ne couvre pas ces entrées. Zéro entrée sans lui :
+c'est le filtre ou la base.
+
+`vlt update -debug ldap trace` ajoute le déroulé — paquets reçus, contenu des
+entrées rendues. À réserver à un diagnostic : ces lignes portent des données de
+l'annuaire. Ce détail ne part jamais dans le journal commun (`vlt logs`) : il se
+lit sur le core lui-même.
 
 ---
 
