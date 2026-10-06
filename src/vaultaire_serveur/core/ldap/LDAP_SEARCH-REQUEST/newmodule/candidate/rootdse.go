@@ -3,6 +3,7 @@ package candidate
 import (
 	"strings"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 )
 
 // RootDSEEntry implémente la réponse standard RFC 4512
@@ -21,6 +22,17 @@ type RootDSEEntry struct {
 
 func (r RootDSEEntry) DN() string {
 	return "" // La racine a un DN vide, c'est la règle RFC
+}
+
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Le RootDSE n'appartient à AUCUN domaine : c'est la racine, hors de
+// l'arborescence. La chaîne vide vaut donc « écartée par le filtre
+// d'autorisation », et c'est le bon comportement — cette entrée est servie par
+// le chemin qui court-circuite le filtre, parce qu'elle doit rester lisible sans
+// authentification (RFC 4512).
+func (r RootDSEEntry) Domaines() []string {
+	return nil
 }
 
 func (r RootDSEEntry) ObjectClasses() []string {
@@ -96,18 +108,19 @@ func NewRootDSE() RootDSEEntry {
 		// « aucun », ce qui est vrai.
 		SupportedSASLMechanisms: []string{},
 
-		// AUCUN contrôle.
+		// Les contrôles : ce que le dispatcheur traite, et RIEN d'autre.
 		//
-		// La pagination (1.2.840.113556.1.4.319) était annoncée alors que les
-		// contrôles reçus sont analysés puis IGNORÉS. C'était le pire des deux
-		// mondes : la RFC 4511 §4.1.11 impose de faire ÉCHOUER une opération
-		// portant un contrôle critique non supporté, et le serveur renvoyait au
-		// contraire le jeu complet sans cookie de pagination. Un client qui pagine
-		// — Softerra, les outils AD — boucle alors sur la même page.
+		// La liste est ldapstorage.ControlesGeres, celle-là même que le
+		// dispatcheur consulte pour refuser un contrôle critique : annonce et
+		// traitement ne peuvent plus se contredire.
 		//
-		// Le refus est désormais explicite dans le dispatcheur. Ne plus l'annoncer
-		// évite au client de le tenter.
-		SupportedControl: []string{},
+		// Elles l'ont fait. La pagination (1.2.840.113556.1.4.319) était annoncée
+		// alors que les contrôles reçus étaient analysés puis IGNORÉS : le serveur
+		// renvoyait le jeu complet sans cookie, et un client qui pagine —
+		// Softerra, les outils AD — bouclait sur la même page. Elle a été retirée
+		// de l'annonce, puis implémentée (point 130), et c'est seulement là qu'elle
+		// y est revenue.
+		SupportedControl: append([]string(nil), ldapstorage.ControlesGeres...),
 
 		// AUCUNE extension.
 		//

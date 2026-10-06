@@ -34,7 +34,37 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 
 	// ✅ Mise à jour de key_time_validity
 
-	err = dbsessions.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
+	// Le tunnel machine (`vaultaire`) rafraîchit — et recrée au besoin — la
+	// ligne de SA machine : voir RafraichirConnexion. L'identité a été
+	// comparée à celle de la session par Split_Action avant d'arriver ici.
+	if trames_content.Username == "vaultaire" && trames_content.ClientSoftwareID != "" {
+		err = dbsessions.RafraichirConnexion(db, trames_content.Username,
+			trames_content.ClientSoftwareID, []byte(trames_content.SessionIntegritykey))
+
+		// Le battement de la machine prolonge aussi les sessions de SES
+		// utilisateurs, dans leur propre table.
+		//
+		// Une session ouverte par PAM n'a ni connexion ni clé propre : elle vit
+		// dans ce tunnel-ci (trame 03_01). Rien ne peut donc la prolonger
+		// d'elle-même, et sans cette ligne toute personne connectée
+		// disparaîtrait de `status -u` au bout de dix minutes alors qu'elle est
+		// devant son écran.
+		//
+		// La contrepartie est voulue : si la machine s'éteint, elle cesse de
+		// battre, et ses sessions utilisateur expirent avec elle. C'est le seul
+		// mécanisme d'expiration qu'elles aient.
+		//
+		// La prolongation ne touche QUE `user_sessions` : étendue à `did_login`,
+		// elle maintiendrait en vie les lignes fantômes écrites par la première
+		// version du point 68, qu'on laisse justement expirer.
+		if _, errS := dbsessions.ProlongerSessionsUtilisateurDeLaMachine(db, trames_content.ClientSoftwareID); errS != nil {
+			logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+				"battement: sessions utilisateur non prolongées sur "+
+					trames_content.ClientSoftwareID+" : "+errS.Error())
+		}
+	} else {
+		err = dbsessions.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
+	}
 	if err != nil {
 		log.Println(err)
 	}

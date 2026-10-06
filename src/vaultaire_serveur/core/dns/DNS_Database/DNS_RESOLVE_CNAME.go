@@ -42,7 +42,11 @@ func ResolveCNAME(db *sql.DB, fqdn string) (string, error) {
 		relativeName = "@" // racine de la zone
 	}
 
-	query := fmt.Sprintf(`SELECT data FROM %s WHERE name = ? AND type = 'CNAME' LIMIT 1`, selectedZone.TableName)
+	table, err := identifiantTable(selectedZone.TableName)
+	if err != nil {
+		return "", err
+	}
+	query := fmt.Sprintf(`SELECT data FROM %s WHERE name = ? AND type = 'CNAME' LIMIT 1`, table)
 
 	var target string
 	err = db.QueryRow(query, relativeName).Scan(&target)

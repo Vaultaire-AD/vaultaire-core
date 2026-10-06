@@ -4,8 +4,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"sort"
-	"sync"
 )
 
 // Inventaire des fichiers déposés par les GPO.
@@ -21,16 +19,23 @@ import (
 // Une GPO qui n'est plus appliquée mais affichée comme conforme est pire que pas
 // de GPO : elle donne une garantie qui n'existe plus.
 //
-// # Pourquoi l'inventaire est global et non par module
+// # Pourquoi l'inscription se fait à l'écriture et non par module
 //
-// Les 29 écritures de fichiers du paquet passent TOUTES par writeSystemFile, et
-// il n'existe aucun autre chemin d'écriture — vérifié. Y noter le chemin et le
-// hachage couvre donc l'ensemble sans toucher aux 34 appliqueurs, et sans qu'un
-// appliqueur écrit demain puisse l'oublier.
+// Les écritures du scope machine passent TOUTES par writeSystemFile. Y noter le
+// chemin et le hachage couvre donc l'ensemble sans toucher aux appliqueurs, et
+// sans qu'un appliqueur écrit demain puisse l'oublier.
 //
-// L'attribution à un module se fait par différence : applyModule relève
-// l'inventaire avant et après l'appel, et ce qui est apparu entre les deux
-// appartient au module qu'il vient d'appliquer.
+// Ce paragraphe disait « il n'existe aucun autre chemin d'écriture — vérifié ».
+// C'était faux, et c'est le point 135 : le scope UTILISATEUR écrivait par
+// `writeUserFile`, qui n'inscrivait rien. Ses fichiers n'entraient jamais dans
+// l'inventaire, le scan n'avait rien à comparer, et un `HOME` défait restait
+// affiché conforme. Les deux chemins inscrivent désormais, chacun dans
+// l'inventaire de son cycle, et un test-sentinelle interdit d'en ouvrir un
+// troisième (sentinelle_inventaire_test.go).
+//
+// L'attribution à un module se fait par les marques : applyModule relève le
+// rang de l'inventaire avant l'appel, et ce qui a été inscrit après appartient
+// au module qu'il vient d'appliquer.
 
 // FileState est l'état attendu d'un fichier déposé — ou retiré.
 type FileState struct {
@@ -60,139 +65,56 @@ type FileState struct {
 	// n'en a pas, se relit sans erreur, et vaut « faux » — donc l'ancien
 	// comportement.
 	Absent bool `json:"absent,omitempty"`
-}
 
-var (
-	manifestMu sync.Mutex
-	// manifest accumule les écritures de l'application EN COURS.
+	// Owners liste TOUS les modules qui répondent de ce fichier, quand il y en
+	// a plusieurs — TO-DO 135.
 	//
-	// Vidé au début de chaque cycle par ResetManifest : il ne sert qu'à
-	// attribuer les fichiers à leur module, pas à conserver l'état, qui vit dans
-	// applied_policies.json.
-	manifest = map[string]FileState{}
-)
-
-// ResetManifest vide l'inventaire de travail.
-//
-// Appelé au début d'une application. Sans cela, deux cycles successifs
-// mélangeraient leurs écritures et un fichier serait attribué au module d'un
-// cycle antérieur.
-func ResetManifest() {
-	manifestMu.Lock()
-	manifest = map[string]FileState{}
-	manifestMu.Unlock()
-
-	// Les attentes d'état système suivent le MÊME cycle de vie. Les vider
-	// ailleurs laisserait l'un des deux inventaires survivre à l'autre, et une
-	// attente serait attribuée au module d'un cycle antérieur.
-	ResetCheckManifest()
+	// # Le cas qui l'exige
+	//
+	// Toutes les variables d'environnement d'un compte vivent dans un seul
+	// `.vaultaire_env`, et chacune est un module. Avec un propriétaire unique,
+	// le fichier appartenait au dernier module à l'avoir écrit : retirer CE
+	// module de la politique faisait sortir le fichier de l'inventaire alors
+	// que les autres variables y vivaient encore — plus personne ne le
+	// surveillait, et rien ne le disait.
+	//
+	// # Ce que le scan en fait
+	//
+	// Un écart sur un fichier partagé fait rejouer TOUS ses propriétaires, dans
+	// l'ordre de la politique : c'est la seule façon de retrouver le contenu
+	// qu'ils produisent ensemble.
+	//
+	// CHAMP AJOUTÉ, avec omitempty, et écrit SEULEMENT s'il y a plusieurs
+	// propriétaires. `StateKey` reste renseigné — le dernier à avoir écrit — et
+	// un agent antérieur qui relirait cet état y trouve ce qu'il sait lire.
+	Owners []string `json:"owners,omitempty"`
 }
 
-// recordWrite note qu'un fichier vient d'être déposé.
+// Les fonctions de ce fichier inscrivent dans l'inventaire du cycle MACHINE.
 //
-// Appelé par writeSystemFile, jamais directement : c'est ce qui garantit que
-// l'inventaire suit les écritures réelles et non une liste tenue à la main.
-func recordWrite(path, content string, mode os.FileMode) {
-	sum := sha256.Sum256([]byte(content))
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-	manifest[path] = FileState{
-		SHA256: hex.EncodeToString(sum[:]),
-		Mode:   uint32(mode.Perm()),
-	}
-}
+// Elles n'ont pas changé de nom ni de signature : les appliqueurs du scope
+// machine les appellent par `writeSystemFile` et `removeSystemFile`, sans rien
+// savoir du cycle qui les porte. Ce qu'elles ont perdu, c'est la carte globale
+// qu'elles partageaient avec tous les cycles — voir inventaire.go, qui dit
+// pourquoi (TO-DO 135).
+//
+// Un appliqueur qui connaît le scope UTILISATEUR n'a pas le droit de s'en
+// servir : il passe par les formes qui prennent le contexte (`writeUserFile`,
+// `removeUserFile`, `ctx.writeSystemFile`, `ctx.recordCheck`), qui inscrivent
+// dans l'inventaire de SON cycle.
 
-// recordAbsent note qu'un fichier ne doit PAS exister.
+// ResetManifest vide l'inventaire de travail du cycle machine, fichiers ET
+// attentes : les deux ont le même cycle de vie, et en vider un seul laisserait
+// l'autre attribuer ses entrées au module d'un cycle antérieur.
 //
-// Appelé par removeSystemFile, jamais directement — même discipline que
-// recordWrite : l'inventaire suit les suppressions réelles, pas une liste tenue
-// à la main.
-//
-// # Le trou que cela ferme
-//
-// Un module dont l'effet est « ce fichier ne doit pas exister » ne laissait
-// AUCUNE trace dans l'inventaire. Le recréer ne produisait donc aucun écart : le
-// scan ne compare que ce qu'il connaît, et il ne connaissait que des écritures.
-//
-// Concrètement : une GPO retire /etc/modprobe.d/vaultaire-usb-storage.conf pour
-// lever une interdiction, ou l'inverse — pose un fichier interdisant un module
-// noyau. Quelqu'un le recrée, ou le rétablit, et la machine reste déclarée
-// conforme indéfiniment.
-//
-// # Écraser une entrée d'écriture, et l'inverse
-//
-// Les deux sens sont possibles dans un même cycle : un module peut retirer un
-// fichier qu'un module antérieur avait déposé. La dernière opération gagne,
-// puisque c'est elle qui décrit l'état où le système a été laissé.
-func recordAbsent(path string) {
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-	manifest[path] = FileState{Absent: true}
-}
+// Appelé par ApplyPolicy au début de chaque application machine.
+func ResetManifest() { inventaireMachine.vider() }
 
-// manifestPaths rend les chemins écrits jusqu'ici, triés.
+// manifestSnapshot rend ce que le cycle machine a inscrit jusqu'ici.
 //
-// Triés pour que la différence faite par applyModule soit déterministe : un
-// parcours de map en ordre aléatoire rendrait les journaux et les rapports
-// différents à chaque exécution, pour un même état.
-func manifestPaths() []string {
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-	paths := make([]string, 0, len(manifest))
-	for p := range manifest {
-		paths = append(paths, p)
-	}
-	sort.Strings(paths)
-	return paths
-}
-
-// manifestSince rend les entrées apparues OU MODIFIÉES depuis un relevé.
-//
-// C'est le mécanisme d'attribution : applyModule relève l'inventaire avant
-// d'appeler l'appliqueur, puis demande ce qui a bougé.
-//
-// # Pourquoi « ou modifiées » et non « apparues »
-//
-// La comparaison portait sur la seule PRÉSENCE du chemin. Deux modules qui
-// touchent au même fichier dans un cycle — le second le réécrit, ou le retire —
-// laissaient donc l'entrée attribuée au PREMIER, avec son hachage d'origine. Le
-// scan signalait ensuite une dérive permanente sur un fichier parfaitement
-// conforme à ce que le second module en a fait, et faisait réappliquer le
-// mauvais module.
-//
-// Le cas devient courant avec les entrées d'absence : « ce fichier ne doit pas
-// exister » vient souvent APRÈS un module qui l'avait déposé.
-func manifestSince(avant map[string]FileState, stateKey string) map[string]FileState {
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-
-	nouveaux := map[string]FileState{}
-	for path, state := range manifest {
-		if ancien, existait := avant[path]; existait &&
-			ancien.SHA256 == state.SHA256 &&
-			ancien.Mode == state.Mode &&
-			ancien.Absent == state.Absent {
-			continue
-		}
-		state.StateKey = stateKey
-		nouveaux[path] = state
-	}
-	return nouveaux
-}
-
-// manifestSnapshot relève l'inventaire, pour comparaison ultérieure.
-//
-// Copie les états et pas seulement les clés : c'est ce qui permet à
-// manifestSince de voir qu'un fichier déjà connu a changé.
-func manifestSnapshot() map[string]FileState {
-	manifestMu.Lock()
-	defer manifestMu.Unlock()
-	vue := make(map[string]FileState, len(manifest))
-	for p, s := range manifest {
-		vue[p] = s
-	}
-	return vue
-}
+// Pour un test ou un diagnostic : le moteur n'attribue plus par comparaison de
+// relevés mais par les marques de l'inventaire.
+func manifestSnapshot() map[string]FileState { return inventaireMachine.releveFichiers() }
 
 // HashFile rend le hachage du contenu actuel d'un fichier.
 //

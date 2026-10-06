@@ -3,8 +3,6 @@ package permission
 import (
 	"fmt"
 	"strings"
-	"vaultaire/core/database"
-	dbpermission "vaultaire/core/database/db_permission"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
@@ -41,12 +39,20 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 		}
 		return false, sb.String()
 	}
+
+	// REFUS EXPLICITE d'abord, et pour tous les domaines d'un coup (TO-DO 104) :
+	// un « deny » l'emporte sur ce que n'importe quel autre groupe accorde.
+	// Voir refus.go.
+	if groupID, refuse := refusExplicite(groupIDs, action); refuse {
+		return false, journaliserRefus(action, groupID, groupIDs)
+	}
+
 	var parsedPermission storage.ParsedPermission
 
 	// Cas spécial : aucun domaine à vérifier => on vérifie seulement le super admin (All)
 	if len(domainsToCheck) == 0 {
 		for _, groupID := range groupIDs {
-			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
+			content, err := lireContenuPermission(groupID, action)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -70,7 +76,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 		motif := ""
 
 		for _, groupID := range groupIDs {
-			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
+			content, err := lireContenuPermission(groupID, action)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -79,7 +85,7 @@ func CheckPermissionsMultipleDomains(groupIDs []int, action string, domainsToChe
 
 			parsedPermission = ParsePermissionContent(content)
 
-			if parsedPermission.Deny {
+			if parsedPermission.Aucun || parsedPermission.Refus {
 				continue
 			}
 

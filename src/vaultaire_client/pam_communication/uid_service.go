@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -114,9 +113,7 @@ func serveUIDSocket(chemin string) {
 	// umask 0 pendant le bind : le socket doit naître en 0666. Le poser après
 	// coup laisserait une fenêtre pendant laquelle NSS échouerait pour les
 	// processus non privilégiés — donc des connexions refusées au démarrage.
-	ancienMasque := syscall.Umask(0)
-	ln, err := net.Listen("unix", chemin)
-	syscall.Umask(ancienMasque)
+	ln, err := ecouterSousMasque(chemin, 0)
 	if err != nil {
 		logs.Write_log("CRITICAL", fmt.Sprintf("socket UID : écoute impossible : %v", err))
 		return

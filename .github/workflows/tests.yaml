@@ -1,0 +1,196 @@
+name: "🧪 Tests — à chaque merge dans dev"
+
+# Ce fichier existe parce que la chaîne d'intégration ne lançait AUCUN test
+# (TO-DO 75). L'audit `dev.yaml` vérifie le format, la sécurité et les
+# dépendances ; rien ne vérifiait que le code fait ce qu'il promet. C'est ainsi
+# que des tests périmés ont vécu des mois : deux décrivaient un hachage
+# abandonné, un paquet entier ne compilait plus, cinq paniquaient faute de base.
+#
+# # Pourquoi seulement `dev`, et pourquoi sur `push`
+#
+# Un merge dans `dev` se voit ici comme un `push` sur `dev` : c'est le moment où
+# le code devient celui que tout le monde récupère, donc le seul où un test
+# rouge doit se voir. Pas de déclenchement sur les autres branches — une branche
+# de travail a le droit d'être rouge, c'est à cela qu'elle sert —, ni sur
+# `pull_request`, ni à heure fixe : un test ne change pas d'issue parce qu'il
+# est lundi.
+#
+# `workflow_dispatch` reste, pour rejouer une exécution à la main. Il ne se
+# déclenche jamais seul.
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-dev-${{ github.ref }}
+  # PAS d'annulation en cours de route, contrairement à l'audit. Deux merges
+  # rapprochés donneraient sinon un seul verdict, et le premier merge
+  # resterait sans réponse — or c'est justement celui qu'on cherchera à
+  # incriminer quand `dev` cassera.
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.26.5"
+
+jobs:
+
+  # --------------------------------------------------------------------
+  # 1. Quels modules ? La question est posée au dépôt, pas à une liste
+  # --------------------------------------------------------------------
+  #
+  # `dev.yaml` portait une liste écrite à la main : elle citait un module
+  # inexistant (`vaultaire_api`) et en oubliait quatre. Une liste à la main
+  # diverge, toujours, et son silence ressemble à un succès — le pas était
+  # simplement sauté.
+  #
+  # Ici, la liste est la réponse à « quels dossiers de src/ portent un
+  # go.mod ». Un module neuf est couvert le jour où il naît.
+  modules:
+    name: "🔎 Découverte des modules"
+    runs-on: ubuntu-latest
+    outputs:
+      liste: ${{ steps.decouverte.outputs.liste }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lister les modules Go
+        id: decouverte
+        run: |
+          set -euo pipefail
+          LISTE=$(find src -mindepth 2 -maxdepth 2 -name go.mod -printf '%h\n' \
+                  | sed 's|^src/||' | sort)
+
+          # Zéro module trouvé rendrait une matrice vide, donc un workflow VERT
+          # qui n'a rien testé. C'est exactement le défaut que ce fichier
+          # corrige : on refuse plutôt que de passer.
+          if [ -z "$LISTE" ]; then
+            echo "::error::aucun go.mod trouvé sous src/ — la découverte est cassée"
+            exit 1
+          fi
+
+          echo "Modules couverts :"
+          echo "$LISTE" | sed 's/^/  - /'
+          echo "liste=$(echo "$LISTE" | jq -R -s -c 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
+  # --------------------------------------------------------------------
+  # 2. Les tests, un job par module
+  # --------------------------------------------------------------------
+  tests:
+    name: "🧪 ${{ matrix.module }}"
+    needs: modules
+    runs-on: ubuntu-latest
+    strategy:
+      # Un module rouge ne doit pas masquer l'état des autres : on veut savoir
+      # en une seule exécution ce qui est cassé, pas le découvrir module par
+      # module au fil des corrections.
+      fail-fast: false
+      matrix:
+        module: ${{ fromJson(needs.modules.outputs.liste) }}
+    defaults:
+      run:
+        working-directory: src/${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: src/${{ matrix.module }}/go.sum
+
+      # La compilation d'abord, et séparément : un paquet qui ne compile plus
+      # fait échouer `go test` avec un message noyé dans le reste. C'est ce qui
+      # est arrivé — un paquet entier muet pendant des mois.
+      - name: Compilation
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      # `-race` partout, et non « au moins sur le SDK et le proxy ».
+      #
+      # Une course de données est le défaut qu'un test ne trouve QUE si on le
+      # lui demande : elle ne se manifeste ni à tous les tours, ni sur la
+      # machine du développeur, et elle se corrige d'autant plus cher qu'elle
+      # est découverte tard. Le prix est quelques minutes par exécution, sur un
+      # déclenchement qui n'a lieu qu'aux merges dans `dev`.
+      - name: go test -race
+        run: go test -race ./...
+
+  # --------------------------------------------------------------------
+  # 3. Ce que Linux ne peut pas voir
+  # --------------------------------------------------------------------
+  #
+  # L'agent Windows et les collecteurs d'inventaire du socle sont derrière
+  # `//go:build windows` : les pas ci-dessus ne les compilent même pas. Sans ce
+  # job, on pourrait casser le client Windows sans qu'aucune exécution ne
+  # rougisse — et le défaut n'apparaîtrait qu'à la prochaine fabrication
+  # d'archive.
+  #
+  # Compilation croisée seulement : faire tourner ces tests demanderait un
+  # exécuteur Windows ou wine, pour un gain bien moindre que « est-ce que cela
+  # compile encore ».
+  croise-windows:
+    name: "🪟 Compilation croisée Windows"
+    runs-on: ubuntu-latest
+    env:
+      GOOS: windows
+      GOARCH: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+
+      - name: Agent Windows
+        working-directory: src/vaultaire_client_windows
+        run: |
+          go build ./...
+          go vet ./...
+
+      - name: Socle Ducky, face Windows
+        working-directory: src/ducky-network-sdk-service
+        run: |
+          go build ./...
+          go vet ./...
+
+  # --------------------------------------------------------------------
+  # 4. Le verdict
+  # --------------------------------------------------------------------
+  #
+  # Un seul job à exiger dans les règles de protection de branche : la liste
+  # des modules change, celle-ci non.
+  verdict:
+    name: "📊 Verdict des tests"
+    runs-on: ubuntu-latest
+    if: always()
+    needs: [modules, tests, croise-windows]
+    steps:
+      - name: Résumé
+        run: |
+          {
+            echo "## 🧪 Tests — merge dans \`dev\`"
+            echo ""
+            echo "_Commit \`${GITHUB_SHA::7}\` · [exécution $GITHUB_RUN_ID]($GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID)_"
+            echo ""
+            echo "| Contrôle | Résultat |"
+            echo "|---|---|"
+            echo "| Découverte des modules | ${{ needs.modules.result }} |"
+            echo "| Tests (\`go build\`, \`go vet\`, \`go test -race\`) | ${{ needs.tests.result }} |"
+            echo "| Compilation croisée Windows | ${{ needs.croise-windows.result }} |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Échouer si un contrôle a échoué
+        if: needs.modules.result != 'success' || needs.tests.result != 'success' || needs.croise-windows.result != 'success'
+        run: |
+          echo "::error::des tests ont échoué sur dev — voir les jobs ci-dessus"
+          exit 1

@@ -3,7 +3,6 @@ package ldapparser
 import (
 	"fmt"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
-	"vaultaire/core/logs"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -35,8 +34,6 @@ func parseProtocolOp(p *ber.Packet) (ldapstorage.LDAPProtocolOperation, error) {
 		return nil, fmt.Errorf("protocolOp should be application class")
 	}
 
-	logs.Write_Log("DEBUG", fmt.Sprintf("ldap: protocolOp tag=%d class=%d", p.Tag, p.ClassType))
-
 	switch p.Tag {
 	case 0: // BindRequest
 		return parseBindRequest(p)
@@ -56,27 +53,52 @@ func parseProtocolOp(p *ber.Packet) (ldapstorage.LDAPProtocolOperation, error) {
 		return sr, nil
 
 	default:
-		logs.Write_Log("WARNING", fmt.Sprintf("Unsupported protocolOp tag: %d", p.Tag))
+		// Sans ligne de journal : l'appelant reçoit l'erreur et l'écrit, avec
+		// l'identifiant de la connexion et l'adresse du client — ce que ce
+		// décodeur, qui ne voit que des octets, ne connaît pas.
 		return nil, UnsupportedOperationError{Tag: int(p.Tag)}
 	}
 }
 
+// parseControls décode la liste des contrôles d'un message — RFC 4511 §4.1.11 :
+//
+//	Control ::= SEQUENCE {
+//	        controlType   LDAPOID,
+//	        criticality   BOOLEAN DEFAULT FALSE,
+//	        controlValue  OCTET STRING OPTIONAL }
+//
+// # Les champs se reconnaissent à leur TYPE, pas à leur rang
+//
+// `criticality` a une valeur par défaut : un client qui envoie FALSE l'omet,
+// comme le veut l'encodage DER. La séquence n'a alors que deux éléments, et le
+// second est la VALEUR.
+//
+// La version antérieure lisait par position — le deuxième comme un booléen, le
+// troisième comme la valeur. Sur un contrôle non critique, elle ne trouvait donc
+// pas de booléen (sans conséquence) et ne trouvait pas de valeur non plus : le
+// contrôle arrivait VIDE. Rien ne s'en apercevait tant que tous les contrôles
+// étaient ignorés ; la pagination (point 130), que la plupart des clients
+// demandent sans la marquer critique, aurait été illisible.
 func parseControls(p *ber.Packet) []ldapstorage.LDAPControl {
 	var controls []ldapstorage.LDAPControl
 
 	for _, child := range p.Children {
-		if child.Tag != ber.TagSequence {
+		if child.Tag != ber.TagSequence || len(child.Children) == 0 {
 			continue
 		}
 		var control ldapstorage.LDAPControl
-		if len(child.Children) > 0 {
-			control.ControlType, _ = child.Children[0].Value.(string)
-		}
-		if len(child.Children) > 1 {
-			control.Criticality, _ = child.Children[1].Value.(bool)
-		}
-		if len(child.Children) > 2 {
-			control.ControlValue = child.Children[2].ByteValue
+		control.ControlType, _ = child.Children[0].Value.(string)
+
+		for _, champ := range child.Children[1:] {
+			if champ.ClassType != ber.ClassUniversal {
+				continue
+			}
+			switch champ.Tag {
+			case ber.TagBoolean:
+				control.Criticality, _ = champ.Value.(bool)
+			case ber.TagOctetString:
+				control.ControlValue = champ.ByteValue
+			}
 		}
 		controls = append(controls, control)
 	}

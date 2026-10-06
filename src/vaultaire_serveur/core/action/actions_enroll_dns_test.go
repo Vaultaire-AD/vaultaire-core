@@ -260,7 +260,10 @@ func TestPTRRefuseUneAdresseInvalide(t *testing.T) {
 				"et serait rapportée comme un succès", mauvaise)
 		}
 	}
-	// Les formes valides, IPv4 et IPv6, doivent passer.
+	// Les formes valides, IPv4 et IPv6, doivent passer. Cette moitié-là
+	// descend jusqu'au SQL : sans base, elle est sautée — le contrôle de forme
+	// ci-dessus, lui, a été vérifié.
+	exigeBase(t)
 	for _, bonne := range []string{"192.168.1.10", "::1", "2001:db8::1"} {
 		if _, err := supprimerPTR(Appelant{}, Params{"ip": bonne}); err != nil {
 			t.Errorf("adresse valide %q refusée : %v", bonne, err)
@@ -274,6 +277,7 @@ func TestPTRRefuseUneAdresseInvalide(t *testing.T) {
 // tous les enregistrements sont partis avec elle, et il n'y a pas de retour en
 // arrière — la zone se recrée, son contenu non.
 func TestSuppressionDeZoneDitLAmpleur(t *testing.T) {
+	exigeBase(t)
 	res, err := supprimerZoneDNS(Appelant{}, Params{"zone": "exemple.fr"})
 	if err != nil {
 		t.Fatalf("suppression : %v", err)

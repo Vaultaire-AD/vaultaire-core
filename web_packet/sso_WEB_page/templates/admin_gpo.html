@@ -94,7 +94,7 @@
         </div>
         <div class="perm-card-actions">
           <a href="/admin/gpo?gpo={{ .Name }}" class="btn btn-secondary">Détail</a>
-          <form method="post" class="perm-card-delete" onsubmit="return confirm('Supprimer la GPO {{ .Name }} et tous ses modules ?');">
+          <form method="post" class="perm-card-delete" data-confirm="Supprimer la GPO {{ .Name }} et tous ses modules ?">
             <input type="hidden" name="action" value="delete_gpo">
             <input type="hidden" name="gpo_name" value="{{ .Name }}">
             <button type="submit" class="btn btn-ghost btn-danger">Supprimer</button>

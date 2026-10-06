@@ -57,6 +57,24 @@ func CreateSchema(db *sql.DB) error {
 		// son entrée, sans que personne ait à y penser. Un drapeau par compte
 		// aurait exigé un geste à chaque création, donc aurait été oublié.
 		{"groups", "mfa_required", "BOOLEAN NOT NULL DEFAULT FALSE"},
+
+		// Mot de passe à usage unique, à changement obligatoire — TO-DO 99.
+		//
+		// EN BASE et non dans la session : le drapeau doit survivre à une
+		// déconnexion, et surtout être lu par les chemins qui n'ont pas de
+		// session web — Ducky/PAM et le bind LDAP. La session web en porte déjà
+		// une copie, alimentée par l'expiration ; elle continue de le faire,
+		// cette colonne étant ce qui la renseigne.
+		{"users", "must_change_password", "BOOLEAN NOT NULL DEFAULT FALSE"},
+
+		// Échéance du mot de passe provisoire. NULL = pas de limite de temps,
+		// le changement reste obligatoire.
+		//
+		// Une DATE et non une durée : la durée est un réglage global qui peut
+		// changer entre la pose du mot de passe et sa première utilisation, et
+		// recalculer l'échéance à partir de la durée du jour déplacerait
+		// l'échéance des mots de passe déjà posés — dans les deux sens.
+		{"users", "provisional_password_until", "DATETIME NULL"},
 	}
 
 	for _, c := range columns {

@@ -91,7 +91,10 @@
             </td>
             <td>{{ if .Status }}{{ .Status }}{{ else }}—{{ end }}</td>
             <td>{{ .Modules }}</td>
-            <td>{{ .Conformite }}</td>
+            <td>
+              {{ if .NonVerifiee }}<span class="badge badge-danger">{{ .Conformite }}</span>
+              {{ else }}{{ .Conformite }}{{ end }}
+            </td>
             <td class="muted small">{{ .VuIlYA }}</td>
           </tr>
         {{ end }}

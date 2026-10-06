@@ -35,7 +35,16 @@ func applyDirectory(ctx Context, m Module) (string, error) {
 		// L'absence est notée dans les deux cas — déjà absent ou retiré à
 		// l'instant : la politique dit que ce chemin ne doit pas exister, et
 		// c'est ce que le scan doit surveiller.
-		existait, err := removeSystemFile(path)
+		//
+		// Sous un `HOME`, par la descente sûre (TO-DO 135) : `os.Remove` résout
+		// les répertoires intermédiaires, et un lien planté à la place de l'un
+		// d'eux faisait retirer par root un répertoire hors du dossier.
+		var existait bool
+		if ctx.Scope == ScopeUser {
+			existait, err = removeUserFile(ctx, path)
+		} else {
+			existait, err = ctx.removeSystemFile(path)
+		}
 		if err != nil {
 			return "", fmt.Errorf("suppression de %s impossible (non vide ?) : %v", path, err)
 		}
@@ -49,14 +58,35 @@ func applyDirectory(ctx Context, m Module) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(path, os.FileMode(mode)); err != nil {
-		return "", fmt.Errorf("creation de %s impossible : %v", path, err)
-	}
-	// MkdirAll n'applique le mode qu'aux répertoires qu'il crée : un répertoire
-	// préexistant garderait ses permissions, et la politique serait annoncée
-	// appliquée sans l'être.
-	if err := os.Chmod(path, os.FileMode(mode)); err != nil {
-		return "", fmt.Errorf("permissions de %s impossibles : %v", path, err)
+	// LE SCOPE UTILISATEUR NE TRAVERSE PLUS PAR CHEMIN — TO-DO 97.
+	//
+	// `MkdirAll` puis `os.Chmod` suivent tous deux les liens symboliques. Sur un
+	// dossier que l'utilisateur contrôle, et exécutés EN ROOT par PAM, un lien
+	// `~/.config -> /etc` et un mode permissif rendaient `/etc` accessible en
+	// écriture à tout le monde. C'est la même faille que `writeUserFile`, par
+	// une autre porte.
+	//
+	// Le scope MACHINE garde le chemin : `/etc` et ses voisins ne sont pas sous
+	// le contrôle d'un utilisateur non privilégié, et il n'y a pas de `HOME`
+	// sous lequel descendre.
+	if ctx.Scope == ScopeUser {
+		uid, gid, err := resolveUserIDs(ctx.Username)
+		if err != nil {
+			return "", err
+		}
+		if err := preparerRepertoireUtilisateur(ctx.HomeDir, path, os.FileMode(mode), uid, gid); err != nil {
+			return "", err
+		}
+	} else {
+		if err := os.MkdirAll(path, os.FileMode(mode)); err != nil {
+			return "", fmt.Errorf("creation de %s impossible : %v", path, err)
+		}
+		// MkdirAll n'applique le mode qu'aux répertoires qu'il crée : un répertoire
+		// préexistant garderait ses permissions, et la politique serait annoncée
+		// appliquée sans l'être.
+		if err := os.Chmod(path, os.FileMode(mode)); err != nil {
+			return "", fmt.Errorf("permissions de %s impossibles : %v", path, err)
+		}
 	}
 
 	detail := fmt.Sprintf("repertoire %s (%04o)", path, mode)
@@ -134,15 +164,19 @@ func expandTemplate(ctx Context, content string) string {
 // Autorité de certification
 // ---------------------------------------------------------------------------
 
-// caStorePaths liste les emplacements du magasin de confiance selon la famille
-// de distribution, avec la commande de régénération associée.
-var caStorePaths = []struct {
+// magasinCA décrit le magasin de confiance d'une famille de distribution.
+type magasinCA struct {
+	famille string
 	dir     string
 	suffix  string
 	refresh []string
-}{
-	{"/usr/local/share/ca-certificates", ".crt", []string{"update-ca-certificates"}},     // Debian/Ubuntu
-	{"/etc/pki/ca-trust/source/anchors", ".pem", []string{"update-ca-trust", "extract"}}, // RHEL/Rocky
+}
+
+// caStorePaths liste les magasins de confiance connus, avec la commande de
+// régénération associée.
+var caStorePaths = []magasinCA{
+	{"Debian/Ubuntu", "/usr/local/share/ca-certificates", ".crt", []string{"update-ca-certificates"}},
+	{"RHEL/Rocky", "/etc/pki/ca-trust/source/anchors", ".pem", []string{"update-ca-trust", "extract"}},
 }
 
 // applyTrustedCA installe ou retire une CA du magasin de confiance système.
@@ -154,7 +188,7 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 
 	store, ok := detectCAStore()
 	if !ok {
-		return "", fmt.Errorf("aucun magasin de confiance reconnu sur cette distribution")
+		return "", fmt.Errorf("aucun magasin de confiance utilisable : cherche %s", famillesConnues())
 	}
 	path := store.dir + "/vaultaire-" + name + store.suffix
 
@@ -207,79 +241,75 @@ func applyTrustedCA(ctx Context, m Module) (string, error) {
 	return "CA " + name + " installee (" + store.dir + ")", nil
 }
 
-// detectCAStore retourne le magasin de confiance présent sur la machine.
-func detectCAStore() (struct {
-	dir     string
-	suffix  string
-	refresh []string
-}, bool) {
+// detectCAStore retourne le magasin de confiance utilisable sur la machine.
+//
+// # Ce que la version précédente reconnaissait, et le défaut que ça donnait
+//
+// Elle retenait le PREMIER RÉPERTOIRE qui existe, Debian en tête de liste. Or
+// `/usr/local/share/ca-certificates` est un répertoire ordinaire sous
+// `/usr/local` : il peut parfaitement exister, vide, sur une Rocky. Une Rocky
+// était alors prise pour une Debian, et l'agent lançait
+// `update-ca-certificates`, qui n'y existe pas. Le module échouait, et le
+// message ne disait pas pourquoi — il a fallu une session de recette pour le
+// comprendre.
+//
+// # Ce qui identifie réellement une famille
+//
+// La COMMANDE de régénération, pas le répertoire. Un magasin n'est utilisable
+// que si le programme qui le compile est là : c'est lui qui rend la CA
+// effective, déposer le fichier ne suffit pas. Un répertoire, lui, ne prouve
+// rien — n'importe quel paquet, ou un administrateur, a pu le créer.
+//
+// Le répertoire garde un rôle : départager deux familles dont les deux
+// commandes seraient présentes, ce qui arrive sur une machine où l'on a
+// installé les outils de l'autre distribution.
+func detectCAStore() (magasinCA, bool) {
+	var premierPossible magasinCA
+	trouve := false
+
 	for _, store := range caStorePaths {
+		if !commandExists(store.refresh[0]) {
+			continue
+		}
+		// La commande est là : cette famille est possible. Si son répertoire
+		// existe aussi, c'est elle, sans hésitation.
 		if info, err := os.Stat(store.dir); err == nil && info.IsDir() {
 			return store, true
 		}
+		if !trouve {
+			premierPossible, trouve = store, true
+		}
 	}
-	return caStorePaths[0], false
+
+	// Commande présente mais répertoire absent : le répertoire d'ancrage est
+	// créé. C'est un emplacement documenté de la distribution, pas un chemin
+	// inventé, et le refuser bloquerait le module sur une machine parfaitement
+	// capable de faire ce qu'on lui demande.
+	if trouve {
+		if err := os.MkdirAll(premierPossible.dir, 0o755); err == nil {
+			return premierPossible, true
+		}
+	}
+	return magasinCA{}, false
+}
+
+// famillesConnues rend la liste des magasins cherchés, pour le message d'échec.
+//
+// Un « aucun magasin reconnu » qui ne dit pas ce qui a été cherché oblige à
+// aller lire le code — c'est précisément ce qui a coûté du temps ici.
+func famillesConnues() string {
+	var parts []string
+	for _, store := range caStorePaths {
+		parts = append(parts, store.famille+" ("+store.refresh[0]+")")
+	}
+	return strings.Join(parts, ", ")
 }
 
 // ---------------------------------------------------------------------------
 // Résolution DNS
 // ---------------------------------------------------------------------------
 
-// resolvedDropIn est le fichier de configuration systemd-resolved dédié.
-//
-// Un fichier séparé sous resolved.conf.d/, et surtout PAS /etc/resolv.conf :
-// ce dernier est régénéré par systemd-resolved, NetworkManager ou le client
-// DHCP selon les machines. Une politique qui l'écrirait directement serait
-// effacée au premier renouvellement de bail, sans que rien ne le signale.
-const resolvedDropIn = "/etc/systemd/resolved.conf.d/99-vaultaire-gpo.conf"
-
-// applyDNSResolver fixe les serveurs DNS et le domaine de recherche.
-func applyDNSResolver(ctx Context, m Module) (string, error) {
-	if m.Param("state") == "absent" {
-		if _, err := removeSystemFile(resolvedDropIn); err != nil {
-			return "", fmt.Errorf("retrait de %s impossible : %v", resolvedDropIn, err)
-		}
-		_, _ = runCommand("systemctl", "restart", "systemd-resolved")
-		return "resolution DNS rendue a la configuration locale", nil
-	}
-
-	servers := normalizeList(m.Param("servers"))
-	if servers == "" {
-		return "", fmt.Errorf("aucun serveur DNS fourni")
-	}
-
-	var b strings.Builder
-	b.WriteString("# Genere par Vaultaire (GPO). Ne pas editer a la main.\n")
-	b.WriteString("[Resolve]\n")
-	b.WriteString("DNS=" + servers + "\n")
-	if domains := normalizeList(m.Param("search_domain")); domains != "" {
-		b.WriteString("Domains=" + domains + "\n")
-	}
-
-	previous, had := readFileIfExists(resolvedDropIn)
-	if err := writeSystemFile(resolvedDropIn, b.String(), 0o644); err != nil {
-		return "", err
-	}
-	if _, err := runCommand("systemctl", "restart", "systemd-resolved"); err != nil {
-		// Restauration : une résolution DNS cassée coupe la machine du serveur
-		// Vaultaire lui-même. Sans retour en arrière, plus aucune politique
-		// corrective ne pourrait l'atteindre.
-		restoreOrRemove(resolvedDropIn, previous, had)
-		_, _ = runCommand("systemctl", "restart", "systemd-resolved")
-		return "", fmt.Errorf("redemarrage de systemd-resolved impossible, configuration restauree : %v", err)
-	}
-
-	// L'attente porte sur les serveurs GLOBAUX réellement chargés par resolved.
-	// Le fichier dit ce qu'il devrait lire ; un « resolvectl dns » posé à la
-	// main, ou un service jamais redémarré depuis, laisse le fichier intact et
-	// la machine interroge d'autres serveurs.
-	//
-	// Un DNS posé sur une INTERFACE — par DHCP — prime sur le global pour les
-	// requêtes de cette interface. Ce n'est pas une dérive de ce module : il fixe
-	// le global, et le global sera bien celui qu'il a fixé.
-	recordCheck(CheckDNSServers, "global", servers)
-	return "DNS = " + servers, nil
-}
+// Le module dns_resolver vit dans appliers_dns.go.
 
 // normalizeList nettoie une liste séparée par des virgules et la rend séparée
 // par des espaces, forme attendue par systemd.

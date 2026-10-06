@@ -38,29 +38,37 @@ func parseTrames(trames string) storage.Trames_struct_client {
 	}
 }
 
-func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize int) {
-	messageBuf := make([]byte, reconstructedMessageSize)
-	_, err := duckysession.Conn.Read(messageBuf)
+// MessageReader lit le corps d'une trame et la traite.
+//
+// Une erreur rendue veut dire « fermer la connexion » : le corps n'a pas pu
+// être lu en entier, donc la position dans le flux est perdue. Un échec de
+// DÉCHIFFREMENT, lui, n'en est pas une : le corps a été lu jusqu'au bout, la
+// trame suivante commence au bon endroit, et l'échec est journalisé ici.
+func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize int) error {
+	// lireCorps et non conn.Read : TCP peut rendre le corps en plusieurs
+	// morceaux, et le reste passait pour l'en-tête suivant (TO-DO 101).
+	messageBuf, err := lireCorps(duckysession.Conn, reconstructedMessageSize)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error during the read of the message: "+err.Error())
-		return
+		return err
 	}
 	//fmt.Println("taille du message recu : ", reconstructedMessageSize)
 	if string(messageBuf) == "askkey" {
-		data := []byte("getkey\n" +
-			keymanagement.GetPublicKey())
-		messageSize := sendmessage.CompileMessageSize(data)
-		headerSize := []byte{sendmessage.CompileHeaderSize(messageSize)}
-		datatosend := append(append(headerSize, messageSize...), data...)
+		datatosend, err := sendmessage.CadrerTrame([]byte("getkey\n" +
+			keymanagement.GetPublicKey()))
+		if err != nil {
+			logs.Write_Log("ERROR", "askkey: "+err.Error())
+			return nil
+		}
 		if _, err := duckysession.Conn.Write(datatosend); err != nil {
 			err := duckysession.Conn.Close()
 			if err != nil {
 				logs.Write_Log("ERROR", "Error closing connection: "+err.Error())
 			}
 			logs.Write_Log("ERROR", "Error during the send of the message: "+err.Error())
-			return
+			return nil
 		}
-		return
+		return nil
 	}
 	privateKeyStr := keymanagement.GetPrivateKey()
 	var messageDecrypt string
@@ -70,16 +78,17 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 		messageDecrypt, err = keydecodeencode.DecryptAESGCMString(duckysession.SessionKey, messageBuf)
 		if err != nil {
 			logs.Write_Log("ERROR", "Error during symmetric decryption: "+err.Error())
-			return
+			return nil
 		}
 	} else {
 		// Déchiffrement asymétrique RSA
 		messageDecrypt, err = keydecodeencode.DecryptMessageWithPrivate(privateKeyStr, messageBuf)
 		if err != nil {
 			logs.Write_Log("ERROR", "Error during asymmetric decryption: "+err.Error())
-			return
+			return nil
 		}
 	}
 	var trames_content = parseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
+	return nil
 }

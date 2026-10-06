@@ -38,11 +38,15 @@ func ResolveMXRecords(db *sql.DB, fqdn string) ([]dnsstorage.MXRecord, error) {
 				relativeName = "@"
 			}
 
+			table, err := identifiantTable(foundZone.TableName)
+			if err != nil {
+				return nil, err
+			}
 			query := fmt.Sprintf(`
 				SELECT data, priority, ttl FROM %s
 				WHERE name = ? AND type = 'MX'
 				ORDER BY priority ASC;
-			`, foundZone.TableName)
+			`, table)
 
 			rows, err := db.Query(query, relativeName)
 			if err != nil {

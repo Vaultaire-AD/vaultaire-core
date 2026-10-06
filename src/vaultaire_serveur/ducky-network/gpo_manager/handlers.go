@@ -157,7 +157,7 @@ func serveScope(trames storage.Trames_struct_client, scope gpo.Scope, targetUser
 		scope, manifest.Version, clientID, userSuffix(targetUser), manifest.ModuleCount,
 		manifest.ChunkCount, shortFingerprint(manifest.Fingerprint), shortFingerprint(appliedFingerprint)))
 
-	return replyManifest(trames.SessionIntegritykey, manifest)
+	return replyManifest(trames.SessionIntegritykey, clientID, manifest)
 }
 
 // handleAskChunk traite 05_09 et répond 05_10 ou 05_11.

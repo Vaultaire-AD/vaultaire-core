@@ -8,7 +8,7 @@ import (
 
 // update_UserPermission_Command_Parser règle une action RBAC d'une permission.
 //
-//	update -pu <permission> <clé d'action> nil|all|-a|-r [propagation] [domaine]
+//	update -pu <permission> <clé d'action> nil|all|deny|-a|-r [propagation] [domaine]
 //
 // # Ce qui a disparu d'ici
 //
@@ -29,7 +29,7 @@ import (
 // Cette fonction ne fait plus que traduire une syntaxe en paramètres nommés.
 func update_UserPermission_Command_Parser(command_list []string, sender_groupsIDs []int, _ string, sender_Username string) string {
 	if len(command_list) < 4 {
-		return "Requête invalide : update -pu <permission> <clé d'action> nil|all|-a|-r [propagation] [domaine]"
+		return "Requête invalide : update -pu <permission> <clé d'action> nil|all|deny|-a|-r [propagation] [domaine]"
 	}
 
 	p := action.Params{

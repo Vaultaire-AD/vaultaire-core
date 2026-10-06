@@ -126,6 +126,14 @@ func AnalyserListe(contenu string) ([]Noeud, error) {
 		if ligne == "" {
 			continue
 		}
+		// La ligne de cadence n'est pas un nœud : elle est écartée AVANT
+		// l'analyse et ne compte ni dans les retenues ni dans les rejetées.
+		// La compter ferait dire à chaque trame qu'elle est tronquée, puisque
+		// le nombre annoncé en première ligne ne compte que des nœuds.
+		if strings.HasPrefix(ligne, PrefixeCadence) {
+			appliquerCadenceDepuis(ligne)
+			continue
+		}
 		n, err := analyserLigne(ligne)
 		if err != nil {
 			// Une ligne fautive n'emporte pas les autres : mieux vaut une liste
@@ -248,9 +256,21 @@ func Enregistrer(noeuds []Noeud) {
 // confiance à étendre. Ce n'est pas une anomalie — c'est l'état d'un agent
 // installé sans `-join`, et la liste reste utilisable pour le nœud qu'il joint
 // déjà.
+//
+// # Jamais l'empreinte d'un PROXY
+//
+// Un proxy relaie les octets sans les lire (TO-DO 38) : au bout du tunnel,
+// l'agent parle au CORE et reçoit la clé du core. L'empreinte annoncée pour un
+// proxy est celle de sa propre clé de client ; l'apprendre ferait accepter
+// cette clé comme celle d'un core — c'est-à-dire qu'un proxy pourrait se faire
+// passer pour un core et recueillir les mots de passe du parc, ce que
+// l'arbitrage 2 existe pour empêcher. Les proxies sont donc sautés ici.
 func ApprendreEmpreintes(noeuds []Noeud) {
 	var appris int
 	for _, n := range noeuds {
+		if n.Role == "proxy" {
+			continue
+		}
 		ok, err := serveurauth.ApprendreEmpreinte(n.Empreinte)
 		if err != nil {
 			logs.Write_log("WARNING", fmt.Sprintf(

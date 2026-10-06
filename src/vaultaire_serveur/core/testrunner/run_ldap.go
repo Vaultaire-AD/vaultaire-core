@@ -6,6 +6,7 @@ import (
 
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	ldapfilter "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/filter"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 )
@@ -48,8 +49,9 @@ func testLDAP() []Result {
 
 // entreeTest implémente LDAPEntry sans base ni connexion.
 type entreeTest struct {
-	dn    string
-	attrs map[string][]string
+	dn      string
+	domaine string
+	attrs   map[string][]string
 }
 
 func (e entreeTest) DN() string { return e.dn }
@@ -75,9 +77,19 @@ func (e entreeTest) GetAttributes(attrs []string, typesOnly bool) map[string][]s
 
 func (e entreeTest) ObjectClasses() []string { return []string{"inetOrgPerson"} }
 
+// Domaines — voir ldapinterface.LDAPEntry. Ces entrées ne servent qu'à éprouver
+// l'évaluation des filtres, qui ne regarde pas le rattachement ; il est
+// renseigné pour que le type reste une entrée valide, pas pour être lu.
+func (e entreeTest) Domaines() []string { return []string{e.domaine} }
+
+// Restreinte — voir ldapinterface.LDAPEntry. Ces entrées ne nomment rien
+// d'autre qu'elles-mêmes.
+func (e entreeTest) Restreinte(func(string) bool) ldapinterface.LDAPEntry { return e }
+
 func utilisateurTest() entreeTest {
 	return entreeTest{
-		dn: "uid=jdupont,ou=users,dc=vaultaire,dc=local",
+		dn:      "uid=jdupont,ou=users,dc=vaultaire,dc=local",
+		domaine: "vaultaire.local",
 		attrs: map[string][]string{
 			"uid":         {"jdupont"},
 			"cn":          {"Jean Dupont"},
@@ -346,6 +358,35 @@ func testLDAPAttributs() []Result {
 		"demander entryuuid nommement doit le rendre",
 	})
 
+	// --- L'identifiant est STABLE, et ce n'est plus le nom (point 129) ------
+	//
+	// Il valait le nom du compte : un renommage le changeait, et un client comme
+	// Keycloak créait alors un second compte au lieu de renommer le premier.
+	avant := u.GetAttribute("entryuuid")
+	renomme := u
+	renomme.User.Username = "jean.dupont"
+	apres := renomme.GetAttribute("entryuuid")
+	out = append(out, Result{
+		"LDAP/identifiant: entryUUID survit au renommage du compte",
+		len(avant) == 1 && len(apres) == 1 && avant[0] == apres[0] && avant[0] != u.User.Username,
+		fmt.Sprintf("avant renommage %v, apres %v", avant, apres),
+	})
+
+	sansIdentifiant := u
+	sansIdentifiant.User.EntryUUID = ""
+	attrs = sansIdentifiant.GetAttributes([]string{"+"}, false)
+	var servis []string
+	for _, op := range operationnels {
+		if _, present := attrs[op]; present {
+			servis = append(servis, op)
+		}
+	}
+	out = append(out, Result{
+		"LDAP/identifiant: sans UUID en base, aucun identifiant n'est servi",
+		len(servis) == 0,
+		fmt.Sprintf("servis malgre l'absence d'UUID (le nom ne doit JAMAIS en tenir lieu) : %v", servis),
+	})
+
 	// --- typesOnly : les noms sans les valeurs -----------------------------
 	attrs = u.GetAttributes([]string{"uid"}, true)
 	out = append(out, Result{
@@ -560,8 +601,11 @@ func utilisateurAvecOperationnels() candidate.UserEntry {
 			Firstname: "Jean",
 			Lastname:  "Dupont",
 			Email:     "jean.dupont@vaultaire.local",
+			// Sans identifiant, les cinq attributs d'identification ne sont pas
+			// servis du tout (point 129) : la fixture en porte donc un.
+			EntryUUID: "597ae2f6-16a6-4027-98f4-d28b5365dc14",
 		},
 		BaseDN: "dc=vaultaire,dc=local",
-		Groups: []string{"cn=admins,ou=groups,dc=vaultaire,dc=local"},
+		Groups: []candidate.Appartenance{{DN: "cn=admins,ou=groups,dc=vaultaire,dc=local", Domaine: "vaultaire.local"}},
 	}
 }

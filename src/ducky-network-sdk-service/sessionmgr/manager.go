@@ -218,26 +218,59 @@ func (m *Manager) Touch(sessionID string) {
 	}
 }
 
+// DefinirDelai change le délai d'inactivité au-delà duquel une session est
+// fermée (TO-DO 110).
+//
+// Il était fixé à la création du registre — dix minutes — et ne bougeait plus.
+// Or le seul trafic régulier d'un tunnel est le 02_11 que le core envoie à sa
+// propre cadence, réglable jusqu'à soixante minutes : à dix minutes ou plus,
+// ce registre fermait chaque tunnel entre deux battements. Le paquet enligne
+// l'appelle quand le core annonce sa cadence.
+//
+// Une valeur nulle ou négative est ignorée : elle fermerait tout au passage
+// suivant.
+func (m *Manager) DefinirDelai(delai time.Duration) {
+	if delai <= 0 {
+		return
+	}
+	m.mu.Lock()
+	m.timeout = delai
+	m.mu.Unlock()
+}
+
+// Delai rend le délai d'inactivité en vigueur.
+func (m *Manager) Delai() time.Duration {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.timeout
+}
+
 func (m *Manager) cleanupLoop() {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
 
 	for range ticker.C {
-		now := time.Now()
-		m.mu.Lock()
-		for id, s := range m.sessions {
-			// On ne check QUE le timeout d'inactivité
-			// Si aucune donnée n'a transité depuis m.timeout
-			if now.Sub(s.LastSeen) > m.timeout {
-				logs.Write_log("WARNING", fmt.Sprintf(
-					"Session timeout pour %s (id=%s). Fermeture du tunnel.", s.Username, id))
-				if s.Conn != nil {
-					_ = s.Conn.Close()
-				}
-				delete(m.sessions, id)
+		m.fermerLesSessionsMuettes(time.Now())
+	}
+}
+
+// fermerLesSessionsMuettes fait un passage du nettoyage. Sortie de la boucle
+// pour être éprouvée sans attendre une minute.
+func (m *Manager) fermerLesSessionsMuettes(now time.Time) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for id, s := range m.sessions {
+		// On ne check QUE le timeout d'inactivité
+		// Si aucune donnée n'a transité depuis m.timeout
+		if now.Sub(s.LastSeen) > m.timeout {
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"Session timeout pour %s (id=%s) après %s sans trafic. Fermeture du tunnel.",
+				s.Username, id, m.timeout))
+			if s.Conn != nil {
+				_ = s.Conn.Close()
 			}
+			delete(m.sessions, id)
 		}
-		m.mu.Unlock()
 	}
 }
 
@@ -313,3 +346,66 @@ func (m *Manager) cleanupLoop() {
 // 		logs.Write_log("DEBUG", "=== Fin nettoyage sessions ===")
 // 	}
 // }
+
+// Instantane décrit une session à un instant, par VALEUR : lue sous verrou,
+// elle ne change plus ensuite. Sert au rapport de debug de l'agent.
+//
+// La clé de session n'y figure pas — seulement sa présence : un rapport de
+// debug finit dans un ticket, et une clé qui y serait recopiée ouvrirait la
+// session à qui le lit.
+type Instantane struct {
+	SessionID string
+	Username  string
+	Status    SessionStatus
+	Distant   string
+	Local     string
+	Sure      bool
+	AUneCle   bool
+	CreatedAt time.Time
+	LastSeen  time.Time
+}
+
+// String rend le statut en clair.
+func (s SessionStatus) String() string {
+	switch s {
+	case SessionPending:
+		return "en attente"
+	case SessionAuthenticated:
+		return "authentifiée"
+	case SessionFailed:
+		return "échouée"
+	default:
+		return "inconnu"
+	}
+}
+
+// Snapshot rend toutes les sessions, triées par date de création.
+func (m *Manager) Snapshot() []Instantane {
+	m.mu.RLock()
+	out := make([]Instantane, 0, len(m.sessions))
+	for _, s := range m.sessions {
+		i := Instantane{
+			SessionID: s.SessionID, Username: s.Username, Status: s.Status,
+			CreatedAt: s.CreatedAt, LastSeen: s.LastSeen,
+		}
+		if s.Conn != nil {
+			if a := s.Conn.RemoteAddr(); a != nil {
+				i.Distant = a.String()
+			}
+			if a := s.Conn.LocalAddr(); a != nil {
+				i.Local = a.String()
+			}
+		}
+		if s.DuckySession != nil {
+			i.Sure = s.DuckySession.IsSafe
+			i.AUneCle = len(s.DuckySession.SessionKey) > 0
+		}
+		out = append(out, i)
+	}
+	m.mu.RUnlock()
+	sort.Slice(out, func(a, b int) bool { return out[a].CreatedAt.Before(out[b].CreatedAt) })
+	return out
+}
+
+// Timeout rend la durée d'inactivité au-delà de laquelle une session expire.
+func (m *Manager) Timeout() time.Duration { return m.timeout }

@@ -28,6 +28,7 @@
         <div class="app-container animate-in">
     <h1>Utilisateurs</h1>
     {{if .Message}}<div class="alert alert-success">{{.Message}}</div>{{end}}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
 
     <section class="section">
       <h2>Créer un utilisateur</h2>
@@ -63,7 +64,7 @@
             <td>{{.DateNaissance}}</td>
             <td>{{.CreatedAt}}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer {{.Username}} ?');">
+              <form method="post" style="display:inline" data-confirm="Supprimer {{.Username}} ?">
                 <input type="hidden" name="action" value="delete_user">
                 <input type="hidden" name="username" value="{{.Username}}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>

@@ -49,8 +49,9 @@ func parseBindRequest(p *ber.Packet) (ldapstorage.BindRequest, error) {
 		Authentication: []byte(password),
 		SimpleAuth:     simple,
 		// Anonymat au sens de la RFC 4513 §5.1.1 : DN vide ET mot de passe vide.
-		// Un DN vide avec un mot de passe est un bind « non authentifié », que le
-		// gestionnaire refuse séparément.
+		// Les deux formes voisines sont refusées par le gestionnaire, qui les
+		// classe (natureDuBind) : le bind « non authentifié » de §5.1.2 — DN
+		// fourni, mot de passe vide — et le DN vide avec un mot de passe.
 		Anonymous: name == "" && password == "",
 	}, nil
 }

@@ -26,6 +26,19 @@ ldap:
   ldap_port: 389
   ldaps_port: 636
 
+  # Second facteur au bind LDAP.
+  #
+  # Par défaut (false), un compte dont le second facteur est posé — ou imposé
+  # par un de ses groupes — se lie avec son mot de passe SUIVI du code à 6
+  # chiffres : « MonMotDePasse123456 ». Un compte imposé mais pas encore enrôlé
+  # est refusé.
+  #
+  # true laisse ces comptes se lier avec le seul mot de passe, pour des
+  # applications incapables de transmettre le code. Chaque bind concerné est
+  # journalisé (SECURITY). Préférez des comptes de service hors des groupes
+  # soumis au second facteur.
+  mfa_bypass: false
+
   # Noms et adresses que le certificat LDAPS doit couvrir.
   #
   # Le nom de la machine et ses adresses sont détectés automatiquement. Ne
@@ -41,6 +54,66 @@ ldap:
   #
   # Après modification : vlt certificate regenerate ldaps, puis redémarrage.
   # Voir docs/exploitation/ldaps_keycloak.md
+  # Élargir une recherche « one » à toute l'arborescence.
+  #
+  # Par défaut (false), une recherche de portée « one » rend UN niveau, comme le
+  # veut la RFC 4511. C'est un changement de la 2.2 : le serveur promouvait
+  # silencieusement en « sub » toute recherche « one » dont le conteneur
+  # s'appelait « users ».
+  #
+  # true rétablit l'ancien comportement, pour TOUTE recherche « one » et non plus
+  # selon le nom du conteneur. Utile si un client attend les sous-domaines sans
+  # savoir demander « sub » — JumpServer est dans ce cas. Préférez, quand c'est
+  # possible, reconfigurer le client en « scope=sub » : c'est la façon juste de
+  # demander une arborescence.
+  onelevel_subtree: false
+
+  # Refuser un bind avec mot de passe sur le port en clair.
+  #
+  # Par défaut (false), un bind est accepté sur 389 comme sur 636. Sur 389, le
+  # mot de passe traverse le réseau en clair.
+  #
+  # true refuse tout bind avec mot de passe hors TLS (strongerAuthRequired) : le
+  # client doit se lier en LDAPS, sur 636. Les recherches sans bind — RootDSE,
+  # sous-schéma — restent servies sur 389.
+  #
+  # À n'activer qu'après avoir vérifié que TOUS les clients savent faire du
+  # LDAPS : l'activer coupe aussitôt ceux qui sont configurés sur 389. Les
+  # lignes « ouverte LDAP depuis … » du journal disent lesquels le sont encore.
+  require_tls_for_bind: false
+
+  # Bornes de recherche et de pagination.
+  #
+  # Les valeurs ci-dessous sont celles du code : cette section ne change rien
+  # tant qu'on n'y touche pas. Elles conviennent à un annuaire de quelques
+  # dizaines de milliers d'entrées.
+  #
+  # AUCUNE borne ne se désactive d'ici : zéro, une valeur négative ou un ordre
+  # de grandeur aberrant ARRÊTENT le démarrage, en nommant la clé. Une clé mal
+  # orthographiée aussi. Comment les choisir, et ce que coûte une entrée tenue
+  # en mémoire : docs/exploitation/ldap_bornes.md
+  limites:
+    # Entrées qu'une recherche NON paginée peut rendre (1 à 1 000 000). Au-delà,
+    # le client reçoit sizeLimitExceeded : il doit paginer.
+    max_search_entries: 10000
+    # Temps laissé à l'envoi d'une réponse, en secondes (1 à 3600).
+    max_search_duration_seconds: 30
+    # Taille maximale d'une page (1 à 100 000). Le client propose, le serveur
+    # peut rendre moins.
+    max_page_size: 1000
+    # Entrées qu'UNE recherche paginée peut rendre, toutes pages confondues
+    # (1 à 10 000 000). Jamais moins que max_search_entries.
+    max_paged_search_entries: 200000
+    # Entrées tenues en mémoire par TOUTES les recherches paginées en cours
+    # (1 à 50 000 000). Au-delà, une nouvelle recherche paginée reçoit « busy ».
+    # Jamais moins que max_paged_search_entries.
+    max_paged_entries_held: 500000
+    # Recherches paginées ouvertes en même temps sur une connexion (1 à 64).
+    max_paged_cursors_per_connection: 4
+    # Temps laissé au client pour demander la page suivante, en secondes
+    # (10 à 86 400). Passé ce délai, la recherche est à refaire.
+    paged_cursor_ttl_seconds: 300
+
   ldaps_tls_dns_names: []
   #  - vaultaire-ad
   #  - vaultaire-ad.interne.lan
@@ -52,7 +125,11 @@ dns:
 
 database:
   username: root
-  password: root
+  # REMPLACEZ CETTE VALEUR. Le marqueur ne fonctionne pas : c'est voulu.
+  # Un fichier livré avec un mot de passe QUI MARCHE est un mot de passe publié
+  # dans le dépôt Git du produit, et il reste en place sur toute installation
+  # que personne n'a retouchée.
+  password: CHANGEZ_MOI
   ip_database: "vaultaire-db"
   port_database: "3306"
   databaseName: "vaultaire"
@@ -103,12 +180,63 @@ automatisation:
 api:
   api_enable: true
   api_port: 6643
+  # Débit par adresse source sur /api/command, appliqué AVANT toute
+  # authentification : l'authentification de l'API EST la signature, et la
+  # vérifier coûte au core deux lectures en base et un calcul par clé du compte
+  # visé. Un seau de « limite_rafale » requêtes, rempli de « limite_par_seconde »
+  # par seconde : un script qui envoie cent commandes d'un coup passe, un flot
+  # soutenu est ramené au débit de remplissage. Au-delà : 429 et Retry-After.
+  # Derrière un relais, voir web_trusted_proxies : sans lui toutes les requêtes
+  # portent l'adresse du relais et partagent un seul seau.
+  limite_rafale: 100
+  limite_par_seconde: 20
 
 debug:
-  debug: true
+  # FAUX par défaut. Les lignes DEBUG portent les DN des binds LDAP, les
+  # identifiants de groupe des décisions de permission et le détail des
+  # vérifications de signature : aucun secret, mais la cartographie complète de
+  # l'annuaire et des droits, dans un fichier lisible localement et sans
+  # bornage. À n'activer que le temps d'un diagnostic.
+  debug: false
 
-administreur:
+  # Détail par sous-système : ldap, ducky, gpo, base.
+  #
+  # Chaque sous-système suit « debug » ci-dessus, sauf s'il est réglé ici :
+  #
+  #   off     n'écrit rien sous INFO, même avec debug: true
+  #   debug   écrit ses lignes DEBUG, même avec debug: false
+  #   trace   DEBUG, plus le déroulé pas à pas
+  #
+  # Deux usages : le debug partout SAUF l'annuaire (debug: true, ldap: off) —
+  # un client LDAP bavard noie sinon tout le reste —, ou l'annuaire SEUL
+  # (debug: false, ldap: debug).
+  #
+  # En « debug », l'annuaire écrit UNE ligne par opération : connexion, message,
+  # demande, code de résultat, nombre d'entrées, durée. « trace » y ajoute les
+  # paquets reçus et le CONTENU des entrées rendues : à réserver à un
+  # diagnostic, sur un core dont le journal n'est lu par personne d'autre.
+  #
+  # Se règle aussi à chaud, sans redémarrer : vlt update -debug ldap trace
+  # (jusqu'au redémarrage du core). Un nom ou un niveau inconnu arrête le
+  # démarrage. Voir docs/Developement/how it work/Journalisation.md
+  detail: {}
+  #  ldap: debug
+  #  ducky: off
+
+# « administrateur » et non « administreur ».
+#
+# L'ancienne orthographe n'a JAMAIS été lue : l'étiquette de la structure Go dit
+# « administrateur », et un décodeur YAML apparie sur l'étiquette exacte. Toute
+# cette section était donc ignorée en silence, et le compte d'amorçage naissait
+# avec les valeurs par défaut du code quoi que contienne ce fichier.
+# Le core refuse maintenant de démarrer sur l'ancienne clé, en la nommant.
+administrateur:
   enable: true
   username: admin
-  password: admin123 
+  # REMPLACEZ CETTE VALEUR, le core refuse de démarrer tant qu'elle est là.
+  # Ce compte entre dans le groupe « vaultaire » : tous les droits, sur tous les
+  # domaines. Son mot de passe est PROVISOIRE — il devra être changé sur le
+  # portail à la première connexion — et doit tenir la règle de robustesse
+  # (12 caractères par défaut, « vlt mfa policy »).
+  password: CHANGEZ_MOI
   public_key: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJnFvZ8sfvIGVc0gB5oQEv2Vh1A6lqGNK/CrcgZj5ybNoEwxdbkQyRYkJ6NmtxDs1zLyRUr5GCGtjX44JNNnTDdL+E00Aiw8nFBJRlHkV78ehG62p2DeeVLUydnlnT5ey3KJtmY+Tc0dq5AqWdnAsLbZ/JHw/EuZTeifYJ6wmpxp69oHnsvRxBomH2wSp7CjeYTaBpVFF4KChBSXm/gO4quWQT0JBsDyNmPhZ/QwRJKqujh1B5OX6bbKAl5MOC3OoPXfYkyhilaMku9lK5E6i3wLdP08FQ6Op/Psy7ukTTvMduhqsauxZMMx+x12RAT72LFySZ6RSkLKQXhwkO8pG4laNKFQbDoTULC973AKy0le2Jyb7SnNBL+I+KviMojItYCc6QmQ39TVowy6VQimHiPPs6UPTDt8KROm1SEtPSXj7QvtwJU5hbAG9uFVH/udX7y6BhNPkOgCmrH9s5fh0= root@NTFS"

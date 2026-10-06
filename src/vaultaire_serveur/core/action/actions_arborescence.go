@@ -2,6 +2,7 @@ package action
 
 import (
 	"fmt"
+	"strings"
 
 	"vaultaire/core/database"
 	dbdomains "vaultaire/core/database/db_domains"
@@ -49,10 +50,10 @@ func EnregistrerActionsArborescence(r *Registre) {
 		Portee:  PorteeGlobale,
 		// Même souplesse que group.list : le droit sur un domaine ouvre la
 		// vue, le filtre la réduit.
-		PorteeOuverte:   true,
-		Filtre:          filtrerArborescence,
-		Resume:          "arborescence des domaines et de leurs groupes",
-		Executer:        listerArborescence,
+		PorteeOuverte: true,
+		Filtre:        filtrerArborescence,
+		Resume:        "arborescence des domaines et de leurs groupes",
+		Executer:      listerArborescence,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -62,8 +63,11 @@ func EnregistrerActionsArborescence(r *Registre) {
 		// domaine EST un domaine, la portée est donc lui-même.
 		Portee:          porteeDomaine,
 		UnDomaineSuffit: true,
-		FiltreInutile: "la liste ne porte que des noms de groupes d'un domaine déjà " +
-			"couvert par le contrôle d'accès ; il n'y a pas de second périmètre",
+		// Le filtre n'est PAS inutile : la liste descend dans les
+		// sous-domaines, que le droit sur le domaine demandé ne couvre pas
+		// toujours. Un délégué de paris.fr sans propagation (« 0:paris.fr »)
+		// voyait les groupes de rh.paris.fr — ceux que `eyes -g` lui masquait.
+		Filtre:   filtrerArborescence,
 		Resume:   "groupes situés sous un domaine",
 		Executer: listerGroupesDuDomaine,
 	})
@@ -129,13 +133,27 @@ func ArbreDepuis(groupes []storage.GroupDomain) *storage.DomainNode {
 }
 
 func listerGroupesDuDomaine(_ Appelant, p Params) (Resultat, error) {
-	nom := p.Get("domain")
+	nom := strings.ToLower(strings.TrimSuffix(strings.TrimSpace(p.Get("domain")), "."))
 	if nom == "" {
 		return Resultat{}, fmt.Errorf("nom de domaine requis")
 	}
-	groupes, err := domain.GetGroupsUnderDomain(nom, database.GetDatabase(), true)
+	tous, err := dbdomains.GetAllGroupsWithDomains(database.GetDatabase())
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des groupes du domaine %q : %w", nom, err)
+	}
+	// Des GROUPES avec leur domaine, et non des noms de domaines : l'ancienne
+	// version appelait GetGroupsUnderDomain en mode « domaines », si bien que
+	// « Groupes sous X » listait… des domaines. Le domaine de chaque groupe sert
+	// aussi au filtre de périmètre.
+	var groupes []storage.GroupDomain
+	for _, g := range tous {
+		d := strings.ToLower(strings.TrimSuffix(g.DomainName, "."))
+		if g.GroupName == "" || d == "" {
+			continue
+		}
+		if d == nom || strings.HasSuffix(d, "."+nom) {
+			groupes = append(groupes, g)
+		}
 	}
 	if len(groupes) == 0 {
 		return Resultat{Message: "Domaine " + nom + " : aucun groupe associé."}, nil

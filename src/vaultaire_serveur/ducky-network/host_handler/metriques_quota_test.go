@@ -177,7 +177,15 @@ func TestLeRefusEstNonPunitifDansLeHandler(t *testing.T) {
 	if i < 0 {
 		t.Fatal("handleProxyMetrics n'appelle plus AutoriseMetrique")
 	}
-	bloc := source[i:min(i+400, len(source))]
+	// Le bloc du `if`, délimité par ses accolades — et non une fenêtre de
+	// N caractères, comme le faisait la version précédente de ce test.
+	//
+	// La fenêtre finissait par déborder sur le code qui SUIT le refus. Une
+	// ligne voisine parfaitement légitime — ici le `fmt.Errorf` du contenu
+	// invalide — suffisait alors à faire échouer le test, qui accusait le refus
+	// de remonter une erreur. Un test qui échoue pour ce qu'il ne regarde pas
+	// finit par être ignoré, et il ne garde plus rien.
+	bloc := blocDuIf(t, source[i:])
 
 	if !strings.Contains(bloc, "04_06") {
 		t.Error("le dépassement ne répond pas 04_06 : le nœud resterait sans réponse")
@@ -190,4 +198,27 @@ func TestLeRefusEstNonPunitifDansLeHandler(t *testing.T) {
 		t.Error("le dépassement accuse réception comme si la métrique avait été " +
 			"écrite : la réponse doit dire ce qui s'est passé")
 	}
+}
+
+// blocDuIf rend le corps d'un `if`, accolade ouvrante comprise.
+func blocDuIf(t *testing.T, source string) string {
+	t.Helper()
+	debut := strings.Index(source, "{")
+	if debut < 0 {
+		t.Fatal("bloc introuvable : le `if` n'ouvre aucune accolade")
+	}
+	profondeur := 0
+	for i := debut; i < len(source); i++ {
+		switch source[i] {
+		case '{':
+			profondeur++
+		case '}':
+			profondeur--
+			if profondeur == 0 {
+				return source[debut : i+1]
+			}
+		}
+	}
+	t.Fatal("bloc non refermé : la lecture de la source est à revoir")
+	return ""
 }

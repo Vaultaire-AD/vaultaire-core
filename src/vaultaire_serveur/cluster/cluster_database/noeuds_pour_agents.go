@@ -90,7 +90,7 @@ func NoeudsPourAgents(db *sql.DB, groupesDuDemandeur []int) ([]clusterstorage.No
 
 	rows, err := db.Query(`
 		SELECT id_node, hostname, fqdn, ip_address, role, status, version_code,
-		       capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents,
+		       COALESCE(capabilities, ''), last_heartbeat, ducky_port, priorite, expose_aux_agents,
 		       key_fingerprint, sdk_version, adresse_publique, port_public
 		  FROM cluster_nodes
 		 WHERE status = 'online'
@@ -143,10 +143,10 @@ func partageUnGroupe(a, b []int) bool {
 //
 // # L'ordre, et ce qu'il coûte
 //
-//	1. les PROXIES avant les cores ;
-//	2. à rôle égal, les nœuds AFFINS d'abord ;
-//	3. à affinité égale, la priorité la plus BASSE d'abord ;
-//	4. à priorité égale, le nom — pour que l'ordre soit reproductible.
+//  1. les PROXIES avant les cores ;
+//  2. à rôle égal, les nœuds AFFINS d'abord ;
+//  3. à affinité égale, la priorité la plus BASSE d'abord ;
+//  4. à priorité égale, le nom — pour que l'ordre soit reproductible.
 //
 // # L'affinité vient APRÈS le rôle, et avant la priorité
 //

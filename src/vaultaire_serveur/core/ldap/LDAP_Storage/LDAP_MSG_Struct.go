@@ -65,6 +65,38 @@ type SearchRequest struct {
 	TypesOnly    bool
 	Filter       *LDAPFilter // brut pour l’instant
 	Attributes   []string
+
+	// Page porte le contrôle de pagination (RFC 2696) quand la requête en a un.
+	// nil : recherche ordinaire. Il vit ici, et non dans les contrôles du
+	// message, parce qu'il change ce que la recherche REND — le gestionnaire de
+	// recherche ne reçoit que cette structure.
+	Page *PagedResults
+}
+
+// OIDPagedResults est le contrôle « simple paged results » — RFC 2696.
+const OIDPagedResults = "1.2.840.113556.1.4.319"
+
+// ControlesGeres liste les contrôles que le serveur sait traiter.
+//
+// UNE liste, lue à deux endroits : le dispatcheur, qui refuse un contrôle
+// critique absent d'ici, et le RootDSE, qui annonce ce qui s'y trouve. Tant
+// qu'il y avait deux listes, elles pouvaient se contredire — la pagination a
+// été annoncée sans être traitée, et c'est ce qui faisait boucler les clients.
+var ControlesGeres = []string{OIDPagedResults}
+
+// PagedResults est la valeur du contrôle de pagination, dans une requête comme
+// dans une réponse :
+//
+//	realSearchControlValue ::= SEQUENCE {
+//	        size    INTEGER (0..maxInt),
+//	        cookie  OCTET STRING }
+//
+// Dans une requête, Size est la taille de page demandée et Cookie est vide
+// pour la première page. Dans une réponse, Size est le nombre total d'entrées
+// et Cookie est vide quand il n'y a plus rien à lire.
+type PagedResults struct {
+	Size   int
+	Cookie []byte
 }
 
 func (s SearchRequest) OpType() string {

@@ -5,7 +5,12 @@ import (
 )
 
 // IsAuthorized vérifie si une liste de permissions autorise un domaine
+//
+// Un « deny » parmi elles refuse tout, quel que soit l'ordre (TO-DO 104).
 func IsUserAuthorizedToSearch(rawPermissions []string, domain string) bool {
+	if ContientUnRefus(rawPermissions) {
+		return false
+	}
 	for _, raw := range rawPermissions {
 		pa := ParsePermissionAction(raw)
 

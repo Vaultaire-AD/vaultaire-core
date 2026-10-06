@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"syscall"
 	"vaultaire_client/pamstate"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -120,9 +119,7 @@ func serveSocket(chemin string) {
 	// Un Chmod APRÈS net.Listen laisserait une fenêtre — courte, mais un socket
 	// d'authentification accessible pendant quelques microsecondes au démarrage
 	// reste un socket accessible.
-	ancienMasque := syscall.Umask(0o177)
-	ln, err := net.Listen("unix", chemin)
-	syscall.Umask(ancienMasque)
+	ln, err := ecouterSousMasque(chemin, 0o177)
 	if err != nil {
 		logs.Write_log("CRITICAL", fmt.Sprintf("Error creating Unix socket: %v", err))
 		return

@@ -367,6 +367,9 @@ func listTypes() string {
 		if d.AssertsUser {
 			fmt.Fprintf(&b, "  %-20s ⚠ peut agir au nom d'un utilisateur qu'il authentifie\n", "")
 		}
+		if len(d.UserRights) > 0 {
+			fmt.Fprintf(&b, "  %-20s vérifie des comptes (08) et apprend : %s\n", "", strings.Join(d.UserRights, " "))
+		}
 		fmt.Fprintf(&b, "  %-20s trames : %s\n\n", "", strings.Join(d.Frames, " "))
 	}
 	return strings.TrimRight(b.String(), "\n")

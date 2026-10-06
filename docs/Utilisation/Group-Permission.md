@@ -70,7 +70,10 @@ mais sous forme **structurée et flexible** :
 -   Chaque action (auth, search, compare, etc.) est définie par une
     règle.\
 -   Une règle peut être :
-    -   `"nil"` → accès refusé.\
+    -   `"nil"` → **aucun droit accordé** par cette permission. Ce n'est
+        pas un refus : un autre groupe du compte peut accorder.\
+    -   `"deny"` → **refus explicite** : l'emporte sur tout ce que les
+        autres groupes du compte accordent, `all` compris (depuis la 2.2).\
     -   `"all"` → accès autorisé à tous les domaines.\
     -   `"custom"` → liste de domaines précis avec ou sans propagation.
 
@@ -83,15 +86,15 @@ mais sous forme **structurée et flexible** :
 -   `0:` → domaine sans propagation (uniquement ce domaine précis).
 
 #### Liste des actions possibles (RBAC)
--   **Attention** : le `nil` n'a pas la priorité si un user est dans plusieurs groupes ; si un groupe a `all` ou `custom`, cela prévaut.
--   **Format** : `<catégorie>:<action>:<objet>`. Commande : `update -pu <perm> <action_key> nil|all|-a|-r ...`
+-   **Attention** : `nil` n'a pas la priorité si un user est dans plusieurs groupes ; si un groupe a `all` ou `custom`, cela prévaut. Pour retirer un droit **quoi qu'accordent les autres groupes**, c'est `deny` — voir [MAN §5.0](./MAN.md#50-modèle-des-permissions-user).
+-   **Format** : `<catégorie>:<action>:<objet>`. Commande : `update -pu <perm> <action_key> nil|all|deny|-a|-r ...`
 
 -   `none` → action neutre / désactivée.
 -   `web_admin` → accès à l'interface d'administration Web.
 -   `auth` → autorisation d'authentification (si désactivé, l'utilisateur ne peut pas se connecter ; à utiliser avec un groupe de quarantaine dédié).
 -   `compare` → comparaison LDAP/ressource (authentification).
 -   `search` → recherche d'objets (LDAP, base de données, etc.).
--   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user` (idem pour `group`, `client`, `permission`, `gpo`).
+-   **RBAC** (table `user_permission_action`) : clés `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user`, `write:remove:user` (idem pour `group`, `client`, `permission`, `gpo`). `add` / `remove` rattachent à un groupe et en détachent.
 -   Exemples (CLI) : `vlt update -pu Inspecteur read:get:user all` ; `vlt update -pu DevApp write:create:client -a 1 apps.interne`.
 
 #### Ce que donne un droit sur un domaine précis
@@ -124,6 +127,7 @@ ne les restreint pas, elle les **refuse** :
 ```
 web_admin   read:log   read:dns   write:dns   read:enrollment
 read:cluster   write:cluster   read:certificate   write:certificate   write:server
+write:relay
 ```
 
 La raison est commune : l'objet visé n'appartient à aucun domaine de l'annuaire.

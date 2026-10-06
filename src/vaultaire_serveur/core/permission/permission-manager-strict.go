@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"vaultaire/core/database"
-	dbpermission "vaultaire/core/database/db_permission"
+	isprotected "vaultaire/core/database/is_protected"
 	"vaultaire/core/logs"
 )
 
@@ -46,12 +46,17 @@ func CheckPermissionsAllDomains(groupIDs []int, action string, domainsToCheck []
 		return false, fmt.Sprintf("Action '%s' non valide", action)
 	}
 
+	// Refus explicite d'abord : il vaut pour tous les domaines (TO-DO 104).
+	if groupID, refuse := refusExplicite(groupIDs, normalizedAction); refuse {
+		return false, journaliserRefus(normalizedAction, groupID, groupIDs)
+	}
+
 	// Aucun domaine connu pour l'entité : on ne peut pas vérifier ce sur quoi on
 	// agit. Seul un droit global passe. C'est la même règle que la lecture, et
 	// elle est fermée : dans le doute on refuse.
 	if len(domainsToCheck) == 0 {
 		for _, groupID := range groupIDs {
-			content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+			content, err := lireContenuPermission(groupID, normalizedAction)
 			if err != nil {
 				logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 					fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -64,6 +69,22 @@ func CheckPermissionsAllDomains(groupIDs []int, action string, domainsToCheck []
 		logs.Write_LogCode("WARNING", logs.CodeAuthLoginDenied,
 			fmt.Sprintf("Action '%s' refusée (aucun domaine identifié et pas de droit global)", normalizedAction))
 		return false, "Refusée : aucun domaine identifié pour l'entité et aucun droit global"
+	}
+
+	// Le domaine du groupe superadmin est refusé d'abord, avant même de regarder
+	// les droits (TO-DO 96).
+	//
+	// Avant les droits, et c'est délibéré : un délégué PORTE légitimement
+	// `write:add:user` sur son périmètre, et c'est justement ce droit qui lui
+	// donnait le groupe superadmin en passant par le domaine de celui-ci. Le
+	// contrôle ordinaire ne pouvait donc rien voir — il répondait juste à la
+	// question qu'on lui posait.
+	//
+	// Ici plutôt que dans chaque action : le domaine protégé est atteignable par
+	// toute écriture qui raisonne par domaine, et une garde par action aurait été
+	// une liste à compléter — dont la prochaine entrée aurait été oubliée.
+	if refus := refuserDomaineProtege(groupIDs, normalizedAction, domainsToCheck); refus != "" {
+		return false, refus
 	}
 
 	for _, domain := range domainsToCheck {
@@ -102,15 +123,20 @@ func HasActionAnywhere(groupIDs []int, action string) bool {
 	if !ok {
 		return false
 	}
+	// Un refus explicite ferme aussi la porte d'entrée : ouvrir une page dont
+	// chaque action serait refusée n'aurait rien à offrir (TO-DO 104).
+	if _, refuse := refusExplicite(groupIDs, normalizedAction); refuse {
+		return false
+	}
 	for _, groupID := range groupIDs {
-		content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+		content, err := lireContenuPermission(groupID, normalizedAction)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
 			continue
 		}
 		parsed := ParsePermissionContent(content)
-		if parsed.Deny {
+		if parsed.Aucun || parsed.Refus {
 			continue
 		}
 		if parsed.All || len(parsed.NoPropagation) > 0 || len(parsed.WithPropagation) > 0 {
@@ -176,9 +202,9 @@ func (a AllowedDomains) IsEmpty() bool {
 // un domaine, la question se pose : sans filtrage, un délégué d'un domaine
 // voyait l'annuaire entier.
 //
-// Un refus explicite (nil) sur un groupe n'annule pas ce qu'un autre groupe
-// accorde — même règle que l'évaluation d'accès, pour que voir et pouvoir
-// restent cohérents.
+// Même règle que l'évaluation d'accès, pour que voir et pouvoir restent
+// cohérents : « nil » sur un groupe n'annule pas ce qu'un autre accorde, un
+// refus explicite (« deny ») vide le périmètre entier (TO-DO 104).
 func DomainsWhereAllowed(groupIDs []int, action string) AllowedDomains {
 	var out AllowedDomains
 
@@ -186,19 +212,22 @@ func DomainsWhereAllowed(groupIDs []int, action string) AllowedDomains {
 	if !ok {
 		return out
 	}
+	if _, refuse := refusExplicite(groupIDs, normalizedAction); refuse {
+		return out
+	}
 
 	seenExact := map[string]bool{}
 	seenProp := map[string]bool{}
 
 	for _, groupID := range groupIDs {
-		content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, normalizedAction)
+		content, err := lireContenuPermission(groupID, normalizedAction)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
 			continue
 		}
 		parsed := ParsePermissionContent(content)
-		if parsed.Deny {
+		if parsed.Aucun || parsed.Refus {
 			continue
 		}
 		if parsed.All {
@@ -223,13 +252,16 @@ func DomainsWhereAllowed(groupIDs []int, action string) AllowedDomains {
 
 // isDomainAllowed évalue un domaine unique pour un jeu de groupes.
 //
-// Reprend exactement la règle utilisée en lecture : un refus explicite (nil)
-// n'interrompt pas la boucle — un autre groupe peut accorder le droit —,
+// Reprend exactement la règle utilisée en lecture : « nil » n'interrompt pas
+// la boucle — un autre groupe peut accorder le droit —,
 // « all » couvre tout, les domaines sans propagation exigent l'égalité, ceux
 // avec propagation acceptent les sous-domaines.
+//
+// Le refus explicite (« deny ») n'est pas regardé ici : l'appelant l'a
+// écarté avant, pour tous les domaines d'un coup.
 func isDomainAllowed(groupIDs []int, action, domain string) bool {
 	for _, groupID := range groupIDs {
-		content, err := dbpermission.GetPermissionContent(database.GetDatabase(), groupID, action)
+		content, err := lireContenuPermission(groupID, action)
 		if err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 				fmt.Sprintf("Erreur récupération permission pour le groupe %d: %v", groupID, err))
@@ -237,7 +269,7 @@ func isDomainAllowed(groupIDs []int, action, domain string) bool {
 		}
 
 		parsed := ParsePermissionContent(content)
-		if parsed.Deny {
+		if parsed.Aucun || parsed.Refus {
 			continue
 		}
 		if parsed.All {
@@ -255,4 +287,45 @@ func isDomainAllowed(groupIDs []int, action, domain string) bool {
 		}
 	}
 	return false
+}
+
+// refuserDomaineProtege refuse une écriture visant le domaine du groupe
+// superadmin, sauf à un membre de ce groupe.
+//
+// Rend le motif du refus, ou une chaîne vide si l'écriture peut continuer.
+//
+// # Ce qui reste permis, et pourquoi
+//
+// Ajouter quelqu'un au groupe `vaultaire` — le geste normal pour confier
+// l'administration — passe par ici comme le reste, et reste possible POUR UN
+// MEMBRE de ce groupe. Celui qui donne le pouvoir doit déjà l'avoir ; c'est la
+// seule règle qui ne se contourne pas en obtenant un droit ailleurs.
+func refuserDomaineProtege(groupIDs []int, action string, domaines []string) string {
+	db := database.GetDatabase()
+
+	var vises []string
+	for _, d := range domaines {
+		if isprotected.EstDomaineProtege(db, d) {
+			vises = append(vises, d)
+		}
+	}
+	if len(vises) == 0 {
+		return ""
+	}
+
+	if isprotected.GroupesContiennentLeGroupeProtege(db, groupIDs) {
+		return ""
+	}
+
+	// SECURITY et non WARNING : ce n'est pas un droit manquant, c'est une
+	// tentative d'écriture sur le domaine qui porte tous les droits. C'est la
+	// ligne qu'on cherchera après coup.
+	logs.Write_Log("SECURITY", fmt.Sprintf(
+		"action '%s' refusée : écriture visant le domaine protégé %s par des groupes %v "+
+			"qui n'incluent pas %s", action, strings.Join(vises, ", "), groupIDs,
+		isprotected.ProtectedGroupName))
+
+	return fmt.Sprintf(
+		"le domaine %s est celui du groupe %s : les écritures y sont réservées aux "+
+			"membres de ce groupe", strings.Join(vises, ", "), isprotected.ProtectedGroupName)
 }

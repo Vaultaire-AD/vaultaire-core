@@ -1,17 +1,22 @@
 package ldap
 
 import (
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net"
 	"runtime/debug"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	ldapparser "vaultaire/core/ldap/LDAP_Parser"
 	ldapresponse "vaultaire/core/ldap/LDAP_RESPONSE"
+	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/pagination"
 	ldapsessionmanager "vaultaire/core/ldap/LDAP_SESSION-Manager"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/netguard"
+	"vaultaire/core/proxiesconnus"
+	"vaultaire/core/proxyproto"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -27,8 +32,62 @@ import (
 // web.
 var ldapLimiter = netguard.NewLimiter("ldap", 500, 20)
 
-// Fonction générique utilisée par LDAP et LDAPS
-func handleLDAPConnections(listener net.Listener, protocol string) {
+// PlafondLDAPParProxy est le plafond par adresse d'un PROXY du cluster.
+//
+// Toutes les applications d'un site relayées par un proxy arrivent de son
+// adresse (TO-DO 72) : au plafond ordinaire de vingt, le site entier serait
+// coupé à la vingt-et-unième connexion. Même motif que PlafondParProxy pour
+// Ducky, à la taille d'un annuaire. Le plafond global, lui, reste commun.
+const PlafondLDAPParProxy = 200
+
+func plafondLDAPPourSource(source string) int {
+	if proxiesconnus.EstUnProxy(source) {
+		return PlafondLDAPParProxy
+	}
+	return 0
+}
+
+// preparerConnexion lit un éventuel en-tête PROXY v2, puis pose TLS pour LDAPS.
+//
+// La place au limiteur a été prise sur l'adresse du PAIR — le proxy, s'il y en
+// a un. C'est voulu : c'est lui qui consomme les descripteurs. Ce qui compte
+// par CLIENT, la limitation des échecs de bind, lit RemoteAddr, qui rend
+// désormais l'adresse d'origine.
+//
+// Rend aussi l'adresse du proxy qui a relayé la connexion, vide s'il n'y en a
+// pas : la ligne d'ouverture du journal porte les deux adresses.
+func preparerConnexion(conn net.Conn, protocol string, tlsConfig *tls.Config) (net.Conn, string, error) {
+	c, err := proxyproto.Lire(conn, proxiesconnus.EstUnProxy, netguard.HandshakeReadTimeout)
+	if err != nil {
+		niveau := "WARNING"
+		if errors.Is(err, proxyproto.ErrNonDeConfiance) {
+			// Quelqu'un qui envoie un en-tête PROXY sans être un proxy du
+			// cluster essaie de choisir l'adresse sous laquelle il est compté.
+			niveau = "SECURITY"
+		}
+		logs.Write_LogCode(niveau, logs.CodeLDAPListen, fmt.Sprintf(
+			"ldap: connexion %s de %s refusée : %v", protocol, netguard.SourceAddr(conn), err))
+		return nil, "", err
+	}
+	relais := ""
+	if c.Relais != nil {
+		relais = c.Relais.String()
+	}
+	if tlsConfig != nil {
+		return tls.Server(c, tlsConfig), relais, nil
+	}
+	return c, relais, nil
+}
+
+// Fonction générique utilisée par LDAP et LDAPS.
+//
+// tlsConfig non nul : LDAPS. TLS est posé APRÈS la lecture d'un éventuel
+// en-tête PROXY, dans la goroutine de la connexion — jamais dans la boucle
+// d'acceptation, qu'un pair lent bloquerait pour tout le monde.
+func handleLDAPConnections(listener net.Listener, protocol string, tlsConfig *tls.Config) {
+	ldapLimiter.DefinirPlafondPour(plafondLDAPPourSource)
+	proxiesconnus.Demarrer()
+
 	defer func() {
 		if err := listener.Close(); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: listener close failed: "+err.Error())
@@ -53,20 +112,33 @@ func handleLDAPConnections(listener net.Listener, protocol string) {
 			logs.Write_LogCode("WARNING", logs.CodeLDAPListen,
 				"ldap: connexion refusée depuis "+netguard.SourceAddr(conn)+" : "+motif)
 			if cerr := conn.Close(); cerr != nil {
-				logs.Write_Log("DEBUG", "ldap: fermeture après refus : "+cerr.Error())
+				logs.Write_Log("TRACE", "ldap: fermeture après refus : "+cerr.Error())
 			}
 			continue
 		}
 
 		go func() {
 			defer release()
-			handleLDAPSession(conn, protocol)
+			session, relais, err := preparerConnexion(conn, protocol, tlsConfig)
+			if err != nil {
+				if cerr := conn.Close(); cerr != nil {
+					logs.Write_Log("TRACE", "ldap: fermeture après refus : "+cerr.Error())
+				}
+				return
+			}
+			handleLDAPSession(session, protocol, relais)
 		}()
 	}
 }
 
 // Lecture et traitement d'une session LDAP unique
-func handleLDAPSession(c net.Conn, protocol string) {
+func handleLDAPSession(c net.Conn, protocol, relais string) {
+	// Le journal de la connexion d'abord : tout ce qui suit, panique comprise,
+	// s'écrit sous son numéro (TO-DO 145).
+	ldapjournal.Ouvrir(c, protocol, relais)
+	// Le motif de fermeture, dit par la boucle au moment où elle sort.
+	motif := "interrompue"
+
 	// Filet de dernier recours : une panique ne doit coûter QUE cette
 	// connexion.
 	//
@@ -79,44 +151,76 @@ func handleLDAPSession(c net.Conn, protocol string) {
 	// Ce recover ne RÉPARE rien et ne doit pas servir d'excuse à ne pas
 	// corriger la cause : il la rend survivable, et la journalise en
 	// CRITICAL avec sa pile pour qu'elle soit corrigée.
+	//
+	// Déclaré APRÈS la fermeture ci-dessous dans le code, donc exécuté AVANT
+	// elle : la ligne CRITICAL porte encore le numéro de la connexion. Le
+	// message en cause se lit juste au-dessus — la ligne de l'opération, écrite
+	// en « sans réponse » pendant que la panique remontait.
 	defer func() {
-		if r := recover(); r != nil {
-			logs.Write_LogCode("CRITICAL", logs.CodeLDAPListen, fmt.Sprintf(
-				"ldap: panique traitée sur la session %s : %v\n%s",
-				c.RemoteAddr(), r, debug.Stack()))
+		// Les recherches paginées de cette connexion rendent leur mémoire avec
+		// elle (point 130) : un cookie ne vaut que sur la connexion qui l'a reçu.
+		pagination.OublierConnexion(c)
+		ldapsessionmanager.ClearSession(c)
+		if err := c.Close(); err != nil {
+			ldapjournal.Trace(c, "fermeture de la connexion : %v", err)
 		}
+		ldapjournal.Fermer(c, motif)
 	}()
 
 	defer func() {
-		ldapsessionmanager.ClearSession(c)
-		if err := c.Close(); err != nil {
-			logs.Write_Log("DEBUG", "ldap: connection close failed: "+err.Error())
+		if r := recover(); r != nil {
+			motif = "panique"
+			ldapjournal.Ecrire(c, "CRITICAL", logs.CodeLDAPListen, fmt.Sprintf(
+				"panique traitée sur la session %s : %v\n%s",
+				c.RemoteAddr(), r, debug.Stack()))
 		}
 	}()
 
 	ldapsessionmanager.InitLDAPSession(c)
 	clientAddr := c.RemoteAddr().String()
-	logs.Write_Log("INFO", "ldap: connection from "+clientAddr)
 
 	for {
 		// Réarmé avant CHAQUE lecture : le délai est absolu, pas glissant.
 		//
 		// Une session liée obtient le délai long, une session en cours de bind le
 		// délai court — un client réel envoie son bind aussitôt connecté.
-		sess, _ := ldapsessionmanager.GetLDAPSession(c)
-		netguard.ArmReadDeadline(c, sess != nil && sess.IsBound)
+		sess, existe := ldapsessionmanager.GetLDAPSession(c)
+		if !existe {
+			// L'unbind a retiré la session et fermé la connexion (RFC 4511
+			// §4.3). Relire ne rendrait qu'une erreur « connexion fermée », que
+			// le journal prendrait pour une panne.
+			motif = "unbind"
+			return
+		}
+		netguard.ArmReadDeadline(c, sess.IsBound)
 
 		packet, err := readLDAPPacket(c)
 		if err != nil {
-			if err == io.EOF {
-				logs.Write_Log("DEBUG", "ldap: client closed connection: "+clientAddr)
-			} else {
-				logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: read packet failed from "+clientAddr+": "+err.Error())
+			var expiration net.Error
+			switch {
+			case err == io.EOF:
+				motif = "par le client"
+			case errors.Is(err, net.ErrClosed):
+				// La connexion a été fermée de ce côté-ci. Ce n'est pas une
+				// panne de lecture, et l'écrire en ERROR enverrait chercher un
+				// problème de réseau.
+				motif = "par le serveur"
+			case errors.As(err, &expiration) && expiration.Timeout():
+				// Le délai de lecture de netguard : le client n'a plus rien
+				// envoyé. C'est la fin ordinaire d'une connexion gardée ouverte
+				// par un pool, pas une erreur.
+				motif = "délai d'inactivité"
+			default:
+				motif = "erreur de lecture"
+				ldapjournal.Ecrire(c, "ERROR", logs.CodeLDAPListen,
+					"lecture du paquet en échec depuis "+clientAddr+" : "+err.Error())
 			}
 			return
 		}
 
-		logs.Write_Log("DEBUG", fmt.Sprintf("ldap: packet from %s: % X", clientAddr, packet))
+		if ldapjournal.TraceActive() {
+			ldapjournal.Trace(c, "%s", traceDuPaquet(packet))
+		}
 
 		message, err := ldapparser.ParseLDAPMessage(packet)
 		if err != nil {
@@ -131,15 +235,18 @@ func handleLDAPSession(c net.Conn, protocol string) {
 			// ResponseTagFor : la RFC lui interdit explicitement toute réponse.
 			var unsupported ldapparser.UnsupportedOperationError
 			if errors.As(err, &unsupported) {
+				id := messageIDOf(packet)
+				op := ldapjournal.Debut(c, id, fmt.Sprintf("opération %d non gérée", unsupported.Tag))
 				if appTag, wants := ldapstorage.ResponseTagFor(unsupported.Tag); wants {
-					if sendErr := ldapresponse.SendResult(c, messageIDOf(packet), appTag,
+					if sendErr := ldapresponse.SendResult(c, id, appTag,
 						ldapstorage.ResultUnwillingToPerform, "",
 						"operation not supported by this server"); sendErr != nil {
-						logs.Write_Log("DEBUG", "ldap: "+sendErr.Error())
+						ldapjournal.Trace(c, "%v", sendErr)
 					}
 				}
-				logs.Write_Log("WARNING", fmt.Sprintf(
-					"ldap: opération %d refusée depuis %s", unsupported.Tag, clientAddr))
+				ldapjournal.Ecrire(c, "WARNING", logs.CodeNone, fmt.Sprintf(
+					"opération %d refusée depuis %s", unsupported.Tag, clientAddr))
+				op.Fin()
 				continue
 			}
 
@@ -147,16 +254,81 @@ func handleLDAPSession(c net.Conn, protocol string) {
 			// peut pas en extraire un messageID fiable, donc on ne répond pas et on
 			// ferme — poursuivre la lecture d'un flux qu'on ne sait plus découper
 			// ne produirait que du bruit.
-			logs.Write_LogCode("ERROR", logs.CodeLDAPListen, "ldap: parse failed from "+clientAddr+": "+err.Error())
+			motif = "trame illisible"
+			ldapjournal.Ecrire(c, "ERROR", logs.CodeLDAPListen,
+				"analyse du paquet en échec depuis "+clientAddr+" : "+err.Error())
 			return
 		}
 
-		// if storage.Debug {
-		// 	printLDAPMessageDebug(message, protocol, clientAddr)
-		// }
-
-		ldapparser.DispatchLDAPOperation(message, message.MessageID, c)
+		traiter(c, message)
 	}
+}
+
+// traiter exécute une opération, encadrée par sa ligne de journal.
+//
+// Une fonction à part pour le `defer` : la ligne est écrite quand l'opération
+// est finie, y compris si elle panique — la ligne dit alors « sans réponse »,
+// juste avant le CRITICAL qui porte la pile. C'est exactement ce que le client
+// a vu.
+func traiter(c net.Conn, message *ldapstorage.LDAPParsedReceivedMessage) {
+	op := ldapjournal.Debut(c, message.MessageID,
+		ldapjournal.Decrire(message.ProtocolOp, message.Controls))
+	defer op.Fin()
+	ldapparser.DispatchLDAPOperation(message, message.MessageID, c)
+}
+
+// traceDuPaquet rend la ligne de mise au point d'une trame reçue.
+//
+// # Ce que cette ligne faisait
+//
+// Elle vidait le paquet ENTIER en hexadécimal, avant toute analyse. Sur un
+// BindRequest simple, ce paquet porte le mot de passe en clair — et, quand le
+// second facteur est actif, le code à six chiffres qui lui est accolé (voir la
+// convention décrite dans LDAP_Limits.go). Le journal est un fichier : il tourne,
+// il part dans les sauvegardes.
+//
+// `debug: false` est livré depuis le point 99, ce qui limite la portée. Mais on
+// active DEBUG exactement quand on diagnostique un problème d'annuaire,
+// c'est-à-dire au moment où tous les clients LDAP du parc se lient en boucle.
+//
+// # Ce qui est gardé
+//
+// Le vidage reste, pour toutes les autres opérations : c'est lui qui permet de
+// comprendre une trame mal découpée, et c'est la raison d'être de cette ligne.
+// Seul le bind est masqué.
+//
+// # Où elle s'écrit maintenant
+//
+// En TRACE, sous l'identifiant de sa connexion (TO-DO 145). Elle s'écrivait en
+// DEBUG, une fois par paquet reçu : c'était la ligne la plus longue du journal,
+// et celle qu'on lit le moins — elle ne sert qu'à qui soupçonne le découpage
+// des trames. L'adresse du client n'y figure plus : elle est sur la ligne
+// d'ouverture de la connexion.
+func traceDuPaquet(packet []byte) string {
+	if peutEtreUnBind(packet) {
+		return fmt.Sprintf("paquet reçu : BindRequest de %d octets, contenu masqué", len(packet))
+	}
+	return fmt.Sprintf("paquet reçu : % X", packet)
+}
+
+// peutEtreUnBind répond à la seule question utile ici, et répond OUI quand elle
+// ne sait pas.
+//
+// Le nom dit l'asymétrie : un paquet qu'on n'arrive pas à découper PEUT être un
+// bind, et rien ne permet d'affirmer le contraire sans lire le corps — ce qu'il
+// s'agit précisément d'éviter. Masquer à tort ne coûte qu'une ligne de mise au
+// point, sur un chemin où l'erreur d'analyse est déjà journalisée avec son motif.
+// Se tromper dans l'autre sens coûte un mot de passe.
+//
+// DecodePacketErr et non DecodePacket : la seconde panique sur une entrée
+// forgée, et ce code s'exécute sur des octets venus d'inconnus.
+func peutEtreUnBind(packet []byte) bool {
+	p, err := ber.DecodePacketErr(packet)
+	if err != nil || p == nil || len(p.Children) < 2 {
+		return true
+	}
+	op := p.Children[1]
+	return op.ClassType == ber.ClassApplication && op.Tag == ldapstorage.AppBindRequest
 }
 
 // messageIDOf extrait le messageID d'un paquet dont l'opération n'a pas pu être
@@ -177,52 +349,6 @@ func messageIDOf(packet []byte) int {
 		return int(id)
 	}
 	return 0
-}
-
-func SendLDAPError(conn net.Conn, messageID int, resultCode int, errMsg string) error {
-	// 1. Construction de la réponse (LDAPResult)
-	// Le tag pour SearchResultDone est 101 (0x65), pour les autres opérations c'est différent.
-	// Cependant, pour une erreur générale, LDAP utilise souvent le tag correspondant à l'opération.
-	// Pour simplifier et être compatible, on utilise le format LDAPMessage standard.
-
-	response := ber.Encode(ber.ClassApplication, ber.TypeConstructed, 101, nil, "LDAPResponse") // 101 = SearchResultDone
-	response.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated, uint64(resultCode), "resultCode"))
-	response.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, "", "matchedDN"))
-	response.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString, errMsg, "diagnosticMessage"))
-
-	// 2. Enveloppe du message (LDAPMessage)
-	finalPacket := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
-	finalPacket.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger, uint64(messageID), "Message ID"))
-	finalPacket.AppendChild(response)
-
-	// 3. Envoi sur la socket
-	_, err := conn.Write(finalPacket.Bytes())
-	if err != nil {
-		return fmt.Errorf("failed to send LDAPError: %v", err)
-	}
-
-	logs.Write_Log("WARNING", fmt.Sprintf("LDAP Error sent (Code %d): %s", resultCode, errMsg))
-	return nil
-}
-
-// Affichage structuré des messages LDAP (uniquement si debug)
-func printLDAPMessageDebug(message *ldapstorage.LDAPParsedReceivedMessage, protocol, client string) {
-	logs.Write_Log("DEBUG", fmt.Sprintf("[%s] ===== LDAP Parsed Message (%s) =====", protocol, client))
-	logs.Write_Log("DEBUG", fmt.Sprintf("[%s] Message ID       : %d", protocol, message.MessageID))
-	logs.Write_Log("DEBUG", fmt.Sprintf("[%s] Operation (type) : %s", protocol, message.ProtocolOp.OpType()))
-
-	if len(message.Controls) > 0 {
-		logs.Write_Log("DEBUG", fmt.Sprintf("[%s] Controls (%d):", protocol, len(message.Controls)))
-		for i, ctrl := range message.Controls {
-			logs.Write_Log("DEBUG", fmt.Sprintf("[%s]   • Control #%d", protocol, i+1))
-			logs.Write_Log("DEBUG", fmt.Sprintf("[%s]     - Type        : %s", protocol, ctrl.ControlType))
-			logs.Write_Log("DEBUG", fmt.Sprintf("[%s]     - Criticalité : %v", protocol, ctrl.Criticality))
-			logs.Write_Log("DEBUG", fmt.Sprintf("[%s]     - Valeur      : % X", protocol, ctrl.ControlValue))
-		}
-	} else {
-		logs.Write_Log("DEBUG", fmt.Sprintf("[%s] Controls : Aucun", protocol))
-	}
-	logs.Write_Log("DEBUG", fmt.Sprintf("[%s] ===============================", protocol))
 }
 
 // Lecture binaire d’un paquet LDAP complet

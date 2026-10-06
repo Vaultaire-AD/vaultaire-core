@@ -49,6 +49,13 @@ func EnsureServerKeys() error {
 		return fmt.Errorf("clé SSH de déploiement des agents : %w", err)
 	}
 
+	// La clé de signature des politiques (TO-DO 52) est amorcée ici comme les
+	// deux autres : elle est lue par le gestionnaire GPO à la première
+	// livraison, qui peut arriver dès qu'un agent se connecte.
+	if err := Generate_GPO_Signing_Key(); err != nil {
+		return fmt.Errorf("clé de signature des politiques GPO : %w", err)
+	}
+
 	// L'empreinte est calculée et journalisée au démarrage.
 	//
 	// C'est ce qu'un administrateur recopie sur une machine du parc, et ce qu'il

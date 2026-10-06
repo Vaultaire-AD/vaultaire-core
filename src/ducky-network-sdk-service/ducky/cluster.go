@@ -52,6 +52,52 @@ type OptionsCluster struct {
 	// qui ne relaie rien n'a aucune raison de la demander, et le laisser à faux
 	// lui évite d'apprendre des empreintes qu'il n'utilisera jamais.
 	Decouvrir bool
+
+	// Services : les types de services du cluster dont ce nœud veut les
+	// adresses — « vaultaire_nexus » pour un proxy qui relaie en HTTPS
+	// (TO-DO 72). Lues ensuite par decouverte.AdressesService. Vide : rien
+	// n'est demandé. Le core n'y répond qu'à un vaultaire_proxy.
+	Services []string
+
+	// Metriques rend ce que ce nœud veut remonter de lui-même, à chaque
+	// battement (04_05, TO-DO 108). Nil : rien n'est remonté.
+	//
+	// Une FONCTION et non des valeurs : les compteurs d'un service vivent
+	// pendant qu'il tourne, et le raccordement au cluster a lieu avant qu'ils
+	// n'existent — un proxy ouvre ses relais APRÈS, puisque la liste des cores
+	// vers qui relayer vient de la découverte que ce raccordement démarre.
+	Metriques MetriquesNoeud
+}
+
+// MetriquesNoeud rend les mesures de l'instant.
+//
+// Alias plutôt que type propre : le proxy compose des `decouverte.Metrique`, et
+// une conversion ici n'aurait servi qu'à recopier les mêmes champs sous un autre
+// nom.
+type MetriquesNoeud = decouverte.FournisseurMetriques
+
+// MetriqueNoeud est une mesure remontée par un nœud.
+type MetriqueNoeud = decouverte.Metrique
+
+// TypeMetriqueRelais nomme la mesure que remonte un proxy. Voir decouverte.
+const TypeMetriqueRelais = decouverte.TypeMetriqueRelais
+
+// CleDeSession rend la clé de la session de service courante, ou "" s'il n'y
+// en a pas.
+//
+// Une FONCTION à rappeler, jamais une valeur à garder : la clé change à chaque
+// rétablissement du tunnel. WaitForVaultaireSession plutôt qu'un simple Get :
+// au moment de l'appel le tunnel peut être en cours de rétablissement, et
+// abandonner ferait perdre la trame qu'on s'apprêtait à émettre.
+//
+// Exportée pour le proxy, qui émet le compte rendu de ses relais (TO-DO 141)
+// hors des boucles de ce paquet.
+func CleDeSession() string {
+	session, err := stosession.SessionsUser.WaitForVaultaireSession()
+	if err != nil || session == nil || session.DuckySession == nil {
+		return ""
+	}
+	return string(session.DuckySession.SessionKey)
 }
 
 // RejoindreCluster enregistre ce service dans le cluster et l'y maintient.
@@ -84,13 +130,7 @@ func RejoindreCluster(opts OptionsCluster) error {
 		sendmessage.SendMessage(trame, session.DuckySession)
 	}, storage.Computeur_ID)
 
-	cleDeSession := func() string {
-		session, err := stosession.SessionsUser.WaitForVaultaireSession()
-		if err != nil || session == nil || session.DuckySession == nil {
-			return ""
-		}
-		return string(session.DuckySession.SessionKey)
-	}
+	cleDeSession := CleDeSession
 
 	// Le gestionnaire de catégorie 04 est branché AVANT toute émission : la
 	// boucle de réception consulte le registre dès la connexion établie, et une
@@ -100,10 +140,15 @@ func RejoindreCluster(opts OptionsCluster) error {
 		tramesmanager.RegisterHandler("04", decouverte.HandleTrame)
 	}
 
+	// La source des mesures est branchée AVANT le démarrage du battement, sinon
+	// le premier tour de boucle n'en trouverait aucune.
+	decouverte.ConfigurerMetriques(opts.Metriques)
+
 	decouverte.DemarrerNoeud(cleDeSession, infos, opts.CadenceBattement)
 
 	if opts.Decouvrir {
 		decouverte.Demarrer(cleDeSession)
 	}
+	decouverte.SuivreServices(opts.Services, cleDeSession)
 	return nil
 }

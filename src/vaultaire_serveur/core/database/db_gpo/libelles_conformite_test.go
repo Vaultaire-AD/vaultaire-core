@@ -20,7 +20,7 @@ import (
 // grandit, on ne sait plus laquelle des deux avait raison — alors que c'est
 // justement la vue qu'on consulte quand quelque chose ne va pas.
 
-func ligne(mod func(*ComplianceRow)) ComplianceRow {
+func ligneLibelle(mod func(*ComplianceRow)) ComplianceRow {
 	r := ComplianceRow{
 		ComputeurID: "PC-01", Scope: "machine",
 		ModulesTotal: 10, ModulesFailed: 0,
@@ -39,8 +39,8 @@ func ligne(mod func(*ComplianceRow)) ComplianceRow {
 // Afficher un zéro rassurant est la seule erreur d'affichage qui puisse faire
 // conclure à tort qu'un parc va bien.
 func TestJamaisVerifieNestPasConforme(t *testing.T) {
-	jamais := ligne(func(r *ComplianceRow) { r.DriftAt = sql.NullTime{} })
-	conforme := ligne(func(r *ComplianceRow) {
+	jamais := ligneLibelle(func(r *ComplianceRow) { r.DriftAt = sql.NullTime{} })
+	conforme := ligneLibelle(func(r *ComplianceRow) {
 		r.DriftAt = sql.NullTime{Time: time.Now(), Valid: true}
 		r.DriftChecked = 12
 	})
@@ -58,7 +58,7 @@ func TestJamaisVerifieNestPasConforme(t *testing.T) {
 }
 
 func TestEtatConformiteCompteLesEcarts(t *testing.T) {
-	avec := ligne(func(r *ComplianceRow) {
+	avec := ligneLibelle(func(r *ComplianceRow) {
 		r.DriftAt = sql.NullTime{Time: time.Now(), Valid: true}
 		r.DriftCount = 3
 	})
@@ -72,7 +72,7 @@ func TestEtatConformiteCompteLesEcarts(t *testing.T) {
 // « 0/0 » se lit comme « aucun module à appliquer », c'est-à-dire comme une
 // réussite. Une machine qui n'a jamais rapporté n'a rien appliqué du tout.
 func TestModulesJamaisRapportesNeDisentPasZeroSurZero(t *testing.T) {
-	muette := ligne(func(r *ComplianceRow) {
+	muette := ligneLibelle(func(r *ComplianceRow) {
 		r.JamaisRapporte = true
 		r.ModulesTotal, r.ModulesFailed = 0, 0
 	})
@@ -83,7 +83,7 @@ func TestModulesJamaisRapportesNeDisentPasZeroSurZero(t *testing.T) {
 		t.Errorf("libellé = %q, attendu « - »", got)
 	}
 
-	normale := ligne(func(r *ComplianceRow) { r.ModulesTotal, r.ModulesFailed = 10, 2 })
+	normale := ligneLibelle(func(r *ComplianceRow) { r.ModulesTotal, r.ModulesFailed = 10, 2 })
 	if got := normale.ModulesAppliques(); got != "8/10" {
 		t.Errorf("libellé = %q, attendu « 8/10 »", got)
 	}
@@ -97,13 +97,13 @@ func TestModulesJamaisRapportesNeDisentPasZeroSurZero(t *testing.T) {
 func TestLaVueDesEcartsGardeLesMachinesMuettes(t *testing.T) {
 	maintenant := time.Now().UTC()
 
-	muette := ligne(func(r *ComplianceRow) { r.JamaisRapporte = true; r.DriftCount = 0 })
-	enRetard := ligne(func(r *ComplianceRow) {
-		r.ReportedAt = maintenant.Add(-ToleranceRapport - time.Hour)
+	muette := ligneLibelle(func(r *ComplianceRow) { r.JamaisRapporte = true; r.DriftCount = 0 })
+	enRetard := ligneLibelle(func(r *ComplianceRow) {
+		r.ReportedAt = maintenant.Add(-ToleranceRapport() - time.Hour)
 		r.DriftCount = 0
 	})
-	saine := ligne(func(r *ComplianceRow) { r.DriftCount = 0 })
-	enEcart := ligne(func(r *ComplianceRow) { r.DriftCount = 2 })
+	saine := ligneLibelle(func(r *ComplianceRow) { r.DriftCount = 0 })
+	enEcart := ligneLibelle(func(r *ComplianceRow) { r.DriftCount = 2 })
 
 	cas := []struct {
 		nom     string
@@ -177,11 +177,58 @@ func TestResumeCompteLesMachinesPasLesLignes(t *testing.T) {
 
 func TestResumeToutesAJour(t *testing.T) {
 	maintenant := time.Now().UTC()
+	verifiee := sql.NullTime{Time: maintenant, Valid: true}
 	rows := []ComplianceRow{
-		{ComputeurID: "PC-01", ReportedAt: maintenant},
-		{ComputeurID: "PC-02", ReportedAt: maintenant},
+		{ComputeurID: "PC-01", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 4},
+		{ComputeurID: "PC-02", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 2},
 	}
 	if got := ResumerParc(rows, maintenant).Lisible(); !strings.Contains(got, "toutes à jour") {
 		t.Errorf("résumé = %q, attendu « toutes à jour »", got)
+	}
+}
+
+// TestUnePorteeJamaisVerifieeNEstPasAJour — TO-DO 135.
+//
+// Le défaut du scope utilisateur est resté invisible parce que la colonne
+// disait « non vérifié » et que le résumé, juste en dessous, disait « toutes à
+// jour ». Une portée qui a appliqué sa politique sans que personne n'ait jamais
+// regardé ce qu'il en reste n'est pas à jour : on n'en sait rien.
+func TestUnePorteeJamaisVerifieeNEstPasAJour(t *testing.T) {
+	maintenant := time.Now().UTC()
+	verifiee := sql.NullTime{Time: maintenant, Valid: true}
+	rows := []ComplianceRow{
+		{ComputeurID: "PC-01", Scope: "machine", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 4},
+		// Le compte a appliqué sa politique ; son dossier n'a jamais été scanné.
+		{ComputeurID: "PC-01", Scope: "user", TargetUser: "alice", ReportedAt: maintenant, ModulesTotal: 4},
+		{ComputeurID: "PC-01", Scope: "user", TargetUser: "bob", ReportedAt: maintenant, ModulesTotal: 2},
+		{ComputeurID: "PC-02", Scope: "machine", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 4},
+		// Une portée SANS module : rien n'est appliqué, donc rien n'est à
+		// vérifier. C'est le scope machine de tout parc sans GPO machine, et il
+		// ne doit pas faire dire au résumé qu'il reste quelque chose à regarder.
+		{ComputeurID: "PC-04", Scope: "machine", ReportedAt: maintenant},
+	}
+
+	r := ResumerParc(rows, maintenant)
+	if r.NonVerifiees != 1 {
+		t.Fatalf("NonVerifiees = %d, attendu 1 — deux comptes d'une même machine font une machine", r.NonVerifiees)
+	}
+	lisible := r.Lisible()
+	if strings.Contains(lisible, "toutes à jour") {
+		t.Errorf("résumé = %q : « toutes à jour » alors qu'une portée n'a jamais été vérifiée", lisible)
+	}
+	if !strings.Contains(lisible, "jamais vérifiée") {
+		t.Errorf("résumé = %q, attendu qu'il le dise", lisible)
+	}
+
+	// Une machine MUETTE n'est pas « non vérifiée » : elle se compte ailleurs.
+	muette := NormaliserLigne(ComplianceRow{ComputeurID: "PC-03"}, sql.NullTime{})
+	if muette.NonVerifiee() {
+		t.Error("une machine qui n'a jamais rapporté est comptée comme non vérifiée : elle est muette")
+	}
+	if rows[0].NonVerifiee() || !rows[1].NonVerifiee() {
+		t.Error("NonVerifiee() ne distingue pas la portée scannée de celle qui ne l'a jamais été")
+	}
+	if rows[4].NonVerifiee() {
+		t.Error("une portée sans aucun module est comptée comme non vérifiée : il n'y a rien à vérifier")
 	}
 }

@@ -8,8 +8,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"vaultaire/core/storage"
 )
 
 // RFC 5424 Syslog Protocol
@@ -99,45 +97,19 @@ func (b *LogBuffer) addEntry(entry LogEntry) {
 	}
 }
 
-// GetEntries retourne les entrées filtrées (thread-safe)
-func (b *LogBuffer) GetEntries(levelFilter string, codeFilter string, limit int) []LogEntry {
+// recentes rend une copie des entrées, la plus récente en premier.
+//
+// Une COPIE : l'appelant filtre et pagine hors du verrou. Garder le verrou
+// pendant ce travail bloquerait toutes les écritures de journal du core le
+// temps d'une consultation.
+func (b *LogBuffer) recentes() []LogEntry {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-
-	var filtered []LogEntry
-	count := 0
-
-	// Parcourir depuis la fin (logs les plus récents en premier)
-	for i := len(b.entries) - 1; i >= 0 && count < limit; i-- {
-		entry := b.entries[i]
-
-		// Filtrer par niveau
-		if levelFilter != "" && entry.Level != levelFilter {
-			continue
-		}
-
-		// Filtrer par code
-		if codeFilter != "" && entry.Code != codeFilter {
-			continue
-		}
-
-		filtered = append(filtered, entry)
-		count++
+	out := make([]LogEntry, len(b.entries))
+	for i, e := range b.entries {
+		out[len(b.entries)-1-i] = e
 	}
-
-	// Inverser pour avoir les plus anciens en premier dans le résultat
-	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
-		filtered[i], filtered[j] = filtered[j], filtered[i]
-	}
-
-	return filtered
-}
-
-// GetEntriesCount retourne le nombre total d'entrées
-func (b *LogBuffer) GetEntriesCount() int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return len(b.entries)
+	return out
 }
 
 // levelToSeverity converts log level to RFC 5424 severity (0-7).
@@ -158,11 +130,29 @@ func levelToSeverity(level string) int {
 		return SeverityNotice
 	case "INFO", "INFORMATIONAL":
 		return SeverityInformational
-	case "DEBUG":
+	case "DEBUG", "TRACE":
+		// TRACE n'a pas de sévérité à lui : la RFC 5424 s'arrête à 7. Il porte
+		// celle du DEBUG, et se distingue par son nom de niveau — voir detail.go.
 		return SeverityDebug
 	default:
 		return SeverityInformational
 	}
+}
+
+// SeveriteDe rend la sévérité RFC 5424 d'un nom de niveau, et false s'il est
+// inconnu.
+//
+// Pour les FILTRES, là où levelToSeverity sert l'ÉCRITURE : un niveau inconnu
+// y retombe sur INFO, ce qui est juste pour ne perdre aucune ligne, et faux
+// pour un filtre — « WARNIGN » ferait alors montrer tout ce qui est plus grave
+// qu'INFO, sans dire que la saisie n'a pas été comprise.
+func SeveriteDe(niveau string) (int, bool) {
+	switch strings.ToUpper(strings.TrimSpace(niveau)) {
+	case "EMERGENCY", "EMERG", "ALERT", "CRITICAL", "CRIT", "ERROR", "ERR",
+		"WARNING", "WARN", "SECURITY", "NOTICE", "INFO", "INFORMATIONAL", "DEBUG", "TRACE":
+		return levelToSeverity(niveau), true
+	}
+	return 0, false
 }
 
 // canonicalLevel returns RFC 5424 canonical level name for display.
@@ -184,6 +174,8 @@ func canonicalLevel(level string) string {
 		return "INFO"
 	case "DEBUG":
 		return "DEBUG"
+	case "TRACE":
+		return "TRACE"
 	default:
 		return "INFO"
 	}
@@ -223,7 +215,41 @@ func formatHumanReadable(level string, message string) string {
 	} else if len(lvl) > 8 {
 		lvl = lvl[:8]
 	}
-	return ts + " [" + lvl + "] " + message
+	return ts + " [" + lvl + "] " + SurUneSeuleEntree(message)
+}
+
+// SurUneSeuleEntree met un message en forme pour un affichage LIGNE À LIGNE :
+// ses lignes de suite sont décalées d'une tabulation, et un retour chariot est
+// écrit en clair.
+//
+// # Le défaut que cela ferme — relevé en traitant le TO-DO 145
+//
+// Un message de journal reprend souvent ce qu'un client a envoyé : le nom d'un
+// compte tiré d'un DN de bind, par exemple. Un DN portant un retour à la ligne
+// suivi d'une date et d'un niveau écrivait donc, sur la sortie du core, une
+// ligne que rien ne distinguait d'une vraie :
+//
+//	2026-10-03 13:17:26 [WARNING ] ldap bind: tentative sur le compte révoqué x
+//	2026-10-03 13:00:00 [INFO    ] ldap bind: success user=admin …
+//
+// La seconde est forgée — par un inconnu, sans authentification. Qui lit le
+// journal après un incident y trouve une connexion qui n'a pas eu lieu.
+//
+// Une vraie ligne commence par une date, en première colonne. Décalée, une
+// ligne de suite ne peut plus passer pour telle, et les messages légitimement
+// sur plusieurs lignes — la pile d'une panique, le vidage d'une entrée —
+// restent lisibles.
+//
+// Le format JSON n'est pas concerné : l'encodeur y échappe les retours à la
+// ligne. La table du journal commun non plus : un message y est UNE ligne de
+// base, quel que soit son contenu. C'est à l'AFFICHAGE qu'il faut le faire —
+// ici, et dans `vlt logs`.
+func SurUneSeuleEntree(message string) string {
+	if !strings.ContainsAny(message, "\n\r") {
+		return message
+	}
+	message = strings.ReplaceAll(message, "\r", `\r`)
+	return strings.ReplaceAll(message, "\n", "\n\t")
 }
 
 // formatJSONLine emits one JSON object per line (structured logging); no extra allocation for message.
@@ -277,17 +303,28 @@ func writeEntry(level string, code string, content string, meta *LogMeta) {
 		fmt.Fprintln(os.Stdout, formatHumanReadable(level, content))
 	}
 	getBuffer().addEntry(entry)
+	transmettre(entry)
 }
 
 // Write_Log writes a log to stdout and buffer (no error code, no metadata).
+//
+// Elle n'appelle PAS Write_LogCode, et c'est voulu : le sous-système d'une
+// ligne DEBUG ou TRACE est déduit du fichier de l'appelant, à une profondeur de
+// pile fixe (voir detail.go). Passer par une sœur ajouterait un cadre, et la
+// ligne serait rangée avec ce paquet au lieu de celui qui l'a écrite.
 func Write_Log(level string, content string) {
-	Write_LogCode(level, CodeNone, content)
+	if !emissionPermise(level, 2) {
+		return
+	}
+	writeEntry(level, CodeNone, content, nil)
 }
 
 // Write_LogCode writes a log with RFC 5424 severity and optional error code.
-// DEBUG logs are emitted only when storage.Debug is true.
+//
+// Les lignes DEBUG et TRACE ne sortent que si le détail du sous-système qui les
+// écrit le demande : le réglage `debug`, ou son réglage propre (detail.go).
 func Write_LogCode(level string, code string, content string) {
-	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
+	if !emissionPermise(level, 2) {
 		return
 	}
 	writeEntry(level, code, content, nil)
@@ -296,7 +333,7 @@ func Write_LogCode(level string, code string, content string) {
 // Write_LogCodeMeta writes a log with optional request_id and user_id for critical paths (auth, API, transactions).
 // Never pass passwords or tokens in content or meta.
 func Write_LogCodeMeta(level string, code string, content string, meta *LogMeta) {
-	if strings.ToUpper(level) == "DEBUG" && !storage.Debug {
+	if !emissionPermise(level, 2) {
 		return
 	}
 	writeEntry(level, code, content, meta)
@@ -318,23 +355,30 @@ func UserMeta(userID int) *LogMeta {
 	return &LogMeta{UserID: strconv.Itoa(userID)}
 }
 
-// GetLogsForWebUI retourne les logs filtrés pour la web UI (JSON)
-func GetLogsForWebUI(levelFilter string, codeFilter string, limit int) ([]LogEntry, error) {
-	if limit <= 0 || limit > 1000 {
-		limit = 100 // Limite par défaut
-	}
-	return getBuffer().GetEntries(levelFilter, codeFilter, limit), nil
+// EntreesEnMemoire rend les entrées gardées en mémoire par CE core, la plus
+// récente en premier.
+//
+// Ce n'est plus la source du portail : les journaux se lisent en base, tous
+// cores confondus (voir core/database/db_journaux). La mémoire reste le REPLI
+// quand la base ne répond pas — c'est-à-dire au moment précis où l'on a le
+// plus besoin de lire un journal.
+func EntreesEnMemoire() []LogEntry {
+	return getBuffer().recentes()
 }
 
-// GetLogsStats retourne les statistiques du buffer
-func GetLogsStats() map[string]interface{} {
-	buf := getBuffer()
-	count := buf.GetEntriesCount()
-	return map[string]interface{}{
-		"total_entries": count,
-		"max_size":      buf.maxSize,
-		"hostname":      buf.hostname,
-	}
+// CapaciteMemoire est le nombre d'entrées gardées en mémoire.
+func CapaciteMemoire() int {
+	return getBuffer().maxSize
+}
+
+// NomDuCore rend le nom sous lequel ce core signe ses journaux.
+//
+// C'est `os.Hostname()`, le MÊME nom que celui sous lequel le core s'inscrit
+// au cluster (cluster.StartManager) : une ligne de journal et une ligne de
+// `vlt cluster` doivent désigner un core de la même façon, sans table de
+// correspondance à tenir.
+func NomDuCore() string {
+	return getBuffer().hostname
 }
 
 // ClearLogs vide le buffer (pour tests ou maintenance)

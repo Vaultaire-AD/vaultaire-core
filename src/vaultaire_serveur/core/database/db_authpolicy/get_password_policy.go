@@ -38,7 +38,8 @@ func GetPasswordPolicy(db *sql.DB) PasswordPolicySettings {
 		return fallbackPolicy(previous, hadPrevious, "base indisponible")
 	}
 
-	values, err := readSettings(db, SettingPasswordMaxAgeDays, SettingPasswordWarnDays)
+	values, err := readSettings(db,
+		SettingPasswordMaxAgeDays, SettingPasswordWarnDays, SettingPasswordMinLength)
 	if err != nil {
 		return fallbackPolicy(previous, hadPrevious, err.Error())
 	}
@@ -46,6 +47,14 @@ func GetPasswordPolicy(db *sql.DB) PasswordPolicySettings {
 	policy := PasswordPolicySettings{
 		MaxAgeDays: parseBounded(values[SettingPasswordMaxAgeDays], 0, maxAgeDaysLimit, 0),
 		WarnDays:   parseBounded(values[SettingPasswordWarnDays], 0, warnDaysLimit, defaultWarnDays),
+		// Le PLANCHER est appliqué à la LECTURE, et pas seulement à l'écriture.
+		//
+		// Une ligne posée à la main dans server_settings, ou héritée d'une
+		// version où la borne était plus basse, ne doit pas pouvoir abaisser la
+		// règle. Et le repli du parseur est le DÉFAUT (12), non zéro : une
+		// valeur illisible durcit, elle n'ouvre pas.
+		MinLength: parseBounded(values[SettingPasswordMinLength],
+			MinLengthPlancher, minLengthLimit, MinLengthDefaut),
 	}
 	// Un préavis plus long que la validité n'a pas de sens : le compte serait en
 	// avertissement permanent dès sa création. On le ramène à la validité plutôt

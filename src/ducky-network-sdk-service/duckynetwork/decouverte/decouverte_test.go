@@ -82,11 +82,11 @@ func TestAnalyserListe(t *testing.T) {
 // est en jeu est ce que la machine acceptera comme serveur.
 func TestUnNoeudSansEmpreinteEstRejete(t *testing.T) {
 	cas := map[string]string{
-		"empreinte vide":       "core1|10.0.0.1|6666|core|0|",
-		"champ absent":         "core1|10.0.0.1|6666|core|0",
-		"mauvaise fonction":    "core1|10.0.0.1|6666|core|0|MD5:xxxx",
-		"chaîne quelconque":    "core1|10.0.0.1|6666|core|0|coucou",
-		"minuscules":           "core1|10.0.0.1|6666|core|0|sha256:AAAA",
+		"empreinte vide":    "core1|10.0.0.1|6666|core|0|",
+		"champ absent":      "core1|10.0.0.1|6666|core|0",
+		"mauvaise fonction": "core1|10.0.0.1|6666|core|0|MD5:xxxx",
+		"chaîne quelconque": "core1|10.0.0.1|6666|core|0|coucou",
+		"minuscules":        "core1|10.0.0.1|6666|core|0|sha256:AAAA",
 	}
 
 	for nom, l := range cas {
@@ -267,7 +267,7 @@ func TestConstruireBattement(t *testing.T) {
 func TestUneMetriqueNEstJamaisEnNotationExponentielle(t *testing.T) {
 	n := InfosNoeud{Hostname: "proxy1", IP: "10.0.0.2"}
 	for _, v := range []float64{1500, 0.000015, 1e21} {
-		trame := ConstruireMetrique("cle", "id", n, "connections_total", v)
+		trame := ConstruireMetrique("cle", "id", n, Metrique{Type: "connections_total", Valeur: v})
 		if strings.ContainsAny(trame, "eE") &&
 			strings.Contains(strings.Split(trame, "\n")[8], "e") {
 			t.Errorf("valeur %v rendue en notation exponentielle : %q",

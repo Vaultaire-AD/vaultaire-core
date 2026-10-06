@@ -28,10 +28,11 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 	if db == nil {
 		data := struct {
 			Message   string
+			Error     string
 			Username  string
 			DnsEnable bool
 			Section   string
-		}{Message: "DNS non disponible (base de données non initialisée).", Username: username, DnsEnable: true, Section: "dns"}
+		}{Error: "DNS non disponible (base de données non initialisée).", Username: username, DnsEnable: true, Section: "dns"}
 		_ = executeAdminPage(w, "admin_dns.html", data)
 		return
 	}
@@ -41,6 +42,7 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 		Records   []dnsstorage.ZoneRecord
 		Zone      string
 		Message   string
+		Error     string
 		Username  string
 		DnsEnable bool
 		Section   string
@@ -53,9 +55,9 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 		case "create_zone":
 			zone := strings.ToLower(strings.TrimSpace(r.FormValue("zone_name")))
 			if zone == "" {
-				data.Message = "Nom de zone requis."
+				data.Error = "Nom de zone requis."
 			} else if err := dnsdatabase.CreateZoneTable(db, zone); err != nil {
-				data.Message = "Erreur : " + err.Error()
+				data.Error = "Erreur : " + err.Error()
 				logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin dns: create zone failed: "+err.Error())
 			} else {
 				data.Message = "Zone créée."
@@ -74,14 +76,14 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 			prioStr := r.FormValue("priority")
 			prio, _ := strconv.Atoi(prioStr)
 			if zone == "" || name == "" || recordType == "" || recordData == "" {
-				data.Message = "Zone, nom, type et data requis."
+				data.Error = "Zone, nom, type et data requis."
 			} else {
 				fqdn := zone
 				if name != "@" {
 					fqdn = name + "." + zone
 				}
 				if err := dnsdatabase.AddDNSRecordSmart(db, fqdn, recordType, ttl, recordData, prio); err != nil {
-					data.Message = "Erreur : " + err.Error()
+					data.Error = "Erreur : " + err.Error()
 				} else {
 					data.Message = "Enregistrement ajouté."
 					data.Zone = zone
@@ -97,7 +99,7 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 					fqdn = name + "." + zone
 				}
 				if err := dnsdatabase.DeleteDNSRecord(db, fqdn, recordType); err != nil {
-					data.Message = "Erreur : " + err.Error()
+					data.Error = "Erreur : " + err.Error()
 				} else {
 					data.Message = "Enregistrement supprimé."
 					data.Zone = zone
@@ -109,14 +111,14 @@ func AdminDNSHandler(w http.ResponseWriter, r *http.Request) {
 	zones, err := dnsdatabase.GetAllDNSZones(db)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeWebAdmin, "webadmin dns: list zones failed: "+err.Error())
-		data.Message = "Erreur chargement zones."
+		data.Error = "Erreur chargement zones."
 	} else {
 		data.Zones = zones
 	}
 	if data.Zone != "" {
 		records, err := dnsdatabase.GetZoneRecords(db, data.Zone)
 		if err != nil {
-			data.Message = "Erreur chargement enregistrements."
+			data.Error = "Erreur chargement enregistrements."
 		} else {
 			data.Records = records
 		}

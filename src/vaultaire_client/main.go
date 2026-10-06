@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 	"vaultaire_client/config"
+	"vaultaire_client/debugreport"
 	"vaultaire_client/gpo"
 	pamcommunication "vaultaire_client/pam_communication"
 	"vaultaire_client/revocation"
@@ -25,6 +26,18 @@ import (
 	yaml_vaultaire "vaultaire_client/yaml"
 )
 
+// StartDailyUserCleanup lance le ménage des comptes du domaine, chaque jour à 6 h.
+//
+// # Il tournait un jour sur deux
+//
+// La boucle attendait l'heure dite, faisait son travail, puis dormait vingt-
+// quatre heures de plus avant de recalculer la prochaine échéance. Elle se
+// réveillait donc à 6 h le lendemain, constatait que 6 h était passé « de
+// quelques microsecondes », et repartait pour un jour entier : le ménage
+// quotidien avait lieu tous les deux jours.
+//
+// Une seule attente, celle qui mène à la prochaine échéance, suffit et ne peut
+// pas dériver.
 func StartDailyUserCleanup() {
 	go func() {
 		defer logs.Recover("tache de fond")
@@ -32,18 +45,17 @@ func StartDailyUserCleanup() {
 			now := time.Now()
 			next := time.Date(now.Year(), now.Month(), now.Day(), 6, 0, 0, 0, now.Location())
 
-			if now.After(next) {
+			// !Before plutôt que After : à 6 h 00 min 00 s pile, l'échéance du
+			// jour vient d'être servie — c'est celle de demain qu'on vise.
+			if !now.Before(next) {
 				next = next.Add(24 * time.Hour)
 			}
 
-			duration := time.Until(next)
-			logs.Write_log("INFO", fmt.Sprintf("⏳ Prochaine exécution de la suppression à %s", next.Format(time.RFC1123)))
+			logs.Write_log("INFO", fmt.Sprintf("Prochain ménage des comptes à %s", next.Format(time.RFC1123)))
+			time.Sleep(time.Until(next))
 
-			time.Sleep(duration)
-			logs.Write_log("INFO", "🚀 Lancement de la suppression des utilisateurs Vaultaire inactifs")
+			logs.Write_log("INFO", "Ménage des comptes du domaine restés sans connexion")
 			localusermanagement.DeleteUser_Vaultaire_Past_4Days_withoutconnection()
-
-			time.Sleep(24 * time.Hour)
 		}
 	}()
 }
@@ -74,9 +86,10 @@ func brancherSocleDucky() {
 	// La boucle de connexion de l'agent, et non celle du socle : elle lit
 	// /etc/vaultaire_client/client_conf.json, au format JSON déjà déployé sur
 	// le parc, là où le socle attend du YAML.
-	duckytool.DemarrerSessionMachine = func() {
-		serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-	}
+	//
+	// DemarrerTunnelMachine est idempotent : l'authentification PAM qui trouve
+	// le tunnel en cours de rétablissement ne lance plus une seconde boucle.
+	duckytool.DemarrerSessionMachine = serveurcommunication.DemarrerTunnelMachine
 
 	// Les catégories propres à l'agent. 01 et 02 sont fournies par le socle :
 	// 01 est lue de façon synchrone avant que la boucle ne démarre, 02 est
@@ -107,6 +120,29 @@ func bootstrapDecouverte() {
 		}
 		sendmessage.SendMessage(trame, session.DuckySession)
 	}, storage.Computeur_ID)
+
+	// La liste apprise est PERSISTÉE (TO-DO 61) : dans client_conf.json, section
+	// « learned », et dans la configuration en mémoire. Seuls les nœuds de
+	// confiance arrivent ici — voir decouverte.SurNouvelleListe.
+	decouverte.SurNouvelleListe(func(noeuds []decouverte.Noeud) {
+		liste := make([]config.ServerConfig, 0, len(noeuds))
+		for _, n := range noeuds {
+			liste = append(liste, config.ServerConfig{IP: n.IP, Port: n.Port, Hostname: n.Hostname, Role: n.Role})
+		}
+		ecrit, err := config.MettreAJourAppris(liste)
+		switch {
+		case err != nil:
+			logs.Write_log("ERROR", "découverte : liste apprise non persistée : "+err.Error())
+		case ecrit:
+			logs.Write_log("INFO", fmt.Sprintf(
+				"découverte : %d nœud(s) persisté(s) dans %s", len(liste), config.Chemin()))
+		}
+	})
+
+	// La bascule vers le nœud prioritaire, second abonné à la même liste
+	// (TO-DO 90). Les abonnés s'ajoutent : celui-ci ne désarme pas la
+	// persistance ci-dessus.
+	serveurcommunication.ArmerBascule()
 
 	decouverte.Demarrer(func() string {
 		session, err := stosession.SessionsUser.WaitForVaultaireSession()
@@ -167,12 +203,25 @@ func main() {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
 	}
-	yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu())
+	// L'identité de la machine. Son absence n'arrête pas l'agent — il peut
+	// encore servir un « fetch-key » et journaliser — mais elle se DIT : sans
+	// elle, aucune session ne s'ouvrira et le journal doit le nommer une fois,
+	// au démarrage, plutôt qu'à chaque tentative.
+	if !yaml_vaultaire.ReadYAMLFile(storage.SoftwarePathResolu()) {
+		logs.Write_log("CRITICAL", "identité de la machine illisible ("+
+			storage.SoftwarePathResolu()+") : aucune session ne pourra s'ouvrir")
+	}
 
 	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
 	purgeGroupes := flag.Bool("purge-groups", false,
 		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
 	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
+	// Rapport de debug périodique (vlt_client-Debug.log). La ligne de commande
+	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
+	debugRapport := flag.Bool("debug", false,
+		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
+	debugIntervalle := flag.Int("debug-interval", 0,
+		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
 	flag.Parse()
 
 	if *purgeGroupes {
@@ -198,17 +247,14 @@ func main() {
 		os.Exit(0) // On force l'arrêt propre du binaire
 	} else {
 		StartDailyUserCleanup()
-		// Lancer le serveur de socket Unix
-		if storage.IsServeur {
-			// 3. Appel vers le serveur backend Vaultaire
-			if tools.IsDuckySessionActive() {
-
-			} else {
-				logs.Go("communication serveur", func() {
-					serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
-				})
-			}
-		}
+		// Le tunnel machine, sur TOUT nœud et dès le démarrage.
+		//
+		// Il n'était ouvert d'office que sur un serveur ; sur un poste, il
+		// attendait la première authentification PAM. Une machine sur laquelle
+		// personne ne se connecte restait donc hors ligne : pas de GPO, pas de
+		// révocation, absente de `status -c`. La supervision le relance après
+		// toute coupure — voir serveur_communication/superviseur.go.
+		serveurcommunication.DemarrerTunnelMachine()
 
 		// Transport des GPO. Le comportement est identique pour un client
 		// serveur et un client poste : seule la liste des groupes diffère côté
@@ -241,6 +287,17 @@ func main() {
 		// AuthorizedKeysCommand, et aucune première connexion n'est possible —
 		// sans la moindre trace, puisque rien de Vaultaire n'est exécuté.
 		pamcommunication.StartUIDAllocationServer()
+
+		// Rapport de debug : dans la branche du démon SEULEMENT. En mode
+		// --fetch-key, la sortie standard est la réponse lue par sshd.
+		reglage := config.GetDebug()
+		if *debugRapport || reglage.Enabled {
+			secondes := reglage.IntervalSeconds
+			if *debugIntervalle > 0 {
+				secondes = *debugIntervalle
+			}
+			debugreport.Demarrer(time.Duration(secondes) * time.Second)
+		}
 
 		pamcommunication.UnixSocketServer()
 	}

@@ -16,6 +16,10 @@ BIN="/opt/vaultaire/bin/vaultaire_proxy"
 CONFIG="${VAULTAIRE_CONFIG:-/etc/vaultaire_proxy/config.yaml}"
 KEYS="${VAULTAIRE_KEYS:-/var/lib/vaultaire_proxy/keys}"
 LOGS="/var/log/vaultaire"
+# Port du relais Ducky, annoncé aux agents (-listen-port, obligatoire). 6666
+# dans le conteneur ; c'est le port PUBLIÉ par Docker que les agents joignent —
+# à déclarer sur le core : vlt cluster expose <proxy> <adresse-hôte> <port-publié>
+LISTEN_PORT="${VAULTAIRE_LISTEN_PORT:-6666}"
 RUN_UID=10001
 RUN_GID=10001
 
@@ -74,7 +78,7 @@ if [ "$(id -u)" = "0" ]; then
     # --clear-groups : sans lui, le processus garderait les groupes
     # supplémentaires de root, ce qui annulerait une partie du bénéfice.
     exec setpriv --reuid="$RUN_UID" --regid="$RUN_GID" --clear-groups \
-        "$BIN" --config "$CONFIG" --keys "$KEYS" "$@"
+        "$BIN" --config "$CONFIG" --keys "$KEYS" --listen-port "$LISTEN_PORT" "$@"
 fi
 
 # Démarrage déjà non privilégié (docker run --user, par exemple) : on ne peut
@@ -84,4 +88,4 @@ fi
   partir en root. Retirez le « user: » du docker-compose.yml, ou recréez le
   volume : docker compose down -v && docker compose up -d"
 
-exec "$BIN" --config "$CONFIG" --keys "$KEYS" "$@"
+exec "$BIN" --config "$CONFIG" --keys "$KEYS" --listen-port "$LISTEN_PORT" "$@"
