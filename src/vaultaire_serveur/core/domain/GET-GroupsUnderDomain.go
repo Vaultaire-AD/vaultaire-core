@@ -2,16 +2,26 @@ package domain
 
 import (
 	"database/sql"
-	"fmt"
 	"strings"
 	dbdomains "vaultaire/core/database/db_domains"
 )
 
-// normalizeDomain normalise un nom de domaine : minuscules, trim espaces et point final
-func normalizeDomain(s string) string {
+// NormaliserDomaine met un nom de domaine sous sa forme de comparaison :
+// minuscules, sans espaces de bord ni point final.
+//
+// EXPORTÉE parce qu'elle décide de ce qui est chargé, et que le contrôle d'accès
+// LDAP doit décider de ce qui est RENDU avec exactement la même règle
+// (`security.PorteeDeRecherche`, point 120). Deux normalisations qui se
+// ressemblent finissent par diverger, et la divergence se manifeste alors en
+// entrée chargée puis écartée — ou l'inverse.
+func NormaliserDomaine(s string) string {
 	s = strings.TrimSpace(s)
 	s = strings.TrimSuffix(s, ".")
 	return strings.ToLower(s)
+}
+
+func normalizeDomain(s string) string {
+	return NormaliserDomaine(s)
 }
 
 // GetGroupsUnderDomain retourne tous les noms de groupes appartenant à un domaine
@@ -144,8 +154,12 @@ func GetGroupsDirectlyUnderDomainExact(domainPath string, db *sql.DB, returnDoma
 	target := normalizeDomain(domainPath)
 	result := []string{}
 
+	// Sans écriture sur la sortie standard (TO-DO 145). Un `fmt.Printf` de mise
+	// au point était resté ici : une ligne « DEBUG: checking… » par groupe de
+	// l'annuaire, à CHAQUE recherche LDAP de portée `one`, mode debug actif ou
+	// non — hors du journal, donc sans horodatage, sans niveau et sans moyen de
+	// l'éteindre.
 	for _, g := range allGroups {
-		fmt.Printf("DEBUG: checking g.DomainName='%s', normalized='%s', target='%s'\n", g.DomainName, normalizeDomain(g.DomainName), target)
 		if g.DomainName == "" || g.GroupName == "" {
 			continue
 		}

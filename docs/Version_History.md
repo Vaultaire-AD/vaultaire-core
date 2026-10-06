@@ -8,11 +8,17 @@ version majeure et un fichier par version mineure.
 
 ---
 
-## [Cycle 2.1 — refactorisation](./Version/2.0/2.1.md)
+## [Cycle 2.2 — en cours](./Version/2.0/2.2.md)
 
-Unification CLI/web derrière le registre d'actions, filtrage des lectures par domaine, sélecteur d'entités du portail.
+Vaultaire Nexus et authentification par un service (catégorie 08), formation pas à pas, recette du 21/09 : domaines de connexion, verbe RBAC « Détacher », second facteur au bind LDAP, tunnel machine supervisé.
 
-Contient : 🚧 non publié, Alpha 2.1.0.
+Contient : 🚧 non publié.
+
+## [Alpha 2.1.0 — 16/09/2026](./Version/2.0/2.1.md)
+
+Unification CLI/web derrière le registre d'actions, filtrage des lectures par domaine, sélecteur d'entités du portail, releases automatiques.
+
+Contient : Alpha 2.1.0.
 
 ## [Alpha 2.0.0 « PIG » — 02/08/2026](./Version/2.0/2.0.md)
 
@@ -37,7 +43,8 @@ Contient : Alpha 1.0.2, Alpha 1.0.1, Alpha 1.0.
 ## Convention
 
 - Un dossier par version **majeure** : `docs/Version/1.0/`, `docs/Version/2.0/`.
-- Un fichier par version **mineure** : `1.0.md`, `1.1.md`, `2.0.md`, `2.1.md`.
+- Un fichier par version **mineure** : `1.0.md`, `1.1.md`, `2.0.md`, `2.1.md`, `2.2.md`.
+- Changer de série : voir [`exploitation/Changement_de_version.md`](./exploitation/Changement_de_version.md).
 - Les correctifs d'une même mineure sont regroupés dans son fichier, du plus
   récent au plus ancien.
 - Toute modification doit être consignée dans le fichier de la version en cours

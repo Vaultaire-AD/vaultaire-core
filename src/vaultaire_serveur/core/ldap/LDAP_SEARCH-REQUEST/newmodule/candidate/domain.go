@@ -18,6 +18,22 @@ func (d DomainEntry) DN() string {
 	return ldaptools.ToDN(d.DNName)
 }
 
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// DNName porte tantôt « enov.local », tantôt « dc=enov,dc=local » selon le
+// chemin qui a construit l'entrée. Le RBAC ne connaît que la première forme :
+// la conversion est donc faite ici, et pas laissée à l'appelant.
+func (d DomainEntry) Domaines() []string {
+	nom := d.DNName
+	if strings.Contains(nom, "=") {
+		nom = ldaptools.ConvertLDAPBaseToDomainName(nom)
+	}
+	if nom == "" {
+		return nil
+	}
+	return []string{nom}
+}
+
 func (d DomainEntry) ObjectClasses() []string {
 	return []string{"top", "domain"}
 }

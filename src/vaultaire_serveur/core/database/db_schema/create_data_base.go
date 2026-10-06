@@ -137,6 +137,45 @@ func Create_DataBase(db *sql.DB) {
 			session_key BLOB NOT NULL,
 			key_time_validity TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 			d_id_logiciel INT NOT NULL,
+			-- L'unicité (compte, machine), portée par la BASE depuis le TO-DO 107.
+			--
+			-- Elle était tenue par le code : SELECT EXISTS puis INSERT d'un côté,
+			-- COUNT(*) puis UPDATE de l'autre. Deux séquences non atomiques, donc
+			-- deux courses — et deux authentifications simultanées de la même paire
+			-- faisaient apparaître la machine DEUX FOIS dans « status -c ».
+			--
+			-- Le même nom d'index est posé sur une base existante par
+			-- EnsureDidLoginUnicite, après dédoublonnage.
+			UNIQUE KEY uq_did_login (d_id_user, d_id_logiciel),
+			FOREIGN KEY (d_id_user) REFERENCES users(id_user) ON DELETE CASCADE,
+			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
+		);`,
+
+		// Sessions UTILISATEUR ouvertes par PAM.
+		//
+		// # Pourquoi une table à elle, et pas une ligne de did_login
+		//
+		// `did_login` vaut « une ligne = une session Ducky », et `status -c` la
+		// lit pour énumérer les machines connectées. Y écrire les sessions PAM
+		// — ce qu'a fait le point 68 — faisait apparaître une machine deux fois
+		// dès que quelqu'un s'y connectait, alors qu'un seul tunnel existe.
+		//
+		// Les deux objets n'ont ni le même cycle de vie, ni la même clé, ni le
+		// même lecteur. Une colonne d'origine aurait suffi à les distinguer,
+		// mais aurait laissé deux natures dans la même table et un filtre à ne
+		// pas oublier : la prochaine lecture de `did_login` serait retombée
+		// dans le piège.
+		//
+		// L'unicité (compte, machine) est portée par la BASE cette fois, et non
+		// par le code comme dans did_login : deux ouvertures de session
+		// successives doivent mettre à jour une ligne, pas en empiler deux.
+		`CREATE TABLE IF NOT EXISTS user_sessions (
+			id_user_session INT AUTO_INCREMENT PRIMARY KEY,
+			d_id_user INT NOT NULL,
+			d_id_logiciel INT NOT NULL,
+			opened_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+			key_time_validity TIMESTAMP NULL DEFAULT NULL,
+			UNIQUE KEY uq_user_session (d_id_user, d_id_logiciel),
 			FOREIGN KEY (d_id_user) REFERENCES users(id_user) ON DELETE CASCADE,
 			FOREIGN KEY (d_id_logiciel) REFERENCES id_logiciels(id_logiciel) ON DELETE CASCADE
 		);`,
@@ -353,6 +392,50 @@ func Create_DataBase(db *sql.DB) {
     		INDEX idx_created (created_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
+		// ----- Relais des proxies pilotés par le core (TO-DO 141) -----
+		//
+		// Ce que le core DEMANDE à un proxy : une ligne par relais. La clé est
+		// le propriétaire — l'identifiant du client — et non le nœud :
+		// cluster_nodes oublie un nœud resté hors ligne un jour, et sa liste
+		// de relais ne doit pas disparaître avec lui.
+		//
+		// Les quatre derniers réglages valent zéro pour « le défaut du proxy ».
+		`CREATE TABLE IF NOT EXISTS cluster_relays (
+    		id_relay INT AUTO_INCREMENT PRIMARY KEY,
+    		owner_client_id VARCHAR(191) NOT NULL,
+    		nom VARCHAR(64) NOT NULL,
+    		type VARCHAR(16) NOT NULL,              -- 'ducky', 'https', 'ldaps'
+    		ecoute VARCHAR(128) NOT NULL,           -- '[adresse]:port'
+    		source VARCHAR(128) NOT NULL,           -- 'cores', 'liste', 'service:<type>'
+    		adresses TEXT,                          -- une par ligne, pour la source 'liste'
+    		port_cible INT NOT NULL DEFAULT 0,
+    		delai_connexion_s INT NOT NULL DEFAULT 0,
+    		inactivite_s INT NOT NULL DEFAULT 0,
+    		max_connexions INT NOT NULL DEFAULT 0,
+    		max_par_source INT NOT NULL DEFAULT 0,
+    		position INT NOT NULL DEFAULT 0,
+    		UNIQUE KEY uk_relay (owner_client_id, nom)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		// Une ligne par proxy : si le core le PILOTE, la révision de sa
+		// demande, et le dernier compte rendu du proxy (04_18). Séparée de
+		// cluster_relays : la demande est une décision, le compte rendu un
+		// état réécrit chaque minute.
+		//
+		// `revision` ne redescend JAMAIS, même quand le core rend la main :
+		// c'est par elle que le proxy dit ce qu'il applique, et un numéro
+		// réemployé pour une autre liste lui ferait dire « appliquée » d'une
+		// liste qu'il n'a jamais reçue.
+		`CREATE TABLE IF NOT EXISTS cluster_relay_state (
+    		owner_client_id VARCHAR(191) NOT NULL PRIMARY KEY,
+    		pilote BOOLEAN NOT NULL DEFAULT FALSE,
+    		revision INT NOT NULL DEFAULT 0,
+    		modifie_par VARCHAR(255) DEFAULT NULL,
+    		modifie_le DATETIME DEFAULT NULL,
+    		rapport MEDIUMTEXT,
+    		rapport_le DATETIME DEFAULT NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
 		// ----- Données initiales -----
 		`INSERT IGNORE INTO users (username, firstname, lastname, email, password, salt, date_naissance)
  			VALUES ('vaultaire','Vault','Admin','vaultaire@example.com','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,
@@ -420,6 +503,45 @@ func Create_DataBase(db *sql.DB) {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"database: complément du schéma cluster_nodes échoué : "+err.Error())
 		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
+	}
+
+	// Les horodatages de l'annuaire (TO-DO 126).
+	//
+	// FATALE, contrairement au dédoublonnage qui suit. La tentation était de la
+	// rendre facultative — « une base sans ces colonnes fonctionne comme avant » —
+	// mais c'est faux : les requêtes de lecture LDAP NOMMENT désormais ces
+	// colonnes. Une migration facultative ne rendrait pas le défaut inoffensif,
+	// elle le déplacerait à la première recherche, en exploitation, sous la forme
+	// d'un « Unknown column » qui casse l'annuaire entier.
+	//
+	// Un ALTER TABLE ADD COLUMN sur `users` et `groups` est par ailleurs
+	// l'opération la moins risquée de ce fichier.
+	if err := EnsureHorodatagesAnnuaire(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: horodatages de l'annuaire non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des horodatages de l'annuaire : %v", err)
+	}
+
+	// L'identifiant stable des entrées (point 129). FATALE pour la même raison
+	// que les horodatages : les requêtes de lecture LDAP nomment la colonne.
+	// Après les insertions initiales plus haut, qui reçoivent ici le leur.
+	if err := EnsureIdentifiantsAnnuaire(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: identifiants de l'annuaire non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des identifiants de l'annuaire : %v", err)
+	}
+
+	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
+	//
+	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue
+	// laisse une base qui fonctionne exactement comme avant, avec le défaut
+	// qu'elle avait déjà. Arrêter le core sur ce motif transformerait une
+	// correction en panne de démarrage — et sur la base d'un parc en service,
+	// c'est le genre de migration qu'on veut pouvoir reprendre au tour suivant.
+	if err := EnsureDidLoginUnicite(db); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+			"database: unicité de did_login non posée, les doublons de « status -c » "+
+				"restent possibles : "+err.Error())
 	}
 
 	logs.Write_Log("INFO", "database: all tables and relations created successfully")

@@ -28,6 +28,7 @@ import (
 	"database/sql"
 	"fmt"
 	"regexp"
+	"strings"
 
 	"vaultaire/core/logs"
 )
@@ -94,11 +95,24 @@ func EnsureColumn(db *sql.DB, sujet, table, column, definition string) error {
 // les supprimant. La fonction ne le fait pas à sa place : que faire d'une ligne
 // sans valeur dépend entièrement de ce qu'elle représente, et le deviner ici
 // effacerait des données dans un cas et pas dans l'autre.
-func EnsureUniqueIndex(db *sql.DB, sujet, table, index, column string) error {
-	if !identifierPattern.MatchString(table) ||
-		!identifierPattern.MatchString(index) ||
-		!identifierPattern.MatchString(column) {
-		return fmt.Errorf("identifiant de schéma refusé : %s.%s (%s)", table, index, column)
+//
+// # Plusieurs colonnes
+//
+// La signature est variadique : `EnsureUniqueIndex(db, s, t, i, "a", "b")` pose
+// l'unicité sur le COUPLE. C'est ce qu'il faut pour une table dont l'unicité
+// porte sur une paire — (compte, machine) — et une seconde fonction n'aurait
+// fait qu'une seconde inspection d'index à tenir d'accord avec celle-ci.
+func EnsureUniqueIndex(db *sql.DB, sujet, table, index string, columns ...string) error {
+	if len(columns) == 0 {
+		return fmt.Errorf("index %s.%s : aucune colonne", table, index)
+	}
+	if !identifierPattern.MatchString(table) || !identifierPattern.MatchString(index) {
+		return fmt.Errorf("identifiant de schéma refusé : %s.%s", table, index)
+	}
+	for _, c := range columns {
+		if !identifierPattern.MatchString(c) {
+			return fmt.Errorf("identifiant de schéma refusé : %s.%s (%s)", table, index, c)
+		}
 	}
 
 	var count int
@@ -114,7 +128,8 @@ func EnsureUniqueIndex(db *sql.DB, sujet, table, index, column string) error {
 		return nil
 	}
 
-	if _, err := db.Exec("ALTER TABLE `" + table + "` ADD UNIQUE KEY `" + index + "` (`" + column + "`)"); err != nil {
+	if _, err := db.Exec("ALTER TABLE `" + table + "` ADD UNIQUE KEY `" + index + "` (`" +
+		strings.Join(columns, "`, `") + "`)"); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			sujet+": ajout de l'index "+table+"."+index+" échoué : "+err.Error())
 		return fmt.Errorf("ajout de l'index %s.%s : %w", table, index, err)

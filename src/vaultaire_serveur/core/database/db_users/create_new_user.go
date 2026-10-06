@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	database "vaultaire/core/database"
+	"vaultaire/core/identifiant"
 	"vaultaire/core/logs"
 	"vaultaire/core/tools"
 )
@@ -46,9 +47,20 @@ func Create_New_User(db *sql.DB, username, firstname, lastname, email, password,
 	// redémarrage, donc un mot de passe qui n'expire jamais. Le trou serait
 	// invisible — le compte fonctionne — et ne se refermerait qu'au hasard des
 	// redémarrages.
+	//
+	// entry_uuid est posé ICI, à la création, et jamais réécrit : c'est
+	// l'identifiant sous lequel les clients LDAP reconnaissent le compte, y
+	// compris après un renommage (point 129). Le rattrapage du schéma en
+	// donnerait bien un au prochain démarrage — mais d'ici là le compte serait
+	// servi sans identifiant, et un client qui l'importe dans l'intervalle ne
+	// le reconnaîtrait plus ensuite.
+	entryUUID, err := identifiant.NouvelUUID()
+	if err != nil {
+		return fmt.Errorf("identifiant du compte : %v", err)
+	}
 	_, err = tx.Exec(`
-		INSERT INTO users (username, firstname, lastname, email, password, salt, date_naissance, created_at, password_changed_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, username, firstname, lastname, email, password, salt, birthdate, createdAt, createdAt)
+		INSERT INTO users (username, firstname, lastname, email, password, salt, date_naissance, created_at, password_changed_at, entry_uuid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, username, firstname, lastname, email, password, salt, birthdate, createdAt, createdAt, entryUUID)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'insertion de l'utilisateur: "+err.Error())
 		return fmt.Errorf("erreur lors de l'insertion de l'utilisateur: %v", err)

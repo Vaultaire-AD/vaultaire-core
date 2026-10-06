@@ -32,7 +32,7 @@ import (
 // CibleClient est un nœud tel que ce client le recevra, avec son rang.
 type CibleClient struct {
 	// Rang commence à 1 : c'est un ordre de tentative, pas un indice.
-	Rang int
+	Rang  int
 	Noeud clusterstorage.Node
 	// Motif explique la place, en clair.
 	Motif string

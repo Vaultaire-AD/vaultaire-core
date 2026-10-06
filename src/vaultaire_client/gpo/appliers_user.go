@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"duckynetworkclient/V1/duckynetwork/logs"
 )
 
 // Appliqueurs des modules de scope utilisateur, plus le déploiement de fichier
@@ -59,31 +61,30 @@ func applyUserEnv(ctx Context, m Module) (string, error) {
 	}
 
 	envPath := filepath.Join(ctx.HomeDir, userEnvFileName)
-	existing, _ := readFileIfExists(envPath)
 
-	// Une ligne par variable, remplacée à l'identique : les autres variables
-	// posées par d'autres modules de la même politique doivent survivre.
-	lines := []string{}
-	replaced := false
-	prefix := "export " + name + "="
-	for _, line := range strings.Split(existing, "\n") {
-		trimmed := strings.TrimSpace(line)
-		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
-			continue
-		}
-		if strings.HasPrefix(trimmed, prefix) {
-			lines = append(lines, prefix+shellQuote(value))
-			replaced = true
-			continue
-		}
-		lines = append(lines, trimmed)
-	}
-	if !replaced {
-		lines = append(lines, prefix+shellQuote(value))
-	}
-
+	// Le fichier est ÉCRIT DEPUIS LA POLITIQUE, sans relire ce qu'il contient —
+	// TO-DO 135.
+	//
+	// # Ce que faisait la version précédente
+	//
+	// Elle relisait le fichier, remplaçait SA ligne et recopiait les autres,
+	// pour que les variables des modules voisins survivent. Trois conséquences,
+	// dont deux n'apparaissent qu'avec l'inventaire :
+	//
+	//   - une ligne ajoutée à la main survivait à toutes les réapplications, et
+	//     entrait dans le hachage attendu : la « correction » d'une dérive
+	//     consacrait ce qu'elle devait effacer ;
+	//   - une variable retirée de la politique restait dans le fichier pour
+	//     toujours, alors que le commentaire de userEnvFileName promet l'inverse ;
+	//   - la relecture passait par `os.ReadFile`, qui suit les liens : root
+	//     recopiait la cible d'un lien planté là dans un fichier appartenant à
+	//     l'utilisateur.
+	//
+	// Le contenu ne dépend plus que de la politique : n'importe lequel des
+	// modules `user_env` produit le fichier entier, et tous produisent le même.
+	// Ils en répondent ensemble (FileState.Owners), et un écart les fait rejouer.
 	content := "# Fichier genere par Vaultaire GPO. Ne pas editer a la main.\n" +
-		strings.Join(lines, "\n") + "\n"
+		strings.Join(lignesDEnvironnement(ctx, name, value), "\n") + "\n"
 
 	if err := writeUserFile(ctx, envPath, content, 0o644); err != nil {
 		return "", err
@@ -110,14 +111,27 @@ func ensureProfileHook(ctx Context, envPath string) ([]string, error) {
 	// .bashrc entier s'il s'agit de sa dernière instruction.
 	block := fmt.Sprintf("if [ -r %s ]; then . %s; fi", shellQuote(envPath), shellQuote(envPath))
 
-	var hooked []string
+	var hooked, ecartes []string
 	for _, name := range shellStartupFiles {
 		path := filepath.Join(ctx.HomeDir, name)
-		existing, exists := readFileIfExists(path)
+		// Lecture SANS suivre de lien — voir lireFichierUtilisateur. Un fichier
+		// de démarrage qui est un lien symbolique, ou qui n'appartient pas au
+		// compte, est laissé tel quel : ni lu, ni remplacé. L'ancien code lisait
+		// à travers le lien puis écrasait le lien par un fichier ordinaire, ce
+		// qui recopiait la cible chez l'utilisateur et défaisait au passage le
+		// rangement de qui tient ses fichiers de démarrage sous un gestionnaire.
+		existing, exists, err := readUserFile(ctx, path)
+		if err != nil {
+			ecartes = append(ecartes, name)
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"GPO: %s de %s laisse tel quel, il n'est pas un fichier ordinaire du compte : %v",
+				name, ctx.Username, err))
+			continue
+		}
 		if !exists {
 			continue
 		}
-		if err := writeUserFile(ctx, path, replaceManagedBlock(existing, block), 0o644); err != nil {
+		if err := writeUserBlock(ctx, path, replaceManagedBlock(existing, block), 0o644, blocEnvironnement); err != nil {
 			return nil, fmt.Errorf("accrochage dans %s impossible : %v", name, err)
 		}
 		hooked = append(hooked, name)
@@ -127,17 +141,71 @@ func ensureProfileHook(ctx Context, envPath string) ([]string, error) {
 	// .bashrc, lu par les shells interactifs et sourcé par le .bash_profile de
 	// la plupart des distributions.
 	if len(hooked) == 0 {
+		// Sauf si .bashrc EXISTE et vient d'être écarté : le créer reviendrait à
+		// le remplacer, c'est-à-dire à faire ce que la lecture vient de refuser.
+		for _, name := range ecartes {
+			if name == ".bashrc" {
+				return nil, fmt.Errorf(
+					"aucun fichier de demarrage accrochable : %s existe(nt) mais ce ne sont pas "+
+						"des fichiers ordinaires du compte (lien symbolique ?)", strings.Join(ecartes, ", "))
+			}
+		}
 		path := filepath.Join(ctx.HomeDir, ".bashrc")
-		if err := writeUserFile(ctx, path, replaceManagedBlock("", block), 0o644); err != nil {
+		if err := writeUserBlock(ctx, path, replaceManagedBlock("", block), 0o644, blocEnvironnement); err != nil {
 			return nil, fmt.Errorf("creation de .bashrc impossible : %v", err)
 		}
 		hooked = append(hooked, ".bashrc")
 	}
 
-	// Nettoyage du fichier inerte créé par la version précédente.
-	_ = os.Remove(filepath.Join(ctx.HomeDir, legacyProfileHook))
+	// Nettoyage du fichier inerte créé par la version précédente. Par la
+	// descente sûre, et sans rien inscrire : ce n'est pas une politique, c'est
+	// du ménage.
+	if uid, _, err := resolveUserIDs(ctx.Username); err == nil {
+		_, _ = retirerSousHome(ctx.HomeDir, filepath.Join(ctx.HomeDir, legacyProfileHook), uid)
+	}
 
 	return hooked, nil
+}
+
+// lignesDEnvironnement rend les lignes « export » de TOUTES les variables que
+// la politique en cours pose pour ce compte.
+//
+// L'ordre est celui de la politique, donc celui de l'application. Deux modules
+// qui posent la même variable : le dernier l'emporte, comme il l'emporterait
+// s'ils écrivaient l'un après l'autre.
+//
+// Le module en cours est ajouté s'il manque — c'est le cas d'un test qui
+// appelle l'appliqueur à la main, sans politique autour.
+func lignesDEnvironnement(ctx Context, nom, valeur string) []string {
+	var noms []string
+	valeurs := map[string]string{}
+	poser := func(n, v string) {
+		if n == "" {
+			return
+		}
+		if _, deja := valeurs[n]; !deja {
+			noms = append(noms, n)
+		}
+		valeurs[n] = v
+	}
+
+	if ctx.Politique != nil {
+		for _, m := range ctx.Politique.Modules {
+			if m.Type != ModuleUserEnv {
+				continue
+			}
+			poser(strings.ToUpper(m.Param("name")), m.Param("value"))
+		}
+	}
+	if _, present := valeurs[nom]; !present {
+		poser(nom, valeur)
+	}
+
+	lignes := make([]string, 0, len(noms))
+	for _, n := range noms {
+		lignes = append(lignes, "export "+n+"="+shellQuote(valeurs[n]))
+	}
+	return lignes
 }
 
 // applyUserCron installe ou retire un timer systemd utilisateur.
@@ -171,7 +239,7 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 		_ = runUserSystemctl(ctx, "disable", "--now", timerName)
 		removed := 0
 		for _, path := range []string{servicePath, timerPath} {
-			if _, err := removeSystemFile(path); err == nil {
+			if existait, err := removeUserFile(ctx, path); err == nil && existait {
 				removed++
 			}
 		}
@@ -308,7 +376,15 @@ func applyFileDeploy(ctx Context, m Module) (string, error) {
 	}
 
 	if state == "absent" {
-		existait, err := removeSystemFile(path)
+		// Sous un `HOME`, le retrait passe par la descente sûre : `os.Remove`
+		// résout les répertoires intermédiaires, et un lien planté à la place
+		// de l'un d'eux faisait supprimer par root un fichier hors du dossier.
+		var existait bool
+		if ctx.Scope == ScopeUser {
+			existait, err = removeUserFile(ctx, path)
+		} else {
+			existait, err = ctx.removeSystemFile(path)
+		}
 		if err != nil {
 			return "", fmt.Errorf("suppression de %s impossible : %v", path, err)
 		}
@@ -331,7 +407,7 @@ func applyFileDeploy(ctx Context, m Module) (string, error) {
 		return fmt.Sprintf("%s ecrit (%d octets, %04o, %s)", path, len(content), mode, ctx.Username), nil
 	}
 
-	if err := writeSystemFile(path, content, os.FileMode(mode)); err != nil {
+	if err := ctx.writeSystemFile(path, content, os.FileMode(mode)); err != nil {
 		return "", err
 	}
 	if owner := m.Param("owner"); owner != "" {
@@ -353,47 +429,166 @@ func applyFileDeploy(ctx Context, m Module) (string, error) {
 // ---------------------------------------------------------------------------
 
 // writeUserFile écrit un fichier appartenant à l'utilisateur cible.
+//
+// # Ce que cette fonction faisait, et pourquoi c'était une élévation vers root
+//
+// Elle appelait `os.MkdirAll`, `chownTree` puis `os.Chown` — trois fonctions qui
+// DÉRÉFÉRENCENT les liens symboliques —, et `chownTree` vérifiait l'appartenance
+// au `HOME` par `strings.HasPrefix` sur la chaîne non résolue.
+//
+// Elle tourne EN ROOT, lancée par PAM, sur un dossier que l'utilisateur
+// contrôle. Il lui suffisait de remplacer un répertoire intermédiaire par un
+// lien vers `/etc` pour que root chowne `/etc` à son nom. Voir TO-DO 97 et
+// chemin_sur_linux.go, qui porte le détail complet du chemin d'attaque.
+//
+// La traversée passe désormais par des DESCRIPTEURS : chaque composant est
+// ouvert relativement au précédent avec `O_NOFOLLOW`, et l'écriture comme le
+// changement de propriétaire se font sur le descripteur, jamais sur un chemin
+// qu'il faudrait résoudre une seconde fois.
+//
+// `chownTree` a disparu : la descente pose elle-même le propriétaire des
+// répertoires qu'elle crée, ce qui était sa seule raison d'être.
+//
+// # Et il entre dans l'inventaire — TO-DO 135
+//
+// C'est la ligne qui manquait. `writeSystemFile` inscrivait ce qu'il écrivait ;
+// cette fonction, non. Les fichiers d'un `HOME` n'entraient donc JAMAIS dans
+// l'inventaire, le scan de conformité sortait sur « rien à comparer » sans
+// émettre de rapport, et un fichier supprimé ou réécrit par l'utilisateur
+// restait affiché conforme — indéfiniment, puisque le cycle suivant recevait
+// « politique inchangée » et ne posait rien.
+//
+// Le chemin inscrit est le chemin RÉSOLU, `%h` développé : c'est celui que le
+// scan relira. L'inscription suit l'écriture, comme côté machine : un fichier
+// que le disque n'a pas reçu ne doit pas être surveillé.
+//
+// Cette fonction est pour un fichier qui appartient EN ENTIER à la politique.
+// Un fichier de l'utilisateur dans lequel Vaultaire ne tient qu'un bloc passe
+// par writeUserBlock : en hacher la totalité ferait signaler une dérive chaque
+// fois que la personne édite son propre `.bashrc`.
 func writeUserFile(ctx Context, path, content string, mode os.FileMode) error {
-	if ctx.Username == "" {
-		return fmt.Errorf("utilisateur cible non defini")
-	}
-	uid, gid, err := resolveUserIDs(ctx.Username)
+	uid, gid, err := idsDuCompte(ctx)
 	if err != nil {
 		return err
 	}
-
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return fmt.Errorf("creation de %s impossible : %v", dir, err)
-	}
-	// Les répertoires intermédiaires créés sous le home doivent eux aussi
-	// appartenir à l'utilisateur, sinon il ne peut rien y écrire ensuite.
-	if err := chownTree(ctx.HomeDir, dir, uid, gid); err != nil {
+	path = filepath.Clean(path)
+	if err := ecrireFichierUtilisateur(ctx.HomeDir, path, content, mode, uid, gid); err != nil {
 		return err
 	}
-
-	if err := writeSystemFile(path, content, mode); err != nil {
-		return err
-	}
-	if err := os.Chown(path, uid, gid); err != nil {
-		return fmt.Errorf("proprietaire de %s non applique : %v", path, err)
-	}
+	ctx.inventaire().noterEcriture(path, content, mode)
 	return nil
 }
 
-// chownTree rattache à l'utilisateur les répertoires créés sous son home.
-func chownTree(homeDir, dir string, uid, gid int) error {
-	if homeDir == "" || !strings.HasPrefix(dir, homeDir) {
-		return nil
+// idsDuCompte résout l'uid et le gid du compte cible.
+func idsDuCompte(ctx Context) (int, int, error) {
+	if ctx.Username == "" {
+		return 0, 0, fmt.Errorf("utilisateur cible non defini")
 	}
-	current := dir
-	for len(current) > len(homeDir) {
-		if err := os.Chown(current, uid, gid); err != nil && !os.IsNotExist(err) {
-			return fmt.Errorf("proprietaire de %s non applique : %v", current, err)
-		}
-		current = filepath.Dir(current)
+	return resolveUserIDs(ctx.Username)
+}
+
+// removeUserFile retire un fichier — ou un répertoire vide — sous le `HOME`, et
+// inscrit qu'il doit rester absent.
+//
+// Le pendant de removeSystemFile pour le scope utilisateur, avec deux
+// différences qui sont toute sa raison d'être : la traversée ne suit aucun lien
+// (voir retirerSousHome), et l'absence est inscrite dans l'inventaire du cycle
+// de CE compte.
+func removeUserFile(ctx Context, path string) (bool, error) {
+	uid, _, err := idsDuCompte(ctx)
+	if err != nil {
+		return false, err
 	}
+	path = filepath.Clean(path)
+	existait, err := retirerSousHome(ctx.HomeDir, path, uid)
+	if err != nil {
+		// Rien n'est inscrit : la politique n'a pas abouti, et surveiller une
+		// absence jamais obtenue signalerait une dérive permanente.
+		return false, err
+	}
+	ctx.inventaire().noterAbsence(path)
+	return existait, nil
+}
+
+// readUserFile lit un fichier sous le `HOME` du compte, sans suivre de lien.
+func readUserFile(ctx Context, path string) (string, bool, error) {
+	uid, _, err := idsDuCompte(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	return lireFichierUtilisateur(ctx.HomeDir, filepath.Clean(path), uid)
+}
+
+// writeUserBlock écrit un fichier de l'UTILISATEUR dans lequel Vaultaire tient
+// un bloc, et inscrit ce bloc — pas le fichier.
+//
+// # Pourquoi pas le fichier entier
+//
+// `.bashrc`, `.profile`, `~/.ssh/config` appartiennent à la personne. La
+// politique n'y demande qu'une chose : que SON bloc y soit, tel qu'elle l'a
+// écrit. Hacher le fichier ferait de chaque alias ajouté par l'utilisateur une
+// dérive, corrigée — c'est-à-dire réécrite — à la connexion suivante, et la vue
+// de conformité se remplirait de comptes « en écart » parce qu'ils se servent
+// de leur shell.
+//
+// Ce qui est inscrit est donc une ATTENTE (CheckFileBlock) sur le contenu du
+// bloc : la retirer ou la modifier est un écart, tout le reste du fichier est
+// hors du champ. Un bloc que le contenu écrit ne porte pas — parce que la
+// politique le retire — s'inscrit comme devant rester absent.
+func writeUserBlock(ctx Context, path, content string, mode os.FileMode, bloc string) error {
+	uid, gid, err := idsDuCompte(ctx)
+	if err != nil {
+		return err
+	}
+	path = filepath.Clean(path)
+	if err := ecrireFichierUtilisateur(ctx.HomeDir, path, content, mode, uid, gid); err != nil {
+		return err
+	}
+	inscrireBloc(ctx, path, content, bloc)
 	return nil
+}
+
+// removeUserBlock retire le fichier où le bloc était SEUL, et inscrit que ce
+// bloc doit rester absent.
+//
+// Ce n'est pas « ce fichier ne doit pas exister » : la politique ne demande que
+// l'absence de son bloc, et la personne peut créer demain son propre fichier
+// sans que ce soit un écart.
+func removeUserBlock(ctx Context, path, bloc string) error {
+	uid, _, err := idsDuCompte(ctx)
+	if err != nil {
+		return err
+	}
+	path = filepath.Clean(path)
+	if _, err := retirerSousHome(ctx.HomeDir, path, uid); err != nil {
+		return err
+	}
+	inscrireBloc(ctx, path, "", bloc)
+	return nil
+}
+
+// inscrireBloc déclare ce que le bloc doit être, d'après ce qui vient d'être
+// écrit.
+//
+// L'attente est tirée du CONTENU ÉCRIT, par la même extraction que celle du
+// vérificateur : il est impossible que l'un cherche autre chose que ce que
+// l'autre a posé.
+//
+// Le nom du compte voyage dans l'attente. Le vérificateur en a besoin pour
+// relire le fichier par la descente sûre — qui exige le `HOME` et l'uid —, et
+// il ne reçoit rien d'autre que l'attente.
+func inscrireBloc(ctx Context, chemin, contenu, bloc string) {
+	debut, fin, ok := marqueursDuBloc(bloc)
+	if !ok {
+		return
+	}
+	attendu := "compte=" + ctx.Username
+	if corps, present := extraireBloc(contenu, debut, fin); present {
+		attendu += ",sha256=" + hacherBloc(corps)
+	} else {
+		attendu += ",etat=absent"
+	}
+	ctx.recordCheck(CheckFileBlock, chemin+separateurBloc+bloc, attendu)
 }
 
 // shellQuote protège une valeur destinée à un fichier sourcé par le shell.

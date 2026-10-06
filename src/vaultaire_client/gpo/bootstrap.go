@@ -49,9 +49,18 @@ func Bootstrap() {
 // Les séparer imposerait de dupliquer l'attente de session, avec le risque que
 // l'un des deux dérive de l'autre.
 //
-// La demande d'ordres en attente part dans une goroutine : elle attend la
-// session, et Bootstrap doit rendre la main tout de suite pour que le tunnel
-// puisse justement s'établir.
+// # Les ordres en attente : réclamés à chaque tunnel rétabli — TO-DO 134
+//
+// Ce bloc lançait UNE goroutine, qui attendait la session puis envoyait UNE
+// demande 06_04. Les commentaires du paquet `revocation` promettaient « à
+// chaque démarrage et à chaque reconnexion » : seule la première moitié était
+// vraie, et un ordre émis pendant une coupure attendait le redémarrage du
+// service. La surveillance réclame au démarrage, à chaque session neuve, puis
+// périodiquement — voir revocation/rattrapage.go.
+//
+// Elle part dans sa propre goroutine : elle scrute la session, et Bootstrap
+// doit rendre la main tout de suite pour que le tunnel puisse justement
+// s'établir.
 func bootstrapRevocation() {
 	revocation.Configure(func(trame string) {
 		session, err := stosession.SessionsUser.WaitForVaultaireSession()
@@ -63,19 +72,11 @@ func bootstrapRevocation() {
 	})
 
 	go func() {
-		defer logs.Recover("bootstrap GPO")
-		// WaitForVaultaireSession bloque jusqu'à ce que le tunnel soit monté et
-		// authentifié : c'est exactement le moment où le serveur acceptera une
-		// demande 06_04.
-		session, err := stosession.SessionsUser.WaitForVaultaireSession()
-		if err != nil || session == nil || session.DuckySession == nil {
-			logs.Write_log("WARNING", "revocation: session indisponible, ordres en attente non reclames")
-			return
-		}
-		revocation.AskPending(string(session.DuckySession.SessionKey))
+		defer logs.Recover("surveillance des ordres de revocation")
+		revocation.SurveillerLesOrdres(CurrentSessionKey)
 	}()
 
-	logs.Write_log("INFO", "revocation: transport initialise, ordres en attente reclames")
+	logs.Write_log("INFO", "revocation: transport initialise, ordres en attente reclames a chaque tunnel retabli")
 }
 
 // CurrentSessionKey retourne la clé de la session mère vaultaire, ou "" si

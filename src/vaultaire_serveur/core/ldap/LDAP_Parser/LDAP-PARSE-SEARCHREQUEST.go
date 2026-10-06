@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"strings"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
-	"vaultaire/core/logs"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -300,8 +299,6 @@ func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error)
 			val = child.Data.String()
 		}
 
-		logs.Write_Log("DEBUG", fmt.Sprintf("extensibleMatch child tag=%d: value='%s'", child.Tag, val))
-
 		switch child.Tag {
 		case 0: // matchingRule [0] OBJECT IDENTIFIER
 			// OID for matching rule
@@ -324,8 +321,6 @@ func decodeExtensibleMatchFilter(p *ber.Packet) (*ldapstorage.LDAPFilter, error)
 
 	filter.Attribute = attribute
 	filter.Value = matchValue
-
-	logs.Write_Log("DEBUG", fmt.Sprintf("Decoded extensibleMatch: attribute=%s, value=%s", attribute, matchValue))
 
 	return filter, nil
 }

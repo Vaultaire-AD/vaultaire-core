@@ -156,7 +156,7 @@ func TestLOrdreEstReproductible(t *testing.T) {
 // TestLaPrioritePrimeSurLeNomMaisPasSurLeRole : l'ordre des trois critères.
 func TestLaPrioritePrimeSurLeNomMaisPasSurLeRole(t *testing.T) {
 	noeuds := []clusterstorage.Node{
-		noeud("aaa-core", "core", 1),  // priorité forte, mais core
+		noeud("aaa-core", "core", 1),   // priorité forte, mais core
 		noeud("zzz-proxy", "proxy", 9), // priorité faible, mais proxy
 	}
 	TrierNoeudsPourAgents(noeuds)

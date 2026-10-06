@@ -164,11 +164,18 @@ if [ "$DO_DOWNLOAD" -eq 1 ]; then
         echo "==> Téléchargement depuis $DL/$TAG"
         "${CURL[@]}" -o "$TMP/SHA256SUMS" "$DL/$TAG/SHA256SUMS" \
             || { echo "ERREUR : release $TAG introuvable ou incomplète." >&2; exit 1; }
+        # La release peut contenir plus d'archives que la pré-prod n'en installe
+        # (vaultaire_nexus, par exemple). On ne vérifie donc que les lignes des
+        # archives téléchargées — mais CHACUNE doit y figurer : une archive
+        # absente de SHA256SUMS n'est pas vérifiée, donc pas installée.
+        : > "$TMP/SHA256SUMS.pre-prod"
         for c in $COMPOSANTS; do
             f="${c}-${TAG}-linux-amd64.tar.gz"
             "${CURL[@]}" -o "$TMP/$f" "$DL/$TAG/$f"
+            grep -E "^[0-9a-f]{64}[[:space:]]+\*?${f}\$" "$TMP/SHA256SUMS" >> "$TMP/SHA256SUMS.pre-prod" \
+                || { echo "ERREUR : $f absent de SHA256SUMS — rien n'a été installé." >&2; exit 1; }
         done
-        (cd "$TMP" && sha256sum --quiet -c SHA256SUMS) \
+        (cd "$TMP" && sha256sum --quiet -c SHA256SUMS.pre-prod) \
             || { echo "ERREUR : somme de contrôle invalide — rien n'a été installé." >&2; exit 1; }
 
         echo "==> git checkout $TAG"

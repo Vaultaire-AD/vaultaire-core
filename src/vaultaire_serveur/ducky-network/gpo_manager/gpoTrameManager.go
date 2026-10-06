@@ -7,6 +7,7 @@ import (
 
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
 )
 
@@ -20,6 +21,10 @@ import (
 //	05_09 demande fragment → 05_10 fragment  / 05_11 erreur           (2 scopes)
 //	05_12 rapport          → 05_13 accusé    / 05_14 erreur           (2 scopes)
 //	05_15 conformité       → 05_16 accusé    / 05_17 erreur           (2 scopes)
+//
+//	05_18 « rafraîchis maintenant » — la SEULE trame 05 émise par le serveur de
+//	      lui-même, et elle ne transporte aucune politique : elle fait repartir
+//	      le client sur une 05_01 ordinaire (voir rafraichissement.go).
 //
 // Chaque demande est suivie de ses réponses : le numéro de trame porte le scope
 // pour tout ce qui est spécifique à un scope, le scope ne voyage dans le contenu
@@ -70,8 +75,9 @@ func GPO_Trame_Manager(trames storage.Trames_struct_client, duckysession *storag
 	case "15":
 		return handleDriftReport(trames)
 	default:
-		// 05_02, 03, 04, 06, 07, 08, 10, 11, 13, 14, 16 et 17 sont des trames
-		// serveur → client : les recevoir signale un client mal implémenté.
+		// 05_02, 03, 04, 06, 07, 08, 10, 11, 13, 14, 16, 17 et 18 sont des
+		// trames serveur → client : les recevoir signale un client mal
+		// implémenté.
 		logs.Write_LogCode("WARNING", logs.CodeGPOTransport, fmt.Sprintf(
 			"gpo: sous-ordre 05_%s inattendu en réception serveur (client %s)", sub, trames.ClientSoftwareID))
 		return ""
@@ -89,12 +95,96 @@ func reply(action, sessionKey string, contentLines ...string) string {
 	return strings.Join(parts, "\n")
 }
 
+// PrefixeCadence ouvre la ligne de cadence des réponses machine (05_02, 05_03).
+//
+// # Pourquoi la cadence voyage avec la politique
+//
+// `gpo_refresh_minutes` est un réglage du core, mais la boucle qu'il pilote
+// tourne sur l'AGENT — exactement le cas de `group_sync_minutes` et de la trame
+// 03_09, dont ceci reprend la recette.
+//
+// Une constante côté agent aurait laissé deux valeurs à tenir d'accord, dont
+// une invisible depuis l'interface : un réglage qui s'affiche sans rien changer
+// au comportement est plus trompeur que pas de réglage du tout.
+//
+// La ligne est AJOUTÉE EN QUEUE et reconnue à son PRÉFIXE, jamais à son rang.
+// Un agent resté à l'ancienne version lit les champs qu'il connaît et ignore
+// celui-ci ; un core ancien ne l'envoie pas, et l'agent garde son défaut. Même
+// arbitrage que le port et l'empreinte dans 04_01.
+const PrefixeCadence = "refresh:"
+
+// ligneCadence rend « refresh:<minutes> », ou une chaîne vide si la cadence est
+// aberrante — auquel cas l'agent garde la sienne, ce qui vaut mieux que de lui
+// faire appliquer un zéro.
+func ligneCadence() string {
+	minutes := reglages.Valeur(reglages.CleRafraichissementGPO)
+	if minutes <= 0 {
+		return ""
+	}
+	return PrefixeCadence + strconv.Itoa(minutes)
+}
+
+// PrefixeVerifUtilisateur ouvre la ligne qui annonce la cadence de vérification
+// du scope UTILISATEUR — TO-DO 142. Doit rester identique à
+// `gpo.PrefixeVerifUtilisateur` de l'agent : rien ne les lie à la compilation.
+//
+// # Pourquoi elle part dans les QUATRE réponses
+//
+// Dans 05_02 et 05_03, pour que l'agent la connaisse dès son premier cycle
+// machine — avant qu'une seule personne ne se soit connectée. Dans 05_06 et
+// 05_07, pour qu'un réglage modifié atteigne le poste à la connexion suivante,
+// au lieu d'attendre le tour de la machine, qui peut être dans une heure.
+//
+// Même recette que les autres lignes de queue : reconnue à son préfixe, jamais
+// à son rang ; un agent ancien l'ignore, un core ancien ne l'envoie pas et
+// l'agent garde son défaut.
+const PrefixeVerifUtilisateur = "usercheck:"
+
+// ligneVerifUtilisateur rend « usercheck:<minutes> », ou une chaîne vide sur une
+// valeur aberrante — l'agent garde alors la sienne.
+func ligneVerifUtilisateur() string {
+	minutes := reglages.Valeur(reglages.CleVerifGPOUtilisateur)
+	if minutes <= 0 {
+		return ""
+	}
+	return PrefixeVerifUtilisateur + strconv.Itoa(minutes)
+}
+
+// avecVerifUtilisateur ajoute la cadence de vérification utilisateur.
+func avecVerifUtilisateur(lignes []string) []string {
+	if c := ligneVerifUtilisateur(); c != "" {
+		return append(lignes, c)
+	}
+	return lignes
+}
+
+// avecCadence ajoute les lignes de cadence aux lignes d'une réponse MACHINE.
+//
+// Celle de la boucle machine (`refresh:`) ne part QUE là : un cycle utilisateur
+// est déclenché par une ouverture de session, pas par une boucle. Celle de la
+// vérification utilisateur (`usercheck:`) la suit, et part aussi dans les
+// réponses du scope utilisateur — voir PrefixeVerifUtilisateur.
+func avecCadence(lignes []string) []string {
+	if c := ligneCadence(); c != "" {
+		lignes = append(lignes, c)
+	}
+	return avecVerifUtilisateur(lignes)
+}
+
 // replyManifest construit 05_02 (machine) ou 05_06 (user).
 //
 // Le scope n'apparaît pas dans le contenu : il est porté par le numéro de trame.
 // L'utilisateur cible, en revanche, est repris en scope user, parce que plusieurs
 // connexions peuvent être en cours sur la même machine.
-func replyManifest(sessionKey string, m gpo.Manifest) string {
+//
+// # Les lignes de queue
+//
+// La cadence (`refresh:`) ne part qu'en scope machine — un cycle utilisateur
+// n'a pas de boucle à régler. La cadence de vérification utilisateur
+// (`usercheck:`), la signature (`sig:`) et l'exigence (`sigreq:`), elles,
+// partent dans les DEUX scopes : une politique utilisateur se signe comme une
+// autre, et c'est même celle dont le contenu atterrit dans un `HOME`.
+func replyManifest(sessionKey, clientID string, m gpo.Manifest) string {
 	common := []string{
 		strconv.Itoa(m.Version),
 		m.Fingerprint,
@@ -104,17 +194,25 @@ func replyManifest(sessionKey string, m gpo.Manifest) string {
 		m.Checksum,
 	}
 	if m.Scope == gpo.ScopeUser {
-		return reply("05_06", sessionKey, append([]string{m.Username}, common...)...)
+		lignes := avecVerifUtilisateur(append([]string{m.Username}, common...))
+		return reply("05_06", sessionKey, append(lignes, lignesSignature(clientID, m)...)...)
 	}
-	return reply("05_02", sessionKey, common...)
+	return reply("05_02", sessionKey,
+		append(avecCadence(common), lignesSignature(clientID, m)...)...)
 }
 
 // replyUnchanged construit 05_03 (machine) ou 05_07 (user).
 func replyUnchanged(sessionKey string, scope gpo.Scope, username, fingerprint string) string {
 	if scope == gpo.ScopeUser {
-		return reply("05_07", sessionKey, username, fingerprint)
+		// « Rien à faire » est la réponse de presque toutes les connexions :
+		// c'est par elle qu'un réglage modifié atteint un poste dont la
+		// politique ne bouge pas.
+		return reply("05_07", sessionKey, avecVerifUtilisateur([]string{username, fingerprint})...)
 	}
-	return reply("05_03", sessionKey, fingerprint)
+	// 05_03 dit « rien à faire » — et c'est justement le cas le plus fréquent,
+	// donc le seul chemin par lequel une cadence modifiée atteindra un parc
+	// dont la politique ne bouge pas.
+	return reply("05_03", sessionKey, avecCadence([]string{fingerprint})...)
 }
 
 // replyScopeError construit 05_04 (machine) ou 05_08 (user).

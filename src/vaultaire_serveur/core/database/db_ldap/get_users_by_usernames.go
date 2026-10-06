@@ -69,6 +69,8 @@ func GetUsersByUsernames(db *sql.DB, usernames []string) (map[string]ldapstorage
 				u.lastname,
 				u.email,
 				u.created_at,
+				u.updated_at,
+				COALESCE(u.entry_uuid, ''),
 				MIN(dg.domain_name) AS domain_name
 			FROM users u
 			JOIN users_group ug ON u.id_user = ug.d_id_user
@@ -84,7 +86,8 @@ func GetUsersByUsernames(db *sql.DB, usernames []string) (map[string]ldapstorage
 		for rows.Next() {
 			var user ldapstorage.User
 			if err := rows.Scan(&user.ID, &user.Username, &user.Firstname,
-				&user.Lastname, &user.Email, &user.Created_at, &user.GroupDomain); err != nil {
+				&user.Lastname, &user.Email, &user.Created_at, &user.Modified_at,
+				&user.EntryUUID, &user.GroupDomain); err != nil {
 				rows.Close()
 				return nil, fmt.Errorf("lecture d'une ligne utilisateur : %w", err)
 			}

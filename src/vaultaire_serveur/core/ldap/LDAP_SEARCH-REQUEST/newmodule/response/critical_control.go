@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"net"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 
 	ber "github.com/go-asn1-ber/asn1-ber"
 )
@@ -31,6 +32,7 @@ const LDAPResultUnavailableCriticalExtension = 12
 // par les clients pour un refus général et c'est déjà ce qu'emploie le reste du
 // paquet.
 func SendUnavailableCriticalExtension(conn net.Conn, messageID int, controlType string) error {
+	ldapjournal.Resultat(conn, messageID, LDAPResultUnavailableCriticalExtension)
 	resultDone := ber.Encode(ber.ClassApplication, ber.TypeConstructed, 5, nil, "SearchResultDone")
 	resultDone.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated,
 		LDAPResultUnavailableCriticalExtension, "resultCode"))

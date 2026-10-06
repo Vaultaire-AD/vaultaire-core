@@ -1,6 +1,10 @@
 package candidate
 
-import "testing"
+import (
+	"testing"
+
+	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
+)
 
 // TestRootDSENAnnonceQueCeQuiExiste.
 //
@@ -13,9 +17,26 @@ import "testing"
 func TestRootDSENAnnonceQueCeQuiExiste(t *testing.T) {
 	dse := NewRootDSE()
 
-	if len(dse.SupportedControl) != 0 {
-		t.Errorf("SupportedControl = %v : aucun contrôle n'est traité, "+
-			"les contrôles reçus sont refusés s'ils sont critiques", dse.SupportedControl)
+	// Les contrôles annoncés sont EXACTEMENT ceux que le dispatcheur traite : la
+	// liste est la même variable (point 130). La pagination a été annoncée sans
+	// être traitée, et un client qui pagine bouclait alors sur la même page.
+	if len(dse.SupportedControl) != len(ldapstorage.ControlesGeres) {
+		t.Fatalf("SupportedControl = %v, ControlesGeres = %v : annonce et traitement divergent",
+			dse.SupportedControl, ldapstorage.ControlesGeres)
+	}
+	for i, oid := range ldapstorage.ControlesGeres {
+		if dse.SupportedControl[i] != oid {
+			t.Errorf("SupportedControl[%d] = %q, ControlesGeres[%d] = %q", i, dse.SupportedControl[i], i, oid)
+		}
+	}
+	if len(dse.SupportedControl) != 1 || dse.SupportedControl[0] != "1.2.840.113556.1.4.319" {
+		t.Errorf("SupportedControl = %v : seule la pagination est implémentée. Un contrôle de plus "+
+			"s'ajoute ici AVEC son traitement, dans le même commit", dse.SupportedControl)
+	}
+	// Modifier ce que rend NewRootDSE ne doit pas abîmer la liste du dispatcheur.
+	dse.SupportedControl[0] = "altéré"
+	if ldapstorage.ControlesGeres[0] != ldapstorage.OIDPagedResults {
+		t.Error("le RootDSE partage son tableau avec ControlesGeres : le modifier change ce que le serveur accepte")
 	}
 	if len(dse.SupportedExtension) != 0 {
 		t.Errorf("SupportedExtension = %v : StartTLS n'est pas implémenté, "+

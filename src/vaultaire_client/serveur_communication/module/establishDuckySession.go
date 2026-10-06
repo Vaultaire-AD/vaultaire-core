@@ -9,7 +9,6 @@ import (
 	"duckynetworkclient/V1/sessionmgr"
 	"fmt"
 	"net"
-	"strconv"
 	"time"
 	"vaultaire_client/config"
 )
@@ -25,11 +24,12 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 	// distribuée est vide, fausse, ou pointe sur des nœuds tous éteints — et il
 	// faudrait repasser à la main sur les machines, c'est-à-dire exactement ce
 	// que la découverte existe pour éviter.
-	statiques := make([]string, 0, len(config.GetServers()))
-	for _, s := range config.GetServers() {
-		statiques = append(statiques, s.IP+":"+strconv.Itoa(s.Port))
-	}
-	adresses := decouverte.FusionnerAdresses(statiques)
+	//
+	// « Statiques » s'entend depuis la 2.2 comme « du fichier » : la liste
+	// apprise PERSISTÉE (`learned`, TO-DO 61) puis celle de l'installation.
+	// Après un redémarrage, la mémoire est vide et c'est `learned` qui tient
+	// lieu de liste apprise.
+	adresses := decouverte.FusionnerAdresses(config.AdressesConnues())
 	if len(adresses) == 0 {
 		return nil, fmt.Errorf("aucun serveur configuré ni découvert")
 	}
@@ -100,9 +100,13 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 		userauth.AskAuthentification(user, pass, ds)
 		// Tout est OK
 		logs.Write_log("INFO", "Connexion Vaultaire établie sur "+serverAddr)
+		noterSucces(serverAddr, adresses)
 		return ds, nil
 	}
 
+	if lastErr != nil {
+		noterEchec("tous les nœuds", lastErr)
+	}
 	return nil, fmt.Errorf(
 		"aucun serveur Vaultaire disponible : %v",
 		lastErr,

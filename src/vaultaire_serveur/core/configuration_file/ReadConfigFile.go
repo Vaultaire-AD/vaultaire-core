@@ -1,8 +1,11 @@
 package configuration_file
 
 import (
+	"fmt"
 	"os"
+	"sort"
 	"vaultaire/core/auth/ratelimit"
+	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 
@@ -26,25 +29,44 @@ func ReadConfigUser[T any](filePath string) (*T, error) {
 	return &config, nil
 }
 
+// ErreurDeValeur : le fichier a été trouvé et lu, mais une valeur qu'il porte
+// est refusée.
+//
+// Un type à part pour que l'appelant ne confonde pas ce cas avec un fichier
+// introuvable : le message de `ErreurConfigIntrouvable` propose de recopier le
+// fichier de référence, ce qui écraserait une configuration dont une seule
+// ligne est à corriger.
+type ErreurDeValeur struct {
+	Cause error
+}
+
+func (e *ErreurDeValeur) Error() string { return e.Cause.Error() }
+func (e *ErreurDeValeur) Unwrap() error { return e.Cause }
+
 func LoadConfig(filePath string) error {
-	// Ouvrir le fichier
-	file, err := os.Open(filePath)
+	// Le fichier est lu EN ENTIER puis décodé, au lieu d'être décodé au fil de
+	// l'ouverture.
+	//
+	// C'est ce qui permet d'inspecter son TEXTE avant décodage — et il faut
+	// l'inspecter : une clé qu'aucune étiquette ne réclame ne laisse aucune
+	// trace après décodage, par construction. C'est exactement ce qui a rendu la
+	// section « administreur: » invisible pendant toute la vie du produit
+	// (TO-DO 99, voir SignalerCleMalOrthographiee).
+	contenu, err := os.ReadFile(filePath)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if err := file.Close(); err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeFileConfig, "config: file close failed: "+err.Error())
-		}
-	}()
+
+	if err := SignalerCleMalOrthographiee(contenu); err != nil {
+		logs.Write_LogCode("CRITICAL", logs.CodeFileConfig, "config: "+err.Error())
+		return err
+	}
 
 	// Initialiser une variable pour stocker les données du fichier
 	var config storage.Config
 
 	// Décoder le fichier YAML dans la structure Config
-	decoder := yaml.NewDecoder(file)
-	err = decoder.Decode(&config)
-	if err != nil {
+	if err := yaml.Unmarshal(contenu, &config); err != nil {
 		return err
 	}
 
@@ -104,6 +126,32 @@ func LoadConfig(filePath string) error {
 	}
 	// Les SAN sont recopiés même vides : une liste vidée dans le fichier doit
 	// pouvoir revenir à la seule détection automatique.
+	// Second facteur au bind LDAP : exigé sauf réglage contraire explicite.
+	ldapstorage.MFABypass = config.Ldap.Ldap_MFA_Bypass != nil && *config.Ldap.Ldap_MFA_Bypass
+	if ldapstorage.MFABypass {
+		logs.Write_Log("WARNING", "ldap.mfa_bypass activé : les comptes soumis au second facteur se lient par LDAP sans code")
+	}
+	// Élargissement des recherches `one` : refusé sauf réglage contraire explicite.
+	ldapstorage.OneLevelSubtree = config.Ldap.Ldap_OneLevel_Subtree != nil && *config.Ldap.Ldap_OneLevel_Subtree
+	if ldapstorage.OneLevelSubtree {
+		logs.Write_Log("WARNING", "ldap.onelevel_subtree activé : TOUTE recherche « one » rend l'arborescence, quel que soit le conteneur")
+	}
+	// Bind avec mot de passe hors TLS : accepté sauf réglage contraire explicite
+	// (TO-DO 152). Le commentaire de la variable disait « à activer une fois
+	// vérifié que le parc sait faire du LDAPS » ; rien ne permettait de le faire
+	// sans recompiler.
+	ldapstorage.RequireTLSForBind = config.Ldap.Ldap_Require_TLS_For_Bind != nil && *config.Ldap.Ldap_Require_TLS_For_Bind
+	if ldapstorage.RequireTLSForBind {
+		logs.Write_Log("INFO", "ldap.require_tls_for_bind activé : un bind avec mot de passe sur le port en clair est refusé (strongerAuthRequired)")
+	}
+	// Bornes de recherche et de pagination. Une valeur refusée ARRÊTE le
+	// démarrage : voir ldapstorage.AppliquerLimites pour le pourquoi.
+	if err := ldapstorage.AppliquerLimites(config.Ldap.Ldap_Limites); err != nil {
+		return &ErreurDeValeur{Cause: err}
+	}
+	if len(config.Ldap.Ldap_Limites) > 0 {
+		logs.Write_Log("INFO", "ldap.limites : bornes en vigueur — "+ldapstorage.LimitesEnVigueur())
+	}
 	storage.Ldaps_TLS_DNSNames = config.Ldap.Ldaps_TLS_DNSNames
 	storage.Ldaps_TLS_IPs = config.Ldap.Ldaps_TLS_IPs
 	if config.Website.Website_Enable != nil {
@@ -127,8 +175,26 @@ func LoadConfig(filePath string) error {
 	if config.Api.API_Port != nil {
 		storage.API_Port = *config.Api.API_Port
 	}
+	// Refusées plutôt que corrigées : une limite à zéro ou négative ne veut
+	// rien dire, et la ramener en silence à une valeur choisie ici ferait
+	// tourner le core sur un barème que personne n'a écrit.
+	if v := config.Api.API_Limite_Rafale; v != nil {
+		if *v < 1 {
+			return &ErreurDeValeur{Cause: fmt.Errorf("api.limite_rafale vaut %d : un entier d'au moins 1 est attendu", *v)}
+		}
+		storage.API_Limite_Rafale = *v
+	}
+	if v := config.Api.API_Limite_Par_Seconde; v != nil {
+		if *v <= 0 {
+			return &ErreurDeValeur{Cause: fmt.Errorf("api.limite_par_seconde vaut %g : un nombre strictement positif est attendu", *v)}
+		}
+		storage.API_Limite_Par_Seconde = *v
+	}
 	if config.Debug.Debug != nil {
 		storage.Debug = *config.Debug.Debug
+	}
+	if err := appliquerDetail(config.Debug.Detail); err != nil {
+		return &ErreurDeValeur{Cause: err}
 	}
 	// servercheckonlinetimer a quitté le fichier pour la base.
 	//
@@ -165,5 +231,54 @@ func LoadConfig(filePath string) error {
 	}
 
 	// Retourner la configuration lue
+	return nil
+}
+
+// appliquerDetail règle le détail du journal par sous-système — section
+// `debug.detail` (TO-DO 145).
+//
+// Un sous-système ou un niveau inconnu est une ERREUR, pas une ligne ignorée.
+// On écrit cette section pour diagnostiquer : une faute de frappe laisserait le
+// détail éteint, et l'on chercherait pendant une heure pourquoi la panne
+// n'écrit rien.
+//
+// Les réglages sont posés tous ensemble ou pas du tout, et un sous-système
+// absent de la section revient à son état d'origine : la configuration décrit
+// l'état voulu, elle ne s'ajoute pas à ce qu'une commande aurait réglé avant.
+func appliquerDetail(detail map[string]string) error {
+	type reglage struct {
+		sous   logs.SousSysteme
+		niveau logs.Detail
+		herite bool
+	}
+
+	noms := make([]string, 0, len(detail))
+	for nom := range detail {
+		noms = append(noms, nom)
+	}
+	sort.Strings(noms)
+
+	voulus := make([]reglage, 0, len(noms))
+	for _, nom := range noms {
+		sous, connu := logs.SousSystemeNomme(nom)
+		if !connu {
+			return fmt.Errorf("debug.detail.%s : sous-système inconnu (admis : %s)",
+				nom, logs.NomsDesSousSystemes())
+		}
+		niveau, herite, err := logs.LireDetail(detail[nom])
+		if err != nil {
+			return fmt.Errorf("debug.detail.%s : %w", nom, err)
+		}
+		voulus = append(voulus, reglage{sous, niveau, herite})
+	}
+
+	for _, s := range logs.SousSystemes() {
+		logs.LaisserDetail(s)
+	}
+	for _, r := range voulus {
+		if !r.herite {
+			logs.ReglerDetail(r.sous, r.niveau)
+		}
+	}
 	return nil
 }

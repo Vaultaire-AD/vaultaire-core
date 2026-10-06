@@ -1,7 +1,7 @@
 // Package commandcertificate gère les certificats TLS du serveur.
 //
 //	vlt certificate list
-//	vlt certificate show ldaps
+//	vlt certificate show ldaps|web|api
 //	vlt certificate regenerate ldaps|web|api|all [--dns nom1,nom2] [--ip 10.0.0.1,10.0.0.2]
 //
 // # Pourquoi le portail et l'API sont régénérables
@@ -359,7 +359,7 @@ func helpText() string {
 	return `Utilisation : vlt certificate <sous-commande>
 
   list                    certificats en base et ce qu'ils couvrent
-  show [ldaps]            détail, défauts constatés, et PEM à distribuer
+  show [ldaps|web|api]    détail, défauts constatés, et PEM à distribuer
   fingerprint             empreinte de la clé du core, attendue par les agents
   regenerate <cible>      régénère un certificat et le remplace en base
       ldaps               écouteur LDAPS

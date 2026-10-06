@@ -222,7 +222,7 @@
     </section>
 
     <section class="section">
-      <form method="post" action="/admin/groups?group={{ .Group }}" onsubmit="return confirm('Supprimer ce groupe ?');">
+      <form method="post" action="/admin/groups?group={{ .Group }}" data-confirm="Supprimer ce groupe ?">
         <input type="hidden" name="action" value="delete_group">
         <input type="hidden" name="target_group" value="{{ .Group }}">
         <button type="submit" class="btn btn-danger">Supprimer le groupe</button>

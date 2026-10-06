@@ -111,18 +111,41 @@ Restart=on-failure
 WantedBy=multi-user.target
 EOF
 
-# 4. Configuration JSON du client
+# 4. Configuration JSON du client : la liste des cores
+#
+# Le core qui installe dépose client_conf.json à côté des clés : TOUS les cores
+# exposés du cluster, dans l'ordre où la découverte (04_04) les servirait. Ce
+# fichier était auparavant écrit ICI, avec une adresse fixe en dur.
+#
+# L'agent le complète ensuite lui-même (section « learned ») avec la liste
+# qu'il apprend du cluster, et n'en réécrit jamais la section « servers ».
+#
+# Repli, si le core n'a rien déposé (aucun core exposé et en ligne) : l'adresse
+# du core qui exécute ce script, lue dans SSH_CONNECTION, sur le port Ducky par
+# défaut. C'est au moins un nœud joignable depuis cette machine.
 log_info "Écriture du fichier de configuration client..."
-cat > /etc/vaultaire_client/client_conf.json <<'EOF'
+if [[ -f /opt/vaultaire/client_conf.json ]]; then
+    mv -f /opt/vaultaire/client_conf.json /etc/vaultaire_client/client_conf.json
+    log_info "Liste des cores reçue du core : $(grep -c '"ip"' /etc/vaultaire_client/client_conf.json) core(s)."
+else
+    CORE_IP="${SSH_CONNECTION%% *}"
+    if [[ -z "$CORE_IP" ]]; then
+        echo -e "\033[1;31m[ERREUR]\033[0m Aucune liste de cores reçue et SSH_CONNECTION vide : adresse du core inconnue." >&2
+        exit 1
+    fi
+    log_warn "Aucune liste de cores reçue : repli sur le core qui installe (${CORE_IP}:6666)."
+    cat > /etc/vaultaire_client/client_conf.json <<EOF
 {
-  "servers": [
-    {
-      "ip": "192.168.30.3",
-      "port": 6666
-    }
-  ]
+    "servers": [
+        {
+            "ip": "${CORE_IP}",
+            "port": 6666
+        }
+    ]
 }
 EOF
+fi
+chmod 600 /etc/vaultaire_client/client_conf.json
 
 # 4bis. Ancien repertoire de journaux
 #

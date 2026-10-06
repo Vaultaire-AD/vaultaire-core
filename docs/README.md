@@ -5,6 +5,14 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 ---
 
+## 🎓 Formation
+
+| Fichier | Contenu |
+| --- | --- |
+| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 10 chapitres, 31 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster |
+
+---
+
 ## 🛠 Installation
 
 | Fichier | Contenu |
@@ -12,6 +20,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | [`Installation/Requirements.md`](./Installation/Requirements.md) | Prérequis système, versions, dépendances |
 | [`Installation/Setup.md`](./Installation/Setup.md) | Installation complète : base de données, service systemd, configuration YAML, poste client |
 | [`Installation/Docker_Kubernetes.md`](./Installation/Docker_Kubernetes.md) | Déploiement conteneurisé |
+| [`Installation/Client_Windows.md`](./Installation/Client_Windows.md) | **Poste Windows (V1)** : identité de la machine, service, tuile de l'écran de connexion, compte local |
 
 ---
 
@@ -29,6 +38,15 @@ intégrateurs. Elle répond à « que taper » et « quel droit accorder », jam
 | [`Utilisation/Actions_et_Permissions.md`](./Utilisation/Actions_et_Permissions.md) | **Quel droit pour quelle opération** — la référence à consulter avant de déléguer |
 | [`Utilisation/vaultairectl.md`](./Utilisation/vaultairectl.md) | `vaultaire_ctl` — administration distante via l'API REST signée |
 | [`Utilisation/vaultaireLDAP.md`](./Utilisation/vaultaireLDAP.md) | Module LDAP : arborescence, filtres, intégrations |
+| [`Utilisation/DNS.md`](./Utilisation/DNS.md) | Commandes DNS : zones, enregistrements, PTR |
+
+---
+
+## 🔀 Proxy
+
+| Fichier | Contenu |
+| --- | --- |
+| [`proxy/README.md`](./proxy/README.md) | **Le proxy** : déploiement, relais (Ducky, HTTPS vers les Nexus, LDAPS ; LDAP en clair refusé), sécurité, dépannage |
 
 ---
 
@@ -53,12 +71,16 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Actions.md`](./Developement/how%20it%20work/Actions.md) | Le registre `core/action` : chemin d'une requête, portées, filtrage, **comment ajouter une action** |
 | [`Permissions_RBAC.md`](./Developement/how%20it%20work/Permissions_RBAC.md) | Modèle RBAC : clés, domaines, les trois portées, matrice d'administration |
 | [`Reglages_de_duree.md`](./Developement/how%20it%20work/Reglages_de_duree.md) | Comment une période de boucle est déclarée, lue et changée |
-| [`Protocole_Ducky.md`](./Developement/how%20it%20work/Protocole_Ducky.md) | Référence du protocole Ducky Network : toutes les trames `MM_SS` |
+| [`ducky-network/`](./Developement/how%20it%20work/ducky-network/README.md) | **Référence du protocole Ducky Network**, un chapitre par catégorie de trames (01 à 08 ; la `09` est réservée à la mise à jour du parc) |
+| [`Nouveau_service.md`](./Developement/how%20it%20work/Nouveau_service.md) | **Créer un nouveau service** : module, catalogue, raccordement, authentification, droits, build, déploiement |
 | [`Versions.md`](./Developement/how%20it%20work/Versions.md) | Comment chaque composant déclare sa version, et ce que le core en fait |
 | [`GPO.md`](./Developement/how%20it%20work/GPO.md) | Modèle déclaratif des GPO, catalogue des modules, restrictions, **ajouter un module** |
 | [`Base_de_donnees.md`](./Developement/how%20it%20work/Base_de_donnees.md) | Schéma de la base de données |
 | [`MFA_et_Expiration.md`](./Developement/how%20it%20work/MFA_et_Expiration.md) | Second facteur et expiration des mots de passe |
-| [`Journalisation.md`](./Developement/how%20it%20work/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi |
+| [`Journalisation.md`](./Developement/how%20it%20work/Journalisation.md) | Ce que le serveur journalise, à quel niveau, et pourquoi ; le détail par sous-système et le journal de l'annuaire |
+| [`Tests.md`](./Developement/how%20it%20work/Tests.md) | **Les tests** : comment les lancer, les deux familles, les tests-sentinelles, la suite `--test` |
+| [`Dependances.md`](./Developement/how%20it%20work/Dependances.md) | **De quoi Vaultaire dépend** : l'inventaire, à quoi chaque dépendance sert, et les divergences de version |
+| [`Pense-bete_developpement.md`](./Developement/how%20it%20work/Pense-bete_developpement.md) | **Les étapes à suivre** quand on ajoute une fonctionnalité — de l'entrée TO-DO au commit |
 
 > **Ce qui n'a pas sa place ici** : « comment déléguer un droit », « quelle
 > commande taper ». Cela relève de [`Utilisation/`](./Utilisation/). La règle est
@@ -74,6 +96,8 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | Fichier | Contenu |
 | --- | --- |
 | [`Developement/TO-DO.md`](./Developement/TO-DO.md) | Tâches ouvertes |
+| [`Developement/Mise_a_jour_du_parc.md`](./Developement/Mise_a_jour_du_parc.md) | **Mettre à jour le parc d'agents** : la stratégie arrêtée le 28/09, ses arbitrages et ce qui a été écarté (points 111 à 118) |
+| [`Developement/Audit_LDAP_2026-09-28.md`](./Developement/Audit_LDAP_2026-09-28.md) | **Audit LDAP du 28/09** : sécurité, fonctionnalités et compatibilité client par client (points 119 à 131) |
 | [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`) |
 
 > Une tâche validée est déplacée **à la main** de `TO-DO.md` vers
@@ -85,9 +109,13 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 
 | Fichier | Contenu |
 | --- | --- |
+| [`../src/vaultaire_nexus/README.md`](../src/vaultaire_nexus/README.md) | Nexus, le dépôt de paquets du parc : installation, dépôts RPM/Debian/Docker, releases, droits |
 | [`exploitation/Releases.md`](./exploitation/Releases.md) | Releases automatiques, numérotation, rétention, mise à jour de la préprod, purge de l'historique |
+| [`exploitation/Agent_configuration_et_debug.md`](./exploitation/Agent_configuration_et_debug.md) | Agent : liste des cores (installation, apprise, persistée) et rapport de debug `vlt_client-Debug.log` |
+| [`exploitation/Changement_de_version.md`](./exploitation/Changement_de_version.md) | Passer à la série suivante (2.1 → 2.2) : fichiers à modifier, documentation à clore et à ouvrir |
 | [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
 | [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |
+| [`exploitation/ldap_bornes.md`](./exploitation/ldap_bornes.md) | Bornes de recherche et de pagination de l'annuaire : les régler, ce qu'elles coûtent en mémoire, refuser le bind en clair |
 
 ---
 
@@ -107,7 +135,8 @@ version mineure, **du plus récent au plus ancien**.
 
 | Fichier | Contenu |
 | --- | --- |
-| [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Cycle 2.1 — refactorisation, et travaux non publiés |
+| [`Version/2.0/2.2.md`](./Version/2.0/2.2.md) | Cycle 2.2 — en cours, travaux non publiés |
+| [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Alpha 2.1.0 — refactorisation, releases automatiques |
 | [`Version/2.0/2.0.md`](./Version/2.0/2.0.md) | Alpha 2.0.0 « PIG » — les deux audits de sécurité |
 | [`Version/1.0/1.1.md`](./Version/1.0/1.1.md) | Cycle 1.1 — GPO, LDAP puis LDAPS, portail web, API |
 | [`Version/1.0/1.0.md`](./Version/1.0/1.0.md) | Cycle 1.0 « ROCKET » — premières versions |

@@ -21,7 +21,17 @@ import (
 // — ce qui est le comportement correct, et la raison pour laquelle la politique
 // est désactivée par défaut (durée 0).
 func backfillPasswordDates(db *sql.DB) error {
-	res, err := db.Exec(`UPDATE users SET password_changed_at = created_at
+	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
+	//
+	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
+	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
+	// et sur-synchroniser vaut mieux que manquer un changement.
+	//
+	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
+	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
+	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
+	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
+	res, err := db.Exec(`UPDATE users SET password_changed_at = created_at, updated_at = updated_at
 		WHERE password_changed_at IS NULL`)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,

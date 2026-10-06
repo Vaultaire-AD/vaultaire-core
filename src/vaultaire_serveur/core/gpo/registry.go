@@ -237,9 +237,13 @@ var baseCatalog = []ModuleSchema{
 			{Name: "content", Label: "Contenu", Type: FieldText, MaxLen: 262144},
 			{Name: "mode", Label: "Permissions", Type: FieldMode, Required: true, Default: "0644",
 				Help: "Notation octale à 3 chiffres. Les bits setuid/setgid ne sont pas exprimables."},
-			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32,
-				Help: "Laisser vide pour root en scope machine, pour l'utilisateur cible en scope user."},
-			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32},
+			// Propriétaire et groupe n'existent qu'en scope MACHINE. En scope
+			// user, le propriétaire est l'utilisateur cible et l'agent le pose
+			// lui-même (writeUserFile) : le champ ne changeait rien, et
+			// affichait le contraire.
+			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32, Scope: ScopeMachine,
+				Help: "Laisser vide pour root."},
+			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32, Scope: ScopeMachine},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present"},
 		},
@@ -255,8 +259,9 @@ var baseCatalog = []ModuleSchema{
 			{Name: "path", Label: "Chemin", Type: FieldPath, Required: true, MaxLen: 512,
 				Help: "Scope machine : chemin absolu hors zones refusées. Scope user : " + userHomePlaceholder + "/chemin/relatif."},
 			{Name: "mode", Label: "Permissions", Type: FieldMode, Required: true, Default: "0755"},
-			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32},
-			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32},
+			// Scope machine seulement — voir file_deploy.
+			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32, Scope: ScopeMachine},
+			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32, Scope: ScopeMachine},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present",
 				Help: "« absent » ne supprime qu'un répertoire vide : effacer récursivement depuis une GPO transformerait une faute de frappe en perte de données."},
@@ -274,8 +279,9 @@ var baseCatalog = []ModuleSchema{
 			{Name: "content", Label: "Contenu", Type: FieldText, MaxLen: 262144,
 				Help: "Marqueurs disponibles : {{hostname}}, {{fqdn}}, {{username}}, {{domain}}. Un marqueur inconnu est laissé tel quel plutôt que remplacé par du vide — une substitution silencieuse produirait un fichier syntaxiquement correct mais faux."},
 			{Name: "mode", Label: "Permissions", Type: FieldMode, Required: true, Default: "0644"},
-			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32},
-			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32},
+			// Scope machine seulement — voir file_deploy.
+			{Name: "owner", Label: "Propriétaire", Type: FieldIdent, MaxLen: 32, Scope: ScopeMachine},
+			{Name: "group", Label: "Groupe", Type: FieldIdent, MaxLen: 32, Scope: ScopeMachine},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present"},
 		},

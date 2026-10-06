@@ -79,8 +79,14 @@ Ou localement :
 
 > ⚠️ La configuration de référence
 > [`deployments/configs/serveur_conf.yaml`](../../deployments/configs/serveur_conf.yaml)
-> contient des identifiants de démonstration (`root`/`root`, `admin`/`admin123`).
-> Ils doivent être changés avant toute exposition, y compris en préproduction.
+> ne porte que des marqueurs `CHANGEZ_MOI`, et **le core refuse de démarrer tant
+> qu'ils y sont** (TO-DO 99). Posez de vraies valeurs dans le fichier, ou les
+> variables `VAULTAIRE_ADMIN_PASSWORD` et `VAULTAIRE_DB_PASSWORD` — c'est ce que
+> font les trois piles de `deployments/`.
+>
+> Le mot de passe d'amorçage doit tenir la règle de robustesse (12 caractères par
+> défaut) et il est **provisoire** : le portail en demandera un autre à la
+> première connexion.
 
 ---
 
@@ -89,3 +95,11 @@ Ou localement :
 Non fourni. Les éléments nécessaires existent — image sans état, configuration
 par fichier YAML et variables d'environnement, sondes possibles sur les ports
 HTTP — mais aucun manifeste, chart ou opérateur n'est maintenu ici.
+
+
+## Pile compilée localement — `deployments/dev-comp/`
+
+Pour tester une version **non publiée** (branche, modifications non commitées) :
+`./deployments/dev-comp/dev-comp.sh` compile le dépôt dans un conteneur Rocky 9
+(même recette que la CI), puis démarre la pile de préprod avec ces binaires.
+Détail : [`deployments/dev-comp/README.md`](../../deployments/dev-comp/README.md).

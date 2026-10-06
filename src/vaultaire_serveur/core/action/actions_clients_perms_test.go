@@ -18,6 +18,9 @@ func TestActionsClientToutesEnregistrees(t *testing.T) {
 
 	attendues := map[string]string{
 		"client.create": "write:create:client",
+		// Même clé que la création : l'archive contient exactement ce que la
+		// création produit — identité et clé privée.
+		"client.export": "write:create:client",
 		"client.update": "write:update:client",
 		"client.delete": "write:delete:client",
 	}
@@ -309,21 +312,28 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// Le compte attendu couvre les écritures ET les lectures.
 	//
 	// Il valait 37 — le total des seules écritures, à l'époque où le registre ne
-	// portait qu'elles. Les lots de lecture (utilisateur, groupe, client,
-	// permission, GPO, état de session, arborescence, cluster, certificats, DNS,
-	// enrôlement) l'ont porté à 80, et ce chiffre-ci n'avait pas suivi.
-	//
-	// Personne ne l'a vu parce que ce paquet ne compilait pas : le test n'avait
-	// pas tourné depuis. Un compte figé qu'aucune exécution ne confronte au
-	// catalogue ne surveille rien du tout.
+	// portait qu'elles — puis 80 quand les lots de lecture sont arrivés.
+	// Il vaut 89 depuis les lots 2.1/2.2 (conformité GPO, réglages de rétention,
+	// cluster, Nexus), 91 depuis log.list (journal commun, TO-DO 91), 96
+	// depuis le second facteur sur le chemin Ducky (TO-DO 95, deux actions), et
+	// 97 depuis l'archive d'installation d'une machine (TO-DO 82), 98 depuis
+	// la lecture du détail du journal, `server.get_debug` (TO-DO 145), et 102
+	// depuis le pilotage des relais d'un proxy (TO-DO 141, quatre actions).
 	//
 	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
 	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
 	// disparu de EnregistrerTout ne ferait que le faire baisser en silence.
-	const actionsAttendues = 80
+	//
+	// Il se met donc à jour EN MÊME TEMPS que l'ajout d'une action, comme la
+	// documentation du catalogue : c'est le prix du garde-fou, et c'est ce qu'on
+	// veut — ajouter une action sans s'en apercevoir est précisément ce qu'il
+	// empêche. Le laisser rouge des mois, en revanche, le rend inutile : on
+	// cesse de le lire.
+	const actionsAttendues = 102
 	if len(defs) != actionsAttendues {
 		t.Fatalf("%d actions au catalogue, attendu %d — "+
-			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée",
+			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée. "+
+			"Si l'ajout est voulu, mettez ce nombre à jour dans le même passage",
 			len(defs), actionsAttendues)
 	}
 }

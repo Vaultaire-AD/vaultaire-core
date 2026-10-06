@@ -130,6 +130,42 @@
     </div>
     {{ end }}
 
+    <h2 class="h2">Changements d'état</h2>
+    {{ if .HistoriqueIllisible }}
+      <div class="alert alert-danger">Historique illisible : {{ .HistoriqueIllisible }}</div>
+    {{ else if not .Historique }}
+      <p class="muted">
+        Aucun changement enregistré : cette machine n'a pas encore rapporté
+        d'application.
+      </p>
+    {{ else }}
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Quand</th><th>Portée</th><th>Utilisateur</th><th>État</th><th>Modules</th><th>En échec ou ignorés</th></tr></thead>
+        <tbody>
+        {{ range .Historique }}
+          <tr>
+            <td>{{ .QuandIlYA }}</td>
+            <td>{{ .Scope }}</td>
+            <td>{{ if .TargetUser }}{{ .TargetUser }}{{ else }}—{{ end }}</td>
+            <td>
+              {{ if eq .Status "applied" }}<span class="badge">{{ .Status }}</span>
+              {{ else }}<span class="badge badge-danger">{{ .Status }}</span>{{ end }}
+            </td>
+            <td>{{ .Reussis }}/{{ .ModulesTotal }}</td>
+            <td class="small">{{ if .ModulesEnEchec }}{{ .ModulesEnEchec }}{{ else }}—{{ end }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">
+      Une ligne par <strong>changement</strong> d'état ou d'empreinte, pas par
+      cycle : une machine stable n'en produit qu'une, à son premier rapport.
+      La conservation se règle avec <code>gpo_history_retention_days</code>.
+    </p>
+    {{ end }}
+
     <p class="muted" style="margin-top:1.5rem">
       <a href="/admin/gpo/compliance">← Retour à la conformité du parc</a>
     </p>

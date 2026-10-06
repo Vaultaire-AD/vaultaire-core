@@ -1,0 +1,49 @@
+[⌂ Documentation](../README.md) › Proxy
+
+# Le proxy Vaultaire
+
+Un **proxy** est un nœud du cluster placé près des agents d'un site. Il
+**transporte** leurs connexions vers les cores, sans les lire. Ce dossier
+réunit ce qu'il faut pour le déployer, le régler et le dépanner.
+
+```
+  agents du site ──TCP──▶  vlt-proxy  ──TCP──▶  core 1
+                             (relais)   └────▶  core 2   (repli, dans l'ordre)
+```
+
+| Page | Pour qui | Contenu |
+|---|---|---|
+| [`deploiement.md`](./deploiement.md) | exploitant | Enrôlement, conteneur `vlt-proxy`, `-listen-port`, `cluster expose`, dev-comp |
+| [`relais.md`](./relais.md) | exploitant | Ce qu'est un relais, types, sources de cibles, section `relais:`, limites, journal |
+| [`pilotage.md`](./pilotage.md) | exploitant | **Ajouter, changer, retirer un relais depuis le core** : `vlt cluster relais`, la fiche du proxy, les états demandé / appliqué / refusé |
+| [`securite.md`](./securite.md) | exploitant, relecteur | Pourquoi le proxy ne déchiffre rien, ce que l'agent lui accorde, exemption côté core |
+| [`https-et-ldaps.md`](./https-et-ldaps.md) | exploitant | Relais HTTPS vers les Nexus, LDAPS vers les cores (adresse du client en PROXY v2), certificats, ports |
+| [`depannage.md`](./depannage.md) | exploitant | Messages du journal, causes, vérifications |
+
+## En une minute
+
+- **Ce qui marche en 2.2** : le relais **Ducky** (agents → cores), le relais
+  **HTTPS** vers les Nexus du cluster, et le relais **LDAPS** vers les cores,
+  qui transmet l'adresse du client au core (TO-DO 72).
+- **Ce qui est refusé** : **LDAP en clair**, qui ferait voyager les mots de
+  passe en clair jusqu'au core.
+- **Les relais se pilotent depuis le core** (TO-DO 141) : `vlt cluster relais
+  <proxy>` et la fiche du proxy montrent ce qu'il expose et vers quoi, et le
+  changent sans redémarrage. Le fichier du proxy reste l'amorce.
+- **Le proxy ne termine rien** : ni la session Ducky, ni TLS. Il ne voit jamais un
+  mot de passe en clair.
+- **Tous les cores injoignables → refus franc** : la connexion de l'agent est
+  fermée aussitôt, et l'agent passe au nœud suivant de sa liste.
+- **Un agent n'accorde aucune confiance au proxy** : il vérifie la clé du core
+  au bout du tunnel, comme en direct.
+
+## Le proxy dans le reste de la documentation
+
+| Où | Quoi |
+|---|---|
+| [`training/10-cluster-et-proxy/`](../training/10-cluster-et-proxy/README.md) | Le chapitre de formation : clés d'enrôlement, déployer un proxy, topologie |
+| [`Utilisation/MAN.md`](../Utilisation/MAN.md) | `vlt cluster` (list, expose, priority, rotation, affinity, relais) et `vlt enroll` |
+| [`ducky-network/04-cluster/`](../Developement/how%20it%20work/ducky-network/04-cluster/README.md) | La spécification : trames `04_*`, découverte, arbitrages |
+| [`../../deployments/pre-prod/vlt-proxy/`](../../deployments/pre-prod/vlt-proxy/README.md) | Le conteneur de préprod (release installée) |
+| [`../../deployments/dev-comp/`](../../deployments/dev-comp/README.md) | La pile compilée depuis le dépôt, proxy compris (`--proxy`) |
+| [`exploitation/Agent_configuration_et_debug.md`](../exploitation/Agent_configuration_et_debug.md) | La liste des nœuds de l'agent et le rapport de debug |

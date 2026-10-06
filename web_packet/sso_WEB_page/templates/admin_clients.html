@@ -28,6 +28,24 @@
         <div class="app-container animate-in">
     <h1>Clients</h1>
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+    {{ if .ArchiveLien }}
+    <div class="alert alert-success">
+      <p>
+        <strong>Identité de {{ .ArchiveMachine }} ({{ .ArchiveSysteme }}) prête.</strong>
+        <a href="{{ .ArchiveLien }}" class="btn btn-primary" style="margin-left:0.75rem">Télécharger</a>
+      </p>
+      <p class="muted small">
+        Ce lien ne sert <strong>qu'une fois</strong> et expire dans cinq minutes.
+        Il n'y a aucun moyen de le retrouver ensuite : relancez un export depuis
+        la liste ci-dessous si besoin.
+      </p>
+      <p class="muted small">
+        L'archive contient la <strong>clé privée</strong> de la machine : elle vaut
+        son identité sur le parc. Effacez-la une fois l'agent installé.
+      </p>
+    </div>
+    {{ end }}
 
     <section class="section">
       <h2>Créer un client</h2>
@@ -35,6 +53,17 @@
         <input type="hidden" name="action" value="create_client">
         <label>Est serveur ?</label>
         <select name="is_serveur"><option value="0">Non</option><option value="1">Oui</option></select>
+        <label>Système du poste</label>
+        <select name="systeme">
+          <option value="linux">Linux</option>
+          <option value="windows">Windows</option>
+        </select>
+        <p class="muted small">
+          Ce choix ne décrit <em>que</em> l'archive : quels fichiers y mettre. Il
+          ne renseigne pas la colonne « OS » de la liste, que l'agent déclare
+          lui-même une fois qu'il parle — elle doit dire ce qui tourne, pas ce
+          qu'on a coché.
+        </p>
         <p class="muted small">
           Un agent, installé sur une machine du parc. Le core génère sa paire de
           clés et produit sa configuration.
@@ -63,7 +92,16 @@
             <td>{{ .Hostname }}</td>
             <td>{{ .OS }}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer client {{ .ComputeurID }} ?');">
+              <form method="post" style="display:inline" data-confirm="Produire l'identité de {{ .ComputeurID }} ?&#10;&#10;L'archive contient sa CLÉ PRIVÉE : qui la détient peut se faire passer pour cette machine.">
+                <input type="hidden" name="action" value="export_client">
+                <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
+                <select name="systeme">
+                  <option value="linux"{{ if ne .OS "Windows" }} selected{{ end }}>Linux</option>
+                  <option value="windows"{{ if eq .OS "Windows" }} selected{{ end }}>Windows</option>
+                </select>
+                <button type="submit" class="btn">Identité</button>
+              </form>
+              <form method="post" style="display:inline" data-confirm="Supprimer client {{ .ComputeurID }} ?">
                 <input type="hidden" name="action" value="delete_client">
                 <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>

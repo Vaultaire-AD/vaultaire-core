@@ -1,0 +1,48 @@
+{{define "content"}}
+{{$r := .Data.Repo}}
+<p class="crumbs"><a href="/ui/repos">Dépôts</a> › <a href="/ui/repos/{{$r.Name}}">{{$r.Name}}</a> ›</p>
+<h1>{{.Data.Image.Name}}</h1>
+
+<div class="kpis">
+  <div class="kpi"><span>Tags</span><b>{{len .Data.Image.Tags}}</b></div>
+  <div class="kpi"><span>Manifestes</span><b>{{len .Data.Manifests}}</b></div>
+  <div class="kpi"><span>Pulls</span><b>{{.Data.Counter.Downloads}}</b><small>dernier : {{ago .Data.Counter.Last}}</small></div>
+</div>
+
+<section class="card">
+  <h2>Récupérer</h2>
+  <pre class="copyable"><code>docker pull {{.Data.Pull}}{{if .Data.PullTag}}:{{.Data.PullTag}}{{end}}</code></pre>
+</section>
+
+<section class="card">
+  <h2>Manifestes</h2>
+  <table>
+    <thead><tr><th>Tags</th><th>Condensat</th><th>Type</th><th>Plateforme</th><th class="num">Taille</th><th>Poussé</th>{{if .Data.CanWrite}}<th></th>{{end}}</tr></thead>
+    <tbody>{{range .Data.Manifests}}
+    <tr>
+      <td>{{range .Tags}}
+        <span class="tag">{{.}}</span>
+        {{if $.Data.CanWrite}}<form method="post" action="/ui/repos/{{$r.Name}}/image/delete" class="inline" data-confirm="Retirer le tag {{.}} ?">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="name" value="{{$.Data.Image.Name}}"><input type="hidden" name="ref" value="{{.}}">
+          <button class="link small" title="Retirer ce tag">×</button></form>{{end}}
+      {{else}}<small class="muted">sans tag</small>{{end}}</td>
+      <td><code class="copy" data-copy="{{$.Data.Pull}}@{{.Digest}}" title="{{.Digest}}">{{short .Digest}}</code></td>
+      <td><small>{{.MediaType}}</small></td>
+      <td>{{.Platform}}</td>
+      <td class="num">{{bytes .Size}}</td>
+      <td title="{{date .PushedAt}}">{{ago .PushedAt}}<br><small class="muted">{{.PushedBy}}</small></td>
+      {{if $.Data.CanWrite}}<td>
+        <form method="post" action="/ui/repos/{{$r.Name}}/image/delete" data-confirm="Supprimer ce manifeste et ses tags ?">
+          <input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="name" value="{{$.Data.Image.Name}}"><input type="hidden" name="ref" value="{{.Digest}}">
+          <button class="danger small">Supprimer</button></form></td>{{end}}
+    </tr>
+    {{end}}</tbody>
+  </table>
+  <p class="hint">Les couches libérées sont récupérées par le ramasse-miettes (Administration).</p>
+</section>
+
+<section class="card">
+  <h2>Activité récente</h2>
+  {{template "events" .Data.Events}}
+</section>
+{{end}}

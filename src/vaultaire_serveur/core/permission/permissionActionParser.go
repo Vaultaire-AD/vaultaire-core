@@ -11,6 +11,9 @@ func FormatPermissionAction(pa storage.PermissionAction) string {
 	var sb strings.Builder
 
 	sb.WriteString(fmt.Sprintf("Type: %s\n", pa.Type))
+	if pa.Type == ValeurRefus {
+		sb.WriteString("  ⛔ Refus explicite : l'emporte sur ce que les autres groupes accordent\n")
+	}
 
 	if pa.Type == "custom" {
 		if len(pa.WithPropagation) > 0 {
@@ -42,6 +45,13 @@ func ParsePermissionAction(value string) storage.PermissionAction {
 	// Cas all
 	if value == "all" {
 		return storage.PermissionAction{Type: "all"}
+	}
+
+	// Refus explicite (TO-DO 104). Reconnu ici AVANT le cas custom : sans quoi
+	// « deny » serait lu comme une liste de domaines vide — un « nil » qui ne
+	// dit pas son nom, l'inverse exact de ce qu'il demande.
+	if value == ValeurRefus {
+		return storage.PermissionAction{Type: ValeurRefus}
 	}
 
 	// Cas custom

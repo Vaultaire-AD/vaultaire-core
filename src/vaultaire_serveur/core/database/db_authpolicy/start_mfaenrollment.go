@@ -16,7 +16,17 @@ import (
 // Écrase un enrôlement en cours, volontairement : recharger la page doit donner
 // un secret utilisable, pas se heurter à un secret précédent abandonné.
 func StartMFAEnrollment(db *sql.DB, username, secret string) error {
-	res, err := db.Exec(`UPDATE users SET mfa_secret = ?, mfa_enabled = FALSE, mfa_last_counter = NULL
+	// `updated_at = updated_at` : la date de modification de l'annuaire ne bouge PAS.
+	//
+	// La colonne est tenue par la base — `ON UPDATE CURRENT_TIMESTAMP` —, ce qui est
+	// voulu : un chemin d'écriture nouveau bumpe la date sans que personne y pense,
+	// et sur-synchroniser vaut mieux que manquer un changement.
+	//
+	// Mais ce qui s'écrit ici n'est visible d'aucun client LDAP. Laisser la date
+	// bouger ferait réimporter le compte à CHAQUE connexion par tout client qui
+	// synchronise en incrémental, pour un annuaire qui n'a pas changé d'un
+	// caractère. Réaffecter la colonne à elle-même est la façon MySQL de le dire.
+	res, err := db.Exec(`UPDATE users SET mfa_secret = ?, mfa_enabled = FALSE, mfa_last_counter = NULL, updated_at = updated_at
 		WHERE username = ? AND mfa_enabled = FALSE`, secret, username)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,

@@ -7,6 +7,7 @@ import (
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"strings"
 )
 
@@ -17,11 +18,39 @@ func BuildClientTrame(action, dest, sessionKey, username, clientID string, conte
 	return strings.Join(parts, "\n")
 }
 
-func CompileMessageSize(message []byte) []byte {
+// TailleMaxCorps est la plus grande taille de corps que le champ taille, sur
+// deux octets, peut annoncer. Même valeur que tramesmanager.TailleMaxCorps et
+// que le core.
+const TailleMaxCorps = math.MaxUint16
+
+// CompileMessageSize encode la taille du corps sur deux octets.
+//
+// Une ERREUR au-delà de TailleMaxCorps, jamais une troncature : `uint16(...)`
+// annonçait la taille modulo 65536 alors que le corps entier partait, et le
+// tunnel restait désynchronisé jusqu'à sa fermeture (TO-DO 101).
+func CompileMessageSize(message []byte) ([]byte, error) {
+	if len(message) > TailleMaxCorps {
+		return nil, fmt.Errorf(
+			"trame de %d octets : dépasse la taille maximale du protocole Ducky (%d) — non émise",
+			len(message), TailleMaxCorps)
+	}
 	sizeBytes := make([]byte, 2)
 	binary.BigEndian.PutUint16(sizeBytes, uint16(len(message)))
 
-	return sizeBytes
+	return sizeBytes, nil
+}
+
+// CadrerTrame rend la trame prête à écrire : longueur du champ taille, taille,
+// corps. Seul assemblage à employer.
+func CadrerTrame(corps []byte) ([]byte, error) {
+	taille, err := CompileMessageSize(corps)
+	if err != nil {
+		return nil, err
+	}
+	trame := make([]byte, 0, 1+len(taille)+len(corps))
+	trame = append(trame, CompileHeaderSize(taille))
+	trame = append(trame, taille...)
+	return append(trame, corps...), nil
 }
 
 func CompileHeaderSize(messageSize []byte) byte {
@@ -58,11 +87,14 @@ func SendMessage(message string, duckysession *storage.DuckySession) {
 	}
 
 	// 3. Préparation du paquet (Header + Size + Payload)
-	messageSize := CompileMessageSize([]byte(cipherMsg))
-	headerSize := []byte{CompileHeaderSize(messageSize)}
-
-	// Construction de la trame : [1 byte HeaderSize][2 bytes MessageSize][Payload]
-	data := append(append(headerSize, messageSize...), []byte(cipherMsg)...)
+	// Construction de la trame : [1 byte HeaderSize][2 bytes MessageSize][Payload].
+	// Trop grande, elle n'est pas émise et la connexion reste ouverte : rien
+	// n'est parti, le flux est intact.
+	data, err := CadrerTrame([]byte(cipherMsg))
+	if err != nil {
+		logs.Write_log("ERROR", err.Error())
+		return
+	}
 
 	// 4. Envoi sur la connexion
 	_, err = duckysession.Conn.Write(data)

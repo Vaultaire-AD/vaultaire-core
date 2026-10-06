@@ -11,7 +11,11 @@ func ParsePermissionContent(content string) storage.ParsedPermission {
 
 	// Cas spéciaux
 	if content == "nil" {
-		result.Deny = true
+		result.Aucun = true
+		return result
+	}
+	if content == ValeurRefus {
+		result.Refus = true
 		return result
 	}
 	if content == "*" || content == "all" {

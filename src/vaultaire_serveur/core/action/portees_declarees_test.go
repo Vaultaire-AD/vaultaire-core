@@ -56,9 +56,12 @@ func nomDeFonction(f PorteeFunc) string {
 // porteesAttendues : nom d'action → nom de la fonction de portée.
 var porteesAttendues = map[string]string{
 	// Créations : la cible n'existe pas encore, elle n'a aucun domaine.
-	"user.create":              "PorteeGlobale",
-	"group.create":             "PorteeGlobale",
-	"client.create":            "PorteeGlobale",
+	"user.create":   "PorteeGlobale",
+	"group.create":  "PorteeGlobale",
+	"client.create": "PorteeGlobale",
+	// Globale comme la création : l'archive ne dépend d'aucun domaine, et une
+	// machine fraîchement créée n'en a encore aucun.
+	"client.export":            "PorteeGlobale",
 	"permission.create":        "PorteeGlobale",
 	"client_permission.create": "PorteeGlobale",
 	"gpo.create":               "PorteeGlobale",
@@ -104,9 +107,11 @@ var porteesAttendues = map[string]string{
 	"client.delete": "PorteeClient",
 
 	// Permissions : les domaines de la permission visée.
-	"permission.get":           "porteePermissionUtilisateur",
-	"permission.delete":        "porteePermissionUtilisateur",
-	"permission.update_action": "porteePermissionUtilisateur",
+	"permission.get":    "porteePermissionUtilisateur",
+	"permission.delete": "porteePermissionUtilisateur",
+	// Globale pour poser ou lever un « deny » : il franchit les domaines
+	// (TO-DO 104).
+	"permission.update_action": "porteeReglageActionPermission",
 	"client_permission.get":    "porteePermissionClient",
 	"client_permission.update": "porteePermissionClient",
 	"client_permission.delete": "porteePermissionClient",
@@ -143,17 +148,33 @@ var porteesAttendues = map[string]string{
 	"cluster.get_purge_delay":       "PorteeGlobale",
 	"cluster.set_purge_delay":       "PorteeGlobale",
 	"cluster.get_metrics_retention": "PorteeGlobale",
+
+	// Durées d'exploitation et journal : réglages et lignes du SERVEUR, qu'aucun
+	// domaine ne porte.
+	"settings.list":                 "PorteeGlobale",
+	"settings.set":                  "PorteeGlobale",
+	"settings.reset":                "PorteeGlobale",
+	"log.list":                      "PorteeGlobale",
 	"cluster.set_metrics_retention": "PorteeGlobale",
 	"cluster.set_node_exposure":     "PorteeGlobale",
 	"cluster.set_node_groups":       "PorteeGlobale",
 	"cluster.client_targets":        "PorteeGlobale",
-	"certificate.list":              "PorteeGlobale",
-	"certificate.get":               "PorteeGlobale",
-	"certificate.regenerate":        "PorteeGlobale",
+	// Relais des proxies (TO-DO 141) : un proxy n'appartient à aucun domaine.
+	"cluster.relay_list":     "PorteeGlobale",
+	"cluster.relay_set":      "PorteeGlobale",
+	"cluster.relay_remove":   "PorteeGlobale",
+	"cluster.relay_release":  "PorteeGlobale",
+	"certificate.list":       "PorteeGlobale",
+	"certificate.get":        "PorteeGlobale",
+	"certificate.regenerate": "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
-	"gpo.list_compliance": "PorteeGlobale",
-	"gpo.get_compliance":  "PorteeClient",
+	"gpo.list_compliance":      "PorteeGlobale",
+	"gpo.get_compliance":       "PorteeClient",
+	"gpo.refresh":              "PorteeClient",
+	"gpo.get_signature_policy": "PorteeGlobale",
+	"gpo.set_signature_policy": "PorteeGlobale",
+	"cluster.refresh_nodes":    "PorteeClient",
 
 	// Arborescence : même droit que get -g.
 	"domain.list_tree":   "PorteeGlobale",
@@ -164,6 +185,7 @@ var porteesAttendues = map[string]string{
 	"dns.list_records":      "PorteeGlobale",
 	"enroll.list_keys":      "PorteeGlobale",
 	"server.set_debug":      "PorteeGlobale",
+	"server.get_debug":      "PorteeGlobale",
 	"server.clear_sessions": "PorteeGlobale",
 
 	// Sans domaine par nature.
@@ -180,6 +202,10 @@ var porteesAttendues = map[string]string{
 	"dns.delete_ptr":                 "PorteeGlobale",
 	"certificate.delete":             "PorteeGlobale",
 	"authpolicy.set_password_policy": "PorteeGlobale",
+	// Le second facteur du chemin Ducky décide de ce que TOUT le parc exige à
+	// l'ouverture de session : aucun domaine ne le porte (TO-DO 95).
+	"mfa.get_ducky_policy": "PorteeGlobale",
+	"mfa.set_ducky_policy": "PorteeGlobale",
 }
 
 // clesAttendues : nom d'action → clé RBAC exigée.
@@ -217,15 +243,15 @@ var clesAttendues = map[string]string{
 	"group.list":                     "read:get:group",
 	"group.delete":                   "write:delete:group",
 	"group.add_user":                 "write:add:user",
-	"group.remove_user":              "write:delete:user",
+	"group.remove_user":              "write:remove:user",
 	"group.add_client":               "write:add:client",
-	"group.remove_client":            "write:delete:client",
+	"group.remove_client":            "write:remove:client",
 	"group.add_permission":           "write:add:permission",
-	"group.remove_permission":        "write:delete:permission",
+	"group.remove_permission":        "write:remove:permission",
 	"group.add_client_permission":    "write:add:permission",
-	"group.remove_client_permission": "write:delete:permission",
+	"group.remove_client_permission": "write:remove:permission",
 	"group.add_gpo":                  "write:add:gpo",
-	"group.remove_gpo":               "write:delete:gpo",
+	"group.remove_gpo":               "write:remove:gpo",
 	"group.set_mfa_required":         "write:mfa",
 
 	// group.list_users exige read:get:USER et non :group : ce qui est révélé
@@ -235,6 +261,10 @@ var clesAttendues = map[string]string{
 
 	// Machines.
 	"client.create": "write:create:client",
+	// MÊME clé que la création : l'archive contient exactement ce que la
+	// création produit. Un droit distinct laisserait croire qu'on peut donner
+	// l'un sans l'autre.
+	"client.export": "write:create:client",
 	"client.get":    "read:get:client",
 	"client.list":   "read:get:client",
 	"client.update": "write:update:client",
@@ -253,17 +283,25 @@ var clesAttendues = map[string]string{
 	"client_permission.delete": "write:delete:permission",
 
 	// GPO. Toutes en *:gpo — voir GPO.CleSpecifiqueAuxGPO dans le testrunner.
-	"gpo.create":          "write:create:gpo",
-	"gpo.get":             "read:get:gpo",
-	"gpo.list":            "read:get:gpo",
-	"gpo.update":          "write:update:gpo",
-	"gpo.set_drift_mode":  "write:update:gpo",
-	"gpo.delete":          "write:delete:gpo",
-	"gpo.add_module":      "write:update:gpo",
-	"gpo.update_module":   "write:update:gpo",
-	"gpo.delete_module":   "write:update:gpo",
-	"gpo.list_compliance": "read:get:gpo",
-	"gpo.get_compliance":  "read:get:gpo",
+	"gpo.create":               "write:create:gpo",
+	"gpo.get":                  "read:get:gpo",
+	"gpo.list":                 "read:get:gpo",
+	"gpo.update":               "write:update:gpo",
+	"gpo.set_drift_mode":       "write:update:gpo",
+	"gpo.delete":               "write:delete:gpo",
+	"gpo.add_module":           "write:update:gpo",
+	"gpo.update_module":        "write:update:gpo",
+	"gpo.delete_module":        "write:update:gpo",
+	"gpo.list_compliance":      "read:get:gpo",
+	"gpo.get_compliance":       "read:get:gpo",
+	"gpo.refresh":              "write:update:client",
+	"gpo.get_signature_policy": "read:log",
+	"gpo.set_signature_policy": "write:server",
+	// Même paire de clés que la signature des GPO, et pour le même raisonnement :
+	// le réglage engage tout le parc, il ne se délègue pas par domaine (TO-DO 95).
+	"mfa.get_ducky_policy":  "read:log",
+	"mfa.set_ducky_policy":  "write:server",
+	"cluster.refresh_nodes": "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et
 	// savoir qu'il est ouvert sur une machine ne se délèguent pas pareil.
@@ -285,18 +323,32 @@ var clesAttendues = map[string]string{
 	"cluster.get_purge_delay":       "read:cluster",
 	"cluster.set_purge_delay":       "write:cluster",
 	"cluster.get_metrics_retention": "read:cluster",
+
+	// Durées et journal. La lecture des durées emprunte read:log — voir
+	// actions_reglages_duree.go.
+	"settings.list":                 "read:log",
+	"settings.set":                  "write:server",
+	"settings.reset":                "write:server",
+	"log.list":                      "read:log",
 	"cluster.set_metrics_retention": "write:cluster",
 	"cluster.set_node_exposure":     "write:cluster",
 	"cluster.set_node_groups":       "write:cluster",
 	"cluster.client_targets":        "read:cluster",
-	"certificate.list":              "read:certificate",
-	"certificate.get":               "read:certificate",
-	"certificate.regenerate":        "write:certificate",
-	"dns.list_zones":                "read:dns",
-	"dns.list_records":              "read:dns",
-	"enroll.list_keys":              "read:enrollment",
-	"server.set_debug":              "write:server",
-	"server.clear_sessions":         "write:server",
+	// Relais des proxies (TO-DO 141). Lire fait partie de l'état du cluster ;
+	// écrire déplace un point d'entrée du réseau, et a sa clé.
+	"cluster.relay_list":     "read:cluster",
+	"cluster.relay_set":      "write:relay",
+	"cluster.relay_remove":   "write:relay",
+	"cluster.relay_release":  "write:relay",
+	"certificate.list":       "read:certificate",
+	"certificate.get":        "read:certificate",
+	"certificate.regenerate": "write:certificate",
+	"dns.list_zones":         "read:dns",
+	"dns.list_records":       "read:dns",
+	"enroll.list_keys":       "read:enrollment",
+	"server.set_debug":       "write:server",
+	"server.get_debug":       "read:log",
+	"server.clear_sessions":  "write:server",
 
 	// Enrôlement, écriture : reste sur write:create:client, et délibérément.
 	// Émettre une clé, c'est accorder le droit d'ajouter un programme au
@@ -444,7 +496,14 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsGPO(r)
 	EnregistrerActionsLectureEtat(r)
 	EnregistrerActionsServeur(r)
+	EnregistrerActionsRelais(r)
 	EnregistrerActionsConformiteGPO(r)
+	EnregistrerActionsRafraichissementGPO(r)
+	EnregistrerActionsRafraichissementCluster(r)
+	EnregistrerActionsSignatureGPO(r)
+	EnregistrerActionsMFADucky(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
+	EnregistrerActionsDuree(r)
+	EnregistrerActionsJournaux(r)
 }

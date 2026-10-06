@@ -3,14 +3,18 @@ package dnsdatabase
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 	"vaultaire/core/logs"
 )
 
 func ResolveTXTRecords(db *sql.DB, zone string) ([]string, error) {
-	safeTableName := "zone_" + strings.ReplaceAll(zone, ".", "_")
+	// Le nom vient d'une requête DNS reçue du réseau : il est validé ici,
+	// avant d'approcher la base (TO-DO 105).
+	table, err := tableDeZone(zone)
+	if err != nil {
+		return nil, err
+	}
 
-	query := fmt.Sprintf(`SELECT data FROM %s WHERE type = 'TXT'`, safeTableName)
+	query := fmt.Sprintf(`SELECT data FROM %s WHERE type = 'TXT'`, table)
 
 	rows, err := db.Query(query)
 	if err != nil {

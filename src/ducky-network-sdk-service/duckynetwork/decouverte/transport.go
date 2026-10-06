@@ -35,25 +35,6 @@ func Configure(s Sender, id string) {
 	clientID = id
 }
 
-// CadenceParDefaut espace deux demandes de liste.
-//
-// # Pourquoi une constante ici, et non un réglage
-//
-// La cadence de synchronisation des groupes voyage dans sa trame, parce qu'elle
-// pilote une action sur le système — créer et vider des groupes — dont le coût
-// et le risque se règlent depuis le core.
-//
-// Celle-ci ne pilote qu'une lecture, dont le seul effet est de rafraîchir une
-// liste d'adresses en mémoire. Lui donner un réglage ajouterait une entrée au
-// catalogue, une colonne à l'interface et une question de plus à qui l'exploite,
-// pour un choix que personne n'a de raison de changer.
-//
-// Elle est longue à dessein : la liste ne change qu'à l'ajout ou au retrait d'un
-// nœud, ce qui n'arrive pas tous les jours. Une machine qui a besoin de la liste
-// TOUT DE SUITE — parce que son serveur habituel ne répond plus — ne l'attend
-// pas : elle bascule sur l'adresse suivante, qu'elle a déjà.
-const CadenceParDefaut = 30 * time.Minute
-
 // Demarrer arme la boucle de découverte et rend la main immédiatement.
 //
 // `sessionKey` est un FOURNISSEUR et non une valeur : la clé change à chaque
@@ -62,7 +43,7 @@ const CadenceParDefaut = 30 * time.Minute
 func Demarrer(sessionKey func() string) {
 	go boucle(sessionKey)
 	logs.Write_log("INFO", fmt.Sprintf(
-		"découverte : active (cadence %s, %d empreinte(s) de confiance)",
+		"découverte : active (cadence %s par défaut, %d empreinte(s) de confiance)",
 		CadenceParDefaut, EmpreintesConnues()))
 }
 
@@ -87,9 +68,18 @@ func boucle(sessionKey func() string) {
 	emettre(sessionKey)
 
 	for {
+		// La cadence est RELUE à chaque tour : le core peut la changer par la
+		// ligne « disco: » de n'importe quelle 04_04, et une valeur capturée
+		// une fois ne bougerait plus jusqu'au redémarrage de l'agent.
 		select {
-		case <-time.After(CadenceParDefaut):
+		case <-time.After(Cadence()):
 		case <-demandeInit:
+		case <-reveilCadence:
+			// La cadence vient de changer : on réarme sur la nouvelle valeur
+			// sans émettre. Redemander la liste ici ferait redemander tout le
+			// parc à la seconde où l'on touche au réglage — exactement la
+			// rafale que la cadence sert à éviter.
+			continue
 		}
 		emettre(sessionKey)
 	}
@@ -110,7 +100,7 @@ func emettre(sessionKey func() string) {
 
 // HandleTrame traite une trame 04_xx reçue par un CLIENT.
 //
-// Seules 04_04 et 04_02 y arrivent en pratique : les autres 04_xx sont des
+// Seules 04_04, 04_02 et, pour un proxy, 04_16 et 04_19 y arrivent en pratique : les autres 04_xx sont des
 // requêtes, que le core reçoit et non l'inverse.
 func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string {
 	if len(t.Message_Order) < 2 {
@@ -121,11 +111,29 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 	case "04":
 		traiterListe(t.Content)
 	case "02":
-		logs.Write_log("INFO", "découverte : enregistrement du nœud confirmé par le core")
-	case "06", "08":
-		// Accusés de métriques et de battement. Rien à faire, mais nommés :
-		// les laisser tomber dans le `default` les ferait passer pour des
-		// trames non gérées dans le journal, et on chercherait un défaut.
+		traiterAccuseEnregistrement(t.Content)
+	case "16":
+		traiterServices(t.Content)
+	case "19":
+		traiterConfigurationRelais(t.Content)
+	case "17":
+		// « Redemande ta liste maintenant ». Elle ne transporte AUCUNE liste :
+		// l'agent repart sur une 04_03 ordinaire, et tout le chemin habituel —
+		// filtrage par groupes, tri, empreintes, persistance — reste identique.
+		// Une trame de réveil ne pouvait pas devenir un second chemin
+		// d'apprentissage, qu'il aurait fallu tenir d'accord avec le premier.
+		motif := strings.TrimSpace(t.Content)
+		if motif == "" {
+			motif = "demande du core"
+		}
+		logs.Write_log("INFO", "découverte : liste redemandée hors tour ("+motif+")")
+		DemanderMaintenant()
+	case "08":
+		traiterAccuseBattement(t.Content)
+	case "06":
+		// Accusé de métriques. Rien à faire, mais nommé : le laisser tomber
+		// dans le `default` le ferait passer pour une trame non gérée dans le
+		// journal, et on chercherait un défaut.
 	default:
 		logs.Write_log("DEBUG", "découverte : sous-trame 04_"+t.Message_Order[1]+" non gérée")
 	}
@@ -150,7 +158,59 @@ func traiterListe(contenu string) {
 
 	ApprendreEmpreintes(noeuds)
 	Enregistrer(noeuds)
+	// Après l'apprentissage des empreintes : un nœud dont l'empreinte vient
+	// d'être retenue est persistable dès cette liste-ci.
+	notifier(noeuds)
 
 	logs.Write_log("INFO", fmt.Sprintf(
 		"découverte : %d nœud(s) joignable(s) — %s", len(noeuds), Resume()))
+}
+
+// traiterAccuseBattement lit le 04_08 (TO-DO 109).
+//
+//	ack             battement pris en compte
+//	refus\n<motif>  le core ne connaît pas ce nœud : il faut rejouer 04_01
+//
+// Tout ce qui n'est pas un refus vaut « pris en compte », contenu vide
+// compris : c'est ce que répondent les cores antérieurs à la 2.2, qui ne
+// refusaient jamais par ce canal.
+func traiterAccuseBattement(contenu string) {
+	lignes := strings.Split(strings.TrimSpace(contenu), "\n")
+	if !estUnRefus(lignes[0]) {
+		return
+	}
+	motif := "sans motif"
+	if len(lignes) > 1 && strings.TrimSpace(lignes[1]) != "" {
+		motif = strings.TrimSpace(lignes[1])
+	}
+	SignalerBattementRefuse(motif)
+}
+
+// estUnRefus reconnaît la première ligne d'un accusé négatif, sous les trois
+// orthographes que le 04_02 accepte déjà.
+func estUnRefus(ligne string) bool {
+	statut := strings.ToLower(strings.TrimSpace(ligne))
+	return statut == "refus" || statut == "refuse" || statut == "refusé"
+}
+
+// traiterAccuseEnregistrement lit le 04_02.
+//
+//	ok              enregistrement accepté
+//	refus\n<motif>  refusé, motif en seconde ligne (point 73)
+//
+// Un contenu vide vaut « accepté » : les cores antérieurs au point 73 n'ont
+// jamais refusé par ce canal, et leur accusé se réduisait parfois à son en-tête.
+func traiterAccuseEnregistrement(contenu string) {
+	lignes := strings.Split(strings.TrimSpace(contenu), "\n")
+	if estUnRefus(lignes[0]) {
+		motif := "sans motif"
+		if len(lignes) > 1 && strings.TrimSpace(lignes[1]) != "" {
+			motif = strings.TrimSpace(lignes[1])
+		}
+		logs.Write_log("ERROR", "découverte : enregistrement du nœud REFUSÉ par le core — "+motif)
+		SignalerAccuseEnregistrement(false, motif)
+		return
+	}
+	logs.Write_log("INFO", "découverte : enregistrement du nœud confirmé par le core")
+	SignalerAccuseEnregistrement(true, "")
 }

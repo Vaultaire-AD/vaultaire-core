@@ -63,11 +63,11 @@ func TestUnServeurEnTropEstUneDerive(t *testing.T) {
 	attendus := serveursNTP("a.ntp.fr,b.ntp.fr")
 
 	cas := map[string]string{
-		"un serveur en trop":    "a.ntp.fr b.ntp.fr pirate.ntp.fr",
-		"un serveur en moins":   "a.ntp.fr",
-		"un serveur remplacé":   "a.ntp.fr autre.ntp.fr",
-		"aucun serveur":         "",
-		"tous différents":       "x.ntp.fr y.ntp.fr",
+		"un serveur en trop":  "a.ntp.fr b.ntp.fr pirate.ntp.fr",
+		"un serveur en moins": "a.ntp.fr",
+		"un serveur remplacé": "a.ntp.fr autre.ntp.fr",
+		"aucun serveur":       "",
+		"tous différents":     "x.ntp.fr y.ntp.fr",
 	}
 	for quoi, constate := range cas {
 		if egalesIgnorantLOrdre(attendus, serveursNTP(constate)) {
@@ -140,11 +140,11 @@ func TestUneEtiquetteVideNeTrouveRien(t *testing.T) {
 // TestLesTroisFormesDEtiquetteSontLues : auditctl n'écrit pas toujours pareil.
 func TestLesTroisFormesDEtiquetteSontLues(t *testing.T) {
 	cas := map[string]string{
-		"-w /etc/passwd -p wa -k identites":              "identites",
-		"-w /etc/passwd -p wa -k=identites":              "identites",
-		"-a always,exit -F arch=b64 -F key=identites":    "identites",
-		"-a always,exit -F arch=b64 -S execve":           "",
-		"":                                               "",
+		"-w /etc/passwd -p wa -k identites":           "identites",
+		"-w /etc/passwd -p wa -k=identites":           "identites",
+		"-a always,exit -F arch=b64 -F key=identites": "identites",
+		"-a always,exit -F arch=b64 -S execve":        "",
+		"":                                            "",
 	}
 	for ligne, attendu := range cas {
 		if got := etiquetteDeRegle(ligne); got != attendu {

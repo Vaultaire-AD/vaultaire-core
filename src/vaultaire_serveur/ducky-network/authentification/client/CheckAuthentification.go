@@ -12,9 +12,10 @@ import (
 	dbusers "vaultaire/core/database/db_users"
 	logs "vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
-	"vaultaire/ducky-network/ducky_tools"
 	"vaultaire/ducky-network/sessionmgr"
+	"vaultaire/ducky-network/trame"
 )
 
 // SendAuthRequest processes the authentication request from the client.
@@ -191,7 +192,13 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		userID, _ := dbusers.Get_User_ID_By_Username(db, username)
 		dbsessions.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
 		logs.Write_LogCodeMeta("INFO", logs.CodeNone, trames_content.ClientSoftwareID+" is online and enter in the system", meta)
-		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nclient_giveinformation")
+		// La cadence de vérification en ligne part dès ce premier 02_11 : un
+		// agent qui vient de se connecter règle son délai de fermeture avant
+		// d'avoir attendu un seul battement (TO-DO 110).
+		// Les capacités du core aussi : c'est à CETTE trame, la première de la
+		// connexion, qu'un proxy apprend s'il peut émettre sa 04_18 (TO-DO 141).
+		return ("02_11\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nclient_giveinformation\n" +
+			reglages.LigneCadenceEnLigne() + "\n" + trame.LigneCapacites())
 
 	}
 
@@ -206,23 +213,40 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "\nSomething go wrong contact you administrator")
 		}
 		if can {
+			// L'acceptation est COMPOSÉE avant d'être actée (TO-DO 138).
+			//
+			// La 02_04 porte toutes les clés SSH du compte. Un compte garni
+			// avant les bornes de la 2.2 peut dépasser ce qu'une trame Ducky
+			// transporte : elle n'était alors pas émise, le poste attendait
+			// une réponse qui ne venait pas, et le core n'écrivait qu'une
+			// taille — sans nom de compte, donc sans rien à corriger. Pendant
+			// ce temps la session était déjà inscrite comme authentifiée.
+			//
+			// On regarde donc la taille AVANT d'inscrire quoi que ce soit, et un
+			// compte qui ne tient pas reçoit un refus qui dit pourquoi.
+			admin, _ := dbusers.IsUserAdmin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
+			userpukey, errCles := dbusers.GetUserKeys(userID)
+			if errCles != nil {
+				logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
+					"Erreur lors de la récupération de la clé publique de l'utilisateur "+username+" : "+errCles.Error(), meta)
+			}
+			acceptation, tient := ComposerAcceptation(trames_content.SessionIntegritykey, username, admin, userpukey, errCles)
+			if !tient {
+				logs.Write_LogCodeMeta("ERROR", logs.CodeNone, MessageClesTropLourdes(username, len(userpukey), len(acceptation)), meta)
+				// Un REFUS, pas une liste tronquée : retirer des clés pour faire
+				// tenir la trame serait retirer un accès sans que personne
+				// l'ait décidé — et lequel ?
+				return RefusPourPoids(trames_content.SessionIntegritykey, username)
+			}
+
 			dbsessions.AddLoginEntry(db, userID, []byte(trames_content.SessionIntegritykey), trames_content.ClientSoftwareID)
 			sessionmgr.Sessions.SetIdentity(duckysession.SessionID, username, trames_content.ClientSoftwareID)
 			sessionmgr.Sessions.SetStatus(duckysession.SessionID, sessionmgr.SessionAuthenticated)
 			logs.Write_LogCodeMeta("INFO", logs.CodeNone, username+" login with succes with clientsoftware "+trames_content.ClientSoftwareID, meta)
-			admin, _ := dbusers.IsUserAdmin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 			if admin {
 				logs.Write_LogCodeMeta("INFO", logs.CodeNone, username+" is admin for the client : "+trames_content.ClientSoftwareID, meta)
 			}
-			userpukey, err := dbusers.GetUserKeys(userID)
-			if err != nil {
-				logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
-					"Erreur lors de la récupération de la clé publique de l'utilisateur "+username+" : "+err.Error(), meta)
-				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + "empty" + "\nYou are authentificate Has : \n" + username)
-			} else {
-				publicKeys := ducky_tools.ExtractPublicKeys(userpukey)
-				return ("02_04\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\n" + strconv.FormatBool(admin) + "\n" + publicKeys + "\nYou are authentificate Has : \n" + username)
-			}
+			return acceptation
 
 		} else {
 			return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nyou have not the authorisation for acces to this computeur")

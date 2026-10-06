@@ -13,7 +13,7 @@ import (
 // Traitement des trames 06 côté agent.
 //
 //	06_01  revoke_order        reçue    -> on applique, puis 06_02 ou 06_03
-//	06_04  ask_revocations     émise    -> au démarrage et à chaque reconnexion
+//	06_04  ask_revocations     émise    -> au démarrage, à chaque tunnel rétabli, puis toutes les dix minutes
 //	06_05  revocations_list    reçue    -> on applique chaque ordre
 //	06_06  revocations_error   reçue    -> journalisée, on réessaiera au cycle suivant
 
@@ -46,10 +46,11 @@ func HandleTrame(sub, sessionKey, content string) string {
 
 // AskPendingFrame construit la trame 06_04.
 //
-// Émise après authentification, à chaque démarrage et à chaque reconnexion.
-// C'est le rattrapage : une machine éteinte au moment d'une révocation récupère
-// ici les ordres qu'elle a manqués. Sans ça, éteindre son poste suffirait à
-// échapper à une révocation.
+// Émise après authentification : au démarrage, à chaque tunnel rétabli, puis
+// périodiquement (voir rattrapage.go — jusqu'au point 134 elle ne partait qu'au
+// démarrage, malgré ce que disait ce commentaire). C'est le rattrapage : une
+// machine éteinte au moment d'une révocation récupère ici les ordres qu'elle a
+// manqués. Sans ça, éteindre son poste suffirait à échapper à une révocation.
 func AskPendingFrame(sessionKey string) string {
 	return strings.Join([]string{
 		"06_04",

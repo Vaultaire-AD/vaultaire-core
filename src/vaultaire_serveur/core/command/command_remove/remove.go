@@ -68,7 +68,7 @@ func Remove_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		// Hors périmètre. Aucun contrôle ajouté ici : remove_GPO_Command_Parser
 		// exige déjà le droit sur les domaines de la GPO, ce qui est plus précis
 		// qu'un contrôle global posé en amont.
-		return remove_GPO_Command_Parser(command_list, sender_groupsIDs, "write:delete:gpo", sender_Username)
+		return remove_GPO_Command_Parser(command_list, sender_groupsIDs, "write:remove:gpo", sender_Username)
 
 	default:
 		return "Requête invalide. Essayez « remove -h »."

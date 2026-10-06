@@ -17,10 +17,13 @@ func ouFromBaseObject(baseObject string) (string, bool) {
 	return "", false
 }
 
-func isUserContainerSearch(baseObject string) bool {
-	ou, ok := ouFromBaseObject(baseObject)
-	return ok && strings.EqualFold(ou, "users")
-}
+// isUserContainerSearch a été retirée avec le point 127.
+//
+// Elle servait à décider, sur le NOM du conteneur, qu'une recherche `one` devait
+// en réalité rendre toute l'arborescence. Un nom de conteneur n'est pas une bonne
+// raison de changer la portée d'une recherche : le réglage
+// `ldap.onelevel_subtree` l'a remplacée, et il vaut pour toutes les recherches
+// `one`, pas seulement celles dont le conteneur s'appelle « users ».
 
 // FilterByBaseObject restreint les candidats au baseObject LDAP demandé (scope RFC 4511).
 func FilterByBaseObject(entries []ldapinterface.LDAPEntry, baseObject string, scope int) []ldapinterface.LDAPEntry {

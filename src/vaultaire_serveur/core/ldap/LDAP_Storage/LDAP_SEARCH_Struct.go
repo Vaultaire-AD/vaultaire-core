@@ -7,7 +7,16 @@ type User struct {
 	Firstname   string
 	Lastname    string
 	Email       string
+	// Created_at et Modified_at portent les dates telles que la BASE les rend.
+	// La mise au format LDAP est faite au moment de servir l'attribut, par
+	// ldaptools.VersGeneralizedTime — pas ici, pour que ces champs restent ce
+	// qu'ils sont : des valeurs de colonnes.
 	Created_at  string
+	Modified_at string
+	// EntryUUID est l'identifiant STABLE du compte (point 129) : la colonne
+	// `entry_uuid`, posée à la création et jamais réattribuée. Vide si la base
+	// n'en porte pas — l'attribut n'est alors pas servi.
+	EntryUUID string
 }
 
 type LDAPUserResponse struct {
@@ -25,6 +34,11 @@ type Group struct {
 	GroupName  string
 	DomainName string
 	Users      []string // liste des usernames ou DN selon ton usage
+	// Dates telles que la base les rend — voir User.
+	Created_at  string
+	Modified_at string
+	// EntryUUID : identifiant stable du groupe — voir User.
+	EntryUUID string
 }
 
 // LDAPFilterType représente les types RFC 4511

@@ -87,7 +87,8 @@ jobs:
           # série. Sinon un build local annoncerait une autre version.
           for f in src/vaultaire_serveur/core/version/version.go \
                    src/vaultaire_client/version/version.go \
-                   src/vaultaire_proxy/version/version.go; do
+                   src/vaultaire_proxy/version/version.go \
+                   src/vaultaire_nexus/version/version.go; do
             CODE="$(sed -nE 's/^var Version = "([0-9]+\.[0-9]+)\.[0-9]+"/\1/p' "$f")"
             if [ "$CODE" != "$SERIE" ]; then
               echo "::warning file=$f::Version du code ($CODE) ≠ VERSION ($SERIE) — les builds locaux annonceront l'ancienne série"
@@ -156,6 +157,7 @@ jobs:
           paquet vaultaire_client "$B"/vaultaire_client/*
           paquet vaultaire_ctl    "$B/vaultaire_ctl/vaultaire_ctl"
           paquet vaultaire_proxy  "$B"/vaultaire_proxy/*
+          paquet vaultaire_nexus  "$B"/vaultaire_nexus/*
           (cd "$O" && sha256sum *.tar.gz > SHA256SUMS)
           cat "$O/SHA256SUMS"
 

@@ -2,6 +2,7 @@ package userauth
 
 import (
 	"duckynetworkclient/V1/duckynetwork/ducky_tool/getlocalinformation"
+	"duckynetworkclient/V1/duckynetwork/enligne"
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/sendmessage"
 	"duckynetworkclient/V1/duckynetwork/storage"
@@ -61,6 +62,11 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 			fmt.Sprintf("Authentification failed for user %s : %s", lines[0], lines[1]))
 
 	case "11":
+		// La cadence du battement, annoncée par le core en queue de cette
+		// trame : elle règle le délai après lequel ce client ferme lui-même
+		// un tunnel muet (TO-DO 110). Un core antérieur à la 2.2 ne l'envoie
+		// pas, et rien ne change.
+		enligne.Apprendre(trames_content.Content)
 		// lines := strings.Split(trames_content.Content, "\n")
 		// username := lines[0]
 		activeSession, _ := getlocalinformation.GetActiveUsers()

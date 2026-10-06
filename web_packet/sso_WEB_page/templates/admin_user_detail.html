@@ -139,7 +139,7 @@
         appliqueront l'ordre à leur reconnexion.
       </p>
       <form method="post" action="/admin/users?user={{ .User.Username }}"
-            onsubmit="return confirm('Supprimer {{ .User.Username }} ? Le compte et son répertoire personnel seront détruits sur toutes les machines.');">
+            data-confirm="Supprimer {{ .User.Username }} ? Le compte et son répertoire personnel seront détruits sur toutes les machines.">
         <input type="hidden" name="action" value="delete_user">
         <input type="hidden" name="target_user" value="{{ .User.Username }}">
         <button type="submit" class="btn btn-danger">Supprimer l'utilisateur</button>

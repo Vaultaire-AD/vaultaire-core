@@ -33,6 +33,8 @@ import (
 	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
 	dbgpo "vaultaire/core/database/db_gpo"
+	"vaultaire/core/reglages"
+	gpomanager "vaultaire/ducky-network/gpo_manager"
 )
 
 // GPO_Command traite `vlt gpo ...`.
@@ -80,9 +82,56 @@ func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 		return conformiteParc(appelant, true)
 	case "mode":
 		return reglerMode(appelant, commandList[1:])
+	case "refresh":
+		return rafraichir(appelant, commandList[1:])
+	case "signature":
+		return reglerSignature(appelant, commandList[1:])
 	default:
 		return "Requête invalide. Essayez « gpo -h »."
 	}
+}
+
+// reglerSignature traite `vlt gpo signature [on|off]`.
+//
+// Sans argument, elle LIT — contrairement à `gpo mode`, et pour la raison
+// inverse : il n'existe aucune autre façon de savoir si l'exigence est posée,
+// alors que le mode de dérive s'affiche déjà dans `gpo status`. Une commande
+// dont l'état ne se lit nulle part est une commande qu'on active sans savoir
+// ce qu'elle remplaçait.
+func reglerSignature(appelant action.Appelant, args []string) string {
+	if len(args) == 0 {
+		res, err := action.Executer("gpo.get_signature_policy", appelant, nil)
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		etat, ok := res.Donnees.(action.EtatSignatureGPO)
+		if !ok {
+			return res.Message
+		}
+
+		var b strings.Builder
+		b.WriteString(res.Message + "\n")
+		if etat.Indisponible != "" {
+			// Dit FORT : sans clé, activer l'exigence couperait le parc, et
+			// c'est la seule chose qu'il faut savoir avant de taper la commande
+			// suivante.
+			b.WriteString("\n⚠ Ce core n'a PAS de clé de signature : " + etat.Indisponible + "\n" +
+				"  Les politiques partent non signées, et « gpo signature on » sera refusé.\n")
+		} else {
+			b.WriteString("\nClé de signature du cluster : " + etat.Empreinte + "\n" +
+				"  Une machine vérifie si elle porte cette clé, déposée par\n" +
+				"  « create -c … --join ». Les autres appliquent sans vérifier.\n")
+		}
+		b.WriteString("\nUsage : vlt gpo signature <on|off>\n")
+		return b.String()
+	}
+
+	res, err := action.Executer("gpo.set_signature_policy", appelant,
+		action.Params{"exigee": strings.TrimSpace(args[0])})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
 }
 
 // reglerMode traite `vlt gpo mode <nom> <enforce|audit>`.
@@ -116,6 +165,73 @@ func reglerMode(appelant action.Appelant, args []string) string {
 		return commandaction.MessageDErreur(err)
 	}
 	return res.Message
+}
+
+// rafraichir traite `vlt gpo refresh <computeur_id>` et `vlt gpo refresh --all`.
+//
+// # Pourquoi la cible est obligatoire
+//
+// Un cycle GPO relit la politique, réapplique les modules et peut redémarrer
+// des services. Le déclencher sur tout le parc est une opération légitime —
+// après une correction urgente — mais ce n'est pas ce qu'on veut quand on a
+// simplement oublié de taper un identifiant. `--all` doit donc être écrit.
+//
+// # Pourquoi le parc est parcouru ici et pas dans l'action
+//
+// Chaque machine est contrôlée pour elle-même (voir actions_gpo_refresh.go) :
+// un administrateur délégué rafraîchit les siennes et se voit refuser les
+// autres, au lieu de tout ou rien. Le décompte final le dit.
+func rafraichir(appelant action.Appelant, args []string) string {
+	cible := ""
+	if len(args) > 0 {
+		cible = strings.TrimSpace(args[0])
+	}
+
+	switch cible {
+	case "":
+		return "Usage : vlt gpo refresh <computeur_id> | --all\n\n" +
+			"La machine refait immédiatement sa demande de politique, au lieu d'attendre\n" +
+			"son prochain tour. Une machine hors ligne le fera à sa reconnexion."
+	case "--all", "-a":
+		return rafraichirParc(appelant)
+	}
+
+	res, err := action.Executer("gpo.refresh", appelant, action.Params{"computeur_id": cible})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	return res.Message
+}
+
+// rafraichirParc pousse la demande à toutes les machines connectées.
+func rafraichirParc(appelant action.Appelant) string {
+	machines := gpomanager.MachinesEnLigne()
+	if len(machines) == 0 {
+		return "Aucune machine connectée : il n'y a personne à qui demander un rafraîchissement."
+	}
+
+	jointes, refusees := 0, 0
+	for _, id := range machines {
+		res, err := action.Executer("gpo.refresh", appelant, action.Params{"computeur_id": id})
+		if err != nil {
+			// Hors périmètre, ou machine inconnue de l'annuaire : compté, pas
+			// détaillé. Lister les machines qu'on n'a pas le droit de toucher
+			// renseignerait sur un parc qu'on n'a pas le droit de voir.
+			refusees++
+			continue
+		}
+		if envoye, _ := res.Donnees.(bool); envoye {
+			jointes++
+		}
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "Rafraîchissement demandé à %d machine(s) sur %d connectée(s).\n", jointes, len(machines))
+	if refusees > 0 {
+		fmt.Fprintf(&b, "%d machine(s) hors de votre périmètre n'ont pas été touchées.\n", refusees)
+	}
+	b.WriteString("Les machines hors ligne rafraîchiront à leur reconnexion.\n")
+	return b.String()
 }
 
 // conformiteParc rend la vue d'ensemble, filtrée au périmètre.
@@ -221,8 +337,6 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 	return b.String()
 }
 
-
-
 // rendreConformiteMachine met en forme le détail d'une machine.
 //
 // Les trois lectures — état par portée, modules en échec, écarts — sont faites
@@ -283,10 +397,33 @@ func rendreConformiteMachineA(d action.ConformiteMachine, maintenant time.Time) 
 		b.WriteString(indenter(td.String(), "    "))
 	}
 
+	// L'historique vient EN DERNIER, après l'état et ses détails.
+	//
+	// La première question devant une fiche est « où en est cette machine » ;
+	// « depuis quand » ne se pose qu'après, et seulement si la réponse à la
+	// première ne plaît pas. Le mettre en tête repousserait l'état courant sous
+	// la ligne de flottaison sur une machine qui a beaucoup bougé.
+	if d.HistoriqueIllisible != "" {
+		b.WriteString("\n  Historique illisible : " + d.HistoriqueIllisible + "\n")
+	} else if len(d.Historique) > 0 {
+		b.WriteString("\n  Changements d'état (le plus récent en tête)\n")
+		th := display.NouvelleTable("QUAND", "SCOPE", "UTILISATEUR", "ÉTAT", "MODULES", "EN ÉCHEC OU IGNORÉS")
+		for _, h := range d.Historique {
+			th.Ajouter(
+				dbgpo.AgeRelatif(h.ReportedAt, maintenant),
+				h.Scope,
+				orDash(h.TargetUser),
+				orDash(h.Status),
+				fmt.Sprintf("%d/%d", h.ModulesTotal-h.ModulesFailed-h.ModulesSkipped, h.ModulesTotal),
+				orDash(unLigne(h.ModulesEnEchec)))
+		}
+		b.WriteString(indenter(th.String(), "    "))
+		b.WriteString("\n    Une ligne par CHANGEMENT d'état ou d'empreinte, pas par cycle :\n" +
+			"    une machine stable n'en produit qu'une, à son premier rapport.\n")
+	}
+
 	return b.String()
 }
-
-
 
 func userSuffix(username string) string {
 	if username == "" {
@@ -345,6 +482,8 @@ func helpText() string {
   status <computeur_id>  détail d'une machine : modules en échec, écarts
   drift                  machines en écart, et machines muettes
   mode <gpo> <valeur>    enforce | audit — ce qui est fait d'un écart
+  refresh <id> | --all   demande un cycle maintenant, sans attendre le tour
+  signature [on|off]     exige, ou non, que les politiques soient signées
 
 Le mode est porté par la GPO et hérité par ses modules : une machine qui reçoit
 une GPO en audit et une autre en enforce applique la règle de chacune. Un écart
@@ -358,9 +497,17 @@ Trois informations distinctes :
 « non vérifié » ne veut pas dire conforme : il veut dire que l'agent n'a pas
 encore rapporté de scan, ou qu'il n'a aucun fichier inventorié.
 
+Les politiques sont SIGNÉES par le cluster. Une machine qui porte la clé de
+signature — déposée par « create -c … --join » — vérifie chaque politique
+avant de l'appliquer ; les autres appliquent sans vérifier. « gpo signature on »
+fait refuser les politiques NON signées : à n'activer qu'une fois le parc
+réinstallé ou la clé déposée partout.
+
 La vue part de l'INVENTAIRE et non des rapports : une machine créée mais jamais
 installée, ou dont l'agent est tombé, apparaît en « jamais » ou « en retard ».
-« en retard » se déclenche après trois cycles manqués, soit trois heures — un
+« en retard » se déclenche après trois cycles manqués — la durée d'un cycle est
+le réglage « ` + reglages.CleRafraichissementGPO + ` », donc trois fois ` +
+		reglages.Duree(reglages.CleRafraichissementGPO).String() + ` ici. Un
 redémarrage ou une maintenance en coûtent un et ne remontent pas.
 
 Le tri place devant ce dont on ne sait rien, puis les échecs, puis les écarts.`

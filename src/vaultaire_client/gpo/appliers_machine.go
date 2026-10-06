@@ -403,7 +403,42 @@ func applySystemdService(ctx Context, m Module) (string, error) {
 // ---------------------------------------------------------------------------
 
 // writeSystemFile écrit un fichier système de façon atomique.
+// writeSystemFile écrit un fichier du SCOPE MACHINE.
+//
+// # Pourquoi ce chemin ne passe pas par la descente sûre du point 97
+//
+// Le scope utilisateur a dû abandonner la traversée par chemin : ses fichiers
+// vivent sous un dossier que l'utilisateur contrôle, et il pouvait y planter un
+// lien vers `/etc` au moment précis où root allait l'emprunter.
+//
+// Ici, les chemins sont `/etc`, `/usr/lib/systemd` et leurs voisins. Planter un
+// lien à l'un de ces emplacements demande déjà d'être root — donc de détenir ce
+// que l'attaque du point 97 cherchait à obtenir. Il n'y a rien à gagner à s'en
+// protéger, et la descente composant par composant sous une racine n'aurait de
+// toute façon pas de racine à laquelle s'accrocher.
+//
+// Ce qui EST fait, et qui suffit ici : l'écriture passe par un fichier
+// temporaire créé avec `O_CREAT|O_EXCL` — donc jamais à travers un lien
+// existant — puis renommé, et `rename` remplace un lien au lieu de le suivre.
+// Un `/etc/resolv.conf` qui est un lien vers systemd-resolved est donc
+// REMPLACÉ, ce qui est exactement ce que le module `dns_resolver` veut.
+//
+// Le seul appel qui suive encore les liens est le `MkdirAll` du répertoire
+// parent. C'est assumé, et c'est écrit ici pour que ce ne soit pas redécouvert
+// comme un oubli.
 func writeSystemFile(path, content string, mode os.FileMode) error {
+	return ecrireFichierSysteme(inventaireMachine, path, content, mode)
+}
+
+// ecrireFichierSysteme écrit, puis inscrit dans l'inventaire qu'on lui donne.
+//
+// L'inventaire est un paramètre depuis le point 135 : un cycle UTILISATEUR écrit
+// lui aussi un fichier système — les quotas d'un compte vivent sous
+// `/etc/systemd/system/user-<uid>.slice.d` —, et c'est dans SON inventaire que
+// le fichier doit entrer, pas dans celui de la machine. `writeSystemFile` reste
+// la forme du scope machine ; `ctx.writeSystemFile` est celle de qui connaît le
+// scope utilisateur.
+func ecrireFichierSysteme(inv *inventaire, path, content string, mode os.FileMode) error {
 	dir := path[:strings.LastIndex(path, "/")]
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creation de %s impossible : %v", dir, err)
@@ -447,7 +482,7 @@ func writeSystemFile(path, content string, mode os.FileMode) error {
 	//
 	// C'est le SEUL endroit du paquet qui écrit un fichier système : tout
 	// appliqueur passe par ici, y compris ceux qui seront écrits plus tard.
-	recordWrite(path, content, mode)
+	inv.noterEcriture(path, content, mode)
 	return nil
 }
 
@@ -487,6 +522,12 @@ func writeSystemFile(path, content string, mode os.FileMode) error {
 // rendu — une distinction qui compte pour qui lit le rapport d'application, et
 // que le seul retour d'erreur ne permettait plus de faire.
 func removeSystemFile(path string) (existait bool, err error) {
+	return retirerFichierSysteme(inventaireMachine, path)
+}
+
+// retirerFichierSysteme retire, puis inscrit l'absence dans l'inventaire donné.
+// Même raison que ecrireFichierSysteme.
+func retirerFichierSysteme(inv *inventaire, path string) (existait bool, err error) {
 	err = os.Remove(path)
 	switch {
 	case err == nil:
@@ -499,7 +540,7 @@ func removeSystemFile(path string) (existait bool, err error) {
 		// qui n'a jamais été obtenue.
 		return false, err
 	}
-	recordAbsent(path)
+	inv.noterAbsence(path)
 	return existait, nil
 }
 

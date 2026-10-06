@@ -4,13 +4,19 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"strings"
 )
 
 // Crée une table de zone et l'enregistre dans dns_zones
 func CreateZoneTable(db *sql.DB, zone string) error {
-	// Nettoyer et créer un nom de table sûr
-	safeTableName := "zone_" + strings.ReplaceAll(zone, ".", "_")
+	// Nom de table validé (liste blanche) puis cité (TO-DO 105).
+	safeTableName, err := NomDeTable(zone)
+	if err != nil {
+		return err
+	}
+	table, err := identifiantTable(safeTableName)
+	if err != nil {
+		return err
+	}
 
 	// 1. Créer la table de la zone DNS si elle n'existe pas
 	createTableQuery := fmt.Sprintf(`
@@ -21,9 +27,9 @@ func CreateZoneTable(db *sql.DB, zone string) error {
 		ttl INT DEFAULT 3600,
 		data TEXT NOT NULL,
 		priority INT DEFAULT NULL
-	);`, safeTableName)
+	);`, table)
 
-	_, err := db.Exec(createTableQuery)
+	_, err = db.Exec(createTableQuery)
 	if err != nil {
 		return fmt.Errorf("erreur création de la table %s : %v", safeTableName, err)
 	}

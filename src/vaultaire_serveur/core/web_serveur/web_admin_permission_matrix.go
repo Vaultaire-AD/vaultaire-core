@@ -41,8 +41,9 @@ type permissionCell struct {
 	Field   string // clé complète, ex. « write:create:user »
 	Value   string // valeur brute en base
 	Summary string // résumé court affiché dans la case
-	// State pilote la couleur : "nil" (refus), "all" (tous domaines),
-	// "custom" (domaines énumérés). Décidé en Go pour que le template n'ait pas
+	// State pilote la couleur : "nil" (rien d'accordé), "deny" (refus
+	// explicite, TO-DO 104), "all" (tous domaines), "custom" (domaines
+	// énumérés). Décidé en Go pour que le template n'ait pas
 	// à interpréter la syntaxe des valeurs.
 	State     string
 	Domains   []permissionDomainView
@@ -51,6 +52,9 @@ type permissionCell struct {
 	// n'y propose pas de domaines, parce qu'en ajouter revient à refuser
 	// l'action au lieu de la restreindre.
 	GlobalOnly bool
+	// Label est le libellé lisible d'une action hors modèle ; vide pour les
+	// cases de la matrice, que la ligne et la colonne nomment déjà.
+	Label string
 }
 
 // permissionMatrixVerb est une colonne de la matrice.
@@ -102,6 +106,32 @@ var rbacVerbLabels = map[string]string{
 	"delete": "Supprimer",
 	"update": "Modifier",
 	"add":    "Rattacher",
+	"remove": "Détacher",
+}
+
+// specialActionLabels traduit les actions hors modèle. Même principe de repli :
+// une clé absente s'affiche sous son nom technique, elle ne disparaît pas.
+//
+// Les clés des services (Nexus…) y figurent parce qu'elles ne disent pas à qui
+// elles s'adressent : « write:nexus » ne se comprend qu'en connaissant le
+// dépôt. Le libellé nomme le service.
+var specialActionLabels = map[string]string{
+	"write:dns":                       "DNS — modifier",
+	"write:eyes":                      "Obsolète — n'est plus vérifiée (l'arborescence exige read:get:group)",
+	permission.ActionKillSwitch:       "Révocation d'urgence (kill switch)",
+	permission.ActionReadLog:          "Journaux — consulter",
+	permission.ActionManageMFA:        "Second facteur — gérer",
+	permission.ActionReadCluster:      "Cluster — consulter",
+	permission.ActionWriteCluster:     "Cluster — régler",
+	permission.ActionWriteRelay:       "Relais des proxies — décider ce qu'ils exposent",
+	permission.ActionReadCertificate:  "Certificats — consulter",
+	permission.ActionWriteCertificate: "Certificats — régénérer",
+	permission.ActionReadDNS:          "DNS — consulter",
+	permission.ActionReadEnrollment:   "Clés d'enrôlement — consulter",
+	permission.ActionWriteServer:      "Réglages du serveur",
+	permission.ActionReadNexus:        "Nexus (dépôt de paquets) — lire les dépôts privés",
+	permission.ActionWriteNexus:       "Nexus (dépôt de paquets) — publier et supprimer",
+	permission.ActionAdminNexus:       "Nexus (dépôt de paquets) — administrer",
 }
 
 // labelOr retourne la traduction si elle existe, sinon la clé technique.
@@ -126,6 +156,10 @@ func buildPermissionCell(field, value string) permissionCell {
 		cell.State = "all"
 		cell.Summary = "tous"
 		return cell
+	case permission.ValeurRefus:
+		cell.State = permission.ValeurRefus
+		cell.Summary = "refus"
+		return cell
 	case "custom":
 		for _, d := range parsed.WithPropagation {
 			cell.Domains = append(cell.Domains, permissionDomainView{Name: d, Propagation: "1", Inherited: true})
@@ -137,8 +171,8 @@ func buildPermissionCell(field, value string) permissionCell {
 
 	if len(cell.Domains) == 0 {
 		// Une valeur « custom » sans aucun domaine accorde en pratique la même
-		// chose que nil. L'afficher comme un refus évite de laisser croire à un
-		// droit partiel qui n'existe pas.
+		// chose que nil : rien. L'afficher comme nil évite de laisser croire à
+		// un droit partiel qui n'existe pas.
 		cell.State = "nil"
 		cell.Summary = "—"
 		return cell
@@ -194,7 +228,9 @@ func buildPermissionMatrix(db *sql.DB, perm *storage.UserPermission) permissionM
 				continue
 			}
 			cell := buildPermissionCell(field, read(field))
-			if cell.State != "nil" {
+			// Un refus n'est pas un accord : le compter gonflerait le nombre
+			// de droits affiché sur la ligne.
+			if cell.State == "all" || cell.State == "custom" {
 				row.GrantCount++
 			}
 			view.CellByID[field] = cell
@@ -215,6 +251,7 @@ func buildPermissionMatrix(db *sql.DB, perm *storage.UserPermission) permissionM
 	}
 	for _, key := range permission.SpecialActionKeys() {
 		cell := buildPermissionCell(key, read(key))
+		cell.Label = specialActionLabels[key]
 		view.Special = append(view.Special, cell)
 		view.CellByID[key] = cell
 	}

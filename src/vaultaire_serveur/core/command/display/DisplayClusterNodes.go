@@ -1,6 +1,7 @@
 package display
 
 import (
+	"fmt"
 	"strings"
 
 	clusterstorage "vaultaire/cluster/cluster_storage"
@@ -20,7 +21,8 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 	}
 
 	tb := NouvelleTable("ÉTAT", "HÔTE", "ACCÈS AGENTS", "VU PAR LE NŒUD", "ROT.",
-		"SERT EN PRIORITÉ", "RÔLE", "VERSION", "SDK", "DERNIER BATTEMENT")
+		"SERT EN PRIORITÉ", "RÔLE", "RELAIS", "TRAFIC", "VERSION", "SDK",
+		"DERNIER BATTEMENT")
 	for _, n := range noeuds {
 		// Deux colonnes d'adresse, et c'est le point de la vue.
 		//
@@ -57,6 +59,14 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 			// mono-site remplirait la colonne de bruit.
 			Valeur(strings.Join(n.GroupesAffins, ", ")),
 			Valeur(n.Role),
+			// RELAIS et TRAFIC : ce que le nœud a remonté de lui-même
+			// (04_05, TO-DO 108).
+			//
+			// Vides sur un core — il ne relaie rien — et sur un proxy dont la
+			// dernière mesure est trop ancienne. Une mesure périmée affichée
+			// sans son âge se lirait comme l'état courant.
+			Valeur(relaisLisible(n.Relais)),
+			Valeur(traficLisible(n.Relais)),
 			// VERSION porte désormais ce que le nœud DÉCLARE de lui-même. Elle
 			// contenait la chaîne « vaultaire_proxy » écrite en dur côté core,
 			// c'est-à-dire le type — que la colonne RÔLE affiche déjà.
@@ -80,9 +90,44 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 		"  « VU PAR LE NŒUD » n'est renseigné que lorsqu'il diffère.\n" +
 		"  ROT. « out » : le nœud n'est annoncé à aucun agent (vlt cluster rotation <nœud> in).\n" +
 		"  « SERT EN PRIORITÉ » vide = tout le parc, sans préférence. C'est une préférence\n" +
-		"  et non une exclusivité : les agents des autres groupes gardent ce nœud, en queue.\n"
+		"  et non une exclusivité : les agents des autres groupes gardent ce nœud, en queue.\n" +
+		"  RELAIS « a/t » : connexions actives / relayées depuis le démarrage du proxy ;\n" +
+		"  « ✗n » compte celles qui ne sont pas passées (aucune cible joignable, ou plafond).\n" +
+		"  RELAIS et TRAFIC vides : ce nœud ne relaie rien, ou n'a rien remonté depuis\n" +
+		"  plus de trois minutes. Ces mesures sont MONTRÉES, elles n'ordonnent pas la liste\n" +
+		"  servie aux agents — un nœud décide de ce qu'il déclare.\n"
 
 	return titre + "\n\n" + tb.String() + legende
+}
+
+// relaisLisible rend les connexions d'un nœud en une colonne étroite.
+//
+//	« 3/128 »      trois connexions en cours, cent vingt-huit depuis le démarrage
+//	« 3/128 ✗7 »   et sept qui ne sont pas passées
+//
+// Le compteur d'écarts n'apparaît QUE s'il est non nul : un « ✗0 » sur chaque
+// ligne d'un cluster sain noierait les rares lignes où il dit quelque chose.
+func relaisLisible(m *clusterstorage.MetriquesRelais) string {
+	if m == nil {
+		return ""
+	}
+	ligne := fmt.Sprintf("%d/%d", m.Actives, m.Total)
+	if ecartees := m.Ecartees(); ecartees > 0 {
+		ligne += fmt.Sprintf(" ✗%d", ecartees)
+	}
+	return ligne
+}
+
+// traficLisible rend le trafic cumulé des deux sens.
+//
+// Les deux sens ensemble : le détail montant/descendant tient dans la fiche du
+// nœud, et deux colonnes de plus dans une table qui en porte déjà douze la
+// rendraient illisible sur un terminal ordinaire.
+func traficLisible(m *clusterstorage.MetriquesRelais) string {
+	if m == nil {
+		return ""
+	}
+	return clusterstorage.OctetsLisibles(m.Octets())
 }
 
 // rotationLisible rend l'appartenance à la rotation en deux caractères.

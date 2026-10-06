@@ -366,7 +366,7 @@ func ajouterModuleGPO(a Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("GPO %q introuvable : %w", nom, err)
 	}
 
-	params, err := ParametresDeModule(typeModule, p)
+	params, err := ParametresDeModule(typeModule, policy.Scope, p)
 	if err != nil {
 		return Resultat{}, err
 	}
@@ -414,7 +414,7 @@ func modifierModuleGPO(a Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("le module %d n'appartient pas à la GPO %q", id, nom)
 	}
 
-	params, err := ParametresDeModule(existant.Type, p)
+	params, err := ParametresDeModule(existant.Type, policy.Scope, p)
 	if err != nil {
 		return Resultat{}, err
 	}
@@ -482,14 +482,20 @@ func supprimerModuleGPO(a Appelant, p Params) (Resultat, error) {
 //
 // Exportée pour que l'interface web construise ses formulaires sur la même
 // source.
-func ParametresDeModule(typeModule string, p Params) (map[string]string, error) {
+func ParametresDeModule(typeModule string, scope gpo.Scope, p Params) (map[string]string, error) {
 	schema, connu := gpo.SchemaFor(typeModule)
 	if !connu {
 		return nil, fmt.Errorf("type de module %q inconnu du catalogue", typeModule)
 	}
 
-	params := make(map[string]string, len(schema.Fields))
-	for _, f := range schema.Fields {
+	// Le SCOPE de la GPO écarte les champs qui n'y ont pas de sens.
+	//
+	// Sans lui, un champ retiré du scope user serait quand même collecté — vide,
+	// puisque le formulaire ne le propose plus — puis réécrit en base à chaque
+	// modification. La clé survivrait indéfiniment à son propre retrait.
+	champs := schema.FieldsForScope(scope)
+	params := make(map[string]string, len(champs))
+	for _, f := range champs {
 		// Préfixe « p_ » : c'est la convention des formulaires web, conservée
 		// pour ne pas avoir à réécrire les gabarits. La valeur sans préfixe est
 		// acceptée aussi, pour que la ligne de commande n'ait pas à imiter une

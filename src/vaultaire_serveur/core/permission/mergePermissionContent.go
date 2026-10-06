@@ -7,6 +7,9 @@ import (
 
 // MergePermissionContent fusionne deux contenus de permission (union = plus permissif).
 // Utilisé pour READ = merge(can_read, api_read_permission) et WRITE = merge(can_write, api_write_permission).
+//
+// Un « deny » d'un côté l'emporte sur tout : c'est un refus explicite, que
+// l'union ne doit pas dissoudre (TO-DO 104). « nil » reste neutre.
 func MergePermissionContent(a, b string) string {
 	pa := ParsePermissionContent(strings.TrimSpace(a))
 	pb := ParsePermissionContent(strings.TrimSpace(b))
@@ -16,18 +19,22 @@ func MergePermissionContent(a, b string) string {
 
 func mergeParsed(a, b storage.ParsedPermission) storage.ParsedPermission {
 	var out storage.ParsedPermission
+	if a.Refus || b.Refus {
+		out.Refus = true
+		return out
+	}
 	if a.All || b.All {
 		out.All = true
 		return out
 	}
-	if a.Deny && b.Deny {
-		out.Deny = true
+	if a.Aucun && b.Aucun {
+		out.Aucun = true
 		return out
 	}
-	if a.Deny {
+	if a.Aucun {
 		return b
 	}
-	if b.Deny {
+	if b.Aucun {
 		return a
 	}
 	// Union des domaines (dédupliqués)
@@ -67,10 +74,13 @@ func mergeParsed(a, b storage.ParsedPermission) storage.ParsedPermission {
 }
 
 func parsedPermissionToString(p storage.ParsedPermission) string {
+	if p.Refus {
+		return ValeurRefus
+	}
 	if p.All {
 		return "all"
 	}
-	if p.Deny && len(p.NoPropagation) == 0 && len(p.WithPropagation) == 0 {
+	if p.Aucun && len(p.NoPropagation) == 0 && len(p.WithPropagation) == 0 {
 		return "nil"
 	}
 	var parts []string

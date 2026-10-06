@@ -68,7 +68,7 @@
           </div>
           <div class="perm-card-actions">
             <a href="/admin/permissions?perm={{ .Name }}" class="btn btn-secondary">Détail</a>
-            <form method="post" class="perm-card-delete" onsubmit="return confirm('Supprimer la permission {{ .Name }} ?');">
+            <form method="post" class="perm-card-delete" data-confirm="Supprimer la permission {{ .Name }} ?">
               <input type="hidden" name="action" value="delete_permission">
               <input type="hidden" name="active_tab" value="users">
               <input type="hidden" name="permission_name" value="{{ .Name }}">
@@ -113,7 +113,7 @@
             </form>
           </div>
           <div class="perm-card-actions">
-            <form method="post" class="perm-card-delete" onsubmit="return confirm('Supprimer la permission client {{ .Name }} ?');">
+            <form method="post" class="perm-card-delete" data-confirm="Supprimer la permission client {{ .Name }} ?">
               <input type="hidden" name="action" value="delete_client_permission">
               <input type="hidden" name="active_tab" value="clients">
               <input type="hidden" name="permission_name" value="{{ .Name }}">

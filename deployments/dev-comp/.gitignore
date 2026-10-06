@@ -1,0 +1,3 @@
+# Sortie de la compilation locale : jamais dans git.
+build/
+.env

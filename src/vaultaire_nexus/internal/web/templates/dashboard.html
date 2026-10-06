@@ -1,0 +1,56 @@
+{{define "content"}}
+<h1>Tableau de bord</h1>
+<div class="kpis">
+  <div class="kpi"><span>Dépôts</span><b>{{len .Data.Repos}}</b></div>
+  <div class="kpi"><span>Paquets et images</span><b>{{.Data.Total.Packages}}</b><small>{{.Data.Total.Versions}} versions</small></div>
+  <div class="kpi"><span>Volume publié</span><b>{{bytes .Data.Total.Size}}</b></div>
+  <div class="kpi"><span>Téléchargements 24 h</span><b>{{.Data.Day.Downloads}}</b><small>{{bytes .Data.Day.Bytes}}</small></div>
+  <div class="kpi"><span>Téléchargements 7 j</span><b>{{.Data.Week.Downloads}}</b><small>{{.Data.Week.Uploads}} publications</small></div>
+</div>
+
+<section class="card">
+  <h2>Téléchargements — 14 jours</h2>
+  {{template "chart" .Data}}
+</section>
+
+<div class="grid2">
+<section class="card">
+  <h2>Dépôts</h2>
+  {{if .Data.Repos}}
+  <table>
+    <thead><tr><th>Nom</th><th>Type</th><th class="num">Éléments</th><th class="num">Taille</th></tr></thead>
+    <tbody>
+    {{range .Data.Repos}}
+      <tr><td><a href="/ui/repos/{{.Repo.Name}}">{{.Repo.Name}}</a>{{if .Repo.Public}} <span class="tag">public</span>{{end}}</td>
+      <td><span class="type t-{{.Repo.Type}}">{{typeLabel .Repo.Type}}</span></td>
+      <td class="num">{{.Stats.Packages}}</td><td class="num">{{bytes .Stats.Size}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}<p class="empty">Aucun dépôt visible. {{if .IsAdmin}}<a href="/ui/repos">Créer un dépôt</a>{{end}}</p>{{end}}
+</section>
+
+<section class="card">
+  <h2>Les plus téléchargés</h2>
+  {{if .Data.Top}}
+  <table>
+    <thead><tr><th>Paquet</th><th>Dépôt</th><th class="num">Téléch.</th><th class="num">Comptes</th></tr></thead>
+    <tbody>{{range .Data.Top}}
+      <tr><td>{{.Name}}</td><td><a href="/ui/repos/{{.Repo}}">{{.Repo}}</a></td><td class="num">{{.Downloads}}</td><td class="num">{{len .Users}}</td></tr>
+    {{end}}</tbody>
+  </table>
+  {{else}}<p class="empty">Rien n'a encore été téléchargé.</p>{{end}}
+</section>
+</div>
+
+<div class="grid2">
+<section class="card">
+  <h2>Dernières publications</h2>
+  {{template "events" .Data.Uploads}}
+</section>
+<section class="card">
+  <h2>Derniers téléchargements</h2>
+  {{template "events" .Data.Recent}}
+</section>
+</div>
+{{end}}

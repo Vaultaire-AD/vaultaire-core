@@ -31,13 +31,13 @@ import (
 // EnregistrerActionsLectureEtat ajoute les lectures d'état de session.
 func EnregistrerActionsLectureEtat(r *Registre) {
 	r.MustEnregistrer(Definition{
-		Nom:             "session.list_users",
-		CleRBAC:         "read:status:user",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerSessionsUtilisateur,
-		Resume:          "liste les utilisateurs connectés",
-		Executer:        listerSessionsUtilisateur,
+		Nom:           "session.list_users",
+		CleRBAC:       "read:status:user",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerSessionsUtilisateur,
+		Resume:        "liste les utilisateurs connectés",
+		Executer:      listerSessionsUtilisateur,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -60,13 +60,13 @@ func EnregistrerActionsLectureEtat(r *Registre) {
 	})
 
 	r.MustEnregistrer(Definition{
-		Nom:             "session.list_clients",
-		CleRBAC:         "read:status:client",
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerSessionsClient,
-		Resume:          "liste les machines connectées",
-		Executer:        listerSessionsClient,
+		Nom:           "session.list_clients",
+		CleRBAC:       "read:status:client",
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerSessionsClient,
+		Resume:        "liste les machines connectées",
+		Executer:      listerSessionsClient,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -85,11 +85,11 @@ func EnregistrerActionsLectureEtat(r *Registre) {
 		// Portée globale : un type de logiciel — « vaultaire_web », un proxy —
 		// n'appartient à aucun domaine. Le filtre réduit ensuite aux machines
 		// visibles.
-		Portee:          PorteeGlobale,
-		PorteeOuverte:   true,
-		Filtre:          filtrerSessionsClient,
-		Resume:          "machines connectées d'un type de logiciel",
-		Executer:        listerSessionsClientParType,
+		Portee:        PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        filtrerSessionsClient,
+		Resume:        "machines connectées d'un type de logiciel",
+		Executer:      listerSessionsClientParType,
 	})
 }
 
@@ -126,7 +126,7 @@ func filtrerSessionsClient(donnees any, perim Perimetre) (any, int) {
 // --- utilisateurs ------------------------------------------------------------
 
 func listerSessionsUtilisateur(_ Appelant, _ Params) (Resultat, error) {
-	sessions, err := dbsessions.Command_STATUS_GetConnectedUsers(database.GetDatabase())
+	sessions, err := dbsessions.ListerSessionsUtilisateur(database.GetDatabase())
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des sessions utilisateur : %w", err)
 	}
@@ -141,7 +141,7 @@ func lireSessionUtilisateur(_ Appelant, p Params) (Resultat, error) {
 	if nom == "" {
 		return Resultat{}, fmt.Errorf("nom d'utilisateur requis")
 	}
-	sessions, err := dbsessions.Command_STATUS_GetConnectedUser(database.GetDatabase(), nom)
+	sessions, err := dbsessions.SessionsDUnUtilisateur(database.GetDatabase(), nom)
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des sessions de %q : %w", nom, err)
 	}
@@ -156,7 +156,7 @@ func listerSessionsUtilisateurParGroupe(_ Appelant, p Params) (Resultat, error) 
 	if groupe == "" {
 		return Resultat{}, fmt.Errorf("nom de groupe requis")
 	}
-	sessions, err := dbsessions.Command_STATUS_GetUsersByGroup(database.GetDatabase(), groupe)
+	sessions, err := dbsessions.SessionsDuGroupe(database.GetDatabase(), groupe)
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture des sessions du groupe %q : %w", groupe, err)
 	}

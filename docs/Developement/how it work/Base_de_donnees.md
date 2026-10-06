@@ -84,113 +84,64 @@ DATABASE: DUCKY
 │   ├─ d_id_logiciel FK -> id_logiciels.id_logiciel
 │   └─ d_id_group FK -> groups.id_group
 │
-├─ did_login
+├─ did_login   [* une ligne = une session DUCKY : un tunnel, une clé *]
 │   ├─ PK: id_login
+│   ├─ UNIQUE uq_did_login (d_id_user, d_id_logiciel)   ← porté par la BASE (TO-DO 107)
 │   ├─ d_id_user FK -> users.id_user
 │   ├─ session_key BLOB, key_time_validity TIMESTAMP
 │   └─ d_id_logiciel FK -> id_logiciels.id_logiciel
 │
-├─ sessions
-│   ├─ PK: id
-│   ├─ ordinateur_id_d FK -> id_logiciels.id_logiciel
-│   └─ session_nom
-│
-├─ users_logiciel   [* historique utilisateurs ↔ logiciels *]
-│   ├─ PK composite: (d_id_user, d_id_logiciel)
+├─ user_sessions   [* une ligne = une session PAM : qui est devant quel poste *]
+│   ├─ PK: id_user_session
+│   ├─ UNIQUE (d_id_user, d_id_logiciel)   ← porté par la BASE, pas par le code
 │   ├─ d_id_user FK -> users.id_user
-│   ├─ d_id_logiciel FK -> id_logiciels.id_logiciel
-│   └─ recent_utilisation TIMESTAMP
-│
-├─ gpo   [* créée par core/database/db_gpo, pas par Create_DataBase *]
-│   ├─ PK: id_gpo
-│   ├─ gpo_name VARCHAR(64) UNIQUE
-│   ├─ scope VARCHAR(16)  -- 'machine' ou 'user' (jamais 'both' : réservé aux schémas de module)
-│   ├─ description TEXT, version INT, enabled BOOLEAN
-│   ├─ drift_mode VARCHAR(16) DEFAULT 'enforce'  -- 'enforce' ou 'audit' : ce que les
-│   │                              -- agents font d'un écart. Les modules en héritent à
-│   │                              -- la résolution. Colonne ajoutée après coup, posée
-│   │                              -- par schematools.EnsureColumn au démarrage.
-│   ├─ created_at / updated_at DATETIME
-│   └─ Relations:
-│       ├─ gpo_module.d_id_gpo ← FK -> gpo.id_gpo (ON DELETE CASCADE)
-│       └─ gpo_group.d_id_gpo  ← FK -> gpo.id_gpo (ON DELETE CASCADE)
-│
-├─ gpo_module   [* un module déclaratif par ligne *]
-│   ├─ PK: id_gpo_module
-│   ├─ d_id_gpo FK -> gpo.id_gpo
-│   ├─ module_type VARCHAR(64)   -- type du catalogue core/gpo (registry.go)
-│   ├─ module_scope VARCHAR(16)  -- recopie du scope de la GPO porteuse
-│   ├─ apply_order INT           -- issu du catalogue, pas de l'ordre de saisie
-│   └─ params TEXT (JSON)        -- champs validés contre le schéma du module
-│
-├─ gpo_group   [* association groups ↔ gpo ; une GPO ne cible que des groupes *]
-│   ├─ PK composite: (d_id_gpo, d_id_group)
-│   ├─ d_id_gpo FK -> gpo.id_gpo
-│   └─ d_id_group FK -> groups.id_group
-│
-├─ gpo_restriction   [* restrictions éditables, réservées au groupe vaultaire *]
-│   ├─ PK: id_gpo_restriction
-│   ├─ kind VARCHAR(24)      -- allow_value | path_allow | path_deny | env_deny | meta
-│   ├─ module_type, field_name  -- renseignés pour kind='allow_value'
-│   ├─ scope VARCHAR(16)     -- any | machine | user
-│   ├─ value VARCHAR(512)    -- valeur autorisée, préfixe de chemin, ou nom de variable
-│   ├─ note, updated_by, updated_at
-│   └─ UNIQUE (kind, module_type, field_name, scope, value(191))
-│
-├─ gpo_value_definition   [* valeurs nommées porteuses d'un contenu *]
-│   ├─ PK: id_gpo_value_definition
-│   ├─ module_type, field_name, name
-│   ├─ payload_kind VARCHAR(32)  -- command_list (extensible : core/gpo/payload.go)
-│   ├─ payload TEXT              -- contenu réel (ex. une commande sudo par ligne)
-│   ├─ note, updated_by, updated_at
-│   └─ UNIQUE (module_type, field_name, name)
-│
-│  Table distincte de gpo_restriction car le contenu est long et multiligne, ce
-│  qui ne tient pas dans une colonne indexée. Premier utilisateur : les jeux de
-│  commandes sudo (sudoers_rule/command_set).
-│
-├─ gpo_field_rule   [* mode de validation d'un champ de module *]
-│   ├─ PK: id_gpo_field_rule
-│   ├─ module_type, field_name
-│   ├─ mode VARCHAR(16)          -- list | pattern | free
-│   ├─ allow_pattern VARCHAR(512) -- regex, requis en mode pattern
-│   ├─ deny_pattern VARCHAR(512)  -- regex d'exclusion, prioritaire dans tous les modes
-│   ├─ note, updated_by, updated_at
-│   └─ UNIQUE (module_type, field_name)
-│
-│  Peuplement initial : core/database/db_gpo/seed/gpo_seed.sql, embarqué dans le
-│  binaire (go:embed). Une instruction n'est exécutée que si sa TABLE CIBLE vient
-│  d'être créée — l'existence des tables est constatée avant leur création. Une
-│  valeur supprimée depuis l'interface ne peut donc pas réapparaître au
-│  redémarrage, et une base créée par une version antérieure ne reçoit que les
-│  tables qui lui manquaient.
-│
-│  Exception : les lignes de gpo_field_rule sont vérifiées à chaque démarrage
-│  (INSERT IGNORE). Une règle définit COMMENT un champ se valide, pas quelles
-│  valeurs sont permises ; un champ ajouté au catalogue sans règle refuserait tout.
-│  Les règles existantes, même modifiées, ne sont jamais écrasées.
-│
-│  Lecture fail-closed : si la base ne répond pas, le jeu de restrictions est vide
-│  et aucune GPO ne valide. Aucun repli sur un socle codé en dur, pour qu'une
-│  panne ne rétablisse pas une valeur volontairement retirée.
-│
-│  Toute écriture est journalisée en SECURITY avec son auteur.
-│
-│  Tables supprimées (ancien modèle) : linux_gpo_distributions, group_linux_gpo.
-│  Elles stockaient une commande shell brute par distribution, donc de l'exécution
-│  de code arbitraire en root. dbgpo.CreateTables les DROP si elles subsistent.
-│
-├─ user_public_keys
-│   ├─ PK: id_key
-│   ├─ id_user FK -> users.id_user
-│   ├─ public_key (TEXT) UNIQUE (unique_pubkey on first 255 chars)
-│   ├─ label VARCHAR(100), created_at DATETIME
-│   └─ ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
-│
-└─ (Insert initial data)
-    └─ INSERT IGNORE INTO users (username, password, salt, date_naissance)
-       VALUES ('vaultaire','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');
-```
+│   ├─ opened_at, key_time_validity TIMESTAMP
+│   └─ d_id_logiciel FK -> id_logiciels.id_logiciel
+
+> **`did_login` et `user_sessions` ne se croisent jamais.** `status -c` lit la
+> première pour énumérer les machines ; `status -u` lit la seconde pour dire qui
+> est connecté et où. Écrire les sessions PAM dans `did_login` — ce qu'a fait la
+> première version du point 68 — faisait apparaître une machine deux fois dès
+> que quelqu'un s'y connectait. Un test-sentinelle analyse les littéraux SQL des
+> deux paquets et refuse qu'un nom de table passe dans l'autre.
+>
+> L'unicité `(compte, machine)` est **des deux côtés** une contrainte de la
+> base. Celle de `did_login` n'existait que dans le code jusqu'au point 107 —
+> voir ci-dessous.
+
+### `did_login` : l'unicité a quitté le code *(TO-DO 107)*
+
+Elle était tenue par deux séquences **lecture-puis-écriture** : `AddLoginEntry`
+faisait `SELECT EXISTS` puis `INSERT`, `RafraichirConnexion` faisait `COUNT(*)`
+puis `UPDATE`. Donc deux courses. Deux authentifications simultanées de la même
+paire y trouvaient toutes les deux « la ligne n'existe pas » et inséraient chacune
+la leur : la machine apparaissait **deux fois** dans `status -c`.
+
+Ce n'était pas théorique : le `--fetch-key` de sshd ouvre une session à chaque
+connexion SSH, en parallèle du tunnel permanent. La fenêtre s'ouvre en
+fonctionnement normal, sans que personne ne cherche à la provoquer — et c'est
+exactement le doublon que le point 92 a fermé pour les sessions PAM, par une
+autre porte.
+
+Les deux écritures passent désormais par un `INSERT … ON DUPLICATE KEY UPDATE`,
+et la contrainte est dans le schéma.
+
+**Migration.** `EnsureDidLoginUnicite` (`db_schema/did_login_unicite.go`)
+dédoublonne **puis** contraint : `ADD UNIQUE KEY` échoue si la table porte déjà
+des doublons, c'est-à-dire précisément sur les bases qui en ont besoin. La ligne
+gardée est celle dont l'identifiant est le plus grand — la dernière insérée, donc
+celle qui porte la clé de session la plus récente : garder une ancienne ferait
+échouer le prochain rafraîchissement, qui la cherche par sa clé.
+
+L'appel est **non fatal** au démarrage : un core qui ne peut pas poser cet index
+doit continuer à servir, en le disant en WARNING. Le nombre de lignes retirées est
+journalisé.
+
+Un test-sentinelle (`did_login_unicite_test.go`) vérifie trois choses : que le
+`CREATE TABLE` d'une base neuve porte l'index, que son **nom** est le même que
+celui de la migration — sinon elle tente de le reposer à chaque démarrage —, et
+qu'aucun littéral SQL des deux fichiers d'écriture ne relit la table avant de
+l'écrire.
 
 ## Second facteur et expiration des mots de passe
 
@@ -208,6 +159,12 @@ bases existantes les reçoivent sans script de migration à lancer à la main.
 | `users` | `mfa_last_counter` | `BIGINT NULL` | Dernier pas de temps consommé (anti-rejeu). En base et non en mémoire : un code vaut 90 s, un registre volatil le rendrait rejouable à chaque redémarrage |
 | `users` | `password_changed_at` | `DATETIME NULL` | Base du calcul d'expiration. Posé à la création et dans la même requête que tout changement de mot de passe |
 | `groups` | `mfa_required` | `BOOLEAN NOT NULL DEFAULT FALSE` | Le groupe impose le second facteur à ses membres |
+| `users`, `groups` | `entry_uuid` | `CHAR(36) NULL DEFAULT NULL`, index unique `uniq_<table>_entry_uuid` | **Identifiant stable** de l'entrée, servi en LDAP sous `entryUUID` (point 129). Tiré en Go à la création — UUID de version 4, jamais celui du moteur, qui porte l'adresse matérielle du serveur de base. Jamais réécrit : il survit au renommage. `NULL` n'existe que le temps de la migration ; `dbschema.EnsureIdentifiantsAnnuaire` remplit à **chaque** démarrage ce qui est vide |
+
+> **Toute insertion dans `users` ou `groups` doit nommer `entry_uuid`.** La
+> colonne admet `NULL`, donc l'oubli ne se voit pas : l'entrée est servie sans
+> identifiant jusqu'au redémarrage suivant, puis en change. Un test de
+> `db_schema` relit les `INSERT` du dépôt et échoue sur celui qui l'oublie.
 
 ```sql
 CREATE TABLE IF NOT EXISTS server_settings (
@@ -231,6 +188,192 @@ mauvaises : « jamais changé donc infiniment expiré » verrouille l'annuaire d
 coup, « inconnu donc valide » crée une population qui n'expirera jamais.
 
 Détails et raisonnement dans [`MFA_et_Expiration.md`](./MFA_et_Expiration.md).
+
+## Mot de passe provisoire et robustesse — TO-DO 99 et 100
+
+Deux colonnes de plus sur `users`, posées par `db_authpolicy/create_schema.go`
+comme les colonnes `mfa_*` :
+
+| Colonne | Type | Rôle |
+|---|---|---|
+| `must_change_password` | `BOOLEAN NOT NULL DEFAULT FALSE` | le mot de passe en place est provisoire |
+| `provisional_password_until` | `DATETIME NULL` | son échéance ; NULL = pas de limite de temps, le changement reste obligatoire |
+
+- **En base et non dans la session** : le drapeau doit survivre à une
+  déconnexion, et surtout être lu par les chemins qui n'ont **pas** de session
+  web — Ducky/PAM et le bind LDAP. La session web en porte une copie, que cette
+  colonne renseigne.
+- **Une DATE et non une durée** : la durée est un réglage global qui peut changer
+  entre la pose du mot de passe et sa première utilisation. Recalculer l'échéance
+  à partir de la durée du jour déplacerait celle des mots de passe déjà posés,
+  dans les deux sens.
+- **`BOOLEAN NOT NULL DEFAULT FALSE`** donne la bonne valeur aux lignes
+  existantes sans rattrapage : un annuaire en service ne voit rien changer.
+- Les deux colonnes sont lues par `GetAuthState`, dans la **même requête** que
+  l'état du second facteur. Les chemins d'authentification la font déjà : leur
+  faire relire le compte doublerait les requêtes sur le trajet le plus fréquent
+  du serveur, et ouvrirait une fenêtre où les deux lectures ne verraient pas le
+  même compte.
+
+Un réglage de plus dans `server_settings` :
+
+| Clé | Bornes | Défaut |
+|---|---|---|
+| `password_min_length` | 8 à 128, **le plancher ne se désactive pas** | 12 |
+
+Le plancher est appliqué **à la lecture** autant qu'à l'écriture : une ligne
+posée à la main, ou héritée d'une version où la borne était plus basse, ne doit
+pas pouvoir abaisser la règle. Voir
+[`MFA_et_Expiration.md`](./MFA_et_Expiration.md) §4 ter.
+
+## Journal commun des cores — `server_logs`
+
+Créée par `core/database/db_journaux/schema.go`, appelé à chaque démarrage juste
+après `Create_DataBase`. Table **neuve** : `CREATE TABLE IF NOT EXISTS` suffit.
+Une colonne ajoutée plus tard devra passer aussi par `EnsureColumn`.
+
+```sql
+CREATE TABLE IF NOT EXISTS server_logs (
+    id         BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    created_at DATETIME(6)      NOT NULL,   -- UTC
+    severity   TINYINT UNSIGNED NOT NULL,   -- RFC 5424 : 0 le plus grave
+    level      VARCHAR(16)      NOT NULL,
+    code       VARCHAR(32)      NOT NULL DEFAULT '',
+    core_name  VARCHAR(255)     NOT NULL,   -- os.Hostname() du core émetteur
+    message    TEXT             NOT NULL,   -- tronqué à 8 Ko, marqué
+    request_id VARCHAR(64)      NOT NULL DEFAULT '',
+    user_id    VARCHAR(64)      NOT NULL DEFAULT '',
+    INDEX idx_server_logs_created  (created_at),
+    INDEX idx_server_logs_core     (core_name, created_at),
+    INDEX idx_server_logs_severity (severity, created_at),
+    INDEX idx_server_logs_code     (code, created_at)
+);
+```
+
+- **`core_name` en texte, sans clé étrangère** vers `cluster_nodes` : un core
+  retiré du cluster laisse ses lignes — c'est souvent pour comprendre pourquoi il
+  est tombé qu'on les relit.
+- **`DATETIME(6)`** : à la seconde, deux lignes de deux cores émises dans la même
+  seconde ne se départagent pas. L'heure est écrite et relue en **UTC**.
+- **Troncature avant insertion** : en mode SQL strict, une valeur trop longue
+  fait échouer l'INSERT — et avec lui tout le lot de 200 lignes.
+- **Rétention** : `log_retention_days` (30 j par défaut), purge par lots de
+  10 000. La table est bornée par le temps, pas par le nombre de lignes.
+
+## Mesures des nœuds — `proxy_metrics`
+
+Créée par `create_data_base.go`. Une ligne par trame `04_05`.
+
+```sql
+proxy_metrics (
+    id_metric      INT AUTO_INCREMENT PRIMARY KEY,
+    proxy_hostname VARCHAR(255) NOT NULL,   -- celui de la ligne du DEMANDEUR
+    proxy_ip       VARCHAR(45)  NOT NULL,
+    metric_type    VARCHAR(64)  NOT NULL,   -- « relais » pour un vlt-proxy
+    metric_value   DOUBLE       NOT NULL,   -- connexions actives
+    extra          JSON,                    -- tous les autres compteurs
+    created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_proxy (proxy_hostname),
+    INDEX idx_created (created_at)
+)
+```
+
+- **Une seule ligne par battement** (20 s), et non une par compteur *(TO-DO
+  108)*. Six lignes toutes les vingt secondes feraient vingt-cinq mille par jour
+  et par proxy — près d'un million sur la rétention, pour une vue qui n'en lit
+  jamais qu'une : la dernière. `extra` est du JSON exactement pour cela.
+- **`proxy_hostname` n'est pas celui du contenu de la trame** : c'est celui de la
+  ligne `cluster_nodes` du demandeur. Sinon n'importe quel nœud décrivait l'état
+  d'un pair. L'écart est journalisé en `SECURITY`.
+- **Lecture** : `DernieresMetriquesRelais` ne prend que la **dernière** ligne par
+  nœud, par `MAX(id_metric)` — et non par date : deux mesures de la même seconde
+  portent la même date, ce qui arrive dès qu'un nœud rattrape un retard. Une
+  mesure de plus de **trois minutes** n'est pas rendue.
+- **Rétention** : `proxy_metrics_retention_days` (30 j par défaut, 0 = illimité),
+  purge par lots de 10 000. Débit borné à 60 écritures par nœud et par minute.
+- **Rien ne s'en sert pour décider.** Le tri de la liste servie aux agents ne lit
+  pas cette table, et c'est volontaire : une `04_05` est déclarative.
+
+## Relais pilotés — `cluster_relays` et `cluster_relay_state` *(TO-DO 141)*
+
+Créées par `create_data_base.go`. Ce que le core **demande** à un proxy
+d'exposer, et ce que le proxy **répond**.
+
+```sql
+cluster_relays (                            -- une ligne par relais DEMANDÉ
+    id_relay          INT AUTO_INCREMENT PRIMARY KEY,
+    owner_client_id   VARCHAR(191) NOT NULL,   -- le proxy, par son identité Ducky
+    nom               VARCHAR(64)  NOT NULL,
+    type              VARCHAR(16)  NOT NULL,   -- 'ducky', 'https', 'ldaps'
+    ecoute            VARCHAR(128) NOT NULL,   -- '[adresse]:port'
+    source            VARCHAR(128) NOT NULL,   -- 'cores', 'liste', 'service:<type>'
+    adresses          TEXT,                    -- une par ligne, pour 'liste'
+    port_cible        INT NOT NULL DEFAULT 0,
+    delai_connexion_s INT NOT NULL DEFAULT 0,  -- 0 = le défaut du proxy
+    inactivite_s      INT NOT NULL DEFAULT 0,
+    max_connexions    INT NOT NULL DEFAULT 0,
+    max_par_source    INT NOT NULL DEFAULT 0,
+    position          INT NOT NULL DEFAULT 0,
+    UNIQUE KEY uk_relay (owner_client_id, nom)
+)
+
+cluster_relay_state (                       -- une ligne par proxy
+    owner_client_id VARCHAR(191) NOT NULL PRIMARY KEY,
+    pilote          BOOLEAN NOT NULL DEFAULT FALSE,
+    revision        INT NOT NULL DEFAULT 0,
+    modifie_par     VARCHAR(255),
+    modifie_le      DATETIME,
+    rapport         MEDIUMTEXT,                -- dernier compte rendu (04_18), JSON
+    rapport_le      DATETIME
+)
+```
+
+- **Rattachées à `owner_client_id`, pas à la ligne `cluster_nodes`.** Un nœud
+  oublié par la purge, ou dont la ligne a été perdue, se réenregistre avec un
+  nouvel identifiant de ligne (TO-DO 109) : ce qu'on lui demande d'exposer ne
+  doit pas partir avec. L'identité du client, elle, ne change pas.
+- **`pilote` et `revision` sont deux colonnes**, et non « révision à zéro = pas
+  de pilotage ». `revision` ne redescend **jamais**, même quand le core rend la
+  main : c'est par elle que le proxy dit ce qu'il applique, et un numéro
+  réemployé pour une autre liste lui ferait dire « appliquée » d'une liste qu'il
+  n'a jamais reçue.
+- **Écriture en une transaction**, la ligne d'état verrouillée (`FOR UPDATE`) :
+  la liste est remplacée en entier et la révision avance d'un cran. Deux
+  administrateurs qui écrivent en même temps obtiennent deux révisions, pas un
+  mélange.
+- **Zéro veut dire « le défaut du proxy »** pour les délais et les plafonds : le
+  core ne recopie pas des défauts qui vivent dans le code du proxy, il les
+  laisserait figés à la valeur du jour.
+- **Deux tables** parce que ce sont deux natures : la demande est une décision
+  d'administrateur, tracée ; le compte rendu est un état que le proxy réécrit
+  chaque minute. Les mêler aurait fait d'une écriture par minute un verrou sur
+  la table que lit l'administration.
+- **`rapport` n'est pas obéi.** Il dit ce que le proxy fait tourner ; rien n'en
+  est recopié dans `cluster_relays` hors de la première prise en main, qui part
+  de lui pour ne pas fermer ce qui tourne.
+- **Pas de clé étrangère** vers `cluster_nodes` ni de purge automatique : les
+  lignes d'un proxy retiré restent, sans effet, jusqu'à un `release`.
+
+Voir [`04-relais-pilotes.md`](./ducky-network/04-cluster/04-relais-pilotes.md).
+
+## Tables de zone DNS — base `<base>_dns`
+
+Une table par zone, nommée `zone_` + le nom de zone, points remplacés par des
+soulignés (`acme.lan` → `zone_acme_lan`), et enregistrée dans `dns_zones`.
+
+Ce nom entre dans des requêtes SQL **comme identifiant**, donc il ne peut pas être
+un paramètre lié. Depuis le TO-DO 105, il ne passe que par
+`core/dns/DNS_Database/nom_de_table.go` :
+
+- le nom de zone est validé par **liste blanche** (`ValiderNomDeZone`), la même
+  pour l'action `dns.*` et pour la base ;
+- l'identifiant est **cité** et revérifié à chaque usage (`identifiantTable`),
+  y compris quand il est relu dans `dns_zones` ;
+- un test relit les sources du paquet et refuse toute requête qui insère un nom
+  de table sans passer par là.
+
+Les requêtes **TXT** et **NS** reçues du réseau y arrivent avec le nom demandé :
+c'est pour elles, surtout, que la règle ne souffre pas d'exception.
 
 ## Notes rapides / observations
 

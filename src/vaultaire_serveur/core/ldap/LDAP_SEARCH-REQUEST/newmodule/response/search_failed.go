@@ -3,6 +3,7 @@ package response
 import (
 	"fmt"
 	"net"
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 	ldapstorage "vaultaire/core/ldap/LDAP_Storage"
 	"vaultaire/core/logs"
 
@@ -26,6 +27,7 @@ const LDAPResultOperationsError = ldapstorage.ResultOperationsError
 // administrateur, réessayer plus tard. Sans distinction, un client bien écrit ne
 // peut rien faire de mieux qu'un client mal écrit.
 func SendLDAPSearchFailureCode(conn net.Conn, messageID, resultCode int, errMsg string) error {
+	ldapjournal.Resultat(conn, messageID, resultCode)
 	resultDone := ber.Encode(ber.ClassApplication, ber.TypeConstructed,
 		ber.Tag(ldapstorage.AppSearchResultDone), nil, "SearchResultDone")
 	resultDone.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated,
@@ -41,7 +43,7 @@ func SendLDAPSearchFailureCode(conn net.Conn, messageID, resultCode int, errMsg 
 	finalPacket.AppendChild(resultDone)
 
 	if _, err := conn.Write(finalPacket.Bytes()); err != nil {
-		logs.Write_Log("WARNING", "ldap: envoi du SearchResultDone en échec : "+err.Error())
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, "envoi du SearchResultDone en échec : "+err.Error())
 		return fmt.Errorf("failed to send SearchResultDone: %v", err)
 	}
 	return nil
@@ -54,4 +56,39 @@ func SendLDAPSearchFailureCode(conn net.Conn, messageID, resultCode int, errMsg 
 // SendLDAPSearchFailureCode avec le code correspondant.
 func SendLDAPSearchFailure(conn net.Conn, messageID int, errMsg string) error {
 	return SendLDAPSearchFailureCode(conn, messageID, ldapstorage.ResultOperationsError, errMsg)
+}
+
+// SendLDAPNoSuchObject termine une recherche dont le baseObject ne désigne
+// aucune entrée — RFC 4511, code 32.
+//
+// # Pourquoi une fonction à part
+//
+// Parce qu'elle est la seule à renseigner `matchedDN`. Ce champ est vide partout
+// ailleurs, et c'est correct : il n'a de sens que pour ce code-là. Il dit au
+// client OÙ le chemin se rompt — « dc=enov,dc=local existe, dc=admin dessous
+// n'existe pas » — au lieu de le laisser deviner lequel des composants de son DN
+// est en cause.
+//
+// matchedDN peut être vide : cela veut dire qu'aucun ancêtre n'existe non plus.
+func SendLDAPNoSuchObject(conn net.Conn, messageID int, matchedDN string) error {
+	ldapjournal.Resultat(conn, messageID, ldapstorage.ResultNoSuchObject)
+	resultDone := ber.Encode(ber.ClassApplication, ber.TypeConstructed,
+		ber.Tag(ldapstorage.AppSearchResultDone), nil, "SearchResultDone")
+	resultDone.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagEnumerated,
+		uint64(ldapstorage.ResultNoSuchObject), "resultCode"))
+	resultDone.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString,
+		matchedDN, "matchedDN"))
+	resultDone.AppendChild(ber.NewString(ber.ClassUniversal, ber.TypePrimitive, ber.TagOctetString,
+		"no such object", "diagnosticMessage"))
+
+	finalPacket := ber.Encode(ber.ClassUniversal, ber.TypeConstructed, ber.TagSequence, nil, "LDAPMessage")
+	finalPacket.AppendChild(ber.NewInteger(ber.ClassUniversal, ber.TypePrimitive, ber.TagInteger,
+		uint64(messageID), "Message ID"))
+	finalPacket.AppendChild(resultDone)
+
+	if _, err := conn.Write(finalPacket.Bytes()); err != nil {
+		ldapjournal.Ecrire(conn, "WARNING", logs.CodeNone, "envoi du noSuchObject en échec : "+err.Error())
+		return fmt.Errorf("failed to send noSuchObject: %v", err)
+	}
+	return nil
 }

@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -120,12 +122,15 @@ func ConstruireBattement(sessionKey, clientID, hostname string) string {
 // La valeur est formatée sans notation exponentielle : le core la lit avec
 // ParseFloat, qui l'accepterait, mais la table est aussi lue à l'œil et
 // « 1.5e+03 » y est illisible.
-func ConstruireMetrique(sessionKey, clientID string, n InfosNoeud, typeMetrique string, valeur float64) string {
+//
+// L'accompagnement est la DERNIÈRE ligne, et le core recolle tout ce qui suit la
+// valeur avant de l'analyser : un JSON multiligne ne décalerait donc aucun champ.
+func ConstruireMetrique(sessionKey, clientID string, n InfosNoeud, m Metrique) string {
 	return strings.Join([]string{
 		"04_05", "serveur_central", sessionKey, "vaultaire", clientID,
-		n.Hostname, n.IP, typeMetrique,
-		strconv.FormatFloat(valeur, 'f', -1, 64),
-		"{}",
+		n.Hostname, n.IP, m.Type,
+		strconv.FormatFloat(m.Valeur, 'f', -1, 64),
+		extraJSON(m.Extra),
 	}, "\n")
 }
 
@@ -146,32 +151,192 @@ func DemarrerNoeud(sessionKey func() string, n InfosNoeud, cadence time.Duration
 	go func() {
 		defer logs.Recover("enregistrement du nœud")
 
-		if !enregistrer(sessionKey, n) {
-			// L'enregistrement a échoué : on ne bat pas dans le vide. Le
-			// battement met à jour une ligne qui n'existe pas — le core répond
-			// sans rien faire, et le journal se remplit d'accusés qui ne
-			// signifient rien.
-			logs.Write_log("ERROR",
-				"nœud : enregistrement échoué, le battement n'est pas démarré")
-			return
-		}
+		// Premier essai, puis un par cadence tant que le core n'a pas confirmé.
+		// C'est le battement qui sert d'horloge : un nœud non enregistré n'a
+		// rien d'autre à faire, et une seconde boucle n'aurait servi qu'à
+		// choisir un autre intervalle.
+		battementRefuse.Store(false)
+		enregistre := tenterEnregistrement(sessionKey, n, cadence)
 
 		for range time.Tick(cadence) {
-			cle := sessionKey()
-			if strings.TrimSpace(cle) == "" {
-				logs.Write_log("WARNING", "nœud : aucune session, battement non envoyé")
-				continue
-			}
-			if envoyer == nil {
+			var continuer bool
+			enregistre, continuer = tourDeBattement(sessionKey, n, cadence, enregistre)
+			if !continuer {
 				return
 			}
-			envoyer(ConstruireBattement(cle, clientID, n.Hostname))
 		}
 	}()
+}
 
-	logs.Write_log("INFO", fmt.Sprintf(
-		"nœud : %s (%s, %s:%d) enregistré, battement toutes les %s",
-		n.Hostname, n.Role, n.IP, n.Port, cadence))
+// battementRefuse est levé par la goroutine de LECTURE quand le core refuse un
+// battement, et lu par la boucle du nœud à son tour suivant (TO-DO 109).
+//
+// Un drapeau atomique plutôt qu'un canal : la lecture ne doit jamais attendre
+// la boucle, et deux refus avant le tour suivant ne demandent qu'UN
+// réenregistrement.
+var battementRefuse atomic.Bool
+
+// SignalerBattementRefuse est appelée à la réception d'un 04_08 « refus » : le
+// core ne connaît plus ce nœud.
+//
+// # Ce qui manquait (TO-DO 109)
+//
+// `enregistre` passait à vrai sur l'accusé du 04_01 et n'en revenait jamais.
+// Un proxy purgé par le core après vingt-quatre heures hors ligne — ou dont le
+// core avait été réinstallé — continuait donc de battre sur une ligne qui
+// n'existait plus : invisible du cluster, aucun agent ne lui était envoyé, et
+// son propre journal le disait enregistré. Il fallait le redémarrer, et savoir
+// qu'il le fallait.
+func SignalerBattementRefuse(motif string) {
+	if battementRefuse.Swap(true) {
+		// Déjà levé : le tour suivant s'en occupe, une ligne suffit.
+		return
+	}
+	logs.Write_log("WARNING", "nœud : battement REFUSÉ par le core ("+motif+
+		") — ce nœud n'est plus dans le cluster, il se réenregistre au prochain tour")
+}
+
+// tourDeBattement fait UN tour de la boucle du nœud. Rend l'état
+// d'enregistrement après ce tour, et faux en second s'il faut arrêter la boucle.
+//
+// Sortie de DemarrerNoeud pour être éprouvée sans attendre une cadence : c'est
+// ici que se décide « battre » ou « se réenregistrer », et c'est cette décision
+// qui était fausse.
+func tourDeBattement(sessionKey func() string, n InfosNoeud, cadence time.Duration, enregistre bool) (bool, bool) {
+	cle := sessionKey()
+	if strings.TrimSpace(cle) == "" {
+		logs.Write_log("WARNING", "nœud : aucune session, battement non envoyé")
+		return enregistre, true
+	}
+	if envoyer == nil {
+		return enregistre, false
+	}
+	// Le core a refusé un battement depuis le dernier tour : ce nœud n'est
+	// plus enregistré, quoi qu'il en ait cru.
+	if battementRefuse.Swap(false) {
+		enregistre = false
+	}
+	if !enregistre {
+		// Battre avant d'être enregistré met à jour une ligne qui
+		// n'existe pas : le core ne fait rien, et le journal se
+		// remplirait d'accusés qui ne signifient rien.
+		return tenterEnregistrement(sessionKey, n, cadence), true
+	}
+	envoyer(ConstruireBattement(cle, clientID, n.Hostname))
+
+	// Les mesures suivent le battement, sur la même horloge et dans le
+	// même tour de boucle.
+	//
+	// Après et non avant : le battement est ce qui maintient le nœud
+	// dans la liste servie aux agents, les mesures ne servent qu'à le
+	// regarder. Si l'émission devait un jour coûter cher, c'est la
+	// seconde qui doit en pâtir.
+	emettreMetriques(cle, n)
+	return true, true
+}
+
+// DelaiAccuseEnregistrement borne l'attente du 04_02.
+//
+// Court : le core répond dans la foulée, sur la session déjà établie. Plus long
+// retarderait d'autant la première tentative suivante ; plus court prendrait un
+// aller-retour lent pour un refus.
+// Variable et non constante : les tests l'abaissent pour éprouver le silence
+// d'un core antérieur au point 73 sans attendre dix secondes.
+var DelaiAccuseEnregistrement = 10 * time.Second
+
+// tenterEnregistrement envoie la 04_01 et ATTEND l'accusé du core.
+//
+// # Pourquoi attendre (TO-DO 73)
+//
+// Le nœud journalisait « enregistré » dès la trame émise. Or le core refuse
+// l'enregistrement dans plusieurs cas — hostname déjà pris par un autre client,
+// type qui ne prend aucun rôle de nœud, port ou empreinte mal formés — et, avant
+// le point 73, ne répondait alors rien du tout. Un proxy pouvait donc paraître
+// sain sans figurer dans `cluster_nodes` : ni distribué aux agents, ni exempté
+// du plafond par adresse du core. C'est exactement le genre de panne qu'on
+// cherche ailleurs pendant des heures.
+//
+// Un core ANTÉRIEUR au point 73 reste silencieux sur un refus : l'attente
+// expire, et le nœud retente. C'est le bon comportement dans les deux cas —
+// l'accusé perdu comme le refus muet.
+func tenterEnregistrement(sessionKey func() string, n InfosNoeud, cadence time.Duration) bool {
+	attente := armerAccuse()
+	if !enregistrer(sessionKey, n) {
+		desarmerAccuse()
+		return false
+	}
+
+	accepte, motif, recu := attendreAccuse(attente, DelaiAccuseEnregistrement)
+	switch {
+	case accepte:
+		logs.Write_log("INFO", fmt.Sprintf(
+			"nœud : %s (%s, %s:%d) enregistré, battement toutes les %s",
+			n.Hostname, n.Role, n.IP, n.Port, cadence))
+		return true
+	case recu:
+		logs.Write_log("ERROR", fmt.Sprintf(
+			"nœud : enregistrement REFUSÉ par le core (%s) — %s n'est pas dans le cluster, "+
+				"aucun agent ne lui sera envoyé ; nouvelle tentative dans %s",
+			motif, n.Hostname, cadence))
+	default:
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"nœud : aucun accusé d'enregistrement après %s — %s n'est peut-être pas dans le cluster ; "+
+				"nouvelle tentative dans %s", DelaiAccuseEnregistrement, n.Hostname, cadence))
+	}
+	return false
+}
+
+// attendreAccuse borne l'attente. Rend (accepté, motif, accusé reçu).
+func attendreAccuse(attente <-chan accuseEnregistrement, delai time.Duration) (bool, string, bool) {
+	select {
+	case a := <-attente:
+		return a.ok, a.motif, true
+	case <-time.After(delai):
+		desarmerAccuse()
+		return false, "", false
+	}
+}
+
+// L'accusé 04_02 arrive sur la goroutine de lecture ; l'attente est ailleurs.
+// D'où ce point de rendez-vous, volontairement minuscule : un seul
+// enregistrement est en vol à la fois.
+var (
+	accuseMu sync.Mutex
+	accuse   chan accuseEnregistrement
+)
+
+type accuseEnregistrement struct {
+	ok    bool
+	motif string
+}
+
+func armerAccuse() <-chan accuseEnregistrement {
+	accuseMu.Lock()
+	defer accuseMu.Unlock()
+	// Tampon de 1 : la goroutine de lecture ne doit JAMAIS bloquer sur un
+	// accusé que plus personne n'attend.
+	accuse = make(chan accuseEnregistrement, 1)
+	return accuse
+}
+
+func desarmerAccuse() {
+	accuseMu.Lock()
+	defer accuseMu.Unlock()
+	accuse = nil
+}
+
+// SignalerAccuseEnregistrement est appelée à la réception d'un 04_02.
+func SignalerAccuseEnregistrement(ok bool, motif string) {
+	accuseMu.Lock()
+	defer accuseMu.Unlock()
+	if accuse == nil {
+		return
+	}
+	select {
+	case accuse <- accuseEnregistrement{ok: ok, motif: motif}:
+	default:
+	}
+	accuse = nil
 }
 
 // CadenceBattementParDefaut doit rester NETTEMENT sous le seuil de péremption

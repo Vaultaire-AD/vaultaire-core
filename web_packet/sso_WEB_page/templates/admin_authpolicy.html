@@ -33,7 +33,7 @@
       {{if .Error}}<div class="alert alert-error">{{.Error}}</div>{{end}}
 
       <section class="section">
-        <h2>Expiration des mots de passe</h2>
+        <h2>Expiration et robustesse des mots de passe</h2>
 
         <p class="small muted">
           État actuel :
@@ -43,6 +43,9 @@
           {{else}}
             <strong>désactivée</strong> — aucun mot de passe n'expire.
           {{end}}
+          Un mot de passe neuf doit faire au moins <strong>{{.MinLength}}</strong>
+          caractères, et ne pas contenir l'identifiant du compte, son domaine, ni
+          un classique connu.
         </p>
 
         <form method="post">
@@ -62,6 +65,21 @@
           <p class="small muted">
             Nombre de jours pendant lesquels l'utilisateur est averti sur son
             profil avant l'expiration. 0 supprime l'avertissement.
+          </p>
+
+          <label for="min_length">Longueur minimale d'un mot de passe neuf</label>
+          <input type="number" id="min_length" name="min_length"
+                 value="{{.MinLength}}" min="{{.MinLengthPlancher}}" max="{{.MinLengthLimit}}" required>
+          <p class="small muted">
+            <strong>Ne se désactive pas</strong> : le plancher est de
+            {{.MinLengthPlancher}} caractères. C'est la longueur qui coûte à
+            l'attaquant — une règle de complexité produit « Password1! », qui
+            figure dans toutes les listes.
+            <br>
+            La règle ne s'applique qu'aux mots de passe <strong>neufs</strong> :
+            on ne peut pas recalculer ce qu'on refuserait d'un mot de passe déjà
+            en base, il n'y existe que sous forme d'empreinte. Le parc s'y
+            conforme au premier changement de chacun.
           </p>
 
           <div style="margin-top:0.75rem">

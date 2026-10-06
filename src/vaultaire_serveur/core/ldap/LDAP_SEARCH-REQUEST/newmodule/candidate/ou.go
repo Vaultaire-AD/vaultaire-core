@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
+	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 )
 
 // OUEntry représente une Organizational Unit fictive
@@ -14,6 +15,23 @@ type OUEntry struct {
 
 func (ou OUEntry) DN() string {
 	return fmt.Sprintf("ou=%s,%s", ou.Name, ldaptools.ToRootDN(ou.BaseDN))
+}
+
+// Domaines — voir ldapinterface.LDAPEntry.
+//
+// Une OU est fabriquée pour un domaine donné : `users` et `groups` sont créées
+// une fois par domaine parcouru, et `BaseDN` est ce domaine-là.
+func (ou OUEntry) Domaines() []string {
+	if ou.BaseDN == "" {
+		return nil
+	}
+	return []string{ou.BaseDN}
+}
+
+// Restreinte — voir ldapinterface.LDAPEntry. Une unité d'organisation ne nomme
+// qu'elle-même : rien à retirer.
+func (ou OUEntry) Restreinte(func(domaine string) bool) ldapinterface.LDAPEntry {
+	return ou
 }
 
 func (ou OUEntry) ObjectClasses() []string {

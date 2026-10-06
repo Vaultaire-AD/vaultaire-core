@@ -6,9 +6,17 @@ import (
 
 // Objets et actions RBAC (catégorie:action:objet)
 var (
-	RBACObjects   = []string{"user", "group", "client", "permission", "gpo"}
-	RBACRead      = []string{"get", "status"}
-	RBACWrite     = []string{"create", "delete", "update", "add"}
+	RBACObjects = []string{"user", "group", "client", "permission", "gpo"}
+	RBACRead    = []string{"get", "status"}
+	// « remove » (Détacher) est le verbe inverse de « add » (Rattacher).
+	//
+	// Il n'existait pas : retirer un compte, une machine, une permission ou une
+	// GPO d'un groupe empruntait la clé « delete » de l'objet. Pour sortir
+	// quelqu'un d'un groupe, il fallait donc le droit de SUPPRIMER des comptes
+	// — et l'accorder à un délégué lui ouvrait aussi la suppression. Détacher
+	// ne détruit rien : c'est l'inverse d'un rattachement, pas une suppression.
+	// Voir docs/Developement/how it work/Permissions_RBAC.md § 2.
+	RBACWrite     = []string{"create", "delete", "update", "add", "remove"}
 	legacyActions = []string{"none", "web_admin", "auth", "compare", "search"}
 
 	// specialActions sont les commandes qui ne se rangent pas dans le modèle
@@ -22,6 +30,8 @@ var (
 		ActionReadCluster, ActionWriteCluster,
 		ActionReadCertificate, ActionWriteCertificate,
 		ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
+		ActionReadNexus, ActionWriteNexus, ActionAdminNexus,
+		ActionWriteRelay,
 	}
 )
 
@@ -96,6 +106,60 @@ const ActionWriteServer = "write:server"
 const (
 	ActionReadCluster  = "read:cluster"
 	ActionWriteCluster = "write:cluster"
+)
+
+// ActionWriteRelay est le droit de décider ce qu'un proxy EXPOSE : quels
+// relais il ouvre, sur quels ports, et vers quoi (TO-DO 141).
+//
+// # Pourquoi pas write:cluster
+//
+// `write:cluster` règle la façon dont le parc joint les nœuds : une adresse
+// déclarée, une priorité, une affinité. Une erreur y coupe des machines ; elle
+// ne déplace aucune porte.
+//
+// Poser un relais ouvre un port sur une machine du site et y fait arriver un
+// service — l'annuaire en LDAPS, un dépôt en HTTPS — ou, par une liste fixe,
+// n'importe quelle adresse que le proxy sait joindre. C'est un changement de
+// ce qui est exposé au réseau, pas un réglage. Qui administre l'ordre des
+// nœuds n'a pas pour autant à pouvoir en décider, et l'inverse non plus.
+//
+// La LECTURE reste `read:cluster` : voir ce qu'un proxy expose fait partie de
+// l'état du cluster.
+//
+// # Fail-closed
+//
+// Accordée à personne tant qu'on ne l'accorde pas, sauf à vaultaire_all
+// (EnsureSuperadminActions l'ajoute au démarrage suivant).
+const ActionWriteRelay = "write:relay"
+
+// ActionReadNexus, ActionWriteNexus et ActionAdminNexus : droits sur le dépôt
+// de paquets (src/vaultaire_nexus).
+//
+// # Pourquoi des actions spéciales et non un objet RBAC
+//
+// Même raisonnement que le cluster : un dépôt n'appartient à aucun domaine.
+// Un objet « nexus » engendrerait six clés dont trois n'accorderaient rien ;
+// trois niveaux seulement ont un sens — lire, publier, administrer.
+//
+// `write:nexus_admin` et non `admin:nexus` : IsRBACActionKey et les affichages
+// supposent une catégorie read ou write.
+//
+// # Qui les évalue
+//
+// Pas le core : le SERVICE, à qui le core transmet les clés accordées au compte
+// — par la trame 08_02 (ducky-network/serviceauth), ou par l'attribut LDAP
+// opérationnel `vaultaireServiceRights`. Le core reste la source de vérité ; le
+// service applique. La liste des clés qu'un type de service peut apprendre est
+// déclarée dans son entrée du catalogue (clienttype.UserRights).
+//
+// # Fail-closed
+//
+// Accordées à personne tant qu'on ne les accorde pas, sauf à vaultaire_all
+// (EnsureSuperadminActions les ajoute au démarrage suivant).
+const (
+	ActionReadNexus  = "read:nexus"
+	ActionWriteNexus = "write:nexus"
+	ActionAdminNexus = "write:nexus_admin"
 )
 
 // ActionReadCertificate et ActionWriteCertificate : certificats TLS du serveur.
@@ -189,10 +253,13 @@ var globalOnlyActions = []string{
 	ActionReadCluster, ActionWriteCluster,
 	ActionReadCertificate, ActionWriteCertificate,
 	ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
+	ActionReadNexus, ActionWriteNexus, ActionAdminNexus,
+	// Un proxy n'appartient à aucun domaine, pas plus qu'un autre nœud.
+	ActionWriteRelay,
 }
 
 // IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte
-// donc que nil ou all.
+// donc que nil, all ou deny.
 func IsGlobalOnlyAction(key string) bool {
 	for _, a := range globalOnlyActions {
 		if a == key {

@@ -1,13 +1,16 @@
 package storage
 
 var Host_Type string = "core"
-var Host_Version string = "2.1.0"
+var Host_Version string = "2.2.0"
 
 type Config struct {
 	ServerListenPort *string `yaml:"serveurlistenport"`
 	Api              struct {
 		API_Enable *bool `yaml:"api_enable"`
 		API_Port   *int  `yaml:"api_port"`
+		// Débit par source sur /api/command (TO-DO 102).
+		API_Limite_Rafale      *int     `yaml:"limite_rafale"`
+		API_Limite_Par_Seconde *float64 `yaml:"limite_par_seconde"`
 	} `yaml:"api"`
 	Path struct {
 		SocketPath       *string `yaml:"socketpath"`
@@ -36,6 +39,23 @@ type Config struct {
 		// répartiteur : ces deux listes servent à les déclarer.
 		Ldaps_TLS_DNSNames []string `yaml:"ldaps_tls_dns_names"`
 		Ldaps_TLS_IPs      []string `yaml:"ldaps_tls_ip_addresses"`
+		// Laisse les comptes soumis au second facteur se lier avec leur seul
+		// mot de passe. Faux par défaut : voir ldapstorage.MFABypass.
+		Ldap_MFA_Bypass *bool `yaml:"mfa_bypass"`
+		// Élargit TOUTE recherche `one` à l'arborescence, quel que soit le
+		// conteneur. Faux par défaut : voir ldapstorage.OneLevelSubtree.
+		Ldap_OneLevel_Subtree *bool `yaml:"onelevel_subtree"`
+		// Refuse un bind avec mot de passe hors TLS, donc sur le port 389. Faux
+		// par défaut : voir ldapstorage.RequireTLSForBind.
+		Ldap_Require_TLS_For_Bind *bool `yaml:"require_tls_for_bind"`
+		// Bornes de recherche et de pagination (TO-DO 152).
+		//
+		// Une TABLE et non une structure, à dessein : une structure ignore en
+		// silence une clé qu'elle ne connaît pas, et une borne mal orthographiée
+		// se lirait dans le fichier sans rien régler. La table laisse
+		// ldapstorage.AppliquerLimites voir toutes les clés écrites, et refuser
+		// celles qu'il ne connaît pas.
+		Ldap_Limites map[string]int `yaml:"limites"`
 	} `yaml:"ldap"`
 	Dns struct {
 		Dns_Enable *bool `yaml:"dns_enable"`
@@ -78,6 +98,10 @@ type Config struct {
 	} `yaml:"automatisation"`
 	Debug struct {
 		Debug *bool `yaml:"debug"`
+		// Détail par sous-système (TO-DO 145) : « ldap: trace », « ducky: off ».
+		// Une table pour la même raison que ldap.limites — un sous-système mal
+		// orthographié doit se voir, pas s'ignorer. Voir logs.ReglerDetail.
+		Detail map[string]string `yaml:"detail"`
 	} `yaml:"debug"`
 	Administrateur struct {
 		Enable    *bool   `yaml:"enable"`
@@ -152,9 +176,31 @@ var Sh_folder_path string = "/opt/vaultaire/automatisation/"
 var API_Enable bool = true
 var API_Port int = 6643
 
+// API_Limite_Rafale et API_Limite_Par_Seconde bornent le débit de chaque source
+// sur l'API de commande, avant toute authentification (TO-DO 102).
+//
+// Un seau de 100 requêtes qui se remplit de 20 par seconde : un intégrateur qui
+// envoie sa rafale d'un coup passe, un flot soutenu est ramené à 20 par
+// seconde. Voir core/auth/ratelimit/debit.go.
+var (
+	API_Limite_Rafale      int     = 100
+	API_Limite_Par_Seconde float64 = 20
+)
+
 var Debug bool = false
 
 var Administrateur_Enable bool = true
 var Administrateur_Username string = "admin"
-var Administrateur_Password string = "admin123"
+
+// VIDE, et non « admin123 » — TO-DO 99.
+//
+// Le défaut du code était identique à la valeur du fichier livré, et c'est ce
+// qui a rendu invisible pendant toute la vie du produit le fait que la section
+// « administreur: » n'était jamais lue : un exploitant qui changeait le mot de
+// passe dans le fichier démarrait quand même sur celui-ci, sans qu'aucun écart
+// ne se voie nulle part.
+//
+// Vide, l'amorçage s'arrête en le disant. C'est bruyant, et c'est exactement ce
+// qu'on veut : un mot de passe de superadmin ne doit jamais venir d'un défaut.
+var Administrateur_Password string = ""
 var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJnFvZ8sfvIGVc0gB5oQEv2Vh1A6lqGNK/CrcgZj5ybNoEwxdbkQyRYkJ6NmtxDs1zLyRUr5GCGtjX44JNNnTDdL+E00Aiw8nFBJRlHkV78ehG62p2DeeVLUydnlnT5ey3KJtmY+Tc0dq5AqWdnAsLbZ/JHw/EuZTeifYJ6wmpxp69oHnsvRxBomH2wSp7CjeYTaBpVFF4KChBSXm/gO4quWQT0JBsDyNmPhZ/QwRJKqujh1B5OX6bbKAl5MOC3OoPXfYkyhilaMku9lK5E6i3wLdP08FQ6Op/Psy7ukTTvMduhqsauxZMMx+x12RAT72LFySZ6RSkLKQXhwkO8pG4laNKFQbDoTULC973AKy0le2Jyb7SnNBL+I+KviMojItYCc6QmQ39TVowy6VQimHiPPs6UPTDt8KROm1SEtPSXj7QvtwJU5hbAG9uFVH/udX7y6BhNPkOgCmrH9s5fh0= root@NTFS"

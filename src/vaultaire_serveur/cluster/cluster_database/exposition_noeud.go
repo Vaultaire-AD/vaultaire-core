@@ -162,7 +162,7 @@ func NoeudParHostname(db *sql.DB, hostname string) (clusterstorage.Node, error) 
 
 	err := db.QueryRow(`
 		SELECT id_node, hostname, fqdn, ip_address, role, status, version_code,
-		       capabilities, last_heartbeat, ducky_port, priorite, expose_aux_agents,
+		       COALESCE(capabilities, ''), last_heartbeat, ducky_port, priorite, expose_aux_agents,
 		       key_fingerprint, sdk_version, adresse_publique, port_public
 		  FROM cluster_nodes WHERE hostname = ?`, strings.TrimSpace(hostname)).Scan(
 		&n.ID, &n.Hostname, &n.FQDN, &n.IPAddress, &n.Role, &n.Status, &n.VersionCode,

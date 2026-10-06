@@ -6,16 +6,16 @@ Pile autonome. **Rien n'est compilé ici** : le binaire vient de
 
 ## Ce que fait ce proxy
 
-Trois choses, et rien d'autre :
-
 ```
 enrôlement au premier démarrage   (01_05 → 01_08)
-authentification du serveur       (01_01 → 01_02)
-authentification du client        (02_01 → 02_11)
+authentification auprès du core   (01_01 → 01_02, 02_01 → 02_11)
+déclaration au cluster et battement (04_01, 04_07)
+relais Ducky : agents → cores     (TCP, octets transportés sans être lus)
 ```
 
-Pas de cluster, pas de répartition de charge. Il apparaît dans `vlt client list`,
-pas dans `vlt cluster list`.
+Il apparaît dans `vlt client list` (son identité) **et** dans `vlt cluster list`
+(le nœud de rôle `proxy`). Le relais est décrit dans
+[`docs/proxy/relais.md`](../../../docs/proxy/relais.md).
 
 ## Mise en service
 
@@ -50,6 +50,12 @@ Deux valeurs suffisent, et elles se donnent en variables dans le
 | `VAULTAIRE_IP_CORE` | `ip:port` du core. Port **6666 par défaut**, donc `vaultaire-ad` suffit. Plusieurs cores séparés par des virgules, essayés dans l'ordre. |
 | `VAULTAIRE_ENROLL_KEY` | la clé créée sur le core. Lue au **premier démarrage seulement**. |
 | `VAULTAIRE_ENROLL_LABEL` | nom lisible côté core. Facultatif, aucune valeur de sécurité. |
+| `VAULTAIRE_LISTEN_PORT` | port du relais Ducky dans le conteneur, annoncé au cluster. `6666` par défaut ; publié sur `6667` de l'hôte (`VLT_PROXY_PORT`). |
+
+> **Relais (2.2).** Le proxy transporte les connexions Ducky des agents vers les
+> cores. Déclarez sur le core l'adresse par laquelle les agents le joignent :
+> `vlt cluster expose <proxy> <adresse-de-l-hôte> 6667`. Détail :
+> [`docs/proxy/`](../../../docs/proxy/README.md).
 
 Un `config.yaml` reste possible pour une configuration plus fournie — voir
 `config.example.yaml` — mais **il n'est pas nécessaire**. Quand les deux sont
@@ -74,8 +80,9 @@ Le conteneur **démarre en root** et **finit en UID 10001**.
 
 L'entrypoint fait une seule chose avec ses privilèges : reprendre la propriété du
 volume d'identité, puis les abandonner avec `setpriv` avant d'exécuter le proxy.
-Le processus qui parle au réseau tourne donc sans privilège — il n'ouvre que des
-connexions sortantes et n'écrit que dans son répertoire de clés.
+Le processus qui parle au réseau tourne donc sans privilège — il écoute le port
+du relais (6666 dans le conteneur, non privilégié), ouvre des connexions vers les
+cores et n'écrit que dans son répertoire de clés.
 
 **Pourquoi pas simplement `USER` dans le Dockerfile.** Docker crée un volume
 nommé avec la propriété qu'avait le répertoire dans l'image *au moment de la
@@ -86,6 +93,20 @@ de consommer un jeton.
 
 Reprendre le volume au démarrage rend le conteneur remplaçable : l'identité du
 proxy survit aux reconstructions d'image.
+
+**Relais HTTPS et LDAPS.** Même contrainte pour eux : UID 10001, donc pas de
+port sous 1024 dans le conteneur. Déclarez-les dans la section `relais:` sur un
+port haut (`:8843`, `:1636`) et publiez 443 ou 636 sur l'hôte dans le
+`docker-compose.yml` — voir [`docs/proxy/https-et-ldaps.md`](../../../docs/proxy/https-et-ldaps.md).
+
+**Relais posés depuis le core.** Depuis la 2.2, un relais s'ajoute aussi par
+`vlt cluster relais <proxy> set …`, sans toucher à ce fichier
+([`docs/proxy/pilotage.md`](../../../docs/proxy/pilotage.md)). Deux choses
+restent vraies ici : le port doit être **haut** — sinon le relais revient
+« refusé », `permission denied` —, et il doit être **publié** dans le
+`docker-compose.yml`, sans quoi il écoute dans le conteneur et personne ne
+l'atteint. La dernière liste reçue du core est gardée dans le volume des clés
+(`relais_du_core.json`) : elle survit aux reconstructions, comme l'identité.
 
 **Le binaire monté doit rester en 0755.** `docker-update.sh` le pose à
 l'installation. Symptôme sinon :
@@ -137,4 +158,6 @@ docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 | `aucune clé d'enrôlement dans la configuration` | `VAULTAIRE_ENROLL_KEY` vide |
 | `enrôlement refusé (invalid_key)` | clé inconnue, expirée, épuisée ou révoquée — le motif exact est dans le journal du **core**, jamais renvoyé au client |
 | `aucune session authentifiée après 30s` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy |
+| `relais Ducky … alors que le port annoncé aux agents est …` | la section `relais:` du `config.yaml` écoute ailleurs que `VAULTAIRE_LISTEN_PORT` |
+| `aucune cible joignable pour … — connexion refusée` | aucun core joignable depuis le proxy : voir [`docs/proxy/depannage.md`](../../../docs/proxy/depannage.md) |
 | `répertoire des clés … non inscriptible` | un `user:` a été ajouté au compose : l'entrypoint ne peut plus reprendre le volume |

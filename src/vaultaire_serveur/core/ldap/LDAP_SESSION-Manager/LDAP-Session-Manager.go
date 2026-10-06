@@ -1,10 +1,10 @@
 package ldapsessionmanager
 
 import (
-	"fmt"
 	"net"
 	"sync"
-	"vaultaire/core/logs"
+
+	ldapjournal "vaultaire/core/ldap/LDAP_Journal"
 )
 
 type LDAPSession struct {
@@ -42,6 +42,12 @@ func SetAnonymousBindInfo(conn net.Conn) {
 }
 
 // Créer une nouvelle session
+//
+// Elle n'écrit plus rien au journal (TO-DO 145). Elle annonçait « Nouvelle
+// session LDAP créée » en INFO, juste après la ligne « connection from » de la
+// boucle de lecture — deux lignes pour le même événement, dans le journal
+// commun des cores. La ligne d'ouverture est écrite une fois, par ldapjournal,
+// avec le numéro de la connexion.
 func InitLDAPSession(conn net.Conn) {
 	sessionStoreMu.Lock()
 	defer sessionStoreMu.Unlock()
@@ -50,7 +56,6 @@ func InitLDAPSession(conn net.Conn) {
 		Conn:    conn,
 		IsBound: false,
 	}
-	logs.Write_Log("INFO", fmt.Sprintf("Nouvelle session LDAP créée pour %s", conn.RemoteAddr()))
 }
 
 // Récupérer une session existante
@@ -72,6 +77,8 @@ func SetBindInfo(conn net.Conn, username string, userDN string) {
 		sess.Username = username
 		sess.UserDN = userDN
 	}
+	// Le journal retient le compte, pour le bilan écrit à la fermeture.
+	ldapjournal.CompteLie(conn, username)
 }
 
 // ResetBindInfo ramène la session à l'état non authentifié, SANS la supprimer.
@@ -90,6 +97,8 @@ func SetBindInfo(conn net.Conn, username string, userDN string) {
 // connexion dans l'état anonyme. Avant, un client authentifié comme alice qui
 // ratait un bind sur bob restait alice.
 func ResetBindInfo(conn net.Conn) {
+	ldapjournal.CompteLie(conn, "")
+
 	sessionStoreMu.Lock()
 	defer sessionStoreMu.Unlock()
 
@@ -116,8 +125,10 @@ func DeleteLDAPSession(conn net.Conn) {
 	sessionStoreMu.Lock()
 	defer sessionStoreMu.Unlock()
 
+	// Sans ligne de journal : la fermeture d'une connexion est écrite par
+	// ldapjournal.Fermer, avec son motif et son bilan. Celle-ci sortait deux
+	// fois pour un unbind — une fois ici, une fois à la sortie de la boucle.
 	delete(sessionStore, conn)
-	logs.Write_Log("INFO", fmt.Sprintf("Session LDAP supprimée pour %s", conn.RemoteAddr()))
 }
 
 func ListActiveSessions() []LDAPSession {

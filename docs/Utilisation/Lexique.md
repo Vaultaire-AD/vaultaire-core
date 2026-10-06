@@ -30,8 +30,10 @@ et sa configuration.
 > générique. Voir ci-dessous.
 
 ### Proxy
-`vaultaire_proxy`. Relais de découverte et de répartition de charge entre les
-postes et les **cores**.
+`vaultaire_proxy`. Nœud du cluster placé près des postes d'un site : il
+**relaie** leurs connexions Ducky et LDAPS vers les **cores**, et HTTPS vers les
+**Nexus**.
+Voir [`docs/proxy/`](../proxy/README.md).
 
 **Il ne déchiffre rien** : la session Ducky reste de bout en bout entre l'agent
 et le core, et le proxy transporte les octets sans les lire. Ce n'est pas un
@@ -39,7 +41,8 @@ détail d'implémentation mais une décision — depuis que le mot de passe tran
 dans le tunnel, un proxy qui terminerait la session deviendrait un point de
 collecte des mots de passe du parc entier.
 
-Il n'authentifie personne et ne reçoit aucune politique.
+Il n'authentifie personne, ne répartit pas la charge (l'ordre des cibles est
+fixe) et ne reçoit aucune politique.
 
 ### Interface web
 `vaultaire_web`, servie par le core sur le port 4443. Elle authentifie les
@@ -47,6 +50,20 @@ administrateurs et relaie leurs commandes.
 
 Du point de vue du protocole, c'est un **service** comme un autre : elle s'enrôle
 et ouvre une session Ducky.
+
+### Nexus
+`vaultaire_nexus`, le **dépôt de paquets** du parc (`src/vaultaire_nexus`) :
+paquets RPM et Debian, images Docker, releases Vaultaire, fichiers versionnés.
+Port 8843.
+
+C'est un **service** : il s'enrôle, s'enregistre dans le cluster (`04_09`) et
+fait vérifier les comptes de ses utilisateurs par le core (`08_01`), second
+facteur compris. Il n'agit au nom de personne.
+
+### Droits de service
+Clés RBAC que le core **transmet** à un service, qui les **applique** :
+`read:nexus`, `write:nexus`, `write:nexus_admin`. Elles ne correspondent à aucune
+commande `vlt`. Voir [`Actions_et_Permissions.md`](./Actions_et_Permissions.md).
 
 ### CLI locale / CLI distante
 - `vlt` (`vaultaire_cli`) parle au core par un **socket UNIX local**. Elle suppose
@@ -74,7 +91,7 @@ et c'est elle qui décide de la façon dont il naît :
 | Famille | Comment il naît | Exemples |
 |---|---|---|
 | **agent** | **créé sur le core**, qui lui fabrique ses clés | `vaultaire_client` |
-| **service** | **s'enrôle seul**, avec ses propres clés | `vaultaire_proxy`, `vaultaire_web` |
+| **service** | **s'enrôle seul**, avec ses propres clés | `vaultaire_proxy`, `vaultaire_web`, `vaultaire_nexus` |
 
 La distinction n'est pas cosmétique. Un **service** génère sa paire de clés sur
 la machine qui l'exécutera : sa clé privée ne quitte jamais cet hôte. Un agent,
@@ -108,6 +125,18 @@ délégation**. Un droit s'accorde sur un domaine, avec ou sans **propagation** 
 sous-domaines.
 
 Ce n'est pas un domaine DNS, même si Vaultaire sait aussi servir du DNS.
+
+Un domaine n'existe que porté par un groupe. Créer un groupe dans
+`infra.cloud.acme.lan` crée donc aussi les domaines parents qui manquent
+(`cloud.acme.lan`, `acme.lan`), chacun avec un groupe du même nom.
+
+### Domaine principal
+Les **deux derniers labels** d'un domaine : `infra.cloud.test.fr` → `test.fr`.
+C'est le seul domaine sous lequel un compte se **connecte** à une machine
+(`alice@test.fr`) : ceux de ses groupes, réduits à leur domaine principal. Un
+compte membre de groupes sous `test.fr` et sous `acme.lan` a deux identités de
+connexion, donc deux comptes locaux distincts sur une même machine. Tout autre
+domaine — un sous-domaine, ou un domaine où il n'a aucun groupe — est refusé.
 
 ### Groupe
 Un rattachement. On y met des **utilisateurs**, des **clients**, des
@@ -169,7 +198,9 @@ On l'accorde avec `all`, ou pas du tout.
 La révocation d'urgence d'un compte (`vlt kill -u`). Elle coupe l'accès **partout
 à la fois** — portail, LDAP, Ducky — et le refus précède toute évaluation du mot
 de passe, pour que le verrouillage ne devienne pas un moyen de confirmer qu'un
-compte existe.
+compte existe. Sur les postes, l'agent verrouille le compte local **puis ferme
+ses sessions et arrête ses processus** : verrouiller empêche d'entrer, cela ne
+fait sortir personne.
 
 ---
 
@@ -223,8 +254,9 @@ magasin de confiance, DNS…). Un effet que l'agent ne sait pas relire est signa
 Selon le **mode** de la GPO, un écart est corrigé au cycle suivant (`enforce`)
 ou seulement signalé (`audit`).
 
-Limite actuelle : seul le scope **machine** est scanné ; le scope utilisateur ne
-l'est pas encore (TO-DO 33).
+Les deux scopes sont scannés : la **machine** avant chaque cycle machine,
+l'**utilisateur** à l'ouverture de session — au plus une fois par cadence GPO et
+par compte.
 
 > « Non vérifié » ne veut pas dire conforme : cela veut dire que l'agent n'a pas
 > encore rapporté de scan.
@@ -242,5 +274,5 @@ l'état.
 | Les commandes | [`MAN.md`](./MAN.md) |
 | Déléguer des droits | [`Group-Permission.md`](./Group-Permission.md) |
 | Quel droit pour quelle opération | [`Actions_et_Permissions.md`](./Actions_et_Permissions.md) |
-| Le protocole en détail | [`../Developement/how it work/Protocole_Ducky.md`](../Developement/how%20it%20work/Protocole_Ducky.md) |
+| Le protocole en détail | [`../Developement/how it work/ducky-network/`](../Developement/how%20it%20work/ducky-network/README.md) |
 | Les GPO en détail | [`../Developement/how it work/GPO.md`](../Developement/how%20it%20work/GPO.md) |
