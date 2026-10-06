@@ -178,6 +178,10 @@ type ResumeParc struct {
 	EnRetard   int // ont rapporté un jour, plus depuis ToleranceRapport()
 	EnEchec    int // au moins un module en échec
 	AvecEcarts int // au moins un écart de conformité constaté
+
+	// NonVerifiees : au moins une portée appliquée dont la conformité n'a
+	// jamais été vérifiée — voir ComplianceRow.NonVerifiee.
+	NonVerifiees int
 }
 
 // ResumerParc agrège les lignes en un état d'ensemble.
@@ -193,6 +197,7 @@ func ResumerParc(rows []ComplianceRow, maintenant time.Time) ResumeParc {
 	retard := map[string]bool{}
 	echec := map[string]bool{}
 	ecarts := map[string]bool{}
+	nonVerifiees := map[string]bool{}
 
 	for _, r := range rows {
 		if !vues[r.ComputeurID] {
@@ -218,6 +223,10 @@ func ResumerParc(rows []ComplianceRow, maintenant time.Time) ResumeParc {
 		if r.DriftCount > 0 && !ecarts[r.ComputeurID] {
 			ecarts[r.ComputeurID] = true
 			out.AvecEcarts++
+		}
+		if r.NonVerifiee() && !nonVerifiees[r.ComputeurID] {
+			nonVerifiees[r.ComputeurID] = true
+			out.NonVerifiees++
 		}
 	}
 	return out

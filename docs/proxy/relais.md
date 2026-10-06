@@ -31,6 +31,11 @@ Sans section `relais:` dans `config.yaml`, le proxy ouvre **un** relais Ducky
 vers les cores, sur le port de `-listen-port`. C'est ce que fait le conteneur
 `vlt-proxy`, et c'est ce qu'il faut dans presque tous les cas.
 
+> **Ce fichier est l'AMORCE** *(TO-DO 141)*. Le core peut piloter les relais
+> d'un proxy : dès qu'il a une liste pour lui, c'est elle qui s'applique, et la
+> section ci-dessous n'est plus lue. Pour ajouter, changer ou retirer un relais
+> sans toucher à cette machine : [`pilotage.md`](./pilotage.md).
+
 ## La section `relais:`
 
 ```yaml
@@ -55,7 +60,7 @@ relais:
 | `cibles.adresses` | — | pour `source: liste`, en `hôte:port` |
 | `cibles.port` | 636 pour `ldaps`, le port annoncé sinon | pour `source: cores` seulement : le port à joindre sur chaque core |
 | `delai_connexion_secondes` | 3 | court à dessein : on passe vite à la cible suivante |
-| `inactivite_secondes` | 900 | doit dépasser le battement du protocole (Ducky : 2 min) |
+| `inactivite_secondes` | 900 | pour un relais `ducky`, relevée d'elle-même à deux battements du core plus une minute si elle est plus courte (TO-DO 110) |
 | `max_connexions` | 4000 | |
 | `max_par_source` | 20 | une machine ne prend pas toutes les places |
 
@@ -68,6 +73,15 @@ Règles vérifiées au chargement — une erreur arrête le proxy :
 - un relais `https` nomme ses cibles (`service:<type>` ou `liste`) : `cores`
   donnerait les adresses Ducky des cores ;
 - `service:<type>` ne sert qu'au relais `https`.
+
+Une clé de plus, hors de la liste des relais :
+
+```yaml
+pilotage_par_le_core: false   # défaut : true
+```
+
+À `false`, le proxy rend compte de ses relais au core mais **refuse** qu'il les
+change. Voir [`pilotage.md`](./pilotage.md#un-proxy-qui-garde-la-main).
 
 ## Les sources de cibles
 
@@ -118,7 +132,12 @@ qui se reconnecte comme il le ferait en direct.
 Le bilan périodique est là pour un cas : un relais qui refuse tout ne se verrait
 sinon qu'en lisant une ligne par connexion. Diagnostic : [`depannage.md`](./depannage.md).
 
-## Ce que le core en voit *(TO-DO 108)*
+## Ce que le core en voit *(TO-DO 108 et 141)*
+
+Deux choses remontent : la **configuration** des relais et leur état — une
+trame `04_18` par minute, et après chaque changement —, et leurs **compteurs**.
+La première est décrite dans [`pilotage.md`](./pilotage.md) ; ce qui suit
+concerne les compteurs.
 
 Les mêmes compteurs partent au core à la cadence du **battement** du nœud
 (20 s), dans une trame `04_05`. Ils n'ont donc plus besoin d'être lus dans le

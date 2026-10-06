@@ -3,6 +3,7 @@ package decouverte
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -31,29 +32,112 @@ const CadenceServices = 5 * time.Minute
 var (
 	servicesMu sync.RWMutex
 	services   = map[string][]string{}
-	suivis     sync.Once
+
+	// typesSuivis est l'ensemble des types demandés au core. Il GRANDIT en
+	// cours de route : un relais HTTPS posé par le core (TO-DO 141) peut
+	// nommer un type de service qu'aucun relais du fichier ne suivait.
+	typesSuivis  = map[string]bool{}
+	boucleSuivi  sync.Once
+	cleDesSuivis func() string
+	reveilSuivi  = make(chan struct{}, 1)
 )
 
 // SuivreServices demande, tout de suite puis à chaque CadenceServices, les
-// services de chacun des types. Un seul appel par processus : les suivants
-// sont ignorés.
+// services de chacun des types.
+//
+// Peut être appelée plusieurs fois : les types s'AJOUTENT, et un type nouveau
+// est demandé sans attendre le tour suivant. Aucun n'est jamais retiré — une
+// demande de trop toutes les cinq minutes coûte moins qu'un relais dont les
+// cibles cessent d'être rafraîchies parce qu'on a mal compté ses voisins.
 func SuivreServices(types []string, sessionKey func() string) {
-	if len(types) == 0 {
+	nouveaux := ajouterTypesSuivis(types)
+
+	// Le fournisseur de clé est retenu MÊME sans type à suivre : un proxy sans
+	// relais HTTPS dans son fichier peut en recevoir un du core plus tard, et
+	// il lui faudra de quoi émettre la demande.
+	servicesMu.Lock()
+	premierFournisseur := cleDesSuivis == nil && sessionKey != nil
+	if cleDesSuivis == nil {
+		cleDesSuivis = sessionKey
+	}
+	cle := cleDesSuivis
+	servicesMu.Unlock()
+	if cle == nil {
 		return
 	}
-	suivis.Do(func() {
+	if premierFournisseur {
+		// Ceux qui avaient été retenus avant qu'on sache émettre partent aussi.
+		nouveaux = TypesSuivis()
+	}
+	if len(nouveaux) == 0 {
+		return
+	}
+
+	logs.Write_log("INFO", fmt.Sprintf("services du cluster : suivi de %s (cadence %s)",
+		strings.Join(nouveaux, ", "), CadenceServices))
+
+	boucleSuivi.Do(func() {
 		go func() {
 			defer logs.Recover("services du cluster")
 			for {
-				for _, t := range types {
-					emettreDemandeServices(sessionKey, t)
+				for _, t := range TypesSuivis() {
+					emettreDemandeServices(cle, t)
 				}
-				time.Sleep(CadenceServices)
+				select {
+				case <-time.After(CadenceServices):
+				case <-reveilSuivi:
+				}
 			}
 		}()
-		logs.Write_log("INFO", fmt.Sprintf("services du cluster : suivi de %s (cadence %s)",
-			strings.Join(types, ", "), CadenceServices))
 	})
+	// La boucle tourne déjà : un type ajouté est demandé maintenant.
+	select {
+	case reveilSuivi <- struct{}{}:
+	default:
+	}
+}
+
+// SuivreServicesEnPlus ajoute des types au suivi déjà démarré, avec le
+// fournisseur de clé donné au premier appel. Sans effet tant que
+// SuivreServices n'a jamais reçu de fournisseur.
+func SuivreServicesEnPlus(types []string) {
+	servicesMu.RLock()
+	cle := cleDesSuivis
+	servicesMu.RUnlock()
+	if cle == nil {
+		// Retenus quand même : ils partiront au premier SuivreServices.
+		ajouterTypesSuivis(types)
+		return
+	}
+	SuivreServices(types, cle)
+}
+
+// ajouterTypesSuivis rend ceux qui n'étaient pas encore suivis.
+func ajouterTypesSuivis(types []string) []string {
+	servicesMu.Lock()
+	defer servicesMu.Unlock()
+	var nouveaux []string
+	for _, t := range types {
+		t = strings.TrimSpace(t)
+		if t == "" || typesSuivis[t] {
+			continue
+		}
+		typesSuivis[t] = true
+		nouveaux = append(nouveaux, t)
+	}
+	return nouveaux
+}
+
+// TypesSuivis rend les types demandés au core, triés.
+func TypesSuivis() []string {
+	servicesMu.RLock()
+	defer servicesMu.RUnlock()
+	out := make([]string, 0, len(typesSuivis))
+	for t := range typesSuivis {
+		out = append(out, t)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func emettreDemandeServices(sessionKey func() string, typ string) {

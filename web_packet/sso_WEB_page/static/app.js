@@ -132,4 +132,36 @@
     });
   }
   if (drawerClose) drawerClose.addEventListener('click', closeDrawer);
+
+  /* Confirmation avant un envoi destructeur (TO-DO 103).
+     Remplace les attributs onsubmit="return confirm(...)" des gabarits : la
+     Content-Security-Policy du portail interdit tout script en ligne, attributs
+     on* compris. Le message vient de data-confirm, écrit par le gabarit et donc
+     échappé par html/template. Sans JavaScript, le formulaire part sans
+     confirmation — comme avant pour un navigateur qui bloquait confirm(). */
+  document.addEventListener('submit', function (e) {
+    var form = e.target;
+    if (!form || !form.getAttribute) return;
+    var message = form.getAttribute('data-confirm');
+    if (message && !window.confirm(message)) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+    }
+  }, true);
+
+  /* Boutons « copier » des blocs de code (tableau de bord). Venus d'un script
+     en ligne de admin.html. */
+  document.querySelectorAll('.chat-code-copy[data-copy-target]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var el = document.getElementById(btn.getAttribute('data-copy-target'));
+      if (!el || !navigator.clipboard) return;
+      var text = el.textContent || el.innerText;
+      navigator.clipboard.writeText(text).then(function () {
+        var lbl = btn.textContent;
+        btn.textContent = 'Copié';
+        btn.classList.add('chat-code-copied');
+        setTimeout(function () { btn.textContent = lbl; btn.classList.remove('chat-code-copied'); }, 2000);
+      });
+    });
+  });
 })();

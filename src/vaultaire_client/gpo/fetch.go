@@ -257,18 +257,27 @@ func HandleTrame(sub, sessionKey, content string) {
 		// interrompt la suite, et il n'y a aucune raison de perdre au passage un
 		// réglage que le serveur vient d'annoncer.
 		appliquerCadence(lines)
+		appliquerCadenceUtilisateur(lines)
 		handleManifest(sessionKey, ScopeMachine, "", lines)
 	case "03":
 		appliquerCadence(lines)
+		appliquerCadenceUtilisateur(lines)
 		handleUnchanged(ScopeMachine, "", lineAt(lines, 0))
 	case "04":
 		handleScopeError(ScopeMachine, "", lineAt(lines, 0), lineAt(lines, 1))
 	case "06":
 		// En scope user, la première ligne est l'utilisateur cible : le reste du
 		// manifeste suit le même format qu'en scope machine.
+		//
+		// La cadence de vérification utilisateur voyage aussi ici (TO-DO 142) :
+		// c'est par ces deux réponses qu'un réglage modifié atteint le poste à
+		// la connexion suivante. Celle de la machine, non — il n'y a pas de
+		// boucle à régler de ce côté.
+		appliquerCadenceUtilisateur(lines)
 		username := strings.TrimSpace(lineAt(lines, 0))
 		handleManifest(sessionKey, ScopeUser, username, dropFirst(lines))
 	case "07":
+		appliquerCadenceUtilisateur(lines)
 		handleUnchanged(ScopeUser, strings.TrimSpace(lineAt(lines, 0)), lineAt(lines, 1))
 	case "08":
 		handleScopeError(ScopeUser, strings.TrimSpace(lineAt(lines, 0)), lineAt(lines, 1), lineAt(lines, 2))

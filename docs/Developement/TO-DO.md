@@ -12,13 +12,13 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **156**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **166**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
 détaillés dans [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md).
-**Traités dans la 2.2** : 95, 96, 97, 99, 100, 101, 106, 107 et 108. **Restent
-ouverts** : 98 (secrets au repos, à cadrer) et 102 à 105. Ce fichier porte :
+**Traités dans la 2.2** : 95 à 97, 99 à 108. **Reste ouvert** : 98 (secrets au
+repos, à cadrer). Ce fichier porte :
 ce que le code fait, qui peut l'atteindre, ce qu'il obtient, et pourquoi la
 correction n'est pas triviale. Ce fichier porte aussi les constats laissés de
 côté, pour qu'ils ne soient pas redécouverts comme neufs.
@@ -51,24 +51,42 @@ bind, qui vient d'être repris.
 **Recette du 30/09 (postes Windows et Linux).** Six constats, dont cinq ouvrent
 un point : **133** et **134** (révocation), **135** (dérive du scope
 utilisateur), **136** (le test 29d est contradictoire) et **137** (la DLL Windows
-manque en silence) — ces deux derniers **traités**, voir `DO/2.2/2.2.md`. Le sixième — récupérer l'identité d'une machine créée depuis
+manque en silence) — **tous traités**, voir `DO/2.2/2.2.md`. Le sixième — récupérer l'identité d'une machine créée depuis
 le portail — n'est pas neuf : c'est le **82**, dont la section « À faire » a été
 complétée de ce que la recette a montré. Le Credential Provider reste en
 attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
+
+**Recette du 05/10 (branche `hotfix`, poste Windows).** La tuile s'inscrit et se
+charge, mais l'écran de connexion reste **vide** — aucune tuile, pas même celles
+de Windows. Deux défauts trouvés en cherchant sont **traités** (**156**, voir
+`DO/2.2/2.2.md`) : l'échange avec l'agent n'avait aucune échéance côté DLL, et le
+journal ne disait pas où LogonUI s'arrêtait. La cause de l'écran vide, elle,
+**n'est pas établie** : c'est le **157**.
 
 **Recette du 03/10 (retours de Lorens sur `A_TESTER.md`).** Dix points ouverts,
 **139 à 148** : Windows (**139** la DLL dépend de `libwinpthread-1.dll`, **140**
 le fournisseur s'inscrit sous le CLSID `{` — **traités** le jour même, voir
 `DO/2.2/2.2.md` ; le **149** en est la suite),
-proxy (**141** la configuration des relais se pilote depuis le core), GPO
-(**142** cadence de la vérification utilisateur, **143** une ligne par machine
-dans la page Conformité), comptes et LDAP (**144** créer un compte sans mot de
+proxy (**141** la configuration des relais se pilote depuis le core —
+**traité**, voir `DO/2.2/2.2.md` ; les **158** et **160** en sont la suite), GPO
+(**142** cadence de la vérification utilisateur — **traité** —, **143** une ligne
+par machine dans la page Conformité), comptes et LDAP (**144** créer un compte sans mot de
 passe provisoire, **145** journal LDAP illisible en debug — **traité**, voir
 `DO/2.2/2.2.md` ; les **153** et **154** en sont la suite) et cluster (**146**
 retirer un nœud à la main, **147** maintenance et purge, **148** sessions
 actives par core). Le retour sur le § 26 — une suppression ou une modification
 dans un `HOME` n'est pas détectée — n'ouvre pas de point : c'est le **135**,
-confirmé, et complété de ce que la recette a montré.
+confirmé, et **traité** depuis.
+
+**Banc du 06/10 (premier agent réel lancé contre un core).** En traitant les
+133, 134, 135 et 142, trois défauts que la relecture n'avait pas montrés sont
+sortis, **traités** dans le même lot (voir `DO/2.2/2.2.md`) : `kill -u <nom>`
+ne verrouillait **aucun** compte local quand le nom était donné sans domaine
+(dans le **133**), deux appliqueurs du scope utilisateur suivaient encore les
+liens d'un dossier personnel (**162**), et l'agent gardait un masque de création
+faux selon son démarrage (**165**). Deux points en restent : **163** (les
+modules utilisateur sans vérificateur) et **164** (voir où en est un ordre de
+révocation, machine par machine).
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -79,14 +97,10 @@ confirmé, et complété de ce que la recette a montré.
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 102 | API          | Ni freinage ni borne de corps sur `/api/command`            | À faire — sérieux                       |
-| 103 | WEB          | Ni jeton CSRF ni en-tête de sécurité sur le portail         | À faire — sérieux                       |
-| 104 | RBAC         | « Deny » ne refuse pas                                      | À faire — sérieux, à trancher           |
-| 105 | DNS          | Nom de table construit par concaténation                    | À faire — sérieux                       |
-| 109 | CLUSTER      | Un proxy oublié ne se réenregistre jamais                   | À faire                                 |
-| 110 | RÉGLAGES     | `check_online_minutes` peut couper le parc en silence       | À faire                                 |
-| 138 | DUCKY        | Comptes déjà au-delà de 10 clés SSH                         | À faire — petit                         |
-| 141 | CLUSTER      | Piloter les relais d'un proxy depuis le core (web + CLI)    | À faire — gros chantier, à cadrer       |
+| 158 | PROXY        | Un proxy démarré sans core n'ouvre aucun relais             | À faire — **la copie locale ne sert pas à froid** |
+| 159 | DUCKY        | Un refus `02_07` à une ligne fait paniquer le poste         | À faire — petit, à lire avant de toucher |
+| 160 | DOC          | « Pas de port sous 1024 en UID 10001 » : à vérifier         | À faire — petit, une commande           |
+| 161 | RÉGLAGES     | Prévenir quand la cadence dépasse ce que tolère le parc     | À faire — petit, la version est en base |
 | 146 | CLUSTER      | Retirer à la main un nœud hors ligne                        | À faire — petit                         |
 | 147 | CLUSTER      | Maintenance et purge d'un nœud                              | À faire — après le 148                  |
 | 148 | CLUSTER      | Sessions actives par core, en page et en commande           | À faire                                 |
@@ -96,12 +110,11 @@ confirmé, et complété de ce que la recette a montré.
 | 144 | COMPTES      | Créer un compte de service sans mot de passe provisoire     | À faire — petit, l'action le sait déjà  |
 | 153 | JOURNAL      | Dix-huit écritures directes sur la sortie standard          | À faire — petit                         |
 | 154 | JOURNAL      | Le tampon mémoire est recopié à chaque ligne une fois plein | À faire — petit, **2,4 ms par ligne de journal** |
-| 135 | GPO          | Le scope utilisateur n'entre jamais dans l'inventaire       | À faire — **la conformité ment**, confirmé le 03/10 |
-| 142 | GPO          | Cadence propre à la vérification du scope utilisateur       | À faire — après le 135                  |
 | 143 | GPO          | Page Conformité : une seule ligne par machine               | À faire — moins urgent                  |
+| 163 | GPO          | Modules utilisateur encore sans vérificateur                | À faire — petit, un module à la fois    |
 | 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
-| 133 | RÉVOCATION   | `kill -u` ne coupe aucune session ouverte                   | À faire — **l'aide affirme le contraire** |
-| 134 | RÉVOCATION   | Le rattrapage `06_04` n'est demandé qu'au démarrage         | À faire                                 |
+| 164 | RÉVOCATION   | Voir, machine par machine, où en est un ordre               | À faire — la lecture existe, sans appelant |
+| 157 | WINDOWS      | L'écran de connexion reste vide une fois la tuile inscrite  | **À faire — bloque la recette Windows** |
 | 149 | WINDOWS      | Éprouver la DLL du fournisseur dans la fabrication (wine)   | À faire — petit                         |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
@@ -115,7 +128,7 @@ confirmé, et complété de ce que la recette a montré.
 | 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 22  | SELINUX      | Domaine dédié pour l'agent                                 | En cours                                |
-| 49  | RÉVOCATION   | Retenter les révocations poussées en échec                 | À faire                                 |
+| 49  | RÉVOCATION   | Retenter les révocations poussées en échec                 | À faire — l'agent le borne déjà à dix minutes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
 
@@ -123,115 +136,113 @@ confirmé, et complété de ce que la recette a montré.
 
 ## Réseau Ducky
 
-### 138. [DUCKY] Les comptes déjà au-delà de 10 clés SSH
+### 159. [DUCKY] Un refus `02_07` à une seule ligne fait paniquer le poste
 
-**Constat** (relevé en traitant le 101). La borne de 10 clés par compte, de
-4 096 caractères chacune, ne s'applique qu'à l'AJOUT. Un compte qui en porte
-davantage depuis avant la 2.2 les garde. Si sa trame `02_04` dépasse 65 535
-octets une fois chiffrée, elle n'est plus émise : le tunnel reste sain — c'est
-l'objet du 101 —, mais ce compte ne peut plus ouvrir de session Ducky, et la
-seule trace est une ligne ERROR « trame de N octets » côté core, sans nom de
-compte.
+**Constat** (relevé en traitant le 138). Le poste lit un refus d'authentification
+ainsi (`userauth/UserAuthentificationManager.go`, `case "07"`) :
 
-Peu probable (il faut une soixantaine de grosses clés RSA), mais silencieux
-pour l'utilisateur.
+```go
+lines := strings.Split(trames_content.Content, "\n")
+logs.Write_log("WARNING", fmt.Sprintf("Authentification failed for user %s : %s", lines[0], lines[1]))
+```
 
-**À faire.** Au démarrage du core, relever les comptes au-delà de la borne et
-l'écrire en WARNING, nommément ; et dans le chemin de la `02_04`, nommer le
-compte quand la trame est refusée. Ne PAS tronquer la liste de clés en silence :
-ce serait retirer un accès sans que personne l'ait décidé.
+Il attend donc **deux** lignes de contenu : le compte, puis le motif. Or neuf
+des onze `02_07` de `CheckAuthentification.go` n'en portent qu'**une** —
+`Wrong login Data`, `Auth Failed please retry`, `You are not authentificate`,
+`Password expired…`. `lines[1]` sort alors du tableau et le traitement de la
+trame panique. La panique est récupérée par `handleConnection`
+(`serveur_communication/GoroutineConnection.go`), qui **ferme la connexion et
+retire la session**. Le journal du poste porte donc « Panic récupéré dans
+handleConnection … index out of range » là où il devrait porter le motif du
+refus — « mot de passe expiré » compris, que l'utilisateur ne lit nulle part.
 
-### 109. [CLUSTER] Un proxy oublié ne se réenregistre jamais
+Deuxième défaut au même endroit : le refus de la ligne 213 du même fichier
+(`Something go wrong contact you administrator`) est composé **sans** la ligne
+de destination `serveur_central`. Tous ses champs sont décalés d'un rang.
 
-**Constat** (relevé dans la revue des sessions du 25/09). Dans
-`decouverte.DemarrerNoeud` (SDK), le booléen `enregistre` passe à vrai à la
-réception du `04_02` et **n'est jamais remis à faux**.
+Le refus ajouté par le 138 (« trop de clés ») porte, lui, le compte et le
+motif : il s'affiche correctement.
 
-Côté core, `handleHostHeartbeat` sur `touchees == 0` rend `("", error)` : **aucune
-trame n'est envoyée**, `Spliter.go` journalise l'erreur et n'a rien à
-transmettre. Et même si une trame partait, `decouverte.HandleTrame` range `"08"`
-dans les accusés « rien à faire ».
+**Pourquoi ce n'est pas corrigé en passant.** La panique a un effet de bord :
+c'est elle qui **ferme** la connexion d'un essai refusé. Écrire la ligne
+proprement la laisserait ouverte. *À vérifier avant de toucher* : ce qui, dans
+`vaultaire_client`, conclut à l'échec — la fermeture, ou un délai — et ce que
+voit `sshd` dans chaque cas.
 
-Un proxy purgé après 24 h hors ligne bat donc dans le vide indéfiniment,
-invisible du cluster, en se croyant enregistré. C'est le TO-DO 84 pour les
-proxies : le correctif du point 85 (`startHeartbeatLoop` → `RegisterNode`) ne
-vaut que pour un **core** qui écrit dans sa propre base.
+**À faire.** Côté poste, lire le motif sans supposer le nombre de lignes (une
+ligne : c'est le motif, le compte est inconnu), puis fermer la session
+**explicitement**. Côté core, donner à tous les
+`02_07` la même forme — compte, motif — et réparer celui qui n'a pas de
+destination. Un test par forme de trame, des deux côtés.
 
-**À faire.** Renvoyer un refus explicite au battement d'un nœud inconnu — le
-commentaire de `Spliter.go` décrit déjà ce besoin, mais pour `04_01` — et remettre
-`enregistre` à faux à sa réception, ce qui fait rejouer `04_01` au tour suivant.
-Un test du côté SDK : un refus de battement doit produire un réenregistrement.
+### 158. [PROXY] Un proxy démarré sans core joignable n'ouvre aucun relais
 
-### 110. [RÉGLAGES] `check_online_minutes` peut couper le parc en silence
+**Constat** (relevé en traitant le 141). L'ordre de `vaultaire_proxy/main.go` est :
+`ducky.Start` — qui attend une session authentifiée, **trente secondes** au
+plus — puis le raccordement au cluster, puis les relais. Sans core joignable,
+`Start` rend une erreur et le proxy s'arrête (`aucune session authentifiée
+après 30s`) **avant** d'avoir ouvert un seul port.
 
-**Constat** (audit du 25/09). Le réglage `check_online_minutes` est réglable de 1
-à 60 minutes. Mais `authIdleTimeout` (**5 min**) et `handshakeIdleTimeout`
-(60 s) sont des constantes de `duckyGoroutine.go`, et `dbsessions.ValiditeSession`
-(**10 min**) en est une autre. Seul `FraicheurTunnel()` suit le réglage.
+Ce n'est pas neuf, mais le 141 le rend plus visible : le proxy garde maintenant
+sur disque la dernière liste de relais reçue du core (`relais_du_core.json`),
+précisément pour repartir sans lui. À froid, cette copie n'est jamais lue. Un
+site dont le proxy redémarre pendant une coupure du lien perd donc aussi ses
+relais `https` vers des cibles **locales** (`source: liste`), qui n'ont pas
+besoin du core pour fonctionner. En conteneur, la politique de redémarrage
+relance le proxy toutes les trente secondes, sans effet.
 
-Porter la cadence à 6 minutes fait donc couper par le balayage **toutes les
-sessions authentifiées** avant leur premier battement. La porter à 11 fait quitter
-`status -c` à tout le parc entre deux battements. Rien ne l'interdit, rien ne le
-signale, et le symptôme — « le parc se déconnecte en boucle » — ne désigne pas le
-réglage qu'on vient de changer.
+Un proxy **déjà démarré** qui perd ses cores n'est pas concerné : il garde tous
+ses relais ouverts — vérifié sur le banc.
 
-Les commentaires justifient les 5 et 10 minutes **par rapport à la valeur par
-défaut de 2**. C'est exactement le raisonnement que `dbgpo.CadenceAgent` a été
-créé pour éviter côté GPO, où la tolérance « trois cycles » est calculée depuis le
-réglage et non écrite en dur.
+**Ce qu'il faut trancher.** Le relais **Ducky** sans core n'a rien vers quoi
+relayer : l'ouvrir donne des refus francs, ce qui est le comportement voulu
+(l'agent passe au nœud suivant). Mais le proxy doit-il rester en vie sans
+session, et pour combien de temps ? Aujourd'hui l'arrêt sert d'alarme.
 
-**À faire.** Dériver les trois valeurs du réglage — par exemple
-`2 × cadence + 1 min` pour le balayage et `5 × cadence` pour la validité en base
-— avec un plancher. Le même geste que `FraicheurTunnel()`, appliqué aux deux
-autres. Et un test qui pose la cadence à son maximum et vérifie qu'aucune session
-saine n'est coupée.
+**À faire.** Ouvrir les relais **avant** d'attendre la session — depuis la copie
+locale, sinon depuis le fichier —, et faire de l'absence de session un état
+journalisé et retenté plutôt qu'un arrêt. Le raccordement au cluster et le
+compte rendu attendent la session, eux. Un test : proxy démarré sans core, un
+relais `liste` relaie.
 
+### 160. [DOC] [PROXY] « Pas de port sous 1024 en UID 10001 » : à vérifier
 
-### 141. [CLUSTER] [PROXY] [WEB] Piloter les relais d'un proxy depuis le core
+**Constat** (relevé en écrivant la documentation du 141). Trois pages affirment
+que le conteneur `vlt-proxy`, parce qu'il tourne en UID 10001, ne peut pas
+écouter sous 1024 : `docs/proxy/https-et-ldaps.md`,
+`deployments/pre-prod/vlt-proxy/README.md` et `config.example.yaml`. C'est vrai
+d'un processus non root sur un hôte. *À vérifier* dans un conteneur : depuis
+Docker 20.10, l'espace réseau d'un conteneur reçoit par défaut
+`net.ipv4.ip_unprivileged_port_start=0`, ce qui autorise justement les ports
+bas à un utilisateur ordinaire. La règle ne tiendrait alors que hors conteneur,
+en réseau `host`, ou sur un moteur plus ancien.
 
-**Constat** (recette du 03/10, § 22a). Rien n'explique comment gérer la
-configuration des relais d'un proxy, et surtout elle ne se gère **que** dans le
-fichier YAML du proxy (`relais:` — nom, type, écoute, cibles). Le core n'en sait
-que ce que le proxy lui remonte : la page Cluster affiche, au clic sur un proxy,
-un tableau de **compteurs** par relais (nom, type, écoute, connexions, trafic —
-TO-DO 108). Elle ne dit pas vers quoi chaque relais redirige, et ne permet de
-rien changer.
+Sans conséquence sur le fonctionnement : un port refusé remonte « refusé » avec
+son motif (141), un port accepté fonctionne. Seule la documentation dirait une
+chose fausse — et ferait choisir 1636 là où 636 conviendrait.
 
-**Demande de Lorens.** « Qui expose quoi » — LDAP, HTTP, HTTPS, Ducky — doit se
-gérer depuis la page Cluster des cores **et** en ligne de commande. Au clic sur
-un proxy, **toute** sa configuration remonte proprement. Et une commande avec un
-suivi visuel de l'état.
+**À faire.** Une commande sur la préprod :
+`vlt cluster relais <proxy> set essai --type ldaps --ecoute :636`, lire l'état,
+retirer le relais. Puis corriger les trois pages dans le sens constaté.
 
-**Ce qu'il faut trancher avant d'écrire.**
+### 161. [RÉGLAGES] Prévenir quand `check_online_minutes` dépasse ce que tolère le parc
 
-- **Où vit la vérité** : aujourd'hui le fichier du proxy. Si le core pilote, il
-  faut une table des relais par nœud et une trame qui la pousse (famille `04`,
-  comme la `04_15`/`04_16` qui sert déjà les cibles). Que devient alors le YAML :
-  amorçage seulement, ou repli quand le core est injoignable ? Un proxy isolé de
-  ses cores doit continuer de relayer avec sa dernière configuration connue.
-- **Ce qui reste local par nature** : le port d'écoute dépend de la machine
-  (ports bas interdits en UID 10001, port déjà pris). Le core peut le demander,
-  seul le proxy sait s'il l'a obtenu : il faut un état **demandé / appliqué /
-  refusé** par relais, et c'est lui le « suivi visuel ».
-- **Les types** : `ducky`, `https`, `ldaps` existent. Le LDAP en clair est
-  **refusé** par décision (voir `docs/proxy/https-et-ldaps.md`) ; « HTTP » est-il
-  demandé en clair, ou est-ce l'HTTPS relayé sans terminaison TLS ?
-- **Le droit** : changer ce qu'un proxy expose déplace un point d'entrée du
-  réseau. Clé RBAC dédiée, portée globale, ligne d'audit.
+**Constat** (reste du 110). Depuis la 2.2, le core et les postes à jour suivent
+la cadence du battement. Un agent **antérieur** garde son délai fixe : il ferme
+son tunnel après dix minutes sans trafic. Régler `check_online_minutes` à 10 ou
+plus le fait donc se reconnecter en boucle — le symptôme même que le 110 a
+retiré pour les autres. Aujourd'hui seule la `Consequence` affichée du réglage
+le dit ; rien ne l'empêche à la saisie.
 
-**À faire**, une fois tranché.
+Le core a pourtant ce qu'il faut : `id_logiciels.agent_version`, remontée par
+`02_12`.
 
-1. La fiche d'un proxy affiche sa configuration complète : chaque relais avec
-   son type, son écoute, sa **source de cibles** et les cibles résolues en ce
-   moment, à côté des compteurs existants.
-2. Les mêmes informations en commande (`vlt cluster relais <proxy>`), et les
-   écritures des deux côtés par la même action du registre (invariant § 6.1).
-3. La page d'exploitation manquante dans `docs/proxy/` : comment on ajoute, on
-   change et on retire un relais — c'est le manque que la recette a relevé en
-   premier — et un jalon dans la formation, chapitre 10.
-
-Lié au **67** (ce qu'un proxy voit des cores) : les deux touchent à ce que le
-core dit à un proxy, et gagneraient à partager leur trame.
+**À faire.** À `settings set check_online_minutes <n>` avec `n` ≥ 10 (et sur la
+page des durées), compter les machines dont la version est antérieure à la 2.2,
+ou inconnue. S'il y en a : le dire, les nommer (les cinq premières et le
+compte), et demander une confirmation explicite — pas un refus, un parc peut
+vouloir assumer. Même calcul dans `settings list`, en avertissement à côté de la
+valeur. Partage sa lecture de version avec le **111**.
 
 ### 148. [CLUSTER] Les sessions actives d'un core, en page et en commande
 
@@ -303,11 +314,13 @@ entier dans la liste.
 **À faire.** Une action `cluster.forget` — bouton sur la fiche du nœud et
 `vlt cluster forget <nœud>` — **réservée aux nœuds hors ligne** : retirer un
 nœud vivant ne sert à rien, il se réinscrit au battement suivant s'il est un
-core, et **jamais** s'il est un proxy (c'est le défaut du **109**, qu'un bouton
-rendrait facile à déclencher). Traiter le 109 avant, ou refuser franchement un
-nœud dont le dernier battement est récent. Ligne d'audit, et rappel de ce qui
-part avec la ligne : ses réglages d'exposition, de priorité et d'affinité
-(TO-DO 85 les fait survivre à l'absence, pas à l'oubli).
+core comme s'il est un proxy (depuis le **109**, traité : le core refuse son
+battement et il se réenregistre au tour suivant). Refuser franchement un nœud
+dont le dernier battement est récent. Retirer aussi ce que le core lui demandait
+d'exposer — les lignes `cluster_relays` et `cluster_relay_state` de ce nœud
+(141) restent sinon en base, sans effet mais sans fin. Ligne d'audit, et rappel
+de ce qui part avec la ligne : ses réglages d'exposition, de priorité et
+d'affinité (TO-DO 85 les fait survivre à l'absence, pas à l'oubli).
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
@@ -341,6 +354,52 @@ qui lui est propre — les services d'un type, par la `04_15` réservée aux pro
 des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
+
+### 157. [WINDOWS] L'écran de connexion reste vide une fois la tuile inscrite
+
+**Constat** (recette du 05/10, DLL compilée depuis `hotfix`). Après
+Ctrl+Alt+Suppr, l'écran de connexion n'affiche **aucune tuile** — ni celle de
+Vaultaire, ni celles de Windows. Seuls restent le bouton du réseau et celui de
+l'accessibilité. Le Bureau à distance ne passe pas non plus. Le journal de la
+DLL porte « fournisseur charge » et « scenario 1 accepte », rien d'autre ;
+celui de l'agent ne porte rien.
+
+**Ce qui est établi.**
+
+- Ces deux lignes sont aussi celles d'une ouverture de session **réussie** : le
+  journal d'avant le 156 ne distinguait pas un écran vide d'un écran sain. Elles
+  ne disent donc rien de la cause.
+- Rejouée sous wine par un faux LogonUI (toute la suite d'appels d'un
+  fournisseur, scénarios 1 et 2), la DLL de `hotfix` rend un résultat correct à
+  chaque méthode, agent arrêté comme agent en marche.
+- Un seul cas reproduit le symptôme : un tube **présent** dont l'agent ne répond
+  pas. `SetSelected` y restait bloquée sans limite. C'est corrigé (156) — mais
+  rien ne prouve que ce soit le cas de la recette.
+- L'en-tête MinGW des interfaces (ordre des méthodes, identifiants, énumérations,
+  taille des structures) a été relu contre les définitions de Windows : il est
+  juste. Le faux LogonUI et la DLL partagent cet en-tête ; une erreur commune
+  aux deux n'aurait pas été vue autrement.
+
+**À faire, dans l'ordre.** Chaque étape tranche une hypothèse.
+
+1. Refaire l'archive depuis une branche qui porte le 156, réinstaller, poser le
+   témoin `C:\ProgramData\Vaultaire\logs\credential_provider.trace`, refaire
+   l'essai, lire `credential_provider.log` (`A_TESTER.md`, §48). Une entrée
+   « > Méthode » sans sa sortie « < Méthode » nomme l'endroit. Une suite
+   complète dit que la DLL a tout rendu, et que la panne est en aval.
+2. Valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur : si les tuiles de
+   Windows reviennent, c'est bien notre DLL ; sinon, chercher ailleurs.
+3. Observateur d'événements, journal Application, sources « Application Error »
+   (1000) et « Application Hang » (1002) pour `LogonUI.exe` : le module fautif
+   y est nommé.
+4. Si la trace est complète et que l'écran reste vide : ce qui distingue notre
+   tuile de l'exemple de Microsoft — elle se déclare tuile **par défaut**
+   (`GetCredentialCount`), n'a **pas d'image** (`CPFT_TILE_IMAGE`), et le
+   fournisseur n'implémente pas `ICredentialProviderSetUserArray`. À essayer un
+   par un, sur le poste.
+
+**Lié.** Le 149 : le faux LogonUI qui a servi ici est exactement l'essai que le
+149 demande d'ajouter à la fabrication.
 
 ### 149. [WINDOWS] [TESTS] Éprouver la DLL du fournisseur dans la fabrication
 
@@ -390,52 +449,6 @@ wine. Ce n'est pas LogonUI — la tuile elle-même reste une recette manuelle.
 Debian et Ubuntu, avec la même section 4 (liste des cores déposée par le core,
 repli sur `SSH_CONNECTION`).
 
-### 135. [GPO] [CLIENT] Les fichiers du scope utilisateur n'entrent jamais dans l'inventaire
-
-**Constat** (recette du 30/09). Une GPO de scope `user` dépose un fichier. L'utilisateur le supprime, ou le modifie. La dérive n'est **jamais** détectée : après plusieurs ouvertures de session, `vlt gpo status` et la page Conformité continuent d'annoncer que tout va bien.
-
-**Confirmé en recette le 03/10**, et sous une seconde forme : après une déconnexion puis une reconnexion du compte, le scope utilisateur **n'est pas réappliqué**. C'est la même cause. `RunUserCycle` enchaîne bien le scan puis le cycle à chaque ouverture de session ; mais le scan ne voit rien (inventaire vide), donc n'oublie aucune empreinte, et le cycle reçoit « politique inchangée » — il sort sans rien poser. Le scope machine, lui, détecte et corrige : le défaut est propre au chemin utilisateur.
-
-**Ce que le code fait.** Le scan lui-même est juste. `scanFromState` (`drift.go`) traite la modification, l'absence, le mode, et même le lien symbolique posé à la place du fichier ; `drift_absent_test.go` le couvre. Le point 33 a bien ajouté le déclenchement à l'ouverture de session, avec sa borne de cadence et son verrou par compte.
-
-**La rupture est en amont, et elle tient en une ligne.** L'inventaire est alimenté par `recordWrite` / `recordAbsent` (`manifest.go`), et ces deux fonctions ne sont appelées **que** par `writeSystemFile` / `removeSystemFile`, dans `appliers_machine.go`. Le chemin du scope utilisateur — `writeUserFile` (`appliers_user.go`) → `ecrireFichierUtilisateur` (`chemin_sur_linux.go`) — n'appelle **ni l'un ni l'autre**.
-
-Conséquence en chaîne : `outcome.Files` est vide → `state.Files` reste vide pour ce scope → `scanFromState` sort sur `len(scopeState.Files) == 0` → `report.Checked == 0` → `scanUserDrift` **renonce en silence, avant même d'émettre un rapport**. Le core ne reçoit donc rien, et la conformité affiche le dernier état connu : conforme.
-
-**Pourquoi les tests ne l'ont pas vu.** `TestLaDeriveEstDetecteeDansUnHome` construit le `ScopeState` **à la main**, en y injectant les entrées `Files` que le vrai chemin n'écrit jamais. Il vérifie donc la règle, pas ce qui la nourrit. C'est exactement le défaut du point 120 (LDAP) : la règle était juste, ce qui l'alimentait ne l'était pas.
-
-**À faire.**
-
-1. Appeler `recordWrite` depuis le chemin du scope utilisateur, avec le chemin **résolu** (le `%h` développé) — c'est celui que le scan relira.
-2. Prévoir l'équivalent de `recordAbsent` si un module utilisateur retire un fichier.
-3. Un test qui parte du **vrai** applicateur et non d'un état fabriqué : déposer, muter, scanner. Un test-sentinelle interdisant une écriture de fichier qui ne passerait pas par une fonction enregistrant l'inventaire serait mieux encore — c'est la classe d'erreur, pas l'occurrence, qu'il faut fermer.
-4. Distinguer, côté affichage, « aucune dérive constatée » de « aucun scan n'a eu lieu ». Aujourd'hui les deux se lisent « conforme », et c'est ce qui a rendu ce défaut invisible.
-
----
-
-### 142. [GPO] [CLIENT] Une cadence propre à la vérification du scope utilisateur
-
-**Demande de Lorens** (recette du 03/10). Qu'un compte qui se déconnecte et se
-reconnecte retrouve sa politique réappliquée — « mais pas avant cinq minutes, il
-faut trouver le bon équilibre ».
-
-**Aujourd'hui.** La vérification d'un `HOME` est bornée par
-`intervalleScanUtilisateur()` (`drift_user.go`), qui rend la cadence **machine**
-(`gpo_refresh_minutes`, de 5 minutes à 24 heures). Le choix était délibéré : PAM
-est sollicité à chaque `ssh` et à chaque `sudo`, et scanner à chaque passage
-coûterait un hachage de l'inventaire et une trame `05_15` par commande
-privilégiée. Mais sur un parc réglé à une heure, un `HOME` dérivé n'est donc
-revérifié qu'une fois par heure, quel que soit le nombre de reconnexions.
-
-**À trancher.** Un réglage distinct pour le scope utilisateur (cinq minutes par
-défaut, annoncé par le core comme l'autre, même recette que `refresh:`), ou un
-plafond fixe « au plus la cadence machine, au moins cinq minutes ». Et
-distinguer une **ouverture de session** d'un `sudo` : c'est la première qui doit
-vérifier, le second n'a rien à remettre en état.
-
-**Après le 135** : tant que l'inventaire du scope utilisateur est vide, aucune
-cadence ne détectera rien.
-
 ### 143. [GPO] [WEB] Page Conformité : une seule ligne par machine
 
 **Constat** (recette du 03/10, moins urgent). La page Conformité liste une ligne
@@ -451,7 +464,45 @@ s'afficher conforme parce que son scope machine l'est. Le résumé du parc
 les faire compter des machines, sans perdre « le pire état l'emporte ».
 `vlt gpo status` doit suivre la même règle (invariant § 6.1).
 
+**Depuis le 135**, la ligne d'un compte porte un vrai état — `ok (N)`, ou des
+écarts — au lieu de rester « non vérifié » : la règle « remonte seulement en cas
+d'écart » a maintenant de quoi se nourrir. `ResumerParc` compte déjà des
+machines, y compris pour « une portée jamais vérifiée ».
+
+### 163. [GPO] [CLIENT] Les modules utilisateur encore sans vérificateur
+
+**Origine.** Reste du **135**. Le scope utilisateur est inventorié, mais trois
+modules n'y laissent rien que le scan sache relire. Un compte qui ne reçoit
+qu'eux reste « non vérifié » — silence, et non fausse conformité.
+
+| Module | Ce qui manque |
+|---|---|
+| `user_git_config` | un vérificateur de la clé. Le fichier est à la personne : pas de hachage. Relire `~/.gitconfig` par `lireFichierUtilisateur`, le copier hors du dossier, `git config --file <copie> --get <clé>` — jamais `git` sous le `HOME` (voir 162) |
+| `user_password_policy` | relire `chage -l <compte>` ; `force_change` ne se vérifie pas (il se consomme à la connexion) |
+| `user_cron` | les deux unités sont inventoriées ; l'**activation** du timer ne l'est pas (`systemctl --user is-enabled` demande le bus de la personne, absent hors session) |
+
+**Deux lectures par chemin restent**, sans rien écrire :
+
+- le scan des **fichiers** d'un `HOME` (`scanFromState`) refuse le lien posé à la
+  place du fichier, mais traverse un répertoire intermédiaire devenu lien : root
+  hache alors un autre fichier. Le hachage ne sort pas de la machine. Le passer
+  par la descente sûre demande de résoudre le `HOME` et l'uid dans le scan ;
+- le vérificateur d'ACL (`verifierACL`) appelle `getfacl <chemin>`. Même
+  remède que l'appliqueur : `designerSousHome`, puis `/proc/<pid>/fd/<n>`.
+
+**À faire.** Un module à la fois, chacun avec son test qui part du vrai
+appliqueur — c'est la règle du paquet : une vérification approximative est pire
+qu'aucune.
+
 ### 86. [GPO] Le mode audit ne se distingue pas d'enforce, et une GPO modifiée ne semble pas repartir
+
+> **Banc du 06/10.** En scope **utilisateur**, avec un agent réel, `audit` se
+> distingue bien : fichier supprimé, reconnexion, `gpo status` affiche
+> « 1 écart(s) », le journal de l'agent dit « mode audit, 1 module(s) en ecart
+> signale(s) sans correction », et le fichier n'est pas reposé. Avant le **135**
+> il ne pouvait rien montrer dans ce scope — aucun écart n'y était jamais vu —,
+> ce qui est peut-être tout le premier symptôme. Le scope **machine** n'a pas
+> été rejoué.
 
 **Constat** (recette du 24/09, **à préciser**). Deux symptômes rapportés, aucun reproduit ici : le mode `audit` ne produit pas de différence visible, et une GPO mise à jour ne semble rien changer chez un client qui l'avait déjà appliquée.
 
@@ -462,42 +513,6 @@ Une piste pour le second symptôme : l'empreinte porte sur la **politique effect
 ---
 
 ## Sécurité et authentification
-
-### 133. [RÉVOCATION] [SÉCURITÉ] `kill -u` ne termine aucune session ouverte — et son aide affirme le contraire
-
-**Constat** (recette du 30/09). `kill -u <compte>` ne ferme pas les sessions SSH ouvertes, et n'en laisse aucune trace côté client. Le testeur admettait qu'une session GDM survive ; en réalité **aucune** session système n'est coupée, SSH comme GDM.
-
-**Ce que le code fait.** Le chemin est complet et branché — le gestionnaire `06` existe côté agent, la trame arrive, elle est appliquée et acquittée. Mais le mode par défaut (`soft`) se réduit à `lockAccount` (`src/vaultaire_client/revocation/apply.go`) : `usermod -L` puis `chage -E 1`. Deux écritures dans `/etc/shadow`, **aucune action sur un processus vivant**.
-
-C'est correct pour la PRÉVENTION : la phase `account` de PAM refusera toute connexion neuve, clé SSH comprise. C'est sans effet sur une session en cours : une fois `sshd` fourché et le shell lancé, plus rien ne relit `/etc/shadow`. La session survit jusqu'au `exit` — ou indéfiniment sous `tmux`. Le seul `pkill` du dépôt est dans `deleteAccount`, donc en `--hard` seulement, et sa motivation écrite est de laisser passer `userdel`, pas de couper une session.
-
-**Ce que le core ferme, lui**, ce sont les sessions Ducky, les sessions web, et des LIGNES D'AFFICHAGE en base — le commentaire de `FermerSessionsUtilisateurPartout` le dit sans détour. Le compteur « sessions fermées » affiché par la CLI ne compte donc jamais une session SSH, même quand il est non nul.
-
-**Deux obstacles de fond, à trancher avant d'écrire.**
-
-1. **Vaultaire ne sait pas identifier une session.** La table `user_sessions` a pour clé le couple *(compte, machine)*, avec une contrainte d'unicité qui **fusionne trois `ssh` simultanés en une seule ligne**. Ni PID, ni TTY, ni identifiant `logind`. Le module PAM n'en relève aucun non plus. Même en ajoutant demain une trame « tue la session X », rien nulle part ne sait remplir X : l'agent devra repartir du système local.
-2. **Les cibles ne viennent pas des sessions ouvertes** mais des GROUPES (`machines_sharing_group_with.go`). Une machine où la personne a une session SSH mais qui n'est dans aucun de ses groupes n'est **jamais visée**, et la CLI affiche quand même un succès.
-
-**À faire.**
-
-1. Dans `lockAccount`, après les deux verrous : `loginctl terminate-user <compte>` quand `systemd-logind` est là, avec repli `pkill -KILL -u`. **À trancher explicitement** : `pkill -u` emporte aussi les processus détachés (`tmux`, `cron`) — probablement voulu sur un compte compromis, mais ce doit être une décision, pas un effet de bord.
-2. Corriger le texte d'aide de `kill -h`, qui affirme aujourd'hui « ses sessions ouvertes sont fermées immédiatement » sous un titre « Ce que fait le mode par défaut (soft) ». C'est faux, et c'est l'endroit où un exploitant va chercher la vérité pendant un incident. Vérifier aussi `docs/training/09-…/02-incident-et-journaux.md` et `MAN.md`.
-3. Ajouter les sessions ouvertes aux cibles, en plus des groupes.
-4. Une recette qui vérifie qu'une session SSH **ouverte** est réellement coupée. Aucun scénario ne le demande aujourd'hui, et le répertoire `revocation/` n'a **aucun** test.
-
----
-
-### 134. [RÉVOCATION] Le rattrapage `06_04` n'est demandé qu'au démarrage de l'agent
-
-**Constat.** Relevé en instruisant le 133, et probable explication du « aucune trace côté client ».
-
-`revocation.AskPending` n'a qu'un seul appelant dans tout le dépôt : une goroutine lancée par `bootstrapRevocation()`, lui-même appelé **une seule fois** au démarrage de l'agent. Trois commentaires du code et la documentation de conception affirment pourtant le contraire — « à chaque démarrage **et à chaque reconnexion du tunnel** », « une machine éteinte reçoit l'ordre à sa prochaine connexion ».
-
-**Conséquence.** Un ordre émis pendant que le tunnel machine est tombé reste en attente jusqu'au **redémarrage complet du service agent**. C'est exactement le scénario 3 de la recette (couper le réseau une minute, rétablir) : il ne peut pas passer.
-
-**À faire.** Rejouer `AskPending` à chaque rétablissement du tunnel, pas seulement à l'amorçage — ou corriger les trois commentaires et la documentation si l'on décide l'inverse. Ce qui ne doit pas rester, c'est l'écart entre les deux.
-
----
 
 ### 98. [SÉCURITÉ] Les secrets sont en clair dans la base
 
@@ -517,52 +532,6 @@ Une fois tranché : chiffrement d'enveloppe des colonnes `private_key_data` et `
 
 **Ne pas commencer par le code.** Ce point demande une décision d'exploitation, pas une implémentation.
 
-### 102. [API] Ni freinage ni borne de corps sur `/api/command`
-
-**Constat** (audit du 25/09). `core/api/api.go` n'importe pas `ratelimit`, et `commandHandler` (l. 130) décode le corps JSON **avant toute authentification**, sans `http.MaxBytesReader`.
-
-Chaque requête anonyme coûte donc au core deux lectures en base puis une vérification RSA **par clé enregistrée** sur le compte visé. Le port est ouvert à tous, puisque l'authentification *est* la signature.
-
-Trois conséquences : un amplificateur de déni de service ; une énumération de l'annuaire par chronométrage (« utilisateur introuvable » sort avant la lecture des clés) ; et plusieurs gigaoctets en mémoire par requête en vol, avec un `ReadTimeout` de 30 s.
-
-**À faire.** Freiner **sur la source seule**, avant de savoir de quel compte il s'agit — le freinage existant raisonne sur un couple (compte, source) après échec, il ne convient pas tel quel. Borner le corps avec `http.MaxBytesReader`. Égaliser le temps de réponse entre compte inconnu et signature invalide.
-
-**Attention.** Un intégrateur légitime pilote le parc en rafale : le barème par source doit le laisser travailler. Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 102.
-
-### 103. [WEB] Ni jeton CSRF ni en-tête de sécurité sur le portail
-
-**Constat** (audit du 25/09). Recherche exhaustive dans `vaultaire_serveur` : **zéro** occurrence de `csrf`, `Content-Security-Policy`, `X-Frame-Options`, `Strict-Transport-Security`, `X-Content-Type-Options`, `Referrer-Policy`. La seule mention de CSRF est un commentaire de `web_login.go:126` qui **constate l'absence**.
-
-La défense repose entièrement sur `SameSite=Strict`. Les actions d'administration sont des POST simples : créer un compte, lier une GPO, déclencher un **kill switch**.
-
-**À faire.** Porter le dispositif de Nexus (`vaultaire_nexus/internal/web/ui.go:212`), qui a déjà de vrais jetons CSRF — il s'agit de le reprendre, pas de l'inventer. Ajouter les en-têtes, et sortir le JavaScript en ligne des gabarits pour qu'une `Content-Security-Policy` stricte tienne.
-
-**Attention.** Un jeton par formulaire veut dire toucher **tous** les gabarits d'administration et tous les gestionnaires POST. Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 103.
-
-### 104. [RBAC] « Deny » ne refuse pas
-
-**Constat** (audit du 25/09). `permission-manager.go:82` et `permission-manager-strict.go`, même motif : `if parsedPermission.Deny { continue }`. Un refus explicite fait **sauter ce groupe** ; si un autre groupe accorde, c'est accordé.
-
-Un exploitant qui croit retirer un droit en posant un refus ne retire **rien** tant que la cible appartient à un autre groupe permissif. Un mot qui dit l'inverse de ce qu'il fait, sur un contrôle d'accès.
-
-**À trancher avant d'écrire.** Le comportement est **délibéré** : le commentaire de `DomainsWhereAllowed` l'assume, pour que « ce qu'on voit » et « ce qu'on peut » restent cohérents. Deux issues, et le choix n'est pas technique :
-
-- rendre `Deny` prioritaire — la sémantique attendue, celle d'AD —, au risque de retirer des droits en service à la mise à jour ;
-- **renommer** : si ce n'est pas un refus, cela ne doit pas s'appeler `Deny`.
-
-Voir [`Audit_securite_2026-09-25.md`](./Audit_securite_2026-09-25.md) § 104.
-
-### 105. [DNS] Le nom de table est construit par concaténation
-
-**Constat** (audit du 25/09). Cinq fichiers de `core/dns/DNS_Database/` font `safeTableName := "zone_" + strings.ReplaceAll(zoneName, ".", "_")` puis l'interpolent dans la requête (`DNS_DELETE_Zone.go:11`). La variable s'appelle `safeTableName` ; seuls les points ont été remplacés.
-
-`nomDNSAcceptable` (`actions_dns.go:361`) refuse les espaces, `/`, `\` et les sauts de ligne — mais **laisse passer l'apostrophe inverse et la virgule**. Or `DROP TABLE` accepte une liste séparée par des virgules, et MySQL cite les identifiants avec des apostrophes inverses.
-
-Un délégué `write:dns` peut vraisemblablement faire supprimer une table arbitraire. `multiStatements` n'étant pas activé dans le DSN, il n'y a pas de requête empilée — la portée est la destruction, pas l'exécution. **À confirmer par un essai réel.**
-
-**À faire.** Valider le nom de zone par une **liste blanche** (`^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`) et citer l'identifiant, dans les **cinq** fichiers. Allonger la liste de caractères interdits serait la mauvaise correction.
-
-
 ### 22. [EN COURS] [SELINUX] Politique pour les clients
 
 **Contexte.** Le module NSS lit désormais un fichier et ouvre un socket. Sous `sshd_t`, SELinux refuse : d'où « Invalid user » sans aucun journal Vaultaire, alors que `getent` lancé à la main réussit. Détails : `docs/exploitation/selinux.md`.
@@ -578,6 +547,33 @@ Un délégué `write:dns` peut vraisemblablement faire supprimer une table arbit
 **Constat.** La révocation poussée ne touche que les machines connectées au moment du déclenchement. Une machine absente récupère ses ordres en attente à sa reconnexion (`revocation_manager/trames.go`), mais une machine **connectée dont le push a échoué** attend elle aussi la reconnexion suivante, qui peut ne jamais venir tant que le tunnel tient.
 
 **À faire.** Une tâche de fond côté core qui renvoie périodiquement les ordres en attente aux clients connectés.
+
+**Borné par le point 134 (06/10).** Un agent à jour redemande ses ordres en
+attente à chaque tunnel rétabli **et toutes les dix minutes** : un ordre poussé
+en vain, ou appliqué en échec, est donc rejoué dans les dix minutes sans rien
+demander au core. Ce point reste ouvert pour ramener ce délai à quelques
+secondes, et pour les agents antérieurs, qui ne redemandent qu'à leur démarrage.
+
+### 164. [RÉVOCATION] Voir, machine par machine, où en est un ordre
+
+**Origine.** Reste du **133**. Le compte rendu de `kill -u` dit combien de
+machines ont **reçu** l'ordre. Ce qu'elles en ont fait — acquitté, en échec parce
+que des processus survivent, toujours en attente — ne se lit que dans le journal
+du core (`revocation: ordre 12 acquitté par <machine> (applied)`).
+
+Or depuis le 133 un ordre peut **échouer** sur une machine, et c'est précisément
+l'information qu'on cherche pendant un incident : « où ce compte travaille-t-il
+encore ? ».
+
+**Ce qui existe.** `dbrevocation.TargetsOf` lit l'état de chaque cible d'un
+ordre — et n'a **aucun appelant**. La table `user_revocation_target` porte le
+statut, la date de la dernière tentative et le détail.
+
+**À faire.** Une action au registre (lecture, clé à choisir : `write:killswitch`
+couvre déjà qui a le droit de déclencher), exposée en commande — par exemple
+`vlt kill -u <compte> --status` — **et** sur la fiche du compte du portail, sous
+l'historique des ordres qui s'y trouve déjà. Colonnes : machine, statut, dernière
+tentative, détail. Mettre devant ce qui n'est pas acquitté.
 
 **Déjà corrigé par le point 89 (24/09).** Une partie des « push en échec sur une machine connectée » ne venait pas du réseau : la session était choisie au hasard parmi celles qui portaient l'identifiant de la machine — poignée de main, session d'un utilisateur. `pushToOnline` passe désormais par `sessionmgr.SessionsMachine`. Reste le vrai sujet de ce point : rejouer un ordre dont l'envoi a réellement échoué.
 

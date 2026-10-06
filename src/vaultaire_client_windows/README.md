@@ -227,6 +227,7 @@ réellement le compte.
 | `C:\ProgramData\Vaultaire\keys\` | clé privée, clé du core, empreintes de confiance |
 | `C:\ProgramData\Vaultaire\logs\vaultaire_client_windows.log` | journal de l'agent |
 | `C:\ProgramData\Vaultaire\logs\credential_provider.log` | journal de la DLL (écran de connexion) |
+| `C:\ProgramData\Vaultaire\logs\credential_provider.trace` | témoin, **absent** en temps normal : sa présence allume la trace de la DLL (voir Diagnostic) |
 | `C:\ProgramData\Vaultaire\bin\` | binaires installés |
 
 ## Diagnostic
@@ -234,6 +235,8 @@ réellement le compte.
 | Symptôme | Cause probable |
 |---|---|
 | La tuile n'apparaît pas | Lire `credential_provider.log`. **Aucune ligne « fournisseur inscrit »** : `regsvr32` a échoué — code 3, la DLL ne se charge pas (dépendance manquante : archive d'avant le TO-DO 139). **« inscrit » mais jamais « charge »** : la clé n'est pas celle que LogonUI lit — `reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers"` doit montrer `{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}` ; une clé nommée `{` est la trace d'une DLL d'avant le TO-DO 140, refaire l'archive |
+| L'écran de connexion n'affiche **aucune** tuile, pas même celles de Windows | Un fournisseur retient LogonUI. Poser le témoin de trace (ci-dessous) et refaire l'essai : une ligne `> Méthode` sans sa ligne `<` nomme l'endroit. Pour reprendre la main : valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur, ou `uninstall.ps1 -CredentialProviderSeulement`. L'Observateur d'événements (Application, 1000 et 1002, `LogonUI.exe`) nomme le module en cas de plantage |
+| « Le service Vaultaire de ce poste ne répond pas » | le tube existe mais l'agent n'a pas répondu en 1,5 s : agent figé ou surchargé. Son journal, puis `sc stop` / `sc start VaultaireAgent` |
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` ; le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu, ou `servers` faux dans `client_conf.json` |
 | Refus alors que le mot de passe est bon | le compte a-t-il le droit sur cette machine ? le motif exact est dans le journal du **core** |
@@ -242,3 +245,36 @@ réellement le compte.
 
 Les deux journaux se lisent ensemble : la DLL dit ce qu'elle a demandé, l'agent
 dit ce que le core a répondu.
+
+### La trace de la DLL
+
+En temps normal la DLL n'écrit que trois choses : son inscription, son
+chargement, le scénario accepté. Ce sont **aussi** les lignes d'une ouverture de
+session réussie — elles ne disent pas où un écran de connexion s'est arrêté.
+
+```powershell
+New-Item C:\ProgramData\Vaultaire\logs\credential_provider.trace -Force   # allumer
+Remove-Item C:\ProgramData\Vaultaire\logs\credential_provider.trace       # éteindre
+```
+
+Le fichier est relu à chaque affichage de l'écran de connexion : pas de
+redémarrage. Tant qu'il est là, `credential_provider.log` porte une ligne à
+l'entrée de chaque appel de Windows et une à sa sortie :
+
+```
+trace fil=4120 > Tuile::SetSelected
+trace fil=4120 < Tuile::SetSelected = 0x00000000 (3 ms)
+```
+
+Une entrée sans sortie désigne la méthode où LogonUI est resté. Les interfaces
+que Windows demande y figurent, celles qu'on lui refuse aussi. **Aucune valeur
+saisie n'entre dans une ligne de trace** — ni identifiant, ni mot de passe, ni
+code. (La ligne ordinaire d'un refus nomme toujours le compte, comme avant.)
+
+C'est un fichier, et non une valeur de registre, parce qu'un poste dont l'écran
+de connexion est vide ne se règle plus de l'intérieur : un fichier se pose par
+`\\poste\c$` ou depuis le mode sans échec. Oublié, il se coupe de lui-même
+quand le journal dépasse 8 Mo.
+
+Sans trace, un appel qui retient LogonUI plus d'une seconde laisse quand même
+une ligne `lent : <méthode> a retenu LogonUI N ms`.

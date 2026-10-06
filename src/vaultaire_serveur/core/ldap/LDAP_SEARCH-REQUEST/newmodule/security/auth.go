@@ -48,6 +48,9 @@ type PorteeDeRecherche struct {
 	// partagée. Elle devrait l'être si on se mettait un jour à la garder d'une
 	// recherche à l'autre.
 	decisions map[string]bool
+	// refus : l'une des permissions est un « deny » (TO-DO 104). Il ferme la
+	// recherche entière, quels que soient les accords des autres groupes.
+	refus bool
 }
 
 // NouvellePortee construit la portée à partir de permissions déjà lues.
@@ -84,6 +87,7 @@ func NouvellePortee(permissions []string) *PorteeDeRecherche {
 	return &PorteeDeRecherche{
 		actions:   actions,
 		decisions: make(map[string]bool, 8),
+		refus:     permission.ContientUnRefus(permissions),
 	}
 }
 
@@ -125,7 +129,13 @@ func PorteeDeRecherchePour(username string) (*PorteeDeRecherche, error) {
 	if err != nil {
 		return NouvellePortee(nil), err
 	}
-	return NouvellePortee(perms), nil
+	p := NouvellePortee(perms)
+	// Le groupe protégé échappe aux refus, comme sur tous les autres chemins :
+	// voir core/permission/refus.go.
+	if p.refus && permission.CompteExempteDesRefus(username) {
+		p.refus = false
+	}
+	return p, nil
 }
 
 // Autorise dit si le compte a le droit de lire un domaine donné.
@@ -163,6 +173,9 @@ func (p *PorteeDeRecherche) Autorise(domaine string) bool {
 // le même verdict sur des entrées déjà en minuscules, et un test le vérifie cas
 // par cas — voir portee_test.go.
 func (p *PorteeDeRecherche) decider(domaine string) bool {
+	if p.refus {
+		return false
+	}
 	for _, pa := range p.actions {
 		switch pa.Type {
 		case "all":

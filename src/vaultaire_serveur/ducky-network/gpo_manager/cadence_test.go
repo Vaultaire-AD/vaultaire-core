@@ -103,7 +103,10 @@ func TestLaCadencePartAussiQuandRienNeChange(t *testing.T) {
 	if lignes[3] != "empreinte" {
 		t.Fatalf("empreinte deplacee : %q", lignes[3])
 	}
-	if !strings.HasPrefix(lignes[len(lignes)-1], PrefixeCadence) {
+	// En queue, sans être forcément la DERNIÈRE ligne : la cadence de
+	// vérification utilisateur l'a rejointe (TO-DO 142). Ce qui compte est
+	// qu'elle soit derrière l'empreinte, que l'agent lit par son rang.
+	if !enQueue(lignes, 4, PrefixeCadence) {
 		t.Fatalf("aucune cadence dans 05_03 : %q", lignes)
 	}
 	// 05_03 ne porte AUCUNE ligne de signature : elle ne transporte pas de
@@ -128,6 +131,63 @@ func TestLeScopeUserNePorteAucuneCadence(t *testing.T) {
 		if strings.Contains(trame, PrefixeCadence) {
 			t.Errorf("cadence presente en scope user : %q", trame)
 		}
+	}
+}
+
+// TO-DO 142 — la cadence de vérification du scope utilisateur part dans les
+// QUATRE réponses de politique, toujours derrière les champs lus par rang.
+func TestLaVerificationUtilisateurPartDansLesQuatreReponses(t *testing.T) {
+	machine := gpo.Manifest{
+		Scope: gpo.ScopeMachine, Version: 3, Fingerprint: "empreinte",
+		ChunkCount: 2, TotalSize: 4096, ModuleCount: 7, Checksum: "somme",
+	}
+	compte := machine
+	compte.Scope, compte.Username = gpo.ScopeUser, "alice"
+
+	cas := []struct {
+		nom          string
+		trame        string
+		positionnels int // en-tête comprise
+	}{
+		{"05_02", replyManifest("cle", "poste-1", machine), 9},
+		{"05_03", replyUnchanged("cle", gpo.ScopeMachine, "", "empreinte"), 4},
+		{"05_06", replyManifest("cle", "poste-1", compte), 10},
+		{"05_07", replyUnchanged("cle", gpo.ScopeUser, "alice", "empreinte"), 5},
+	}
+	attendu := PrefixeVerifUtilisateur + strconv.Itoa(reglages.Valeur(reglages.CleVerifGPOUtilisateur))
+	for _, c := range cas {
+		lignes := lignesDe(c.trame)
+		if lignes[0] != c.nom {
+			t.Fatalf("trame %q construite pour %s", lignes[0], c.nom)
+		}
+		if !enQueue(lignes, c.positionnels, PrefixeVerifUtilisateur) {
+			t.Errorf("%s : aucune ligne %q derriere les %d champs lus par rang : %q",
+				c.nom, PrefixeVerifUtilisateur, c.positionnels, lignes)
+			continue
+		}
+		trouve := false
+		for _, l := range lignes {
+			if l == attendu {
+				trouve = true
+			}
+		}
+		if !trouve {
+			t.Errorf("%s : la valeur envoyee n'est pas celle du reglage (%q attendu) : %q", c.nom, attendu, lignes)
+		}
+	}
+
+	// Les champs que l'agent lit par RANG en scope utilisateur n'ont pas bougé.
+	lignes := lignesDe(replyUnchanged("cle", gpo.ScopeUser, "alice", "empreinte"))
+	if lignes[3] != "alice" || lignes[4] != "empreinte" {
+		t.Errorf("05_07 : champs deplaces : %q", lignes)
+	}
+}
+
+// Le préfixe est déclaré des deux côtés du réseau.
+func TestLePrefixeDeVerificationUtilisateurResteCeluiDeLAgent(t *testing.T) {
+	if PrefixeVerifUtilisateur != "usercheck:" {
+		t.Errorf("PrefixeVerifUtilisateur = %q : la valeur doit rester identique a celle "+
+			"de l'agent (gpo.PrefixeVerifUtilisateur)", PrefixeVerifUtilisateur)
 	}
 }
 

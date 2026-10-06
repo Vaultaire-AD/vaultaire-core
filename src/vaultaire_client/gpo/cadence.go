@@ -48,9 +48,52 @@ const (
 	CadenceMaximum = 24 * time.Hour
 )
 
+// PrefixeVerifUtilisateur ouvre la ligne qui annonce la cadence de vérification
+// du scope UTILISATEUR — TO-DO 142.
+//
+// # Pourquoi une seconde cadence
+//
+// La vérification d'un `HOME` était bornée par la cadence MACHINE : au plus un
+// scan par compte et par `gpo_refresh_minutes`. Sur un parc réglé à une heure,
+// quelqu'un qui défaisait sa politique, se déconnectait et revenait dix minutes
+// plus tard retrouvait son dossier tel qu'il l'avait laissé — le scan avait eu
+// lieu « récemment », et sans scan le cycle reçoit « politique inchangée ».
+//
+// Les deux durées ne répondent pas à la même question. La cadence machine dit
+// à quel rythme un parc redemande une politique qui n'a le plus souvent pas
+// changé : c'est du trafic, on le veut rare. Celle-ci dit combien de temps une
+// personne peut rester avec un dossier défait en se reconnectant : c'est le
+// délai de réparation, on le veut court. Les lier obligeait à choisir entre un
+// parc bavard et des `HOME` réparés une fois par heure.
+//
+// Elle part dans les QUATRE réponses de politique — 05_02 et 05_03 pour que
+// l'agent la connaisse dès son premier cycle machine, avant la première
+// connexion ; 05_06 et 05_07 pour qu'un réglage modifié atteigne le poste à la
+// connexion suivante, sans attendre le tour de la machine.
+const PrefixeVerifUtilisateur = "usercheck:"
+
+// Bornes et défaut de la vérification utilisateur, identiques à celles du
+// réglage `gpo_user_check_minutes` côté core.
+//
+// Cinq minutes par défaut : c'est aussi ce qu'applique un agent face à un core
+// qui n'annonce rien — plus ancien que ce réglage.
+//
+// Une minute au moins. La borne ne protège pas d'une boucle, comme celle de la
+// cadence machine : aucune boucle ne tourne ici, c'est PAM qui déclenche. Elle
+// protège du scan répété — un déverrouillage d'écran est une authentification
+// PAM comme une autre, et quelqu'un qui verrouille et déverrouille son poste
+// ne doit pas faire hacher son inventaire à chaque fois.
+const (
+	VerifUtilisateurParDefaut = 5 * time.Minute
+	VerifUtilisateurMinimum   = 1 * time.Minute
+	VerifUtilisateurMaximum   = 24 * time.Hour
+)
+
 var (
 	cadenceMu sync.Mutex
 	cadence   = MachineRefreshInterval
+
+	cadenceUtilisateur = VerifUtilisateurParDefaut
 
 	// Canaux de réveil de la boucle de rafraîchissement.
 	//
@@ -66,6 +109,55 @@ func CadenceActuelle() time.Duration {
 	cadenceMu.Lock()
 	defer cadenceMu.Unlock()
 	return cadence
+}
+
+// CadenceUtilisateur rend l'intervalle minimal entre deux vérifications du
+// scope utilisateur d'un même compte.
+func CadenceUtilisateur() time.Duration {
+	cadenceMu.Lock()
+	defer cadenceMu.Unlock()
+	return cadenceUtilisateur
+}
+
+// appliquerCadenceUtilisateur cherche la ligne `usercheck:` dans une réponse de
+// politique et l'applique.
+//
+// Cherchée par son PRÉFIXE, comme l'autre. Aucune boucle à réveiller : la
+// valeur est lue au prochain passage de PAM.
+func appliquerCadenceUtilisateur(lignes []string) {
+	for _, ligne := range lignes {
+		valeur := strings.TrimSpace(ligne)
+		if !strings.HasPrefix(valeur, PrefixeVerifUtilisateur) {
+			continue
+		}
+		minutes, err := strconv.Atoi(strings.TrimSpace(strings.TrimPrefix(valeur, PrefixeVerifUtilisateur)))
+		if err != nil {
+			logs.Write_log("WARNING", "GPO: cadence de verification utilisateur illisible : "+valeur)
+			return
+		}
+		definirCadenceUtilisateur(time.Duration(minutes) * time.Minute)
+		return
+	}
+}
+
+// definirCadenceUtilisateur pose la cadence, bornée.
+func definirCadenceUtilisateur(nouvelle time.Duration) {
+	switch {
+	case nouvelle < VerifUtilisateurMinimum:
+		nouvelle = VerifUtilisateurMinimum
+	case nouvelle > VerifUtilisateurMaximum:
+		nouvelle = VerifUtilisateurMaximum
+	}
+
+	cadenceMu.Lock()
+	change := nouvelle != cadenceUtilisateur
+	cadenceUtilisateur = nouvelle
+	cadenceMu.Unlock()
+
+	if change {
+		logs.Write_log("INFO", fmt.Sprintf(
+			"GPO: verification du scope utilisateur au plus toutes les %s, sur decision du serveur", nouvelle))
+	}
 }
 
 // appliquerCadence cherche la ligne de cadence dans une réponse machine et

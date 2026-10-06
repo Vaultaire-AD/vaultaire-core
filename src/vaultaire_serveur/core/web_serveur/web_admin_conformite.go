@@ -46,6 +46,10 @@ type conformiteVue struct {
 	Modules    string
 	Conformite string
 	VuIlYA     string
+
+	// NonVerifiee fait ressortir la cellule : « non vérifié » en texte nu se
+	// lisait comme une valeur parmi d'autres, entre deux « ok » (TO-DO 135).
+	NonVerifiee bool
 }
 
 // AdminGPOComplianceHandler affiche la conformité du parc, ou le détail d'une
@@ -123,6 +127,7 @@ func vueDeLigne(r dbgpo.ComplianceRow, maintenant time.Time) conformiteVue {
 		Modules:       r.ModulesAppliques(),
 		Conformite:    r.EtatConformite(),
 		VuIlYA:        dbgpo.AgeRelatif(r.ReportedAt, maintenant),
+		NonVerifiee:   r.NonVerifiee(),
 	}
 }
 

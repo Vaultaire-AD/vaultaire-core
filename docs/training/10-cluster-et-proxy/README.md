@@ -6,8 +6,8 @@
 
 ---
 
-Enrôler des services, déployer un proxy et piloter quel nœud sert quel
-site.
+Enrôler des services, déployer un proxy, piloter quel nœud sert quel site et
+ce que chaque proxy expose.
 
 ## Prérequis
 
@@ -22,6 +22,7 @@ site.
 | 10.1 | [Clés d'enrôlement](./01-cles-d-enrolement.md) | ☐ |
 | 10.2 | [Déployer un proxy](./02-deployer-un-proxy.md) | ☐ |
 | 10.3 | [Topologie : exposition, affinité, rotation](./03-topologie.md) | ☐ |
+| 10.4 | [Décider ce qu'un proxy expose](./04-piloter-les-relais.md) | ☐ |
 
 Chaque jalon suit le même plan : **objectif**, **étapes**, **vous avez réussi
 si**, puis un **exercice** avec sa solution repliée.

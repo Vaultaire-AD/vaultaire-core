@@ -160,9 +160,9 @@ func TestLOrdreDesEcartsEstStable(t *testing.T) {
 func TestUneAttenteEstAttribueeAuModuleQuiLaDeclare(t *testing.T) {
 	ResetManifest()
 
-	avant := checkSnapshot()
+	marque := inventaireMachine.marque()
 	recordCheck("essai", "unite-a", "active=started")
-	deA := checksSince(avant, "module-a")
+	deA := inventaireMachine.attentesDepuis(marque, "module-a")
 
 	if len(deA) != 1 {
 		t.Fatalf("%d attente(s) attribuee(s), attendu 1", len(deA))
@@ -181,9 +181,9 @@ func TestUneAttenteModifieeChangeDeModule(t *testing.T) {
 	ResetManifest()
 
 	recordCheck("essai", "unite", "active=started")
-	avant := checkSnapshot()
+	marque := inventaireMachine.marque()
 	recordCheck("essai", "unite", "active=stopped")
-	deB := checksSince(avant, "module-b")
+	deB := inventaireMachine.attentesDepuis(marque, "module-b")
 
 	c, ok := deB["essai|unite"]
 	if !ok {

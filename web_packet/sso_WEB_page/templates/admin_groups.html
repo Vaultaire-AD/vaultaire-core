@@ -55,7 +55,7 @@
             <td>{{ .UserCount }}</td>
             <td>{{ .ClientCount }}</td>
             <td>
-              <form method="post" style="display:inline" onsubmit="return confirm('Supprimer le groupe {{ .GroupName }} ?');">
+              <form method="post" style="display:inline" data-confirm="Supprimer le groupe {{ .GroupName }} ?">
                 <input type="hidden" name="action" value="delete_group">
                 <input type="hidden" name="group_name" value="{{ .GroupName }}">
                 <button type="submit" class="btn btn-danger">Supprimer</button>

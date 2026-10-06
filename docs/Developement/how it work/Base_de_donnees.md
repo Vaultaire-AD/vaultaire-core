@@ -294,6 +294,87 @@ proxy_metrics (
 - **Rien ne s'en sert pour décider.** Le tri de la liste servie aux agents ne lit
   pas cette table, et c'est volontaire : une `04_05` est déclarative.
 
+## Relais pilotés — `cluster_relays` et `cluster_relay_state` *(TO-DO 141)*
+
+Créées par `create_data_base.go`. Ce que le core **demande** à un proxy
+d'exposer, et ce que le proxy **répond**.
+
+```sql
+cluster_relays (                            -- une ligne par relais DEMANDÉ
+    id_relay          INT AUTO_INCREMENT PRIMARY KEY,
+    owner_client_id   VARCHAR(191) NOT NULL,   -- le proxy, par son identité Ducky
+    nom               VARCHAR(64)  NOT NULL,
+    type              VARCHAR(16)  NOT NULL,   -- 'ducky', 'https', 'ldaps'
+    ecoute            VARCHAR(128) NOT NULL,   -- '[adresse]:port'
+    source            VARCHAR(128) NOT NULL,   -- 'cores', 'liste', 'service:<type>'
+    adresses          TEXT,                    -- une par ligne, pour 'liste'
+    port_cible        INT NOT NULL DEFAULT 0,
+    delai_connexion_s INT NOT NULL DEFAULT 0,  -- 0 = le défaut du proxy
+    inactivite_s      INT NOT NULL DEFAULT 0,
+    max_connexions    INT NOT NULL DEFAULT 0,
+    max_par_source    INT NOT NULL DEFAULT 0,
+    position          INT NOT NULL DEFAULT 0,
+    UNIQUE KEY uk_relay (owner_client_id, nom)
+)
+
+cluster_relay_state (                       -- une ligne par proxy
+    owner_client_id VARCHAR(191) NOT NULL PRIMARY KEY,
+    pilote          BOOLEAN NOT NULL DEFAULT FALSE,
+    revision        INT NOT NULL DEFAULT 0,
+    modifie_par     VARCHAR(255),
+    modifie_le      DATETIME,
+    rapport         MEDIUMTEXT,                -- dernier compte rendu (04_18), JSON
+    rapport_le      DATETIME
+)
+```
+
+- **Rattachées à `owner_client_id`, pas à la ligne `cluster_nodes`.** Un nœud
+  oublié par la purge, ou dont la ligne a été perdue, se réenregistre avec un
+  nouvel identifiant de ligne (TO-DO 109) : ce qu'on lui demande d'exposer ne
+  doit pas partir avec. L'identité du client, elle, ne change pas.
+- **`pilote` et `revision` sont deux colonnes**, et non « révision à zéro = pas
+  de pilotage ». `revision` ne redescend **jamais**, même quand le core rend la
+  main : c'est par elle que le proxy dit ce qu'il applique, et un numéro
+  réemployé pour une autre liste lui ferait dire « appliquée » d'une liste qu'il
+  n'a jamais reçue.
+- **Écriture en une transaction**, la ligne d'état verrouillée (`FOR UPDATE`) :
+  la liste est remplacée en entier et la révision avance d'un cran. Deux
+  administrateurs qui écrivent en même temps obtiennent deux révisions, pas un
+  mélange.
+- **Zéro veut dire « le défaut du proxy »** pour les délais et les plafonds : le
+  core ne recopie pas des défauts qui vivent dans le code du proxy, il les
+  laisserait figés à la valeur du jour.
+- **Deux tables** parce que ce sont deux natures : la demande est une décision
+  d'administrateur, tracée ; le compte rendu est un état que le proxy réécrit
+  chaque minute. Les mêler aurait fait d'une écriture par minute un verrou sur
+  la table que lit l'administration.
+- **`rapport` n'est pas obéi.** Il dit ce que le proxy fait tourner ; rien n'en
+  est recopié dans `cluster_relays` hors de la première prise en main, qui part
+  de lui pour ne pas fermer ce qui tourne.
+- **Pas de clé étrangère** vers `cluster_nodes` ni de purge automatique : les
+  lignes d'un proxy retiré restent, sans effet, jusqu'à un `release`.
+
+Voir [`04-relais-pilotes.md`](./ducky-network/04-cluster/04-relais-pilotes.md).
+
+## Tables de zone DNS — base `<base>_dns`
+
+Une table par zone, nommée `zone_` + le nom de zone, points remplacés par des
+soulignés (`acme.lan` → `zone_acme_lan`), et enregistrée dans `dns_zones`.
+
+Ce nom entre dans des requêtes SQL **comme identifiant**, donc il ne peut pas être
+un paramètre lié. Depuis le TO-DO 105, il ne passe que par
+`core/dns/DNS_Database/nom_de_table.go` :
+
+- le nom de zone est validé par **liste blanche** (`ValiderNomDeZone`), la même
+  pour l'action `dns.*` et pour la base ;
+- l'identifiant est **cité** et revérifié à chaque usage (`identifiantTable`),
+  y compris quand il est relu dans `dns_zones` ;
+- un test relit les sources du paquet et refuse toute requête qui insère un nom
+  de table sans passer par là.
+
+Les requêtes **TXT** et **NS** reçues du réseau y arrivent avec le nom demandé :
+c'est pour elles, surtout, que la règle ne souffre pas d'exception.
+
 ## Notes rapides / observations
 
 * Les tables **d'association** (`users_group`, `logiciel_group`, `group_user_permission`, `group_permission_logiciel`, `group_linux_gpo`, `users_logiciel`) implémentent des relations N-N et ont des PK composites — c'est correct pour l'intégrité.

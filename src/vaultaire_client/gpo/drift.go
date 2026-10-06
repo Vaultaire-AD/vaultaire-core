@@ -110,6 +110,13 @@ type DriftItem struct {
 	StateKey string
 	Kind     DriftKind
 	Detail   string
+
+	// Coproprietaires : les AUTRES modules qui écrivent le même fichier.
+	//
+	// Local à l'agent, jamais transmis : le rapport 05_15 garde un module par
+	// ligne, celui qui a écrit en dernier. Ce champ ne sert qu'à décider quoi
+	// rejouer — voir ModulesConcerned et FileState.Owners.
+	Coproprietaires []string
 }
 
 // DriftReport est le résultat d'un scan pour un scope.
@@ -126,21 +133,59 @@ type DriftReport struct {
 func (r DriftReport) Conforming() bool { return len(r.Items) == 0 }
 
 // ModulesConcerned rend les modules à réappliquer, sans doublon.
+//
+// # Tous les propriétaires d'un fichier partagé
+//
+// Un fichier que plusieurs modules écrivent — `.vaultaire_env`, où vit chaque
+// variable d'un compte — ne se rétablit qu'en les rejouant TOUS : n'en rejouer
+// qu'un rendrait un fichier où il manque ce que les autres y mettaient, et dont
+// le nouveau hachage serait aussitôt enregistré comme la référence.
+//
+// # Une incertitude ne fait rien rejouer
+//
+// `DriftUnverifiable` veut dire « je n'ai pas pu constater » : commande
+// absente, délai dépassé. Le commentaire du type le dit depuis l'origine — sur
+// une incertitude on ne réapplique rien — mais cette fonction rendait le module
+// quand même, et EnforceDrift lui faisait perdre son empreinte. Un `getfacl`
+// désinstallé faisait donc rejouer `setfacl` à chaque cycle, indéfiniment.
+// L'écart reste dans le rapport, où il se lit ; il n'entre plus ici.
 func (r DriftReport) ModulesConcerned() []string {
 	vus := map[string]struct{}{}
 	var keys []string
+	noter := func(key string) {
+		if key == "" {
+			return
+		}
+		if _, déjà := vus[key]; déjà {
+			return
+		}
+		vus[key] = struct{}{}
+		keys = append(keys, key)
+	}
 	for _, item := range r.Items {
-		if item.StateKey == "" {
+		if item.Kind == DriftUnverifiable {
 			continue
 		}
-		if _, déjà := vus[item.StateKey]; déjà {
-			continue
+		noter(item.StateKey)
+		for _, key := range item.Coproprietaires {
+			noter(key)
 		}
-		vus[item.StateKey] = struct{}{}
-		keys = append(keys, item.StateKey)
 	}
 	sort.Strings(keys)
 	return keys
+}
+
+// seulementDesIncertitudes dit si aucun écart du rapport n'est un constat.
+func (r DriftReport) seulementDesIncertitudes() bool {
+	if len(r.Items) == 0 {
+		return false
+	}
+	for _, item := range r.Items {
+		if item.Kind != DriftUnverifiable {
+			return false
+		}
+	}
+	return true
 }
 
 // ScanScope compare l'état réel d'un scope à l'inventaire.
@@ -208,7 +253,7 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 			// fichier que la politique retire passait pour « toujours absent ».
 			if _, err := os.Lstat(path); err == nil {
 				report.Items = append(report.Items, DriftItem{
-					Path: path, StateKey: attendu.StateKey, Kind: DriftReappeared,
+					Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftReappeared,
 					Detail: "fichier recree alors que la politique le retire",
 				})
 			}
@@ -240,7 +285,7 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 		if scope == ScopeUser {
 			if lst, errL := os.Lstat(path); errL == nil && lst.Mode()&os.ModeSymlink != 0 {
 				report.Items = append(report.Items, DriftItem{
-					Path: path, StateKey: attendu.StateKey, Kind: DriftModified,
+					Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftModified,
 					Detail: "remplace par un lien symbolique",
 				})
 				continue
@@ -250,14 +295,14 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			report.Items = append(report.Items, DriftItem{
-				Path: path, StateKey: attendu.StateKey, Kind: DriftMissing,
+				Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftMissing,
 				Detail: "fichier supprime",
 			})
 			continue
 		}
 		if err != nil {
 			report.Items = append(report.Items, DriftItem{
-				Path: path, StateKey: attendu.StateKey, Kind: DriftUnreadable,
+				Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftUnreadable,
 				Detail: sanitizeDetail(err.Error()),
 			})
 			continue
@@ -266,7 +311,7 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 		actuel, lisible := HashFile(path)
 		if !lisible {
 			report.Items = append(report.Items, DriftItem{
-				Path: path, StateKey: attendu.StateKey, Kind: DriftUnreadable,
+				Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftUnreadable,
 				Detail: "contenu illisible",
 			})
 			continue
@@ -274,7 +319,7 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 
 		if actuel != attendu.SHA256 {
 			report.Items = append(report.Items, DriftItem{
-				Path: path, StateKey: attendu.StateKey, Kind: DriftModified,
+				Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftModified,
 				Detail: "contenu modifie",
 			})
 			continue
@@ -285,7 +330,7 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 		// exposer ce qu'il contient sans qu'une seule ligne n'ait bougé.
 		if attendu.Mode != 0 && uint32(info.Mode().Perm()) != attendu.Mode {
 			report.Items = append(report.Items, DriftItem{
-				Path: path, StateKey: attendu.StateKey, Kind: DriftPermissions,
+				Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftPermissions,
 				Detail: fmt.Sprintf("mode %04o attendu %04o", info.Mode().Perm(), attendu.Mode),
 			})
 		}
@@ -336,6 +381,14 @@ func EnforceDrift(scope, username string, report DriftReport) int {
 
 	modules := report.ModulesConcerned()
 	if len(modules) == 0 {
+		if report.seulementDesIncertitudes() {
+			// Rien n'a été CONSTATÉ : une commande manque, un délai est passé.
+			// On ne rejoue pas un module sur une incertitude, et on ne parle
+			// pas de « réapplication impossible » — il n'y a rien à réappliquer.
+			logs.Write_log("INFO",
+				"GPO: etat non verifiable sur cette machine, aucun module rejoue")
+			return 0
+		}
 		// Des écarts sans module identifié : l'inventaire vient d'une version
 		// qui ne notait pas l'origine. Rien à réappliquer de ciblé, on le dit
 		// plutôt que de laisser croire à une correction.

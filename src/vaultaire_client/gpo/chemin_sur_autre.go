@@ -53,3 +53,15 @@ func ecrireFichierUtilisateur(_, chemin, _ string, _ os.FileMode, _, _ int) erro
 func preparerRepertoireUtilisateur(_, chemin string, _ os.FileMode, _, _ int) error {
 	return fmt.Errorf("%s (%s)", indisponible, chemin)
 }
+
+func lireFichierUtilisateur(_, chemin string, _ int) (string, bool, error) {
+	return "", false, fmt.Errorf("%s (%s)", indisponible, chemin)
+}
+
+func retirerSousHome(_, chemin string, _ int) (bool, error) {
+	return false, fmt.Errorf("%s (%s)", indisponible, chemin)
+}
+
+func designerSousHome(_, chemin string, _ int) (*os.File, error) {
+	return nil, fmt.Errorf("%s (%s)", indisponible, chemin)
+}

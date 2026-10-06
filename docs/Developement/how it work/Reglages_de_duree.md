@@ -142,7 +142,7 @@ La recette, éprouvée d'abord par `group_sync_minutes` :
 1. le réglage est déclaré ici, dans `catalogue`, comme n'importe quelle durée ;
 2. sa valeur est **ajoutée en queue** d'une trame que l'agent reçoit déjà, sur
    une ligne **préfixée** — `sync:` en `03_09`, `refresh:` en `05_02`/`05_03`,
-   `disco:` en `04_04` ;
+   `disco:` en `04_04`, `usercheck:` dans les quatre réponses de politique ;
 3. l'agent la lit **par son préfixe, jamais par son rang**, la **borne**, et
    réarme sa boucle.
 
@@ -186,9 +186,92 @@ peut désormais couper un tunnel. C'est ce qui l'a fait passer du code au
 catalogue — la question à se poser pour une durée d'agent n'est pas « à quelle
 fréquence », mais « qu'est-ce que cela déclenche sur le parc ».
 
+**Une durée qui ne pilote PAS une boucle.** `gpo_user_check_minutes`
+(TO-DO 142) suit la recette, mais il n'y a aucune boucle à réarmer : la
+vérification d'un compte est déclenchée par PAM, et le réglage est le délai
+minimal entre deux d'entre elles. Deux conséquences :
+
+- il part dans **quatre** trames et non deux — les réponses machine, pour que
+  l'agent le connaisse avant la première connexion, **et** les réponses du scope
+  utilisateur, pour qu'un changement atteigne le poste à la connexion suivante
+  plutôt qu'au tour de la machine ;
+- sa borne basse est **une minute**, pas zéro. Elle ne protège pas d'une attente
+  active, comme celle d'une cadence : elle protège du scan répété. Un
+  déverrouillage d'écran est une authentification PAM comme une autre.
+
+Il était d'abord confondu avec `gpo_refresh_minutes` — la vérification d'un
+`HOME` suivait la cadence du parc. Les deux durées ne répondent pas à la même
+question : l'une règle un trafic, qu'on veut rare ; l'autre un délai de
+réparation, qu'on veut court. Avant d'accrocher un comportement à un réglage
+existant, se demander si l'on voudra un jour les régler en sens contraire.
+
 Restent hors de portée les durées que l'agent est **seul** à connaître : délais
 d'attente d'une réponse, budget d'un cycle utilisateur sur le chemin de
 connexion. Elles relèvent des GPO.
+
+---
+
+## 6 ter. Une durée qui en ENTRAÎNE d'autres *(TO-DO 110)*
+
+`check_online_minutes` règle la cadence du battement `02_11`. Quatre délais en
+dépendaient sans en dépendre dans le code :
+
+| Délai | Où | Valait | Vaut |
+|---|---|---|---|
+| silence toléré sur un tunnel authentifié | balayage du core | 5 min | `max(5 min, 2 × cadence + 1 min)` |
+| échéance de lecture d'une connexion authentifiée | `netguard`, boucle de lecture du core | 10 min | `max(10 min, tolérance)` |
+| validité d'une ligne de session en base | `did_login`, `user_sessions` | 10 min | `max(10 min, tolérance + cadence)` |
+| fermeture d'un tunnel muet par le poste | SDK, `sessionmgr` | 10 min | `max(10 min, 2 × cadence + 1 min)` |
+
+Chacune était une constante, justifiée dans son commentaire « par rapport au
+défaut de deux minutes ». Une cadence de six minutes faisait donc couper par le
+balayage toutes les sessions avant leur battement suivant ; à onze, l'échéance
+de lecture fermait le socket, les lignes expiraient en base et les postes
+fermaient leur tunnel. Rien ne l'interdisait,
+et le symptôme — le parc se déconnecte en boucle — ne désignait pas le réglage
+qu'on venait de changer.
+
+**L'échéance de lecture n'est pas le balayage.** Le balayage décide qu'une
+session est partie ; l'échéance, posée avant chaque lecture, libère la goroutine
+et le descripteur d'un socket bloqué sans attendre le tour suivant. Deux
+mécanismes pour une même session muette : dériver l'un sans l'autre aurait
+déplacé le défaut de « à partir de six minutes » à « à partir de dix » — c'est ce
+que la première version de ce correctif faisait. L'essai le montre : à onze
+minutes, avec l'échéance fixe, le core ferme un tunnel silencieux à dix minutes
+pile, et le poste se reconnecte en boucle. La règle : l'échéance n'est **jamais
+plus courte que la tolérance** (`echeanceDeLecture`, paquet `duckynetwork`).
+LDAP garde la constante : rien n'y bat.
+
+**Elles sont calculées, pas déclarées** (`core/reglages/derives.go`). En faire
+trois réglages de plus aurait donné quatre valeurs à tenir cohérentes à la main,
+c'est-à-dire le même défaut avec une interface. Le **plancher** est la valeur
+d'avant : à la cadence par défaut, rien ne change, et aucun parc ne voit ses
+délais bouger à la mise à jour.
+
+**Deux cadences plus une minute.** Le balayage passe dans le même tour que le
+battement, juste après : une session saine a, à ce moment, **une** cadence de
+silence. Deux laissent passer un battement perdu ; la minute couvre la réponse.
+La validité en base ajoute une cadence : une ligne ne doit jamais expirer avant
+la session en mémoire qu'elle décrit.
+
+**Le poste apprend la cadence** par une ligne `online:<minutes>` en queue de la
+`02_11` — la recette du § 6 bis. Le poste la borne (1 à 60) et garde son délai
+de dix minutes si la ligne manque. *Un agent antérieur à la 2.2 ne la lit pas :
+il ferme toujours après dix minutes.* La `Consequence` du réglage le dit, et
+conseille de ne pas dépasser 8 tant que le parc n'est pas à jour.
+
+**La poignée de main reste fixe** (60 s, `handshakeIdleTimeout`) : ce délai borne
+une connexion **non authentifiée**. Le faire suivre un réglage d'exploitation
+aurait rendu la surface d'un déni de service réglable depuis la page des durées.
+Ces connexions sont balayées par leur propre boucle, toutes les trente secondes,
+pour ne pas attendre un tour du battement. Elle est **nécessaire** depuis que
+l'échéance de lecture suit la cadence : une connexion arrêtée après `02_01` a
+ouvert son canal chiffré, donc reçoit l'échéance longue, sans être authentifiée
+— c'est ce balayage, à période fixe, qui la ferme à soixante secondes.
+
+Un test parcourt les soixante cadences admises et vérifie l'ordre
+`cadence < tolérance < validité` ; un autre, côté SDK, que le poste ne ferme
+jamais avant que le core n'ait pu battre deux fois.
 
 ---
 

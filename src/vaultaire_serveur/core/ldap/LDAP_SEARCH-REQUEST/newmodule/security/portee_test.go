@@ -274,6 +274,24 @@ func TestLesPermissionsSeCumulent(t *testing.T) {
 	}
 }
 
+// UN « deny » FERME LA RECHERCHE, quel que soit l'ordre et quoi que les autres
+// groupes accordent (TO-DO 104). « nil », lui, ne retire rien.
+func TestUnRefusExpliciteFermeLaRecherche(t *testing.T) {
+	for _, perms := range [][]string{
+		{"all", "deny"},
+		{"deny", "all"},
+		{"(1:" + parent + ")", "deny"},
+	} {
+		p := NouvellePortee(perms)
+		if p.Autorise(parent) || p.Autorise(enfant) {
+			t.Errorf("permissions %v : un domaine sort malgré le refus explicite", perms)
+		}
+	}
+	if p := NouvellePortee([]string{"nil", "(1:" + parent + ")"}); !p.Autorise(enfant) {
+		t.Error("« nil » sur un groupe retire ce qu'un autre accorde : il doit être ignoré")
+	}
+}
+
 // LA RÈGLE RESTE CELLE DU RBAC, et ce test est là pour l'y tenir.
 //
 // `decider` réécrit la règle de `permission.IsUserAuthorizedToSearch` — non par
@@ -292,6 +310,10 @@ func TestLaRegleEstCelleDuRBAC(t *testing.T) {
 		{"(0:enov.local)", "(1:autre.local)"},
 		{"(1:a.b.c)"},
 		{"(0:enov.local,autre.local)"},
+		{"deny"},
+		{"all", "deny"},
+		{"deny", "(1:enov.local)"},
+		{"nil", "(1:enov.local)"},
 	}
 	domaines := []string{
 		"enov.local", "admin.enov.local", "a.admin.enov.local",

@@ -94,6 +94,29 @@ réciproquement.
 
 ---
 
+## Refus et freinage
+
+Depuis la 2.2 (TO-DO 102), l'API répond :
+
+| Statut | Message | Cause |
+|---|---|---|
+| 401 | `authentification refusée` | compte inconnu, révoqué, sans clé, ou signature fausse — **le même message pour tous**, à dessein : des messages distincts diraient à n'importe qui si un nom existe. La cause exacte est dans le journal du core. |
+| 401 | `Requête rejetée : …` | signature juste, mais horodatage hors fenêtre ou nonce déjà vu : horloge du poste à vérifier |
+| 413 | `requête trop volumineuse` | corps au-delà de 64 Kio |
+| 429 | `trop de requêtes : réessayer dans N s` | débit de l'adresse source dépassé, ou échecs d'authentification répétés depuis elle. L'en-tête `Retry-After` donne le délai. |
+
+Le débit est réglé par `api.limite_rafale` (100 par défaut) et
+`api.limite_par_seconde` (20) dans `serveur_conf.yaml` : une rafale de cent
+commandes passe d'un coup, un flot soutenu est ramené à vingt par seconde. Un
+intégrateur qui pilote le parc plus vite relève ces valeurs — ou, mieux, relit
+`Retry-After` et patiente.
+
+Les échecs répétés partagent les compteurs du portail et de LDAP : trois sont
+libres, puis l'adresse attend 1, 2, 4… secondes, 30 au plus. Une signature
+juste les efface.
+
+---
+
 ## Journalisation
 
 Chaque requête API est journalisée côté serveur, avec l'identité de l'appelant :

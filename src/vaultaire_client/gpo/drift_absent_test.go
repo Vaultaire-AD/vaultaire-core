@@ -220,21 +220,21 @@ func TestLAttributionSuitLeChangementEtPasSeulementLaPresence(t *testing.T) {
 	chemin := filepath.Join(dir, "partage.conf")
 
 	// Module A dépose.
-	avantA := manifestSnapshot()
+	marqueA := inventaireMachine.marque()
 	if err := writeSystemFile(chemin, "version A\n", 0o644); err != nil {
 		t.Fatalf("%v", err)
 	}
-	deA := manifestSince(avantA, "module-a")
+	deA := inventaireMachine.fichiersDepuis(marqueA, "module-a")
 	if _, ok := deA[chemin]; !ok {
 		t.Fatal("le depot n'a pas ete attribue a A")
 	}
 
 	// Module B le retire.
-	avantB := manifestSnapshot()
+	marqueB := inventaireMachine.marque()
 	if _, err := removeSystemFile(chemin); err != nil {
 		t.Fatalf("%v", err)
 	}
-	deB := manifestSince(avantB, "module-b")
+	deB := inventaireMachine.fichiersDepuis(marqueB, "module-b")
 
 	entrée, ok := deB[chemin]
 	if !ok {

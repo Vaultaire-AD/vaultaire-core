@@ -34,12 +34,27 @@ type Stats struct {
 	DernierRefus   time.Time
 }
 
+// reglage est ce qu'un relais applique à une connexion : sa configuration et
+// ses cibles. Les deux bougent ENSEMBLE — changer la source des cibles change
+// le résolveur — et c'est pourquoi ils sont remplacés d'un seul geste.
+type reglage struct {
+	cfg    Relais
+	cibles Resolveur
+}
+
 // Serveur fait tourner un relais.
 type Serveur struct {
-	cfg     Relais
-	cibles  Resolveur
+	// etat est remplacé en entier par Reconfigurer (TO-DO 141). Un pointeur
+	// atomique : il est lu à chaque connexion et à chaque lecture de compteur,
+	// écrit quelques fois dans la vie du proxy.
+	etat    atomic.Pointer[reglage]
 	journal Journal
 	dial    func(network, addr string, d time.Duration) (net.Conn, error)
+
+	// inactiviteMin, s'il est posé, relève l'inactivité tolérée sur une
+	// connexion relayée. Voir DefinirInactiviteMin. Atomique : il est relu par
+	// chaque connexion en cours pendant qu'une reconfiguration peut le changer.
+	inactiviteMin atomic.Pointer[func() time.Duration]
 
 	actives, total, refusees, rejetees atomic.Int64
 	montants, descendants              atomic.Int64
@@ -57,16 +72,86 @@ func Nouveau(cfg Relais, cibles Resolveur, journal Journal) *Serveur {
 	if journal == nil {
 		journal = func(string, string) {}
 	}
-	return &Serveur{cfg: cfg, cibles: cibles, journal: journal, dial: net.DialTimeout,
+	s := &Serveur{journal: journal, dial: net.DialTimeout,
 		parSource: map[string]int{}, parCible: map[string]int64{}}
+	s.etat.Store(&reglage{cfg: cfg, cibles: cibles})
+	return s
+}
+
+// Config rend la configuration en vigueur.
+func (s *Serveur) Config() Relais { return s.etat.Load().cfg }
+
+// Cibles rend les cibles que le relais essaierait MAINTENANT, dans l'ordre.
+// Pour le compte rendu au core : « vers quoi ce relais redirige » est la
+// première chose qu'on veut lire, et la configuration seule ne le dit pas
+// quand la source est « cores » ou « service: ».
+func (s *Serveur) Cibles() []string {
+	r := s.etat.Load()
+	if r.cibles == nil {
+		return nil
+	}
+	return r.cibles()
+}
+
+// Reconfigurer change la configuration d'un relais QUI ÉCOUTE DÉJÀ, sans
+// fermer son port ni ses connexions (TO-DO 141).
+//
+// # Ce qui se change en place, et ce qui ne s'y change pas
+//
+// Les cibles, les plafonds, les délais et le type : ils ne s'appliquent qu'à
+// la connexion suivante, et les connexions en cours gardent le réglage sous
+// lequel elles ont été acceptées. L'adresse d'ÉCOUTE, elle, ne se change pas
+// ici — il faut un autre port, donc un autre relais : c'est Parc qui ouvre le
+// nouveau avant de fermer l'ancien.
+//
+// Un relais reconfiguré garde ses compteurs. Le fermer pour le rouvrir les
+// aurait remis à zéro, et laissé « actives » compter des connexions qui
+// vivent encore dans l'objet qu'on vient de jeter.
+func (s *Serveur) Reconfigurer(cfg Relais, cibles Resolveur) {
+	avant := s.etat.Load().cfg
+	// L'écoute reste celle qui est ouverte, quoi que dise la nouvelle
+	// configuration : ce champ décrit un fait, pas une intention.
+	cfg.Ecoute = avant.Ecoute
+	s.etat.Store(&reglage{cfg: cfg, cibles: cibles})
+	s.journal("INFO", fmt.Sprintf("relais %s (%s) : reconfiguré sans coupure, écoute inchangée sur %s",
+		cfg.Nom, cfg.Type, s.Adresse()))
+}
+
+// DefinirInactiviteMin pose — ou retire, avec nil — un plancher à l'inactivité
+// tolérée sur une connexion relayée : la valeur appliquée est la plus grande
+// des deux.
+//
+// Pour le relais Ducky (TO-DO 110) : le seul trafic régulier d'un tunnel est
+// le battement du core, dont la cadence se règle jusqu'à une heure. À quinze
+// minutes d'inactivité fixe, un proxy coupait tous les tunnels qu'il relayait
+// dès que cette cadence les dépassait. La fonction est relue à CHAQUE
+// lecture : une connexion ouverte avant un changement de cadence le suit.
+func (s *Serveur) DefinirInactiviteMin(f func() time.Duration) {
+	if f == nil {
+		s.inactiviteMin.Store(nil)
+		return
+	}
+	s.inactiviteMin.Store(&f)
+}
+
+// inactivite rend l'inactivité tolérée à cet instant.
+func (s *Serveur) inactivite(cfg Relais) time.Duration {
+	d := cfg.Inactivite()
+	if f := s.inactiviteMin.Load(); f != nil {
+		if min := (*f)(); min > d {
+			return min
+		}
+	}
+	return d
 }
 
 // Ecouter ouvre le port. Séparé de Servir pour qu'un port occupé soit une
 // erreur de DÉMARRAGE, visible, et non une goroutine qui meurt en silence.
 func (s *Serveur) Ecouter() error {
-	ln, err := net.Listen("tcp", s.cfg.Ecoute)
+	cfg := s.Config()
+	ln, err := net.Listen("tcp", cfg.Ecoute)
 	if err != nil {
-		return fmt.Errorf("relais %s : écoute sur %s impossible : %w", s.cfg.Nom, s.cfg.Ecoute, err)
+		return fmt.Errorf("relais %s : écoute sur %s impossible : %w", cfg.Nom, cfg.Ecoute, err)
 	}
 	s.ln = ln
 	return nil
@@ -75,7 +160,7 @@ func (s *Serveur) Ecouter() error {
 // Adresse rend l'adresse d'écoute effective (utile quand le port vaut 0).
 func (s *Serveur) Adresse() string {
 	if s.ln == nil {
-		return s.cfg.Ecoute
+		return s.Config().Ecoute
 	}
 	return s.ln.Addr().String()
 }
@@ -95,14 +180,14 @@ func (s *Serveur) Servir() error {
 			return err
 		}
 	}
-	s.journal("INFO", fmt.Sprintf("relais %s (%s) : écoute sur %s", s.cfg.Nom, s.cfg.Type, s.Adresse()))
+	s.journal("INFO", fmt.Sprintf("relais %s (%s) : écoute sur %s", s.Config().Nom, s.Config().Type, s.Adresse()))
 	for {
 		c, err := s.ln.Accept()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return nil
 			}
-			s.journal("WARNING", fmt.Sprintf("relais %s : accept : %v", s.cfg.Nom, err))
+			s.journal("WARNING", fmt.Sprintf("relais %s : accept : %v", s.Config().Nom, err))
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -119,10 +204,10 @@ func source(c net.Conn) string {
 }
 
 // prendre réserve une place ; rend faux si un plafond est atteint.
-func (s *Serveur) prendre(src string) bool {
+func (s *Serveur) prendre(src string, cfg Relais) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.actives.Load() >= int64(s.cfg.maxConnexions()) || s.parSource[src] >= s.cfg.maxParSource() {
+	if s.actives.Load() >= int64(cfg.maxConnexions()) || s.parSource[src] >= cfg.maxParSource() {
 		return false
 	}
 	s.parSource[src]++
@@ -142,17 +227,22 @@ func (s *Serveur) rendre(src string) {
 }
 
 func (s *Serveur) traiter(client net.Conn) {
+	// Le réglage est lu UNE fois : la connexion vit jusqu'au bout sous celui
+	// qui l'a acceptée, même si le relais est reconfiguré entre-temps.
+	r := s.etat.Load()
+	cfg := r.cfg
+
 	src := source(client)
-	if !s.prendre(src) {
+	if !s.prendre(src, cfg) {
 		s.rejetees.Add(1)
-		s.journal("WARNING", fmt.Sprintf("relais %s : connexion de %s rejetée, plafond atteint", s.cfg.Nom, src))
+		s.journal("WARNING", fmt.Sprintf("relais %s : connexion de %s rejetée, plafond atteint", cfg.Nom, src))
 		_ = client.Close()
 		return
 	}
 	defer s.rendre(src)
 	s.total.Add(1)
 
-	cible, amont := s.joindre(client)
+	cible, amont := s.joindre(client, r)
 	if amont == nil {
 		// REFUS FRANC : fermer tout de suite. Le client essaie le suivant de
 		// sa liste — un core, puisqu'ils y figurent toujours. Faire attendre
@@ -161,16 +251,16 @@ func (s *Serveur) traiter(client net.Conn) {
 		s.mu.Lock()
 		s.dernierRef = time.Now()
 		s.mu.Unlock()
-		s.journal("WARNING", fmt.Sprintf("relais %s : aucune cible joignable pour %s — connexion refusée", s.cfg.Nom, src))
+		s.journal("WARNING", fmt.Sprintf("relais %s : aucune cible joignable pour %s — connexion refusée", cfg.Nom, src))
 		_ = client.Close()
 		return
 	}
 	s.mu.Lock()
 	s.parCible[cible]++
 	s.mu.Unlock()
-	s.journal("DEBUG", fmt.Sprintf("relais %s : %s → %s", s.cfg.Nom, src, cible))
+	s.journal("DEBUG", fmt.Sprintf("relais %s : %s → %s", cfg.Nom, src, cible))
 
-	s.recopier(client, amont)
+	s.recopier(client, amont, cfg)
 }
 
 // joindre essaie les cibles dans l'ordre et rend la première qui accepte.
@@ -183,21 +273,25 @@ func (s *Serveur) traiter(client net.Conn) {
 // Pour LDAPS, l'en-tête PROXY v2 est écrit ICI, avant tout octet du client :
 // une cible qui ne l'accepte pas est traitée comme une cible injoignable, et
 // la suivante est essayée.
-func (s *Serveur) joindre(client net.Conn) (string, net.Conn) {
+func (s *Serveur) joindre(client net.Conn, r *reglage) (string, net.Conn) {
+	cfg := r.cfg
 	var entete []byte
-	if s.cfg.EnvoieEnteteProxy() {
+	if cfg.EnvoieEnteteProxy() {
 		var err error
 		if entete, err = enteteV2(client.RemoteAddr(), client.LocalAddr()); err != nil {
 			// Sans en-tête, le core compterait ce client sous l'adresse du
 			// proxy : mieux vaut refuser que fausser la limitation.
-			s.journal("WARNING", fmt.Sprintf("relais %s : en-tête PROXY impossible : %v", s.cfg.Nom, err))
+			s.journal("WARNING", fmt.Sprintf("relais %s : en-tête PROXY impossible : %v", cfg.Nom, err))
 			return "", nil
 		}
 	}
-	for _, c := range s.cibles() {
-		conn, err := s.dial("tcp", c, s.cfg.DelaiConnexion())
+	if r.cibles == nil {
+		return "", nil
+	}
+	for _, c := range r.cibles() {
+		conn, err := s.dial("tcp", c, cfg.DelaiConnexion())
 		if err == nil && entete != nil {
-			_ = conn.SetWriteDeadline(time.Now().Add(s.cfg.DelaiConnexion()))
+			_ = conn.SetWriteDeadline(time.Now().Add(cfg.DelaiConnexion()))
 			if _, err = conn.Write(entete); err != nil {
 				_ = conn.Close()
 			} else {
@@ -207,7 +301,7 @@ func (s *Serveur) joindre(client net.Conn) (string, net.Conn) {
 		if err == nil {
 			return c, conn
 		}
-		s.journal("DEBUG", fmt.Sprintf("relais %s : cible %s injoignable : %v", s.cfg.Nom, c, err))
+		s.journal("DEBUG", fmt.Sprintf("relais %s : cible %s injoignable : %v", cfg.Nom, c, err))
 	}
 	return "", nil
 }
@@ -217,12 +311,12 @@ func (s *Serveur) joindre(client net.Conn) (string, net.Conn) {
 // Fin propre d'un sens (EOF) : on ferme seulement l'ÉCRITURE de l'autre côté,
 // pour que l'autre sens finisse de passer (demi-fermeture TCP). Erreur ou
 // inactivité : on ferme tout, ce qui débloque aussi l'autre sens.
-func (s *Serveur) recopier(client, amont net.Conn) {
+func (s *Serveur) recopier(client, amont net.Conn, cfg Relais) {
 	var wg sync.WaitGroup
 	wg.Add(2)
 	sens := func(dst, src net.Conn, compteur *atomic.Int64) {
 		defer wg.Done()
-		n, err := copierAvecInactivite(dst, src, s.cfg.Inactivite())
+		n, err := copierAvecInactivite(dst, src, func() time.Duration { return s.inactivite(cfg) })
 		compteur.Add(n)
 		tc, demi := dst.(*net.TCPConn)
 		if errors.Is(err, io.EOF) && demi {
@@ -241,11 +335,14 @@ func (s *Serveur) recopier(client, amont net.Conn) {
 
 // copierAvecInactivite recopie src vers dst ; une lecture sans rien pendant
 // « inactivite » termine la copie.
-func copierAvecInactivite(dst io.Writer, src net.Conn, inactivite time.Duration) (int64, error) {
+//
+// Une FONCTION, relue avant chaque lecture : le délai peut suivre un réglage
+// qui change pendant que la connexion vit (voir Serveur.InactiviteMin).
+func copierAvecInactivite(dst io.Writer, src net.Conn, inactivite func() time.Duration) (int64, error) {
 	buf := make([]byte, 32*1024)
 	var total int64
 	for {
-		_ = src.SetReadDeadline(time.Now().Add(inactivite))
+		_ = src.SetReadDeadline(time.Now().Add(inactivite()))
 		n, err := src.Read(buf)
 		if n > 0 {
 			w, errW := dst.Write(buf[:n])
@@ -269,7 +366,8 @@ func (s *Serveur) Stats() Stats {
 	}
 	dr := s.dernierRef
 	s.mu.Unlock()
-	return Stats{Nom: s.cfg.Nom, Type: s.cfg.Type, Ecoute: s.Adresse(),
+	cfg := s.Config()
+	return Stats{Nom: cfg.Nom, Type: cfg.Type, Ecoute: s.Adresse(),
 		Actives: s.actives.Load(), Total: s.total.Load(), Refusees: s.refusees.Load(),
 		Rejetees: s.rejetees.Load(), OctetsMontants: s.montants.Load(), OctetsDescend: s.descendants.Load(),
 		ParCible: par, DernierRefus: dr}

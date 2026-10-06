@@ -174,10 +174,16 @@ var catalogue = []Definition{
 		// relayer en HTTPS. RÉSERVÉE au proxy : la carte des services n'a pas
 		// à être diffusée à tout le parc, et c'est pour cela qu'elle n'est pas
 		// dans la 04_04 que reçoit chaque agent.
+		//
+		// 04_18 (TO-DO 141) : le compte rendu de ses relais, auquel le core
+		// répond par la liste qu'il veut voir tourner. RÉSERVÉE au proxy pour
+		// la même raison, renversée : ce que cette trame fait écrire en base
+		// est affiché comme « ce que ce nœud expose », et seul un programme
+		// qui porte des relais a quoi que ce soit à en dire.
 		Frames: []string{
 			"01_01", "01_05", "01_07",
 			"02_01", "02_03", "02_05", "02_12",
-			"04_01", "04_03", "04_05", "04_07", "04_15",
+			"04_01", "04_03", "04_05", "04_07", "04_15", "04_18",
 		},
 	},
 	{

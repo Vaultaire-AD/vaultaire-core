@@ -21,7 +21,8 @@ vérifier depuis son propre accès.
 
 Certains droits ne se délèguent pas par domaine et s'accordent en `all` ou pas
 du tout : `web_admin`, `read:log`, `read:dns`, `write:dns`, `read:cluster`,
-`write:cluster`, `read:certificate`, `write:certificate`, `write:server`.
+`write:cluster`, `write:relay`, `read:certificate`, `write:certificate`,
+`write:server`.
 
 La **création** d'un compte exige un droit global : le compte n'a encore aucun
 domaine, il ne peut donc pas être rattaché au périmètre d'un délégué.

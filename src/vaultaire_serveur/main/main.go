@@ -33,6 +33,7 @@ import (
 	"vaultaire/core/vaultairegoroutine"
 	webserveur "vaultaire/core/web_serveur"
 	duckynetwork "vaultaire/ducky-network"
+	authclient "vaultaire/ducky-network/authentification/client"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
 )
@@ -286,6 +287,12 @@ func main() {
 	} else if len(crees) > 0 {
 		logs.Write_Log("INFO", "bootstrap: domaine(s) parent(s) créé(s) : "+strings.Join(crees, ", "))
 	}
+
+	// Les comptes dont les clés SSH dépassent les bornes de l'ajout (TO-DO 138).
+	// Elles ne valent que pour une clé NOUVELLE : un compte garni avant la 2.2
+	// garde tout, et peut ne plus pouvoir ouvrir de session sans que rien ne
+	// l'ait dit. Le relevé le nomme ; il ne retire rien.
+	authclient.SignalerLesComptesHorsBornes(db.GetDatabase())
 
 	// Les CLÉS du core, avant tout ce qui les lit.
 	//

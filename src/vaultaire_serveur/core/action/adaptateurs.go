@@ -57,6 +57,9 @@ func (DroitsVaultaire) AutorisePartout(groupIDs []int, cle string) (bool, string
 	if permission.HasActionAnywhere(groupIDs, cle) {
 		return true, ""
 	}
+	if motif := permission.MotifDeRefusExplicite(groupIDs, cle); motif != "" {
+		return false, fmt.Sprintf("le droit %s est refusé : %s", cle, motif)
+	}
 	return false, fmt.Sprintf(
 		"le droit %s n'est accordé sur aucun domaine", cle)
 }
@@ -285,6 +288,7 @@ func EnregistrerTout() {
 	EnregistrerActionsGPO(Catalogue)
 	EnregistrerActionsLectureEtat(Catalogue)
 	EnregistrerActionsServeur(Catalogue)
+	EnregistrerActionsRelais(Catalogue)
 	EnregistrerActionsConformiteGPO(Catalogue)
 	EnregistrerActionsRafraichissementGPO(Catalogue)
 	EnregistrerActionsRafraichissementCluster(Catalogue)

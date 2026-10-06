@@ -392,6 +392,50 @@ func Create_DataBase(db *sql.DB) {
     		INDEX idx_created (created_at)
 		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
 
+		// ----- Relais des proxies pilotés par le core (TO-DO 141) -----
+		//
+		// Ce que le core DEMANDE à un proxy : une ligne par relais. La clé est
+		// le propriétaire — l'identifiant du client — et non le nœud :
+		// cluster_nodes oublie un nœud resté hors ligne un jour, et sa liste
+		// de relais ne doit pas disparaître avec lui.
+		//
+		// Les quatre derniers réglages valent zéro pour « le défaut du proxy ».
+		`CREATE TABLE IF NOT EXISTS cluster_relays (
+    		id_relay INT AUTO_INCREMENT PRIMARY KEY,
+    		owner_client_id VARCHAR(191) NOT NULL,
+    		nom VARCHAR(64) NOT NULL,
+    		type VARCHAR(16) NOT NULL,              -- 'ducky', 'https', 'ldaps'
+    		ecoute VARCHAR(128) NOT NULL,           -- '[adresse]:port'
+    		source VARCHAR(128) NOT NULL,           -- 'cores', 'liste', 'service:<type>'
+    		adresses TEXT,                          -- une par ligne, pour la source 'liste'
+    		port_cible INT NOT NULL DEFAULT 0,
+    		delai_connexion_s INT NOT NULL DEFAULT 0,
+    		inactivite_s INT NOT NULL DEFAULT 0,
+    		max_connexions INT NOT NULL DEFAULT 0,
+    		max_par_source INT NOT NULL DEFAULT 0,
+    		position INT NOT NULL DEFAULT 0,
+    		UNIQUE KEY uk_relay (owner_client_id, nom)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
+		// Une ligne par proxy : si le core le PILOTE, la révision de sa
+		// demande, et le dernier compte rendu du proxy (04_18). Séparée de
+		// cluster_relays : la demande est une décision, le compte rendu un
+		// état réécrit chaque minute.
+		//
+		// `revision` ne redescend JAMAIS, même quand le core rend la main :
+		// c'est par elle que le proxy dit ce qu'il applique, et un numéro
+		// réemployé pour une autre liste lui ferait dire « appliquée » d'une
+		// liste qu'il n'a jamais reçue.
+		`CREATE TABLE IF NOT EXISTS cluster_relay_state (
+    		owner_client_id VARCHAR(191) NOT NULL PRIMARY KEY,
+    		pilote BOOLEAN NOT NULL DEFAULT FALSE,
+    		revision INT NOT NULL DEFAULT 0,
+    		modifie_par VARCHAR(255) DEFAULT NULL,
+    		modifie_le DATETIME DEFAULT NULL,
+    		rapport MEDIUMTEXT,
+    		rapport_le DATETIME DEFAULT NULL
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;`,
+
 		// ----- Données initiales -----
 		`INSERT IGNORE INTO users (username, firstname, lastname, email, password, salt, date_naissance)
  			VALUES ('vaultaire','Vault','Admin','vaultaire@example.com','5f4dcc3b5aa765d61d8327deb882cf99','abc123salt','1990-01-01');`,

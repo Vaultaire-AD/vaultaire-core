@@ -16,7 +16,10 @@
 | Point | État |
 |---|---|
 | **101** — cadrage des trames | **traité** (2.2) — premier octet ≠ 2 refusé avant toute allocation, `io.ReadFull` partout, refus au lieu de troncature à l'émission, garde-fou porté dans le SDK, 10 clés SSH par compte ; core ET SDK, chacun avec sa sentinelle contre `conn.Read` |
-| 102, 103, 104, 105 | ouverts |
+| **102** — API de commande | **traité** (2.2) — corps borné à 64 Kio, débit par source (seau à jetons, réglable) et échecs répétés freinés AVANT la base ; un seul message et un seul parcours pour compte inconnu, révoqué, sans clé ou signature fausse, avec une clé-leurre du type de la signature |
+| **104** — « Deny » ne refusait pas | **traité** (2.2) — tranché : `nil` reste « rien d'accordé », ignoré (le champ `Deny` qui le portait est renommé `Aucun`) ; nouvelle valeur `deny`, refus explicite prioritaire sur tous les groupes et tous les chemins (RBAC, recherche LDAP, porte d'entrée web). Le groupe protégé n'y est pas soumis ; poser ou lever un `deny` exige le droit global |
+| **103** — CSRF et en-têtes du portail | **traité** (2.2) — jeton dérivé du cookie de session (HMAC, sans état, valable d'un core à l'autre), inséré au rendu dans chaque formulaire POST et vérifié par un middleware devant toutes les routes ; CSP sans script en ligne (le JavaScript des gabarits est passé dans `/static`, les `onsubmit` en `data-confirm`), `X-Frame-Options`, `nosniff`, `Referrer-Policy`, HSTS |
+| **105** — nom de table DNS | **traité** (2.2) — liste blanche et identifiant cité dans les **douze** requêtes ; le défaut était aussi atteignable **sans compte**, par les requêtes TXT et NS reçues du réseau |
 | 98 — secrets en clair dans la base | ouvert, à cadrer |
 | **106** — compte `vaultaire` | **traité** (2.2) — `03_01` et `08_01` refusent le compte d'amorçage, et un test-sentinelle interdit d'accorder un droit à partir du nom d'une session Ducky |
 | **107** — unicité de `did_login` | **traité** (2.2) — contrainte en base, dédoublonnage à la migration, écritures en `ON DUPLICATE KEY UPDATE` |
@@ -216,6 +219,13 @@ droits en service à la mise à jour. L'alternative honnête est de **renommer**
 si ce n'est pas un refus, ça ne doit pas s'appeler `Deny`.
 
 Il faut trancher, et le choix n'est pas technique.
+
+**Tranché le 04/10 (2.2).** Ni l'un ni l'autre tel quel. Rendre `nil`
+prioritaire était exclu : c'est la valeur par défaut de toute action jamais
+réglée, et la mise à jour aurait retiré presque tous les droits à quiconque
+appartient à plus d'un groupe. Donc `nil` garde son comportement et perd son
+faux nom (`Aucun`), et une valeur **nouvelle**, `deny`, porte le refus
+prioritaire. Voir `core/permission/refus.go` et `DO/2.2/2.2.md`, point 104.
 
 ---
 

@@ -35,6 +35,15 @@ enrollment:
 # client en PROXY v2). ldap en clair est refusé. Voir docs/proxy/relais.md et
 # docs/proxy/https-et-ldaps.md.
 #
+# PILOTAGE (2.2). Cette section est l'AMORCE : le core peut piloter les relais
+# d'un proxy (vlt cluster relais <proxy>, ou la fiche du proxy dans Admin →
+# Cluster). Dès qu'il a une liste pour ce proxy, c'est elle qui s'applique, à
+# chaud, et cette section n'est plus lue. Voir docs/proxy/pilotage.md.
+#
+# Pour que ce proxy rende compte de ses relais sans se les laisser changer :
+#
+# pilotage_par_le_core: false
+#
 # relais:
 #   - nom: ducky
 #     type: ducky

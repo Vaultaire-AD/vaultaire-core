@@ -31,7 +31,7 @@ modèle :
 | Variable | Contenu | Pourquoi c'est à part |
 |----------|---------|-----------------------|
 | `legacyActions` | `none`, `web_admin`, `auth`, `compare`, `search` | Héritées du modèle LDAP d'origine. Stockées dans des colonnes de `user_permission`, pas dans `user_permission_action`. |
-| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log`, `write:mfa`, `read:cluster`, `write:cluster`, `read:certificate`, `write:certificate`, `read:dns`, `read:enrollment`, `write:server`, `read:nexus`, `write:nexus`, `write:nexus_admin` | Actions sans objet au sens RBAC — dont les **droits de service** (§ 5). |
+| `specialActions` | `write:dns`, `write:eyes`, `write:killswitch`, `read:log`, `write:mfa`, `read:cluster`, `write:cluster`, `read:certificate`, `write:certificate`, `read:dns`, `read:enrollment`, `write:server`, `read:nexus`, `write:nexus`, `write:nexus_admin`, `write:relay` | Actions sans objet au sens RBAC — dont les **droits de service** (§ 5). |
 
 ### `add` et `remove` : rattacher, détacher
 
@@ -154,6 +154,7 @@ La liste réelle, dans `core/permission/isValidAction.go` :
 | `read:dns`, `write:dns` | une zone DNS n'est pas une entité de l'annuaire |
 | `read:enrollment` | une clé d'enrôlement n'appartient à aucun domaine |
 | `read:cluster`, `write:cluster` | un nœud du cluster n'appartient à aucun domaine |
+| `write:relay` | un proxy n'appartient à aucun domaine ; ses relais sont des points d'entrée du réseau — clé séparée de `write:cluster`, qui ne règle que l'ordre de service (TO-DO 141) |
 | `read:certificate`, `write:certificate` | un certificat sert tout le serveur ; le régénérer ou le supprimer coupe le service pour tout le monde |
 | `write:server` | un réglage du serveur — mode debug, purge des sessions — engage l'ensemble |
 | `read:nexus`, `write:nexus`, `write:nexus_admin` | un dépôt Nexus n'appartient à aucun domaine ; c'est le service qui les applique (§ 5) |

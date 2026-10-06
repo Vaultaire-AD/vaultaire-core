@@ -8,6 +8,9 @@ type Config struct {
 	Api              struct {
 		API_Enable *bool `yaml:"api_enable"`
 		API_Port   *int  `yaml:"api_port"`
+		// Débit par source sur /api/command (TO-DO 102).
+		API_Limite_Rafale      *int     `yaml:"limite_rafale"`
+		API_Limite_Par_Seconde *float64 `yaml:"limite_par_seconde"`
 	} `yaml:"api"`
 	Path struct {
 		SocketPath       *string `yaml:"socketpath"`
@@ -172,6 +175,17 @@ var Sh_folder_path string = "/opt/vaultaire/automatisation/"
 
 var API_Enable bool = true
 var API_Port int = 6643
+
+// API_Limite_Rafale et API_Limite_Par_Seconde bornent le débit de chaque source
+// sur l'API de commande, avant toute authentification (TO-DO 102).
+//
+// Un seau de 100 requêtes qui se remplit de 20 par seconde : un intégrateur qui
+// envoie sa rafale d'un coup passe, un flot soutenu est ramené à 20 par
+// seconde. Voir core/auth/ratelimit/debit.go.
+var (
+	API_Limite_Rafale      int     = 100
+	API_Limite_Par_Seconde float64 = 20
+)
 
 var Debug bool = false
 

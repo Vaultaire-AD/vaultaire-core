@@ -1,6 +1,7 @@
 package sendmessage
 
 import (
+	"encoding/base64"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -45,6 +46,30 @@ func CompileMessageSize(message []byte) ([]byte, error) {
 	binary.BigEndian.PutUint16(sizeBytes, uint16(len(message)))
 
 	return sizeBytes, nil
+}
+
+// surchargeAESGCM est ce qu'AES-GCM ajoute à un message : douze octets de
+// nonce devant, seize d'étiquette d'authentification derrière.
+const surchargeAESGCM = 12 + 16
+
+// TailleChiffree rend la taille du corps qu'un message de n octets occupera sur
+// le fil d'une session établie : chiffré en AES-GCM, puis encodé en base64,
+// comme SendMessage le fait.
+//
+// Un CALCUL, pour ne pas chiffrer deux fois : qui veut savoir si une trame
+// partira n'a besoin que de sa longueur. Le test TestTailleChiffree le tient
+// égal à ce que le chiffrement rend réellement.
+func TailleChiffree(n int) int {
+	return base64.StdEncoding.EncodedLen(n + surchargeAESGCM)
+}
+
+// TientDansUneTrame dit si un message partira sur une session établie, ou si
+// CadrerTrame le refusera pour sa taille (TO-DO 138).
+//
+// À demander AVANT de s'engager : SendMessage ne sait pas ce que porte la trame
+// qu'il refuse, et son erreur ne peut nommer ni le compte ni la cause.
+func TientDansUneTrame(message string) bool {
+	return TailleChiffree(len(message)) <= TailleMaxCorps
 }
 
 // CadrerTrame rend la trame prête à écrire : longueur du champ taille, taille,

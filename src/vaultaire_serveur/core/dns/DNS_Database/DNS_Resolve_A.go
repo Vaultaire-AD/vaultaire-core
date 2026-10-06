@@ -69,14 +69,18 @@ func ResolveFQDNToIP(db *sql.DB, fqdn string) (string, error) {
 
 // queryIPFromZoneTable cherche un enregistrement A dans la table de la zone
 func queryIPFromZoneTable(db *sql.DB, tableName, relativeName string) (string, error) {
+	table, err := identifiantTable(tableName)
+	if err != nil {
+		return "", err
+	}
 	query := `
-		SELECT data FROM ` + tableName + `
+		SELECT data FROM ` + table + `
 		WHERE name = ? AND type = 'A'
 		ORDER BY priority ASC
 		LIMIT 1
 	`
 	var ip string
-	err := db.QueryRow(query, relativeName).Scan(&ip)
+	err = db.QueryRow(query, relativeName).Scan(&ip)
 	if err != nil {
 		return "", err
 	}

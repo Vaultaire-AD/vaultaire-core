@@ -75,9 +75,14 @@ const (
 )
 
 // Cibles dit vers qui relayer.
+//
+// Les étiquettes JSON sont celles du protocole (04_18 et 04_19, TO-DO 141) :
+// le core écrit et lit le même document sans partager ce code. Elles suivent
+// les étiquettes YAML à dessein — un relais se décrit de la même façon dans le
+// fichier du proxy, dans la trame et dans la base du core.
 type Cibles struct {
-	Source   string   `yaml:"source"`
-	Adresses []string `yaml:"adresses,omitempty"`
+	Source   string   `yaml:"source" json:"source"`
+	Adresses []string `yaml:"adresses,omitempty" json:"adresses,omitempty"`
 
 	// Port : pour la source « cores », le port à joindre sur chaque core.
 	//
@@ -85,7 +90,7 @@ type Cibles struct {
 	// LDAPS qui reprendrait ces adresses telles quelles enverrait LDAPS sur le
 	// port 6666 — défaut trouvé en éprouvant le TO-DO 72. Zéro : 636 pour un
 	// relais ldaps, le port annoncé pour un relais ducky.
-	Port int `yaml:"port,omitempty"`
+	Port int `yaml:"port,omitempty" json:"port,omitempty"`
 }
 
 // PortLDAPSParDefaut est le port LDAPS des cores quand la configuration du
@@ -106,20 +111,34 @@ func (r Relais) PortCible() int {
 
 // Relais est la configuration d'un relais.
 type Relais struct {
-	Nom    string `yaml:"nom"`
-	Type   Type   `yaml:"type"`
-	Ecoute string `yaml:"ecoute"`
-	Cibles Cibles `yaml:"cibles"`
+	Nom    string `yaml:"nom" json:"nom"`
+	Type   Type   `yaml:"type" json:"type"`
+	Ecoute string `yaml:"ecoute" json:"ecoute"`
+	Cibles Cibles `yaml:"cibles" json:"cibles"`
 
 	// Délai pour joindre UNE cible. Court à dessein : un client qui attend ne
 	// fait rien, et le relais essaie la suivante.
-	DelaiConnexionSecondes int `yaml:"delai_connexion_secondes,omitempty"`
+	DelaiConnexionSecondes int `yaml:"delai_connexion_secondes,omitempty" json:"delai_connexion_secondes,omitempty"`
 	// Inactivité au-delà de laquelle une connexion relayée est fermée. Doit
 	// dépasser le battement du protocole (Ducky : 02_11 toutes les 2 min).
-	InactiviteSecondes int `yaml:"inactivite_secondes,omitempty"`
+	InactiviteSecondes int `yaml:"inactivite_secondes,omitempty" json:"inactivite_secondes,omitempty"`
 	// Plafonds : total et par adresse source.
-	MaxConnexions int `yaml:"max_connexions,omitempty"`
-	MaxParSource  int `yaml:"max_par_source,omitempty"`
+	MaxConnexions int `yaml:"max_connexions,omitempty" json:"max_connexions,omitempty"`
+	MaxParSource  int `yaml:"max_par_source,omitempty" json:"max_par_source,omitempty"`
+}
+
+// Effectif rend le relais avec ses défauts RÉSOLUS : les quatre réglages
+// facultatifs portent la valeur réellement appliquée, et non zéro.
+//
+// Pour le compte rendu au core. Afficher « 0 » pour un plafond laisserait
+// croire qu'il n'y en a pas ; afficher « défaut » obligerait la page à
+// connaître des constantes qui vivent ici.
+func (r Relais) Effectif() Relais {
+	r.DelaiConnexionSecondes = int(r.DelaiConnexion() / time.Second)
+	r.InactiviteSecondes = int(r.Inactivite() / time.Second)
+	r.MaxConnexions = r.maxConnexions()
+	r.MaxParSource = r.maxParSource()
+	return r
 }
 
 // Défauts.
@@ -273,6 +292,113 @@ func (r *Relais) Valider() error {
 // Le reste (servers, enrollment) est lu par le SDK.
 type fichier struct {
 	Relais []Relais `yaml:"relais"`
+
+	// Pilotage dit si ce proxy accepte que le core pilote ses relais
+	// (TO-DO 141). Un POINTEUR : absent vaut « oui », et seul un « false »
+	// écrit le refuse.
+	Pilotage *bool `yaml:"pilotage_par_le_core"`
+}
+
+// Refus est un relais écarté d'une liste, et pourquoi.
+type Refus struct {
+	Relais Relais
+	Motif  string
+	// err garde l'erreur d'origine : Charger la rend telle quelle, et un
+	// appelant peut y reconnaître ErrTypePrevu.
+	err error
+}
+
+func refuser(r Relais, err error) Refus { return Refus{Relais: r, Motif: err.Error(), err: err} }
+
+// Trier contrôle une liste de relais et sépare ceux qui peuvent tourner de
+// ceux qui ne le peuvent pas (TO-DO 141).
+//
+// # Pourquoi les deux listes
+//
+// Charger arrêtait à la première faute : c'est juste pour un fichier, que
+// quelqu'un vient d'écrire et peut corriger avant de démarrer. Ce ne l'est
+// plus pour une liste poussée par le core : refuser dix relais parce que le
+// onzième demande un port mal écrit couperait un site pour une faute de frappe
+// faite ailleurs. Ici chaque relais est jugé seul, et les autres vivent.
+//
+// # Les règles de LISTE
+//
+// Deux relais ne portent pas le même nom, ni la même écoute. Le relais Ducky
+// écoute sur le port ANNONCÉ au cluster — sinon les agents se présenteraient
+// là où rien ne répond — et il n'y en a qu'un, puisqu'un seul port est
+// annoncé. Quand deux relais sont en conflit, c'est le SECOND qui est écarté :
+// l'ordre de la liste tranche, et il est stable.
+//
+// Les relais retenus sortent normalisés : Valider a posé leurs défauts.
+func Trier(liste []Relais, portAnnonce int) (retenus []Relais, refus []Refus) {
+	noms := map[string]bool{}
+	ecoutes := map[string]bool{}
+	ducky := 0
+	for _, r := range liste {
+		if err := r.Valider(); err != nil {
+			refus = append(refus, refuser(r, err))
+			continue
+		}
+		if noms[r.Nom] {
+			refus = append(refus, refuser(r, fmt.Errorf("relais %q déclaré deux fois", r.Nom)))
+			continue
+		}
+		_, port, _ := net.SplitHostPort(r.Ecoute)
+		// Le port 0 demande un port libre au système : deux relais qui le
+		// demandent n'écoutent pas au même endroit.
+		if port != "0" && ecoutes[r.Ecoute] {
+			refus = append(refus, refuser(r, fmt.Errorf("deux relais écoutent sur %s", r.Ecoute)))
+			continue
+		}
+		if r.Type == TypeDucky {
+			if port != strconv.Itoa(portAnnonce) {
+				refus = append(refus, refuser(r, fmt.Errorf(
+					"relais Ducky %q sur le port %s, alors que le port annoncé aux agents est %d (-listen-port) : "+
+						"les agents se présenteraient là où rien ne répond", r.Nom, port, portAnnonce)))
+				continue
+			}
+			if ducky++; ducky > 1 {
+				refus = append(refus, refuser(r, fmt.Errorf(
+					"%d relais Ducky déclarés : un seul port est annoncé aux agents", ducky)))
+				continue
+			}
+		}
+		noms[r.Nom] = true
+		ecoutes[r.Ecoute] = true
+		retenus = append(retenus, r)
+	}
+	return retenus, refus
+}
+
+// PorteUnRelaisDucky dit si une liste retenue porte le relais Ducky.
+func PorteUnRelaisDucky(retenus []Relais) bool {
+	for _, r := range retenus {
+		if r.Type == TypeDucky {
+			return true
+		}
+	}
+	return false
+}
+
+// ParDefaut rend la liste d'un proxy sans section « relais » : un seul relais
+// Ducky vers les cores, sur le port annoncé au cluster.
+func ParDefaut(portAnnonce int) []Relais {
+	return []Relais{{Nom: "ducky", Type: TypeDucky, Ecoute: ":" + strconv.Itoa(portAnnonce),
+		Cibles: Cibles{Source: SourceCores}}}
+}
+
+func lire(chemin string) (fichier, error) {
+	var f fichier
+	data, err := os.ReadFile(chemin)
+	switch {
+	case err == nil:
+		if err := yaml.Unmarshal(data, &f); err != nil {
+			return f, fmt.Errorf("configuration %s illisible : %w", chemin, err)
+		}
+	case !os.IsNotExist(err):
+		return f, fmt.Errorf("lecture de %s : %w", chemin, err)
+	}
+	return f, nil
 }
 
 // Charger lit la section « relais » du fichier de configuration.
@@ -284,48 +410,39 @@ type fichier struct {
 // Le relais Ducky doit écouter sur le port ANNONCÉ : sinon les agents se
 // présenteraient là où rien ne répond. Un relais Ducky configuré sur un autre
 // port est refusé.
+//
+// Un fichier est STRICT : la première faute arrête tout, et c'est l'erreur
+// qu'on rend. Voir Trier pour le cas d'une liste poussée par le core.
 func Charger(chemin string, portAnnonce int) ([]Relais, error) {
-	var f fichier
-	data, err := os.ReadFile(chemin)
-	switch {
-	case err == nil:
-		if err := yaml.Unmarshal(data, &f); err != nil {
-			return nil, fmt.Errorf("configuration %s illisible : %w", chemin, err)
-		}
-	case !os.IsNotExist(err):
-		return nil, fmt.Errorf("lecture de %s : %w", chemin, err)
+	f, err := lire(chemin)
+	if err != nil {
+		return nil, err
 	}
 	if len(f.Relais) == 0 {
-		f.Relais = []Relais{{Nom: "ducky", Type: TypeDucky, Ecoute: ":" + strconv.Itoa(portAnnonce),
-			Cibles: Cibles{Source: SourceCores}}}
+		f.Relais = ParDefaut(portAnnonce)
 	}
-	noms := map[string]bool{}
-	ecoutes := map[string]bool{}
-	ducky := 0
-	for i := range f.Relais {
-		r := &f.Relais[i]
-		if err := r.Valider(); err != nil {
-			return nil, err
-		}
-		if noms[r.Nom] {
-			return nil, fmt.Errorf("relais %q déclaré deux fois", r.Nom)
-		}
-		noms[r.Nom] = true
-		if ecoutes[r.Ecoute] {
-			return nil, fmt.Errorf("deux relais écoutent sur %s", r.Ecoute)
-		}
-		ecoutes[r.Ecoute] = true
-		if r.Type == TypeDucky {
-			ducky++
-			_, p, _ := net.SplitHostPort(r.Ecoute)
-			if p != strconv.Itoa(portAnnonce) {
-				return nil, fmt.Errorf("relais Ducky %q sur le port %s, alors que le port annoncé aux agents est %d (-listen-port) : "+
-					"les agents se présenteraient là où rien ne répond", r.Nom, p, portAnnonce)
-			}
-		}
+	retenus, refus := Trier(f.Relais, portAnnonce)
+	if len(refus) > 0 {
+		return nil, refus[0].err
 	}
-	if ducky > 1 {
-		return nil, fmt.Errorf("%d relais Ducky déclarés : un seul port est annoncé aux agents", ducky)
+	return retenus, nil
+}
+
+// PilotageAutorise dit si le fichier laisse le core piloter les relais de ce
+// proxy. Vrai sans la clé, et vrai si le fichier est illisible — Charger, lu
+// juste avant, aura déjà arrêté le proxy sur cette erreur.
+//
+// # Pourquoi un proxy peut refuser
+//
+// Piloter les relais, c'est décider des ports qu'une machine ouvre et vers
+// quoi elle redirige. Par défaut le proxy fait confiance à son core, comme il
+// le fait déjà pour la liste des cibles. Un site qui veut que ce pouvoir reste
+// à qui administre la machine écrit « pilotage_par_le_core: false » : le proxy
+// continue de rendre compte, le core voit tout, et ne change rien.
+func PilotageAutorise(chemin string) bool {
+	f, err := lire(chemin)
+	if err != nil || f.Pilotage == nil {
+		return true
 	}
-	return f.Relais, nil
+	return *f.Pilotage
 }

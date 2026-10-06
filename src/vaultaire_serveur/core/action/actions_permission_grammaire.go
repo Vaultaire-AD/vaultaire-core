@@ -56,8 +56,8 @@ func EnregistrerActionsGrammairePermission(r *Registre) {
 	r.MustEnregistrer(Definition{
 		Nom:      "permission.update_action",
 		CleRBAC:  "write:update:permission",
-		Portee:   porteePermissionUtilisateur,
-		Resume:   "règle une action RBAC d'une permission (nil, all, ajout ou retrait d'un domaine)",
+		Portee:   porteeReglageActionPermission,
+		Resume:   "règle une action RBAC d'une permission (nil, all, deny, ajout ou retrait d'un domaine)",
 		Executer: reglerActionPermission,
 	})
 }
@@ -71,6 +71,7 @@ func EnregistrerActionsGrammairePermission(r *Registre) {
 const (
 	OpPermissionNil     = "nil"
 	OpPermissionAll     = "all"
+	OpPermissionRefus   = permission.ValeurRefus
 	OpPermissionAjout   = "add"
 	OpPermissionRetrait = "remove"
 )
@@ -86,6 +87,8 @@ func normaliserOperation(op string) (string, bool) {
 		return OpPermissionNil, true
 	case "all":
 		return OpPermissionAll, true
+	case permission.ValeurRefus:
+		return OpPermissionRefus, true
 	case "-a", "add":
 		return OpPermissionAjout, true
 	case "-r", "remove":
@@ -93,6 +96,45 @@ func normaliserOperation(op string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+// lireValeurActionPermission rend la valeur actuelle d'une action. Remplaçable
+// par les tests.
+var lireValeurActionPermission = func(nom, champ string) (string, error) {
+	db := database.GetDatabase()
+	permID, err := dbpermission.Command_GET_UserPermissionID(db, nom)
+	if err != nil {
+		return "", err
+	}
+	return dbpermission.Command_GET_UserPermissionAction(db, permID, champ)
+}
+
+// porteeReglageActionPermission : le droit sur les domaines de la permission,
+// sauf pour POSER ou LEVER un refus explicite, qui exige le droit global
+// (TO-DO 104).
+//
+// # Pourquoi le droit global
+//
+// Un « deny » franchit les domaines. Il retire l'action à chaque membre des
+// groupes qui portent la permission, y compris ce qu'un AUTRE groupe de ce
+// membre lui accorde ailleurs. Un délégué de compta qui pourrait le poser
+// retirerait à un collègue des droits qu'il tient d'admin, un domaine où le
+// délégué n'a rien.
+//
+// Le lever demande la même chose, sinon le même délégué annulerait un refus
+// posé par l'administration globale en réécrivant l'action par-dessus.
+//
+// Une valeur actuelle illisible exige elle aussi le droit global : dans le
+// doute, on ne laisse pas un délégué écraser ce qui est peut-être un refus.
+func porteeReglageActionPermission(p Params) ([]string, error) {
+	if op, _ := normaliserOperation(p.Get("op")); op == OpPermissionRefus {
+		return PorteeGlobale(p)
+	}
+	actuelle, err := lireValeurActionPermission(p.Get("permission_name"), p.Get("field"))
+	if err != nil || strings.TrimSpace(actuelle) == permission.ValeurRefus {
+		return PorteeGlobale(p)
+	}
+	return porteePermissionUtilisateur(p)
 }
 
 // ActionPermissionAdministrable dit si une clé peut être réglée sur une
@@ -159,7 +201,7 @@ func reglerActionPermission(a Appelant, p Params) (Resultat, error) {
 	op, connue := normaliserOperation(p.Get("op"))
 	if !connue {
 		return Resultat{}, fmt.Errorf(
-			"opération %q inconnue : attendu nil, all, add (-a) ou remove (-r)", p.Get("op"))
+			"opération %q inconnue : attendu nil, all, deny, add (-a) ou remove (-r)", p.Get("op"))
 	}
 
 	// Divergence 1 : la clé doit être réellement administrable.
@@ -171,14 +213,14 @@ func reglerActionPermission(a Appelant, p Params) (Resultat, error) {
 			"action %q inconnue : elle ne serait jamais évaluée par le moteur de droits", champ)
 	}
 
-	// Divergence 2 : une action globale par nature n'accepte que nil ou all.
+	// Divergence 2 : une action globale par nature n'accepte que nil, all ou deny.
 	//
 	// Le refus est ici et non dans le seul formulaire : l'interface ne doit
 	// jamais être la seule barrière, sinon la ligne de commande la contourne —
 	// ce qui était exactement le cas.
 	if permission.IsGlobalOnlyAction(champ) && (op == OpPermissionAjout || op == OpPermissionRetrait) {
 		return Resultat{}, fmt.Errorf(
-			"l'action %s s'évalue sur tous les domaines : elle accepte seulement nil ou all. "+
+			"l'action %s s'évalue sur tous les domaines : elle accepte seulement nil, all ou deny. "+
 				"Lui donner une liste de domaines la refuserait au lieu de la restreindre", champ)
 	}
 
@@ -206,7 +248,15 @@ func reglerActionPermission(a Appelant, p Params) (Resultat, error) {
 	switch op {
 	case OpPermissionNil:
 		nouvelle = "nil"
-		message = fmt.Sprintf("Action %s mise à nil sur %s : plus aucun domaine.", champ, nom)
+		message = fmt.Sprintf("Action %s mise à nil sur %s : cette permission n'accorde plus rien "+
+			"pour cette action. Un autre groupe du compte peut encore l'accorder ; "+
+			"pour la retirer quoi qu'il arrive, c'est deny.", champ, nom)
+
+	case OpPermissionRefus:
+		nouvelle = permission.ValeurRefus
+		message = fmt.Sprintf("Action %s mise à deny sur %s : REFUS EXPLICITE. Les membres des "+
+			"groupes qui portent cette permission perdent cette action partout, même si un autre "+
+			"de leurs groupes l'accorde — sauf les membres du groupe protégé.", champ, nom)
 
 	case OpPermissionAll:
 		nouvelle = "all"
@@ -228,8 +278,9 @@ func reglerActionPermission(a Appelant, p Params) (Resultat, error) {
 
 		// Plus aucun domaine : l'action passe à nil plutôt que de conserver une
 		// liste vide. Les deux se lisent pareil pour le moteur, mais « nil » se
-		// lit « refusé » dans la fiche, alors qu'une liste vide ressemble à une
-		// donnée manquante.
+		// lit « aucun droit » dans la fiche, alors qu'une liste vide ressemble à
+		// une donnée manquante. Jamais à deny : retirer le dernier domaine
+		// n'accorde plus rien, ce n'est pas refuser.
 		nouvelle = "nil"
 		if len(analyse.WithPropagation) > 0 || len(analyse.WithoutPropagation) > 0 {
 			nouvelle = permission.ConvertPermissionActionToString(analyse)

@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sort"
 	"strings"
-	"sync"
 )
 
 // Vérification des effets NON-fichier.
@@ -26,9 +25,9 @@ import (
 // qu'il a fait, et lui seul : c'est donc lui qui déclare ce qu'il faudra
 // revérifier, au moment où il l'applique.
 //
-// Le mécanisme est le jumeau exact de celui des fichiers — recordWrite note une
-// écriture, recordCheck note une attente — et il s'attribue de la même façon,
-// par différence avant/après l'appel de l'appliqueur. Aucun appliqueur n'a à
+// Le mécanisme est le jumeau exact de celui des fichiers — writeSystemFile
+// inscrit une écriture, recordCheck inscrit une attente — et il s'attribue de la
+// même façon, par la marque relevée avant l'appel de l'appliqueur. Aucun appliqueur n'a à
 // tenir de liste, et un module écrit demain sans recordCheck n'est simplement
 // pas vérifié : silence, pas fausse conformité.
 //
@@ -112,66 +111,26 @@ func VerifiableKinds() []string {
 }
 
 // --- inventaire des attentes, jumeau de celui des fichiers -------------------
-
-var (
-	checkMu sync.Mutex
-	// checkManifest accumule les attentes déclarées par l'application EN COURS.
-	checkManifest = map[string]SystemCheck{}
-)
-
-// ResetCheckManifest vide l'inventaire des attentes.
 //
-// Appelé par ResetManifest : les deux inventaires ont exactement le même cycle
-// de vie, et les séparer laisserait l'un survivre à l'autre — donc des attentes
-// attribuées au module d'un cycle antérieur.
-func ResetCheckManifest() {
-	checkMu.Lock()
-	defer checkMu.Unlock()
-	checkManifest = map[string]SystemCheck{}
-}
+// Les attentes vivent dans le MÊME inventaire de cycle que les fichiers — voir
+// inventaire.go. Elles ont exactement le même cycle de vie, et la même raison
+// de ne plus être globales : deux comptes qui ouvrent une session en même temps
+// ne doivent pas se voir attribuer les attentes l'un de l'autre.
 
-// recordCheck déclare un état à revérifier.
+// recordCheck déclare un état à revérifier, pour le cycle MACHINE.
 //
 // Appelé DEPUIS l'appliqueur, une fois l'action réussie. L'appeler avant
 // noterait une attente que l'action n'a pas obtenue, et le scan signalerait une
 // dérive permanente sur un état jamais atteint.
-func recordCheck(kind, target, expect string) {
-	c := SystemCheck{Kind: kind, Target: target, Expect: expect}
-	checkMu.Lock()
-	defer checkMu.Unlock()
-	checkManifest[c.CheckID()] = c
-}
-
-// checkSnapshot relève les attentes présentes, pour comparaison ultérieure.
 //
-// Copie les attentes et pas seulement les clés, comme manifestSnapshot : deux
-// modules peuvent surveiller la même cible avec des attentes différentes, et
-// comparer les seules clés attribuerait la seconde au premier module.
-func checkSnapshot() map[string]SystemCheck {
-	checkMu.Lock()
-	defer checkMu.Unlock()
-	vue := make(map[string]SystemCheck, len(checkManifest))
-	for id, c := range checkManifest {
-		vue[id] = c
-	}
-	return vue
+// Un appliqueur qui connaît le scope utilisateur appelle `ctx.recordCheck`, qui
+// inscrit dans l'inventaire de SON cycle.
+func recordCheck(kind, target, expect string) {
+	inventaireMachine.noterAttente(kind, target, expect)
 }
 
-// checksSince rend les attentes apparues OU MODIFIÉES depuis un relevé.
-func checksSince(avant map[string]SystemCheck, stateKey string) map[string]SystemCheck {
-	checkMu.Lock()
-	defer checkMu.Unlock()
-
-	nouvelles := map[string]SystemCheck{}
-	for id, c := range checkManifest {
-		if ancienne, existait := avant[id]; existait && ancienne.Expect == c.Expect {
-			continue
-		}
-		c.StateKey = stateKey
-		nouvelles[id] = c
-	}
-	return nouvelles
-}
+// checkSnapshot rend les attentes inscrites par le cycle machine, pour un test.
+func checkSnapshot() map[string]SystemCheck { return inventaireMachine.releveAttentes() }
 
 // --- le scan ----------------------------------------------------------------
 

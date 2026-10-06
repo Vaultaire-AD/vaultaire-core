@@ -132,6 +132,14 @@ func DeleteUser_Vaultaire_Past_4Days_withoutconnection() {
 		"ménage des comptes : %d compte(s) examiné(s), %d retiré(s)", len(candidats), retires))
 }
 
+// ComptesDuDomaine rend les comptes que CET agent a provisionnés.
+//
+// Exportée pour le kill switch (TO-DO 133) : un ordre qui désigne une personne
+// par son nom d'annuaire doit retrouver SES comptes locaux, et ne toucher à
+// aucun autre. Cette liste est exactement celle-là — ce que l'agent a créé, et
+// rien de ce qui se trouvait déjà sur la machine.
+func ComptesDuDomaine() ([]string, error) { return comptesDuDomaine() }
+
 // comptesDuDomaine rend les comptes que CET agent a provisionnés.
 //
 // L'intersection de la carte et de /etc/passwd, à UID égal. Voir l'en-tête du

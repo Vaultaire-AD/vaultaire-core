@@ -71,3 +71,28 @@ func ReponseClient(code, destination, sessionKey string, contenu ...string) stri
 	}
 	return entete + "\n" + strings.Join(contenu, "\n")
 }
+
+// PrefixeCapacites ouvre la ligne où le core annonce ce qu'il sait faire, en
+// queue de chaque 02_11 : « capacites:relais ». Écrit aussi dans le SDK
+// (enligne.PrefixeCapacites).
+//
+// # Pourquoi le core doit le dire (TO-DO 141)
+//
+// Split_Action FERME la connexion d'un client qui émet une trame que son type
+// n'a pas le droit d'émettre. Pour un core d'une version antérieure, une trame
+// ajoutée depuis est exactement cela : un proxy mis à jour avant son core se
+// ferait couper à chaque émission, en boucle. Le client n'émet donc une trame
+// nouvelle que vers un core qui l'annonce.
+//
+// Dans la 02_11 parce qu'elle arrive à CHAQUE connexion, avant toute autre
+// trame : un client qui bascule sur un autre core du cluster, resté en
+// arrière, l'apprend avant d'avoir rien émis.
+const PrefixeCapacites = "capacites:"
+
+// CapaciteRelais : ce core lit la 04_18 et émet la 04_19.
+const CapaciteRelais = "relais"
+
+// LigneCapacites rend la ligne à placer en queue de la 02_11.
+func LigneCapacites() string {
+	return PrefixeCapacites + CapaciteRelais
+}

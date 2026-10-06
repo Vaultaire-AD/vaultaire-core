@@ -2,7 +2,7 @@
 
 # 4.3 — Affinité, enrôlement par site, et ce qui reste
 
-[← Découverte de service et proxies](./02-decouverte-et-proxies.md) · [Chapitre 5 — Transport des GPO (05) →](../05-gpo/README.md)
+[← Découverte de service et proxies](./02-decouverte-et-proxies.md) · [Les relais d'un proxy, pilotés par le core →](./04-relais-pilotes.md)
 
 ---
 
@@ -151,4 +151,4 @@ sujet du point 67 dans `TO-DO.md`.
 
 ---
 
-[← Découverte de service et proxies](./02-decouverte-et-proxies.md) · [Chapitre 5 — Transport des GPO (05) →](../05-gpo/README.md)
+[← Découverte de service et proxies](./02-decouverte-et-proxies.md) · [Les relais d'un proxy, pilotés par le core →](./04-relais-pilotes.md)

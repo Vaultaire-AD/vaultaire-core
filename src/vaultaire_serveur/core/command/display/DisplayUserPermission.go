@@ -68,8 +68,27 @@ func DisplayUserPermission(permission storage.UserPermission, actions []ActionRB
 			f.Ajouter(a.Cle, lisibleValeurAction(a.Valeur))
 		}
 
-		// Les droits refusés en fin de fiche : ils sont la majorité, et les
-		// mettre en tête noierait les quelques-uns qui comptent.
+		// Les REFUS EXPLICITES juste après les accords, chacun sur sa ligne :
+		// ce sont les seuls à retirer un droit qu'un autre groupe accorde, et
+		// les fondre dans « non accordés » les rendrait invisibles (TO-DO 104).
+		var explicites, neutres []ActionRBAC
+		for _, a := range refusees {
+			if strings.TrimSpace(strings.ToLower(a.Valeur)) == "deny" {
+				explicites = append(explicites, a)
+			} else {
+				neutres = append(neutres, a)
+			}
+		}
+		refusees = neutres
+		if len(explicites) > 0 {
+			f.AjouterSection(fmt.Sprintf("Refus explicites (%d) — prioritaires sur les autres groupes", len(explicites)))
+			for _, a := range explicites {
+				f.Ajouter(a.Cle, "deny")
+			}
+		}
+
+		// Les droits non accordés en fin de fiche : ils sont la majorité, et
+		// les mettre en tête noierait les quelques-uns qui comptent.
 		if len(refusees) > 0 {
 			f.AjouterSection(fmt.Sprintf("Droits non accordés (%d)", len(refusees)))
 			f.Ajouter("clés", resumerRefus(refusees))
@@ -139,22 +158,27 @@ func rangObjet(cle string) int {
 
 // estAccordee dit si une valeur donne effectivement un droit.
 //
-// « nil » et la chaîne vide valent refus. Tout le reste — « all », ou une liste
-// de domaines — accorde quelque chose.
+// « nil », « deny » et la chaîne vide n'accordent rien. Tout le reste —
+// « all », ou une liste de domaines — accorde quelque chose.
 func estAccordee(v string) bool {
 	v = strings.TrimSpace(strings.ToLower(v))
-	return v != "" && v != "nil"
+	return v != "" && v != "nil" && v != "deny"
 }
 
 // lisibleValeurAction traduit les valeurs internes.
 //
-// « all » et « nil » sont des marqueurs de la base, pas des mots destinés à un
-// administrateur. « tous les domaines » et « refusé » disent la même chose sans
-// qu'il faille connaître la convention interne.
+// « all », « nil » et « deny » sont des marqueurs de la base, pas des mots
+// destinés à un administrateur.
+//
+// « nil » se lisait « refusé » : c'était faux, et c'est tout le TO-DO 104. Un
+// groupe à « nil » n'accorde rien mais ne retire rien — un autre groupe du
+// compte peut accorder. Seul « deny » refuse.
 func lisibleValeurAction(v string) string {
 	switch strings.TrimSpace(strings.ToLower(v)) {
 	case "", "nil":
-		return "refusé"
+		return "aucun droit"
+	case "deny":
+		return "REFUS EXPLICITE (prioritaire sur les autres groupes)"
 	case "all":
 		return "tous les domaines"
 	default:

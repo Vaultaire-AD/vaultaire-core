@@ -106,10 +106,160 @@
               n'est pas oublié (délai de purge du cluster, 24 h d'absence par défaut).
             </p>
 
-            {{/* Le détail par relais (TO-DO 108).
+            {{/* LES RELAIS DU PROXY (TO-DO 141).
+
+                 Ce qu'il expose, vers quoi, et où en est ce que le core lui
+                 demande. La section remplace le tableau de compteurs seuls
+                 (TO-DO 108) dès que le proxy rend compte de sa configuration ;
+                 un proxy d'une version antérieure garde l'ancien tableau, plus
+                 bas, parce qu'il n'a que cela à montrer. */}}
+            {{ $noeud := .Hostname }}
+            {{ with $.RelaisProxy }}
+            {{ if or .Connu .Pilote }}
+            <h3>Relais — ce que ce proxy expose</h3>
+            <p class="{{ if .Refus }}alert alert-error{{ else }}muted small{{ end }}">{{ .Resume }}.
+              {{ if .Connu }}
+                Dernier compte rendu du proxy :
+                {{ if .Frais }}{{ .Recu.Local.Format "15:04:05" }}{{ else }}<strong>{{ .Recu.Local.Format "2006-01-02 15:04:05" }} — périmé, le proxy ne rend plus compte</strong>{{ end }}.
+              {{ end }}
+              {{ if and .Pilote .ModifiePar }}Dernière modification : {{ .ModifiePar }}, le {{ .ModifieLe.Local.Format "2006-01-02 15:04:05" }}.{{ end }}
+            </p>
+            {{ if and .Connu (not .PilotageAccepte) }}
+            <p class="alert alert-error">
+              Ce proxy <strong>garde la main</strong> sur ses relais : son fichier de configuration porte
+              <code>pilotage_par_le_core: false</code>. Ce qui suit est affiché, et ne se change que sur sa machine.
+            </p>
+            {{ end }}
+
+            {{ if .Relais }}
+              {{ if .Pilote }}<p class="muted small"><strong>Demandés par le core</strong></p>{{ end }}
+              {{ template "table_relais" .Relais }}
+            {{ else }}
+              <p class="muted small">Aucun relais connu.</p>
+            {{ end }}
+            {{ if .EnService }}
+              <p class="muted small"><strong>En service sur le proxy en ce moment</strong> — la demande ci-dessus n'est pas appliquée.</p>
+              {{ template "table_relais" .EnService }}
+            {{ end }}
+            <p class="muted small">
+              <em>Demandé</em> : le core le veut, le proxy n'a pas encore dit ce qu'il en est — rechargez la page.
+              <em>Appliqué</em> : le proxy l'a ouvert. <em>Refusé</em> : il ne peut pas, et dit pourquoi — un port déjà pris,
+              ou un port bas qu'il n'a pas le droit d'ouvrir. Le proxy applique sans redémarrer : les tunnels en cours ne sont pas coupés.
+              Les compteurs sont cumulés depuis son démarrage.
+            </p>
+
+            {{ if and $.PeutPiloter .Connu .PilotageAccepte }}
+              {{ if not .Pilote }}
+              <p class="muted small">
+                Ces relais viennent du <strong>fichier</strong> du proxy. Le premier changement fait d'ici
+                <strong>prend la main</strong> : le core repart de ce qui tourne, et sa liste fait foi ensuite.
+              </p>
+              {{ end }}
+
+              {{ range .Relais }}
+              <details class="card" style="margin-bottom:0.6rem">
+                <summary>Modifier le relais <strong>{{ .Nom }}</strong></summary>
+                <form method="post" action="/admin/cluster?noeud={{ $noeud }}">
+                  <input type="hidden" name="action" value="set_relay">
+                  <input type="hidden" name="node" value="{{ $noeud }}">
+                  <input type="hidden" name="name" value="{{ .Nom }}">
+
+                  <label>Type</label>
+                  {{ if eq .Type "ducky" }}
+                    <input value="ducky" disabled>
+                    <input type="hidden" name="type" value="ducky">
+                    <p class="muted small">Le relais Ducky ne change ni de type ni de port : c'est le port que ce proxy a annoncé au cluster, celui que reçoivent les agents.</p>
+                    <input type="hidden" name="listen" value="{{ .Ecoute }}">
+                  {{ else }}
+                    <select name="type">
+                      <option value="https"{{ if eq .Type "https" }} selected{{ end }}>https — vers des services HTTPS (Nexus…)</option>
+                      <option value="ldaps"{{ if eq .Type "ldaps" }} selected{{ end }}>ldaps — vers l'annuaire des cores</option>
+                    </select>
+                    <label>Écoute</label>
+                    <input name="listen" value="{{ .Ecoute }}" placeholder=":8843">
+                    <p class="muted small">« [adresse]:port ». Sans adresse : toutes les interfaces du proxy. Un port bas peut lui être refusé — il le dira.</p>
+                  {{ end }}
+
+                  <label>Source des cibles</label>
+                  <input name="source" value="{{ .Cibles.Source }}" list="sources-de-cibles">
+                  <label>Adresses <span class="muted small">(source « liste » : une par ligne, hôte:port)</span></label>
+                  <textarea name="addresses" rows="2">{{ range .Cibles.Adresses }}{{ . }}
+{{ end }}</textarea>
+                  <label>Port cible <span class="muted small">(source « cores »)</span></label>
+                  <input name="target_port" type="number" min="0" max="65535" value="{{ if .Cibles.Port }}{{ .Cibles.Port }}{{ end }}" placeholder="celui du type">
+
+                  <label>Délai de connexion (s)</label>
+                  <input name="connect_timeout" type="number" min="0" value="{{ if .DelaiConnexionSecondes }}{{ .DelaiConnexionSecondes }}{{ end }}" placeholder="défaut du proxy">
+                  <label>Inactivité (s)</label>
+                  <input name="idle" type="number" min="0" value="{{ if .InactiviteSecondes }}{{ .InactiviteSecondes }}{{ end }}" placeholder="défaut du proxy">
+                  <label>Connexions au plus</label>
+                  <input name="max_connections" type="number" min="0" value="{{ if .MaxConnexions }}{{ .MaxConnexions }}{{ end }}" placeholder="défaut du proxy">
+                  <label>Connexions au plus par source</label>
+                  <input name="max_per_source" type="number" min="0" value="{{ if .MaxParSource }}{{ .MaxParSource }}{{ end }}" placeholder="défaut du proxy">
+
+                  <div class="gpo-actions"><button type="submit" class="btn btn-primary">Enregistrer</button></div>
+                </form>
+                {{ if ne .Type "ducky" }}
+                <form method="post" action="/admin/cluster?noeud={{ $noeud }}">
+                  <input type="hidden" name="action" value="remove_relay">
+                  <input type="hidden" name="node" value="{{ $noeud }}">
+                  <input type="hidden" name="name" value="{{ .Nom }}">
+                  <div class="gpo-actions"><button type="submit" class="btn btn-ghost">Retirer ce relais</button></div>
+                </form>
+                {{ end }}
+              </details>
+              {{ end }}
+
+              <details class="card" style="margin-bottom:0.6rem">
+                <summary>Ajouter un relais</summary>
+                <form method="post" action="/admin/cluster?noeud={{ $noeud }}">
+                  <input type="hidden" name="action" value="set_relay">
+                  <input type="hidden" name="node" value="{{ $noeud }}">
+
+                  <label>Nom</label>
+                  <input name="name" required placeholder="nexus" pattern="[a-zA-Z0-9][a-zA-Z0-9._-]*" maxlength="48">
+                  <label>Type</label>
+                  <select name="type">
+                    <option value="https">https — vers des services HTTPS (Nexus…)</option>
+                    <option value="ldaps">ldaps — vers l'annuaire des cores</option>
+                  </select>
+                  <p class="muted small">LDAP en clair n'est pas proposé : relayé, il ferait voyager les mots de passe en clair du site jusqu'au core.</p>
+                  <label>Écoute</label>
+                  <input name="listen" placeholder="vide : 443 pour https, 636 pour ldaps">
+                  <label>Source des cibles</label>
+                  <input name="source" list="sources-de-cibles" placeholder="vide : les cores (ldaps) — obligatoire en https">
+                  <label>Adresses <span class="muted small">(source « liste » : une par ligne, hôte:port)</span></label>
+                  <textarea name="addresses" rows="2"></textarea>
+                  <label>Port cible <span class="muted small">(source « cores »)</span></label>
+                  <input name="target_port" type="number" min="0" max="65535" placeholder="celui du type">
+                  <div class="gpo-actions"><button type="submit" class="btn btn-primary">Ajouter</button></div>
+                </form>
+              </details>
+              <datalist id="sources-de-cibles">
+                <option value="cores">les cores du cluster (ducky, ldaps)</option>
+                <option value="service:vaultaire_nexus">les Nexus du cluster (https)</option>
+                <option value="liste">les adresses données ci-dessous</option>
+              </datalist>
+
+              {{ if .Pilote }}
+              <form method="post" action="/admin/cluster?noeud={{ $noeud }}" style="margin-bottom:1.2rem">
+                <input type="hidden" name="action" value="release_relays">
+                <input type="hidden" name="node" value="{{ $noeud }}">
+                <button type="submit" class="btn btn-ghost">Rendre la main au fichier du proxy</button>
+                <span class="muted small">Le proxy referme ce que le core a posé et réapplique son fichier de configuration.</span>
+              </form>
+              {{ end }}
+            {{ else if and .Connu .PilotageAccepte }}
+              <p class="muted small">Modifier ces relais demande le droit <code>write:relay</code>.</p>
+            {{ end }}
+            {{ end }}
+            {{ end }}
+
+            {{/* Les compteurs seuls (TO-DO 108), pour un proxy qui ne rend pas
+                 compte de sa configuration — version antérieure à la 2.2.
                  L'agrégat de la liste dit qu'un proxy écarte des connexions ;
-                 seul ce tableau dit LEQUEL de ses relais les écarte, et un
-                 proxy en porte plusieurs — Ducky, HTTPS, LDAP. */}}
+                 seul ce tableau dit LEQUEL de ses relais les écarte. */}}
+            {{ if not (and $.RelaisProxy (or $.RelaisProxy.Connu $.RelaisProxy.Pilote)) }}
             {{ with .Relais }}
             <h3>Relais</h3>
             <p class="muted small">
@@ -152,6 +302,7 @@
                 </tbody>
               </table>
             </div>
+            {{ end }}
             {{ end }}
 
           <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" class="card" style="margin-bottom:0.8rem">
@@ -262,4 +413,58 @@
   <script src="/static/admin_sidebar.js"></script>
 </body>
 </html>
-
+{{/* Le tableau des relais d'un proxy (TO-DO 141), employé deux fois dans la
+     fiche : pour ce que le core demande, et pour ce qui tourne quand cela
+     diffère. Défini ICI, au niveau supérieur et APRÈS le document : une
+     définition ne peut pas vivre à l'intérieur d'un bloc, et rien ne doit
+     précéder le DOCTYPE. */}}
+{{ define "table_relais" }}
+<div class="table-wrap">
+  <table class="cluster-liste">
+    <thead>
+      <tr>
+        <th>État</th>
+        <th>Relais</th>
+        <th>Type</th>
+        <th>Écoute</th>
+        <th>Redirige vers</th>
+        <th>Actives / total</th>
+        <th>Écartées</th>
+        <th>Trafic</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{ range . }}
+      <tr>
+        <td>
+          {{ if eq .Etat "refuse" }}<strong>refusé</strong>
+          {{ else if eq .Etat "demande" }}<em>demandé</em>
+          {{ else }}{{ .LibelleEtat }}{{ end }}
+        </td>
+        <td>{{ .Nom }}</td>
+        <td>{{ .Type }}</td>
+        <td class="muted small">{{ if .EcouteEffective }}{{ .EcouteEffective }}{{ else }}{{ .Ecoute }}{{ end }}</td>
+        <td>
+          {{ .SourceLisible }}
+          {{ if .CiblesResolues }}<br><span class="muted small">en ce moment : {{ .CiblesLisibles }}</span>
+          {{ else if ne .Etat "refuse" }}{{ if ne .Etat "demande" }}<br><span class="muted small">aucune cible en ce moment</span>{{ end }}{{ end }}
+          <br><span class="muted small">{{ .Limites }}</span>
+          {{ if .Motif }}<br><strong>{{ .Motif }}</strong>{{ end }}
+        </td>
+        {{ with .Mesure }}
+        <td>{{ .Actives }} <span class="muted small">/ {{ .Total }}</span></td>
+        <td>{{ if .Ecartees }}{{ .Ecartees }}
+          <span class="muted small">({{ .Refusees }} sans cible, {{ .Rejetees }} au plafond)</span>
+          {{ else }}<span class="muted small">0</span>{{ end }}</td>
+        <td class="muted small">{{ .TraficLisible }}</td>
+        {{ else }}
+        <td><span class="muted small">—</span></td>
+        <td><span class="muted small">—</span></td>
+        <td><span class="muted small">—</span></td>
+        {{ end }}
+      </tr>
+    {{ end }}
+    </tbody>
+  </table>
+</div>
+{{ end }}

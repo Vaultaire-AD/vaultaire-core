@@ -16,6 +16,7 @@ func initializeServer() {
 	// comme pour l'ancienne sync.Map.
 	go clearSession()
 	go checkServeurOnline()
+	go balayerLesPoigneesDeMain()
 }
 
 // La génération des clés a QUITTÉ ce fichier.

@@ -99,6 +99,15 @@ port sous 1024 dans le conteneur. Déclarez-les dans la section `relais:` sur un
 port haut (`:8843`, `:1636`) et publiez 443 ou 636 sur l'hôte dans le
 `docker-compose.yml` — voir [`docs/proxy/https-et-ldaps.md`](../../../docs/proxy/https-et-ldaps.md).
 
+**Relais posés depuis le core.** Depuis la 2.2, un relais s'ajoute aussi par
+`vlt cluster relais <proxy> set …`, sans toucher à ce fichier
+([`docs/proxy/pilotage.md`](../../../docs/proxy/pilotage.md)). Deux choses
+restent vraies ici : le port doit être **haut** — sinon le relais revient
+« refusé », `permission denied` —, et il doit être **publié** dans le
+`docker-compose.yml`, sans quoi il écoute dans le conteneur et personne ne
+l'atteint. La dernière liste reçue du core est gardée dans le volume des clés
+(`relais_du_core.json`) : elle survit aux reconstructions, comme l'identité.
+
 **Le binaire monté doit rester en 0755.** `docker-update.sh` le pose à
 l'installation. Symptôme sinon :
 

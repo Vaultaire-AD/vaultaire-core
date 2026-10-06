@@ -11,7 +11,7 @@
 | `06_01` | client | revoke_order | verrouiller, déverrouiller ou supprimer un compte local |
 | `06_02` | core | revoke_ack | ordre appliqué |
 | `06_03` | core | revoke_error | ordre non appliqué |
-| `06_04` | core | ask_revocations | ordres en attente (démarrage, reconnexion) |
+| `06_04` | core | ask_revocations | ordres en attente (démarrage, tunnel rétabli, puis toutes les dix minutes) |
 | `06_05` | client | revocations_list | ordres non acquittés |
 | `06_06` | client | revocations_error | erreur |
 
@@ -44,9 +44,9 @@ rafraîchissement des GPO. C'est précisément ce qu'un kill switch doit éviter
 
 | Mode | Annuaire | Machines | Réversible |
 |------|----------|----------|------------|
-| `soft` | Compte marqué révoqué : plus aucune authentification, plus aucune permission | `usermod -L` + `chage -E 1` — compte verrouillé, home intact | Oui, via `unlock` |
+| `soft` | Compte marqué révoqué : plus aucune authentification, plus aucune permission | `usermod -L` + `chage -E 1`, **puis** fermeture des sessions et arrêt des processus du compte — home intact | Oui, via `unlock` |
 | `unlock` | Marque levée | `usermod -U` + `chage -E -1` | — |
-| `hard` | Compte **supprimé** de l'annuaire | `userdel -r` — compte et répertoire personnel supprimés | **Non** |
+| `hard` | Compte **supprimé** de l'annuaire | même coupure, puis `userdel -r` — compte et répertoire personnel supprimés | **Non** |
 
 **Pourquoi le verrouillage local est indispensable, y compris en `soft`.** Le
 module PAM écrit le mot de passe dans le `/etc/shadow` de chaque machine où
@@ -55,6 +55,30 @@ Une révocation limitée au serveur laisserait donc le compte utilisable en loca
 sur toutes ces machines. Un kill switch qui ne coupe pas l'accès n'est pas un
 kill switch.
 
+**Verrouiller ne fait sortir personne** *(TO-DO 133)*. Les deux verrous sont
+deux écritures dans `/etc/shadow` : ils empêchent d'**entrer**. Une fois `sshd`
+fourché et le shell lancé, plus rien ne relit `/etc/shadow`, et la session vivait
+jusqu'au `exit` — ou indéfiniment sous `tmux`. L'agent coupe donc, **après**
+avoir verrouillé (l'inverse laisserait le temps de se reconnecter) :
+
+1. `loginctl terminate-user <uid>` quand `systemd-logind` tourne — il ferme les
+   sessions et le gestionnaire utilisateur, y compris un shell passé root par
+   `sudo`, qui garde son appartenance à la session ;
+2. `pkill -KILL` par uid réel puis effectif, dans tous les cas ;
+3. puis il **compte** ce qui reste, dans `/proc`. S'il reste un processus, l'ordre
+   est en échec (`06_03`) : le core le voit, et rejoue.
+
+**Tout ce qui tourne sous le compte s'arrête**, pas seulement ses terminaux : un
+`tmux` détaché, un `nohup`, une tâche planifiée. C'est une décision. Sur un
+compte compromis, ce qui survit à la fermeture du terminal est précisément ce
+que l'attaquant a laissé pour revenir. La contrepartie est assumée : un
+verrouillage pour départ interrompt aussi le calcul long que la personne avait
+lancé.
+
+**Deux refus, avant toute commande** : jamais l'uid 0, jamais le compte sous
+lequel tourne l'agent. L'ordre vient du réseau, et un `pkill -KILL -U 0` ne se
+rattrape pas.
+
 **Le mode `hard` détruit le répertoire personnel** (`userdel -r`), conformément
 au choix retenu. À garder en tête : sur un compte compromis, cela détruit aussi
 les traces de la compromission. Si un jour l'analyse post-incident devient un
@@ -62,14 +86,49 @@ besoin, c'est ici qu'il faudra revenir.
 
 ## Quelles machines reçoivent l'ordre
 
-Celles qui partagent au moins un groupe avec l'utilisateur — la même règle que
-les GPO utilisateur, et la fonction existe déjà (`HasSharedGroup`). C'est
-exactement l'ensemble des machines où l'utilisateur a pu se connecter, donc
-l'ensemble où un compte local a pu être créé.
+Deux ensembles, réunis :
+
+- celles qui **partagent au moins un groupe** avec l'utilisateur — la même règle
+  que les GPO utilisateur. C'est l'ensemble des machines où il a pu se connecter,
+  donc où un compte local a pu être créé ;
+- celles où il a **une session ouverte** au moment du déclenchement, quels que
+  soient ses groupes *(TO-DO 133)*.
+
+Les groupes disent où la personne **pouvait** se connecter, pas où elle **est** :
+la retirer d'un groupe ne ferme pas la session qu'elle y tenait. La machine la
+plus urgente à joindre — celle où le compte travaille en ce moment — pouvait
+donc être la seule à ne pas recevoir l'ordre, pendant que la commande affichait
+un succès. Le compte rendu dit combien de cibles portent une session ouverte, et
+combien ne sont visées que pour cela.
 
 En `hard`, la liste est **figée au moment du déclenchement**, avant la
 suppression du compte en base : après la suppression, l'appartenance aux groupes
-n'existe plus et la liste serait vide.
+n'existe plus et la liste serait vide. Les sessions sont lues au même moment,
+avant que le core n'efface leurs lignes.
+
+## Quel compte, sur la machine
+
+Le compte local d'une personne s'appelle `nom@domaine` : c'est le module PAM qui
+le crée, sous le nom tapé pour se connecter. L'annuaire ne connaît que `nom`, et
+c'est ce nom-là qu'un exploitant tape — `vlt kill -u bob.durand`.
+
+*(TO-DO 133.)* L'agent cherchait un compte local de ce nom **exact**, n'en
+trouvait pas, journalisait « ordre sans objet » et **acquittait** : rien n'était
+verrouillé, sur aucune machine, et le core rangeait l'ordre comme traité. Seule
+la forme complète, tapée à la main, atteignait le compte — et le rejeu d'un
+ordre en attente relit le nom en base, où il est court.
+
+Un nom **sans domaine** désigne désormais tous les comptes locaux de cette
+personne, `nom@<n'importe quel domaine>`, parmi ceux que l'agent a lui-même
+provisionnés (`/etc/vaultaire/uid.map`, recoupé avec `/etc/passwd`). Un nom
+**avec domaine** désigne ce compte-là. Jamais un compte que l'agent n'a pas
+créé : un compte Unix local qui porterait le nom d'une personne de l'annuaire
+n'est pas le sien. La comparaison s'arrête à l'arobase — `bob.durand` ne désigne
+pas `bob.durandal@…`.
+
+> ⚠️ **Un agent antérieur à ce correctif n'applique rien à un nom court.** Tant
+> que tout le parc n'est pas à jour, taper la forme complète, et savoir qu'une
+> machine hors ligne au moment de l'ordre ne sera pas traitée à son retour.
 
 ## Machines hors ligne
 
@@ -81,6 +140,31 @@ reçoit l'ordre à sa prochaine connexion, via 06_04.
 Sans cette persistance, éteindre son poste suffirait à échapper à une
 révocation — le seul cas où la précaution compte vraiment.
 
+## Quand l'agent réclame ses ordres
+
+*(TO-DO 134.)* Ce chapitre disait « démarrage, reconnexion ». La demande `06_04`
+ne partait qu'**une fois**, d'une goroutine lancée à l'amorçage de l'agent : un
+ordre émis pendant que le tunnel était tombé attendait le **redémarrage du
+service**. Couper le réseau d'un poste une minute au bon moment suffisait à le
+soustraire à une révocation.
+
+`revocation.SurveillerLesOrdres` réclame désormais :
+
+| Quand | Pourquoi |
+|---|---|
+| au **démarrage** de l'agent | rattraper ce qui a été émis pendant qu'il était arrêté |
+| à chaque **tunnel rétabli** — la clé de session a changé | rattraper ce qui a été émis pendant la coupure |
+| **toutes les dix minutes**, tant que la session tient | rejouer un ordre poussé en vain à une machine connectée, ou appliqué en échec |
+
+Le rappel est une constante (`RappelDesOrdres`), pas un réglage : c'est la durée
+maximale pendant laquelle un compte coupé peut rester ouvert sur une machine
+pourtant connectée, et l'allonger pour économiser une trame par machine
+allongerait exactement cela. Il couvre du côté de l'agent ce que le TO-DO 49
+demande du côté du core, à dix minutes près.
+
+Le tunnel est scruté, comme le fait déjà le cycle GPO : il est remonté par un
+paquet qui n'expose aucune notification, et la clé de session se lit en mémoire.
+
 ## Séquence
 
 ```
@@ -88,14 +172,14 @@ révocation — le seul cas où la précaution compte vraiment.
         │
         ├─ écriture en base : ordre + liste des machines cibles
         ├─ marquage du compte / suppression selon le mode
-        ├─ fermeture immédiate des sessions Ducky de l'utilisateur
+        ├─ fermeture immédiate des sessions que le SERVEUR tient (Ducky, portail)
         │
         └─ pour chaque machine EN LIGNE :
-                serveur ──── 06_01 revoke_order ────► client
+                serveur ──── 06_01 revoke_order ────► client      verrouille, puis coupe sessions et processus
                 serveur ◄─── 06_02 revoke_ack ─────── client      cible passée à « acquittée »
-                        ◄─── 06_03 revoke_error ─────            cible passée à « en échec », réessai au cycle suivant
+                        ◄─── 06_03 revoke_error ─────            cible passée à « en échec », rejouée au prochain 06_04
 
- Machine qui se (re)connecte
+ Machine qui démarre, dont le tunnel revient, ou toutes les dix minutes
                 serveur ◄─── 06_04 ask_revocations ── client      après authentification
                 serveur ──── 06_05 revocations_list ► client
                 serveur ◄─── 06_02 revoke_ack ─────── client      un acquittement par ordre

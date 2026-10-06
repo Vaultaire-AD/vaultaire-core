@@ -95,6 +95,8 @@ website:
 api:
   api_enable: true
   api_port: 6643
+  limite_rafale: 100       # débit par source, voir vaultairectl.md § Refus et freinage
+  limite_par_seconde: 20
 
 administrateur:
   enable: true
@@ -115,6 +117,17 @@ administrateur:
 > `administrateur` et non `administreur` : l'ancienne orthographe n'a jamais été
 > lue, et toute la section était ignorée en silence. Le core refuse maintenant de
 > démarrer dessus, en la nommant.
+
+**Le portail se protège lui-même** *(2.2, TO-DO 103)*. Chaque formulaire porte
+un jeton anti-CSRF, et chaque réponse ces en-têtes : `Content-Security-Policy`
+(aucun script en ligne), `X-Frame-Options: DENY`, `X-Content-Type-Options`,
+`Referrer-Policy`, `Strict-Transport-Security`. Deux conséquences :
+
+- derrière un **reverse proxy**, laissez passer ces en-têtes tels quels ; un
+  proxy qui pose sa propre CSP plus large affaiblit celle du portail ;
+- une page restée ouverte après un **changement de mot de passe** ou une
+  reconnexion refuse son prochain envoi (« jeton de formulaire absent ou
+  expiré ») : rechargez-la.
 
 **À ne pas oublier** : `debug: false` en production, et aucun sous-système réglé
 dans `debug.detail` — les lignes DEBUG portent
@@ -219,7 +232,27 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 
 Les **permissions utilisateur** contrôlent l’accès aux ressources (SSO, API, LDAP, etc.). Chaque permission possède un ensemble d’**actions** configurables par domaine :
 
-- **Valeur par action** : `nil` (refusé), `all` (tous les domaines), ou une liste de domaines avec ou sans propagation.
+- **Valeur par action** : `nil` (aucun droit), `all` (tous les domaines), `deny` (refus explicite), ou une liste de domaines avec ou sans propagation.
+
+**`nil` et `deny` ne disent pas la même chose** *(2.2, TO-DO 104)*. Un compte
+reçoit les droits de **tous** ses groupes :
+
+| Valeur sur un groupe | Si un autre groupe du compte accorde |
+|---|---|
+| `nil` | **accordé** : `nil` n'accorde rien, il ne retire rien non plus. C'est la valeur de toute action jamais réglée. |
+| `deny` | **refusé**, sur tous les domaines, même face à `all`. |
+
+Deux règles encadrent `deny` :
+
+- **Le groupe protégé (`vaultaire`) n'y est jamais soumis.** Sans cela, un
+  `deny` sur `write:update:permission` porté par tous les administrateurs ne
+  pourrait plus être levé par personne.
+- **Poser ou lever un `deny` exige le droit global** (`write:update:permission`
+  à `all`). Un refus franchit les domaines — il retire aussi ce qu'un autre
+  groupe accorde ailleurs —, il ne relève donc pas d'un délégué.
+
+Le refus est journalisé en `WARNING` avec le groupe qui le pose :
+`refus explicite (deny) posé par le groupe N`.
 - **Format des domaines** : `(1:domaine.fr)(0:sous.domaine.fr)` — `1:` = avec propagation (sous-domaines inclus), `0:` = sans propagation.
 
 **Actions disponibles** :
@@ -228,7 +261,7 @@ Les **permissions utilisateur** contrôlent l’accès aux ressources (SSO, API,
 |------|--------|
 | **Legacy** | `none`, `web_admin`, `auth`, `compare`, `search` |
 | **RBAC** | Format `catégorie:action:objet` — ex. `read:get:user`, `write:create:group` |
-| **Spécial** | `read:log`, `read:dns`, `write:dns`, `write:mfa`, `write:killswitch`, `read:enrollment`, `read:cluster`, `write:cluster`, `read:certificate`, `write:certificate`, `write:server` |
+| **Spécial** | `read:log`, `read:dns`, `write:dns`, `write:mfa`, `write:killswitch`, `read:enrollment`, `read:cluster`, `write:cluster`, `write:relay`, `read:certificate`, `write:certificate`, `write:server` |
 
 **Objets RBAC** : `user`, `group`, `client`, `permission`, `gpo`.  
 **Lecture** : `read:get:<objet>`, `read:status:<objet>`.  
@@ -252,8 +285,8 @@ get -u                                            # les utilisateurs de paris.fr
 
 Certains droits ne se délèguent **pas** par domaine et s'accordent avec `all` ou
 pas du tout : `web_admin`, `read:log`, `read:dns`, `write:dns`,
-`read:enrollment`, `read:cluster`, `write:cluster`, `read:certificate`,
-`write:certificate`, `write:server`.
+`read:enrollment`, `read:cluster`, `write:cluster`, `write:relay`,
+`read:certificate`, `write:certificate`, `write:server`.
 
 > 📘 **Détail, exemples et raisons** : [`Group-Permission.md`](./Group-Permission.md).
 > **Quel droit pour quelle opération** : [`Actions_et_Permissions.md`](./Actions_et_Permissions.md).
@@ -833,8 +866,9 @@ update -pu <PermissionName> <ActionKey> <Arg> [ChildOrAll] [Domain]
   - **RBAC** : `read:get:user`, `read:status:user`, `write:create:user`, `write:delete:user`, `write:update:user`, `write:add:user`, `write:remove:user` (et idem pour `group`, `client`, `permission`, `gpo`). `add` rattache à un groupe, `remove` en détache.
   - **Spécial** : voir [Actions et permissions](./Actions_et_Permissions.md) (`write:dns`, `read:cluster`, `write:mfa`…). `write:eyes` n'est plus vérifiée.
 - **Arg** :
-  - `nil` — aucun accès.
+  - `nil` — aucun droit accordé par cette permission (un autre groupe peut accorder).
   - `all` — tous les domaines.
+  - `deny` — refus explicite, prioritaire sur les autres groupes. Exige le droit global.
   - `-a` — ajouter un domaine (nécessite ChildOrAll et Domain).
   - `-r` — retirer un domaine (nécessite ChildOrAll et Domain).
 - **ChildOrAll** (avec -a ou -r) : `0` = sans propagation, `1` = avec propagation (sous-domaines inclus).
@@ -927,6 +961,10 @@ Exemple :
 dns zone create example.com
 dns zone show example.com
 ```
+
+**Nom de zone** : lettres, chiffres et tirets, étiquettes séparées par des points
+(`acme.lan`, `mon-site.fr`, `10.in-addr.arpa`), 59 caractères au plus. Tout autre
+caractère est refusé : le nom devient celui d'une table en base.
 
 ⚠️ `zone delete` emporte tous les enregistrements de la zone. Les noms qu’elle résolvait cessent de l’être, et il n’y a pas de retour en arrière : la zone se recrée, son contenu non.
 
@@ -1088,6 +1126,46 @@ kill -u <username> --reason <code>  # compromised (défaut) | offboarding | admi
 
 > `--hard` est irréversible : il ne verrouille pas, il supprime.
 
+**Ce que fait le mode par défaut, et sur quelles machines** *(TO-DO 133)* :
+
+- le compte ne s'authentifie plus nulle part, et perd ses permissions ;
+- ses sessions **Vaultaire** — portail, Ducky — sont fermées tout de suite ;
+- sur chaque machine jointe, l'agent **verrouille** le compte local, **puis coupe
+  tout ce qu'il y a d'ouvert** : sessions SSH, console et bureau, mais aussi ce
+  qui tourne détaché d'un terminal (`tmux`, `nohup`, tâches planifiées). Le
+  répertoire personnel reste intact ;
+- les machines visées sont celles qui partagent un groupe avec le compte, **et**
+  celles où il a une session ouverte au moment de l'ordre.
+
+Le nom se tape **sans domaine** — `kill -u bob.durand` — et désigne tous les
+comptes locaux de la personne (`bob.durand@<domaine>`) sur chaque poste.
+
+```text
+Ordre 12 — verrouillage du compte sur bob.durand
+  Sessions Vaultaire fermées (portail, Ducky) : 2
+  Machines visées : 5 — dont 2 où une session du compte est ouverte
+  Ordre remis immédiatement : 3 machine(s) en ligne
+    chacune verrouille le compte local, puis ferme ses sessions et tue ses processus ;
+    son acquittement — ou son échec — s'inscrit au journal du core (logs --since 10m)
+  En attente (machines hors ligne) : 2 — l'ordre sera rejoué à leur reconnexion
+  Réversible : kill -u bob.durand --unlock
+```
+
+> ⚠️ **« Remis » n'est pas « appliqué ».** Le core sait qu'il a transmis l'ordre ;
+> c'est l'agent qui verrouille et coupe, puis acquitte. Tant que la ligne « En
+> attente » n'est pas à zéro, le compte travaille peut-être encore sur une
+> machine hors ligne : l'ordre y sera appliqué à son retour. Un agent connecté
+> redemande ses ordres en attente à chaque tunnel rétabli et toutes les dix
+> minutes (TO-DO 134).
+>
+> L'acquittement de chaque machine se lit aujourd'hui dans le journal du core —
+> `revocation: ordre 12 acquitté par <machine> (applied)`, ou `EN ÉCHEC` s'il
+> reste des processus. Aucune commande ne le montre encore (TO-DO 164).
+
+> ⚠️ **Agents antérieurs à ce correctif** : ils ne verrouillent rien quand le nom
+> est donné sans domaine, et ne coupent aucune session. Tant que le parc n'est
+> pas à jour, taper la forme complète (`kill -u bob.durand@acme.lan`).
+
 ---
 
 ## 18. mfa — Second facteur et mots de passe
@@ -1230,11 +1308,12 @@ gpo signature <on|off>               # les refuser, ou non
 > « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
 
 **Les deux scopes sont vérifiés.** La machine l'est avant chaque cycle machine ;
-un compte l'est à son ouverture de session, au plus une fois par cadence GPO —
-PAM est sollicité à chaque `ssh` mais aussi à chaque `sudo`, et scanner à chaque
-passage aurait envoyé un rapport par commande privilégiée. `gpo status
-<computeur_id>` affiche donc une ligne de conformité par utilisateur, là où elle
-disait « jamais vérifiée » avant la 2.2.
+un compte l'est à sa connexion, au plus une fois par `gpo_user_check_minutes` —
+PAM est sollicité à chaque `ssh` mais aussi à chaque déverrouillage d'écran, et
+scanner à chaque passage aurait envoyé un rapport à chaque retour de pause.
+`gpo status <computeur_id>` affiche donc une ligne de conformité par
+utilisateur. Le détail est plus bas :
+[Les GPO d'un compte](#les-gpo-dun-compte--vérifiées-à-sa-connexion-to-do-135-142).
 
 Un écart dans un `HOME` est corrigé **à la connexion suivante de ce compte**, pas
 au prochain cycle machine : le scan précède le cycle utilisateur, si bien que
@@ -1381,6 +1460,49 @@ et c’est pour cela qu’il passe en premier.
 `gpo drift` ne masque **pas** les machines muettes : elles ont zéro écart
 constaté parce que plus personne ne regarde, pas parce qu’elles sont saines.
 
+### Les GPO d'un compte : vérifiées à sa connexion *(TO-DO 135, 142)*
+
+Le scope machine est vérifié par une boucle, à la cadence `gpo_refresh_minutes`.
+Le scope **utilisateur** n'a pas de boucle : il est vérifié quand la personne
+s'authentifie sur le poste — `ssh`, console, bureau, déverrouillage d'écran.
+
+À la connexion, si la dernière vérification de ce compte sur ce poste date de
+plus de **`gpo_user_check_minutes`** (5 min par défaut), l'agent compare ce que
+la politique a posé à ce qui s'y trouve, et **repose ce qui manque avant que la
+session ne s'ouvre**. En deçà, il ne vérifie pas.
+
+```bash
+settings set gpo_user_check_minutes 1     # pendant une recette
+settings reset gpo_user_check_minutes     # retour à cinq minutes
+```
+
+Ce qui est vérifié dans un dossier personnel :
+
+| Posé par | Vérifié | Un écart |
+|---|---|---|
+| `file_deploy`, `templated_file_deploy` | le fichier entier : contenu et droits | supprimé, modifié, droits changés, remplacé par un lien |
+| `user_env` | `.vaultaire_env` en entier, et **le bloc** de chargement dans `.bashrc`, `.profile`… | fichier modifié ; bloc retiré ou modifié |
+| `user_ssh_client_config` | **le bloc** de l'alias dans `~/.ssh/config` | bloc retiré ou modifié |
+| `user_cron` | les deux unités systemd | supprimées, modifiées |
+| `file_acl`, `user_shell`, `user_group_membership` | l'état, par la commande système | ACL retirée, shell changé, groupe quitté |
+
+Le reste d'un `.bashrc` ou d'un `~/.ssh/config` appartient à la personne : y
+ajouter un alias ou un hôte **n'est pas un écart**. `user_git_config` et
+`user_password_policy` ne sont pas encore vérifiés (TO-DO 163).
+
+**Dans `gpo status`**, la ligne d'un compte passe à `ok (N)` dès sa première
+connexion, et y revient après chaque correction. Le résumé du parc ne dit plus
+« toutes à jour » quand une portée n'a jamais été vérifiée :
+
+```text
+3 machine(s) : 1 avec une portée jamais vérifiée.
+```
+
+> **Après la mise à jour de l'agent**, la première connexion de chaque compte
+> rejoue une fois tous ses modules — c'est ce qui fait entrer ses fichiers dans
+> l'inventaire. Le journal de l'agent le dit. Les modules d'une GPO en `audit`
+> ne sont pas rejoués.
+
 La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’interface web.
 
 ---
@@ -1404,6 +1526,11 @@ cluster rotation <noeud> <in|out>         # annoncer ce nœud aux agents, ou non
 cluster refresh <computeur_id>            # la machine redemande la liste des nœuds
 cluster refresh -g <groupe>               # les machines d'un groupe
 cluster refresh --all                     # toutes les machines connectées
+
+cluster relais <proxy>                    # ce que ce proxy expose, vers quoi, et son état
+cluster relais <proxy> set <nom> [options]   # ajoute un relais, ou change celui qui porte ce nom
+cluster relais <proxy> remove <nom>       # retire un relais
+cluster relais <proxy> release            # rend la main au fichier du proxy
 ```
 
 ### Dire à un nœud par où on le joint
@@ -1548,7 +1675,60 @@ cet oubli intervenait au bout de **cinq minutes** : une veille ou un redémarrag
 lent suffisait à perdre l'adresse publique, le port et la priorité.
 
 Un **core** dont la ligne a disparu (oubli, base réinitialisée) se réenregistre
-de lui-même au battement suivant, et le journal le dit.
+de lui-même au battement suivant, et le journal le dit. Un **proxy** aussi,
+depuis le TO-DO 109 : le core répond à son battement par un **refus** qui nomme
+la cause, et le proxy se réenregistre à son tour de battement suivant — une
+vingtaine de secondes —, sans redémarrage. Ses réglages d'exposition, eux, sont partis avec la ligne — ce que
+le core lui demande d'**exposer** (ses relais, ci-dessous) est gardé à part et
+lui revient.
+
+### Décider ce qu'un proxy expose *(TO-DO 141)*
+
+```bash
+cluster relais proxy-paris
+cluster relais proxy-paris set nexus --type https --ecoute :8843 --source service:vaultaire_nexus
+cluster relais proxy-paris set ldaps --type ldaps --ecoute :1636
+cluster relais proxy-paris set nexus --max 200        # un seul réglage : le reste ne change pas
+cluster relais proxy-paris remove nexus
+cluster relais proxy-paris release
+```
+
+Les relais d'un proxy — Ducky, HTTPS, LDAPS, leur port, leurs cibles, leurs
+plafonds — se lisent et se changent ici, ou sur **Admin → Cluster**, fiche du
+proxy. Le proxy applique **sans redémarrer** et sans couper les tunnels en
+cours, puis dit ce qu'il a obtenu :
+
+| État | Ce que cela veut dire |
+|---|---|
+| **demandé** | le core le veut ; le proxy n'a pas encore rendu compte |
+| **appliqué** | le proxy l'a ouvert, avec cette configuration |
+| **refusé** | le proxy ne peut pas — port déjà pris, port bas sans le droit ; le motif est le sien |
+| **du fichier** | le core ne pilote pas ce proxy : le relais vient de son `config.yaml` |
+
+| Option de `set` | Valeur |
+|---|---|
+| `--type` | `ducky`, `https`, `ldaps` — obligatoire à la création |
+| `--ecoute` | `[adresse]:port` |
+| `--source` | `cores`, `liste`, `service:<type>` |
+| `--adresses` | `hôte:port,hôte:port`, pour `--source liste` |
+| `--port-cible` | port à joindre sur les cores (636 en `ldaps`) |
+| `--delai`, `--inactivite` | secondes : pour joindre une cible ; de silence avant fermeture |
+| `--max`, `--max-par-source` | connexions simultanées : au total ; par adresse cliente |
+
+- La **première écriture prend la main** : le core repart de ce que le proxy
+  fait tourner, puis sa liste fait foi. `release` la rend au fichier du proxy.
+- Le relais **Ducky** ne se retire pas et ne change pas de port : c'est celui
+  que le proxy a annoncé au cluster. **LDAP en clair** et HTTP en clair ne se
+  relaient pas.
+- Un proxy joint par ce core applique dans la seconde ; un proxy raccordé à un
+  autre core, ou hors ligne, à son prochain compte rendu (un par minute).
+- Un proxy dont le fichier porte `pilotage_par_le_core: false` rend compte et
+  **refuse** toute liste : la commande le dit.
+
+**Droits** : `read:cluster` pour consulter, **`write:relay`** pour changer — une
+clé distincte de `write:cluster`, parce qu'elle ouvre et ferme des ports sur une
+machine d'un autre site. Chaque écriture laisse une ligne `SECURITY` avec l'état
+avant et après. Détail : [`proxy/pilotage.md`](../proxy/pilotage.md).
 
 La colonne **VERSION** porte ce que le nœud déclare de lui-même. Elle contenait
 auparavant le TYPE du programme, écrit en dur côté serveur — que la colonne
@@ -1574,7 +1754,7 @@ settings reset <clé>           # la ramène à son défaut codé
 
 | Clé | Unité | Défaut | Ce qu'elle gouverne |
 |---|---|---|---|
-| `check_online_minutes` | min | 2 | vérification des machines en ligne |
+| `check_online_minutes` | min | 2 | vérification des machines en ligne — et, par dérivation, ce qui ferme un tunnel muet (voir ci-dessous) |
 | `ducky_session_purge_minutes` | min | 5 | purge des sessions Ducky expirées |
 | `cluster_heartbeat_seconds` | s | 30 | battement du nœud vers le cluster |
 | `cluster_cleanup_seconds` | s | 30 | mise hors ligne des nœuds silencieux |
@@ -1583,6 +1763,7 @@ settings reset <clé>           # la ramène à son défaut codé
 | `web_session_purge_minutes` | min | 5 | purge des sessions web expirées |
 | `group_sync_minutes` | min | 60 | synchronisation des groupes du domaine sur les machines |
 | `gpo_refresh_minutes` | min | 60 | rafraîchissement des GPO sur les machines — voir [§20](#20-gpo--application-et-conformité) |
+| `gpo_user_check_minutes` | min | 5 | délai minimal entre deux vérifications des GPO d'un même compte à sa connexion — voir [§20](#20-gpo--application-et-conformité) |
 | `node_list_refresh_minutes` | min | 30 | rafraîchissement de la liste des cores et proxies sur les machines — voir [§21](#21-cluster--nœuds-du-parc) |
 | `log_retention_days` | j | 30 | conservation du journal commun en base — voir [§24](#24-logs--journal-commun-des-cores) |
 | `gpo_history_retention_days` | j | 90 | conservation des changements d'état d'application GPO — voir [§20](#20-gpo--application-et-conformité) |
@@ -1607,11 +1788,22 @@ question qu'on se pose devant un serveur qu'on ne connaît pas.
 > un service tombé reste affiché en ligne, ou un nœud vivant est déclaré hors
 > ligne entre deux battements.
 
+> ⚠️ `check_online_minutes` entraîne **trois délais qui ne se règlent pas** *(TO-DO 110)* :
+> le silence toléré sur un tunnel (deux battements plus une minute, cinq minutes
+> au moins), la validité d'une session en base (un battement de plus, dix minutes
+> au moins), et le délai après lequel un poste ferme lui-même un tunnel muet —
+> que le core lui annonce à chaque battement. Jusque-là ces délais étaient fixes
+> (5 et 10 min) : un battement de six minutes ou plus coupait tout le parc en
+> boucle. **Un agent antérieur à la 2.2 garde ses dix minutes** : ne dépassez pas
+> 8 tant que le parc n'est pas à jour.
+
 ### Ce qui n'est pas ici
 
 Les délais de **protocole** et de **sécurité** — échéances de lecture réseau,
-fenêtre anti-rejeu de l'API, barème de la limitation de débit — restent des
-constantes du serveur. Ce ne sont pas des préférences d'exploitation mais des
+fenêtre anti-rejeu de l'API, barème de la limitation des échecs
+d'authentification — restent des constantes du serveur. Seul le **débit par
+source de l'API** (`api.limite_rafale`, `api.limite_par_seconde`) se règle, dans
+le fichier YAML : il dépend de la cadence des intégrateurs du parc. Ce ne sont pas des préférences d'exploitation mais des
 propriétés du protocole : une échéance trop longue ouvre un déni de service,
 trop courte casse les connexions lentes.
 

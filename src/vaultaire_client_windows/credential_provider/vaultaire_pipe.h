@@ -22,12 +22,30 @@ namespace vaultaire {
 // Le nom du tube. Écrit aussi dans ipc/protocole.go (constante NomTube).
 const wchar_t* const kNomTube = L"\\\\.\\pipe\\vaultaire_agent";
 
-// Délai total d'un échange, en millisecondes.
+// Les délais d'un échange, en millisecondes. Ils sont tenus PAR LA DLL (TO-DO 156).
 //
-// Vingt secondes : l'agent borne lui-même l'attente du core à sept secondes,
-// et il faut laisser passer un tunnel en cours de rétablissement. Au-delà,
-// l'utilisateur devant l'écran conclut que la machine est morte.
-const DWORD kDelaiEchangeMs = 20000;
+// LogonUI appelle le fournisseur sur le fil qui dessine l'écran de connexion.
+// Une lecture sans échéance sur le tube y retient donc l'écran entier, et pas
+// seulement notre tuile. Avant ce point, la seule borne était le veilleur de
+// l'agent, c'est-à-dire celle du processus dont on attendait justement la
+// réponse : un agent figé retenait LogonUI sans limite.
+//
+// Deux délais, parce que les deux questions n'ont pas le même prix :
+//
+//   - l'ÉTAT est demandé à la sélection de la tuile, donc à l'affichage de
+//     l'écran. L'agent y répond de mémoire, sans réseau. Une seconde et demie
+//     est déjà longue ; au-delà, on affiche « ne répond pas » et l'écran vit.
+//   - l'AUTHENTIFICATION attend le core. L'agent borne lui-même son traitement
+//     à vingt secondes et rend alors un verdict « délai » : on lui laisse cinq
+//     secondes de plus pour que ce soit SON verdict qui arrive, et non notre
+//     coupure — les deux n'ont pas la même cause.
+const DWORD kDelaiEtatMs = 1500;
+const DWORD kDelaiAuthMs = 25000;
+
+// Durée au-delà de laquelle une authentification est signalée « lente » dans
+// le journal. L'agent borne l'attente du core à sept secondes : au-delà de
+// huit, ce n'est plus un lien lent, c'est l'agent qui a tardé.
+const DWORD kAuthLenteMs = 8000;
 
 // Statuts rendus par l'agent.
 enum class Statut {
@@ -37,6 +55,10 @@ enum class Statut {
   kDelai,          // le core n'a pas répondu
   kAgentAbsent,    // le tube n'existe pas : service arrêté ou non installé
   kErreurLocale,   // échec d'appel système ou réponse illisible
+  // Ajouté EN FIN d'énumération : le journal écrit le statut par son numéro
+  // (« refus pour … (statut N) »), et insérer au milieu changerait le sens des
+  // lignes déjà écrites sur les postes.
+  kAgentMuet,      // le tube existe, l'agent n'a pas répondu dans le délai
 };
 
 // Reponse est ce que l'agent a dit.

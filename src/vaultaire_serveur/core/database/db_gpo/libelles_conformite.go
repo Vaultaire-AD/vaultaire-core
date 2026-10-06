@@ -45,6 +45,27 @@ func (r ComplianceRow) EtatConformite() string {
 	return fmt.Sprintf("%d écart(s)", r.DriftCount)
 }
 
+// NonVerifiee : la portée a rapporté une APPLICATION, jamais une VÉRIFICATION.
+//
+// # Pourquoi une méthode pour une condition d'une ligne
+//
+// Parce que c'est exactement l'état que le point 135 a laissé passer pendant
+// des semaines. L'agent n'inventoriait pas les fichiers d'un `HOME` ; son scan
+// n'avait rien à comparer et se taisait ; la ligne restait donc sans date de
+// vérification. La colonne disait bien « non vérifié » — et le résumé du parc,
+// une ligne plus bas, disait « toutes à jour ». C'est le résumé qu'on lit.
+//
+// Une machine qui n'a JAMAIS rapporté n'est pas « non vérifiée » : elle est
+// muette, ce qui se dit autrement et se compte ailleurs.
+//
+// Une portée qui n'applique AUCUN module non plus : il n'y a rien à vérifier, et
+// c'est le cas ordinaire du scope machine d'un parc sans GPO machine. La compter
+// ferait dire au résumé, pour toujours et sur tous les postes, qu'il reste
+// quelque chose à regarder — et on cesserait de lire la ligne.
+func (r ComplianceRow) NonVerifiee() bool {
+	return !r.JamaisRapporte && !r.ReportedAt.IsZero() && r.ModulesTotal > 0 && !r.DriftAt.Valid
+}
+
 // ModulesAppliques rend « appliqués / total », ou « - » si rien n'a été dit.
 //
 // « 0/0 » se lit comme « aucun module à appliquer », c'est-à-dire comme une
@@ -96,6 +117,12 @@ func (r ResumeParc) Lisible() string {
 	}
 	if r.AvecEcarts > 0 {
 		parties = append(parties, fmt.Sprintf("%d avec écarts", r.AvecEcarts))
+	}
+	// Dit EN TOUTES LETTRES, et en dernier : ce n'est pas un incident, c'est une
+	// limite de ce qu'on sait. Mais « toutes à jour » ne peut pas s'écrire d'un
+	// parc où une portée n'a jamais été regardée (TO-DO 135).
+	if r.NonVerifiees > 0 {
+		parties = append(parties, fmt.Sprintf("%d avec une portée jamais vérifiée", r.NonVerifiees))
 	}
 	if len(parties) == 0 {
 		return fmt.Sprintf("%d machine(s), toutes à jour.", r.Machines)

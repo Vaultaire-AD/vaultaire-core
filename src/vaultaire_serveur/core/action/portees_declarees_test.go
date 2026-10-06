@@ -107,9 +107,11 @@ var porteesAttendues = map[string]string{
 	"client.delete": "PorteeClient",
 
 	// Permissions : les domaines de la permission visée.
-	"permission.get":           "porteePermissionUtilisateur",
-	"permission.delete":        "porteePermissionUtilisateur",
-	"permission.update_action": "porteePermissionUtilisateur",
+	"permission.get":    "porteePermissionUtilisateur",
+	"permission.delete": "porteePermissionUtilisateur",
+	// Globale pour poser ou lever un « deny » : il franchit les domaines
+	// (TO-DO 104).
+	"permission.update_action": "porteeReglageActionPermission",
 	"client_permission.get":    "porteePermissionClient",
 	"client_permission.update": "porteePermissionClient",
 	"client_permission.delete": "porteePermissionClient",
@@ -157,9 +159,14 @@ var porteesAttendues = map[string]string{
 	"cluster.set_node_exposure":     "PorteeGlobale",
 	"cluster.set_node_groups":       "PorteeGlobale",
 	"cluster.client_targets":        "PorteeGlobale",
-	"certificate.list":              "PorteeGlobale",
-	"certificate.get":               "PorteeGlobale",
-	"certificate.regenerate":        "PorteeGlobale",
+	// Relais des proxies (TO-DO 141) : un proxy n'appartient à aucun domaine.
+	"cluster.relay_list":     "PorteeGlobale",
+	"cluster.relay_set":      "PorteeGlobale",
+	"cluster.relay_remove":   "PorteeGlobale",
+	"cluster.relay_release":  "PorteeGlobale",
+	"certificate.list":       "PorteeGlobale",
+	"certificate.get":        "PorteeGlobale",
+	"certificate.regenerate": "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
 	"gpo.list_compliance":      "PorteeGlobale",
@@ -327,15 +334,21 @@ var clesAttendues = map[string]string{
 	"cluster.set_node_exposure":     "write:cluster",
 	"cluster.set_node_groups":       "write:cluster",
 	"cluster.client_targets":        "read:cluster",
-	"certificate.list":              "read:certificate",
-	"certificate.get":               "read:certificate",
-	"certificate.regenerate":        "write:certificate",
-	"dns.list_zones":                "read:dns",
-	"dns.list_records":              "read:dns",
-	"enroll.list_keys":              "read:enrollment",
-	"server.set_debug":              "write:server",
-	"server.get_debug":              "read:log",
-	"server.clear_sessions":         "write:server",
+	// Relais des proxies (TO-DO 141). Lire fait partie de l'état du cluster ;
+	// écrire déplace un point d'entrée du réseau, et a sa clé.
+	"cluster.relay_list":     "read:cluster",
+	"cluster.relay_set":      "write:relay",
+	"cluster.relay_remove":   "write:relay",
+	"cluster.relay_release":  "write:relay",
+	"certificate.list":       "read:certificate",
+	"certificate.get":        "read:certificate",
+	"certificate.regenerate": "write:certificate",
+	"dns.list_zones":         "read:dns",
+	"dns.list_records":       "read:dns",
+	"enroll.list_keys":       "read:enrollment",
+	"server.set_debug":       "write:server",
+	"server.get_debug":       "read:log",
+	"server.clear_sessions":  "write:server",
 
 	// Enrôlement, écriture : reste sur write:create:client, et délibérément.
 	// Émettre une clé, c'est accorder le droit d'ajouter un programme au
@@ -483,6 +496,7 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsGPO(r)
 	EnregistrerActionsLectureEtat(r)
 	EnregistrerActionsServeur(r)
+	EnregistrerActionsRelais(r)
 	EnregistrerActionsConformiteGPO(r)
 	EnregistrerActionsRafraichissementGPO(r)
 	EnregistrerActionsRafraichissementCluster(r)

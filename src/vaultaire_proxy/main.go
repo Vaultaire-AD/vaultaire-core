@@ -44,6 +44,7 @@ import (
 	"syscall"
 
 	"duckynetworkclient/V1/ducky"
+	"duckynetworkclient/V1/duckynetwork/decouverte"
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"vaultaire_proxy/relais"
@@ -150,10 +151,17 @@ func main() {
 	//
 	// Un relais qui ne peut pas écouter est FATAL : ce proxy est annoncé aux
 	// agents sur ce port, et y laisser un port mort en ferait un trou noir.
-	serveurs, err := demarrerRelais(liste)
-	if err != nil {
+	//
+	// Depuis le TO-DO 141, ce que le proxy ouvre ici n'est plus figé : le core
+	// peut pousser une autre liste, que le pilote applique à chaud. La liste du
+	// fichier n'est que l'amorce — ou le repli, si le core n'a rien à dire.
+	pilote := nouveauPilote(*configPath, *listen)
+	if err := pilote.demarrer(liste); err != nil {
 		log.Fatalf("proxy : %v", err)
 	}
+	lancerLeBilan()
+	decouverte.SurConfigurationRelais(pilote.surConfiguration)
+	logs.Go("compte rendu des relais", pilote.boucleDeCompteRendu)
 
 	// L'arrêt passe par un signal plutôt qu'un os.Exit immédiat : la boucle de
 	// réception tourne dans sa goroutine, et lui laisser le temps de fermer
@@ -163,8 +171,5 @@ func main() {
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	<-stop
 	log.Println("arrêt demandé")
-	for _, srv := range serveurs {
-		_ = srv.Fermer()
-		logs.Write_log("INFO", srv.Stats().Resume())
-	}
+	pilote.fermer()
 }

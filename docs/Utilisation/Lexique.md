@@ -198,7 +198,9 @@ On l'accorde avec `all`, ou pas du tout.
 La révocation d'urgence d'un compte (`vlt kill -u`). Elle coupe l'accès **partout
 à la fois** — portail, LDAP, Ducky — et le refus précède toute évaluation du mot
 de passe, pour que le verrouillage ne devienne pas un moyen de confirmer qu'un
-compte existe.
+compte existe. Sur les postes, l'agent verrouille le compte local **puis ferme
+ses sessions et arrête ses processus** : verrouiller empêche d'entrer, cela ne
+fait sortir personne.
 
 ---
 

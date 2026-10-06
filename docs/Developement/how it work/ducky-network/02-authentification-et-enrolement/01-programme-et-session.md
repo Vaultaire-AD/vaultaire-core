@@ -38,7 +38,7 @@ L'enrôlement a sa page : [2.2](./02-enrolement-service.md).
 | `02_04` | client | auth_success | succès |
 | `02_05` | core | close session | fermeture de session (déconnexion) |
 | `02_07` | client | failed | échec de l'authentification |
-| `02_11` | client | ask_information | le core demande l'inventaire (nom, versions…) |
+| `02_11` | client | ask_information | le core demande l'inventaire (nom, versions…). En queue, depuis la 2.2 : `online:<minutes>` — la cadence de ce battement — et `capacites:<liste>` — ce que ce core sait faire |
 | `02_12` | core | serveur_information | inventaire d'un programme (services, agents) |
 | `02_13` | core | client_information | réservée — jamais émise |
 

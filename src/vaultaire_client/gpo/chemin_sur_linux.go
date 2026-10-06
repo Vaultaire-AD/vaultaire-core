@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"unsafe"
 )
 
 // Traversée sûre d'un chemin sous le répertoire personnel — TO-DO 97.
@@ -338,7 +339,7 @@ func ecrireDansRepertoire(fdRep int, base, pourMessage, contenu string,
 	mode os.FileMode, uid, gid int) error {
 
 	// Le nom temporaire porte le PID : deux cycles simultanés sur la même
-	// machine — un « sudo » pendant une session ssh — ne doivent pas écrire dans
+	// machine — deux authentifications du même compte — ne doivent pas écrire dans
 	// le même fichier intermédiaire. Le point 33 sérialise déjà le cycle par
 	// compte ; cette précaution couvre deux comptes différents visant le même
 	// chemin, ce que la sérialisation ne couvre pas.
@@ -425,4 +426,323 @@ func preparerRepertoireUtilisateur(home, chemin string, mode os.FileMode, uid, g
 		return fmt.Errorf("permissions de %s impossibles : %v", chemin, err)
 	}
 	return nil
+}
+
+// --- lire et retirer, par la même porte — TO-DO 135 --------------------------
+//
+// # Pourquoi ces deux fonctions arrivent avec l'inventaire
+//
+// Le point 97 a fermé l'ÉCRITURE sous un `HOME`. Deux gestes voisins étaient
+// restés sur des chemins :
+//
+//   - LIRE : pour poser son bloc dans `~/.bashrc` ou `~/.ssh/config`, l'agent
+//     relisait le fichier par `os.ReadFile`, qui suit les liens, puis réécrivait
+//     ce qu'il avait lu dans un fichier APPARTENANT À L'UTILISATEUR. Avec
+//     `ln -sf /etc/shadow ~/.bashrc`, root recopiait donc `/etc/shadow` dans le
+//     dossier de la personne, lisible par elle. N'importe quel fichier du poste
+//     y passait, clés privées de l'agent comprises ;
+//   - RETIRER : `os.Remove(chemin)` résout les répertoires intermédiaires. Avec
+//     `ln -s /etc ~/.config`, une politique qui retire `~/.config/app.conf`
+//     faisait supprimer `/etc/app.conf` par root.
+//
+// Tant qu'un module utilisateur n'était rejoué qu'au changement de sa GPO,
+// l'attaquant devait attendre que l'administrateur y touche. Le point 135 fait
+// rejouer un module dès que son fichier DÉRIVE — c'est-à-dire quand l'utilisateur
+// le décide. Livrer l'inventaire sans fermer ces deux portes aurait transformé
+// deux défauts dormants en lecture de fichier à la demande.
+//
+// Les deux passent donc par la descente du point 97 : chaque composant ouvert
+// relativement au précédent, sans suivre un seul lien, et l'opération finale
+// faite sur le descripteur du répertoire.
+
+// errComposantAbsent : un répertoire du chemin n'existe pas.
+//
+// Distincte de ErrCheminSuspect, et jamais rendue à l'appelant : pour une
+// lecture comme pour un retrait, « le dossier n'existe pas » veut simplement
+// dire « le fichier non plus ».
+var errComposantAbsent = errors.New("composant absent")
+
+// tailleMaxLecture borne ce que l'agent accepte de relire sous un `HOME`.
+//
+// Ce sont des fichiers de démarrage de shell et de configuration : quelques
+// kilo-octets. Un mégaoctet laisse une marge sans commune mesure, et empêche
+// qu'un fichier géant posé là fasse grossir l'agent — qui tourne en root et ne
+// redémarre pas — à chaque ouverture de session.
+const tailleMaxLecture = 1 << 20
+
+// descendreSansCreer ouvre les répertoires d'un chemin, sans en créer aucun.
+//
+// C'est la descente de `descendre`, privée de son `mkdirat` : une lecture ou un
+// retrait ne doit laisser aucune trace de son passage.
+func (r *racineOuverte) descendreSansCreer(composants []string, uid int) (int, error) {
+	courant, err := syscall.Dup(r.fd)
+	if err != nil {
+		return -1, fmt.Errorf("duplication du descripteur de %s : %v", r.home, err)
+	}
+
+	const drapeaux = syscall.O_RDONLY | syscall.O_DIRECTORY | syscall.O_NOFOLLOW | syscall.O_CLOEXEC
+
+	parcouru := r.home
+	for _, nom := range composants {
+		parcouru = filepath.Join(parcouru, nom)
+		if nom == "" || nom == "." || nom == ".." {
+			_ = syscall.Close(courant)
+			return -1, fmt.Errorf("%w : composant invalide %q", ErrCheminSuspect, nom)
+		}
+
+		suivant, err := syscall.Openat(courant, nom, drapeaux, 0)
+		_ = syscall.Close(courant)
+		switch {
+		case err == nil:
+		case errors.Is(err, syscall.ENOENT):
+			return -1, errComposantAbsent
+		case errors.Is(err, syscall.ENOTDIR):
+			// Même énumération que ouvrirOuCreerRepertoire, pour la même raison :
+			// un lien symbolique arrive ici, et c'est le cas qui compte.
+			return -1, fmt.Errorf(
+				"%w : %s n'est pas un repertoire reel — lien symbolique, fichier, tube ou socket",
+				ErrCheminSuspect, parcouru)
+		default:
+			return -1, fmt.Errorf("%s inaccessible : %v", parcouru, err)
+		}
+		if errV := verifierRepertoireDe(suivant, parcouru, uid); errV != nil {
+			_ = syscall.Close(suivant)
+			return -1, errV
+		}
+		courant = suivant
+	}
+	return courant, nil
+}
+
+// ouvrirParent ouvre le répertoire qui contient un chemin, sans rien créer.
+//
+// Rend le descripteur du répertoire et le nom du dernier composant. Une
+// erreur errComposantAbsent veut dire que le fichier ne peut pas exister.
+func ouvrirParent(home, chemin string, uid int) (fdRep int, base string, err error) {
+	racine, err := ouvrirRacine(home, uid)
+	if err != nil {
+		return -1, "", err
+	}
+	defer racine.fermer()
+
+	composants, err := composantsSous(home, chemin)
+	if err != nil {
+		return -1, "", err
+	}
+	if len(composants) == 0 {
+		return -1, "", fmt.Errorf("%w : %s designe le repertoire personnel lui-meme",
+			ErrCheminSuspect, chemin)
+	}
+
+	base = composants[len(composants)-1]
+	fdRep, err = racine.descendreSansCreer(composants[:len(composants)-1], uid)
+	if err != nil {
+		return -1, "", err
+	}
+	return fdRep, base, nil
+}
+
+// lireFichierUtilisateur lit un fichier sous le `HOME`, sans suivre un seul lien.
+//
+// Trois issues, et l'appelant doit les distinguer :
+//
+//   - (contenu, true, nil)  : un fichier ordinaire de l'utilisateur, lu ;
+//   - ("", false, nil)      : il n'existe pas ;
+//   - ("", false, erreur)   : il y a quelque chose à cet endroit, et ce n'est pas
+//     un fichier ordinaire appartenant au compte. On ne lit pas.
+//
+// # Ce qui est refusé, et pourquoi
+//
+// Un LIEN symbolique : c'est la porte que cette fonction ferme. L'appelant
+// décide de ce qu'il en fait — passer au fichier suivant, ou échouer.
+//
+// Un fichier qui n'appartient PAS au compte : un lien physique vers un fichier
+// d'un autre propriétaire se présente comme un fichier ordinaire, sous un
+// répertoire parfaitement réel. `fs.protected_hardlinks` l'interdit sur les
+// distributions courantes ; ce contrôle ne coûte qu'un `fstat` et ne dépend pas
+// d'un réglage du noyau.
+//
+// Un TUBE, une socket, un répertoire : ouvert en `O_NONBLOCK`, donc sans que la
+// session PAM reste pendue à un tube sans écrivain, puis refusé sur son type.
+func lireFichierUtilisateur(home, chemin string, uid int) (string, bool, error) {
+	fdRep, base, err := ouvrirParent(home, chemin, uid)
+	if errors.Is(err, errComposantAbsent) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	defer func() { _ = syscall.Close(fdRep) }()
+
+	fd, err := syscall.Openat(fdRep, base,
+		syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	switch {
+	case err == nil:
+	case errors.Is(err, syscall.ENOENT):
+		return "", false, nil
+	case errors.Is(err, syscall.ELOOP):
+		// Sans O_DIRECTORY, O_NOFOLLOW rend bien ELOOP sur un lien : c'est ici,
+		// et seulement ici, que le lien se reconnaît à coup sûr.
+		return "", false, fmt.Errorf("%w : %s est un lien symbolique", ErrCheminSuspect, chemin)
+	default:
+		return "", false, fmt.Errorf("%s illisible : %v", chemin, err)
+	}
+	defer func() { _ = syscall.Close(fd) }()
+
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		return "", false, fmt.Errorf("%w : %s illisible (%v)", ErrCheminSuspect, chemin, err)
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFREG {
+		return "", false, fmt.Errorf("%w : %s n'est pas un fichier ordinaire", ErrCheminSuspect, chemin)
+	}
+	if int(st.Uid) != uid {
+		return "", false, fmt.Errorf("%w : %s appartient a l'uid %d, attendu %d — %w",
+			ErrCheminSuspect, chemin, st.Uid, uid, ErrProprietaireAutre)
+	}
+	if st.Size > tailleMaxLecture {
+		return "", false, fmt.Errorf("%s depasse %d octets, il n'est pas relu", chemin, tailleMaxLecture)
+	}
+
+	// Lu par le descripteur, borné : la taille annoncée par fstat peut avoir
+	// changé depuis, et un fichier qui grossit pendant la lecture ne doit pas
+	// la faire durer.
+	tampon := make([]byte, 0, st.Size+1)
+	bloc := make([]byte, 32*1024)
+	for len(tampon) <= tailleMaxLecture {
+		n, err := syscall.Read(fd, bloc)
+		if n > 0 {
+			tampon = append(tampon, bloc[:n]...)
+		}
+		if err != nil {
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			return "", false, fmt.Errorf("lecture de %s impossible : %v", chemin, err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	if len(tampon) > tailleMaxLecture {
+		return "", false, fmt.Errorf("%s depasse %d octets, il n'est pas relu", chemin, tailleMaxLecture)
+	}
+	return string(tampon), true, nil
+}
+
+// atRemoveDir est AT_REMOVEDIR : `unlinkat` retire alors un répertoire VIDE.
+// La bibliothèque standard n'exporte pas la constante.
+const atRemoveDir = 0x200
+
+// retirerSousHome retire un fichier — ou un répertoire VIDE — sous le `HOME`,
+// sans suivre un seul lien.
+//
+// Le booléen dit s'il y avait quelque chose à retirer, comme removeSystemFile.
+//
+// `unlinkat` ne suit jamais le dernier composant : un lien planté à la place du
+// fichier est RETIRÉ, et sa cible n'est pas touchée. Ce sont les répertoires
+// intermédiaires qui posaient problème, et la descente les traite.
+//
+// Jamais récursif, pour la raison écrite dans applyDirectory : effacer une
+// arborescence depuis une politique transformerait une faute de frappe en perte
+// de données sur tout un parc.
+func retirerSousHome(home, chemin string, uid int) (bool, error) {
+	fdRep, base, err := ouvrirParent(home, chemin, uid)
+	if errors.Is(err, errComposantAbsent) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer func() { _ = syscall.Close(fdRep) }()
+
+	err = unlinkat(fdRep, base, 0)
+	if errors.Is(err, syscall.EISDIR) || errors.Is(err, syscall.EPERM) {
+		// Linux rend EISDIR pour un répertoire ; POSIX autorise EPERM. Les deux
+		// mènent au même essai, qui échouera proprement si ce n'en est pas un.
+		err = unlinkat(fdRep, base, atRemoveDir)
+	}
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.Is(err, syscall.ENOENT):
+		return false, nil
+	}
+	return false, fmt.Errorf("suppression de %s impossible : %v", chemin, err)
+}
+
+// unlinkat appelle unlinkat(2) avec ses drapeaux.
+//
+// `syscall.Unlinkat` de la bibliothèque standard ne prend pas de drapeaux sur
+// Linux : il ne sait donc pas retirer un répertoire.
+func unlinkat(dirfd int, nom string, drapeaux int) error {
+	p, err := syscall.BytePtrFromString(nom)
+	if err != nil {
+		return err
+	}
+	_, _, errno := syscall.Syscall(syscall.SYS_UNLINKAT,
+		uintptr(dirfd), uintptr(unsafe.Pointer(p)), uintptr(drapeaux))
+	if errno != 0 {
+		return errno
+	}
+	return nil
+}
+
+// oPath est O_PATH : un descripteur qui DÉSIGNE un objet sans l'ouvrir.
+// La bibliothèque standard n'exporte pas la constante.
+const oPath = 0x200000
+
+// designerSousHome rend un descripteur qui désigne un objet sous le `HOME`.
+//
+// # À quoi il sert
+//
+// À passer une cible à une COMMANDE sans lui passer un chemin. `setfacl` suit
+// les liens de l'argument qu'on lui donne : avec `ln -s /etc/shadow ~/partage`,
+// une politique « donner au groupe X l'accès à ~/partage » donnait l'accès à
+// `/etc/shadow`. Vérifier le chemin avant d'appeler la commande ne ferme rien —
+// l'utilisateur le remplace entre les deux.
+//
+// Un descripteur, lui, désigne l'objet. On le donne à la commande sous la forme
+// `/proc/<pid>/fd/<n>`, que le noyau résout vers l'objet lui-même, quel que soit
+// ce que le chemin est devenu entre-temps.
+//
+// Refuse un lien symbolique en dernière position : `O_PATH|O_NOFOLLOW` l'ouvre
+// sans le suivre, et le `fstat` le reconnaît.
+func designerSousHome(home, chemin string, uid int) (*os.File, error) {
+	fdRep, base, err := ouvrirParent(home, chemin, uid)
+	if errors.Is(err, errComposantAbsent) {
+		return nil, fmt.Errorf("%s absent", chemin)
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = syscall.Close(fdRep) }()
+
+	fd, err := syscall.Openat(fdRep, base, oPath|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if errors.Is(err, syscall.ENOENT) {
+		return nil, fmt.Errorf("%s absent", chemin)
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s inaccessible : %v", chemin, err)
+	}
+
+	var st syscall.Stat_t
+	if err := syscall.Fstat(fd, &st); err != nil {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("%w : %s illisible (%v)", ErrCheminSuspect, chemin, err)
+	}
+	switch st.Mode & syscall.S_IFMT {
+	case syscall.S_IFREG, syscall.S_IFDIR:
+	default:
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf(
+			"%w : %s n'est ni un fichier ni un repertoire — lien symbolique, tube ou socket",
+			ErrCheminSuspect, chemin)
+	}
+	if int(st.Uid) != uid {
+		_ = syscall.Close(fd)
+		return nil, fmt.Errorf("%w : %s appartient a l'uid %d, attendu %d — %w",
+			ErrCheminSuspect, chemin, st.Uid, uid, ErrProprietaireAutre)
+	}
+	return os.NewFile(uintptr(fd), chemin), nil
 }

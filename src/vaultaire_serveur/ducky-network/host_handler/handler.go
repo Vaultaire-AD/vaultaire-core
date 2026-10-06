@@ -43,6 +43,35 @@ func RefusEnregistrement(tramesContent storage.Trames_struct_client, motif strin
 		"refus", motif)
 }
 
+// MotifBattementInconnu est le motif du refus rendu au battement d'un nœud que
+// cluster_nodes ne connaît pas.
+const MotifBattementInconnu = "nœud non enregistré dans le cluster : rejouez 04_01"
+
+// RefusBattement compose le 04_08 « refus » (TO-DO 109).
+//
+// # Pourquoi un 04_08, et pas un 04_02
+//
+// Le 04_02 est l'accusé de l'ENREGISTREMENT, et le nœud ne l'écoute que
+// pendant qu'il en attend un : hors de cette attente, il est ignoré. Le 04_08
+// est la réponse au battement — c'est là qu'un nœud qui bat peut apprendre que
+// son battement n'a rien mis à jour.
+//
+// # Les nœuds déjà déployés
+//
+// Ils rangent toute 04_08 dans « rien à faire », sans lire son contenu : ce
+// refus ne change rien pour eux, ni en bien ni en mal. Seul un nœud au SDK de
+// la 2.2 le lit, et rejoue son 04_01.
+func RefusBattement(tramesContent storage.Trames_struct_client, motif string) string {
+	if strings.TrimSpace(motif) == "" {
+		motif = MotifBattementInconnu
+	}
+	// Une seule ligne : un motif multiligne décalerait la lecture côté nœud.
+	motif = strings.ReplaceAll(strings.ReplaceAll(motif, "\n", " "), "\r", " ")
+	return trame.ReponseClient("04_08",
+		tramesContent.Destination_Server, tramesContent.SessionIntegritykey,
+		"refus", motif)
+}
+
 // HandleHostTrame traite les trames 04_xx (Cluster / Service discovery) et retourne la réponse à envoyer.
 func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duckysession *storage.DuckySession) (string, error) {
 	if len(tramesContent.Message_Order) < 2 {
@@ -74,6 +103,11 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 	// services_du_cluster.go.
 	case "15":
 		return handleListServices(db, tramesContent, content)
+
+	// Compte rendu des relais d'un proxy, et la liste que le core lui demande
+	// en retour (TO-DO 141). Voir relais_pilotes.go.
+	case "18":
+		return handleEtatRelais(db, tramesContent, content, duckysession)
 	default:
 		return "", fmt.Errorf("sous-trame 04_%s non gérée", sub)
 	}
@@ -570,13 +604,23 @@ func handleHostHeartbeat(db *sql.DB, tramesContent storage.Trames_struct_client,
 		return "", err
 	}
 	if touchees == 0 {
-		// Le nœud bat sans s'être enregistré : le core a peut-être été
-		// réinstallé sous lui. On le lui dit plutôt que d'accuser réception d'un
-		// battement qui n'a rien mis à jour — sinon il bat dans le vide
-		// indéfiniment, et la supervision le croit absent sans savoir pourquoi.
+		// Le nœud bat sans être enregistré : il a été purgé après une longue
+		// absence, ou le core a été réinstallé sous lui.
+		//
+		// # Le refus est ÉMIS (TO-DO 109)
+		//
+		// Ce commentaire promettait déjà « on le lui dit » — et la fonction
+		// rendait une chaîne vide avec une erreur : rien ne partait, le core
+		// écrivait une ligne dans SON journal, et le nœud continuait de battre
+		// dans le vide en se croyant enregistré. Un proxy purgé après
+		// vingt-quatre heures hors ligne ne revenait donc jamais dans le
+		// cluster sans être redémarré à la main.
+		//
+		// Pas d'erreur rendue avec le message : ce n'est pas une panne du core,
+		// et Spliter écrirait une seconde ligne, en ERROR, pour le même fait.
 		logs.Write_Log("WARNING", "heartbeat: nœud "+proprietaire+
-			" non enregistré dans cluster_nodes — il doit rejouer 04_01")
-		return "", fmt.Errorf("heartbeat: nœud non enregistré, rejouez 04_01")
+			" non enregistré dans cluster_nodes — refus renvoyé, il doit rejouer 04_01")
+		return RefusBattement(tramesContent, MotifBattementInconnu), nil
 	}
 	return trame.ReponseClient("04_08",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey, "ack"), nil

@@ -15,7 +15,7 @@
 | `04_05` | core | proxy_metrics | mesures d'un nœud : `hostname\|ip\|type\|valeur\|extra_json`, une ligne par battement (table `proxy_metrics`) |
 | `04_06` | nœud | proxy_metrics_ack | accusé |
 | `04_07` | core | host_heartbeat | battement d'un nœud |
-| `04_08` | nœud | host_heartbeat_ack | accusé |
+| `04_08` | nœud | host_heartbeat_ack | accusé — ou `refus` puis le motif, quand le core ne connaît pas ce nœud : il rejoue alors `04_01` (TO-DO 109) |
 | `04_09` | core | register_service | un **service** se déclare : version, point d'accès, capacités |
 | `04_10` | service | register_service_ok | accusé |
 | `04_11` | service | register_service_error | refus : code et message |
@@ -25,8 +25,10 @@
 | `04_15` | core | list_services | **proxy seulement** : les services d'un type — contenu `<type>` (ex. `vaultaire_nexus`) |
 | `04_16` | proxy | list_services_response | `<type>`, `<nombre>`, puis `<hôte:port>` par service en ligne et exposé, **ordonnés** (priorité, puis nom). Adresse déduite de l'URL déclarée en `04_09` |
 | `04_17` | client | refresh_nodes | le core demande à une machine de redemander sa liste — contenu : le motif, aucune liste |
+| `04_18` | core | relay_state | **proxy seulement** : compte rendu de ses relais (JSON) — voir [4.4](./04-relais-pilotes.md) |
+| `04_19` | proxy | relay_config | la liste de relais que le core demande : `<mode>`, `<révision>`, JSON — voir [4.4](./04-relais-pilotes.md) |
 
-Plage réservée : `04_01` à `04_19` — libre à partir de `04_18`.
+Plage réservée : `04_01` à `04_19` — **pleine**. La trame suivante ouvrira `04_20`.
 
 **Nœud ou service ?** Un nœud (`04_01`) est une MACHINE joignable par les
 agents : core, proxy. Un service (`04_09`) est une FONCTION : l'interface web,

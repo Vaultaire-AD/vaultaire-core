@@ -9,6 +9,7 @@
 #include "vaultaire_credential.h"
 #include "vaultaire_guid.h"
 #include "vaultaire_pipe.h"
+#include "vaultaire_trace.h"
 
 #include <new>
 
@@ -26,9 +27,12 @@ class CVaultaireProvider : public ICredentialProvider {
     if (riid == IID_IUnknown || riid == IID_ICredentialProvider) {
       *ppv = static_cast<ICredentialProvider*>(this);
       AddRef();
+      if (TraceActive()) Tracer(L"Fournisseur::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
       return S_OK;
     }
     *ppv = nullptr;
+    // Les refus sont tracés aussi : ils disent ce que LogonUI aurait voulu.
+    if (TraceActive()) Tracer(L"Fournisseur::QueryInterface %ls = refusee", NomDeLInterface(riid).c_str());
     return E_NOINTERFACE;
   }
 
@@ -53,7 +57,14 @@ class CVaultaireProvider : public ICredentialProvider {
   }
 
   // SetUsageScenario : Windows annonce POURQUOI il demande des identifiants.
-  IFACEMETHODIMP SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, DWORD) override {
+  IFACEMETHODIMP SetUsageScenario(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario,
+                                  DWORD drapeaux) override {
+    // Le témoin est relu ICI : c'est le premier appel de chaque affichage de
+    // l'écran de connexion, donc le moment où poser ou retirer le fichier doit
+    // prendre effet.
+    RelireTemoinTrace();
+    Passage p(L"Fournisseur::SetUsageScenario", L"scenario=%u drapeaux=0x%08lx",
+              (unsigned)scenario, (unsigned long)drapeaux);
     switch (scenario) {
       case CPUS_LOGON:
       case CPUS_UNLOCK_WORKSTATION:
@@ -64,13 +75,13 @@ class CVaultaireProvider : public ICredentialProvider {
         // le changer depuis l'écran de connexion, ce qui ne changerait que le
         // compte local — donc rien, au prochain provisionnement.
         JournaliserScenario(scenario, L"refuse (le mot de passe se change dans le portail)");
-        return E_NOTIMPL;
+        return p.Rendre(E_NOTIMPL);
       default:
         // Journalisé, parce qu'un refus ici est INDISCERNABLE d'une DLL non
         // chargée : dans les deux cas la tuile n'apparaît pas. La ligne dit
         // lequel des deux on regarde.
         JournaliserScenario(scenario, L"refuse (pas de tuile dans ce contexte)");
-        return E_NOTIMPL;
+        return p.Rendre(E_NOTIMPL);
     }
     JournaliserScenario(scenario, L"accepte (la tuile doit apparaitre)");
 
@@ -80,34 +91,44 @@ class CVaultaireProvider : public ICredentialProvider {
       credential_ = nullptr;
     }
     credential_ = new (std::nothrow) CVaultaireCredential();
-    if (credential_ == nullptr) return E_OUTOFMEMORY;
-    return credential_->Initialiser(scenario);
+    if (credential_ == nullptr) return p.Rendre(E_OUTOFMEMORY);
+    return p.Rendre(credential_->Initialiser(scenario));
   }
 
   // SetSerialization : Windows propose des identifiants déjà sérialisés
   // (ouverture de session à distance, par exemple). Non géré en V1.
   IFACEMETHODIMP SetSerialization(const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION*) override {
-    return E_NOTIMPL;
+    Passage p(L"Fournisseur::SetSerialization");
+    return p.Rendre(E_NOTIMPL);
   }
 
   // Advise / UnAdvise : le fournisseur ne provoque jamais de rafraîchissement
   // des tuiles — il n'a rien qui change tout seul.
-  IFACEMETHODIMP Advise(ICredentialProviderEvents*, UINT_PTR) override { return E_NOTIMPL; }
-  IFACEMETHODIMP UnAdvise() override { return E_NOTIMPL; }
+  IFACEMETHODIMP Advise(ICredentialProviderEvents*, UINT_PTR) override {
+    Passage p(L"Fournisseur::Advise");
+    return p.Rendre(E_NOTIMPL);
+  }
+  IFACEMETHODIMP UnAdvise() override {
+    Passage p(L"Fournisseur::UnAdvise");
+    return p.Rendre(E_NOTIMPL);
+  }
 
   IFACEMETHODIMP GetFieldDescriptorCount(DWORD* nombre) override {
+    Passage p(L"Fournisseur::GetFieldDescriptorCount");
+    if (nombre == nullptr) return p.Rendre(E_INVALIDARG);
     *nombre = kNombreDeChamps;
-    return S_OK;
+    return p.Rendre(S_OK);
   }
 
   IFACEMETHODIMP GetFieldDescriptorAt(DWORD rang,
                                       CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR** description) override {
-    if (rang >= kNombreDeChamps || description == nullptr) return E_INVALIDARG;
+    Passage p(L"Fournisseur::GetFieldDescriptorAt", L"rang=%lu", (unsigned long)rang);
+    if (rang >= kNombreDeChamps || description == nullptr) return p.Rendre(E_INVALIDARG);
 
     const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR& source = DescriptionDesChamps()[rang];
     CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* copie =
         (CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR*)CoTaskMemAlloc(sizeof(*copie));
-    if (copie == nullptr) return E_OUTOFMEMORY;
+    if (copie == nullptr) return p.Rendre(E_OUTOFMEMORY);
 
     *copie = source;
     // Le LIBELLÉ est recopié : Windows libère la description avec
@@ -117,27 +138,33 @@ class CVaultaireProvider : public ICredentialProvider {
     copie->pszLabel = (wchar_t*)CoTaskMemAlloc(octets);
     if (copie->pszLabel == nullptr) {
       CoTaskMemFree(copie);
-      return E_OUTOFMEMORY;
+      return p.Rendre(E_OUTOFMEMORY);
     }
     CopyMemory(copie->pszLabel, source.pszLabel, octets);
 
     *description = copie;
-    return S_OK;
+    return p.Rendre(S_OK);
   }
 
   IFACEMETHODIMP GetCredentialCount(DWORD* nombre, DWORD* par_defaut,
                                     BOOL* auto_ouvrir) override {
+    Passage p(L"Fournisseur::GetCredentialCount");
+    if (nombre == nullptr || par_defaut == nullptr || auto_ouvrir == nullptr) {
+      return p.Rendre(E_INVALIDARG);
+    }
     *nombre = 1;
     *par_defaut = 0;
     // JAMAIS d'ouverture automatique : il n'y a pas d'identifiants à rejouer,
     // et une tuile qui se soumet seule ferait boucler l'écran de connexion.
     *auto_ouvrir = FALSE;
-    return S_OK;
+    return p.Rendre(S_OK);
   }
 
   IFACEMETHODIMP GetCredentialAt(DWORD rang, ICredentialProviderCredential** credential) override {
-    if (rang != 0 || credential == nullptr || credential_ == nullptr) return E_INVALIDARG;
-    return credential_->QueryInterface(IID_ICredentialProviderCredential, (void**)credential);
+    Passage p(L"Fournisseur::GetCredentialAt", L"rang=%lu", (unsigned long)rang);
+    if (rang != 0 || credential == nullptr || credential_ == nullptr) return p.Rendre(E_INVALIDARG);
+    return p.Rendre(
+        credential_->QueryInterface(IID_ICredentialProviderCredential, (void**)credential));
   }
 
  private:

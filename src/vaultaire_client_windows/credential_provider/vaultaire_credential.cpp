@@ -2,6 +2,7 @@
 #include "vaultaire_guid.h"
 #include "vaultaire_kerb.h"
 #include "vaultaire_pipe.h"
+#include "vaultaire_trace.h"
 
 #include <new>
 
@@ -81,9 +82,11 @@ IFACEMETHODIMP CVaultaireCredential::QueryInterface(REFIID riid, void** ppv) {
       riid == IID_ICredentialProviderCredential2) {
     *ppv = static_cast<ICredentialProviderCredential2*>(this);
     AddRef();
+    if (TraceActive()) Tracer(L"Tuile::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
     return S_OK;
   }
   *ppv = nullptr;
+  if (TraceActive()) Tracer(L"Tuile::QueryInterface %ls = refusee", NomDeLInterface(riid).c_str());
   return E_NOINTERFACE;
 }
 
@@ -96,18 +99,20 @@ IFACEMETHODIMP_(ULONG) CVaultaireCredential::Release() {
 }
 
 IFACEMETHODIMP CVaultaireCredential::Advise(ICredentialProviderCredentialEvents* evenements) {
+  Passage p(L"Tuile::Advise");
   if (evenements_ != nullptr) evenements_->Release();
   evenements_ = evenements;
   if (evenements_ != nullptr) evenements_->AddRef();
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
 IFACEMETHODIMP CVaultaireCredential::UnAdvise() {
+  Passage p(L"Tuile::UnAdvise");
   if (evenements_ != nullptr) {
     evenements_->Release();
     evenements_ = nullptr;
   }
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
 // SetSelected : l'utilisateur vient de cliquer sur la tuile.
@@ -115,10 +120,20 @@ IFACEMETHODIMP CVaultaireCredential::UnAdvise() {
 // C'est ici qu'on demande son état à l'agent. Le faire MAINTENANT, et non au
 // clic sur « Se connecter », permet d'annoncer « service indisponible » avant
 // la saisie — plutôt que de faire taper un mot de passe pour rien.
+//
+// # Cet appel est BORNÉ, et il doit le rester (TO-DO 156)
+//
+// La tuile se déclare tuile par défaut : LogonUI la sélectionne donc dès
+// l'affichage de l'écran, sans clic de personne. Le temps passé ici est du
+// temps où LogonUI est retenu sur son propre fil. Etat() rend la main en
+// kDelaiEtatMs au plus, que l'agent réponde ou non.
 IFACEMETHODIMP CVaultaireCredential::SetSelected(BOOL* auto_ouvrir) {
+  Passage p(L"Tuile::SetSelected");
+  if (auto_ouvrir == nullptr) return p.Rendre(E_INVALIDARG);
   *auto_ouvrir = FALSE;
 
   Reponse etat = Etat();
+  if (TraceActive()) Tracer(L"Tuile::SetSelected : etat de l'agent = statut %d", (int)etat.statut);
   switch (etat.statut) {
     case Statut::kSucces:
       message_ = etat.raccorde ? L"Raccordé au domaine."
@@ -127,30 +142,37 @@ IFACEMETHODIMP CVaultaireCredential::SetSelected(BOOL* auto_ouvrir) {
     case Statut::kAgentAbsent:
       message_ = L"Service Vaultaire arrêté sur ce poste.";
       break;
+    case Statut::kAgentMuet:
+      message_ = L"Le service Vaultaire de ce poste ne répond pas.";
+      break;
     default:
       message_ = L"Service Vaultaire indisponible.";
   }
   if (evenements_ != nullptr) {
     evenements_->SetFieldString(this, kChampMessage, message_.c_str());
   }
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
 // SetDeselected : la tuile perd le focus. Le mot de passe part avec.
 IFACEMETHODIMP CVaultaireCredential::SetDeselected() {
+  Passage p(L"Tuile::SetDeselected");
   EffacerMotDePasse();
   EffacerCode();
   if (evenements_ != nullptr) {
     evenements_->SetFieldString(this, kChampMotDePasse, L"");
     evenements_->SetFieldString(this, kChampCode, L"");
   }
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
 IFACEMETHODIMP CVaultaireCredential::GetFieldState(
     DWORD champ, CREDENTIAL_PROVIDER_FIELD_STATE* etat,
     CREDENTIAL_PROVIDER_FIELD_INTERACTIVE_STATE* interaction) {
-  if (champ >= kNombreDeChamps || etat == nullptr || interaction == nullptr) return E_INVALIDARG;
+  Passage p(L"Tuile::GetFieldState", L"champ=%lu", (unsigned long)champ);
+  if (champ >= kNombreDeChamps || etat == nullptr || interaction == nullptr) {
+    return p.Rendre(E_INVALIDARG);
+  }
 
   *etat = CPFS_DISPLAY_IN_SELECTED_TILE;
   *interaction = CPFIS_NONE;
@@ -168,10 +190,15 @@ IFACEMETHODIMP CVaultaireCredential::GetFieldState(
     default:
       break;
   }
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
 IFACEMETHODIMP CVaultaireCredential::GetStringValue(DWORD champ, wchar_t** valeur) {
+  Passage p(L"Tuile::GetStringValue", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(ValeurDuChamp(champ, valeur));
+}
+
+HRESULT CVaultaireCredential::ValeurDuChamp(DWORD champ, wchar_t** valeur) {
   if (champ >= kNombreDeChamps || valeur == nullptr) return E_INVALIDARG;
   switch (champ) {
     case kChampTitre:       return Copier(L"Vaultaire", valeur);
@@ -186,49 +213,81 @@ IFACEMETHODIMP CVaultaireCredential::GetStringValue(DWORD champ, wchar_t** valeu
   }
 }
 
-IFACEMETHODIMP CVaultaireCredential::GetBitmapValue(DWORD, HBITMAP*) { return E_NOTIMPL; }
-IFACEMETHODIMP CVaultaireCredential::GetCheckboxValue(DWORD, BOOL*, wchar_t**) { return E_NOTIMPL; }
-IFACEMETHODIMP CVaultaireCredential::GetComboBoxValueCount(DWORD, DWORD*, DWORD*) { return E_NOTIMPL; }
-IFACEMETHODIMP CVaultaireCredential::GetComboBoxValueAt(DWORD, DWORD, wchar_t**) { return E_NOTIMPL; }
-IFACEMETHODIMP CVaultaireCredential::SetCheckboxValue(DWORD, BOOL) { return E_NOTIMPL; }
-IFACEMETHODIMP CVaultaireCredential::SetComboBoxSelectedValue(DWORD, DWORD) { return E_NOTIMPL; }
-IFACEMETHODIMP CVaultaireCredential::CommandLinkClicked(DWORD) { return E_NOTIMPL; }
+// Les méthodes des types de champ que la tuile n'a pas. Tracées quand même :
+// un appel ici dit que LogonUI lit un champ autrement qu'on l'a décrit.
+IFACEMETHODIMP CVaultaireCredential::GetBitmapValue(DWORD champ, HBITMAP*) {
+  Passage p(L"Tuile::GetBitmapValue", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
+IFACEMETHODIMP CVaultaireCredential::GetCheckboxValue(DWORD champ, BOOL*, wchar_t**) {
+  Passage p(L"Tuile::GetCheckboxValue", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
+IFACEMETHODIMP CVaultaireCredential::GetComboBoxValueCount(DWORD champ, DWORD*, DWORD*) {
+  Passage p(L"Tuile::GetComboBoxValueCount", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
+IFACEMETHODIMP CVaultaireCredential::GetComboBoxValueAt(DWORD champ, DWORD, wchar_t**) {
+  Passage p(L"Tuile::GetComboBoxValueAt", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
+IFACEMETHODIMP CVaultaireCredential::SetCheckboxValue(DWORD champ, BOOL) {
+  Passage p(L"Tuile::SetCheckboxValue", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
+IFACEMETHODIMP CVaultaireCredential::SetComboBoxSelectedValue(DWORD champ, DWORD) {
+  Passage p(L"Tuile::SetComboBoxSelectedValue", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
+IFACEMETHODIMP CVaultaireCredential::CommandLinkClicked(DWORD champ) {
+  Passage p(L"Tuile::CommandLinkClicked", L"champ=%lu", (unsigned long)champ);
+  return p.Rendre(E_NOTIMPL);
+}
 
 IFACEMETHODIMP CVaultaireCredential::GetSubmitButtonValue(DWORD champ, DWORD* champ_adjacent) {
-  if (champ != kChampValider || champ_adjacent == nullptr) return E_INVALIDARG;
+  Passage p(L"Tuile::GetSubmitButtonValue", L"champ=%lu", (unsigned long)champ);
+  if (champ != kChampValider || champ_adjacent == nullptr) return p.Rendre(E_INVALIDARG);
   // Le bouton se place sous le DERNIER champ de saisie : c'est ce qui fait
   // valider avec la touche Entrée. Depuis le second facteur (TO-DO 95), ce
   // dernier champ est le code et non le mot de passe — le laisser sur le mot de
   // passe ferait valider une saisie incomplète.
   *champ_adjacent = kChampCode;
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
+// SetStringValue : une frappe dans un champ.
+//
+// La trace ne porte que le RANG du champ. Ni la valeur, ni sa longueur : ce
+// sont un identifiant, un mot de passe et un code, et le journal est lisible
+// par tout administrateur du poste.
 IFACEMETHODIMP CVaultaireCredential::SetStringValue(DWORD champ, const wchar_t* valeur) {
+  Passage p(L"Tuile::SetStringValue", L"champ=%lu", (unsigned long)champ);
   switch (champ) {
     case kChampUtilisateur:
       utilisateur_ = (valeur != nullptr) ? valeur : L"";
-      return S_OK;
+      return p.Rendre(S_OK);
     case kChampMotDePasse:
       EffacerMotDePasse();
       mot_de_passe_ = (valeur != nullptr) ? valeur : L"";
-      return S_OK;
+      return p.Rendre(S_OK);
     case kChampCode:
       EffacerCode();
       code_ = (valeur != nullptr) ? valeur : L"";
-      return S_OK;
+      return p.Rendre(S_OK);
     default:
-      return E_INVALIDARG;
+      return p.Rendre(E_INVALIDARG);
   }
 }
 
 IFACEMETHODIMP CVaultaireCredential::GetUserSid(wchar_t** sid) {
+  Passage p(L"Tuile::GetUserSid");
+  if (sid == nullptr) return p.Rendre(E_INVALIDARG);
   // Aucune tuile rattachée à un compte existant : c'est ce que dit
   // S_FALSE avec un SID nul. Rendre un SID ferait apparaître Vaultaire comme
   // une méthode de connexion d'un compte local précis, alors que le compte est
   // choisi par l'identifiant tapé.
   *sid = nullptr;
-  return S_FALSE;
+  return p.Rendre(S_FALSE);
 }
 
 // GetSerialization : le clic sur « Se connecter ».
@@ -241,6 +300,21 @@ IFACEMETHODIMP CVaultaireCredential::GetUserSid(wchar_t** sid) {
 //     ORDINAIRE, pour le compte local que l'agent vient de préparer ;
 //  3. sur refus, on rend un message et RIEN d'autre — surtout pas un bloc.
 IFACEMETHODIMP CVaultaireCredential::GetSerialization(
+    CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* reponse,
+    CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* serialisation,
+    wchar_t** texte_erreur, CREDENTIAL_PROVIDER_STATUS_ICON* icone) {
+  Passage p(L"Tuile::GetSerialization");
+  p.Tolerer(kAuthLenteMs);
+  if (reponse == nullptr || serialisation == nullptr || texte_erreur == nullptr ||
+      icone == nullptr) {
+    return p.Rendre(E_INVALIDARG);
+  }
+  const HRESULT hr = Soumettre(reponse, serialisation, texte_erreur, icone);
+  if (TraceActive()) Tracer(L"Tuile::GetSerialization : reponse=%d icone=%d", (int)*reponse, (int)*icone);
+  return p.Rendre(hr);
+}
+
+HRESULT CVaultaireCredential::Soumettre(
     CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* reponse,
     CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* serialisation,
     wchar_t** texte_erreur, CREDENTIAL_PROVIDER_STATUS_ICON* icone) {
@@ -279,6 +353,9 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
         break;
       case Statut::kErreurLocale:
         texte = L"Erreur locale du service Vaultaire (voir son journal).";
+        break;
+      case Statut::kAgentMuet:
+        texte = L"Le service Vaultaire de ce poste n'a pas répondu.";
         break;
       default:
         break;
@@ -328,13 +405,16 @@ IFACEMETHODIMP CVaultaireCredential::GetSerialization(
 IFACEMETHODIMP CVaultaireCredential::ReportResult(NTSTATUS etat, NTSTATUS sous_etat,
                                                   wchar_t** texte_erreur,
                                                   CREDENTIAL_PROVIDER_STATUS_ICON* icone) {
+  Passage p(L"Tuile::ReportResult", L"etat=0x%08lx sous_etat=0x%08lx", (unsigned long)etat,
+            (unsigned long)sous_etat);
+  if (texte_erreur == nullptr || icone == nullptr) return p.Rendre(E_INVALIDARG);
   *texte_erreur = nullptr;
   *icone = CPSI_NONE;
   if (etat != 0) {
     Journaliser(L"Windows a refusé l'ouverture de session (0x%08lx / 0x%08lx)",
                 (unsigned long)etat, (unsigned long)sous_etat);
   }
-  return S_OK;
+  return p.Rendre(S_OK);
 }
 
 }  // namespace vaultaire

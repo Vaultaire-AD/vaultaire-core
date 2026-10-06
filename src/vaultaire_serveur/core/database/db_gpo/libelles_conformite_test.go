@@ -177,11 +177,58 @@ func TestResumeCompteLesMachinesPasLesLignes(t *testing.T) {
 
 func TestResumeToutesAJour(t *testing.T) {
 	maintenant := time.Now().UTC()
+	verifiee := sql.NullTime{Time: maintenant, Valid: true}
 	rows := []ComplianceRow{
-		{ComputeurID: "PC-01", ReportedAt: maintenant},
-		{ComputeurID: "PC-02", ReportedAt: maintenant},
+		{ComputeurID: "PC-01", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 4},
+		{ComputeurID: "PC-02", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 2},
 	}
 	if got := ResumerParc(rows, maintenant).Lisible(); !strings.Contains(got, "toutes à jour") {
 		t.Errorf("résumé = %q, attendu « toutes à jour »", got)
+	}
+}
+
+// TestUnePorteeJamaisVerifieeNEstPasAJour — TO-DO 135.
+//
+// Le défaut du scope utilisateur est resté invisible parce que la colonne
+// disait « non vérifié » et que le résumé, juste en dessous, disait « toutes à
+// jour ». Une portée qui a appliqué sa politique sans que personne n'ait jamais
+// regardé ce qu'il en reste n'est pas à jour : on n'en sait rien.
+func TestUnePorteeJamaisVerifieeNEstPasAJour(t *testing.T) {
+	maintenant := time.Now().UTC()
+	verifiee := sql.NullTime{Time: maintenant, Valid: true}
+	rows := []ComplianceRow{
+		{ComputeurID: "PC-01", Scope: "machine", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 4},
+		// Le compte a appliqué sa politique ; son dossier n'a jamais été scanné.
+		{ComputeurID: "PC-01", Scope: "user", TargetUser: "alice", ReportedAt: maintenant, ModulesTotal: 4},
+		{ComputeurID: "PC-01", Scope: "user", TargetUser: "bob", ReportedAt: maintenant, ModulesTotal: 2},
+		{ComputeurID: "PC-02", Scope: "machine", ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 4},
+		// Une portée SANS module : rien n'est appliqué, donc rien n'est à
+		// vérifier. C'est le scope machine de tout parc sans GPO machine, et il
+		// ne doit pas faire dire au résumé qu'il reste quelque chose à regarder.
+		{ComputeurID: "PC-04", Scope: "machine", ReportedAt: maintenant},
+	}
+
+	r := ResumerParc(rows, maintenant)
+	if r.NonVerifiees != 1 {
+		t.Fatalf("NonVerifiees = %d, attendu 1 — deux comptes d'une même machine font une machine", r.NonVerifiees)
+	}
+	lisible := r.Lisible()
+	if strings.Contains(lisible, "toutes à jour") {
+		t.Errorf("résumé = %q : « toutes à jour » alors qu'une portée n'a jamais été vérifiée", lisible)
+	}
+	if !strings.Contains(lisible, "jamais vérifiée") {
+		t.Errorf("résumé = %q, attendu qu'il le dise", lisible)
+	}
+
+	// Une machine MUETTE n'est pas « non vérifiée » : elle se compte ailleurs.
+	muette := NormaliserLigne(ComplianceRow{ComputeurID: "PC-03"}, sql.NullTime{})
+	if muette.NonVerifiee() {
+		t.Error("une machine qui n'a jamais rapporté est comptée comme non vérifiée : elle est muette")
+	}
+	if rows[0].NonVerifiee() || !rows[1].NonVerifiee() {
+		t.Error("NonVerifiee() ne distingue pas la portée scannée de celle qui ne l'a jamais été")
+	}
+	if rows[4].NonVerifiee() {
+		t.Error("une portée sans aucun module est comptée comme non vérifiée : il n'y a rien à vérifier")
 	}
 }

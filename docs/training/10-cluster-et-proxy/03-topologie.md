@@ -2,7 +2,7 @@
 
 # Jalon 10.3 — Topologie : exposition, affinité, rotation
 
-[← Déployer un proxy](./02-deployer-un-proxy.md) · [Fin de la formation ⌂](../README.md)
+[← Déployer un proxy](./02-deployer-un-proxy.md) · [Décider ce qu'un proxy expose →](./04-piloter-les-relais.md)
 
 ---
 
@@ -78,4 +78,4 @@ l'enregistrement.
 
 ---
 
-[← Déployer un proxy](./02-deployer-un-proxy.md) · [Fin de la formation ⌂](../README.md)
+[← Déployer un proxy](./02-deployer-un-proxy.md) · [Décider ce qu'un proxy expose →](./04-piloter-les-relais.md)

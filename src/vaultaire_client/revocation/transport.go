@@ -56,9 +56,9 @@ func queueReply(trame string) {
 
 // AskPending demande au serveur les ordres en attente pour cette machine.
 //
-// Appelée après authentification, à chaque démarrage et à chaque reconnexion du
-// tunnel. C'est le seul chemin qui rattrape les ordres émis pendant que la
-// machine était éteinte.
+// Appelée par SurveillerLesOrdres, et par elle seule : au démarrage, à chaque
+// tunnel rétabli, puis périodiquement. C'est le seul chemin qui rattrape les
+// ordres émis pendant que la machine était éteinte, ou poussés en vain.
 func AskPending(sessionKey string) {
 	if sessionKey == "" {
 		logs.Write_log("DEBUG", "revocation: pas de session, demande d'ordres différée")

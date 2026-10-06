@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -24,52 +23,28 @@ const PeriodeBilan = 5 * time.Minute
 // renseignée après elle par le fil principal — c'est-à-dire une course, et le
 // détecteur la signalerait à raison.
 //
-// Un pointeur atomique plutôt qu'un verrou : l'écriture a lieu une fois, au
-// démarrage, et la lecture toutes les vingt secondes. Un mutex n'aurait rien
-// protégé de plus, pour une ligne de plus à chaque lecture.
+// Un pointeur atomique plutôt qu'un verrou : l'écriture a lieu au démarrage,
+// puis à chaque liste appliquée (TO-DO 141) — quelques fois dans la vie du
+// proxy —, et la lecture toutes les vingt secondes. La liste publiée n'est
+// jamais modifiée en place : chaque application en pose une nouvelle.
 var relaisVivants atomic.Pointer[[]*relais.Serveur]
 
-// demarrerRelais ouvre les ports des relais déjà chargés et lance les
-// boucles. Rend une erreur si un relais ne peut pas écouter : c'est à
-// l'appelant d'arrêter le proxy.
-func demarrerRelais(liste []relais.Relais) ([]*relais.Serveur, error) {
-	journal := func(niveau, message string) { logs.Write_log(niveau, message) }
-
-	var serveurs []*relais.Serveur
-	for _, r := range liste {
-		srv := relais.Nouveau(r, resolveurPour(r), journal)
-		if err := srv.Ecouter(); err != nil {
-			for _, s := range serveurs {
-				_ = s.Fermer()
-			}
-			return nil, err
-		}
-		serveurs = append(serveurs, srv)
-	}
-	for _, srv := range serveurs {
-		srv := srv
-		logs.Go("relais "+srv.Stats().Nom, func() {
-			if err := srv.Servir(); err != nil {
-				logs.Write_log("ERROR", fmt.Sprintf("relais arrêté : %v", err))
-			}
-		})
-	}
-	// Publiés pour le battement du nœud : c'est lui qui remonte leurs compteurs
-	// au core (04_05). Après le démarrage, pour ne jamais publier un relais qui
-	// n'écoute pas.
-	relaisVivants.Store(&serveurs)
-
-	// Bilan périodique : sans lui, un relais qui refuse tout (aucun core
-	// joignable) ne se voit qu'en lisant une ligne par connexion.
+// lancerLeBilan écrit périodiquement l'état des relais dans le journal.
+//
+// Sans lui, un relais qui refuse tout (aucun core joignable) ne se voit qu'en
+// lisant une ligne par connexion. La liste est relue à chaque tour : les relais
+// changent maintenant pendant que le proxy tourne (TO-DO 141).
+func lancerLeBilan() {
 	logs.Go("bilan des relais", func() {
 		for {
 			time.Sleep(PeriodeBilan)
-			for _, srv := range serveurs {
-				logs.Write_log("INFO", srv.Stats().Resume())
+			if p := relaisVivants.Load(); p != nil {
+				for _, srv := range *p {
+					logs.Write_log("INFO", srv.Stats().Resume())
+				}
 			}
 		}
 	})
-	return serveurs, nil
 }
 
 // metriquesRelais compose ce que ce proxy remonte de lui-même à chaque

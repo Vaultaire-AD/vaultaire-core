@@ -10,7 +10,9 @@
 package revocationmanager
 
 import (
+	"database/sql"
 	"fmt"
+	"sort"
 	"strings"
 	dbusers "vaultaire/core/database/db_users"
 	guardprotected "vaultaire/core/database/guard_protected"
@@ -36,6 +38,14 @@ type Outcome struct {
 	PushedNow      int
 	SessionsKilled int
 	DirectoryNote  string
+
+	// MachinesEnSession : machines visées où le compte avait une session
+	// ouverte au moment du déclenchement — c'est là que l'ordre a quelque chose
+	// à COUPER, et pas seulement à verrouiller (TO-DO 133).
+	MachinesEnSession int
+	// HorsGroupes : parmi elles, celles qui ne partagent plus aucun groupe avec
+	// le compte. Elles n'auraient pas été visées sans leur session ouverte.
+	HorsGroupes int
 }
 
 // Trigger déclenche une révocation.
@@ -110,11 +120,36 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 	}
 
 	// Étape 2 — avant toute suppression.
-	targets, err := dbrevocation.MachinesSharingGroupWith(db, directoryUser)
+	parGroupes, err := dbrevocation.MachinesSharingGroupWith(db, directoryUser)
 	if err != nil {
 		return out, fmt.Errorf("calcul des machines cibles : %w", err)
 	}
+
+	// Les machines où le compte a une session OUVERTE sont visées aussi, quels
+	// que soient ses groupes — TO-DO 133.
+	//
+	// Les groupes disent où la personne POUVAIT se connecter. Ils ne disent pas
+	// où elle EST : retirer quelqu'un d'un groupe ne ferme pas la session qu'il
+	// y tenait. La machine la plus urgente à joindre — celle où le compte
+	// travaille en ce moment — pouvait donc être la seule à ne pas recevoir
+	// l'ordre, pendant que la commande affichait un succès.
+	//
+	// Lues AVANT killSessions, qui efface ces lignes. Une lecture en échec ne
+	// bloque rien : l'ordre part vers les machines des groupes, et on le dit.
+	enSession, errSessions := machinesEnSession(db, directoryUser)
+	if errSessions != nil {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: sessions ouvertes de %s illisibles, cibles limitées aux groupes : %v",
+			directoryUser, errSessions))
+	}
+	var targets []string
+	targets, out.MachinesEnSession, out.HorsGroupes = reunirLesCibles(parGroupes, enSession)
 	out.TargetCount = len(targets)
+	if out.HorsGroupes > 0 {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"revocation: %s a une session ouverte sur %d machine(s) dont il ne partage plus aucun "+
+				"groupe — elles sont visées quand même", directoryUser, out.HorsGroupes))
+	}
 
 	// Le déverrouillage lève d'abord la marque en base, sinon le compte
 	// resterait bloqué côté serveur alors que les machines le rouvrent.
@@ -157,17 +192,76 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 	out.PushedNow = pushToOnline(order, targets)
 
 	logs.Write_Log("SECURITY", fmt.Sprintf(
-		"revocation: ordre %d appliqué — %s sur %s par %s ; %d machine(s) visée(s), %d jointe(s) immédiatement, %d session(s) fermée(s)",
-		orderID, mode, directoryUser, senderUsername, out.TargetCount, out.PushedNow, out.SessionsKilled))
+		"revocation: ordre %d émis — %s sur %s par %s ; %d machine(s) visée(s) dont %d avec une session ouverte, "+
+			"%d jointe(s) immédiatement, %d session(s) Vaultaire fermée(s)",
+		orderID, mode, directoryUser, senderUsername, out.TargetCount, out.MachinesEnSession,
+		out.PushedNow, out.SessionsKilled))
 
 	return out, nil
 }
 
-// killSessions ferme TOUTES les sessions ouvertes au nom d'un utilisateur.
+// machinesEnSession rend les machines où un compte a une session ouverte.
+func machinesEnSession(db *sql.DB, username string) ([]string, error) {
+	sessions, err := dbsessions.SessionsDUnUtilisateur(db, username)
+	if err != nil {
+		return nil, err
+	}
+	var machines []string
+	for _, s := range sessions {
+		if s.Machine != "" {
+			machines = append(machines, s.Machine)
+		}
+	}
+	return machines, nil
+}
+
+// reunirLesCibles réunit les machines des groupes et celles où une session est
+// ouverte, sans doublon et dans un ordre stable.
+//
+// Rend aussi deux comptes, pour le compte rendu : combien de cibles portent une
+// session ouverte, et combien ne sont visées QUE pour cela.
+//
+// Pure, pour être éprouvée sans base : c'est la décision « qui reçoit
+// l'ordre », et une cible oubliée ici est un compte qui reste ouvert.
+func reunirLesCibles(parGroupes, enSession []string) (cibles []string, avecSession, horsGroupes int) {
+	vues := map[string]bool{}
+	desGroupes := map[string]bool{}
+	for _, m := range parGroupes {
+		if m == "" || vues[m] {
+			continue
+		}
+		vues[m], desGroupes[m] = true, true
+		cibles = append(cibles, m)
+	}
+	comptees := map[string]bool{}
+	for _, m := range enSession {
+		if m == "" || comptees[m] {
+			continue
+		}
+		comptees[m] = true
+		avecSession++
+		if !desGroupes[m] {
+			horsGroupes++
+		}
+		if !vues[m] {
+			vues[m] = true
+			cibles = append(cibles, m)
+		}
+	}
+	sort.Strings(cibles)
+	return cibles, avecSession, horsGroupes
+}
+
+// killSessions ferme les sessions que le SERVEUR tient au nom d'un utilisateur.
 //
 // Sans ça, une personne déjà connectée continuerait de travailler jusqu'à
 // l'expiration de sa session : sur un compte compromis, c'est le temps qu'on
 // cherche justement à supprimer.
+//
+// CE QUE CETTE FONCTION NE FERME PAS : les sessions SYSTÈME — un `ssh`, une
+// console, un bureau. Elles vivent sur les postes, et c'est l'agent qui les
+// coupe en appliquant l'ordre (TO-DO 133). Le nombre rendu ici ne compte donc
+// que des sessions Vaultaire, et les façades le disent sous ce nom.
 //
 // Les deux registres sont traités. Ne fermer que les sessions Ducky laissait le
 // compte révoqué accéder à l'interface web pendant trente minutes : il ne

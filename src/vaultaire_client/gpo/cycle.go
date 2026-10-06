@@ -98,16 +98,32 @@ func RunMachineCycle(sessionKey string) Report {
 // cycle qui suit les réapplique dans la foulée, avant que le shell ne démarre.
 //
 // Le verrou est pris pour les DEUX : le scan lit puis écrit l'état local, et
-// deux connexions simultanées du même compte — deux terminaux, ou un `sudo`
-// pendant une session `ssh` — y perdraient une correction. Voir drift_user.go.
+// deux connexions simultanées du même compte — deux terminaux, ou un écran
+// déverrouillé pendant une session `ssh` — y perdraient une correction. Voir
+// drift_user.go.
 func RunUserCycle(sessionKey, username string) Report {
 	verrou := verrouDe(username)
 	verrou.Lock()
 	defer verrou.Unlock()
 
-	scanUserDrift(sessionKey, username)
+	// Un état écrit avant que le scope utilisateur n'inventorie est rejoué une
+	// fois, pour que ses fichiers entrent enfin dans l'inventaire (TO-DO 135).
+	rattraperInventaireUtilisateur(username)
 
-	return runCycle(sessionKey, ScopeUser, username, UserFetchTimeout)
+	corriges := scanUserDrift(sessionKey, username)
+
+	rapport := runCycle(sessionKey, ScopeUser, username, UserFetchTimeout)
+
+	// Des modules viennent d'être posés — sur un écart, à la première
+	// connexion, ou parce que la politique a changé. Ce que le core sait de la
+	// conformité de ce compte date d'AVANT : un rapport d'écart, ou rien du
+	// tout. On lui dit ce qu'il en est maintenant — voir
+	// constaterApresApplication, le scope utilisateur n'a pas de tour suivant
+	// qui le ferait à sa place.
+	if corriges > 0 || rapport.Counts()[ResultApplied] > 0 {
+		constaterApresApplication(sessionKey, username)
+	}
+	return rapport
 }
 
 // runCycle enchaîne demande, application, enregistrement et rapport.

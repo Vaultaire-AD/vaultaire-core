@@ -8,7 +8,8 @@ import (
 )
 
 // Ce que ces tests gardent : le scan utilisateur existe, il ne part pas à
-// chaque `sudo`, et deux connexions du même compte ne se marchent pas dessus.
+// chaque authentification, et deux connexions du même compte ne se marchent pas
+// dessus.
 
 // avecMemoireDesScansVide isole un test de ceux qui l'ont précédé : la mémoire
 // des scans est un état de paquet, et un instant laissé derrière ferait sauter
@@ -96,9 +97,10 @@ func TestLeModeAuditVautAussiPourUnCompte(t *testing.T) {
 	}
 }
 
-// LA raison de la borne : PAM est sollicité à chaque `ssh` ET à chaque `sudo`.
-// Sans elle, un poste d'administration hacherait tout l'inventaire et enverrait
-// une trame 05_15 par commande privilégiée.
+// LA raison de la borne : PAM est sollicité à chaque authentification du
+// compte — un `ssh`, mais aussi chaque déverrouillage d'écran. Sans elle, un
+// poste de travail hacherait tout l'inventaire et enverrait une trame 05_15 à
+// chaque retour de pause.
 func TestUnSecondPassageRapprocheNeRescannePas(t *testing.T) {
 	avecMemoireDesScansVide(t)
 

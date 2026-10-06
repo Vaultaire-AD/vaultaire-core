@@ -15,6 +15,7 @@ Comment les nœuds et les services s'enregistrent, battent, et comment un agent 
 | 4.1 | [Nœuds et services : enregistrement et battement](./01-noeuds-et-services.md) |
 | 4.2 | [Découverte de service et proxies](./02-decouverte-et-proxies.md) |
 | 4.3 | [Affinité, enrôlement par site, et ce qui reste](./03-arbitrages-et-suite.md) |
+| 4.4 | [Les relais d'un proxy, pilotés par le core](./04-relais-pilotes.md) |
 
 **Commencer : [Nœuds et services : enregistrement et battement](./01-noeuds-et-services.md)**
 

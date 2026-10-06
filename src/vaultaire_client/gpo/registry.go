@@ -196,7 +196,11 @@ var commandExists = func(name string) bool {
 }
 
 // resolveHomeDir retourne le home réel d'un utilisateur local.
-func resolveHomeDir(username string) (string, error) {
+//
+// Variable pour la même raison que runCommand : un test qui déroule le vrai
+// cycle d'un compte doit pouvoir lui donner un répertoire à lui, au lieu
+// d'écrire dans le dossier personnel de qui lance les tests.
+var resolveHomeDir = func(username string) (string, error) {
 	u, err := user.Lookup(username)
 	if err != nil {
 		return "", fmt.Errorf("utilisateur local %s introuvable : %v", username, err)

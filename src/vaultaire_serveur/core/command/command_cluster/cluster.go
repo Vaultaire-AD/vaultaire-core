@@ -22,6 +22,10 @@ import (
 //	cluster priority <noeud> <valeur>    ordre de service
 //	cluster rotation <noeud> <in|out>    annonce ce nœud aux agents, ou non
 //	cluster affinity <noeud> <groupe...> groupes servis en priorité
+//	cluster relais <proxy>               ce qu'un proxy expose, et son état
+//	cluster relais <proxy> set <nom> …   ajoute ou modifie un relais
+//	cluster relais <proxy> remove <nom>  retire un relais
+//	cluster relais <proxy> release       rend la main au fichier du proxy
 //
 // # Deux droits nouveaux, et pourquoi
 //
@@ -76,6 +80,9 @@ func Cluster_Command(args []string, sender_groupsIDs []int, sender_Username stri
 
 	case "refresh":
 		return actualiserListes(args[1:], appelant)
+
+	case "relais", "relay":
+		return relais(args[1:], appelant)
 
 	default:
 		return "Commande cluster invalide. Utilisez « cluster -h »."
@@ -406,6 +413,11 @@ func aide() string {
   cluster refresh --all                     toutes les machines connectées
   cluster refresh -g <groupe>               les machines d'un groupe
 
+  cluster relais <proxy>                    ce que ce proxy expose, vers quoi, et son état
+  cluster relais <proxy> set <nom> [options]   ajoute ou modifie un relais (voir « cluster relais -h »)
+  cluster relais <proxy> remove <nom>       retire un relais
+  cluster relais <proxy> release            rend la main au fichier de configuration du proxy
+
 L'affinité range un nœud devant les autres de son rôle pour les agents des
 groupes visés. PRÉFÉRENCE et non exclusivité : les autres nœuds restent dans la
 liste, en queue. C'est ce qui fait qu'un site dont le proxy est tombé se rabat
@@ -430,6 +442,170 @@ réenrôler avec une nouvelle clé.
 Les métriques au-delà de la rétention sont SUPPRIMÉES, pas résumées : cette
 table n'agrège pas. Raccourcir la valeur détruit au prochain balayage.
 
-Droits : %s pour consulter, %s pour régler.`,
-		"read:cluster", "write:cluster")
+Droits : %s pour consulter, %s pour régler, %s pour décider ce qu'un proxy expose.`,
+		"read:cluster", "write:cluster", "write:relay")
+}
+
+// relais traite `cluster relais …` (TO-DO 141).
+//
+//	cluster relais <proxy>
+//	cluster relais <proxy> set <nom> [--type T] [--ecoute [adr]:port] [--source S]
+//	                                 [--adresses a:p,b:p] [--port-cible N]
+//	                                 [--delai s] [--inactivite s] [--max N] [--max-par-source N]
+//	cluster relais <proxy> remove <nom>
+//	cluster relais <proxy> release
+//
+// # Les options de « set » ne touchent que ce qu'elles nomment
+//
+// Sur un relais qui existe, une option absente laisse le champ tel quel. C'est
+// le parti de « cluster expose » : la commande la plus naturelle — changer un
+// plafond — ne doit pas remettre le port à son défaut.
+func relais(args []string, appelant action.Appelant) string {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		return aideRelais("")
+	}
+	noeud := strings.TrimSpace(args[0])
+
+	if len(args) == 1 {
+		res, err := action.Executer("cluster.relay_list", appelant, action.Params{"node": noeud})
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		d, ok := res.Donnees.(action.RelaisDuNoeud)
+		if !ok {
+			return res.Message
+		}
+		return display.DisplayRelais(d.Noeud, d.EnLigne, d.Vue)
+	}
+
+	switch strings.ToLower(args[1]) {
+	case "set", "add":
+		if len(args) < 3 || strings.HasPrefix(args[2], "-") {
+			return aideRelais("nom du relais manquant")
+		}
+		p := action.Params{"node": noeud, "name": strings.TrimSpace(args[2])}
+		if motif := lireOptionsDeRelais(args[3:], p); motif != "" {
+			return aideRelais(motif)
+		}
+		res, err := action.Executer("cluster.relay_set", appelant, p)
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		return res.Message
+
+	case "remove", "rm", "delete":
+		if len(args) != 3 {
+			return aideRelais("« remove » attend le nom d'un relais, et rien d'autre")
+		}
+		res, err := action.Executer("cluster.relay_remove", appelant,
+			action.Params{"node": noeud, "name": strings.TrimSpace(args[2])})
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		return res.Message
+
+	case "release":
+		if len(args) != 2 {
+			return aideRelais("« release » ne prend pas d'argument")
+		}
+		res, err := action.Executer("cluster.relay_release", appelant, action.Params{"node": noeud})
+		if err != nil {
+			return commandaction.MessageDErreur(err)
+		}
+		return res.Message
+
+	default:
+		return aideRelais("sous-commande « " + args[1] + " » inconnue")
+	}
+}
+
+// optionsDeRelais associe chaque option à son paramètre d'action.
+//
+// Les noms suivent les clés du fichier YAML du proxy : qui a déjà écrit un
+// relais dans ce fichier retrouve les mêmes mots ici.
+var optionsDeRelais = map[string]string{
+	"--type":           "type",
+	"--ecoute":         "listen",
+	"--listen":         "listen",
+	"--source":         "source",
+	"--adresses":       "addresses",
+	"--cibles":         "addresses",
+	"--port-cible":     "target_port",
+	"--delai":          "connect_timeout",
+	"--inactivite":     "idle",
+	"--max":            "max_connections",
+	"--max-par-source": "max_per_source",
+}
+
+// lireOptionsDeRelais range les options dans p. Rend un motif de refus, ou "".
+func lireOptionsDeRelais(args []string, p action.Params) string {
+	for i := 0; i < len(args); i++ {
+		option, valeur, colle := strings.Cut(args[i], "=")
+		parametre, connue := optionsDeRelais[option]
+		if !connue {
+			return "option « " + option + " » inconnue"
+		}
+		if !colle {
+			if i+1 >= len(args) {
+				return "valeur manquante après " + option
+			}
+			i++
+			valeur = args[i]
+		}
+		if _, deja := p[parametre]; deja {
+			return "option " + option + " donnée deux fois"
+		}
+		p[parametre] = strings.TrimSpace(valeur)
+	}
+	return ""
+}
+
+func aideRelais(motif string) string {
+	entete := ""
+	if motif != "" {
+		entete = "Erreur : " + motif + ".\n\n"
+	}
+	return entete + `cluster relais — ce qu'un proxy expose, et vers quoi.
+
+  cluster relais <proxy>                    configuration, cibles, état et compteurs
+  cluster relais <proxy> set <nom> [options]   ajoute un relais, ou modifie celui de ce nom
+  cluster relais <proxy> remove <nom>       retire un relais (jamais le relais Ducky)
+  cluster relais <proxy> release            rend la main au fichier de configuration du proxy
+
+Options de « set » — sur un relais qui existe, celles qu'on ne donne pas ne changent pas :
+
+  --type <ducky|https|ldaps>     ce qui est relayé ; « ldap » en clair est refusé
+  --ecoute <[adresse]:port>      où le proxy écoute ; défaut 443 (https), 636 (ldaps)
+  --source <cores|liste|service:<type>>
+                                 d'où viennent les cibles :
+                                   cores           les cores du cluster (ducky, ldaps)
+                                   service:<type>  les services de ce type, ex. service:vaultaire_nexus (https)
+                                   liste           les adresses données par --adresses
+  --adresses <hôte:port,…>       cibles d'une source « liste »
+  --port-cible <n>               port à joindre sur les cores (source « cores » ; 636 par défaut en ldaps)
+  --delai <s>                    délai pour joindre une cible          (0 : le défaut du proxy)
+  --inactivite <s>               silence au-delà duquel une connexion est fermée
+  --max <n>                      connexions simultanées, au total
+  --max-par-source <n>           connexions simultanées par adresse cliente
+
+Exemples :
+
+  cluster relais proxy1 set nexus --type https --ecoute :8843 --source service:vaultaire_nexus
+  cluster relais proxy1 set ldaps --type ldaps --ecoute :1636
+  cluster relais proxy1 set nexus --max 200
+  cluster relais proxy1 remove ldaps
+
+Le proxy applique SANS REDÉMARRER : les tunnels en cours ne sont pas coupés. Le
+core demande, le proxy dit ce qu'il a obtenu — un port déjà pris ou un port bas
+qu'il n'a pas le droit d'ouvrir donne un relais « refusé », avec le motif.
+
+Tant que le core n'a rien décidé pour un proxy, celui-ci applique son fichier.
+La première écriture PREND LA MAIN en repartant de ce qui tourne ; « release »
+la rend. Un proxy garde sur son disque la dernière liste reçue : redémarré, il
+la rouvre telle quelle, sans repasser par son fichier.
+
+Le relais Ducky ne se retire pas et ne change pas de port : c'est le port que
+le proxy a annoncé au cluster (-listen-port), et celui que reçoivent les agents.
+
+Droits : read:cluster pour consulter, write:relay pour modifier.`
 }

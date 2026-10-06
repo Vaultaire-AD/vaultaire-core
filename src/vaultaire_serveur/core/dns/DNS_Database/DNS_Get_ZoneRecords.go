@@ -3,15 +3,17 @@ package dnsdatabase
 import (
 	"database/sql"
 	"fmt"
-	"strings"
 	dnsstorage "vaultaire/core/dns/DNS_Storage"
 	"vaultaire/core/logs"
 )
 
 func GetZoneRecords(db *sql.DB, zone string) ([]dnsstorage.ZoneRecord, error) {
-	safeTableName := "zone_" + strings.ReplaceAll(zone, ".", "_")
+	table, err := tableDeZone(zone)
+	if err != nil {
+		return nil, err
+	}
 
-	query := fmt.Sprintf(`SELECT id, name, type, ttl, data, priority FROM %s`, safeTableName)
+	query := fmt.Sprintf(`SELECT id, name, type, ttl, data, priority FROM %s`, table)
 
 	rows, err := db.Query(query)
 	if err != nil {

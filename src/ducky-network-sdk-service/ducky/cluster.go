@@ -82,6 +82,24 @@ type MetriqueNoeud = decouverte.Metrique
 // TypeMetriqueRelais nomme la mesure que remonte un proxy. Voir decouverte.
 const TypeMetriqueRelais = decouverte.TypeMetriqueRelais
 
+// CleDeSession rend la clé de la session de service courante, ou "" s'il n'y
+// en a pas.
+//
+// Une FONCTION à rappeler, jamais une valeur à garder : la clé change à chaque
+// rétablissement du tunnel. WaitForVaultaireSession plutôt qu'un simple Get :
+// au moment de l'appel le tunnel peut être en cours de rétablissement, et
+// abandonner ferait perdre la trame qu'on s'apprêtait à émettre.
+//
+// Exportée pour le proxy, qui émet le compte rendu de ses relais (TO-DO 141)
+// hors des boucles de ce paquet.
+func CleDeSession() string {
+	session, err := stosession.SessionsUser.WaitForVaultaireSession()
+	if err != nil || session == nil || session.DuckySession == nil {
+		return ""
+	}
+	return string(session.DuckySession.SessionKey)
+}
+
 // RejoindreCluster enregistre ce service dans le cluster et l'y maintient.
 //
 // À appeler APRÈS Start : l'enregistrement voyage sur une session authentifiée,
@@ -112,13 +130,7 @@ func RejoindreCluster(opts OptionsCluster) error {
 		sendmessage.SendMessage(trame, session.DuckySession)
 	}, storage.Computeur_ID)
 
-	cleDeSession := func() string {
-		session, err := stosession.SessionsUser.WaitForVaultaireSession()
-		if err != nil || session == nil || session.DuckySession == nil {
-			return ""
-		}
-		return string(session.DuckySession.SessionKey)
-	}
+	cleDeSession := CleDeSession
 
 	// Le gestionnaire de catégorie 04 est branché AVANT toute émission : la
 	// boucle de réception consulte le registre dès la connexion établie, et une

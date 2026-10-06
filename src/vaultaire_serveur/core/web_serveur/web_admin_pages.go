@@ -158,9 +158,16 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 						http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 						return
 					}
+					// Même vocabulaire que la ligne de commande (TO-DO 133) :
+					// « session(s) fermée(s) » sans autre mot laissait croire
+					// qu'un `ssh` venait d'être coupé, ce que ce compteur n'a
+					// jamais compté.
 					detailData.Message = fmt.Sprintf(
-						"Ordre %d — %s. %d machine(s) visée(s), %d jointe(s) immédiatement, %d session(s) fermée(s).",
-						out.OrderID, out.Mode.Label(), out.TargetCount, out.PushedNow, out.SessionsKilled)
+						"Ordre %d — %s. %d machine(s) visée(s), dont %d où une session du compte est ouverte ; "+
+							"%d jointe(s) immédiatement — chacune verrouille le compte puis coupe ce qu'il a d'ouvert. "+
+							"%d session(s) Vaultaire (portail, Ducky) fermée(s).",
+						out.OrderID, out.Mode.Label(), out.TargetCount, out.MachinesEnSession,
+						out.PushedNow, out.SessionsKilled)
 					action = ""
 				}
 			}
@@ -1133,6 +1140,29 @@ func joindreValeursMultiples(r *http.Request, champ string) {
 	r.Form.Set(champ, strings.Join(valeurs, ","))
 }
 
+// donneesCluster est ce que le gabarit admin_cluster.html reçoit.
+//
+// Un type NOMMÉ : le test qui rend le gabarit a besoin de le construire, et
+// une structure anonyme dans le gestionnaire l'aurait obligé à la recopier —
+// donc à diverger d'elle au premier champ ajouté.
+type donneesCluster struct {
+	Username  string
+	Nodes     []clusterstorage.Node
+	Selection *clusterstorage.Node
+	AllGroups []string
+	Message   string
+	Error     string
+	DnsEnable bool
+	Section   string
+
+	// RelaisProxy est nil hors de la fiche d'un proxy.
+	RelaisProxy *clusterstorage.VueRelais
+	// PeutPiloter : l'utilisateur porte write:relay. Les formulaires ne
+	// sont montrés qu'à lui — et c'est l'ACTION qui contrôle, pas ce
+	// drapeau : un formulaire forgé sans le droit est refusé pareil.
+	PeutPiloter bool
+}
+
 // AdminClusterHandler affiche l'état des nœuds du cluster et règle leur accès.
 //
 // # Lecture et écriture n'exigent pas la même clé
@@ -1223,24 +1253,35 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		errMsg = "Nœud « " + choisi + " » introuvable : il a peut-être été oublié après une longue absence."
 	}
 
-	data := struct {
-		Username  string
-		Nodes     []clusterstorage.Node
-		Selection *clusterstorage.Node
-		AllGroups []string
-		Message   string
-		Error     string
-		DnsEnable bool
-		Section   string
-	}{
-		Username:  username,
-		Nodes:     nodes,
-		Selection: selection,
-		AllGroups: tousGroupes,
-		Message:   message,
-		Error:     errMsg,
-		DnsEnable: storage.Dns_Enable,
-		Section:   "cluster",
+	// Les relais du proxy ouvert (TO-DO 141) : ce qu'il expose, vers quoi, et
+	// où en est ce que le core lui demande.
+	//
+	// Par l'ACTION de lecture, la même que « vlt cluster relais » : la page et
+	// la commande ne peuvent pas montrer deux états différents. Un échec ne
+	// fait pas échouer la page — la fiche s'affiche sans cette section.
+	var relaisDuProxy *clusterstorage.VueRelais
+	if selection != nil && selection.Role == "proxy" {
+		res, errR := act.Executer("cluster.relay_list",
+			act.Appelant{Username: username, GroupIDs: groupIDs}, act.Params{"node": selection.Hostname})
+		if errR != nil {
+			logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+				"webadmin: relais du proxy "+selection.Hostname+" illisibles : "+errR.Error())
+		} else if d, ok := res.Donnees.(act.RelaisDuNoeud); ok {
+			relaisDuProxy = &d.Vue
+		}
+	}
+
+	data := donneesCluster{
+		Username:    username,
+		Nodes:       nodes,
+		Selection:   selection,
+		AllGroups:   tousGroupes,
+		Message:     message,
+		Error:       errMsg,
+		DnsEnable:   storage.Dns_Enable,
+		Section:     "cluster",
+		RelaisProxy: relaisDuProxy,
+		PeutPiloter: permission.HasActionAnywhere(groupIDs, permission.ActionWriteRelay),
 	}
 
 	if err := executeAdminPage(w, "admin_cluster.html", data); err != nil {

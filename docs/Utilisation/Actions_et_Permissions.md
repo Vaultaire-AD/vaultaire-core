@@ -33,6 +33,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 | `write:mfa` | second facteur d'un tiers |
 | `write:killswitch` | révocation d'urgence d'un compte |
 | `read:cluster` / `write:cluster` | état du cluster / réglages |
+| `write:relay` | ce qu'un proxy **expose** : ses relais, leurs ports, leurs cibles (TO-DO 141) |
 | `read:certificate` / `write:certificate` | certificats TLS du serveur |
 | `read:enrollment` | consultation des clés d'enrôlement |
 | `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées** |
@@ -99,7 +100,7 @@ une politique de mot de passe n'appartiennent à aucun domaine : ce qu'ils
 engagent dépasse tout périmètre délégué.
 
 **Les droits qui ne se délèguent pas du tout** — `read:log`, `read:dns`,
-`write:dns`, `read:enrollment`, `read:cluster`, `write:cluster`,
+`write:dns`, `read:enrollment`, `read:cluster`, `write:cluster`, `write:relay`,
 `read:certificate`, `write:certificate`, `write:server`, `read:nexus`,
 `write:nexus`, `write:nexus_admin`, `web_admin` — sont des
 **booléens** : on les accorde avec `all`, ou pas du tout. Leur donner une liste
@@ -220,6 +221,10 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `cluster.set_node_groups` | `write:cluster` | Globale | — | **Registre** — `cluster affinity` | **Registre** (page Cluster) |
 | `cluster.client_targets` | `read:cluster` | Globale | — | **Registre** — `get -c <id> --targets` | fiche machine |
 | `cluster.refresh_nodes` | `write:update:client` | Machine | — | **Registre** — `cluster refresh <machine>`, `-g`, `--all` | — |
+| `cluster.relay_list` | `read:cluster` | Globale | — | **Registre** — `cluster relais <proxy>` | **Registre** (page Cluster, fiche du proxy) |
+| `cluster.relay_set` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> set <nom> …` | **Registre** (page Cluster) |
+| `cluster.relay_remove` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> remove <nom>` | **Registre** (page Cluster) |
+| `cluster.relay_release` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> release` | **Registre** (page Cluster) |
 | `certificate.list` | `read:certificate` | Globale | — | **Registre** — `certificate list` | — |
 | `certificate.get` | `read:certificate` | Globale | — | **Registre** — `certificate show` | — |
 | `certificate.regenerate` | `write:certificate` | Globale | — | **Registre** — `certificate regenerate` | — |
@@ -248,13 +253,24 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**98 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+**102 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
 ligne de commande.** *(Le compte valait 94 ici alors que le registre en portait
 97 : `client.export`, `mfa.get_ducky_policy` et `mfa.set_ducky_policy` manquaient
 au tableau. Il est tenu par un test — `TestCatalogueCompletNaPasDeDoublon` — qui,
 lui, n'avait pas dérivé.)*
 
 ³ **Sept clés RBAC nouvelles** — voir ci-dessous.
+
+⁴ **`write:relay`, et non `write:cluster`** *(TO-DO 141)*. Régler une priorité
+ou une affinité change l'ORDRE dans lequel des nœuds déjà exposés sont proposés ;
+changer un relais ouvre ou ferme un **port** sur une machine d'un autre site, et
+choisit vers quoi il mène. Ce n'est pas le même pouvoir : qui tient l'astreinte
+du cluster ne doit pas, du même droit, pouvoir déplacer un point d'entrée du
+réseau. La clé s'accorde sur `all` seulement — un proxy n'appartient à aucun
+domaine. La permission d'amorçage `vaultaire_all` la reçoit au démarrage du
+core, comme toute clé nouvelle ; personne d'autre ne l'a tant qu'on ne la donne
+pas : `update -pu <permission> write:relay all`. Voir
+[`proxy/pilotage.md`](../proxy/pilotage.md).
 
 ---
 
@@ -745,7 +761,7 @@ action du registre** : aucune commande `vlt` ne les exige. Le core les
 | `write:nexus` | publieur : publier, supprimer une version, `docker push` |
 | `write:nexus_admin` | administrateur : dépôts, import GitHub, jetons de tous, nettoyage |
 
-Elles s'accordent comme toute clé spéciale — `all` ou `nil` :
+Elles s'accordent comme toute clé spéciale — `all`, `nil` ou `deny` (voir [MAN §5.0](./MAN.md#50-modèle-des-permissions-user)) :
 
 ```bash
 vlt create -p depot-publication non --desc "Publier dans Nexus"

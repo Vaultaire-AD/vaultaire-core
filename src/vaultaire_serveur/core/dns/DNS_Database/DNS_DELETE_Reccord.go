@@ -39,7 +39,11 @@ func DeleteDNSRecord(db *sql.DB, fqdn string, recordType string) error {
 		relativeName = "@"
 	}
 
-	query := fmt.Sprintf(`DELETE FROM %s WHERE name = ? AND type = ?`, selectedZone.TableName)
+	table, err := identifiantTable(selectedZone.TableName)
+	if err != nil {
+		return err
+	}
+	query := fmt.Sprintf(`DELETE FROM %s WHERE name = ? AND type = ?`, table)
 	res, err := db.Exec(query, relativeName, recordType)
 	if err != nil {
 		return fmt.Errorf("❌ erreur suppression enregistrement : %v", err)

@@ -10,7 +10,7 @@
         <td class="muted small">{{ .Note }}</td>
         <td class="muted small">{{ .UpdatedBy }}</td>
         <td>
-          <form method="post" onsubmit="return confirm('Supprimer {{ .Value }} ?');">
+          <form method="post" data-confirm="Supprimer {{ .Value }} ?">
             <input type="hidden" name="action" value="delete_restriction">
             <!-- Ce fragment sert dans plusieurs onglets : la valeur est posée
                  par le script au chargement, selon l'onglet réellement ouvert. -->
@@ -178,7 +178,7 @@
               <div><button type="submit" class="btn btn-primary">Enregistrer</button></div>
             </div>
           </form>
-          <form method="post" onsubmit="return confirm('Supprimer la définition {{ .Name }} ?');">
+          <form method="post" data-confirm="Supprimer la définition {{ .Name }} ?">
             <input type="hidden" name="action" value="delete_definition">
             <input type="hidden" name="active_tab" value="fields">
             <input type="hidden" name="definition_id" value="{{ .ID }}">
@@ -314,7 +314,7 @@
           Efface toutes les restrictions et réécrit le socle par défaut. Utile pour revenir à un état connu après
           une modification malheureuse — les valeurs custom ajoutées seront perdues.
         </p>
-        <form method="post" class="gpo-inline" onsubmit="return confirm('Réinitialiser toutes les restrictions GPO au socle par défaut ?');">
+        <form method="post" class="gpo-inline" data-confirm="Réinitialiser toutes les restrictions GPO au socle par défaut ?">
           <input type="hidden" name="action" value="reset_defaults">
             <input type="hidden" name="active_tab" value="reset">
           <div>

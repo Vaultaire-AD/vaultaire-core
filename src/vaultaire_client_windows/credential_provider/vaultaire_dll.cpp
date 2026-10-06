@@ -12,6 +12,7 @@
 
 #include "vaultaire_guid.h"
 #include "vaultaire_pipe.h"
+#include "vaultaire_trace.h"
 
 #include <windows.h>
 #include <credentialprovider.h>
@@ -55,11 +56,13 @@ class CFabrique : public IClassFactory {
 
   IFACEMETHODIMP CreateInstance(IUnknown* agregat, REFIID riid, void** ppv) override {
     // L'agrégation n'est pas gérée, et c'est la réponse attendue par COM.
-    if (agregat != nullptr) return CLASS_E_NOAGGREGATION;
+    vaultaire::Passage p(L"Fabrique::CreateInstance", L"interface=%ls",
+                         vaultaire::NomDeLInterface(riid).c_str());
+    if (agregat != nullptr) return p.Rendre(CLASS_E_NOAGGREGATION);
     InterlockedIncrement(&g_objets);
     HRESULT hr = vaultaire::CreerFournisseur(riid, ppv);
     if (FAILED(hr)) InterlockedDecrement(&g_objets);
-    return hr;
+    return p.Rendre(hr);
   }
 
   IFACEMETHODIMP LockServer(BOOL verrouiller) override {
@@ -195,13 +198,20 @@ extern "C" HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, void**
     }
   }
 
-  if (rclsid != CLSID_VaultaireProvider) return CLASS_E_CLASSNOTAVAILABLE;
+  // Le témoin de trace est relu à chaque activation : LogonUI est un processus
+  // neuf à chaque affichage de l'écran de connexion, mais d'autres hôtes
+  // gardent la DLL chargée (vaultaire_trace.h).
+  vaultaire::RelireTemoinTrace();
+  vaultaire::Passage p(L"DllGetClassObject", L"interface=%ls",
+                       vaultaire::NomDeLInterface(riid).c_str());
+
+  if (rclsid != CLSID_VaultaireProvider) return p.Rendre(CLASS_E_CLASSNOTAVAILABLE);
 
   CFabrique* fabrique = new (std::nothrow) CFabrique();
-  if (fabrique == nullptr) return E_OUTOFMEMORY;
+  if (fabrique == nullptr) return p.Rendre(E_OUTOFMEMORY);
   HRESULT hr = fabrique->QueryInterface(riid, ppv);
   fabrique->Release();
-  return hr;
+  return p.Rendre(hr);
 }
 
 extern "C" HRESULT WINAPI DllCanUnloadNow() {
