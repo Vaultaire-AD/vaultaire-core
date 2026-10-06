@@ -11,7 +11,7 @@ import sdkversion "duckynetworkclient/V1/duckynetwork/version"
 // Une release la remplace à la compilation (-ldflags -X) : une constante ne
 // pourrait pas l'être. La valeur écrite ici ne sert qu'aux builds locaux ;
 // majeure et mineure doivent suivre le fichier VERSION à la racine.
-var Version = "2.2.0"
+var Version = "2.3.0"
 
 // Commit et Date sont posés à la compilation par build.sh.
 var (

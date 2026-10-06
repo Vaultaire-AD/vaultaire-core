@@ -98,7 +98,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Developement/TO-DO.md`](./Developement/TO-DO.md) | Tâches ouvertes |
 | [`Developement/Mise_a_jour_du_parc.md`](./Developement/Mise_a_jour_du_parc.md) | **Mettre à jour le parc d'agents** : la stratégie arrêtée le 28/09, ses arbitrages et ce qui a été écarté (points 111 à 118) |
 | [`Developement/Audit_LDAP_2026-09-28.md`](./Developement/Audit_LDAP_2026-09-28.md) | **Audit LDAP du 28/09** : sécurité, fonctionnalités et compatibilité client par client (points 119 à 131) |
-| [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`) |
+| [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`, `2.2/`, `2.3/`) |
 
 > Une tâche validée est déplacée **à la main** de `TO-DO.md` vers
 > `DO/<version>/`, puis reportée dans [`Version_History.md`](./Version_History.md).
@@ -135,7 +135,8 @@ version mineure, **du plus récent au plus ancien**.
 
 | Fichier | Contenu |
 | --- | --- |
-| [`Version/2.0/2.2.md`](./Version/2.0/2.2.md) | Cycle 2.2 — en cours, travaux non publiés |
+| [`Version/2.0/2.3.md`](./Version/2.0/2.3.md) | Cycle 2.3 — en cours, travaux non publiés |
+| [`Version/2.0/2.2.md`](./Version/2.0/2.2.md) | Alpha 2.2.0 — Nexus, relais du proxy, client Windows V1, GPO signées, audits de sécurité et LDAP |
 | [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Alpha 2.1.0 — refactorisation, releases automatiques |
 | [`Version/2.0/2.0.md`](./Version/2.0/2.0.md) | Alpha 2.0.0 « PIG » — les deux audits de sécurité |
 | [`Version/1.0/1.1.md`](./Version/1.0/1.1.md) | Cycle 1.1 — GPO, LDAP puis LDAPS, portail web, API |
