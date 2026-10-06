@@ -31,6 +31,7 @@ var (
 		ActionReadCertificate, ActionWriteCertificate,
 		ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
 		ActionReadNexus, ActionWriteNexus, ActionAdminNexus,
+		ActionWriteRelay,
 	}
 )
 
@@ -106,6 +107,30 @@ const (
 	ActionReadCluster  = "read:cluster"
 	ActionWriteCluster = "write:cluster"
 )
+
+// ActionWriteRelay est le droit de décider ce qu'un proxy EXPOSE : quels
+// relais il ouvre, sur quels ports, et vers quoi (TO-DO 141).
+//
+// # Pourquoi pas write:cluster
+//
+// `write:cluster` règle la façon dont le parc joint les nœuds : une adresse
+// déclarée, une priorité, une affinité. Une erreur y coupe des machines ; elle
+// ne déplace aucune porte.
+//
+// Poser un relais ouvre un port sur une machine du site et y fait arriver un
+// service — l'annuaire en LDAPS, un dépôt en HTTPS — ou, par une liste fixe,
+// n'importe quelle adresse que le proxy sait joindre. C'est un changement de
+// ce qui est exposé au réseau, pas un réglage. Qui administre l'ordre des
+// nœuds n'a pas pour autant à pouvoir en décider, et l'inverse non plus.
+//
+// La LECTURE reste `read:cluster` : voir ce qu'un proxy expose fait partie de
+// l'état du cluster.
+//
+// # Fail-closed
+//
+// Accordée à personne tant qu'on ne l'accorde pas, sauf à vaultaire_all
+// (EnsureSuperadminActions l'ajoute au démarrage suivant).
+const ActionWriteRelay = "write:relay"
 
 // ActionReadNexus, ActionWriteNexus et ActionAdminNexus : droits sur le dépôt
 // de paquets (src/vaultaire_nexus).
@@ -229,6 +254,8 @@ var globalOnlyActions = []string{
 	ActionReadCertificate, ActionWriteCertificate,
 	ActionReadDNS, ActionReadEnrollment, ActionWriteServer,
 	ActionReadNexus, ActionWriteNexus, ActionAdminNexus,
+	// Un proxy n'appartient à aucun domaine, pas plus qu'un autre nœud.
+	ActionWriteRelay,
 }
 
 // IsGlobalOnlyAction dit si une action ne s'évalue que sur « * », et n'accepte

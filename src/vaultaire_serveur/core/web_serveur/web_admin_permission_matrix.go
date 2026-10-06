@@ -123,6 +123,7 @@ var specialActionLabels = map[string]string{
 	permission.ActionManageMFA:        "Second facteur — gérer",
 	permission.ActionReadCluster:      "Cluster — consulter",
 	permission.ActionWriteCluster:     "Cluster — régler",
+	permission.ActionWriteRelay:       "Relais des proxies — décider ce qu'ils exposent",
 	permission.ActionReadCertificate:  "Certificats — consulter",
 	permission.ActionWriteCertificate: "Certificats — régénérer",
 	permission.ActionReadDNS:          "DNS — consulter",

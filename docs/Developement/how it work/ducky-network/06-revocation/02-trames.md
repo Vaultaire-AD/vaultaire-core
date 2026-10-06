@@ -15,9 +15,15 @@ serveur_central
 <session_integrity_key>
 <order_id>            identifiant unique de l'ordre
 <mode>                soft | unlock | hard
-<username>            forme complète, domaine compris (admin@vaultaire.fr)
+<username>            nom d'annuaire (bob.durand) ou forme complète (bob.durand@acme.lan)
 <reason_code>         compromised | offboarding | admin_request
 ```
+
+`<username>` est ce que l'exploitant a tapé à l'émission, et le nom d'annuaire —
+court — quand l'ordre est rejoué par `06_05`. Cette page exigeait « la forme
+complète, domaine compris » ; rien ne la garantissait, et un nom court ne
+verrouillait rien (TO-DO 133). L'agent résout désormais les deux : voir
+[Quel compte, sur la machine](./01-principe-et-sequence.md#quel-compte-sur-la-machine).
 
 `reason_code` est un code fermé, jamais du texte libre : le motif détaillé reste
 côté serveur. Une raison saisie par un administrateur n'a pas à voyager jusqu'à
@@ -39,6 +45,10 @@ serveur_central
 `already_absent` (compte local inexistant) et `not_applicable` sont des succès,
 pas des erreurs : une machine où l'utilisateur ne s'est jamais connecté n'a rien
 à faire, et le signaler comme un échec provoquerait des réessais sans fin.
+
+`applied` veut dire, en mode `soft` comme en `hard`, que le compte est verrouillé
+**et** qu'il ne lui reste aucun processus sur la machine. Un compte verrouillé
+dont des processus survivent est un `06_03` (`command_failed`), pas un `06_02`.
 
 ### 06_03 — revoke_error (client → serveur)
 
@@ -62,6 +72,11 @@ serveur_central
 
 Aucun contenu : le serveur connaît déjà la machine, puisque le
 `ClientSoftwareID` est figé à la poignée de main et vérifié à chaque trame.
+
+Émise au démarrage de l'agent, à chaque tunnel rétabli, puis toutes les dix
+minutes (TO-DO 134) — voir
+[Quand l'agent réclame ses ordres](./01-principe-et-sequence.md#quand-lagent-réclame-ses-ordres).
+Un agent antérieur à la 2.2 ne l'émet qu'à son démarrage.
 
 ### 06_05 — revocations_list (serveur → client)
 

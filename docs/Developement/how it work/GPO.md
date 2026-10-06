@@ -112,7 +112,11 @@ un seul point de vérité pour la portée.
 | `appliers_hardening.go` | pam, comptes locaux, modules noyau, known_hosts, audit, SELinux |
 | `appliers_system.go` | GRUB, NTP, journaux, mises à jour, environnement, limites, purge |
 | `appliers_user_extra.go` | ACL, groupes locaux, shell, mot de passe, ssh client, git, quotas |
-| `appliers_user.go` | env, cron, file_deploy |
+| `appliers_user.go` | env, cron, file_deploy — et les **formes sûres** du scope utilisateur (`writeUserFile`, `writeUserBlock`…) |
+| `chemin_sur_linux.go` | écrire, lire, retirer et désigner sous un `HOME` sans suivre un seul lien (TO-DO 97, 135, 162) |
+| `inventaire.go` | l'inventaire de travail d'**un** cycle : ce qu'une application écrit, et à quel module l'attribuer |
+| `verifiers_bloc.go` | le bloc que Vaultaire tient dans un fichier de l'utilisateur (`file_block`) |
+| `drift_user.go`, `cadence.go` | vérification d'un compte à sa connexion, et les deux cadences annoncées par le core |
 | `cycle.go` | Cycles complets, rafraîchissement périodique |
 | `bootstrap.go` | Amorçage : émetteur de trames et clé de session |
 
@@ -563,6 +567,13 @@ couperait l'accès SSH partout, sans retour possible.
 et, quand il doit modifier un fichier de l'utilisateur, n'y pose qu'un bloc
 encadré par ses marqueurs — jamais un remplacement complet.
 
+**Aucun lien suivi sous un `HOME`.** L'agent applique le scope utilisateur en
+root, dans un dossier que la personne contrôle. Écrire, lire, retirer et passer
+une cible à une commande s'y font par descripteur, composant par composant
+(TO-DO 97, 135, 162). Un test-sentinelle interdit à tout appliqueur du scope
+utilisateur d'y revenir par un chemin — voir
+[L'inventaire du scope utilisateur](#linventaire-du-scope-utilisateur-22-to-do-135).
+
 ### NON garanti — à connaître
 
 **Le groupe `vaultaire` a un pouvoir root de fait sur le parc.** Choix assumé :
@@ -714,6 +725,14 @@ var appliers = map[string]Applier{
 **C'est tout côté agent.** Le moteur (`apply.go`) n'a pas à changer : il itère
 sur le registre. Un module envoyé par un serveur plus récent que l'agent est
 rapporté `skipped` avec sa raison — jamais ignoré en silence.
+
+> ⚠️ **Si le module vaut en scope utilisateur**, cet exemple ne suffit pas.
+> `readFileIfExists` et `writeSystemFile` sont les formes du scope **machine** :
+> elles suivent les liens, et la seconde inscrit dans l'inventaire de la machine.
+> Sous un `HOME`, employer `readUserFile`, `writeUserFile` ou `writeUserBlock`,
+> `removeUserFile`, `ctx.recordCheck` — le tableau est dans
+> [L'inventaire du scope utilisateur](#linventaire-du-scope-utilisateur-22-to-do-135),
+> et `sentinelle_inventaire_test.go` fait échouer la suite si l'on s'en écarte.
 
 ### Étape 6 — Vérifier
 
@@ -1032,6 +1051,11 @@ pour ce qui lui est propre.
 | Fichiers **retirés** | chemin, drapeau `absent` | `reappeared` |
 | **États système** | type, cible, attendu | `system_state`, `unverifiable` |
 
+Le **bloc** que Vaultaire tient dans un fichier de l'utilisateur — la ligne de
+chargement dans `.bashrc`, une entrée `Host` dans `~/.ssh/config` — est un état
+système (`file_block`), pas un fichier déposé : voir
+[L'inventaire du scope utilisateur](#linventaire-du-scope-utilisateur-22-to-do-135).
+
 Les deux derniers sont arrivés en 2.1 (TO-DO 4, 37, 41, 44) : avant, le scan ne comparait que des fichiers déposés.
 
 ### Ce qui doit être ABSENT
@@ -1255,6 +1279,13 @@ C'est `unverifiable`, et rien n'est réappliqué. La distinction est celle
 d'`unreadable` pour les fichiers — confondre les deux ferait relancer un service
 sur une simple incertitude.
 
+> **Ce paragraphe était faux jusqu'au TO-DO 135.** Le type existait, le rapport
+> le portait, mais `ModulesConcerned` rendait le module quand même et
+> `EnforceDrift` lui faisait perdre son empreinte : un `getfacl` désinstallé
+> faisait rejouer `setfacl` à chaque cycle, indéfiniment. Un écart
+> `unverifiable` reste désormais dans le rapport, où il se lit, et n'entre plus
+> dans la liste des modules à rejouer.
+
 Une attente dont le vérificateur est **inconnu** — état écrit par un agent plus
 récent — est ignorée en silence, pour la même raison.
 
@@ -1303,22 +1334,64 @@ d'un scope utilisateur n'est pas dans une heure, c'est à la **prochaine
 connexion**. Quelqu'un qui se connecte une fois par semaine aurait gardé son
 `HOME` dérivé une semaine, signalé non conforme tout du long.
 
-### Une vérification par cadence, pas une par `sudo`
+### Une vérification par délai, pas une par authentification *(TO-DO 142)*
 
 Le scope machine a une boucle qui décide quand elle tourne. Le scope utilisateur
-n'en a pas : il est déclenché par PAM, sollicité à chaque `ssh` **et à chaque
-`sudo`**. Scanner à chaque passage aurait fait, sur un poste d'administration, un
-hachage de tout l'inventaire et une trame `05_15` par commande privilégiée.
+n'en a pas : il est déclenché par PAM, à chaque **authentification** du compte
+sur le poste — un `ssh`, une ouverture de session sur la console, et, cas le
+plus fréquent sur un poste de travail, chaque **déverrouillage d'écran** sous
+GDM, qui repasse par la même pile. Scanner à chaque passage ferait hacher
+l'inventaire et émettre une trame `05_15` à chaque retour de pause.
 
-Le scan est donc borné à un par compte et par cadence GPO (`gpo_refresh_minutes`,
-la valeur en vigueur — resserrer le rafraîchissement du parc resserre aussi les
-vérifications). La borne vit en mémoire : un agent qui redémarre refait un scan
-de trop, ce qui est le sens sûr de l'erreur.
+> Ce titre disait « pas une par `sudo` ». C'est inexact pour les piles
+> qu'installe `rocky.sh` : le module y est posé dans `login`, `sshd` et
+> `gdm-password`, **pas dans `sudo`**. Sur un poste installé normalement, il n'y
+> a donc pas de commande privilégiée à distinguer d'une ouverture de session —
+> c'est la réponse à la seconde moitié du TO-DO 142.
+
+Le scan est borné à un par compte et par **`gpo_user_check_minutes`** — cinq
+minutes par défaut, d'une minute à vingt-quatre heures. Passé ce délai depuis la
+dernière vérification, la connexion suivante scanne, et le cycle qui suit repose
+ce qui manque ; en deçà, elle ne scanne pas.
+
+**Ce n'est plus la cadence machine.** La borne était `gpo_refresh_minutes`, une
+heure par défaut : qui défaisait sa politique, se déconnectait et revenait dix
+minutes plus tard retrouvait son dossier tel qu'il l'avait laissé. Les deux
+durées ne répondent pas à la même question — celle du parc règle un trafic, on la
+veut longue ; celle-ci règle un délai de réparation, on la veut courte. Les lier
+obligeait à choisir entre un parc bavard et des dossiers réparés une fois par
+heure.
+
+Le réglage part dans les **quatre** réponses de politique, sur une ligne
+`usercheck:<minutes>` — voir le [chapitre 05 du protocole](./ducky-network/05-gpo/02-trames.md).
+Un agent face à un core qui n'annonce rien garde cinq minutes.
+
+La borne vit en mémoire : un agent qui redémarre refait un scan de trop, ce qui
+est le sens sûr de l'erreur.
+
+### Le constat après application *(TO-DO 135)*
+
+Le rapport d'écart part **avant** la correction — c'est voulu, côté machine comme
+ici : si le poste s'arrête entre les deux, l'écart reste visible. Côté machine, le
+tour suivant de la boucle rescanne et remet le compteur à zéro. Un compte n'a
+pas de tour suivant : son prochain scan est à sa prochaine connexion, demain ou
+jamais.
+
+Quand un cycle utilisateur vient de **poser** au moins un module — sur un écart,
+à la première connexion, ou parce que la politique a changé —, l'agent scanne
+donc de nouveau et envoie ce second constat (`constaterApresApplication`). Sans
+lui, un `HOME` réparé à 9 h restait affiché « 1 écart » jusqu'au retour de la
+personne, et un compte qui venait de recevoir sa politique restait « non
+vérifié ».
+
+Ce constat ne corrige rien, ne compte pas comme une vérification due, et
+n'efface aucune empreinte. Un écart qui subsiste — module en échec, politique en
+audit — reste affiché, à juste titre.
 
 ### Deux connexions du même compte
 
 Le cycle utilisateur est désormais **sérialisé par compte**. Deux connexions
-simultanées — deux terminaux, ou un `sudo` pendant une session `ssh` — lançaient
+simultanées — deux terminaux, ou un écran déverrouillé pendant une session `ssh` — lançaient
 deux cycles en parallèle sur le même `HOME` et le même état local ; tant que le
 cycle ne faisait qu'appliquer, les modules étant idempotents, cela passait. Le
 scan ajoute une lecture suivie d'une écriture, et deux exécutions entrelacées y
@@ -1336,6 +1409,206 @@ PAM.
 > correction en silence — un défaut permissif invisible, exactement ce que
 > `DefaultDriftMode` refuse par ailleurs. Un parc où ces interventions sont
 > légitimes met les GPO concernées en audit.
+
+---
+
+## L'inventaire du scope utilisateur *(2.2, TO-DO 135)*
+
+Le scan du scope utilisateur existait depuis le TO-DO 33, et il était juste. Il
+ne **voyait rien**.
+
+### Le défaut
+
+L'inventaire est nourri au moment où un fichier est écrit. `writeSystemFile`
+inscrivait ce qu'il écrivait ; le scope utilisateur, lui, écrit par
+`writeUserFile` — un chemin à part, voulu par le TO-DO 97 —, et cette fonction
+n'inscrivait **rien**. En chaîne : aucun fichier dans l'état du compte → le scan
+sortait sur « rien à comparer » → aucun rapport → la conformité restait « non
+vérifiée », et le cycle suivant recevait « politique inchangée ». Un fichier
+supprimé dans un `HOME` n'était ni vu, ni reposé.
+
+Les tests ne l'ont pas vu parce qu'ils fabriquaient leur état **à la main**, en
+y inscrivant les fichiers que le vrai chemin n'inscrivait jamais. Ils vérifiaient
+la règle, pas ce qui la nourrit.
+
+### Un inventaire de travail par cycle
+
+`inventaire.go`. L'inventaire de travail — ce qu'une application est en train
+d'écrire — était une carte **globale au paquet**, partagée par tous les cycles.
+Tant que seule la machine y écrivait, cela ne gênait personne. Y faire écrire les
+comptes sans la séparer aurait attribué au module de l'un le fichier de l'autre :
+deux personnes qui ouvrent une session à la même seconde relevaient la même
+carte.
+
+| Cycle | Inventaire | Durée de vie |
+|---|---|---|
+| machine | `inventaireMachine`, unique | **vidé** au début de chaque application |
+| un compte | créé pour l'application | jeté avec elle |
+
+Deux défauts dormants sont tombés au passage. La carte n'était **jamais vidée** —
+son commentaire affirmait le contraire, `ResetManifest` n'avait aucun appelant
+hors des tests. Et l'attribution comparait des **contenus** : deux modules qui
+écrivent le même fichier avec le même contenu ne laissaient que le premier comme
+propriétaire. Chaque inscription reçoit désormais un **rang** ; « ce que ce module
+a écrit » se lit « ce qui porte un rang postérieur à sa marque de départ ».
+
+### Les formes à employer
+
+Un appliqueur qui connaît le scope utilisateur n'écrit, ne lit et ne retire que
+par celles-ci. Chacune inscrit d'elle-même, dans l'inventaire du cycle qui
+l'appelle.
+
+| Geste | Fonction | Ce qui est inscrit |
+|---|---|---|
+| déposer un fichier **entier** | `writeUserFile(ctx, …)` | le fichier : chemin résolu, SHA-256, mode |
+| retirer un fichier ou un répertoire vide | `removeUserFile(ctx, …)` | son absence |
+| tenir un **bloc** dans un fichier de la personne | `writeUserBlock(ctx, …, bloc)` | une attente `file_block` sur le bloc |
+| retirer le fichier où le bloc était seul | `removeUserBlock(ctx, …, bloc)` | le bloc doit rester absent — **pas** le fichier |
+| relire un fichier | `readUserFile(ctx, …)` | rien |
+| écrire un fichier **système** pour un compte | `ctx.writeSystemFile(…)`, `ctx.removeSystemFile(…)` | dans l'inventaire du compte |
+| déclarer un état | `ctx.recordCheck(…)` | dans l'inventaire du compte |
+
+Les formes **nues** — `writeSystemFile`, `removeSystemFile`, `recordCheck` —
+inscrivent dans l'inventaire de la **machine**. Elles restent celles du scope
+machine, et sont **interdites** à une fonction qui connaît le scope utilisateur.
+
+`sentinelle_inventaire_test.go` le garde, par analyse de l'arbre syntaxique : il
+interdit à ces fonctions les formes nues, tout accès au système de fichiers par
+un **chemin** (`os.Remove`, `os.ReadFile`, `readFileIfExists`…), et les
+primitives qui écrivent sans inscrire (`ecrireFichierUtilisateur`,
+`retirerSousHome`). Une dérogation se déclare dans `appelsDeroges`, **avec son
+motif**. C'est la classe d'erreur qui est fermée, pas l'occurrence.
+
+### Le bloc, et non le fichier
+
+`.bashrc`, `.profile`, `~/.ssh/config` appartiennent à la personne. La politique
+n'y demande qu'une chose : que **son** bloc y soit, tel qu'elle l'a écrit. En
+hacher la totalité aurait fait de chaque alias ajouté par l'utilisateur une
+dérive, « corrigée » à la connexion suivante.
+
+L'attente `file_block` (`verifiers_bloc.go`) porte le chemin, l'identifiant du
+bloc et le hachage de son corps :
+
+| Bloc | Délimité par | Posé par |
+|---|---|---|
+| `env` | les marqueurs généraux de Vaultaire | `user_env`, dans chaque fichier de démarrage du shell |
+| `ssh:<alias>` | `# >>> vaultaire-gpo:<alias> >>>` … `<<<` | `user_ssh_client_config` |
+
+Éditer le reste du fichier n'est pas un écart. Retirer le bloc, le modifier, ou
+remplacer le fichier par un lien en est un. La cible s'écrit
+`/home/alice/.bashrc#bloc:env` : c'est elle qu'on lit dans `vlt gpo status`.
+
+### Un fichier, plusieurs modules
+
+Toutes les variables d'environnement d'un compte vivent dans **un** fichier,
+`.vaultaire_env`, et chacune est un module.
+
+- **Il est écrit depuis la politique, sans être relu.** L'appliqueur relisait le
+  fichier, remplaçait sa ligne et recopiait les autres. Une ligne ajoutée à la
+  main survivait donc à toutes les réapplications, **et entrait dans le hachage
+  de référence** : la correction d'une dérive consacrait ce qu'elle devait
+  effacer. N'importe lequel des modules `user_env` produit désormais le fichier
+  entier, depuis `ctx.Politique`, et tous produisent le même. Une variable
+  retirée de la politique disparaît à la réécriture suivante — ce que le
+  commentaire du code promettait déjà.
+- **Ses modules en répondent ensemble.** `FileState.Owners` liste tous les
+  modules qui écrivent un fichier, quand il y en a plusieurs. Un écart les fait
+  rejouer **tous**, et le fichier ne quitte l'inventaire que lorsque le dernier
+  d'entre eux a quitté la politique. Le champ n'est écrit que s'il y a plusieurs
+  propriétaires ; `StateKey` reste renseigné, et un agent antérieur relit l'état
+  sans erreur.
+
+La règle vaut aussi pour la machine : `/etc/environment`, `ssh_known_hosts` et
+le fragment GRUB sont écrits par plusieurs modules, et n'en rejouaient qu'un.
+
+### Ce qu'un module rejoué déclare remplace ce qu'il déclarait
+
+`BuildScopeState` se contentait d'**ajouter** : une entrée que le module ne
+reproduisait plus restait dans l'état pour toujours. Exemple réel — la personne
+supprime son `.zshrc` : l'attente posée dessus signale un écart, le module est
+rejoué, ne retrouve plus le fichier, n'y pose rien… et l'attente est toujours
+là. Écart signalé à chaque vérification, sans jamais converger.
+
+Les entrées d'un module rejoué sont désormais retirées avant que les nouvelles
+ne soient posées. C'est sans risque depuis que l'inventaire de travail repart de
+zéro : un module rejoué réinscrit **tout** ce qu'il écrit.
+
+### Les états écrits avant
+
+Un compte dont la politique n'a pas bougé reçoit « politique inchangée » et
+n'applique rien : son état, écrit par un agent antérieur, porte des empreintes
+de modules et **aucun fichier**. Sans rien d'autre, la correction n'aurait pris
+effet que pour les politiques modifiées après la mise à jour de l'agent.
+
+`ScopeState.Inventaire` dit sous quelle règle d'inventaire un état a été écrit.
+Un état en dessous de `versionInventaire` est rejoué **une fois**, à la première
+connexion du compte (`rattraperInventaireUtilisateur`) — le journal de l'agent le
+dit. Les modules en **audit** ne sont pas rejoués : rejouer, c'est réécrire, et
+l'audit est le mode où l'on a décidé de ne pas réécrire. Ils entreront dans
+l'inventaire à leur prochaine modification, et restent « non vérifiés » d'ici là.
+
+### Lire et retirer sous un `HOME`
+
+Le TO-DO 97 a fermé l'**écriture** sous un `HOME`. Deux gestes voisins étaient
+restés sur des chemins, et l'agent tourne en root sur un dossier que la personne
+contrôle :
+
+| Geste | Ce qui se passait | Avec |
+|---|---|---|
+| **lire** `~/.bashrc`, `~/.ssh/config` | `os.ReadFile` suit les liens ; ce qui était lu était réécrit dans un fichier **appartenant à l'utilisateur** | `ln -sf /etc/shadow ~/.bashrc` → `/etc/shadow` recopié chez la personne |
+| **retirer** `/%h/.config/app.conf` | `os.Remove` résout les répertoires intermédiaires | `ln -s /etc ~/.config` → `/etc/app.conf` supprimé par root |
+
+Tant qu'un module utilisateur n'était rejoué qu'au changement de sa GPO,
+l'attaquant devait attendre que l'administrateur y touche. L'inventaire fait
+rejouer un module dès que son fichier **dérive** — c'est-à-dire quand
+l'utilisateur le décide. Le livrer sans fermer ces deux portes aurait transformé
+deux défauts dormants en lecture de fichier à la demande.
+
+`lireFichierUtilisateur` et `retirerSousHome` (`chemin_sur_linux.go`) passent par
+la descente du TO-DO 97 : chaque composant ouvert relativement au précédent,
+sans suivre un seul lien. La lecture refuse en outre ce qui n'est pas un fichier
+ordinaire **appartenant au compte** — un lien physique vers un fichier de root se
+présente comme un fichier ordinaire —, s'ouvre en `O_NONBLOCK` pour qu'un tube
+posé là ne pende pas la session, et s'arrête à un mégaoctet.
+
+Conséquence visible : un fichier de démarrage du shell qui est un **lien
+symbolique** est désormais laissé tel quel — ni lu, ni remplacé. Le bloc va dans
+ceux qui sont des fichiers ordinaires ; s'il n'y en a aucun et que `.bashrc` est
+un lien, le module `user_env` échoue en le disant.
+
+### `setfacl` et `git config` *(TO-DO 162)*
+
+Deux appliqueurs passaient encore un **chemin** à une commande lancée en root.
+
+- **`file_acl`.** `setfacl` suit les liens de son argument. Avec
+  `ln -s /etc/shadow ~/partage`, une politique « donner au groupe X l'accès à
+  `/%h/partage` » donnait à X l'accès à `/etc/shadow`. Vérifier le chemin avant
+  d'appeler la commande ne ferme rien — il est remplacé entre les deux. La cible
+  est donc **ouverte** par la descente sûre (`designerSousHome`), et la commande
+  reçoit son descripteur sous la forme `/proc/<pid>/fd/<n>`, que le noyau résout
+  vers l'objet lui-même. En récursif, `-P` interdit de suivre un lien rencontré
+  en descendant.
+- **`user_git_config`.** `git config --file ~/.gitconfig` puis
+  `chown <compte> ~/.gitconfig`, tous deux en root, tous deux suivant les liens :
+  avec `ln -s /etc/ld.so.preload ~/.gitconfig`, root créait le fichier puis le
+  **donnait** à l'utilisateur. `git` travaille désormais sur une copie, dans un
+  répertoire que seul root peut ouvrir, et le résultat revient par
+  `ecrireFichierUtilisateur`. `chownToUser` a disparu.
+
+Le scope machine garde ses chemins, pour la raison écrite dans
+`writeSystemFile` : planter un lien sous `/etc` demande déjà d'être root.
+
+### Ce qui n'est pas vérifié
+
+| Module | Pourquoi | Suivi |
+|---|---|---|
+| `user_git_config` | la clé n'a pas de vérificateur | TO-DO 163 |
+| `user_password_policy` | `chage` ne laisse rien que le scan relise | TO-DO 163 |
+| `user_cron` | les deux unités sont inventoriées ; l'**activation** du timer ne l'est pas | TO-DO 163 |
+| `directory_manage` | un répertoire n'entre pas à l'inventaire, côté machine non plus | — |
+
+Silence, donc, et non fausse conformité : un compte qui ne reçoit que de tels
+modules reste « non vérifié », et le résumé du parc le dit.
 
 ---
 

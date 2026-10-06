@@ -3,6 +3,7 @@ package gpo
 import (
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -101,6 +102,53 @@ type Context struct {
 	Hostname string
 	FQDN     string
 	Domain   string
+
+	// Politique est la politique en cours d'application, ENTIÈRE.
+	//
+	// Un appliqueur ne voit d'ordinaire que son module. Un seul a besoin de
+	// plus : `user_env`, dont toutes les variables partagent un fichier. Le
+	// reconstruire depuis ce que le disque contient déjà reviendrait à faire
+	// confiance à un fichier que l'utilisateur écrit librement — voir
+	// applyUserEnv. Nil dans un test qui appelle un appliqueur à la main.
+	Politique *Policy
+
+	// inv est l'inventaire de travail de CE cycle — TO-DO 135.
+	//
+	// Nil vaut l'inventaire du cycle machine : c'est le cas d'un contexte
+	// construit à la main par un test, et celui de tout le scope machine.
+	inv *inventaire
+}
+
+// inventaire rend l'inventaire du cycle qui porte ce contexte.
+func (c Context) inventaire() *inventaire {
+	if c.inv == nil {
+		return inventaireMachine
+	}
+	return c.inv
+}
+
+// recordCheck déclare un état à revérifier, dans l'inventaire de CE cycle.
+//
+// C'est la forme qu'emploie tout appliqueur qui connaît le scope utilisateur :
+// la fonction nue du même nom inscrit dans l'inventaire du cycle MACHINE, et
+// l'attente d'un compte y serait attribuée à un module de la machine — ou à
+// personne.
+func (c Context) recordCheck(kind, target, expect string) {
+	c.inventaire().noterAttente(kind, target, expect)
+}
+
+// writeSystemFile écrit un fichier SYSTÈME pour le compte de ce cycle.
+//
+// Le chemin n'est pas sous un `HOME` — `/etc/systemd/system/user-<uid>.slice.d`
+// pour les quotas d'un compte — mais c'est bien le cycle du compte qui l'écrit,
+// et c'est donc son inventaire qui doit le retenir.
+func (c Context) writeSystemFile(path, content string, mode os.FileMode) error {
+	return ecrireFichierSysteme(c.inventaire(), path, content, mode)
+}
+
+// removeSystemFile retire un fichier SYSTÈME pour le compte de ce cycle.
+func (c Context) removeSystemFile(path string) (bool, error) {
+	return retirerFichierSysteme(c.inventaire(), path)
 }
 
 // Applier applique un module et décrit ce qu'il a fait.
@@ -125,8 +173,11 @@ func ApplyPolicy(policy *Policy, previous *ScopeState) Report {
 		Status:      StatusApplied,
 	}
 
-	ctx := Context{Scope: policy.Scope, Username: policy.Username}
+	ctx := Context{Scope: policy.Scope, Username: policy.Username, Politique: policy}
 	ctx.Hostname, ctx.FQDN, ctx.Domain = machineIdentity()
+
+	ctx.inv = inventairePour(policy.Scope)
+
 	if policy.Scope == ScopeUser {
 		home, err := resolveHomeDir(policy.Username)
 		if err != nil {
@@ -183,6 +234,21 @@ func ApplyPolicy(policy *Policy, previous *ScopeState) Report {
 	return report
 }
 
+// inventairePour rend l'inventaire de travail d'UNE application — TO-DO 135.
+//
+// Celui d'un compte est neuf et ne sert qu'à cette application : deux sessions
+// ouvertes à la même seconde par deux personnes n'écrivent plus dans la même
+// carte. Celui de la machine est vidé : un seul cycle machine tourne à la fois,
+// et rien de ce qu'un cycle antérieur y a laissé ne doit être attribué à un
+// module de celui-ci.
+func inventairePour(scope string) *inventaire {
+	if scope == ScopeUser {
+		return nouvelInventaire()
+	}
+	ResetManifest()
+	return inventaireMachine
+}
+
 // applyModule applique un module unique en tenant compte de l'état précédent.
 func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	outcome := ModuleOutcome{ModuleType: m.Type, StateKey: m.StateKey}
@@ -203,12 +269,16 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 		return outcome
 	}
 
-	// Relevé AVANT l'appel : ce qui s'ajoutera à l'inventaire pendant
-	// l'exécution appartient à ce module. C'est ce qui permet d'attribuer un
-	// fichier dérivé au module qui l'a déposé — donc de savoir quoi
-	// réappliquer — sans rien demander aux 34 appliqueurs.
-	avant := manifestSnapshot()
-	avantChecks := checkSnapshot()
+	// Marque AVANT l'appel : ce qui sera inscrit ensuite dans l'inventaire du
+	// cycle appartient à ce module. C'est ce qui permet d'attribuer un fichier
+	// dérivé au module qui l'a déposé — donc de savoir quoi réappliquer — sans
+	// rien demander aux appliqueurs.
+	//
+	// Une marque et non un relevé comparé : une réécriture à l'identique est une
+	// écriture, et deux modules qui produisent le même fichier en répondent
+	// tous les deux (voir inventaire.go).
+	inv := ctx.inventaire()
+	marque := inv.marque()
 
 	detail, err := applier(ctx, m)
 	if err != nil {
@@ -247,8 +317,8 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	}
 	outcome.Result = ResultApplied
 	outcome.Detail = sanitizeDetail(detail)
-	outcome.Files = manifestSince(avant, m.StateKey)
-	outcome.Checks = checksSince(avantChecks, m.StateKey)
+	outcome.Files = inv.fichiersDepuis(marque, m.StateKey)
+	outcome.Checks = inv.attentesDepuis(marque, m.StateKey)
 	return outcome
 }
 
@@ -312,8 +382,20 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 	// plus aucune politique ne réclame : le scan verrait un écart, la
 	// correction chercherait un module qui n'existe plus, et le cycle
 	// recommencerait indéfiniment.
+	//
+	// Un fichier PARTAGÉ ne part que lorsque son dernier propriétaire est
+	// parti : tant qu'un module de la politique y écrit encore, il reste
+	// surveillé (TO-DO 135, voir FileState.Owners).
 	for path, state := range files {
-		if _, still := byKey[state.StateKey]; !still {
+		var restants []string
+		for _, key := range state.proprietaires() {
+			if _, still := byKey[key]; still {
+				restants = append(restants, key)
+			}
+		}
+		if epure, reste := state.avecProprietaires(restants); reste {
+			files[path] = epure
+		} else {
 			delete(files, path)
 		}
 	}
@@ -329,19 +411,58 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 
 	for _, outcome := range report.Modules {
 		switch outcome.Result {
-		case ResultApplied, ResultUnchanged:
+		case ResultApplied:
 			if m, ok := byKey[outcome.StateKey]; ok {
 				modules[outcome.StateKey] = m.Fingerprint
 			}
-			// Les fichiers relevés remplacent les précédents pour ce module :
-			// une nouvelle application peut avoir changé leur contenu, et
-			// garder l'ancien hachage ferait signaler une dérive dès le
-			// prochain scan.
+
+			// Ce que le module vient de déclarer REMPLACE ce qu'il déclarait.
+			//
+			// L'ancien code se contentait d'ajouter : une entrée que le module
+			// ne reproduisait plus restait dans l'état pour toujours. Le cas
+			// n'est pas théorique — `user_ssh_client_config` retire le fichier
+			// quand son bloc était seul, et réécrit le fichier quand
+			// l'utilisateur y a ajouté les siens. L'entrée « ce fichier doit
+			// être absent » de la première fois survivait à la seconde, et le
+			// scan signalait à chaque passage un fichier « réapparu » que le
+			// module, rejoué, laissait pourtant en place : une correction qui
+			// ne converge jamais.
+			//
+			// C'est sans risque depuis que l'inventaire de travail repart de
+			// zéro à chaque application : un module rejoué réinscrit TOUT ce
+			// qu'il écrit, à l'identique ou non.
+			for path, state := range files {
+				if epure, reste := state.sansProprietaire(outcome.StateKey); reste {
+					files[path] = epure
+				} else {
+					delete(files, path)
+				}
+			}
+			for id, c := range checks {
+				if c.StateKey == outcome.StateKey {
+					delete(checks, id)
+				}
+			}
+
 			for path, state := range outcome.Files {
+				// Un autre module de la politique écrit le même fichier : ils
+				// en répondent ensemble. Le dernier à avoir écrit donne le
+				// hachage — c'est l'état où le disque a été laissé.
+				if deja, partage := files[path]; partage {
+					state, _ = state.avecProprietaires(
+						append(deja.proprietaires(), outcome.StateKey))
+					state.StateKey = outcome.StateKey
+				}
 				files[path] = state
 			}
 			for id, c := range outcome.Checks {
 				checks[id] = c
+			}
+		case ResultUnchanged:
+			// Rien n'a été rejoué : l'empreinte est reconduite, et ce que le
+			// module avait déclaré reste ce qu'il déclare.
+			if m, ok := byKey[outcome.StateKey]; ok {
+				modules[outcome.StateKey] = m.Fingerprint
 			}
 		default:
 			delete(modules, outcome.StateKey)
@@ -355,6 +476,9 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 		Files:   files,
 		Checks:  checks,
 		Modes:   modes,
+		// Un état écrit ici l'est sous la règle d'inventaire de cet agent : les
+		// modules qu'il fallait rejouer pour y entrer viennent de l'être.
+		Inventaire: versionInventaire,
 	}
 	// L'empreinte de politique n'est enregistrée que si TOUT est en place.
 	// Sinon le prochain cycle croirait la machine à jour et n'y reviendrait pas.

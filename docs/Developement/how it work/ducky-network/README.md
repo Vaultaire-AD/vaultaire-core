@@ -30,7 +30,7 @@ catégorie.
 | 1 | [Le socle : canal, format, contrôles](./01-socle/README.md) | — | `ducky-network/trames_manager`, `sessionmgr`, `core/clienttype` |
 | 2 | [Authentification et enrôlement](./02-authentification-et-enrolement/README.md) | `01_01`–`01_09`, `02_01`–`02_13` | `ducky-network/authentification/{serveur,client}` |
 | 3 | [Poste de travail : SSH, PAM et groupes](./03-ssh-et-groupes/README.md) | `03_01`–`03_10` | `ducky-network/authentification/ssh` |
-| 4 | [Cluster et découverte](./04-cluster/README.md) | `04_01`–`04_14` (réservée → `04_19`) | `ducky-network/host_handler`, `cluster/` |
+| 4 | [Cluster et découverte](./04-cluster/README.md) | `04_01`–`04_19` | `ducky-network/host_handler`, `cluster/` |
 | 5 | [Transport des GPO](./05-gpo/README.md) | `05_01`–`05_17` | `ducky-network/gpo_manager`, `core/gpo` |
 | 6 | [Révocation — kill switch](./06-revocation/README.md) | `06_01`–`06_06` | `ducky-network/revocation_manager`, `core/revocation` |
 | 7 | [Interface web](./07-interface-web/README.md) | `07_01`, `07_04` — **réservées** | *aucun* |
@@ -41,7 +41,7 @@ catégorie.
 | Type de client | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 |
 |---|---|---|---|---|---|---|---|---|
 | `vaultaire_client` (agent) | `01_01` | ✔ | ✔ | `04_03` | ✔ | ✔ | — | — |
-| `vaultaire_proxy` | + enrôlement | ✔ | — | nœud (`04_01 03 05 07`) | — | — | — | — |
+| `vaultaire_proxy` | + enrôlement | ✔ | — | nœud (`04_01 03 05 07 15 18`) | — | — | — | — |
 | `vaultaire_web` | + enrôlement | ✔ | — | service (`04_09 12 14`) | — | — | `07_01 07_04` | — |
 | `vaultaire_nexus` | + enrôlement | ✔ | — | service (`04_09 12 14`) | — | — | — | `08_01 08_04` |
 

@@ -469,8 +469,10 @@ il a été retiré ou n'est plus joignable.
 
 ## Ce que le proxy émet
 
-`04_01` au démarrage, `04_07` toutes les 20 secondes, `04_03` pour trouver ses
-cores. La cadence de battement est **locale et volontairement courte** : un
+`04_01` au démarrage — et de nouveau quand le core refuse son battement, parce
+qu'il l'a oublié (TO-DO 109) —, `04_07` toutes les 20 secondes, `04_03` pour
+trouver ses cores, `04_18` une fois par minute pour rendre compte de ses relais
+([4.4](./04-relais-pilotes.md)). La cadence de battement est **locale et volontairement courte** : un
 `reglages` lit la base, qu'un proxy n'a pas, et un battement trop espacé ferait
 déclarer hors ligne un nœud parfaitement vivant.
 

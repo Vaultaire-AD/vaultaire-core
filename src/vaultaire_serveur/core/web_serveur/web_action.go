@@ -143,6 +143,12 @@ var actionsFormulaire = map[string]string{
 	// cluster
 	"set_node_exposure": "cluster.set_node_exposure",
 	"set_node_groups":   "cluster.set_node_groups",
+
+	// Les relais d'un proxy (TO-DO 141). Les mêmes actions que
+	// « vlt cluster relais » : c'est le registre qui contrôle write:relay.
+	"set_relay":      "cluster.relay_set",
+	"remove_relay":   "cluster.relay_remove",
+	"release_relays": "cluster.relay_release",
 }
 
 // aliasParametres traduit les noms de champs des formulaires vers ceux

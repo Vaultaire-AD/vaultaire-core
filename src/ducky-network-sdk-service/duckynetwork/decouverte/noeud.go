@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -154,36 +155,84 @@ func DemarrerNoeud(sessionKey func() string, n InfosNoeud, cadence time.Duration
 		// C'est le battement qui sert d'horloge : un nœud non enregistré n'a
 		// rien d'autre à faire, et une seconde boucle n'aurait servi qu'à
 		// choisir un autre intervalle.
+		battementRefuse.Store(false)
 		enregistre := tenterEnregistrement(sessionKey, n, cadence)
 
 		for range time.Tick(cadence) {
-			cle := sessionKey()
-			if strings.TrimSpace(cle) == "" {
-				logs.Write_log("WARNING", "nœud : aucune session, battement non envoyé")
-				continue
-			}
-			if envoyer == nil {
+			var continuer bool
+			enregistre, continuer = tourDeBattement(sessionKey, n, cadence, enregistre)
+			if !continuer {
 				return
 			}
-			if !enregistre {
-				// Battre avant d'être enregistré met à jour une ligne qui
-				// n'existe pas : le core ne fait rien, et le journal se
-				// remplirait d'accusés qui ne signifient rien.
-				enregistre = tenterEnregistrement(sessionKey, n, cadence)
-				continue
-			}
-			envoyer(ConstruireBattement(cle, clientID, n.Hostname))
-
-			// Les mesures suivent le battement, sur la même horloge et dans le
-			// même tour de boucle.
-			//
-			// Après et non avant : le battement est ce qui maintient le nœud
-			// dans la liste servie aux agents, les mesures ne servent qu'à le
-			// regarder. Si l'émission devait un jour coûter cher, c'est la
-			// seconde qui doit en pâtir.
-			emettreMetriques(cle, n)
 		}
 	}()
+}
+
+// battementRefuse est levé par la goroutine de LECTURE quand le core refuse un
+// battement, et lu par la boucle du nœud à son tour suivant (TO-DO 109).
+//
+// Un drapeau atomique plutôt qu'un canal : la lecture ne doit jamais attendre
+// la boucle, et deux refus avant le tour suivant ne demandent qu'UN
+// réenregistrement.
+var battementRefuse atomic.Bool
+
+// SignalerBattementRefuse est appelée à la réception d'un 04_08 « refus » : le
+// core ne connaît plus ce nœud.
+//
+// # Ce qui manquait (TO-DO 109)
+//
+// `enregistre` passait à vrai sur l'accusé du 04_01 et n'en revenait jamais.
+// Un proxy purgé par le core après vingt-quatre heures hors ligne — ou dont le
+// core avait été réinstallé — continuait donc de battre sur une ligne qui
+// n'existait plus : invisible du cluster, aucun agent ne lui était envoyé, et
+// son propre journal le disait enregistré. Il fallait le redémarrer, et savoir
+// qu'il le fallait.
+func SignalerBattementRefuse(motif string) {
+	if battementRefuse.Swap(true) {
+		// Déjà levé : le tour suivant s'en occupe, une ligne suffit.
+		return
+	}
+	logs.Write_log("WARNING", "nœud : battement REFUSÉ par le core ("+motif+
+		") — ce nœud n'est plus dans le cluster, il se réenregistre au prochain tour")
+}
+
+// tourDeBattement fait UN tour de la boucle du nœud. Rend l'état
+// d'enregistrement après ce tour, et faux en second s'il faut arrêter la boucle.
+//
+// Sortie de DemarrerNoeud pour être éprouvée sans attendre une cadence : c'est
+// ici que se décide « battre » ou « se réenregistrer », et c'est cette décision
+// qui était fausse.
+func tourDeBattement(sessionKey func() string, n InfosNoeud, cadence time.Duration, enregistre bool) (bool, bool) {
+	cle := sessionKey()
+	if strings.TrimSpace(cle) == "" {
+		logs.Write_log("WARNING", "nœud : aucune session, battement non envoyé")
+		return enregistre, true
+	}
+	if envoyer == nil {
+		return enregistre, false
+	}
+	// Le core a refusé un battement depuis le dernier tour : ce nœud n'est
+	// plus enregistré, quoi qu'il en ait cru.
+	if battementRefuse.Swap(false) {
+		enregistre = false
+	}
+	if !enregistre {
+		// Battre avant d'être enregistré met à jour une ligne qui
+		// n'existe pas : le core ne fait rien, et le journal se
+		// remplirait d'accusés qui ne signifient rien.
+		return tenterEnregistrement(sessionKey, n, cadence), true
+	}
+	envoyer(ConstruireBattement(cle, clientID, n.Hostname))
+
+	// Les mesures suivent le battement, sur la même horloge et dans le
+	// même tour de boucle.
+	//
+	// Après et non avant : le battement est ce qui maintient le nœud
+	// dans la liste servie aux agents, les mesures ne servent qu'à le
+	// regarder. Si l'émission devait un jour coûter cher, c'est la
+	// seconde qui doit en pâtir.
+	emettreMetriques(cle, n)
+	return true, true
 }
 
 // DelaiAccuseEnregistrement borne l'attente du 04_02.

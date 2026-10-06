@@ -127,6 +127,7 @@ ne les restreint pas, elle les **refuse** :
 ```
 web_admin   read:log   read:dns   write:dns   read:enrollment
 read:cluster   write:cluster   read:certificate   write:certificate   write:server
+write:relay
 ```
 
 La raison est commune : l'objet visé n'appartient à aucun domaine de l'annuaire.

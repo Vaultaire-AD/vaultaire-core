@@ -94,11 +94,31 @@ func formatOutcome(out revocationmanager.Outcome) string {
 	if out.DirectoryNote != "" {
 		fmt.Fprintf(&b, "  Annuaire : %s\n", out.DirectoryNote)
 	}
+	// « Sessions Vaultaire », et non « sessions » : ce compteur n'a jamais
+	// compté un `ssh`. Il disait « Sessions fermées : 2 » pendant que la
+	// personne continuait de travailler dans son terminal (TO-DO 133).
 	if out.SessionsKilled > 0 {
-		fmt.Fprintf(&b, "  Sessions fermées : %d\n", out.SessionsKilled)
+		fmt.Fprintf(&b, "  Sessions Vaultaire fermées (portail, Ducky) : %d\n", out.SessionsKilled)
 	}
-	fmt.Fprintf(&b, "  Machines visées : %d\n", out.TargetCount)
-	fmt.Fprintf(&b, "  Appliqué immédiatement : %d\n", out.PushedNow)
+	fmt.Fprintf(&b, "  Machines visées : %d", out.TargetCount)
+	if out.MachinesEnSession > 0 {
+		fmt.Fprintf(&b, " — dont %d où une session du compte est ouverte", out.MachinesEnSession)
+	}
+	b.WriteString("\n")
+	if out.HorsGroupes > 0 {
+		fmt.Fprintf(&b, "    (%d visée(s) pour cette seule raison : le compte n'y partage plus aucun groupe)\n",
+			out.HorsGroupes)
+	}
+	// « Remis », et non « appliqué » : c'est ce que le core SAIT à cet instant.
+	// L'application — verrouiller, puis couper ce qui est ouvert — est le fait
+	// de l'agent, qui l'acquitte ensuite. L'acquittement de chaque machine, ou
+	// son échec, se lit aujourd'hui dans le journal du core ; aucune commande
+	// ne le montre encore (TO-DO 164).
+	fmt.Fprintf(&b, "  Ordre remis immédiatement : %d machine(s) en ligne\n", out.PushedNow)
+	if out.Mode != revocation.ModeUnlock && out.PushedNow > 0 {
+		b.WriteString("    chacune verrouille le compte local, puis ferme ses sessions et tue ses processus ;\n")
+		b.WriteString("    son acquittement — ou son échec — s'inscrit au journal du core (logs --since 10m)\n")
+	}
 
 	remaining := out.TargetCount - out.PushedNow
 	if remaining > 0 {
@@ -131,16 +151,27 @@ Options :
 Ce que fait le mode par défaut (soft) :
   - le compte ne peut plus s'authentifier : Ducky, SSH, LDAP, interface web, API
   - il perd toutes ses permissions RBAC
-  - ses sessions ouvertes sont fermées immédiatement
-  - son compte local est verrouillé sur toutes les machines partageant un de ses
-    groupes ; le répertoire personnel et les données restent intacts
+  - ses sessions Vaultaire (portail, Ducky) sont fermées immédiatement
+  - sur chaque machine jointe, son compte local est verrouillé, PUIS tout ce
+    qu'il y a d'ouvert est coupé : sessions SSH, console et bureau, mais aussi
+    ce qui tourne détaché d'un terminal (tmux, nohup, tâches planifiées). Le
+    répertoire personnel et les données restent intacts
+  - les machines visées sont celles qui partagent un de ses groupes, ET celles
+    où il a une session ouverte
+
+Ce qu'il ne fait pas tout de suite : une machine HORS LIGNE garde le compte et
+ses sessions jusqu'à sa reconnexion, où l'ordre est rejoué. Tant que la ligne
+« En attente » du compte rendu n'est pas à zéro, le compte travaille peut-être
+encore quelque part.
 
 Le mode --hard est IRRÉVERSIBLE : le compte est supprimé de l'annuaire, et le
 compte local ainsi que son répertoire personnel sont supprimés sur chaque
 machine.
 
 Les machines hors ligne ne sont pas oubliées : l'ordre est conservé et rejoué à
-leur prochaine connexion.
+leur prochaine connexion. Un agent connecté redemande aussi ses ordres en
+attente toutes les dix minutes : un ordre qui n'a pas abouti du premier coup
+n'attend pas une coupure du tunnel.
 
 Droits requis : write:killswitch sur tous les domaines de la cible.
 Le mode --hard exige en plus write:delete:user.`

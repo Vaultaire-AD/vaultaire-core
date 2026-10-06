@@ -31,6 +31,7 @@ l'état local. `none` au premier démarrage ou après remise à zéro de l'état
 <nb_modules>
 <somme_de_controle>  SHA-256 hex de la charge transmise
 refresh:<minutes>    cadence de rafraîchissement machine — FACULTATIVE, en queue
+usercheck:<minutes>  délai entre deux vérifications d'un compte — FACULTATIVE, en queue
 sig:<base64>         signature de la livraison — FACULTATIVE, en queue
 sigreq:<0|1>         l'agent doit-il refuser une politique non signée
 ```
@@ -63,6 +64,22 @@ Elle ne voyage **que** dans les réponses de scope machine. Un cycle utilisateur
 est déclenché par une ouverture de session, pas par une boucle : il n'y a aucune
 cadence à régler de ce côté.
 
+**La ligne `usercheck:`** *(2.2, TO-DO 142)* porte le réglage
+`gpo_user_check_minutes` : le délai minimal entre deux vérifications du dossier
+d'un même compte sur un poste — cinq minutes par défaut. Même recette que
+`refresh:`, et bornée à la réception comme elle (1 minute à 24 heures). Elle
+voyage dans les **quatre** réponses de politique :
+
+- `05_02` et `05_03`, pour que l'agent la connaisse dès son premier cycle
+  machine, avant qu'une seule personne ne se soit connectée ;
+- `05_06` et `05_07`, pour qu'un réglage modifié atteigne le poste à la
+  connexion suivante, sans attendre le tour de la machine.
+
+Elle est lue **après** que la connexion en cours a décidé de vérifier ou non :
+la valeur reçue vaut pour la connexion suivante. Un agent face à un core qui ne
+l'annonce pas garde cinq minutes ; un agent antérieur ignore la ligne et
+continue de suivre la cadence machine.
+
 **Les lignes `sig:` et `sigreq:`** *(2.2, TO-DO 52)*. La signature couvre
 `vaultaire-gpo-v1`, l'identifiant de la machine, le scope, l'utilisateur,
 l'empreinte et la somme de contrôle — dans cet ordre, une ligne chacun. Elle lie
@@ -90,6 +107,7 @@ document a été vérifié.
 ```
 <empreinte>
 refresh:<minutes>    même ligne facultative qu'en 05_02
+usercheck:<minutes>  idem
 ```
 
 « Rien à faire » est le cas le plus fréquent sur un parc stable : c'est donc le
@@ -132,6 +150,9 @@ de faire dépendre l'authentification du tunnel de l'utilisateur du moment.
 <taille_totale>
 <nb_modules>
 <somme_de_controle>
+usercheck:<minutes>  délai entre deux vérifications d'un compte — FACULTATIVE, en queue
+sig:<base64>         comme en 05_02
+sigreq:<0|1>
 ```
 
 `<username_cible>` est repris dans la réponse : plusieurs connexions peuvent être
@@ -142,7 +163,12 @@ en cours sur la même machine, le client doit savoir à qui rattacher le manifes
 ```
 <username_cible>
 <empreinte>
+usercheck:<minutes>  FACULTATIVE, en queue
 ```
+
+« Rien à faire » est la réponse de presque toutes les connexions : c'est par elle
+qu'un `gpo_user_check_minutes` modifié atteint un poste dont la politique ne
+bouge pas.
 
 ### 05_08 — gpo_user_error (serveur → client)
 

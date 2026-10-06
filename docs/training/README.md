@@ -6,7 +6,7 @@ Apprendre Vaultaire **en le pratiquant**, chapitre par chapitre : installer un
 serveur, construire l'annuaire d'une entreprise fictive, intégrer une machine,
 lui appliquer des politiques, puis brancher DNS et LDAP.
 
-10 chapitres, 30 jalons. Chaque jalon tient en 15 à 30 minutes.
+10 chapitres, 31 jalons. Chaque jalon tient en 15 à 30 minutes.
 
 ---
 
@@ -73,7 +73,7 @@ acme.lan
 | 7 | [DNS](./07-dns/README.md) | 7.1 [Activer et exposer le DNS](./07-dns/01-activer-et-exposer.md)<br>7.2 [Zones et enregistrements](./07-dns/02-zones-et-enregistrements.md)<br>7.3 [Distribuer le résolveur au parc](./07-dns/03-distribuer-le-resolveur.md) |
 | 8 | [LDAP et liaison d'applications](./08-ldap-et-liaison/README.md) | 8.1 [Un compte de service LDAP](./08-ldap-et-liaison/01-compte-de-service.md)<br>8.2 [Interroger l'annuaire](./08-ldap-et-liaison/02-interroger-l-annuaire.md)<br>8.3 [LDAPS et Keycloak](./08-ldap-et-liaison/03-ldaps-et-keycloak.md) |
 | 9 | [Sécurité et exploitation](./09-securite-et-exploitation/README.md) | 9.1 [Second facteur et mots de passe](./09-securite-et-exploitation/01-mfa-et-mots-de-passe.md)<br>9.2 [Incident et journaux](./09-securite-et-exploitation/02-incident-et-journaux.md)<br>9.3 [Réglages et mises à jour](./09-securite-et-exploitation/03-reglages-et-mises-a-jour.md) |
-| 10 | [Cluster et proxy](./10-cluster-et-proxy/README.md) | 10.1 [Clés d'enrôlement](./10-cluster-et-proxy/01-cles-d-enrolement.md)<br>10.2 [Déployer un proxy](./10-cluster-et-proxy/02-deployer-un-proxy.md)<br>10.3 [Topologie : exposition, affinité, rotation](./10-cluster-et-proxy/03-topologie.md) |
+| 10 | [Cluster et proxy](./10-cluster-et-proxy/README.md) | 10.1 [Clés d'enrôlement](./10-cluster-et-proxy/01-cles-d-enrolement.md)<br>10.2 [Déployer un proxy](./10-cluster-et-proxy/02-deployer-un-proxy.md)<br>10.3 [Topologie : exposition, affinité, rotation](./10-cluster-et-proxy/03-topologie.md)<br>10.4 [Décider ce qu'un proxy expose](./10-cluster-et-proxy/04-piloter-les-relais.md) |
 
 ---
 

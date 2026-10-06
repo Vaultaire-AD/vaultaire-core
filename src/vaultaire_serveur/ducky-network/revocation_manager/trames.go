@@ -144,9 +144,12 @@ func handleError(trames storage.Trames_struct_client) string {
 
 // handleAskRevocations traite 06_04 et répond 06_05 ou 06_06.
 //
-// Appelée par l'agent après authentification, à chaque démarrage et à chaque
-// reconnexion. C'est le chemin de rattrapage : une machine éteinte au moment du
-// déclenchement récupère ici les ordres qu'elle a manqués.
+// Appelée par l'agent après authentification : au démarrage, à chaque tunnel
+// rétabli, puis toutes les dix minutes tant que la session tient (TO-DO 134 —
+// un agent antérieur à la 2.2 ne la demande qu'à son démarrage). C'est le chemin
+// de rattrapage : une machine éteinte au moment du déclenchement récupère ici
+// les ordres qu'elle a manqués, et un ordre poussé en vain — ou appliqué en
+// échec — y est rejoué.
 func handleAskRevocations(trames storage.Trames_struct_client) string {
 	db := database.GetDatabase()
 	if db == nil {

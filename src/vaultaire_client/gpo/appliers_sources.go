@@ -35,7 +35,16 @@ func applyDirectory(ctx Context, m Module) (string, error) {
 		// L'absence est notée dans les deux cas — déjà absent ou retiré à
 		// l'instant : la politique dit que ce chemin ne doit pas exister, et
 		// c'est ce que le scan doit surveiller.
-		existait, err := removeSystemFile(path)
+		//
+		// Sous un `HOME`, par la descente sûre (TO-DO 135) : `os.Remove` résout
+		// les répertoires intermédiaires, et un lien planté à la place de l'un
+		// d'eux faisait retirer par root un répertoire hors du dossier.
+		var existait bool
+		if ctx.Scope == ScopeUser {
+			existait, err = removeUserFile(ctx, path)
+		} else {
+			existait, err = ctx.removeSystemFile(path)
+		}
 		if err != nil {
 			return "", fmt.Errorf("suppression de %s impossible (non vide ?) : %v", path, err)
 		}

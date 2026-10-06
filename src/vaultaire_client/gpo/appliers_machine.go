@@ -427,6 +427,18 @@ func applySystemdService(ctx Context, m Module) (string, error) {
 // parent. C'est assumé, et c'est écrit ici pour que ce ne soit pas redécouvert
 // comme un oubli.
 func writeSystemFile(path, content string, mode os.FileMode) error {
+	return ecrireFichierSysteme(inventaireMachine, path, content, mode)
+}
+
+// ecrireFichierSysteme écrit, puis inscrit dans l'inventaire qu'on lui donne.
+//
+// L'inventaire est un paramètre depuis le point 135 : un cycle UTILISATEUR écrit
+// lui aussi un fichier système — les quotas d'un compte vivent sous
+// `/etc/systemd/system/user-<uid>.slice.d` —, et c'est dans SON inventaire que
+// le fichier doit entrer, pas dans celui de la machine. `writeSystemFile` reste
+// la forme du scope machine ; `ctx.writeSystemFile` est celle de qui connaît le
+// scope utilisateur.
+func ecrireFichierSysteme(inv *inventaire, path, content string, mode os.FileMode) error {
 	dir := path[:strings.LastIndex(path, "/")]
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creation de %s impossible : %v", dir, err)
@@ -470,7 +482,7 @@ func writeSystemFile(path, content string, mode os.FileMode) error {
 	//
 	// C'est le SEUL endroit du paquet qui écrit un fichier système : tout
 	// appliqueur passe par ici, y compris ceux qui seront écrits plus tard.
-	recordWrite(path, content, mode)
+	inv.noterEcriture(path, content, mode)
 	return nil
 }
 
@@ -510,6 +522,12 @@ func writeSystemFile(path, content string, mode os.FileMode) error {
 // rendu — une distinction qui compte pour qui lit le rapport d'application, et
 // que le seul retour d'erreur ne permettait plus de faire.
 func removeSystemFile(path string) (existait bool, err error) {
+	return retirerFichierSysteme(inventaireMachine, path)
+}
+
+// retirerFichierSysteme retire, puis inscrit l'absence dans l'inventaire donné.
+// Même raison que ecrireFichierSysteme.
+func retirerFichierSysteme(inv *inventaire, path string) (existait bool, err error) {
 	err = os.Remove(path)
 	switch {
 	case err == nil:
@@ -522,7 +540,7 @@ func removeSystemFile(path string) (existait bool, err error) {
 		// qui n'a jamais été obtenue.
 		return false, err
 	}
-	recordAbsent(path)
+	inv.noterAbsence(path)
 	return existait, nil
 }
 

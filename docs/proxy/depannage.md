@@ -43,7 +43,13 @@ savoir si un agent passe par le proxy.
 | Au-delà d'une vingtaine d'agents par proxy, des connexions échouent | le core ne reconnaît pas l'adresse du proxy : plafond de 20 par IP | l'IP que le core voit (journal du core : `New connection established: <IP>`) doit être l'adresse déclarée du proxy ou son adresse exposée ; sinon (NAT), l'exposer à cette adresse |
 | `connexion de … rejetée, plafond atteint` sur le proxy | une machine ouvre plus de 20 connexions | normal pour un poste en boucle ; sinon relever `max_par_source` |
 | L'agent refuse le core à travers le proxy (empreinte) | la clé du core n'est pas dans son fichier de confiance | même diagnostic qu'en direct : le proxy n'y est pour rien, il ne présente jamais de clé |
-| Connexions coupées après 15 min | inactivité : aucun octet dans aucun sens | un agent Ducky bat toutes les 2 min ; ne se produit que si `inactivite_secondes` a été baissé sous ce délai |
+| Connexions coupées après 15 min | inactivité : aucun octet dans aucun sens | pour un relais `ducky`, le délai suit de lui-même le battement du core (`check_online_minutes`) depuis la 2.2 ; sur un relais `https` ou `ldaps`, relever `--inactivite` |
+| `vlt cluster relais` : un relais reste **demandé** | le proxy n'a pas rendu compte de cette révision : hors ligne, ou raccordé à un autre core | attendre une minute ; `vlt cluster list` : est-il en ligne ? Journal du proxy : `relais : révision N du core appliquée` |
+| `vlt cluster relais` : un relais est **refusé** | le motif vient de la machine du proxy : `address already in use` (port pris), `permission denied` (port sous 1024 en UID 10001) | choisir un autre port : `vlt cluster relais <proxy> set <nom> --ecoute :<port>` |
+| `révision N REFUSÉE par le proxy` | la liste entière est inapplicable (plus de relais Ducky sur le port annoncé), ou le proxy garde la main | lire le motif affiché ; `pilotage_par_le_core: false` dans son fichier ? |
+| `le proxy … n'a jamais rendu compte de ses relais` | proxy antérieur à la 2.2, ou jamais connecté depuis la mise à jour du core | mettre le proxy à jour ; en attendant, ses relais se règlent dans son fichier |
+| Après un redémarrage, le proxy n'applique pas son fichier | il a rouvert la copie de la dernière liste du core (`relais_du_core.json`, à côté de son identité) | c'est voulu ; `vlt cluster relais <proxy> release` rend la main au fichier |
+| Le proxy s'arrête trente secondes après son démarrage : `aucune session authentifiée` | aucun core joignable ; les relais ne s'ouvrent qu'une fois la session établie (TO-DO 158) | rétablir l'accès à un core ; un proxy déjà démarré, lui, garde ses relais |
 
 ## Lire le bilan
 

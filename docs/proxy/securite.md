@@ -87,6 +87,27 @@ laquelle il est compté. Détail : [`https-et-ldaps.md`](./https-et-ldaps.md).
 > `en-tête PROXY reçu d'un pair qui n'est pas un proxy enregistré`. Remède :
 > `vlt cluster expose` à l'adresse que le core voit.
 
+## Le pilotage par le core
+
+Depuis la 2.2, le core peut dire à un proxy quels relais ouvrir
+([`pilotage.md`](./pilotage.md)). C'est un pouvoir : poser un relais ouvre un
+port sur une machine du site et y fait arriver un service — ou, par une source
+`liste`, n'importe quelle adresse que le proxy sait joindre.
+
+| Qui | Ce qui le borne |
+|---|---|
+| l'administrateur | la clé `write:relay`, distincte de `write:cluster`, accordée à personne par défaut ; chaque écriture laisse une ligne `SECURITY` avec l'état avant et après |
+| le core | il contrôle la liste avant de l'écrire : types admis, pas de LDAP en clair, le relais Ducky gardé sur son port |
+| le proxy | il contrôle **de nouveau** tout ce qu'il reçoit, refuse en entier une liste qu'il ne comprend pas complètement ou qui retirerait son relais Ducky, et ne reçoit de liste que par son tunnel authentifié |
+| la machine | `pilotage_par_le_core: false` : le proxy rend compte et ne se laisse rien changer |
+
+Ce que le pilotage **ne change pas** : un relais ne lit toujours rien et ne
+termine toujours ni la session Ducky ni TLS. Un core compromis peut faire ouvrir
+un port à un proxy ; il ne peut pas lui faire déchiffrer ce qui y passe.
+
+Le compte rendu du proxy (`04_18`) est gardé à part de la demande : un proxy
+peut mentir sur son état, pas se donner une configuration.
+
 ## Plafonds du proxy lui-même
 
 Par relais : 20 connexions par adresse cliente, 4000 au total, fermeture après 15

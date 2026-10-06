@@ -42,8 +42,11 @@ var (
 	// SessionReadTimeout borne l'attente APRÈS authentification.
 	//
 	// Doit couvrir plusieurs cycles de battement de cœur. Le serveur envoie un
-	// 02_11 toutes les ServerCheckOnlineTimer minutes (2 par défaut) ; dix
-	// minutes laissent donc passer quatre battements manqués avant de couper.
+	// 02_11 toutes les `check_online_minutes` (2 par défaut) ; dix minutes
+	// laissent donc passer quatre battements manqués avant de couper.
+	//
+	// C'est un PLANCHER pour le réseau Ducky, pas sa valeur : à cadence longue
+	// il emploie ArmReadDeadlineFor avec une échéance calculée (TO-DO 110).
 	SessionReadTimeout = 10 * time.Minute
 )
 
@@ -53,12 +56,32 @@ var (
 // Le poser une seule fois à l'ouverture couperait la connexion à échéance, même
 // active — c'est l'erreur classique avec SetReadDeadline.
 func ArmReadDeadline(conn net.Conn, authentifiee bool) {
-	if conn == nil {
-		return
-	}
 	délai := HandshakeReadTimeout
 	if authentifiee {
 		délai = SessionReadTimeout
+	}
+	ArmReadDeadlineFor(conn, délai)
+}
+
+// ArmReadDeadlineFor pose un délai de lecture CHOISI par l'appelant.
+//
+// # Pourquoi l'appelant choisit (TO-DO 110)
+//
+// SessionReadTimeout est une constante : dix minutes, « plusieurs cycles de
+// battement » à la cadence par défaut de deux. Or la cadence du battement Ducky
+// se règle jusqu'à soixante minutes. À onze, cette échéance tombait ENTRE deux
+// battements : le core coupait lui-même, toutes les dix minutes, chaque
+// session du parc — alors même que le balayage, lui, avait appris à suivre le
+// réglage.
+//
+// Le réseau Ducky calcule donc son échéance (voir duckynetwork) et la passe
+// ici. LDAP garde ArmReadDeadline : rien n'y bat, aucune cadence ne le concerne.
+//
+// Ce paquet ne lit pas le réglage lui-même : il est sous `reglages` dans
+// l'arbre des dépendances, et doit y rester.
+func ArmReadDeadlineFor(conn net.Conn, délai time.Duration) {
+	if conn == nil {
+		return
 	}
 	if délai <= 0 {
 		// Zéro désactive : SetReadDeadline(time.Time{}) retire le délai.

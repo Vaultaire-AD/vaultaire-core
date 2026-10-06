@@ -271,7 +271,21 @@ des liens, faux pour un réglage qui *remplace*.
 Toute action de formulaire doit par ailleurs figurer dans `actionsFormulaire` :
 une action inconnue est **refusée**, jamais exécutée sans contrôle.
 
-### 6.5 Quand il n'y a pas de compilateur
+### 6.5 L'agent est root : trois gestes qui ne se font qu'à un endroit
+
+L'agent tourne en root sur des postes, et une partie de ce qu'il touche
+appartient à quelqu'un d'autre. Trois règles, chacune gardée par un
+test-sentinelle qui fait échouer la suite si on s'en écarte :
+
+| Geste | Par où | Pourquoi | Sentinelle |
+|---|---|---|---|
+| écrire, lire, retirer **sous un dossier personnel** | `writeUserFile`, `writeUserBlock`, `removeUserFile`, `readUserFile` | un chemin s'y remplace entre deux appels, et ce qui n'est pas inscrit à l'inventaire n'est jamais vérifié (TO-DO 97, 135) | `gpo/sentinelle_inventaire_test.go` |
+| changer le **masque de création** du processus | `pam_communication.ecouterSousMasque` | il est celui du processus entier ; deux sections concurrentes se le rendaient faux (TO-DO 165) | `pam_communication/masque_test.go` |
+| **réclamer les ordres** de révocation | `revocation.SurveillerLesOrdres` | une demande émise ailleurs, une fois, est le défaut du TO-DO 134 | `revocation/rattrapage_test.go` |
+
+Détail du premier : [`GPO.md`](./GPO.md), « L'inventaire du scope utilisateur ».
+
+### 6.6 Quand il n'y a pas de compilateur
 
 Un compilateur Go est normalement disponible, et `go test ./...` est **vert sur
 les huit modules** : ne commitez pas sans l'avoir lancé sur ce que vous touchez

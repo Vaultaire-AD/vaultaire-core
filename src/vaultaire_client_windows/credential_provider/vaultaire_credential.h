@@ -77,6 +77,14 @@ class CVaultaireCredential : public ICredentialProviderCredential2 {
   // secondes, il ne doit pas traîner dans la mémoire de LogonUI.
   void EffacerCode();
 
+  // Le corps de GetStringValue et de GetSerialization. Séparés des méthodes
+  // COM pour que celles-ci n'aient qu'UN retour : c'est lui que la trace écrit
+  // (vaultaire_trace.h), et un corps à dix sorties en oublierait une.
+  HRESULT ValeurDuChamp(DWORD champ, wchar_t** valeur);
+  HRESULT Soumettre(CREDENTIAL_PROVIDER_GET_SERIALIZATION_RESPONSE* reponse,
+                    CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION* serialisation,
+                    wchar_t** texte_erreur, CREDENTIAL_PROVIDER_STATUS_ICON* icone);
+
   LONG references_;
   CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario_;
   ICredentialProviderCredentialEvents* evenements_;

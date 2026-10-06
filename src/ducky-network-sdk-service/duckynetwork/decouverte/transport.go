@@ -100,7 +100,7 @@ func emettre(sessionKey func() string) {
 
 // HandleTrame traite une trame 04_xx reçue par un CLIENT.
 //
-// Seules 04_04, 04_02 et, pour un proxy, 04_16 y arrivent en pratique : les autres 04_xx sont des
+// Seules 04_04, 04_02 et, pour un proxy, 04_16 et 04_19 y arrivent en pratique : les autres 04_xx sont des
 // requêtes, que le core reçoit et non l'inverse.
 func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string {
 	if len(t.Message_Order) < 2 {
@@ -114,6 +114,8 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 		traiterAccuseEnregistrement(t.Content)
 	case "16":
 		traiterServices(t.Content)
+	case "19":
+		traiterConfigurationRelais(t.Content)
 	case "17":
 		// « Redemande ta liste maintenant ». Elle ne transporte AUCUNE liste :
 		// l'agent repart sur une 04_03 ordinaire, et tout le chemin habituel —
@@ -126,10 +128,12 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 		}
 		logs.Write_log("INFO", "découverte : liste redemandée hors tour ("+motif+")")
 		DemanderMaintenant()
-	case "06", "08":
-		// Accusés de métriques et de battement. Rien à faire, mais nommés :
-		// les laisser tomber dans le `default` les ferait passer pour des
-		// trames non gérées dans le journal, et on chercherait un défaut.
+	case "08":
+		traiterAccuseBattement(t.Content)
+	case "06":
+		// Accusé de métriques. Rien à faire, mais nommé : le laisser tomber
+		// dans le `default` le ferait passer pour une trame non gérée dans le
+		// journal, et on chercherait un défaut.
 	default:
 		logs.Write_log("DEBUG", "découverte : sous-trame 04_"+t.Message_Order[1]+" non gérée")
 	}
@@ -162,6 +166,33 @@ func traiterListe(contenu string) {
 		"découverte : %d nœud(s) joignable(s) — %s", len(noeuds), Resume()))
 }
 
+// traiterAccuseBattement lit le 04_08 (TO-DO 109).
+//
+//	ack             battement pris en compte
+//	refus\n<motif>  le core ne connaît pas ce nœud : il faut rejouer 04_01
+//
+// Tout ce qui n'est pas un refus vaut « pris en compte », contenu vide
+// compris : c'est ce que répondent les cores antérieurs à la 2.2, qui ne
+// refusaient jamais par ce canal.
+func traiterAccuseBattement(contenu string) {
+	lignes := strings.Split(strings.TrimSpace(contenu), "\n")
+	if !estUnRefus(lignes[0]) {
+		return
+	}
+	motif := "sans motif"
+	if len(lignes) > 1 && strings.TrimSpace(lignes[1]) != "" {
+		motif = strings.TrimSpace(lignes[1])
+	}
+	SignalerBattementRefuse(motif)
+}
+
+// estUnRefus reconnaît la première ligne d'un accusé négatif, sous les trois
+// orthographes que le 04_02 accepte déjà.
+func estUnRefus(ligne string) bool {
+	statut := strings.ToLower(strings.TrimSpace(ligne))
+	return statut == "refus" || statut == "refuse" || statut == "refusé"
+}
+
 // traiterAccuseEnregistrement lit le 04_02.
 //
 //	ok              enregistrement accepté
@@ -171,8 +202,7 @@ func traiterListe(contenu string) {
 // jamais refusé par ce canal, et leur accusé se réduisait parfois à son en-tête.
 func traiterAccuseEnregistrement(contenu string) {
 	lignes := strings.Split(strings.TrimSpace(contenu), "\n")
-	statut := strings.ToLower(strings.TrimSpace(lignes[0]))
-	if statut == "refus" || statut == "refuse" || statut == "refusé" {
+	if estUnRefus(lignes[0]) {
 		motif := "sans motif"
 		if len(lignes) > 1 && strings.TrimSpace(lignes[1]) != "" {
 			motif = strings.TrimSpace(lignes[1])

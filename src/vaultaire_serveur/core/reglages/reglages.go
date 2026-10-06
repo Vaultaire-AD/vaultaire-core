@@ -118,6 +118,7 @@ const (
 	CleSessionWebPurge     = "web_session_purge_minutes"
 	CleSynchroGroupes      = "group_sync_minutes"
 	CleRafraichissementGPO = "gpo_refresh_minutes"
+	CleVerifGPOUtilisateur = "gpo_user_check_minutes"
 	CleListeDesNoeuds      = "node_list_refresh_minutes"
 	CleRetentionJournaux   = "log_retention_days"
 	ClePurgeJournaux       = "log_purge_hours"
@@ -135,7 +136,12 @@ var catalogue = []Definition{
 		Consequence: "Le core envoie un 02_11 à chaque machine à cette cadence. " +
 			"Plus court : une machine tombée est vue plus vite, au prix d'un " +
 			"réveil de tout le parc. Plus long : l'annuaire affiche en ligne des " +
-			"postes éteints.",
+			"postes éteints. Trois délais suivent ce réglage : la coupure d'une " +
+			"session muette (2 × cadence + 1 min, 5 min au moins), la validité " +
+			"des sessions en base, et le délai après lequel un agent ferme son " +
+			"tunnel. ATTENTION : un agent antérieur à la 2.2 ferme son tunnel " +
+			"après 10 minutes sans trafic quelle que soit la cadence — ne pas " +
+			"dépasser 8 minutes tant que tout le parc n'est pas à jour.",
 	},
 	{
 		Cle: CleSessionsDucky, Unite: Minutes, Defaut: 5, Min: 1, Max: 120,
@@ -199,6 +205,37 @@ var catalogue = []Definition{
 			"sa valeur part dans les trames 05_02 et 05_03, et une machine hors " +
 			"ligne l'applique au retour. Il décide aussi du seuil de « en retard » " +
 			"dans « vlt gpo status », fixé à trois cycles.",
+	},
+	{
+		// Une seconde cadence GPO, et pas un plancher câblé dans l'agent
+		// (TO-DO 142).
+		//
+		// La vérification d'un dossier personnel suivait `gpo_refresh_minutes`.
+		// Les deux durées ne répondent pas à la même question : celle du parc
+		// règle un TRAFIC — on la veut longue —, celle-ci règle un DÉLAI DE
+		// RÉPARATION — on la veut courte. Les lier obligeait à choisir entre un
+		// parc qui redemande sa politique toutes les cinq minutes et des
+		// dossiers réparés une fois par heure.
+		//
+		// Cinq minutes : la valeur demandée à la recette du 03/10, et le défaut
+		// qu'un agent applique seul face à un core qui n'annonce rien.
+		//
+		// Une minute au moins, et non zéro : un déverrouillage d'écran est une
+		// authentification PAM comme une autre, et « à chaque fois » ferait
+		// hacher l'inventaire d'un compte à chaque retour de pause.
+		Cle: CleVerifGPOUtilisateur, Unite: Minutes, Defaut: 5, Min: 1, Max: 1440,
+		Libelle: "Vérification des GPO d'un compte à sa connexion",
+		Consequence: "Délai minimal entre deux vérifications du dossier d'un même " +
+			"compte sur un poste. Passé ce délai, la connexion suivante compare ce " +
+			"que la politique a posé à ce qui s'y trouve, et repose ce qui manque " +
+			"avant que la session ne s'ouvre ; en deçà, elle ne vérifie pas. Plus " +
+			"court : un dossier défait est réparé dès la reconnexion, au prix d'un " +
+			"hachage de l'inventaire et d'un rapport à chaque authentification — " +
+			"déverrouillages d'écran compris. Plus long : la personne garde son " +
+			"dossier défait d'autant. Indépendant de « gpo_refresh_minutes », qui " +
+			"ne règle que la boucle des machines. Quatrième réglage à piloter le " +
+			"PARC : sa valeur part dans les réponses de politique (05_02, 05_03, " +
+			"05_06, 05_07), et un poste l'applique à la connexion qui suit.",
 	},
 	{
 		Cle: CleListeDesNoeuds, Unite: Minutes, Defaut: 30, Min: 5, Max: 1440,

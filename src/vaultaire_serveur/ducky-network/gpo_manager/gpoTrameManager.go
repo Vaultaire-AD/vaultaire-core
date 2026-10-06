@@ -124,16 +124,51 @@ func ligneCadence() string {
 	return PrefixeCadence + strconv.Itoa(minutes)
 }
 
-// avecCadence ajoute la ligne de cadence aux lignes d'une réponse MACHINE.
+// PrefixeVerifUtilisateur ouvre la ligne qui annonce la cadence de vérification
+// du scope UTILISATEUR — TO-DO 142. Doit rester identique à
+// `gpo.PrefixeVerifUtilisateur` de l'agent : rien ne les lie à la compilation.
 //
-// Les réponses de scope USER n'en portent pas : un cycle utilisateur est
-// déclenché par une ouverture de session, pas par une boucle — il n'y a aucune
-// cadence à régler de ce côté.
-func avecCadence(lignes []string) []string {
-	if c := ligneCadence(); c != "" {
+// # Pourquoi elle part dans les QUATRE réponses
+//
+// Dans 05_02 et 05_03, pour que l'agent la connaisse dès son premier cycle
+// machine — avant qu'une seule personne ne se soit connectée. Dans 05_06 et
+// 05_07, pour qu'un réglage modifié atteigne le poste à la connexion suivante,
+// au lieu d'attendre le tour de la machine, qui peut être dans une heure.
+//
+// Même recette que les autres lignes de queue : reconnue à son préfixe, jamais
+// à son rang ; un agent ancien l'ignore, un core ancien ne l'envoie pas et
+// l'agent garde son défaut.
+const PrefixeVerifUtilisateur = "usercheck:"
+
+// ligneVerifUtilisateur rend « usercheck:<minutes> », ou une chaîne vide sur une
+// valeur aberrante — l'agent garde alors la sienne.
+func ligneVerifUtilisateur() string {
+	minutes := reglages.Valeur(reglages.CleVerifGPOUtilisateur)
+	if minutes <= 0 {
+		return ""
+	}
+	return PrefixeVerifUtilisateur + strconv.Itoa(minutes)
+}
+
+// avecVerifUtilisateur ajoute la cadence de vérification utilisateur.
+func avecVerifUtilisateur(lignes []string) []string {
+	if c := ligneVerifUtilisateur(); c != "" {
 		return append(lignes, c)
 	}
 	return lignes
+}
+
+// avecCadence ajoute les lignes de cadence aux lignes d'une réponse MACHINE.
+//
+// Celle de la boucle machine (`refresh:`) ne part QUE là : un cycle utilisateur
+// est déclenché par une ouverture de session, pas par une boucle. Celle de la
+// vérification utilisateur (`usercheck:`) la suit, et part aussi dans les
+// réponses du scope utilisateur — voir PrefixeVerifUtilisateur.
+func avecCadence(lignes []string) []string {
+	if c := ligneCadence(); c != "" {
+		lignes = append(lignes, c)
+	}
+	return avecVerifUtilisateur(lignes)
 }
 
 // replyManifest construit 05_02 (machine) ou 05_06 (user).
@@ -145,9 +180,10 @@ func avecCadence(lignes []string) []string {
 // # Les lignes de queue
 //
 // La cadence (`refresh:`) ne part qu'en scope machine — un cycle utilisateur
-// n'a pas de boucle à régler. La signature (`sig:`) et l'exigence (`sigreq:`),
-// elles, partent dans les DEUX scopes : une politique utilisateur se signe
-// comme une autre, et c'est même celle dont le contenu atterrit dans un `HOME`.
+// n'a pas de boucle à régler. La cadence de vérification utilisateur
+// (`usercheck:`), la signature (`sig:`) et l'exigence (`sigreq:`), elles,
+// partent dans les DEUX scopes : une politique utilisateur se signe comme une
+// autre, et c'est même celle dont le contenu atterrit dans un `HOME`.
 func replyManifest(sessionKey, clientID string, m gpo.Manifest) string {
 	common := []string{
 		strconv.Itoa(m.Version),
@@ -158,7 +194,7 @@ func replyManifest(sessionKey, clientID string, m gpo.Manifest) string {
 		m.Checksum,
 	}
 	if m.Scope == gpo.ScopeUser {
-		lignes := append([]string{m.Username}, common...)
+		lignes := avecVerifUtilisateur(append([]string{m.Username}, common...))
 		return reply("05_06", sessionKey, append(lignes, lignesSignature(clientID, m)...)...)
 	}
 	return reply("05_02", sessionKey,
@@ -168,7 +204,10 @@ func replyManifest(sessionKey, clientID string, m gpo.Manifest) string {
 // replyUnchanged construit 05_03 (machine) ou 05_07 (user).
 func replyUnchanged(sessionKey string, scope gpo.Scope, username, fingerprint string) string {
 	if scope == gpo.ScopeUser {
-		return reply("05_07", sessionKey, username, fingerprint)
+		// « Rien à faire » est la réponse de presque toutes les connexions :
+		// c'est par elle qu'un réglage modifié atteint un poste dont la
+		// politique ne bouge pas.
+		return reply("05_07", sessionKey, avecVerifUtilisateur([]string{username, fingerprint})...)
 	}
 	// 05_03 dit « rien à faire » — et c'est justement le cas le plus fréquent,
 	// donc le seul chemin par lequel une cadence modifiée atteindra un parc

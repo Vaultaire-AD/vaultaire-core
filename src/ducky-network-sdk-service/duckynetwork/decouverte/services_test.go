@@ -2,7 +2,9 @@ package decouverte
 
 import (
 	"strings"
+	"sync"
 	"testing"
+	"time"
 )
 
 // La 04_16, côté proxy.
@@ -53,5 +55,45 @@ func TestLaDemandePorteLeType(t *testing.T) {
 	lignes := strings.Split(d, "\n")
 	if lignes[0] != "04_15" || lignes[len(lignes)-1] != "vaultaire_nexus" || len(lignes) != 6 {
 		t.Fatalf("demande = %q", d)
+	}
+}
+
+// Le suivi des services s'étend en cours de route (TO-DO 141) : un relais
+// HTTPS posé par le core peut nommer un type qu'aucun relais du fichier ne
+// suivait, sur un proxy démarré sans aucun type à suivre.
+func TestLeSuiviDesServicesSEtend(t *testing.T) {
+	var mu sync.Mutex
+	demandes := map[string]int{}
+	Configure(func(trame string) {
+		lignes := strings.Split(trame, "\n")
+		if lignes[0] == "04_15" {
+			mu.Lock()
+			demandes[lignes[len(lignes)-1]]++
+			mu.Unlock()
+		}
+	}, "proxy-1")
+	t.Cleanup(func() { Configure(nil, "") })
+
+	// Démarrage sans aucun type : rien n'est émis, mais le fournisseur de clé
+	// est retenu.
+	SuivreServices(nil, func() string { return "CLE" })
+	SuivreServicesEnPlus([]string{"vaultaire_nexus"})
+	SuivreServicesEnPlus([]string{"vaultaire_nexus", " "}) // déjà suivi : pas de doublon
+
+	attendre := time.Now().Add(2 * time.Second)
+	for {
+		mu.Lock()
+		n := demandes["vaultaire_nexus"]
+		mu.Unlock()
+		if n >= 1 {
+			break
+		}
+		if time.Now().After(attendre) {
+			t.Fatal("le type ajouté après le démarrage n'a jamais été demandé au core")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if got := TypesSuivis(); len(got) != 1 || got[0] != "vaultaire_nexus" {
+		t.Fatalf("types suivis : %v, attendu [vaultaire_nexus]", got)
 	}
 }

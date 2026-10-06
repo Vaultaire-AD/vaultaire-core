@@ -73,6 +73,7 @@ fi
     "$ICI/vaultaire_credential.cpp" \
     "$ICI/vaultaire_kerb.cpp" \
     "$ICI/vaultaire_pipe.cpp" \
+    "$ICI/vaultaire_trace.cpp" \
     "$ICI/vaultaire_cp.def" \
     -I"$ICI" \
     -O2 -std=c++17 -Wall -Wextra -Wno-unused-parameter \

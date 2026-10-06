@@ -79,7 +79,36 @@ type ScopeState struct {
 	// n'a pas cette clé, se relit sans erreur, et vaut « tout en enforce » —
 	// donc l'ancien comportement, à l'identique.
 	Modes map[string]string `json:"modes,omitempty"`
+
+	// Inventaire dit sous quelle RÈGLE d'inventaire cet état a été écrit.
+	//
+	// # Pourquoi un numéro
+	//
+	// Le point 135 fait entrer les fichiers du scope utilisateur dans
+	// l'inventaire — au moment où un module est APPLIQUÉ. Or un compte dont la
+	// politique n'a pas bougé reçoit « politique inchangée » à chaque connexion
+	// et n'applique rien : son état, écrit par un agent antérieur, porte des
+	// empreintes de modules et aucun fichier. Sans rien d'autre, la correction
+	// n'aurait donc pris effet que pour les politiques modifiées APRÈS la mise
+	// à jour de l'agent ; partout ailleurs, le scan aurait continué de ne rien
+	// voir, exactement comme avant.
+	//
+	// Un état dont le numéro est inférieur à versionInventaire est donc rejoué
+	// UNE fois — voir rattraperInventaireUtilisateur. Le numéro est écrit par
+	// BuildScopeState, c'est-à-dire seulement quand un cycle a abouti.
+	//
+	// CHAMP AJOUTÉ, avec omitempty : absent d'un état ancien, il vaut zéro, et
+	// c'est justement ce qui le fait reconnaître.
+	Inventaire int `json:"inventaire,omitempty"`
 }
+
+// versionInventaire est la règle d'inventaire que cet agent applique.
+//
+//	1 — les fichiers et les blocs du scope utilisateur sont inventoriés (135).
+//
+// À incrémenter le jour où une autre famille d'effets entre dans l'inventaire
+// et où les états déjà écrits doivent être rejoués pour l'y faire entrer.
+const versionInventaire = 1
 
 // ModuleMode rend le mode de dérive enregistré pour un module.
 //
@@ -135,6 +164,34 @@ func (s *ScopeState) ForgetModule(stateKey string) {
 	// qu'il soit appliqué : l'effacer ferait repasser en enforce, entre le
 	// moment où la dérive est constatée et celui où le cycle réapplique, un
 	// module que la politique veut en audit.
+}
+
+// oublierPourInventaire retire l'empreinte des modules à rejouer pour qu'ils
+// entrent dans l'inventaire, et rend leur nombre.
+//
+// Séparé de rattraperInventaireUtilisateur pour être éprouvé sans toucher à
+// /var/lib/vaultaire — même raison que scanFromState et partitionByMode.
+//
+// Les modules en AUDIT gardent leur empreinte : rejouer, c'est réécrire, et
+// l'audit est le mode où l'on a décidé de ne pas réécrire.
+func (s *ScopeState) oublierPourInventaire() int {
+	if s == nil || s.Inventaire >= versionInventaire {
+		return 0
+	}
+	rejoues := 0
+	for key := range s.Modules {
+		if s.ModuleMode(key) == DriftAudit {
+			continue
+		}
+		delete(s.Modules, key)
+		rejoues++
+	}
+	if rejoues > 0 {
+		// Sans cela le serveur répondrait « politique inchangée » et le cycle
+		// n'irait pas jusqu'aux modules — même raison que dans EnforceDrift.
+		s.Fingerprint = ""
+	}
+	return rejoues
 }
 
 // State est le contenu complet du fichier d'état.

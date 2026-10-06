@@ -12,6 +12,7 @@ import (
 	"vaultaire/core/storage"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/sessionmgr"
+	"vaultaire/ducky-network/trame"
 	tm "vaultaire/ducky-network/trames_manager"
 )
 
@@ -86,7 +87,8 @@ func processIncomingMessage(duckysession *storage.DuckySession) bool {
 	// Sans cette distinction, une seule clé d'enrôlement valide suffirait à tenir
 	// des connexions dix fois plus longtemps que le délai de poignée de main.
 	authentifiée := duckysession.IsSafe && duckysession.EnrollmentComputeurID == ""
-	netguard.ArmReadDeadline(duckysession.Conn, authentifiée)
+	netguard.ArmReadDeadlineFor(duckysession.Conn,
+		echeanceDeLecture(authentifiée, reglages.ToleranceDeSilence()))
 
 	headerSize := tm.Read_Header_Size(duckysession.Conn)
 	if headerSize == 0 {
@@ -110,6 +112,43 @@ func processIncomingMessage(duckysession *storage.DuckySession) bool {
 		return false
 	}
 	return true
+}
+
+// echeanceDeLecture rend le délai de lecture à poser sur une connexion.
+//
+// # Le quatrième délai (TO-DO 110)
+//
+// Le balayage n'est pas seul à couper une session muette : chaque lecture a son
+// échéance, posée par netguard, et celle d'une session authentifiée valait dix
+// minutes en dur. Tant que le core bat toutes les deux minutes, c'est large.
+// Réglé à onze, le core ne recevait plus rien d'une session saine pendant onze
+// minutes — elle ne répond qu'au battement — et l'échéance la fermait à dix.
+// Dériver la tolérance du balayage sans dériver celle-ci aurait déplacé le
+// défaut de « à partir de six minutes » à « à partir de dix », sans le retirer.
+//
+// # La règle
+//
+// Jamais plus courte que la tolérance du balayage : c'est LUI qui décide qu'une
+// session est partie, cette échéance ne fait que libérer la goroutine et le
+// descripteur d'un socket bloqué. Et jamais sous l'ancienne valeur : à cadence
+// courte, rien ne change.
+//
+// # Ce que cela ne relâche pas
+//
+// « authentifiée » veut dire ici « canal chiffré ouvert » (IsSafe), ce qui
+// arrive dès 02_01, AVANT l'authentification. Une connexion arrêtée à ce stade
+// reçoit donc cette échéance longue — mais elle n'est pas « authentifiée » au
+// sens du registre, et balayerLesPoigneesDeMain la ferme après soixante
+// secondes, à période fixe. C'est ce balayage, et non l'échéance, qui borne une
+// poignée de main inachevée ; il ne dépend d'aucun réglage.
+func echeanceDeLecture(authentifiee bool, tolerance time.Duration) time.Duration {
+	if !authentifiee {
+		return netguard.HandshakeReadTimeout
+	}
+	if tolerance > netguard.SessionReadTimeout {
+		return tolerance
+	}
+	return netguard.SessionReadTimeout
 }
 
 // closeConnection retire la session du registre (ce qui ferme le socket) et
@@ -138,21 +177,60 @@ func checkServeurOnline() {
 
 // Délais d'inactivité du balayage.
 //
-// authIdleTimeout couvre plusieurs cycles de heartbeat : le ticker envoie un
-// 02_11 toutes les ServerCheckOnlineTimer minutes (2 par défaut), et la réponse
-// du client rafraîchit LastSeen. Cinq minutes laissent donc passer deux
-// battements manqués avant de conclure que le pair est parti.
+// # Les sessions authentifiées : un délai CALCULÉ (TO-DO 110)
+//
+// Il valait cinq minutes, en dur, justifiées par la cadence par défaut de deux.
+// Or la cadence se règle jusqu'à soixante : à six minutes, le balayage — qui
+// passe juste après l'envoi des battements — trouvait à toutes les sessions
+// six minutes de silence, et les coupait toutes, à chaque tour.
+// reglages.ToleranceDeSilence le calcule depuis le réglage : deux cadences plus
+// une minute, cinq minutes au moins.
+//
+// # Les poignées de main : un délai FIXE, et qui doit le rester
 //
 // handshakeIdleTimeout s'applique à TOUT LE RESTE — sessions en attente, en
 // échec. Un client réel enchaîne accept(), 01_01 et 02_01 en une fraction de
 // seconde ; soixante secondes sont déjà très généreuses pour une liaison lente
-// ou un appareil peu puissant. Leur accorder les cinq minutes des sessions
-// authentifiées reviendrait à offrir un socket ouvert, une goroutine et une
-// entrée de registre à quiconque ouvre une connexion TCP sans rien envoyer.
-const (
-	authIdleTimeout      = 5 * time.Minute
-	handshakeIdleTimeout = 60 * time.Second
-)
+// ou un appareil peu puissant. Il ne suit PAS la cadence, et c'est délibéré :
+// rien ne bat sur une session qui ne s'est pas authentifiée, donc aucune
+// cadence ne la concerne — et l'allonger avec elle reviendrait à offrir un
+// socket ouvert, une goroutine et une entrée de registre, pour une heure, à
+// quiconque ouvre une connexion TCP sans rien envoyer.
+const handshakeIdleTimeout = 60 * time.Second
+
+// periodeBalayagePoignees est la période du balayage propre aux poignées de
+// main (TO-DO 110).
+//
+// Leur délai est de soixante secondes, mais elles n'étaient balayées que par
+// verifyServersOnline, donc à la cadence de la vérification en ligne. Une
+// connexion qui n'envoie RIEN était quand même fermée à soixante secondes, par
+// son échéance de lecture. Mais une connexion arrêtée après 02_01 — canal
+// chiffré ouvert, authentification jamais faite — a l'échéance de lecture des
+// sessions authentifiées (voir echeanceDeLecture) : elle tenait dix minutes dès
+// que la cadence dépassait dix, et tiendrait maintenant autant que la tolérance
+// calculée. La borne de soixante secondes ne valait qu'à la cadence par défaut.
+// Ce balayage-ci ne dépend d'aucun réglage.
+const periodeBalayagePoignees = handshakeIdleTimeout / 2
+
+// balayerLesPoigneesDeMain ferme, à période FIXE, les sessions qui n'ont pas
+// terminé leur poignée de main. Ne rend jamais la main : à lancer dans une
+// goroutine.
+func balayerLesPoigneesDeMain() {
+	for {
+		time.Sleep(periodeBalayagePoignees)
+		fermerLesPoigneesExpirees()
+	}
+}
+
+// fermerLesPoigneesExpirees fait un passage. Les sessions authentifiées n'y
+// sont jamais candidates : leur tolérance est rendue infinie pour ce passage,
+// elles relèvent de verifyServersOnline et de son battement.
+func fermerLesPoigneesExpirees() {
+	const jamais = time.Duration(1<<63 - 1)
+	for _, stale := range sessionmgr.Sessions.StaleSessions(jamais, handshakeIdleTimeout) {
+		dropStaleSession(stale)
+	}
+}
 
 // verifyServersOnline envoie les battements de cœur puis ferme les sessions
 // inactives.
@@ -171,7 +249,7 @@ func verifyServersOnline() {
 		pingServer(sess)
 	}
 
-	for _, stale := range sessionmgr.Sessions.StaleSessions(authIdleTimeout, handshakeIdleTimeout) {
+	for _, stale := range sessionmgr.Sessions.StaleSessions(reglages.ToleranceDeSilence(), handshakeIdleTimeout) {
 		dropStaleSession(stale)
 	}
 
@@ -227,7 +305,12 @@ func dropStaleSession(stale sessionmgr.StaleSession) {
 
 // pingServer envoie un message heartbeat à une session et retourne true si OK.
 func pingServer(sess *sessionmgr.Session) {
-	content := "02_11\nserveur_central\n" + sess.SessionID + "\nclient_giveinformation"
+	// La cadence part avec chaque battement, en queue : l'agent règle dessus le
+	// délai après lequel il ferme lui-même un tunnel muet (TO-DO 110).
+	// Les capacités du core suivent, pour la même raison de place : un client
+	// n'émet une trame récente que vers un core qui l'annonce (TO-DO 141).
+	content := "02_11\nserveur_central\n" + sess.SessionID + "\nclient_giveinformation\n" +
+		reglages.LigneCadenceEnLigne() + "\n" + trame.LigneCapacites()
 	err := sendmessage.SendMessage(content, sess.ClientSoftwareID, sess.DuckySession)
 	if err != nil {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone,
