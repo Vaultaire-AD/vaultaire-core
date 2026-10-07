@@ -124,6 +124,11 @@ var actionsFormulaire = map[string]string{
 	// Formulaire séparé de « update_gpo » : le mode se règle seul, sans
 	// réécrire au passage la description et l'activation.
 	"set_gpo_mode": "gpo.set_drift_mode",
+	// Demander un cycle à UNE machine, depuis sa fiche de conformité
+	// (TO-DO 169). Le bouton de la fiche d'une GPO — toutes ses machines —
+	// n'est pas ici : il fait une boucle sur cette même action, voir
+	// adminGPODetail.
+	"refresh_gpo": "gpo.refresh",
 
 	// certificats
 	"delete_certificate": "certificate.delete",

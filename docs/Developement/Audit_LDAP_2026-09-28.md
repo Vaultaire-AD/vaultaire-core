@@ -35,7 +35,9 @@
 en corrigeant le 120. Le détail de ce qui a été fait, et de ce qui a été écarté,
 est dans `DO/2.2/2.2.md`. Deux suites en sont sorties : le **152** (les bornes ne
 se réglaient pas — traité aussi) et le **155** (`memberOf` dépend de la base de
-recherche), qui reste ouvert dans [`TO-DO.md`](./TO-DO.md).
+recherche), traité en 2.3 : les deux chemins de recherche lisent les
+appartenances au même endroit (`DO/2.3/2.3.md`). Il en reste le **175**, ouvert
+dans [`TO-DO.md`](./TO-DO.md).
 
 > **Sur la méthode.** Chaque lot a été passé à des relectures adverses, et
 > **chacune a trouvé un défaut réel** — dont six qui auraient coupé des clients en

@@ -45,11 +45,18 @@ Droits : `read:cluster` pour voir, **`write:relay`** pour changer.
   identité (`relais_du_core.json`). À son redémarrage, il la rouvre telle
   quelle, sans repasser par son fichier.
 
-> **Ce que la copie ne fait pas.** Un proxy qui démarre sans **aucun** core
-> joignable n'ouvre pas ses relais : il attend sa session, et s'arrête au bout
-> de trente secondes — c'était déjà le cas, et le pilotage n'y change rien
-> (TO-DO 158). Un proxy **déjà démarré** qui perd ses cores, lui, garde tous ses
-> relais ouverts.
+> **Sans aucun core joignable** *(2.3, TO-DO 158)*. Le proxy rouvre ses relais
+> **d'abord** — depuis cette copie, ou depuis son fichier s'il n'en a pas —, puis
+> attend le core en fond, sans limite. Ses relais vers des cibles locales
+> relaient ; son relais Ducky écoute et refuse franchement, et l'agent passe au
+> nœud suivant. Il s'arrêtait au bout de trente secondes sans avoir ouvert un
+> port. Le journal dit ce qui manque : `aucun core joint depuis 30s : N relais
+> reste(nt) ouvert(s)…`, puis un rappel toutes les cinq minutes. Dès qu'un core
+> répond, le proxy s'annonce au cluster de lui-même.
+>
+> Deux choses ne changent pas : un **premier** démarrage demande un core (sans
+> identité, le proxy doit s'enrôler), et un relais du fichier qui ne peut pas
+> écouter arrête le proxy.
 
 ## Demandé, appliqué, refusé
 

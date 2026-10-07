@@ -157,7 +157,8 @@ docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 | `VAULTAIRE_IP_CORE : port invalide dans …` | port hors 1-65535, ou non numérique |
 | `aucune clé d'enrôlement dans la configuration` | `VAULTAIRE_ENROLL_KEY` vide |
 | `enrôlement refusé (invalid_key)` | clé inconnue, expirée, épuisée ou révoquée — le motif exact est dans le journal du **core**, jamais renvoyé au client |
-| `aucune session authentifiée après 30s` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy |
+| `aucun core joint depuis 30s : N relais reste(nt) ouvert(s)…` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy. Depuis la 2.3 le proxy **reste en marche**, relais ouverts, et réessaie sans fin ; la ligne revient toutes les 5 min. Le conteneur ne s'arrête plus : c'est ce journal qu'il faut surveiller |
+| `aucune session authentifiée après 30s`, puis arrêt | même cause, proxy antérieur à la 2.3 |
 | `relais Ducky … alors que le port annoncé aux agents est …` | la section `relais:` du `config.yaml` écoute ailleurs que `VAULTAIRE_LISTEN_PORT` |
 | `aucune cible joignable pour … — connexion refusée` | aucun core joignable depuis le proxy : voir [`docs/proxy/depannage.md`](../../../docs/proxy/depannage.md) |
 | `répertoire des clés … non inscriptible` | un `user:` a été ajouté au compose : l'entrypoint ne peut plus reprendre le volume |

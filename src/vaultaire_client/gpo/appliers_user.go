@@ -235,8 +235,17 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 	servicePath := filepath.Join(unitDir, serviceName)
 	timerPath := filepath.Join(unitDir, timerName)
 
+	// Le lien qui ACTIVE le timer : c'est lui que le scan relit (TO-DO 163).
+	activation := lienDActivation(unitDir, timerName)
+
 	if state == "absent" {
 		_ = runUserSystemctl(ctx, "disable", "--now", timerName)
+		// Le lien d'activation est retiré ici aussi, par la descente sûre.
+		// `disable` s'en charge quand le bus de la personne répond ; hors
+		// session il ne répond pas, et le lien restait — pendant vers une unité
+		// que la suite supprime. Retiré par nous, son absence est inscrite, et
+		// un lien recréé sera vu.
+		_, _ = removeUserFile(ctx, activation)
 		removed := 0
 		for _, path := range []string{servicePath, timerPath} {
 			if existait, err := removeUserFile(ctx, path); err == nil && existait {
@@ -276,6 +285,11 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 		// (cas courant hors session graphique).
 		return "", fmt.Errorf("unites ecrites mais activation impossible : %v", err)
 	}
+	// Les deux unités sont à l'inventaire par writeUserFile ; ceci y ajoute ce
+	// qui manquait : que le timer soit ACTIVÉ. Sans cette attente, un
+	// « systemctl --user disable » laissait les deux fichiers intacts — donc
+	// une portée conforme — et une tâche qui ne partait plus.
+	ctx.recordCheck(CheckUserTimer, activation, "etat=actif")
 	return fmt.Sprintf("tache %s planifiee (%s)", commandID, onCalendar), nil
 }
 
@@ -358,7 +372,7 @@ func runUserSystemctl(ctx Context, args ...string) error {
 	// Délai court : cette commande est sur le chemin d'ouverture de session et
 	// attend le bus utilisateur, qui peut ne jamais démarrer hors session.
 	full := append([]string{"-u", ctx.Username, "--", "systemctl", "--user"}, args...)
-	_, err := runCommandTimeout(UserCommandTimeout, "runuser", full...)
+	_, err := commandeDeCompte(UserCommandTimeout, "runuser", full...)
 	return err
 }
 

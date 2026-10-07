@@ -113,8 +113,15 @@ func listerConformite(_ Appelant, _ Params) (Resultat, error) {
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture de la conformité : %w", err)
 	}
+	// Le message compte des PORTÉES : c'est l'unité des lignes rendues, et celle
+	// que le filtre de périmètre annonce quand il en masque. Les façades, elles,
+	// affichent une ligne par machine (TO-DO 143) et le disent sous le tableau.
+	machines := map[string]bool{}
+	for _, r := range rows {
+		machines[r.ComputeurID] = true
+	}
 	return Resultat{
-		Message: fmt.Sprintf("%d scope(s) suivi(s).", len(rows)),
+		Message: fmt.Sprintf("%d portée(s) suivie(s) sur %d machine(s).", len(rows), len(machines)),
 		Donnees: rows,
 	}, nil
 }
@@ -159,7 +166,7 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 	}
 
 	return Resultat{
-		Message: fmt.Sprintf("Machine %s : %d scope(s) suivi(s).", id, len(etats)),
+		Message: fmt.Sprintf("Machine %s : %d portée(s) suivie(s).", id, len(etats)),
 		Donnees: out,
 	}, nil
 }

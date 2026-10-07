@@ -188,6 +188,29 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			if err != nil {
 				logs.Write_Log("ERROR", "Error sending message: "+err.Error())
 			}
+			fermerApresRefus(message, duckysession)
 		}
+	}
+}
+
+// fermerApresRefus ferme la connexion d'une authentification refusée, une fois
+// le refus parti — TO-DO 159. La décision, et sa raison, sont dans
+// autc.DoitFermerApresRefus.
+//
+// Le socket seul est fermé : la boucle de lecture de cette connexion le voit à
+// sa lecture suivante et retire la session du registre, comme pour toute autre
+// fin de connexion.
+func fermerApresRefus(message string, duckysession *storage.DuckySession) {
+	if duckysession == nil || duckysession.Conn == nil {
+		return
+	}
+	if !autc.DoitFermerApresRefus(message, sessionmgr.Sessions.EstAuthentifiee(duckysession.SessionID)) {
+		return
+	}
+	logs.Write_LogCodeMeta("INFO", logs.CodeNone,
+		"authentification refusée : connexion fermée après l'envoi du refus",
+		logs.WithMeta(duckysession.SessionID, ""))
+	if err := duckysession.Conn.Close(); err != nil {
+		logs.Write_Log("DEBUG", "fermeture après refus : "+err.Error())
 	}
 }

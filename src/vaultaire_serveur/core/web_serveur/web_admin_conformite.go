@@ -8,6 +8,7 @@ import (
 	act "vaultaire/core/action"
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
 
@@ -26,8 +27,8 @@ import (
 // il grandit, on ne sait plus laquelle des deux avait raison — et c'est la vue
 // qu'on consulte quand quelque chose ne va pas.
 //
-// Le tri arrive DÉJÀ fait : `ListCompliance` appelle `TrierConformite`. La page
-// ne le refait pas, et surtout ne le défait pas en réordonnant.
+// Le tri arrive DÉJÀ fait : `RegrouperParMachine` rend les machines dans
+// l'ordre. La page ne le refait pas, et surtout ne le défait pas en réordonnant.
 //
 // # Accès
 //
@@ -35,20 +36,37 @@ import (
 // La liste est réduite au périmètre de l'appelant par le filtre du registre, et
 // le nombre d'entrées masquées est annoncé dans le message de l'action.
 
+// conformiteVue est une ligne de la liste : une MACHINE (TO-DO 143).
+//
+// Les libellés sont calculés ICI, une fois, plutôt que dans le gabarit.
+// `html/template` ne sait pas appeler une méthode avec argument, et
+// `Fraicheur` en prend un — l'instant. Le faire passer par le gabarit
+// demanderait d'y injecter l'heure, donc d'y faire entrer une décision.
 type conformiteVue struct {
-	dbgpo.ComplianceRow
-
-	// Les libellés sont calculés ICI, une fois, plutôt que dans le gabarit.
-	// `html/template` ne sait pas appeler une méthode avec argument, et
-	// `Fraicheur` en prend un — l'instant. Le faire passer par le gabarit
-	// demanderait d'y injecter l'heure, donc d'y faire entrer une décision.
-	Etat       string
-	Modules    string
-	Conformite string
-	VuIlYA     string
+	ComputeurID string
+	Etat        string
+	Application string
+	Modules     string
+	Conformite  string
+	Comptes     string
+	VuIlYA      string
 
 	// NonVerifiee fait ressortir la cellule : « non vérifié » en texte nu se
 	// lisait comme une valeur parmi d'autres, entre deux « ok » (TO-DO 135).
+	NonVerifiee bool
+
+	// ARemonter : les comptes qui ont quelque chose à montrer, affichés sous
+	// la machine. Les autres ne sont que dans la fiche.
+	ARemonter []compteVue
+}
+
+// compteVue est la portée d'un compte remontée sous sa machine.
+type compteVue struct {
+	Utilisateur string
+	Application string
+	Modules     string
+	Conformite  string
+	VuIlYA      string
 	NonVerifiee bool
 }
 
@@ -67,7 +85,29 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 	maintenant := time.Now()
 
 	if machine := strings.TrimSpace(r.URL.Query().Get("machine")); machine != "" {
-		detailConformite(w, appelant, username, machine, maintenant)
+		// La fiche d'une machine porte UNE écriture : demander un cycle
+		// (TO-DO 169). Elle passe par le registre, comme la ligne de commande —
+		// `gpo.refresh`, write:update:client sur les domaines de la machine. La
+		// cible vient de l'adresse, pas du formulaire : un champ forgé ne fait
+		// pas rafraîchir une autre machine que celle qu'on regarde.
+		message, erreur := "", ""
+		if r.Method == http.MethodPost {
+			res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
+				act.Params{"computeur_id": machine})
+			if traite {
+				if errAction != nil {
+					erreur = MessageDActionPourAffichage(res, errAction)
+				} else {
+					message = res.Message
+				}
+			}
+		}
+		detailConformite(w, appelant, username, machine, maintenant, ficheMachineActions{
+			Message: message, Erreur: erreur,
+			// Le bouton n'est montré qu'à qui détient le droit QUELQUE PART ; le
+			// contrôle qui compte, sur cette machine-ci, est celui de l'action.
+			PeutDemanderUnCycle: permission.HasActionAnywhere(groupIDs, "write:update:client"),
+		})
 		return
 	}
 
@@ -82,6 +122,11 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, _ := res.Donnees.([]dbgpo.ComplianceRow)
 
+	// Une ligne par machine. Le regroupement — quelle portée date la machine,
+	// quels comptes remontent, quel état l'emporte — vient du paquet, comme le
+	// tri : la ligne de commande passe par la même fonction.
+	machines := dbgpo.RegrouperParMachine(rows, maintenant)
+
 	data := struct {
 		Username    string
 		DnsEnable   bool
@@ -94,17 +139,17 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 		Vide        bool
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "conformite",
-		Message: res.Message, EcartsSeuls: ecartsSeuls, Total: len(rows),
+		Message: res.Message, EcartsSeuls: ecartsSeuls, Total: len(machines),
 	}
 
-	for _, ligne := range rows {
+	for _, machine := range machines {
 		// Le filtre « écarts » vient du paquet : une machine MUETTE y figure
 		// alors qu'elle a zéro écart constaté — non parce qu'elle est saine,
 		// mais parce que plus personne ne regarde.
-		if ecartsSeuls && !ligne.ARetenirDansLaVueDesEcarts(maintenant) {
+		if ecartsSeuls && !machine.ARetenirDansLaVueDesEcarts(maintenant) {
 			continue
 		}
-		data.Lignes = append(data.Lignes, vueDeLigne(ligne, maintenant))
+		data.Lignes = append(data.Lignes, vueDeMachine(machine, maintenant))
 	}
 
 	if len(rows) > 0 {
@@ -120,19 +165,52 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func vueDeLigne(r dbgpo.ComplianceRow, maintenant time.Time) conformiteVue {
-	return conformiteVue{
-		ComplianceRow: r,
-		Etat:          string(r.Fraicheur(maintenant)),
-		Modules:       r.ModulesAppliques(),
-		Conformite:    r.EtatConformite(),
-		VuIlYA:        dbgpo.AgeRelatif(r.ReportedAt, maintenant),
-		NonVerifiee:   r.NonVerifiee(),
+// vueDeMachine met une machine en forme pour la liste.
+func vueDeMachine(m dbgpo.LigneMachine, maintenant time.Time) conformiteVue {
+	v := conformiteVue{
+		ComputeurID: m.ComputeurID,
+		Etat:        string(m.Fraicheur(maintenant)),
+		Application: "—",
+		Modules:     "—",
+		Conformite:  "—",
+		Comptes:     m.EtatDesComptes(),
+		VuIlYA:      dbgpo.AgeRelatif(m.VuLe(), maintenant),
 	}
+	if m.AMachine {
+		v.Modules = m.Machine.ModulesAppliques()
+		v.Conformite = m.Machine.EtatConformite()
+		v.NonVerifiee = m.Machine.NonVerifiee()
+		if m.Machine.Status != "" {
+			v.Application = m.Machine.Status
+		}
+	}
+	for _, c := range m.ARemonter() {
+		application := c.Status
+		if application == "" {
+			application = "—"
+		}
+		v.ARemonter = append(v.ARemonter, compteVue{
+			Utilisateur: c.TargetUser,
+			Application: application,
+			Modules:     c.ModulesAppliques(),
+			Conformite:  c.EtatConformite(),
+			VuIlYA:      dbgpo.AgeRelatif(c.ReportedAt, maintenant),
+			NonVerifiee: c.NonVerifiee(),
+		})
+	}
+	return v
+}
+
+// ficheMachineActions porte ce que la fiche d'une machine affiche de ses
+// actions : le résultat de celle qui vient d'être faite, et le droit de la
+// proposer.
+type ficheMachineActions struct {
+	Message, Erreur     string
+	PeutDemanderUnCycle bool
 }
 
 // detailConformite affiche la fiche d'une machine.
-func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, machine string, maintenant time.Time) {
+func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, machine string, maintenant time.Time, actions ficheMachineActions) {
 	res, err := act.Executer("gpo.get_compliance", appelant,
 		act.Params{"computeur_id": machine})
 	if err != nil {
@@ -145,12 +223,22 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 		return
 	}
 
+	// NonVerifiee vient du paquet, comme dans la liste. La fiche le décidait
+	// elle-même (« pas de date de scan ») et affichait donc « jamais vérifiée »
+	// pour une portée qui n'applique AUCUN module — celle que la liste, une
+	// page plus haut, dit « rien à vérifier ». Deux pages, deux réponses pour la
+	// même ligne : c'est exactement ce que cette page ne doit pas faire.
 	type etatVue struct {
 		dbgpo.ComplianceRow
-		Conformite   string
-		VuIlYA       string
-		ScanIlYA     string
-		JamaisScanne bool
+		Conformite  string
+		VuIlYA      string
+		ScanIlYA    string
+		NonVerifiee bool
+		// EmpreinteCourte : les douze premiers caractères. Les soixante-quatre
+		// de l'empreinte entière poussaient la colonne « Conformité » — celle
+		// qu'on vient lire — hors de l'écran. L'empreinte entière reste au
+		// survol, et dans `vlt gpo status <machine>`.
+		EmpreinteCourte string
 	}
 
 	// L'historique porte une date déjà mise en forme : un gabarit HTML ne sait
@@ -178,8 +266,13 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 		ModulesIllisibles   string
 		EcartsIllisibles    string
 		HistoriqueIllisible string
+		// Demander un cycle (TO-DO 169).
+		Message             string
+		Error               string
+		PeutDemanderUnCycle bool
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "conformite",
+		Message: actions.Message, Error: actions.Erreur, PeutDemanderUnCycle: actions.PeutDemanderUnCycle,
 		Machine: d.ComputeurID, Echecs: d.Echecs, Ecarts: d.Ecarts,
 		ModulesIllisibles: d.ModulesIllisibles, EcartsIllisibles: d.EcartsIllisibles,
 		HistoriqueIllisible: d.HistoriqueIllisible,
@@ -198,7 +291,11 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 			ComplianceRow: e,
 			Conformite:    e.EtatConformite(),
 			VuIlYA:        dbgpo.AgeRelatif(e.ReportedAt, maintenant),
-			JamaisScanne:  !e.DriftAt.Valid,
+			NonVerifiee:   e.NonVerifiee(),
+		}
+		v.EmpreinteCourte = e.Fingerprint
+		if len(v.EmpreinteCourte) > 12 {
+			v.EmpreinteCourte = v.EmpreinteCourte[:12] + "…"
 		}
 		if e.DriftAt.Valid {
 			v.ScanIlYA = dbgpo.AgeRelatif(e.DriftAt.Time, maintenant)

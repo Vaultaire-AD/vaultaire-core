@@ -212,6 +212,56 @@
       </div>
 
       {{ if .Revocations }}
+      <h3 style="margin-top:1.2rem">Où en est chaque machine</h3>
+      {{ if .SuiviIndisponible }}
+      <p class="muted small">{{ .SuiviIndisponible }}</p>
+      {{ else }}
+      {{ range .Suivi }}
+      <details class="suivi-ordre"{{ if .Ouvert }} open{{ end }}>
+        <summary>
+          Ordre {{ .ID }} — {{ .Action }}
+          {{ if .Reste }}<span class="badge badge-danger">non appliqué sur {{ .Reste }} machine(s)</span>{{ end }}
+          <span class="muted small">{{ .Decompte }}</span>
+        </summary>
+        <p class="muted small">
+          {{ .Motif }}, par {{ .Par }} le {{ .Le }}{{ if .LevePar }} — levé par {{ .LevePar }}{{ end }}.
+          {{ if .Masquees }}<strong>{{ .Masquees }}</strong> autre(s) machine(s) visée(s) sont hors de votre périmètre et ne sont pas montrées.{{ end }}
+        </p>
+        {{ if .Cibles }}
+        <div class="table-wrap">
+          <table class="gpo-modules">
+            <thead>
+              <tr><th>Machine</th><th>État</th><th>Remises</th><th>Dernier échange</th><th>Détail</th></tr>
+            </thead>
+            <tbody>
+              {{ range .Cibles }}
+              <tr>
+                <td><a href="/admin/clients?client={{ .Machine }}">{{ .Machine }}</a></td>
+                <td>
+                  {{ if .AReprendre }}<span class="badge badge-danger">{{ .Etat }}</span>
+                  {{ else }}{{ .Etat }}{{ end }}
+                </td>
+                <td class="muted small">{{ .Remises }}</td>
+                <td class="muted small">{{ .Echange }}</td>
+                <td class="muted small">{{ .Detail }}</td>
+              </tr>
+              {{ end }}
+            </tbody>
+          </table>
+        </div>
+        {{ end }}
+      </details>
+      {{ end }}
+      {{ if .SuiviPlusAnciens }}
+      <p class="muted small">{{ .SuiviPlusAnciens }} ordre(s) plus ancien(s) ne sont pas détaillés.</p>
+      {{ end }}
+      <p class="muted small">
+        Ce qui n'est pas réglé est en tête. « Remises » compte les fois où l'ordre a été envoyé à la
+        machine ; zéro veut dire qu'elle est hors ligne depuis l'ordre. La même vue en ligne de
+        commande : <code>vlt kill -u {{ .User.Username }} --status</code>.
+      </p>
+      {{ end }}
+
       <h3 style="margin-top:1.2rem">Historique</h3>
       <div class="table-wrap">
         <table class="gpo-modules">
@@ -237,8 +287,8 @@
         </table>
       </div>
       <p class="muted small">
-        « En attente » compte les machines qui n'ont pas encore acquitté l'ordre — éteintes,
-        ou injoignables. Elles l'appliqueront à leur reconnexion.
+        « En attente » compte les machines qui n'ont pas encore appliqué l'ordre — éteintes,
+        injoignables, ou en échec. Le core le leur remet de lui-même, sans renoncer.
       </p>
       {{ end }}
     </section>

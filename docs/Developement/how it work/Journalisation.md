@@ -349,6 +349,12 @@ Le point 26 de [`TO-DO.md`](../TO-DO.md) demandait aussi :
 Le second — « user X s'est connecté en LDAPS via le compte X » — est fait
 depuis le TO-DO 145 : la ligne de bind réussi porte le canal.
 
-Deux restes relevés en traitant le 145 : des écritures directes sur la sortie
-standard, hors du journal (**TO-DO 153**), et le tampon mémoire, recopié à
-chaque ligne une fois plein (**TO-DO 154**).
+Un reste relevé en traitant le 145 : des écritures directes sur la sortie
+standard, hors du journal (**TO-DO 153**).
+
+Le second est traité *(2.3, TO-DO 154)* : le tampon mémoire — les 10 000
+dernières lignes de ce core, repli de `vlt logs` quand la base ne répond pas —
+était **recopié en entier à chaque ligne** une fois plein, sous son verrou :
+3,5 ms et 3 Mo par ligne de journal, pour tout ce qui journalise. C'est un
+anneau (`core/logs/tampon.go`) : une ligne de plus écrase la plus ancienne, sans
+allocation, et l'ordre se reconstitue à la lecture.

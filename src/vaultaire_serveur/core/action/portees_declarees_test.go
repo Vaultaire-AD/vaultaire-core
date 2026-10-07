@@ -138,6 +138,7 @@ var porteesAttendues = map[string]string{
 	// une machine ne se délèguent pas de la même façon.
 	"session.list_users":            "PorteeGlobale",
 	"session.get_user":              "PorteeUtilisateur",
+	"revocation.get_status":         "PorteeUtilisateur",
 	"session.list_users_by_group":   "PorteeGroupe",
 	"session.list_clients":          "PorteeGlobale",
 	"session.list_clients_by_group": "PorteeGroupe",
@@ -307,6 +308,7 @@ var clesAttendues = map[string]string{
 	// savoir qu'il est ouvert sur une machine ne se délèguent pas pareil.
 	"session.list_users":            "read:status:user",
 	"session.get_user":              "read:status:user",
+	"revocation.get_status":         "read:status:user",
 	"session.list_users_by_group":   "read:status:user",
 	"session.list_clients":          "read:status:client",
 	"session.list_clients_by_group": "read:status:client",
@@ -495,6 +497,7 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsLectureSuite(r)
 	EnregistrerActionsGPO(r)
 	EnregistrerActionsLectureEtat(r)
+	EnregistrerActionsRevocation(r)
 	EnregistrerActionsServeur(r)
 	EnregistrerActionsRelais(r)
 	EnregistrerActionsConformiteGPO(r)

@@ -402,6 +402,17 @@ pour être exécutée — qui traverse le socket et le traitement de trame.
 
 ### 6.5 Le préalable : durcir l'unité systemd
 
+> **Fait en 2.3 (TO-DO 112).** `vaultaire_client --check` existe, et l'unité
+> porte la relance bornée. Un point a changé par rapport à ce qui suit, et il
+> compte pour le §6.2 : **c'est l'agent qui écrit son unité**
+> (`vaultaire_client --install-unit`). Un binaire antérieur sort en erreur sur
+> `--check` ; l'unité nouvelle posée devant lui empêche le service de démarrer.
+> L'updater devra donc poser le binaire **puis** lui faire écrire l'unité, et en
+> cas de retour arrière remettre **les deux** — `--install-unit` garde l'ancienne
+> en `.precedente` pour cela. Détail :
+> [Agent_configuration_et_debug.md § 3](../exploitation/Agent_configuration_et_debug.md#3-le-service--contrôle-de-démarrage-et-relance-bornée).
+> Le cloisonnement de l'unité reste à décider (TO-DO 168).
+
 Sans cela, le §6.3 ne peut pas fonctionner : un binaire qui meurt boucle sans
 borne, et rien ne distingue « en cours de démarrage » de « ne démarrera jamais ».
 
@@ -427,7 +438,7 @@ devrait être fait en premier, et séparément.
 
 | Fichier | Écrit aujourd'hui par | Risque |
 |---|---|---|
-| `/etc/pam.d/login` | `rocky.sh`, réécriture intégrale | **le plus élevé** — aucun validateur n'existe |
+| `/etc/pam.d/login` | `rocky.sh`, réécriture intégrale ; `debian.sh` (2.3), **insertion** d'une ligne marquée `# vaultaire`, original gardé | **le plus élevé** — aucun validateur n'existe |
 | `/etc/pam.d/sshd` | idem | idem, plus la perte de l'accès distant |
 | `/etc/pam.d/gdm-password` | idem, si le fichier préexiste | idem, poste graphique |
 | `/etc/ssh/sshd_config` | `sed -i` destructif puis `>>` | validable par `sshd -t` |

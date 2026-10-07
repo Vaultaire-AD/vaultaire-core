@@ -37,14 +37,16 @@ import (
 //     ceux du core — et, entre les deux, les relais posés par le core
 //     n'écouteraient pas.
 //
-// # Ce que la copie locale ne fait PAS
+// # À froid, sans core
 //
-// Faire relayer un proxy qui démarre sans aucun core joignable. Les relais ne
-// s'ouvrent qu'une fois la session Ducky établie (ducky.Start, plus haut dans
-// main), et un proxy qui n'en obtient pas en trente secondes s'arrête : c'est
-// le comportement d'avant, et ce fichier n'y change rien — voir le TO-DO 158.
-// Un proxy DÉJÀ démarré qui perd ses cores, lui, garde ses relais ouverts : le
-// SDK retente la connexion, et rien ne touche au parc entre-temps.
+// La copie locale sert aussi à cela (TO-DO 158) : les relais s'ouvrent avant
+// que le proxy n'ait une session, depuis elle ou depuis le fichier. Un proxy
+// qui redémarre pendant une coupure du lien rouvre donc ce qu'il appliquait —
+// et ses relais vers des cibles locales relaient. Jusque-là, ils ne
+// s'ouvraient qu'une fois la session établie, et un proxy qui n'en obtenait
+// pas en trente secondes s'arrêtait : la copie n'était jamais lue à froid.
+// Un proxy DÉJÀ démarré qui perd ses cores garde ses relais ouverts, comme
+// avant : le SDK retente la connexion, et rien ne touche au parc entre-temps.
 //
 // # Ce que le core ne décide pas
 //
@@ -357,6 +359,19 @@ func (p *pilote) ecrireCopie(revision int, liste []relais.Relais) {
 			"relais : copie locale non écrite (%v) — au prochain démarrage, ce proxy ouvrira d'abord les relais "+
 				"de son fichier de configuration, jusqu'à ce que le core lui renvoie sa liste", err))
 	}
+}
+
+// relaisActifs compte les relais qui écoutent.
+func (p *pilote) relaisActifs() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	n := 0
+	for _, e := range p.parc.Etats() {
+		if e.Statut == relais.StatutActif {
+			n++
+		}
+	}
+	return n
 }
 
 // fermer arrête les écoutes et rend le dernier bilan.

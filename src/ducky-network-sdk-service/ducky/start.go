@@ -30,24 +30,62 @@ import (
 // qui a l'air ouverte mais que le core refusera à la première trame utile — avec
 // un message qui ne dira pas que le login manque.
 func Start(opts Options) (*sessionmgr.Session, error) {
-	if err := opts.prepare(); err != nil {
+	if err := Lancer(opts); err != nil {
 		return nil, err
 	}
-	if err := ensureIdentity(opts); err != nil {
-		return nil, err
-	}
-
-	// EnableServerCommunication ne rend pas la main tant que la connexion vit :
-	// elle porte la boucle de réception. D'où la goroutine — et d'où l'attente
-	// juste après, seul moyen de savoir si elle a abouti.
-	go serveurcommunication.EnableServerCommunication(opts.Username, opts.Password)
-
-	session, err := waitAuthenticated(opts.Timeout)
+	session, err := Attendre(opts.Timeout)
 	if err != nil {
 		return nil, err
 	}
 	logs.Write_log("INFO", "session Ducky établie (id="+session.SessionID+")")
 	return session, nil
+}
+
+// Lancer prépare le programme et lance la session Ducky SANS attendre qu'elle
+// soit authentifiée — TO-DO 158.
+//
+// # Pour qui
+//
+// Pour un programme qui a quelque chose à faire avant d'avoir une session, et
+// qui doit le faire même si aucun core ne répond. C'est le cas du proxy : ses
+// relais vers des cibles locales n'ont pas besoin du core, et un proxy qui
+// redémarre pendant une coupure du lien doit les rouvrir. Avec Start, il
+// attendait trente secondes puis s'arrêtait, sans avoir ouvert un seul port.
+//
+// # Ce qui reste bloquant, et fatal
+//
+// La configuration et l'IDENTITÉ. Sans identité, le programme doit s'enrôler,
+// et l'enrôlement demande un core : un premier démarrage sans core échoue ici,
+// comme avant. Une identité déjà en place ne demande aucun réseau.
+//
+// # Ensuite
+//
+// La connexion est tentée en fond, avec la dégressivité du socle, sans fin si
+// Persistent est posé. Attendre dit quand elle a abouti.
+func Lancer(opts Options) error {
+	if err := opts.prepare(); err != nil {
+		return err
+	}
+	if err := ensureIdentity(opts); err != nil {
+		return err
+	}
+
+	// EnableServerCommunication ne rend pas la main tant que la connexion vit :
+	// elle porte la boucle de réception. D'où la goroutine.
+	go serveurcommunication.EnableServerCommunication(opts.Username, opts.Password)
+	return nil
+}
+
+// Attendre rend la session de service dès qu'elle est authentifiée, ou une
+// erreur passé le délai. Un délai nul ou négatif prend DefaultTimeout.
+//
+// L'erreur ne veut PAS dire que la connexion est abandonnée : la boucle lancée
+// par Lancer continue d'essayer. Rappeler Attendre est donc légitime.
+func Attendre(timeout time.Duration) (*sessionmgr.Session, error) {
+	if timeout <= 0 {
+		timeout = DefaultTimeout
+	}
+	return waitAuthenticated(timeout)
 }
 
 // ensureIdentity garantit qu'une identité et une paire de clés sont en place.

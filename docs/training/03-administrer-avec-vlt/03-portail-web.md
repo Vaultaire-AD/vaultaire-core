@@ -20,6 +20,8 @@ Savoir retrouver dans le portail tout ce que vous faites en ligne de commande.
 | `get -p`, `update -pu` | **Admin → Permissions** |
 | `create -gpo`, modules | **Admin → GPO** — les modules **ne s'éditent qu'ici** |
 | `gpo status`, `gpo drift` | **Admin → Conformité** |
+| `gpo refresh <machine>`, `gpo refresh --gpo <nom>` | bouton **Demander un cycle** — fiche d'une machine (Conformité), fiche d'une GPO machine |
+| `kill -u <compte> --status` | **Admin → Utilisateurs** → la fiche du compte, « Où en est chaque machine » |
 | `dns …` | **Admin → DNS** |
 | `enroll …` | **Admin → Enrôlement** |
 | `cluster …` | **Admin → Cluster** |

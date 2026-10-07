@@ -14,6 +14,10 @@ import (
 // L'ordre chronologique compte : un verrouillage suivi d'un déverrouillage doit
 // être rejoué dans cet ordre, sinon la machine terminerait verrouillée alors
 // que le compte a été rétabli.
+//
+// Un verrouillage LEVÉ que la machine n'a jamais acquitté n'y figure plus
+// (statut « lifted », voir LiftSoftRevocations) : il n'a plus d'objet, et le
+// rejouer seul refermerait un compte rétabli.
 func PendingOrdersForClient(db *sql.DB, computeurID string, limit int) ([]revocation.Order, error) {
 	if err := database.SanitizeIdentifier(computeurID); err != nil {
 		return nil, err
@@ -26,10 +30,10 @@ func PendingOrdersForClient(db *sql.DB, computeurID string, limit int) ([]revoca
 		`SELECT r.id_revocation, r.mode, r.username, r.reason_code
 		   FROM user_revocation r
 		   JOIN user_revocation_target t ON t.d_id_revocation = r.id_revocation
-		  WHERE t.computeur_id = ? AND t.status <> ?
+		  WHERE t.computeur_id = ? AND `+sqlARejouer+`
 		  ORDER BY r.id_revocation ASC
 		  LIMIT ?`,
-		computeurID, string(revocation.StatusAcked), limit)
+		computeurID, limit)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des ordres en attente : %w", err)
 	}

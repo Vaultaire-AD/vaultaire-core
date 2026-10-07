@@ -87,22 +87,21 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 	}
 
 	osRelease := out.String()
-	var osType string
-	switch {
-	case strings.Contains(osRelease, "ID=debian"):
-		osType = "debian"
-	case strings.Contains(osRelease, "ID=ubuntu"):
-		osType = "ubuntu"
-	case strings.Contains(osRelease, "ID=\"rocky\"") || strings.Contains(osRelease, "ID=rocky"):
-		osType = "rocky"
-	default:
-		return fmt.Errorf("⚠️ OS non reconnu :\n%s", osRelease)
+	script, distribution, err := ScriptDInstallation(osRelease)
+	if err != nil {
+		return fmt.Errorf("⚠️ %v", err)
 	}
 
-	localScriptPath := storage.Sh_folder_path + osType + ".sh"
+	localScriptPath := storage.Sh_folder_path + script
+	if _, errStat := os.Stat(localScriptPath); errStat != nil {
+		// Dit ICI, et non par l'échec du transfert : « scp : exit status 1 » ne
+		// nommait ni le fichier ni la raison (TO-DO 71).
+		return fmt.Errorf("❌ script d'installation %s introuvable sur ce core (%v) : "+
+			"le répertoire sh_folder_path est-il complet ?", localScriptPath, errStat)
+	}
 	remoteScriptPath := "/tmp/vaultaire_install.sh"
 
-	fmt.Printf("✅ OS détecté : %s. Transfert du script...\n", osType)
+	fmt.Printf("✅ OS détecté : %s. Transfert du script %s...\n", distribution, script)
 
 	// 2. Transférer le script sur le serveur distant via SCP
 	scpCmd := exec.Command("scp", "-i", privateKeyPath, "-P", portStr, localScriptPath, fmt.Sprintf("%s:%s", remote, remoteScriptPath))
@@ -127,4 +126,48 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 func escapeSingleQuotes(cmd string) string {
 	// Transforme chaque ' en '\'' (échappement POSIX pour bash -c '')
 	return strings.ReplaceAll(cmd, "'", "'\\''")
+}
+
+// ScriptDInstallation choisit le script à jouer sur un poste, d'après son
+// /etc/os-release. Rend le nom du fichier et la distribution reconnue.
+//
+// # Ce qui a changé — TO-DO 71
+//
+// Le choix cherchait « ID=debian » ou « ID=ubuntu » N'IMPORTE OÙ dans le
+// fichier, puis demandait « debian.sh » ou « ubuntu.sh » — deux scripts qui
+// n'existaient pas. Sur un poste Debian ou Ubuntu, l'installation échouait au
+// transfert, sur un message qui ne nommait rien.
+//
+// Debian et Ubuntu partagent maintenant UN script, debian.sh : ce qui les
+// distingue de Rocky — apt, le répertoire multiarch, des piles PAM en
+// « @include common-auth » — leur est commun.
+//
+// # Seulement la ligne ID
+//
+// La distribution est lue sur la ligne `ID=`, et elle seule. Chercher le texte
+// partout reconnaissait aussi « VARIANT_ID=debian », ou un commentaire. Et
+// `ID_LIKE` n'est PAS suivi : il dit de qui une distribution descend, pas
+// qu'elle se comporte pareil. Un script qui réécrit PAM ne se joue pas sur une
+// machine parce qu'elle « ressemble » à une autre ; une distribution non
+// reconnue reçoit un refus, qui nomme ce qui a été lu.
+func ScriptDInstallation(osRelease string) (script, distribution string, err error) {
+	id := ""
+	for _, ligne := range strings.Split(osRelease, "\n") {
+		ligne = strings.TrimSpace(ligne)
+		if valeur, ok := strings.CutPrefix(ligne, "ID="); ok {
+			id = strings.ToLower(strings.Trim(strings.TrimSpace(valeur), `"'`))
+			break
+		}
+	}
+	switch id {
+	case "debian", "ubuntu":
+		return "debian.sh", id, nil
+	case "rocky":
+		return "rocky.sh", id, nil
+	case "":
+		return "", "", fmt.Errorf("distribution illisible : aucune ligne ID= dans /etc/os-release")
+	default:
+		return "", "", fmt.Errorf("distribution %q non prise en charge par l'installation à distance "+
+			"(prises en charge : debian, ubuntu, rocky)", id)
+	}
 }

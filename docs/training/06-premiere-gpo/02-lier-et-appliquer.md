@@ -18,11 +18,15 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
    vlt add -gpo ssh-baseline -g Infra
    ```
 
-2. Sans attendre le cycle horaire, relancez l'agent sur `web01` :
+2. Sans attendre le cycle horaire, demandez-le :
 
    ```bash
-   systemctl restart vaultaire_client
+   vlt gpo refresh --gpo ssh-baseline
    ```
+
+   C'est aussi le bouton **Demander un cycle** de la fiche de la GPO, dans le
+   portail. (Relancer l'agent sur `web01` — `systemctl restart
+   vaultaire_client` — fait la même chose pour cette machine.)
 
 3. Vérifiez côté machine :
 
@@ -47,6 +51,10 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
 | **Suivi** | la machine parle-t-elle encore ? `à jour`, `en retard`, `jamais` |
 | **Application** | la politique a-t-elle **pu être posée** ? |
 | **Conformité** | est-elle **encore en place** ? |
+| **Comptes** | les comptes passés sur le poste : `2 ok`, `1 en écart sur 3` |
+
+Une ligne par **machine**. Un compte n'apparaît sous la sienne (`↳`) que s'il y
+a quelque chose à y lire ; tous sont dans `vlt gpo status <computeur_id>`.
 
 ## ✅ Vous avez réussi si
 

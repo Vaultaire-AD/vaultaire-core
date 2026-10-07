@@ -95,15 +95,29 @@ func sansBOM(data []byte) []byte {
 	return bytes.TrimPrefix(data, marqueurBOM)
 }
 
-// LoadConfig charge le fichier JSON et remplace la configuration en mémoire.
-func LoadConfig(filePath string) error {
+// Lire décode le fichier JSON SANS toucher à la configuration en mémoire.
+//
+// Pour le contrôle de démarrage (`--check`, TO-DO 112) : il doit pouvoir dire
+// ce que vaut le fichier sans rien changer à l'état du programme, et lire
+// exactement comme LoadConfig — BOM compris. Une seconde lecture écrite à côté
+// aurait fini par accepter ce que l'agent refuse, ou l'inverse.
+func Lire(filePath string) (Config, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return err
+		return Config{}, err
 	}
 	var c Config
 	if err := json.Unmarshal(sansBOM(data), &c); err != nil {
-		return fmt.Errorf("%s illisible : %w", filePath, err)
+		return Config{}, fmt.Errorf("%s illisible : %w", filePath, err)
+	}
+	return c, nil
+}
+
+// LoadConfig charge le fichier JSON et remplace la configuration en mémoire.
+func LoadConfig(filePath string) error {
+	c, err := Lire(filePath)
+	if err != nil {
+		return err
 	}
 	configMutex.Lock()
 	configPath = filePath

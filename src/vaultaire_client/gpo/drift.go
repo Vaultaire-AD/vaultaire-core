@@ -1,6 +1,7 @@
 package gpo
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -117,7 +118,22 @@ type DriftItem struct {
 	// ligne, celui qui a écrit en dernier. Ce champ ne sert qu'à décider quoi
 	// rejouer — voir ModulesConcerned et FileState.Owners.
 	Coproprietaires []string
+
+	// NonCorrige : tous les modules qui répondent de cet écart sont en AUDIT —
+	// il est signalé, et personne ne le corrigera (TO-DO 86).
+	//
+	// Posé par ScanScope, qui lit le mode dans l'état local ; transmis au core
+	// en tête du détail (voir SendDriftReport). Sans cela, un écart en audit et
+	// un écart en enforce se lisaient pareil dans « gpo status » : rien ne
+	// disait lequel des deux allait rester.
+	NonCorrige bool
 }
+
+// MentionAudit précède le détail d'un écart que l'agent ne corrigera pas.
+//
+// En TÊTE et non à la fin : le détail est tronqué à l'envoi, et c'est le début
+// qui survit.
+const MentionAudit = "[audit : signale, non corrige] "
 
 // DriftReport est le résultat d'un scan pour un scope.
 type DriftReport struct {
@@ -198,7 +214,41 @@ func (r DriftReport) seulementDesIncertitudes() bool {
 // EnforceDrift, séparément, pour qu'un scan puisse être lancé sans effet de bord.
 func ScanScope(scope, username string) DriftReport {
 	state := LoadState()
-	return scanFromState(state.Scope(scope, username), scope, username)
+	scopeState := state.Scope(scope, username)
+	report := scanFromState(scopeState, scope, username)
+	marquerLesNonCorriges(scopeState, &report)
+	return report
+}
+
+// marquerLesNonCorriges repère les écarts dont AUCUN module n'est en enforce.
+//
+// Un fichier écrit par deux modules, l'un en audit et l'autre en enforce, sera
+// réécrit par le second : l'écart sera corrigé, il n'est pas marqué. Une
+// incertitude (« unverifiable ») ne l'est jamais non plus — elle ne fait rien
+// rejouer, quel que soit le mode, et la dire « non corrigée pour cause
+// d'audit » inventerait une cause.
+func marquerLesNonCorriges(scopeState *ScopeState, report *DriftReport) {
+	if scopeState == nil {
+		return
+	}
+	for i := range report.Items {
+		item := &report.Items[i]
+		if item.Kind == DriftUnverifiable || item.Kind == DriftUnreadable {
+			continue
+		}
+		modules := append([]string{item.StateKey}, item.Coproprietaires...)
+		tousEnAudit, unModule := true, false
+		for _, key := range modules {
+			if key == "" {
+				continue
+			}
+			unModule = true
+			if scopeState.ModuleMode(key) != DriftAudit {
+				tousEnAudit = false
+			}
+		}
+		item.NonCorrige = unModule && tousEnAudit
+	}
 }
 
 // scanFromState est le cœur du scan, séparé de la lecture de l'état.
@@ -218,7 +268,11 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 	// à vérifier » doivent rester distinguables, et un module qui ne dépose
 	// aucun fichier aurait sinon un rapport à zéro contrôle.
 	if scopeState != nil {
-		verifs := scanChecks(scopeState)
+		compte := ""
+		if scope == ScopeUser {
+			compte = username
+		}
+		verifs := scanChecks(scopeState, compte)
 		report.Checked += len(scopeState.Checks)
 		report.Items = append(report.Items, verifs...)
 	}
@@ -238,6 +292,17 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 	// rapport, dans le même ordre : un rapport dont l'ordre change à chaque
 	// exécution est illisible en comparaison.
 	sort.Strings(chemins)
+
+	// SOUS UN DOSSIER PERSONNEL, LE SCAN NE SUIT PLUS AUCUN LIEN — TO-DO 163.
+	//
+	// Voir scanSousHome : chaque fichier est constaté par descripteur, à partir
+	// du `HOME` du compte. Les deux boucles ne se mélangent pas — la portée
+	// machine garde ses chemins, où des liens sont légitimes.
+	if scope == ScopeUser {
+		report.Checked += len(chemins)
+		report.Items = append(report.Items, scanSousHome(scopeState, chemins, username)...)
+		return report
+	}
 
 	for _, path := range chemins {
 		attendu := scopeState.Files[path]
@@ -264,34 +329,9 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 			continue
 		}
 
-		// UN LIEN SYMBOLIQUE À LA PLACE DU FICHIER EST UNE DÉRIVE — TO-DO 97.
-		//
-		// Le scan tourne EN ROOT, et les chemins du scope utilisateur vivent dans
-		// un dossier que l'utilisateur contrôle. Avec `os.Stat`, qui suit les
-		// liens, planter « ~/.config/app.conf -> /etc/shadow » faisait LIRE
-		// /etc/shadow par root pour en calculer une empreinte.
-		//
-		// Le contenu ne sortait pas — seule l'empreinte est calculée, et elle
-		// n'est pas transmise — mais faire lire un fichier arbitraire à root sur
-		// commande d'un utilisateur est le genre de porte qu'une évolution
-		// ultérieure ouvre sans s'en apercevoir.
-		//
-		// Et c'est de toute façon PLUS JUSTE : la politique a déposé un fichier
-		// ordinaire ; s'il est devenu un lien, il a bien dérivé.
-		//
-		// Scope UTILISATEUR seulement. En scope machine, des fichiers gérés par
-		// une politique sont légitimement des liens — /etc/resolv.conf vers
-		// systemd-resolved — et les signaler ferait réappliquer en boucle.
-		if scope == ScopeUser {
-			if lst, errL := os.Lstat(path); errL == nil && lst.Mode()&os.ModeSymlink != 0 {
-				report.Items = append(report.Items, DriftItem{
-					Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners, Kind: DriftModified,
-					Detail: "remplace par un lien symbolique",
-				})
-				continue
-			}
-		}
-
+		// Portée MACHINE : des fichiers gérés par une politique sont légitimement
+		// des liens — /etc/resolv.conf vers systemd-resolved — et `os.Stat` les
+		// suit à dessein. La portée utilisateur ne passe plus par ici.
 		info, err := os.Stat(path)
 		if os.IsNotExist(err) {
 			report.Items = append(report.Items, DriftItem{
@@ -441,4 +481,96 @@ func EnforceDrift(scope, username string, report DriftReport) int {
 		"GPO: %d module(s) marque(s) pour reapplication au prochain cycle : %v",
 		len(corriges), corriges))
 	return len(corriges)
+}
+
+// scanSousHome constate les fichiers d'une portée UTILISATEUR — TO-DO 163.
+//
+// # Ce que la boucle commune faisait
+//
+// `os.Lstat` sur le chemin, pour refuser le lien posé À LA PLACE du fichier
+// (TO-DO 97), puis `os.Stat` et une lecture pour le hacher. Les trois résolvent
+// les RÉPERTOIRES qui mènent au fichier : avec `ln -s /etc ~/.config`, root
+// hachait `/etc/app.conf` et le comparait à ce que la politique avait déposé
+// dans `~/.config/app.conf`. L'empreinte ne sortait pas de la machine ; le
+// verdict, lui, était faux, et c'est root qui lisait.
+//
+// # Ce qu'elle fait
+//
+// Chaque fichier est constaté par constaterSousHome : descente depuis le
+// `HOME`, un composant après l'autre, sans suivre un seul lien, et hachage par
+// le descripteur du fichier. Un chemin qui n'est plus celui que la politique a
+// emprunté EST un écart, et le dit.
+//
+// # Ce qui change pour qui lit le rapport
+//
+// Un fichier déposé par une politique est un fichier ORDINAIRE du compte. Un
+// fichier devenu la propriété d'un autre, ou remplacé par autre chose qu'un
+// fichier, n'était pas signalé tant que son contenu se lisait pareil. Il l'est.
+func scanSousHome(scopeState *ScopeState, chemins []string, username string) []DriftItem {
+	var items []DriftItem
+	signaler := func(path string, attendu FileState, genre DriftKind, detail string) {
+		items = append(items, DriftItem{
+			Path: path, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners,
+			Kind: genre, Detail: detail,
+		})
+	}
+
+	home, errHome := resolveHomeDir(username)
+	uid, _, errUID := resolveUserIDs(username)
+	if username == "" || errHome != nil || errUID != nil {
+		// Le compte n'existe plus sur cette machine, ou son dossier ne se
+		// résout pas : on ne sait pas où regarder. « Invérifiable », et non
+		// « illisible » : le second est un constat sur le fichier — ses droits
+		// ont pu changer — et fait rejouer le module. Ici on n'a rien constaté.
+		for _, path := range chemins {
+			signaler(path, scopeState.Files[path], DriftUnverifiable,
+				"compte ou dossier personnel introuvable, fichier non verifie")
+		}
+		return items
+	}
+
+	for _, path := range chemins {
+		attendu := scopeState.Files[path]
+		constat, err := constaterSousHome(home, path, uid)
+
+		// Les entrées d'ABSENCE se lisent à l'envers : la dérive, c'est la
+		// réapparition. Un lien compte — il EXISTE, même s'il ne mène nulle part.
+		if attendu.Absent {
+			// Un chemin suspect ne permet de rien affirmer : on ne signale pas
+			// une réapparition sur une incertitude.
+			if err == nil && constat.Existe {
+				signaler(path, attendu, DriftReappeared, "fichier recree alors que la politique le retire")
+			}
+			continue
+		}
+
+		switch {
+		case errors.Is(err, ErrCheminSuspect):
+			// Un répertoire du chemin est un lien, ou n'appartient plus au
+			// compte. Ce n'est pas « illisible » : c'est un constat, et le
+			// module rejoué le dira à son tour en refusant d'écrire.
+			signaler(path, attendu, DriftModified,
+				"un repertoire du chemin est un lien symbolique ou n'appartient plus au compte")
+		case err != nil:
+			signaler(path, attendu, DriftUnreadable, sanitizeDetail(err.Error()))
+		case !constat.Existe:
+			signaler(path, attendu, DriftMissing, "fichier supprime")
+		case constat.Lien:
+			signaler(path, attendu, DriftModified, "remplace par un lien symbolique")
+		case !constat.Ordinaire:
+			signaler(path, attendu, DriftModified, "remplace par autre chose qu'un fichier")
+		case constat.Uid != uid:
+			signaler(path, attendu, DriftModified,
+				fmt.Sprintf("appartient a l'uid %d et non plus au compte", constat.Uid))
+		case constat.TropGros || constat.SHA256 != attendu.SHA256:
+			signaler(path, attendu, DriftModified, "contenu modifie")
+		case attendu.Mode != 0 && constat.Mode != attendu.Mode:
+			// Le contenu est bon mais le mode a changé : une dérive à part
+			// entière. Un fichier passé en lecture pour tous peut exposer ce
+			// qu'il contient sans qu'une seule ligne n'ait bougé.
+			signaler(path, attendu, DriftPermissions,
+				fmt.Sprintf("mode %04o attendu %04o", constat.Mode, attendu.Mode))
+		}
+	}
+	return items
 }

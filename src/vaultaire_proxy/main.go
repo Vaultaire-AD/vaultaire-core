@@ -2,6 +2,7 @@
 //
 // # Ce que fait cette version
 //
+//	relais ouverts, depuis la copie locale ou le fichier — AVANT toute session
 //	enrôlement au premier démarrage   (01_05 → 01_08)
 //	authentification du serveur       (01_01 → 01_02)
 //	authentification du client        (02_01 → 02_11)
@@ -42,6 +43,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"duckynetworkclient/V1/ducky"
 	"duckynetworkclient/V1/duckynetwork/decouverte"
@@ -97,71 +99,80 @@ func main() {
 	// pas une décision d'exploitation à reprendre sur chaque machine.
 	logs.TailleMaxJournal = 100 << 20
 
-	session, err := ducky.Start(ducky.Options{
-		ConfigPath: *configPath,
-		KeyPath:    *keyPath,
-		Enroll:     !*noEnroll,
-		Persistent: true,
-		Debug:      *debug,
-	})
-	if err != nil {
-		log.Fatalf("proxy : %v", err)
-	}
-	log.Printf("proxy en ligne, session %s", session.SessionID)
-
-	// Le raccordement au cluster vient APRÈS Start : l'enregistrement voyage sur
-	// une session authentifiée, et l'émettre avant reviendrait à l'envoyer dans
-	// le vide.
-	//
-	// Un échec ici n'arrête PAS le proxy. Il reste connecté et authentifié ; ce
-	// qu'il perd est sa visibilité dans le cluster. Traiter cela comme fatal
-	// ferait qu'un défaut de déclaration — nom d'hôte introuvable, aucune
-	// adresse non locale — coupe un service qui fonctionne par ailleurs.
-	// Les relais sont lus AVANT de rejoindre le cluster : ce sont eux qui
-	// disent de quels services demander les adresses (04_15). Une erreur de
-	// configuration arrête le proxy ici, avant qu'il ne s'annonce aux agents.
+	// Les relais sont LUS avant tout le reste : une faute dans leur déclaration
+	// arrête le proxy ici, avant qu'il n'ouvre une connexion ou ne s'annonce.
 	liste, err := relais.Charger(*configPath, *listen)
 	if err != nil {
 		log.Fatalf("proxy : %v", err)
 	}
 
-	if err := ducky.RejoindreCluster(ducky.OptionsCluster{
-		Role:      "proxy",
-		Domaine:   *domaine,
-		Port:      *listen,
-		Decouvrir: true, // un proxy doit savoir vers quels cores relayer
-		Services:  relais.ServicesSuivis(liste),
-		// Les compteurs des relais, à la cadence du battement (TO-DO 108).
-		//
-		// Une fonction, et non des valeurs : les relais s'ouvrent PLUS BAS, après
-		// ce raccordement — c'est la découverte qu'il démarre qui dit vers quels
-		// cores relayer. À cet instant, il n'y a donc encore rien à mesurer.
-		Metriques: metriquesRelais,
+	// La session Ducky est LANCÉE, pas attendue (TO-DO 158). Ce qui reste fatal
+	// ici est ce sans quoi le proxy ne peut rien faire : une configuration
+	// illisible, ou pas d'identité et pas de core pour s'enrôler.
+	if err := ducky.Lancer(ducky.Options{
+		ConfigPath: *configPath,
+		KeyPath:    *keyPath,
+		Enroll:     !*noEnroll,
+		Persistent: true,
+		Debug:      *debug,
 	}); err != nil {
-		log.Printf("proxy : raccordement au cluster impossible : %v", err)
-		log.Printf("proxy : le service reste connecté, mais n'apparaîtra pas " +
-			"dans la liste des nœuds joignables")
+		log.Fatalf("proxy : %v", err)
 	}
 
-	// LES RELAIS (TO-DO 38, lot 4).
+	// LES RELAIS (TO-DO 38, lot 4) — ouverts AVANT d'avoir une session.
 	//
-	// Lancés après le raccordement : la liste des cores vers lesquels relayer
-	// vient de la découverte, que RejoindreCluster démarre. Avant la première
-	// 04_04, le relais Ducky se rabat sur les serveurs du fichier.
+	// Ils s'ouvraient après le raccordement au cluster, donc jamais sans core :
+	// un proxy redémarré pendant une coupure du lien s'arrêtait au bout de
+	// trente secondes sans avoir ouvert un port, y compris ceux de ses relais
+	// vers des cibles locales, qui n'ont pas besoin du core.
 	//
-	// Un relais qui ne peut pas écouter est FATAL : ce proxy est annoncé aux
-	// agents sur ce port, et y laisser un port mort en ferait un trou noir.
+	// Le pilote part de la copie locale de la dernière liste reçue du core
+	// (TO-DO 141), sinon du fichier. Le relais Ducky se rabat sur les serveurs
+	// du fichier tant que la découverte n'a rien appris ; sans core joignable il
+	// refuse franchement, et l'agent passe au nœud suivant.
 	//
-	// Depuis le TO-DO 141, ce que le proxy ouvre ici n'est plus figé : le core
-	// peut pousser une autre liste, que le pilote applique à chaud. La liste du
-	// fichier n'est que l'amorce — ou le repli, si le core n'a rien à dire.
+	// Un relais du FICHIER qui ne peut pas écouter reste FATAL : ce proxy est
+	// annoncé aux agents sur ce port, et y laisser un port mort en ferait un
+	// trou noir.
 	pilote := nouveauPilote(*configPath, *listen)
 	if err := pilote.demarrer(liste); err != nil {
 		log.Fatalf("proxy : %v", err)
 	}
 	lancerLeBilan()
+	// Branché avant le raccordement : une liste de relais poussée par le core
+	// dès l'enregistrement ne doit pas arriver sans personne pour la lire.
 	decouverte.SurConfigurationRelais(pilote.surConfiguration)
-	logs.Go("compte rendu des relais", pilote.boucleDeCompteRendu)
+
+	// Le raccordement, lui, attend la session — en fond, et sans limite : voir
+	// raccordement.go.
+	logs.Go("raccordement au core", raccordement{
+		attendre: func(delai time.Duration) (string, error) {
+			session, err := ducky.Attendre(delai)
+			if err != nil {
+				return "", err
+			}
+			return session.SessionID, nil
+		},
+		rejoindre: func() error {
+			return ducky.RejoindreCluster(ducky.OptionsCluster{
+				Role:      "proxy",
+				Domaine:   *domaine,
+				Port:      *listen,
+				Decouvrir: true, // un proxy doit savoir vers quels cores relayer
+				Services:  relais.ServicesSuivis(liste),
+				// Les compteurs des relais, à la cadence du battement (TO-DO 108).
+				// Une fonction, et non des valeurs : les relais changent pendant
+				// que le proxy tourne (TO-DO 141).
+				Metriques: metriquesRelais,
+			})
+		},
+		ensuite:      func() { logs.Go("compte rendu des relais", pilote.boucleDeCompteRendu) },
+		relaisActifs: pilote.relaisActifs,
+		journal:      func(niveau, message string) { logs.Write_log(niveau, message) },
+		premiere:     PremiereAlarme,
+		rappel:       RappelSansCore,
+		maintenant:   time.Now,
+	}.executer)
 
 	// L'arrêt passe par un signal plutôt qu'un os.Exit immédiat : la boucle de
 	// réception tourne dans sa goroutine, et lui laisser le temps de fermer

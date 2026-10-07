@@ -147,6 +147,15 @@ func serveScope(trames storage.Trames_struct_client, scope gpo.Scope, targetUser
 			scope, clientID, userSuffix(targetUser), shortFingerprint(manifest.Fingerprint)))
 		// Un transfert éventuellement en cours pour ce scope n'a plus lieu d'être.
 		dropTransfer(transferKey{ClientID: clientID, Scope: scope, Username: targetUser})
+
+		// La machine vient de dire qu'elle applique cette empreinte : c'est la
+		// seule nouvelle qu'elle donnera tant que la politique ne change pas.
+		// Sans cette ligne, sa date de rapport reste celle du dernier
+		// changement, et un parc stable passe « en retard » (TO-DO 166).
+		if err := dbgpo.ConfirmerEtat(database.GetDatabase(), clientID, string(scope), targetUser,
+			manifest.Fingerprint); err != nil {
+			logs.Write_LogCode("WARNING", logs.CodeGPOTransport, "gpo: état confirmé non daté : "+err.Error())
+		}
 		return replyUnchanged(trames.SessionIntegritykey, scope, targetUser, manifest.Fingerprint)
 	}
 

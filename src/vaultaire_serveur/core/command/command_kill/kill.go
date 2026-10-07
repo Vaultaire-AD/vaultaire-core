@@ -6,6 +6,10 @@
 //	vlt kill -u <user> --unlock   lève le verrouillage
 //	vlt kill -u <user> --hard     supprime le compte de l'annuaire ET des machines
 //
+// Et une lecture, qui ne déclenche rien :
+//
+//	vlt kill -u <user> --status   où en est l'ordre, machine par machine
+//
 // Toute la logique — contrôles RBAC, calcul des machines, écriture de l'ordre,
 // poussée — vit dans ducky-network/revocation_manager. Ce paquet ne fait que
 // traduire des arguments : le CLI, l'interface web et l'API doivent déclencher
@@ -17,6 +21,10 @@ import (
 	"fmt"
 	"strings"
 
+	"vaultaire/core/action"
+	commandaction "vaultaire/core/command/commandaction"
+	"vaultaire/core/command/display"
+	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/logs"
 	"vaultaire/core/revocation"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
@@ -45,8 +53,17 @@ func Kill_Command(command_list []string, sender_groupsIDs []int, sender_Username
 	// à la hâte, sans option, ne doit jamais détruire quoi que ce soit.
 	mode := revocation.ModeSoft
 	reason := revocation.ReasonCompromised
+	// suivi : --status demande une LECTURE. Les autres options le rendent
+	// ambigu — voir plus bas.
+	suivi, autres := false, []string{}
 
 	for i := 2; i < len(command_list); i++ {
+		if opt := strings.ToLower(command_list[i]); opt == "--status" {
+			suivi = true
+			continue
+		} else if strings.HasPrefix(opt, "--") {
+			autres = append(autres, opt)
+		}
 		switch strings.ToLower(command_list[i]) {
 		case "--hard":
 			mode = revocation.ModeHard
@@ -64,6 +81,19 @@ func Kill_Command(command_list []string, sender_groupsIDs []int, sender_Username
 		default:
 			return fmt.Sprintf("Option inconnue %q. Try 'kill -h' for more information.", command_list[i])
 		}
+	}
+
+	if suivi {
+		// --status ne se combine avec RIEN. « kill -u bob --hard --status »
+		// pourrait se lire « dis-moi où en est la suppression » comme
+		// « supprime, puis dis-moi » : sur la commande la plus destructrice du
+		// produit, une lecture qui déclenche par malentendu ne se rattrape
+		// pas. On refuse, et on dit pourquoi.
+		if len(autres) > 0 {
+			return fmt.Sprintf("--status est une lecture et ne se combine pas avec %s : rien n'a été déclenché.\n"+
+				"Usage : kill -u %s --status", strings.Join(autres, ", "), targetUser)
+		}
+		return suiviDUnCompte(action.Appelant{Username: sender_Username, GroupIDs: sender_groupsIDs}, targetUser)
 	}
 
 	// Le déverrouillage n'est pas une urgence : le motif « compte compromis »
@@ -112,22 +142,104 @@ func formatOutcome(out revocationmanager.Outcome) string {
 	// « Remis », et non « appliqué » : c'est ce que le core SAIT à cet instant.
 	// L'application — verrouiller, puis couper ce qui est ouvert — est le fait
 	// de l'agent, qui l'acquitte ensuite. L'acquittement de chaque machine, ou
-	// son échec, se lit aujourd'hui dans le journal du core ; aucune commande
-	// ne le montre encore (TO-DO 164).
+	// son échec, se lit avec « kill -u <compte> --status » (TO-DO 164).
 	fmt.Fprintf(&b, "  Ordre remis immédiatement : %d machine(s) en ligne\n", out.PushedNow)
 	if out.Mode != revocation.ModeUnlock && out.PushedNow > 0 {
 		b.WriteString("    chacune verrouille le compte local, puis ferme ses sessions et tue ses processus ;\n")
-		b.WriteString("    son acquittement — ou son échec — s'inscrit au journal du core (logs --since 10m)\n")
+		b.WriteString("    son acquittement — ou son échec — se lit avec « kill -u " + out.Username + " --status » ;\n")
+		b.WriteString("    un ordre en échec ou resté sans réponse est rejoué par le core, de plus en plus espacé\n")
 	}
 
 	remaining := out.TargetCount - out.PushedNow
 	if remaining > 0 {
-		fmt.Fprintf(&b, "  En attente (machines hors ligne) : %d — l'ordre sera rejoué à leur reconnexion\n", remaining)
+		fmt.Fprintf(&b, "  En attente (machines hors ligne) : %d — l'ordre leur sera remis dès leur retour\n", remaining)
 	}
 	if out.Mode == revocation.ModeSoft {
 		b.WriteString("  Réversible : kill -u " + out.Username + " --unlock\n")
 	}
 	return b.String()
+}
+
+// suiviDUnCompte rend où en est la révocation d'un compte, machine par
+// machine — TO-DO 164. La lecture, son contrôle de droits et la réduction au
+// périmètre de l'appelant sont le fait de l'action ; ici, on met en forme.
+func suiviDUnCompte(appelant action.Appelant, compte string) string {
+	res, err := action.Executer("revocation.get_status", appelant, action.Params{"username": compte})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	suivi, ok := res.Donnees.(dbrevocation.Suivi)
+	if !ok {
+		return res.Message
+	}
+	return rendreSuivi(suivi, res.Message)
+}
+
+// rendreSuivi met en forme un suivi. Le tri, les libellés, le décompte et le
+// commentaire de chaque cible viennent de db_revocation : la fiche du compte
+// du portail emprunte les mêmes fonctions.
+func rendreSuivi(suivi dbrevocation.Suivi, message string) string {
+	if len(suivi.Ordres) == 0 {
+		return message
+	}
+	var b strings.Builder
+
+	etat := "aucun verrouillage en vigueur"
+	if suivi.Verrouille {
+		etat = "VERROUILLÉ"
+	}
+	fmt.Fprintf(&b, "Compte %s — %s\n", suivi.Username, etat)
+
+	for i, o := range suivi.Ordres {
+		fmt.Fprintf(&b, "\nOrdre %d — %s (%s), par %s le %s\n",
+			o.ID, o.Mode.Label(), o.Reason.Label(), o.IssuedBy, o.IssuedAt.Format("2006-01-02 15:04:05"))
+		if o.LiftedBy != "" {
+			fmt.Fprintf(&b, "  Levé par %s\n", o.LiftedBy)
+		}
+
+		decompte := dbrevocation.Compter(o.Cibles)
+		fmt.Fprintf(&b, "  %s\n", decompte.Lisible())
+		if o.Masquees > 0 {
+			fmt.Fprintf(&b, "  %d autre(s) machine(s) visée(s) sont hors de votre périmètre et ne sont pas montrées.\n", o.Masquees)
+		}
+		// Le tableau, pour l'ordre le plus récent et pour tout ordre qui n'est
+		// pas réglé. Un ordre ancien et réglé tient en une ligne : cinq
+		// tableaux de machines « appliqué » repousseraient hors de l'écran la
+		// seule ligne qu'on cherche. Le portail les replie pour la même raison.
+		if len(o.Cibles) == 0 || (i > 0 && decompte.ResteAFaire() == 0) {
+			continue
+		}
+
+		tb := display.NouvelleTable("MACHINE", "ÉTAT", "REMISES", "DERNIER ÉCHANGE", "DÉTAIL")
+		for _, c := range o.Cibles {
+			tb.Ajouter(c.ComputeurID, c.Status.Libelle(), fmt.Sprint(c.Attempts), c.Echange(), unLigne(c.Commentaire()))
+		}
+		for _, ligne := range strings.Split(strings.TrimRight(tb.String(), "\n"), "\n") {
+			b.WriteString("  " + ligne + "\n")
+		}
+	}
+
+	if suivi.PlusAnciens > 0 {
+		fmt.Fprintf(&b, "\n%d ordre(s) plus ancien(s) ne sont pas détaillés.\n", suivi.PlusAnciens)
+	}
+
+	// La phrase qui répond à la question posée pendant un incident : sur
+	// l'ordre le plus récent, reste-t-il une machine où le compte n'est pas
+	// coupé ?
+	dernier := suivi.Ordres[0]
+	if reste := dbrevocation.Compter(dernier.Cibles).ResteAFaire(); reste > 0 {
+		fmt.Fprintf(&b, "\nL'ordre %d n'est PAS appliqué sur %d machine(s) : le core le leur remet de lui-même, "+
+			"de plus en plus espacé, sans renoncer.\n", dernier.ID, reste)
+	} else if dernier.Masquees == 0 {
+		fmt.Fprintf(&b, "\nL'ordre %d est réglé sur toutes les machines visées.\n", dernier.ID)
+	}
+	return b.String()
+}
+
+// unLigne ramène un détail venu d'une machine à une ligne : il est écrit par
+// l'agent, et un retour à la ligne y casserait le tableau.
+func unLigne(s string) string {
+	return strings.Join(strings.Fields(s), " ")
 }
 
 func reasonList() string {
@@ -144,6 +256,7 @@ func helpText() string {
   kill -u <username>                     verrouille le compte partout (mode par défaut)
   kill -u <username> --unlock            lève le verrouillage
   kill -u <username> --hard              SUPPRIME le compte de l'annuaire et des machines
+  kill -u <username> --status            où en est l'ordre, machine par machine (lecture)
 
 Options :
   --reason <code>    compromised (défaut) | offboarding | admin_request
@@ -168,11 +281,24 @@ Le mode --hard est IRRÉVERSIBLE : le compte est supprimé de l'annuaire, et le
 compte local ainsi que son répertoire personnel sont supprimés sur chaque
 machine.
 
-Les machines hors ligne ne sont pas oubliées : l'ordre est conservé et rejoué à
-leur prochaine connexion. Un agent connecté redemande aussi ses ordres en
-attente toutes les dix minutes : un ordre qui n'a pas abouti du premier coup
-n'attend pas une coupure du tunnel.
+Les machines hors ligne ne sont pas oubliées : l'ordre est conservé, et leur est
+remis dans les secondes qui suivent leur retour. Un ordre qui n'a pas abouti du
+premier coup — envoi perdu, processus qui refusent de mourir — est rejoué par le
+core : dix secondes plus tard, puis de plus en plus espacé, jusqu'à cinq minutes,
+sans jamais renoncer. De son côté, un agent redemande ses ordres en attente
+toutes les dix minutes.
+
+Lever un verrouillage (--unlock) le retire aussi des machines qui ne l'avaient
+pas encore appliqué : elles ne recevront que la levée.
+
+Savoir où en est un ordre : « kill -u <username> --status ». Chaque machine
+visée y a son état — appliqué, en échec avec le motif rendu par la machine, en
+attente, ou levé avant application —, le nombre de fois où l'ordre lui a été
+remis, et le temps écoulé depuis le dernier échange. Ce qui n'est pas réglé est
+en tête. --status ne déclenche rien, et ne se combine avec aucune autre option.
 
 Droits requis : write:killswitch sur tous les domaines de la cible.
-Le mode --hard exige en plus write:delete:user.`
+Le mode --hard exige en plus write:delete:user.
+--status demande read:status:user sur un domaine de la cible, et ne montre que
+les machines de votre périmètre.`
 }

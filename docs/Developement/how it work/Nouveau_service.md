@@ -185,12 +185,28 @@ send("04_09", version, publicURL, "capacité1,capacité2")
 
 Référence : `src/vaultaire_nexus/internal/clusterlink/clusterlink.go`.
 
+**Un service qui doit servir sans core** *(2.3, TO-DO 158)* n'appelle pas
+`ducky.Start`, qui attend la session — trente secondes — avant de rendre la
+main. `Start` est l'enchaînement de deux fonctions :
+
+```go
+if err := ducky.Lancer(opts); err != nil { … }   // configuration, identité, connexion en fond
+// … ouvrir ce que le service sert sans le core …
+session, err := ducky.Attendre(0)                // 0 : ducky.DefaultTimeout
+```
+
+Une erreur d'`Attendre` ne veut **pas** dire que la connexion est abandonnée : la
+boucle lancée par `Lancer` continue, et rappeler `Attendre` est légitime. C'est
+ce que fait le proxy (`src/vaultaire_proxy/raccordement.go`). `Lancer` échoue
+tout de suite sans identité et sans core : l'enrôlement demande un core.
+
 | Piège | Conséquence | Parade |
 |---|---|---|
 | `KeyPath` non persistant (conteneur sans volume) | réenrôlement à chaque démarrage, quota de la clé épuisé | volume dédié, sous le répertoire de données |
 | gestionnaire branché après l'émission | l'accusé `04_10` arrive sans destinataire | brancher d'abord |
 | rejouer `04_09` à chaque `04_11` | boucle serrée si le refus est définitif | rejouer au battement suivant |
 | échec du raccordement fatal | le service tombe avec le core | journaliser, afficher l'état, réessayer (backoff) et **continuer à servir** |
+| le core **refuse** l'authentification (`02_07`) | la session est fermée, par le poste comme par le core ; la reconnexion s'espace (2 s à 5 min) au lieu de revenir toutes les deux secondes | lire le motif au journal du service : `Authentification refusee par le core … — session fermee` |
 | service arrêté plus longtemps que le délai de purge | ligne et client supprimés | nouvelle clé d'enrôlement |
 
 Fichier `ducky.yaml` : même format que celui du proxy (`servers:`,

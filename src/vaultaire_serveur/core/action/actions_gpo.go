@@ -230,11 +230,12 @@ func modifierGPO(a Appelant, p Params) (Resultat, error) {
 		logs.Write_Log("SECURITY", fmt.Sprintf("%s a %s la GPO %s", a.Username, etat, nom))
 	}
 
+	message := "GPO " + nom + " mise à jour. " + priseEnCompte(policy.Scope, nom)
 	relue, err := dbgpo.GetPolicyByName(db, nom)
 	if err != nil {
-		return Resultat{Message: "GPO " + nom + " mise à jour."}, nil
+		return Resultat{Message: message}, nil
 	}
-	return Resultat{Message: "GPO " + nom + " mise à jour.", Donnees: relue}, nil
+	return Resultat{Message: message, Donnees: relue}, nil
 }
 
 // reglerModeDeriveGPO change le mode de dérive d'une GPO.
@@ -298,11 +299,14 @@ func reglerModeDeriveGPO(a Appelant, p Params) (Resultat, error) {
 		"%s a réglé la GPO %s en mode %s (auparavant %s)",
 		a.Username, nom, mode, policy.EffectiveDriftMode()))
 
+	// Le mode voyage avec la politique : il n'atteint un poste qu'à son
+	// prochain cycle, comme toute autre modification (TO-DO 86).
+	message := messageModeDerive(nom, mode) + " " + priseEnCompte(policy.Scope, nom)
 	relue, err := dbgpo.GetPolicyByName(db, nom)
 	if err != nil {
-		return Resultat{Message: messageModeDerive(nom, mode)}, nil
+		return Resultat{Message: message}, nil
 	}
-	return Resultat{Message: messageModeDerive(nom, mode), Donnees: relue}, nil
+	return Resultat{Message: message, Donnees: relue}, nil
 }
 
 // messageModeDerive dit ce que le réglage change réellement sur le parc.
@@ -378,7 +382,7 @@ func ajouterModuleGPO(a Appelant, p Params) (Resultat, error) {
 	logs.Write_Log("SECURITY", fmt.Sprintf(
 		"%s a ajouté le module %s à la GPO %s", a.Username, typeModule, nom))
 
-	return Resultat{Message: fmt.Sprintf("Module %s ajouté à %s.", typeModule, nom)}, nil
+	return Resultat{Message: fmt.Sprintf("Module %s ajouté à %s. %s", typeModule, nom, priseEnCompte(policy.Scope, nom))}, nil
 }
 
 func modifierModuleGPO(a Appelant, p Params) (Resultat, error) {
@@ -426,7 +430,7 @@ func modifierModuleGPO(a Appelant, p Params) (Resultat, error) {
 	logs.Write_Log("SECURITY", fmt.Sprintf(
 		"%s a modifié le module %d (%s) de la GPO %s", a.Username, id, existant.Type, nom))
 
-	return Resultat{Message: fmt.Sprintf("Module %s mis à jour.", existant.Type)}, nil
+	return Resultat{Message: fmt.Sprintf("Module %s mis à jour. %s", existant.Type, priseEnCompte(policy.Scope, nom))}, nil
 }
 
 func supprimerModuleGPO(a Appelant, p Params) (Resultat, error) {
@@ -463,7 +467,11 @@ func supprimerModuleGPO(a Appelant, p Params) (Resultat, error) {
 	logs.Write_Log("SECURITY", fmt.Sprintf(
 		"%s a supprimé le module %d de la GPO %s", a.Username, id, nom))
 
-	return Resultat{Message: "Module retiré."}, nil
+	// Retirer un module ne DÉFAIT rien sur les postes : ce qu'il avait posé y
+	// reste, et cesse seulement d'être vérifié. C'est « state: absent » qui
+	// retire. Le dire ici évite d'attendre un effet qui ne viendra pas.
+	return Resultat{Message: "Module retiré. Ce qu'il avait posé sur les postes y reste, et n'est plus vérifié : " +
+		"pour le retirer aussi, passer d'abord le module à l'état « absent ». " + priseEnCompte(policy.Scope, nom)}, nil
 }
 
 // ParametresDeModule extrait les paramètres d'un module d'après son SCHÉMA.

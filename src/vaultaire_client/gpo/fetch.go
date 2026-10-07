@@ -576,11 +576,17 @@ func SendDriftReport(sessionKey string, report DriftReport) error {
 		strconv.Itoa(len(report.Items)),
 	}
 	for _, item := range report.Items {
+		detail := item.Detail
+		if item.NonCorrige {
+			// Le core affiche ce détail tel quel : c'est par lui que
+			// « gpo status <machine> » dit qu'un écart restera (TO-DO 86).
+			detail = MentionAudit + detail
+		}
 		lines = append(lines, strings.Join([]string{
 			item.StateKey,
 			string(item.Kind),
 			sanitizePath(item.Path),
-			sanitizeDetail(item.Detail),
+			sanitizeDetail(detail),
 		}, "|"))
 	}
 

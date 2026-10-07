@@ -244,13 +244,13 @@ func applyUserPasswordPolicy(ctx Context, m Module) (string, error) {
 	var applied []string
 
 	if maxAge := intParam(m, "max_age_days"); maxAge > 0 {
-		if _, err := runCommandTimeout(UserCommandTimeout, "chage", "-M", strconv.Itoa(maxAge), ctx.Username); err != nil {
+		if _, err := commandeDeCompte(UserCommandTimeout, "chage", "-M", strconv.Itoa(maxAge), ctx.Username); err != nil {
 			return "", fmt.Errorf("age maximal impossible : %v", err)
 		}
 		applied = append(applied, fmt.Sprintf("validite %dj", maxAge))
 	}
 	if warn := intParam(m, "warn_days"); warn > 0 {
-		if _, err := runCommandTimeout(UserCommandTimeout, "chage", "-W", strconv.Itoa(warn), ctx.Username); err != nil {
+		if _, err := commandeDeCompte(UserCommandTimeout, "chage", "-W", strconv.Itoa(warn), ctx.Username); err != nil {
 			return "", fmt.Errorf("delai d'avertissement impossible : %v", err)
 		}
 		applied = append(applied, fmt.Sprintf("avertissement %dj", warn))
@@ -267,7 +267,7 @@ func applyUserPasswordPolicy(ctx Context, m Module) (string, error) {
 				"changement force refuse : le shell de %s est %s, l'utilisateur ne pourrait pas ouvrir de session pour changer son mot de passe",
 				ctx.Username, shell)
 		}
-		if _, err := runCommandTimeout(UserCommandTimeout, "chage", "-d", "0", ctx.Username); err != nil {
+		if _, err := commandeDeCompte(UserCommandTimeout, "chage", "-d", "0", ctx.Username); err != nil {
 			return "", fmt.Errorf("changement force impossible : %v", err)
 		}
 		applied = append(applied, "changement au prochain login")
@@ -275,6 +275,20 @@ func applyUserPasswordPolicy(ctx Context, m Module) (string, error) {
 
 	if len(applied) == 0 {
 		return "aucun parametre fourni, rien a appliquer", nil
+	}
+
+	// Ce que `chage -l` sait relire : l'âge maximal et le délai d'avertissement
+	// (TO-DO 163). Le changement forcé n'y figure pas — il se consomme à la
+	// connexion, voir verifierVieillissement.
+	var facettes []string
+	if maxAge := intParam(m, "max_age_days"); maxAge > 0 {
+		facettes = append(facettes, "max="+strconv.Itoa(maxAge))
+	}
+	if warn := intParam(m, "warn_days"); warn > 0 {
+		facettes = append(facettes, "warn="+strconv.Itoa(warn))
+	}
+	if len(facettes) > 0 {
+		ctx.recordCheck(CheckPasswordAging, ctx.Username, strings.Join(facettes, ","))
 	}
 	return strings.Join(applied, ", "), nil
 }
@@ -444,8 +458,12 @@ func applyUserGitConfig(ctx Context, m Module) (string, error) {
 		return "", err
 	}
 
+	// La cible de l'attente : ce fichier, cette clé (TO-DO 163).
+	cibleDeLAttente := path + separateurCleGit + key
+
 	retirer := m.Param("state") == "absent"
 	if retirer && !existait {
+		ctx.recordCheck(CheckGitConfig, cibleDeLAttente, "etat=absent")
 		return "cle git " + key + " deja absente", nil
 	}
 
@@ -473,16 +491,30 @@ func applyUserGitConfig(ctx Context, m Module) (string, error) {
 	}
 	if string(nouveau) != existant || !existait {
 		// Ce fichier appartient à la personne et Vaultaire n'y tient qu'une
-		// clé : rien n'est inscrit à l'inventaire, exactement comme avant — en
-		// hacher la totalité ferait une dérive de chaque `git config` qu'elle
-		// lance. La clé elle-même n'a pas encore de vérificateur (TO-DO 163).
+		// clé : le FICHIER n'est pas inscrit à l'inventaire — en hacher la
+		// totalité ferait une dérive de chaque `git config` qu'elle lance.
+		// C'est la clé qui est vérifiée, voir plus bas.
 		if err := ecrireFichierUtilisateur(ctx.HomeDir, path, string(nouveau), 0o644, uid, gid); err != nil {
 			return "", err
 		}
 	}
 	if retirer {
+		ctx.recordCheck(CheckGitConfig, cibleDeLAttente, "etat=absent")
 		return "cle git " + key + " retiree", nil
 	}
+
+	// L'attente porte la valeur TELLE QUE GIT LA RELIT, pas celle du module
+	// (TO-DO 163). Le vérificateur passera par la même lecture : comparer à ce
+	// qu'on a demandé d'écrire supposerait que git rend toujours, à l'octet
+	// près, ce qu'on lui a donné.
+	relue, presente, err := lireCleGit(string(nouveau), key)
+	if err != nil {
+		return "", err
+	}
+	if !presente {
+		return "", fmt.Errorf("cle git %s introuvable apres ecriture", key)
+	}
+	ctx.recordCheck(CheckGitConfig, cibleDeLAttente, "sha256="+empreinteDeValeur(relue))
 	return "git " + key + " = " + value, nil
 }
 

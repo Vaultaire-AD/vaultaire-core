@@ -128,14 +128,18 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 	seenGroups := make(map[string]struct{})
 	seenOUs := make(map[string]struct{})
 
-	// memberOf, pour tous les groupes chargés — le domaine demandé ET ses
-	// sous-domaines.
+	// `memberOf` n'est PLUS composé depuis les groupes chargés ici (TO-DO 155).
 	//
-	// Chaque groupe y entre avec SON domaine (TO-DO 132) : c'est ce qui permet
-	// au contrôle d'accès de retirer ensuite, compte par compte, ceux que
-	// l'appelant n'a pas le droit de lire. Le résolveur, lui, ne trie rien : il
-	// ne connaît pas les droits, et ne doit pas les connaître.
-	userMembershipMap := make(map[string][]candidate.Appartenance)
+	// Il l'était : chaque compte recevait les groupes du domaine demandé et de
+	// ses sous-domaines, et pas ceux qu'il avait au-dessus ou à côté. Le même
+	// compte n'avait donc pas le même `memberOf` selon la base de la recherche —
+	// `Equipe`, groupe de `acme.lan`, manquait à qui cherchait sous
+	// `dev.acme.lan`. Une application synchronisée sur un sous-domaine en
+	// concluait que le compte avait quitté le groupe.
+	//
+	// Il est lu plus bas, en une fois, pour tous les comptes rendus — voir
+	// dbldap.GetMemberOfByUsernames.
+
 	// Les DOMAINES où vit chaque compte, c'est-à-dire ceux des groupes par
 	// lesquels il a été trouvé. C'est ce qui sert au contrôle d'accès.
 	//
@@ -161,10 +165,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 			return nil, fmt.Errorf("lecture des membres des groupes de %s : %w", domain, err)
 		}
 		for _, g := range groupsData {
-			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
 			for _, uname := range g.Users {
-				userMembershipMap[uname] = append(userMembershipMap[uname],
-					candidate.Appartenance{DN: groupDN, Domaine: g.DomainName})
 				if rattachements[uname] == nil {
 					rattachements[uname] = make(map[string]struct{}, 2)
 				}
@@ -210,6 +211,21 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 	utilisateurs, err := dbldap.GetUsersByUsernames(db, àLire)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des utilisateurs : %w", err)
+	}
+
+	// Les groupes de ces comptes — TOUS, quel que soit leur domaine (TO-DO 155).
+	//
+	// Chaque groupe y entre avec SON domaine (TO-DO 132) : c'est ce qui permet
+	// au contrôle d'accès de retirer ensuite, compte par compte, ceux que
+	// l'appelant n'a pas le droit de lire. Le résolveur, lui, ne trie rien : il
+	// ne connaît pas les droits, et ne doit pas les connaître.
+	//
+	// Une erreur REMONTE. Rendre des comptes sans groupe parce que la base a
+	// flanché serait la panne que ce point corrige, en pire : un client y lirait
+	// la perte de toutes les appartenances.
+	appartenances, err := dbldap.GetMemberOfByUsernames(db, àLire)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des appartenances : %w", err)
 	}
 
 	for _, domain := range domains {
@@ -261,7 +277,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					// sous-domaine est identique à celui d'un compte du domaine parent.
 					BaseDN:        domain,
 					Rattachements: domainesDe(rattachements[uname]),
-					Groups:        userMembershipMap[uname],
+					Groups:        appartenancesLDAP(appartenances.De(uname)),
 					DisplayName:   userObj.Firstname + " " + userObj.Lastname,
 					GivenName:     userObj.Firstname,
 					Sn:            userObj.Lastname,

@@ -3,6 +3,8 @@
 package gpo
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -462,6 +464,13 @@ func preparerRepertoireUtilisateur(home, chemin string, mode os.FileMode, uid, g
 // dire « le fichier non plus ».
 var errComposantAbsent = errors.New("composant absent")
 
+// errObjetAbsent : il n'y a rien au chemin demandé.
+//
+// designerSousHome le rend enveloppé, sous le même texte qu'avant (« <chemin>
+// absent »). Le vérificateur d'ACL doit distinguer « rien ici » — conforme si la
+// politique retire l'entrée — d'un chemin suspect (TO-DO 163).
+var errObjetAbsent = errors.New("absent")
+
 // tailleMaxLecture borne ce que l'agent accepte de relire sous un `HOME`.
 //
 // Ce sont des fichiers de démarrage de shell et de configuration : quelques
@@ -711,7 +720,7 @@ const oPath = 0x200000
 func designerSousHome(home, chemin string, uid int) (*os.File, error) {
 	fdRep, base, err := ouvrirParent(home, chemin, uid)
 	if errors.Is(err, errComposantAbsent) {
-		return nil, fmt.Errorf("%s absent", chemin)
+		return nil, fmt.Errorf("%s %w", chemin, errObjetAbsent)
 	}
 	if err != nil {
 		return nil, err
@@ -720,7 +729,7 @@ func designerSousHome(home, chemin string, uid int) (*os.File, error) {
 
 	fd, err := syscall.Openat(fdRep, base, oPath|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
 	if errors.Is(err, syscall.ENOENT) {
-		return nil, fmt.Errorf("%s absent", chemin)
+		return nil, fmt.Errorf("%s %w", chemin, errObjetAbsent)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s inaccessible : %v", chemin, err)
@@ -745,4 +754,207 @@ func designerSousHome(home, chemin string, uid int) (*os.File, error) {
 			ErrCheminSuspect, chemin, st.Uid, uid, ErrProprietaireAutre)
 	}
 	return os.NewFile(uintptr(fd), chemin), nil
+}
+
+// ---------------------------------------------------------------------------
+// Constater sous un `HOME`, sans suivre un seul lien — TO-DO 163
+// ---------------------------------------------------------------------------
+//
+// Le point 135 a fermé la lecture et le retrait ; il restait deux gestes de
+// CONSTAT qui passaient un chemin à une primitive qui le résout :
+//
+//   - le scan des fichiers : `os.Lstat` reconnaît le lien posé À LA PLACE du
+//     fichier, mais résout les répertoires qui y mènent. Avec `ln -s /etc
+//     ~/.config`, root hachait `/etc/app.conf` pour le comparer à ce que la
+//     politique avait déposé dans `~/.config/app.conf` ;
+//   - le vérificateur d'ACL, qui donnait le chemin à `getfacl`.
+//
+// Rien ne sortait de la machine — une empreinte, un bit « conforme ou non » —
+// mais c'est root qui lit, sur commande d'un utilisateur, un fichier que
+// l'utilisateur ne peut pas lire. Et le verdict était FAUX : le scan comparait
+// un autre fichier que celui de la politique.
+
+// tailleMaxHachage borne ce que le scan accepte de hacher sous un `HOME`.
+//
+// Un contenu déposé par une politique ne dépasse pas 262 144 caractères, soit
+// un mébioctet au plus. Un fichier plus gros que cette borne n'est PAS celui
+// que la politique a posé : il est dit modifié sans être lu — et un fichier
+// creux de cent gigaoctets ne retient pas une ouverture de session.
+const tailleMaxHachage = 4 * 1024 * 1024
+
+// etatSousHome est ce qu'on constate d'un chemin sous un dossier personnel.
+type etatSousHome struct {
+	Existe bool
+	// Lien : le dernier composant est un lien symbolique. Il EXISTE, même
+	// s'il ne mène nulle part.
+	Lien bool
+	// Ordinaire : un fichier ordinaire. Faux pour un répertoire, un tube…
+	Ordinaire bool
+	Uid       int
+	Mode      uint32
+	// SHA256 n'est renseigné que pour un fichier ordinaire du compte, sous la
+	// borne. TropGros dit qu'il la dépasse.
+	SHA256   string
+	TropGros bool
+}
+
+// constaterSousHome dit ce qu'il y a à un chemin sous le `HOME`, et hache un
+// fichier ordinaire du compte.
+//
+// Une erreur ErrCheminSuspect signale un répertoire du chemin qui est un lien,
+// ou qui n'appartient pas au compte : on ne sait alors rien du fichier, sinon
+// que le chemin qui y menait n'est plus celui que la politique a emprunté.
+func constaterSousHome(home, chemin string, uid int) (etatSousHome, error) {
+	var e etatSousHome
+
+	fdRep, base, err := ouvrirParent(home, chemin, uid)
+	if errors.Is(err, errComposantAbsent) {
+		return e, nil
+	}
+	if err != nil {
+		return e, err
+	}
+	defer func() { _ = syscall.Close(fdRep) }()
+
+	// Le dernier composant LUI-MÊME, sans le suivre.
+	st, present, err := designerSansSuivre(fdRep, base)
+	if err != nil {
+		return e, fmt.Errorf("%s illisible : %v", chemin, err)
+	}
+	if !present {
+		return e, nil
+	}
+	e.Existe = true
+	e.Uid = int(st.Uid)
+	e.Mode = uint32(st.Mode & 0o777)
+	switch st.Mode & syscall.S_IFMT {
+	case syscall.S_IFLNK:
+		e.Lien = true
+		return e, nil
+	case syscall.S_IFREG:
+		e.Ordinaire = true
+	default:
+		return e, nil
+	}
+	if e.Uid != uid {
+		// Un fichier d'un autre compte — un lien physique, par exemple. On ne
+		// le lit pas : l'appelant dira ce qu'il en est.
+		return e, nil
+	}
+	if st.Size > tailleMaxHachage {
+		e.TropGros = true
+		return e, nil
+	}
+
+	// Ouvert RELATIVEMENT au répertoire, sans suivre : si le fichier vient
+	// d'être remplacé par un lien, l'ouverture échoue au lieu de le suivre.
+	fd, err := syscall.Openat(fdRep, base,
+		syscall.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		if errors.Is(err, syscall.ELOOP) {
+			e.Lien, e.Ordinaire = true, false
+			return e, nil
+		}
+		return e, fmt.Errorf("%s illisible : %v", chemin, err)
+	}
+	defer func() { _ = syscall.Close(fd) }()
+
+	// Le descripteur fait foi, pas le fstatat qui l'a précédé.
+	var ouvert syscall.Stat_t
+	if err := syscall.Fstat(fd, &ouvert); err != nil {
+		return e, fmt.Errorf("%s illisible : %v", chemin, err)
+	}
+	if ouvert.Mode&syscall.S_IFMT != syscall.S_IFREG || int(ouvert.Uid) != uid {
+		e.Ordinaire = ouvert.Mode&syscall.S_IFMT == syscall.S_IFREG
+		e.Uid = int(ouvert.Uid)
+		return e, nil
+	}
+	e.Mode = uint32(ouvert.Mode & 0o777)
+
+	somme := sha256.New()
+	bloc := make([]byte, 64*1024)
+	lus := 0
+	for {
+		n, err := syscall.Read(fd, bloc)
+		if n > 0 {
+			lus += n
+			if lus > tailleMaxHachage {
+				e.TropGros = true
+				return e, nil
+			}
+			somme.Write(bloc[:n])
+		}
+		if err != nil {
+			if errors.Is(err, syscall.EINTR) {
+				continue
+			}
+			return e, fmt.Errorf("lecture de %s impossible : %v", chemin, err)
+		}
+		if n == 0 {
+			break
+		}
+	}
+	e.SHA256 = hex.EncodeToString(somme.Sum(nil))
+	return e, nil
+}
+
+// designerSansSuivre rend l'état d'une entrée d'un répertoire déjà ouvert, sans
+// la suivre si c'est un lien.
+//
+// Par `O_PATH|O_NOFOLLOW` puis `fstat`, comme designerSousHome : l'appel
+// `fstatat` n'a pas le même nom d'une architecture à l'autre, et la
+// bibliothèque standard ne l'exporte pas.
+func designerSansSuivre(fdRep int, base string) (st syscall.Stat_t, present bool, err error) {
+	fd, err := syscall.Openat(fdRep, base, oPath|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
+	if errors.Is(err, syscall.ENOENT) {
+		return st, false, nil
+	}
+	if err != nil {
+		return st, false, err
+	}
+	defer func() { _ = syscall.Close(fd) }()
+	if err := syscall.Fstat(fd, &st); err != nil {
+		return st, false, err
+	}
+	return st, true, nil
+}
+
+// lireLienSousHome rend la cible d'un lien symbolique sous le `HOME`.
+//
+// Le lien est LU, jamais suivi : ce qu'on veut savoir, c'est ce qu'il dit, pas
+// ce qu'il y a au bout. `existe` est faux quand rien n'est à cet endroit ;
+// `estLien` l'est quand c'est autre chose qu'un lien.
+func lireLienSousHome(home, chemin string, uid int) (cible string, existe, estLien bool, err error) {
+	fdRep, base, err := ouvrirParent(home, chemin, uid)
+	if errors.Is(err, errComposantAbsent) {
+		return "", false, false, nil
+	}
+	if err != nil {
+		return "", false, false, err
+	}
+	defer func() { _ = syscall.Close(fdRep) }()
+
+	st, present, err := designerSansSuivre(fdRep, base)
+	if err != nil {
+		return "", false, false, fmt.Errorf("%s illisible : %v", chemin, err)
+	}
+	if !present {
+		return "", false, false, nil
+	}
+	if st.Mode&syscall.S_IFMT != syscall.S_IFLNK {
+		return "", true, false, nil
+	}
+
+	p, err := syscall.BytePtrFromString(base)
+	if err != nil {
+		return "", true, true, err
+	}
+	tampon := make([]byte, 4096)
+	n, _, errno := syscall.Syscall6(syscall.SYS_READLINKAT,
+		uintptr(fdRep), uintptr(unsafe.Pointer(p)),
+		uintptr(unsafe.Pointer(&tampon[0])), uintptr(len(tampon)), 0, 0)
+	if errno != 0 {
+		return "", true, true, fmt.Errorf("lecture du lien %s impossible : %v", chemin, errno)
+	}
+	return string(tampon[:n]), true, true, nil
 }

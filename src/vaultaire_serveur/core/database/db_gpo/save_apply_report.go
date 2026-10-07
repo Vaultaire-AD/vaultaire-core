@@ -77,6 +77,33 @@ func SaveApplyReport(db *sql.DB, computeurID, scope, targetUser, fingerprint, st
 		return fmt.Errorf("gpo: enregistrement de la conformité : %w", err)
 	}
 
+	// Une portée qui n'applique PLUS RIEN n'a plus rien qui puisse dériver —
+	// TO-DO 86.
+	//
+	// Les colonnes de dérive survivaient au retrait du dernier module : l'agent
+	// n'a alors plus d'inventaire, son scan se tait (il n'a rien à comparer), et
+	// le dernier constat restait affiché pour toujours. Une machine sans aucun
+	// module affichait « ok (1) » — un élément vérifié qui n'existe plus — ou,
+	// pire, « 1 écart(s) » sur un fichier que plus aucune politique ne réclame,
+	// et que rien ne viendrait jamais « corriger ».
+	//
+	// C'est le SEUL cas où une application touche à la dérive : dès qu'il reste
+	// un module, la règle ci-dessus tient, et le scan garde la main.
+	if len(modules) == 0 {
+		if _, err := tx.Exec(`
+			UPDATE gpo_compliance
+			   SET drift_count = 0, drift_checked = 0, drift_at = NULL
+			 WHERE computeur_id = ? AND scope = ? AND target_user = ?`,
+			computeurID, scope, targetUser); err != nil {
+			return fmt.Errorf("gpo: remise à zéro de la dérive : %w", err)
+		}
+		if _, err := tx.Exec(
+			`DELETE FROM gpo_drift WHERE computeur_id = ? AND scope = ? AND target_user = ?`,
+			computeurID, scope, targetUser); err != nil {
+			return fmt.Errorf("gpo: nettoyage des écarts : %w", err)
+		}
+	}
+
 	// Le détail est REMPLACÉ, pas complété : il décrit le dernier rapport, et
 	// mélanger deux applications donnerait un module apparaissant à la fois en
 	// échec et en succès.

@@ -28,6 +28,20 @@
         <div class="app-container animate-in">
     <h1>Machine {{ .Machine }}</h1>
 
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }} Rechargez la page dans quelques secondes pour voir le résultat du cycle.</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+
+    {{ if .PeutDemanderUnCycle }}
+    <form method="post" style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin:0.6rem 0 1rem 0">
+      <input type="hidden" name="action" value="refresh_gpo">
+      <button type="submit" class="btn btn-secondary">Demander un cycle</button>
+      <span class="muted small">
+        La machine relit sa politique maintenant, au lieu d'attendre son tour. Hors ligne, elle le fera à son retour.
+        Les GPO de compte ne sont pas concernées : elles s'appliquent à l'ouverture de session de chaque compte.
+      </span>
+    </form>
+    {{ end }}
+
     {{ if not .Etats }}
       <div class="alert alert-info">
         Aucun rapport pour cette machine. Soit elle n'a jamais appliqué de
@@ -59,12 +73,12 @@
               {{ .ModulesTotal }} module(s), {{ .ModulesFailed }} échec(s),
               {{ .ModulesSkipped }} ignoré(s)
             </td>
-            <td><code class="small">{{ .Fingerprint }}</code></td>
+            <td><code class="small" title="{{ .Fingerprint }}">{{ .EmpreinteCourte }}</code></td>
             <td>
-              {{ if .JamaisScanne }}
-                <span class="badge badge-danger">jamais vérifiée</span>
+              {{ if .NonVerifiee }}
+                <span class="badge badge-danger">{{ .Conformite }}</span>
               {{ else }}
-                {{ .Conformite }} <span class="muted small">— {{ .ScanIlYA }}</span>
+                {{ .Conformite }}{{ if .ScanIlYA }} <span class="muted small">— {{ .ScanIlYA }}</span>{{ end }}
               {{ end }}
             </td>
             <td class="muted small">{{ .VuIlYA }}</td>

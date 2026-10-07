@@ -49,7 +49,9 @@ savoir si un agent passe par le proxy.
 | `révision N REFUSÉE par le proxy` | la liste entière est inapplicable (plus de relais Ducky sur le port annoncé), ou le proxy garde la main | lire le motif affiché ; `pilotage_par_le_core: false` dans son fichier ? |
 | `le proxy … n'a jamais rendu compte de ses relais` | proxy antérieur à la 2.2, ou jamais connecté depuis la mise à jour du core | mettre le proxy à jour ; en attendant, ses relais se règlent dans son fichier |
 | Après un redémarrage, le proxy n'applique pas son fichier | il a rouvert la copie de la dernière liste du core (`relais_du_core.json`, à côté de son identité) | c'est voulu ; `vlt cluster relais <proxy> release` rend la main au fichier |
-| Le proxy s'arrête trente secondes après son démarrage : `aucune session authentifiée` | aucun core joignable ; les relais ne s'ouvrent qu'une fois la session établie (TO-DO 158) | rétablir l'accès à un core ; un proxy déjà démarré, lui, garde ses relais |
+| `aucun core joint depuis … : N relais reste(nt) ouvert(s)` (ERROR, à +30 s puis toutes les 5 min) | aucun core joignable. Depuis la 2.3 le proxy **ne s'arrête plus** : ses relais sont ouverts, il réessaie sans fin | rétablir l'accès à un core : `proxy en ligne, session … (obtenue après …)` suit sans redémarrage. Tant que la ligne revient, le proxy n'est pas annoncé aux agents et ne reçoit pas ses relais du core |
+| Le proxy s'arrête trente secondes après son démarrage : `aucune session authentifiée` | proxy **antérieur à la 2.3**, aucun core joignable | mettre le proxy à jour, ou rétablir l'accès à un core |
+| Le conteneur du proxy tourne, mais `vlt cluster list` ne le montre pas | il attend un core (ligne ci-dessus) : l'arrêt du conteneur ne sert plus d'alarme | surveiller le **journal**, plus le code de sortie |
 
 ## Lire le bilan
 

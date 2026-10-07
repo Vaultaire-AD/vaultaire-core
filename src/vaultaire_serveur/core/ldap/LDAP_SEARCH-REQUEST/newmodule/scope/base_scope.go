@@ -246,6 +246,21 @@ func memberOfForUser(db *sql.DB, username string, j *ldapjournal.Operation) []ca
 		return nil
 	}
 
+	return appartenancesLDAP(groupes)
+}
+
+// appartenancesLDAP compose le `memberOf` d'un compte depuis ses groupes.
+//
+// UNE fonction pour les deux chemins — la recherche `base` et les recherches
+// `one` et `sub` (TO-DO 155). Chacun composait le sien, depuis des groupes qui
+// n'étaient pas les mêmes : c'est ainsi que le même compte perdait des groupes
+// selon la base de la recherche.
+//
+// Deux groupes qui composent le même DN ne comptent qu'une fois : `ToRootDN`
+// ne garde que les deux derniers labels, si bien qu'un groupe « Dev » de
+// `acme.lan` et un autre de `dev.acme.lan` s'écrivent pareil. Le premier, dans
+// l'ordre de la base, l'emporte — l'ordre est fixe, donc le choix aussi.
+func appartenancesLDAP(groupes []dbldap.GroupDomain) []candidate.Appartenance {
 	var memberOf []candidate.Appartenance
 	vus := make(map[string]struct{}, len(groupes))
 	for _, g := range groupes {

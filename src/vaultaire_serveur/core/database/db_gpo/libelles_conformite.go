@@ -35,8 +35,14 @@ import (
 // Trois cas, et le premier compte : « jamais vérifié » n'est PAS « conforme ».
 // Afficher un zéro rassurant pour une machine que personne n'a scannée est la
 // seule erreur d'affichage qui puisse faire conclure à tort qu'un parc va bien.
+//
+// Une portée qui n'applique AUCUN module n'a rien à vérifier, et le dit : « non
+// vérifié » y laissait croire qu'il restait quelque chose à regarder (TO-DO 86).
 func (r ComplianceRow) EtatConformite() string {
 	if !r.DriftAt.Valid {
+		if !r.JamaisRapporte && !r.ReportedAt.IsZero() && r.ModulesTotal == 0 {
+			return "rien à vérifier"
+		}
 		return "non vérifié"
 	}
 	if r.DriftCount == 0 {

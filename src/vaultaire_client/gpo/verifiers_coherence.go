@@ -1,7 +1,9 @@
 package gpo
 
 import (
+	"errors"
 	"fmt"
+	"os"
 	"strings"
 )
 
@@ -272,16 +274,56 @@ func verifierACL(c SystemCheck) (bool, string, error) {
 		return false, "", fmt.Errorf("getfacl absent : etat des ACL inverifiable")
 	}
 
+	veutPresente := strings.TrimSpace(c.Expect) != "absent"
+
+	// SOUS UN DOSSIER PERSONNEL, `getfacl` NE REÇOIT PLUS UN CHEMIN — TO-DO 163.
+	//
+	// Même remède que pour `setfacl` dans l'appliqueur (TO-DO 162), et pour la
+	// même raison : la commande suit les liens de son argument, elle tourne en
+	// root, et le dossier est à l'utilisateur. Avec `ln -s /etc/shadow
+	// ~/partage`, le vérificateur lisait les ACL de `/etc/shadow` et concluait
+	// sur le dossier de la personne. La cible est OUVERTE par la descente sûre
+	// et `getfacl` reçoit son descripteur.
+	//
+	// c.Compte est posé par le scan pour une portée utilisateur ; en portée
+	// machine il est vide, et le chemin reste un chemin.
+	cible := chemin
+	if c.Compte != "" {
+		home, err := resolveHomeDir(c.Compte)
+		if err != nil {
+			return false, "", err
+		}
+		uid, _, err := resolveUserIDs(c.Compte)
+		if err != nil {
+			return false, "", err
+		}
+		objet, err := designerSousHome(home, chemin, uid)
+		switch {
+		case errors.Is(err, errObjetAbsent):
+			if !veutPresente {
+				return true, "", nil
+			}
+			return false, chemin + " a disparu, et son ACL " + spec + " avec lui", nil
+		case errors.Is(err, ErrCheminSuspect):
+			// Constat, et non incertitude : l'appliqueur a posé l'ACL sur un
+			// fichier ou un répertoire ordinaire du compte, et ce n'en est plus un.
+			return false, chemin + " n'est plus un fichier ou un repertoire ordinaire du compte", nil
+		case err != nil:
+			return false, "", err
+		}
+		defer objet.Close()
+		cible = fmt.Sprintf("/proc/%d/fd/%d", os.Getpid(), objet.Fd())
+	}
+
 	// --absolute-names : sans elle, getfacl retire le « / » de tête et les
 	// messages d'erreur désignent un chemin relatif qui n'existe nulle part.
 	// -c : pas d'en-tête de commentaires, que les entrées.
-	sortie, err := runCommand("getfacl", "--absolute-names", "-c", chemin)
+	sortie, err := runCommand("getfacl", "--absolute-names", "-c", cible)
 	if err != nil {
 		return false, "", fmt.Errorf("ACL de %s illisibles : %v", chemin, err)
 	}
 
 	droits, effectifs, present := entreeACL(sortie, spec)
-	veutPresente := strings.TrimSpace(c.Expect) != "absent"
 
 	if !present {
 		if !veutPresente {

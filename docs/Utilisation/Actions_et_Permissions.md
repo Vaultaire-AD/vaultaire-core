@@ -208,6 +208,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `session.list_users` ² | `read:status:user` | Globale | — | **Registre** — `status -u` | — |
 | `session.get_user` | `read:status:user` | Utilisateur | — | **Registre** — `status -u <compte>` | — |
 | `session.list_users_by_group` ² | `read:status:user` | Groupe | — | **Registre** — `status -u -g` | — |
+| `revocation.get_status` ² | `read:status:user` | Utilisateur | — | **Registre** — `kill -u <compte> --status` | **Registre** — fiche du compte |
 | `session.list_clients` ² | `read:status:client` | Globale | — | **Registre** — `status -c` | — |
 | `session.list_clients_by_group` ² | `read:status:client` | Groupe | — | **Registre** — `status -c -g` | — |
 | `session.list_clients_by_type` ² | `read:status:client` | Globale | — | **Registre** — `status -c <type>` | — |
@@ -231,7 +232,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | **Conformité GPO et arborescence** |
 | `gpo.list_compliance` ² | `read:get:gpo` | Globale | — | **Registre** — `gpo status`, `gpo drift` | — |
 | `gpo.get_compliance` | `read:get:gpo` | Machine | — | **Registre** — `gpo status <machine>` | — |
-| `gpo.refresh` | `write:update:client` | Machine | — | **Registre** — `gpo refresh <machine>`, `--all` | — |
+| `gpo.refresh` | `write:update:client` | Machine | — | **Registre** — `gpo refresh <machine>`, `--gpo <nom>`, `--all` | **Registre** — bouton « Demander un cycle » (fiche d'une machine, fiche d'une GPO machine) |
 | `gpo.get_signature_policy` | `read:log` | Globale | — | **Registre** — `gpo signature` | — |
 | `gpo.set_signature_policy` | `write:server` | Globale | — | **Registre** — `gpo signature <on\|off>` | — |
 | `domain.list_tree` ² | `read:get:group` | Globale | — | **Registre** — `eyes -g` | **Registre** — page Arborescence |
@@ -253,7 +254,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**102 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+**103 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
 ligne de commande.** *(Le compte valait 94 ici alors que le registre en portait
 97 : `client.export`, `mfa.get_ducky_policy` et `mfa.set_ducky_policy` manquaient
 au tableau. Il est tenu par un test — `TestCatalogueCompletNaPasDeDoublon` — qui,
@@ -463,8 +464,8 @@ Une GPO ne porte pas une donnée d'annuaire : elle porte des règles sudo, des
 fichiers déposés en root, des restrictions de shell, appliqués à tout le parc
 visé. C'est l'objet dont le contrôle a le plus de conséquences.
 
-`--test` vérifie six propriétés qui leur sont propres, sur les **10 actions
-GPO** du catalogue :
+`--test` vérifie des propriétés qui leur sont propres, sur les actions `gpo.*`
+du catalogue :
 
 | Vérification | Ce qu'elle empêche |
 |---|---|
@@ -474,6 +475,13 @@ GPO** du catalogue :
 | **Portée non extensible** | Un délégué de paris ne peut pas modifier une GPO couvrant paris **et** lyon — sinon il pousse des règles sudo sur un parc étranger |
 | Lecture reste déléguée | Durcir la lecture priverait un délégué de la vue de son propre parc |
 | Actions présentes | Un catalogue sans action GPO ne les contrôlerait plus du tout |
+| Exemptions vivantes et justifiées | Trois actions `gpo.*` n'agissent pas sur une politique — `gpo.refresh` (la machine), `gpo.get_signature_policy` et `gpo.set_signature_policy` (un réglage du cluster) — et portent une autre clé, à dessein. Elles sont inscrites avec leur raison ; une exemption dont l'action a disparu fait échouer |
+
+> **`gpo.refresh` et `cluster.refresh_nodes` exigent le droit sur TOUS les
+> domaines de la machine** *(2.3, TO-DO 150)*. Elles se contentaient d'un seul —
+> les deux seules écritures du catalogue dans ce cas, signalées par cette suite
+> depuis leur création. Un délégué ne fait plus rafraîchir un poste qu'il
+> partage avec un autre domaine.
 
 Trois mutations éprouvées : clé détournée vers `write:update:group`,
 `gpo.add_module` rendu souple, `gpo.delete` réservé au groupe protégé. Les

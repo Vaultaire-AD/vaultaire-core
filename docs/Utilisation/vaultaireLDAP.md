@@ -223,6 +223,15 @@ d'eux ne trouve rien. Avec la propagation, tous y sont.
 Si une application ne retrouve pas les groupes d'un sous-domaine, c'est ce
 droit qu'il faut regarder : `get -p -u <permission>`, ligne `search`.
 
+**La base de la recherche n'y change rien** *(2.3, TO-DO 155)*. Un compte de
+`dev.acme.lan` qui appartient aussi à un groupe de `acme.lan` porte ce groupe
+dans son `memberOf`, que l'on cherche sous `dc=acme,dc=lan`, sous
+`dc=dev,dc=acme,dc=lan` ou par son DN — pourvu que le compte de connexion ait
+le droit de le lire. Avant la 2.3, une recherche faite sous le sous-domaine ne
+rendait que les groupes de ce sous-domaine : une application synchronisée là
+croyait que le compte avait quitté les autres. À la première synchronisation
+après la mise à jour, ces groupes **reviennent**.
+
 ---
 
 # 🔎 Comprendre ce que fait un client : le journal

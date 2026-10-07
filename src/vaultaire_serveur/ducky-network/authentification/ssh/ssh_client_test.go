@@ -1,9 +1,11 @@
 package sshclient
 
 import (
+	"strings"
 	"testing"
 
 	"vaultaire/core/reglages"
+	"vaultaire/core/storage"
 )
 
 // TestLePrefixeDesGroupesEstFige.
@@ -75,5 +77,43 @@ func TestLePrefixeNePeutPasEtreConfonduAvecUneCle(t *testing.T) {
 			t.Errorf("le préfixe %q ouvre aussi les clés de type %q : l'agent lirait "+
 				"ces clés comme des groupes", PrefixeGroupes, t2)
 		}
+	}
+}
+
+// Une demande d'ouverture de session malformée est refusée par un 03_03, dans
+// le tunnel — TO-DO 159.
+//
+// Elle l'était par un 02_07, qui dit « l'authentification de CETTE session est
+// refusée » : or la session est le tunnel de la machine. Et il ne libérait pas
+// le module PAM qui attend le verdict du compte.
+func TestUneDemandeMalformeeEstRefuseeParUn0303(t *testing.T) {
+	reponse := SSH_SEND_Pubkey_AUTH(storage.Trames_struct_client{
+		Message_Order:       []string{"03", "01"},
+		SessionIntegritykey: "CLE",
+		Username:            "vaultaire",
+		ClientSoftwareID:    "PC-01",
+		Content:             "alice.martin@acme.lan",
+	})
+	lignes := strings.Split(reponse, "\n")
+	if len(lignes) != 5 || lignes[0] != "03_03" || lignes[1] != "serveur_central" || lignes[2] != "CLE" {
+		t.Fatalf("réponse %q — attendu un 03_03 complet", lignes)
+	}
+	if lignes[3] != "alice.martin@acme.lan" {
+		t.Errorf("le refus nomme %q : le poste ne retrouvera pas la demande en attente", lignes[3])
+	}
+	if strings.HasPrefix(reponse, "02_07") {
+		t.Error("un 02_07 dans le tunnel d'une machine : un agent à jour le lirait comme le refus du tunnel")
+	}
+}
+
+// Sans nom de compte il n'y a personne à qui répondre : l'ancienne trame est
+// gardée, bien formée, et le poste la journalise sans fermer son tunnel.
+func TestUneDemandeSansCompteGardeUneTrameLisible(t *testing.T) {
+	reponse := SSH_SEND_Pubkey_AUTH(storage.Trames_struct_client{
+		Message_Order: []string{"03", "01"}, SessionIntegritykey: "CLE", Username: "vaultaire", Content: "",
+	})
+	lignes := strings.Split(reponse, "\n")
+	if len(lignes) != 5 || lignes[0] != "02_07" || lignes[3] != "vaultaire" || lignes[4] == "" {
+		t.Fatalf("réponse %q — attendu une 02_07 à deux lignes de contenu", lignes)
 	}
 }

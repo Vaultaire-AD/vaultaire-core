@@ -225,17 +225,24 @@ Le test vérifie la **couverture** : une action absente le fait échouer, une
 entrée morte aussi. Ce n'est pas une formalité — c'est ce qui empêche qu'une
 portée soit relâchée sans que personne le voie.
 
-Deux invariants de plus, tenus par `core/testrunner/run_rbac.go` :
+Trois invariants de plus, tenus par `core/testrunner/run_rbac.go` — la suite
+`--test`, que `go test` joue aussi depuis le TO-DO 150 :
 
-- **toute lecture déclare `UnDomaineSuffit`**, même sous `PorteeGlobale` où le
-  champ est inerte. Une règle sans exception se relit sans réfléchir ;
-- **aucune écriture ne le déclare** — sinon un délégué d'un domaine agirait sur
-  une entité qui en touche deux.
+- **la lecture d'une entité déclare `UnDomaineSuffit`** — un compte, une
+  machine, une GPO : ce qui a des domaines. Sans lui, une entité à cheval sur
+  deux domaines devient invisible au délégué de l'un d'eux ;
+- **aucune écriture ne le déclare**, ni `PorteeOuverte` — sinon un délégué d'un
+  domaine agirait sur une entité qui en touche deux. `gpo.refresh` et
+  `cluster.refresh_nodes` le déclaraient ; elles sont strictes depuis la 2.3 ;
+- **une action nommée `gpo.*` porte une clé `:gpo`**, sauf les trois qui
+  n'agissent pas sur une politique, inscrites avec leur raison dans la table
+  `horsModele` du test.
 
-> ⚠️ Cet invariant est aujourd'hui en **défaut connu** sur les actions `.list`
-> passées en `PorteeOuverte`, qui ne le déclarent pas. Voir
-> [`../../exploitation/A_TESTER.md`](../../exploitation/A_TESTER.md) § 10d avant
-> de « corriger » quoi que ce soit.
+Les deux autres sortes de portée n'ont rien à déclarer : une liste à
+`PorteeOuverte` laisse entrer qui détient la clé n'importe où et **filtre** ; sous
+`PorteeGlobale` le champ est sans effet. La suite l'exigeait partout, et comptait
+en défaut dix-sept actions qui n'en avaient aucun — c'était le « défaut connu »
+de cette page, qui n'en était pas un dans le code.
 
 ### 6.3 Une colonne SQL s'ajoute à DEUX endroits
 

@@ -70,7 +70,7 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		logs.Write_LogCodeMeta("SECURITY", logs.CodeAuthLoginDenied,
 			trames_content.Username+" : trop de tentatives depuis "+source+
 				", encore "+reste.Round(time.Second).String(), meta)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifIdentifiants)
 	}
 
 	// KILL SWITCH — refus avant toute évaluation du mot de passe.
@@ -83,14 +83,14 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		logs.Write_LogCodeMeta("SECURITY", logs.CodeNone,
 			trames_content.Username+" : tentative d'authentification sur un compte révoqué", meta)
 		ratelimit.Echec(trames_content.Username, source)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifIdentifiants)
 	}
 
 	user_ID, err := dbusers.Get_User_ID_By_Username(database.GetDatabase(), trames_content.Username)
 	if err != nil {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but user does not exist", meta)
 		ratelimit.Echec(trames_content.Username, source)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifIdentifiants)
 	}
 	valide, err := dbusers.VerifierMotDePasse(database.GetDatabase(), user_ID, trames_content.Content)
 	if err != nil {
@@ -98,12 +98,12 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		// Le faire ferait dégénérer une indisponibilité de la base en freinage
 		// général de tous les comptes qui tentent de se connecter.
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but error for get password", meta)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifIdentifiants)
 	}
 	if !valide {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, trames_content.Username+" try to login but password is not correct", meta)
 		ratelimit.Echec(trames_content.Username, source)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nWrong login Data")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifIdentifiants)
 	}
 
 	// Mot de passe prouvé : les compteurs repartent de zéro.
@@ -131,14 +131,13 @@ func SendAuthRequest(trames_content storage.Trames_struct_client) string {
 		logs.Write_LogCodeMeta("SECURITY", logs.CodeNone,
 			trames_content.Username+" : refus, mot de passe expiré depuis "+
 				strconv.Itoa(-status.DaysUntilExpiry)+" jour(s)", meta)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey +
-			"\nPassword expired, change it on the web interface")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifMotDePasseExpire)
 	}
 
 	token, alphaCheck := Generate_Challenge(trames_content.ClientSoftwareID)
 	if alphaCheck == "no" {
 		logs.Write_LogCodeMeta("ERROR", logs.CodeNone, trames_content.Username+" try to login but error for generate challenge", meta)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nAuth Failed please retry")
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifDefiImpossible)
 	}
 	nouvelleAuth := storage.Authentification{
 		RandomAuth:       token,
@@ -181,7 +180,9 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 	if message_content.AuthID == "" || len(randomAuth) == 0 || username == "" {
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone,
 			"Challenge d'authentification inconnu ou vide, trame 02_03 rejetée", meta)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nYou are not authentificate")
+		// Le compte du défi est inconnu, par définition : on rend celui que la
+		// trame annonce.
+		return Refus(trames_content.SessionIntegritykey, trames_content.Username, MotifNonAuthentifie)
 	}
 
 	if username == "vaultaire" {
@@ -210,7 +211,9 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		can, err := dbusers.DidUserCanLogin(database.GetDatabase(), username, trames_content.ClientSoftwareID)
 		if err != nil {
 			logs.Write_LogCodeMeta("ERROR", logs.CodeNone, username+" try to login but error for get user can login", meta)
-			return ("02_07\n" + trames_content.SessionIntegritykey + "\n" + username + "\nSomething go wrong contact you administrator")
+			// Cette trame était composée SANS sa ligne de destination : tous ses
+			// champs arrivaient décalés d'un rang (TO-DO 159).
+			return Refus(trames_content.SessionIntegritykey, username, MotifErreurInterne)
 		}
 		if can {
 			// L'acceptation est COMPOSÉE avant d'être actée (TO-DO 138).
@@ -249,7 +252,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 			return acceptation
 
 		} else {
-			return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + username + "\nyou have not the authorisation for acces to this computeur")
+			return Refus(trames_content.SessionIntegritykey, username, MotifMachineInterdite)
 		}
 
 	} else {
@@ -259,7 +262,7 @@ func CheckAuth(trames_content storage.Trames_struct_client, duckysession *storag
 		// repasser par le mot de passe, donc sans jamais être freiné.
 		logs.Write_LogCodeMeta("WARNING", logs.CodeNone, username+" Does not have the permission for login to "+trames_content.ClientSoftwareID, meta)
 		ratelimit.Echec(username, trames_content.ClientSoftwareID)
-		return ("02_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nYou are not authentificate")
+		return Refus(trames_content.SessionIntegritykey, username, MotifNonAuthentifie)
 
 	}
 }

@@ -33,12 +33,13 @@ import (
 // EnregistrerActionsRafraichissementCluster ajoute la demande d'actualisation.
 func EnregistrerActionsRafraichissementCluster(r *Registre) {
 	r.MustEnregistrer(Definition{
-		Nom:             "cluster.refresh_nodes",
-		CleRBAC:         "write:update:client",
-		Portee:          PorteeClient,
-		UnDomaineSuffit: true,
-		Resume:          "demande à une machine de redemander la liste des nœuds joignables",
-		Executer:        actualiserListeDeLaMachine,
+		Nom:     "cluster.refresh_nodes",
+		CleRBAC: "write:update:client",
+		// Sur TOUS les domaines de la machine, comme toute écriture — voir
+		// `gpo.refresh` (TO-DO 150). L'action déclarait UnDomaineSuffit.
+		Portee:   PorteeClient,
+		Resume:   "demande à une machine de redemander la liste des nœuds joignables",
+		Executer: actualiserListeDeLaMachine,
 	})
 }
 

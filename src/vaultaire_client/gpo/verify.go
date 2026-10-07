@@ -54,6 +54,15 @@ type SystemCheck struct {
 	Expect string `json:"expect"`
 	// StateKey du module qui l'a déclarée, pour savoir quoi réappliquer.
 	StateKey string `json:"state_key,omitempty"`
+
+	// Compte : le compte dont on scanne la portée, vide en portée machine.
+	//
+	// JAMAIS enregistré (`json:"-"`) : c'est le scan qui le pose, à partir de la
+	// portée qu'il parcourt (TO-DO 163). Un vérificateur qui regarde sous un
+	// dossier personnel en a besoin pour s'y rendre sans suivre un lien — et
+	// l'inscrire dans l'état aurait laissé sans lui toutes les attentes déjà
+	// écrites, qui seraient restées vérifiées par leur chemin.
+	Compte string `json:"-"`
 }
 
 // CheckID identifie une attente de façon stable.
@@ -139,7 +148,7 @@ func checkSnapshot() map[string]SystemCheck { return inventaireMachine.releveAtt
 // Séparé de scanFromState pour la même raison que celui-ci est séparé de
 // LoadState : les vérificateurs lancent des commandes, et un test doit pouvoir
 // éprouver la logique de parcours sans en lancer aucune.
-func scanChecks(scopeState *ScopeState) []DriftItem {
+func scanChecks(scopeState *ScopeState, compte string) []DriftItem {
 	if scopeState == nil || len(scopeState.Checks) == 0 {
 		return nil
 	}
@@ -165,6 +174,7 @@ func scanChecks(scopeState *ScopeState) []DriftItem {
 			continue
 		}
 
+		attendu.Compte = compte
 		conforme, detail, err := checker(attendu)
 		switch {
 		case err != nil:

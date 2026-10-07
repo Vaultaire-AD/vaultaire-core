@@ -91,25 +91,8 @@ for mod in pam_login_custom_module.so pam_logout_custom_module.so pam_ssh_auth_m
     fi
 done
 
-# 3. Service Systemd
-log_info "Création du service Systemd..."
-cat > /etc/systemd/system/vaultaire_client.service <<'EOF'
-[Unit]
-Description=Vaultaire Client Service
-After=network.target
-
-[Service]
-User=root
-Group=root
-ExecStart=/usr/bin/vaultaire_client
-WorkingDirectory=/etc/vaultaire_client
-Environment=USER=root
-LimitNOFILE=4096
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-EOF
+# 3. Service Systemd : écrit plus bas (étape 4ter), une fois la configuration en
+#    place — c'est l'agent lui-même qui pose son unité, après s'être contrôlé.
 
 # 4. Configuration JSON du client : la liste des cores
 #
@@ -146,6 +129,32 @@ else
 EOF
 fi
 chmod 600 /etc/vaultaire_client/client_conf.json
+
+# 4ter. Contrôle de démarrage, puis unité systemd — TO-DO 112
+#
+# AVANT de toucher à NSS, SSH et PAM, et ce n'est pas un détail d'ordre.
+#
+# Les piles PAM posées plus bas meurent quand le module ne joint pas l'agent
+# (default=die), sans repli : sur une machine où l'agent ne démarre pas, plus
+# aucun compte du domaine n'ouvre de session. Ce script les posait puis lançait
+# le service, et découvrait à la fin — ou pas du tout — qu'il ne tenait pas.
+#
+# « --install-unit » joue d'abord le contrôle de démarrage (configuration,
+# identité, clé privée — le même que « --check »), et n'écrit l'unité que s'il
+# passe. S'il échoue, on s'arrête ICI : cette exécution n'a alors rien changé
+# aux piles PAM, et la machine reste joignable comme elle l'était.
+#
+# L'unité est écrite par le binaire et non par ce script : elle lance
+# « vaultaire_client --check » avant chaque démarrage, ce qu'un binaire plus
+# ancien ne connaît pas. Posée à côté de lui, elle l'empêcherait de démarrer.
+# Écrite par lui, elle ne peut pas être en avance sur lui.
+log_info "Contrôle de démarrage de l'agent, puis écriture de son unité systemd..."
+if ! /usr/bin/vaultaire_client --install-unit; then
+    echo -e "\033[1;31m[ERREUR]\033[0m L'agent ne peut pas démarrer sur cette machine : voir le contrôle ci-dessus." >&2
+    echo "         Installation interrompue AVANT la configuration de NSS, SSH et PAM :" >&2
+    echo "         cette exécution n'a pas touché aux piles d'authentification." >&2
+    exit 1
+fi
 
 # 4bis. Ancien repertoire de journaux
 #
@@ -297,7 +306,13 @@ rm -rf /opt/vaultaire
 # 11. Activation et redémarrage des services
 log_info "Activation du service systemd et rechargement de SSHD..."
 systemctl daemon-reload
-systemctl enable --now vaultaire_client.service
+# « enable » puis « restart », et non « enable --now » : sur une machine déjà
+# installée le service tourne, « --now » ne faisait donc rien, et l'ancien
+# binaire restait en mémoire jusqu'au prochain redémarrage — une réinstallation
+# qui n'installait pas ce qu'elle venait de déposer. Sur une machine neuve,
+# « restart » vaut « start ».
+systemctl enable vaultaire_client.service
+systemctl restart vaultaire_client.service
 systemctl reload sshd
 
 log_success "Installation de Vaultaire Client terminée avec succès !"

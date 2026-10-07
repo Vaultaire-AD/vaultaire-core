@@ -36,6 +36,7 @@ import (
 	authclient "vaultaire/ducky-network/authentification/client"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
+	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
 type ClientInfo struct {
@@ -312,6 +313,15 @@ func main() {
 
 	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
+
+	// Rejeu des ordres de révocation non acquittés (TO-DO 49).
+	//
+	// Le core ne poussait un ordre qu'une fois, puis attendait qu'on vienne le
+	// lui redemander. Cette boucle le remet, toutes les quelques secondes, aux
+	// machines connectées à CE core qui ne l'ont pas acquitté — un envoi
+	// échoué, un ordre appliqué en échec, une machine tenue par un autre nœud
+	// que celui où la commande a été tapée.
+	go revocationmanager.RejouerLesOrdres()
 
 	if storage.Administrateur_Enable {
 		dbschema.CreateDefaultAdminUser(db.GetDatabase())

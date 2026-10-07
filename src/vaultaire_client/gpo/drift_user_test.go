@@ -31,7 +31,10 @@ func avecMemoireDesScansVide(t *testing.T) {
 // appelé que pour elle. Un inventaire utilisateur doit être examiné comme un
 // autre — c'est tout l'objet du point.
 func TestLaDeriveEstDetecteeDansUnHome(t *testing.T) {
-	home := t.TempDir()
+	// Un compte RÉEL et son dossier : depuis le point 163 le scan d'une portée
+	// utilisateur part du `HOME` du compte, par descripteur, et ne constate plus
+	// rien pour un compte qu'il ne sait pas résoudre.
+	nom, home := compteDEssai(t)
 
 	envFile := filepath.Join(home, ".config", "vaultaire", "env.sh")
 	hook := filepath.Join(home, ".profile.d", "vaultaire.sh")
@@ -57,11 +60,11 @@ func TestLaDeriveEstDetecteeDansUnHome(t *testing.T) {
 	// L'utilisateur fait ce qu'il a parfaitement le droit de faire chez lui.
 	écrireFichier(t, envFile, "export EDITOR=emacs\n", 0o644)
 
-	rapport := scanFromState(état, ScopeUser, "alice")
+	rapport := scanFromState(état, ScopeUser, nom)
 
-	if rapport.Scope != ScopeUser || rapport.Username != "alice" {
-		t.Errorf("rapport pour %q/%q, attendu %q/alice — le core range par ces deux champs",
-			rapport.Scope, rapport.Username, ScopeUser)
+	if rapport.Scope != ScopeUser || rapport.Username != nom {
+		t.Errorf("rapport pour %q/%q, attendu %q/%s — le core range par ces deux champs",
+			rapport.Scope, rapport.Username, ScopeUser, nom)
 	}
 	if rapport.Checked != 3 {
 		t.Errorf("elements examines = %d, attendu 3", rapport.Checked)

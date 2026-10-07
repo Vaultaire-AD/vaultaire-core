@@ -171,6 +171,19 @@ auraient sinon trois formulations, dont deux finiraient périmées.
 Ce n'est **pas** un motif de refus : la réponse qui le porte est une acceptation.
 Un motif de refus voyage dans la `03_03`.
 
+*(2.3, TO-DO 159.)* Ce motif — `permission denied`, `mfa required`,
+`password expired`… — est **écrit dans le journal du poste**. L'agent le recevait
+et ne le lisait nulle part : devant un refus, son journal ne distinguait pas un
+mot de passe faux d'un mot de passe expiré. Le core ne dit rien de plus précis
+que `permission denied` tant que le mot de passe n'est pas prouvé, et ce journal
+n'est lisible que de root. Le motif ne va pas encore jusqu'à l'**écran** de la
+personne (TO-DO 171).
+
+Une `03_01` **malformée** est refusée par une `03_03` (`invalid request`) quand
+le compte est lisible, et plus par un `02_07` émis dans le tunnel : le module
+PAM qui attend le verdict est libéré tout de suite, au lieu de patienter
+jusqu'à son délai.
+
 ## La ligne des groupes dans `03_02`
 
 Les clés publiques occupent « tout le reste » du contenu : il n'existait donc

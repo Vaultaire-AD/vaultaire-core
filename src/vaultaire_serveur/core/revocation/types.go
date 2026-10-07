@@ -132,6 +132,22 @@ const (
 	ResultNotApplicable Result = "not_applicable"
 )
 
+// Libelle dit le résultat comme on le lit dans un suivi (TO-DO 164).
+//
+// Les trois sont des succès, et ne se valent pas pour qui cherche où un compte
+// travaille encore : « appliqué » dit qu'il y avait quelque chose à couper.
+func (r Result) Libelle() string {
+	switch r {
+	case ResultApplied:
+		return "ordre appliqué sur la machine"
+	case ResultAlreadyAbsent:
+		return "aucun compte local de ce nom sur la machine"
+	case ResultNotApplicable:
+		return "sans objet sur cette machine"
+	}
+	return string(r)
+}
+
 // IsValidResult dit si un résultat est connu.
 func IsValidResult(r Result) bool {
 	switch r {
@@ -151,7 +167,44 @@ const (
 	StatusAcked TargetStatus = "acked"
 	// StatusFailed : la machine a signalé un échec. Sera rejoué.
 	StatusFailed TargetStatus = "failed"
+	// StatusLifted : verrouillage LEVÉ avant que cette machine ne l'ait
+	// acquitté. Ne sera plus rejoué — TO-DO 49.
+	//
+	// Un verrouillage et sa levée sont deux ordres. Tant que seul l'agent
+	// réclamait ses ordres, au démarrage, ils arrivaient ensemble et dans
+	// l'ordre. Mais une machine qui a acquitté la levée et pas le verrouillage
+	// — il y avait échoué, des processus refusaient de mourir — gardait ce
+	// verrouillage « à rejouer » : rejoué SEUL, il refermait un compte que
+	// l'annuaire dit ouvert. La levée range donc ce qu'elle rend sans objet.
+	StatusLifted TargetStatus = "lifted"
 )
+
+// Libelle dit l'état d'une cible en français — TO-DO 164.
+//
+// Une seule définition, pour la ligne de commande et le portail. « levé » et
+// non « en attente » pour StatusLifted : l'ordre ne sera plus remis, et le
+// ranger avec ce qui attend ferait chercher une machine qui n'a rien à faire.
+func (s TargetStatus) Libelle() string {
+	switch s {
+	case StatusPending:
+		return "en attente"
+	case StatusFailed:
+		return "en échec"
+	case StatusAcked:
+		return "appliqué"
+	case StatusLifted:
+		return "levé avant application"
+	}
+	return string(s)
+}
+
+// ARejouer dit si une cible dans cet état doit encore recevoir son ordre.
+//
+// Une seule définition : la requête des ordres en attente, le rejeu du core et
+// le décompte « en attente » de l'historique doivent répondre pareil.
+func (s TargetStatus) ARejouer() bool {
+	return s == StatusPending || s == StatusFailed
+}
 
 // Order est un ordre de révocation tel qu'il circule sur le réseau.
 type Order struct {

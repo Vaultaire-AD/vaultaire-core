@@ -62,7 +62,7 @@ type Outcome struct {
 //  6. poussée aux machines connectées.
 //
 // Si l'étape 6 échoue en totalité — serveur isolé du parc — l'ordre reste en
-// base et partira à la reconnexion des machines. C'est le point de l'étape 3.
+// base et partira au retour des machines. C'est le point de l'étape 3.
 func Trigger(senderUsername string, senderGroupIDs []int,
 	targetUser string, mode revocation.Mode, reason revocation.Reason) (Outcome, error) {
 
@@ -149,6 +149,28 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 		logs.Write_Log("SECURITY", fmt.Sprintf(
 			"revocation: %s a une session ouverte sur %d machine(s) dont il ne partage plus aucun "+
 				"groupe — elles sont visées quand même", directoryUser, out.HorsGroupes))
+	}
+
+	// Une LEVÉE vise aussi les machines que le verrouillage avait visées —
+	// TO-DO 49. Les groupes d'aujourd'hui ne sont pas ceux du jour du
+	// verrouillage : une machine qui avait verrouillé, et dont la personne a
+	// été retirée depuis, n'aurait pas reçu la levée et serait restée fermée
+	// pour toujours. Lu AVANT LiftSoftRevocations, qui efface ce repère.
+	if mode == revocation.ModeUnlock {
+		sousVerrou, err := dbrevocation.MachinesSousVerrou(db, directoryUser)
+		if err != nil {
+			logs.Write_Log("WARNING", fmt.Sprintf(
+				"revocation: machines sous verrou de %s illisibles, la levée ne vise que les groupes : %v",
+				directoryUser, err))
+		}
+		var ajoutees int
+		targets, ajoutees = ajouterLesCibles(targets, sousVerrou)
+		out.TargetCount = len(targets)
+		if ajoutees > 0 {
+			logs.Write_Log("INFO", fmt.Sprintf(
+				"revocation: la levée pour %s vise %d machine(s) de plus, verrouillée(s) alors que le compte "+
+					"n'y partage plus aucun groupe", directoryUser, ajoutees))
+		}
 	}
 
 	// Le déverrouillage lève d'abord la marque en base, sinon le compte
@@ -252,6 +274,28 @@ func reunirLesCibles(parGroupes, enSession []string) (cibles []string, avecSessi
 	return cibles, avecSession, horsGroupes
 }
 
+// ajouterLesCibles ajoute des machines à une liste de cibles, sans doublon et
+// en gardant l'ordre trié. Rend aussi combien étaient nouvelles.
+//
+// Comparées sans la casse, comme la base compare les identifiants de machine.
+func ajouterLesCibles(cibles, autres []string) ([]string, int) {
+	vues := map[string]bool{}
+	for _, m := range cibles {
+		vues[strings.ToLower(m)] = true
+	}
+	ajoutees := 0
+	for _, m := range autres {
+		if m == "" || vues[strings.ToLower(m)] {
+			continue
+		}
+		vues[strings.ToLower(m)] = true
+		cibles = append(cibles, m)
+		ajoutees++
+	}
+	sort.Strings(cibles)
+	return cibles, ajoutees
+}
+
 // killSessions ferme les sessions que le SERVEUR tient au nom d'un utilisateur.
 //
 // Sans ça, une personne déjà connectée continuerait de travailler jusqu'à
@@ -316,8 +360,9 @@ func killSessions(username string) int {
 // pushToOnline envoie l'ordre aux machines actuellement connectées.
 //
 // Retourne le nombre de machines jointes. Les autres ne sont pas perdues :
-// leur ligne reste « pending » en base et l'ordre repart à la reconnexion, via
-// 06_04. Un échec d'envoi n'est donc pas traité comme une erreur — c'est un
+// leur ligne reste « pending » en base, et l'ordre leur est remis par le rejeu
+// du core dès qu'elles sont connectées (rejeu.go), ou quand elles le réclament
+// (06_04). Un échec d'envoi n'est donc pas traité comme une erreur — c'est un
 // simple « pas maintenant ».
 func pushToOnline(order revocation.Order, targets []string) int {
 	pushed := 0
@@ -334,6 +379,9 @@ func pushToOnline(order revocation.Order, targets []string) int {
 					order.ID, computeurID, sess.SessionID, err))
 				continue
 			}
+			// L'envoi compte pour un essai : c'est de lui que part
+			// l'espacement des rejeux (TO-DO 49).
+			noterLEssai(computeurID, []int{order.ID})
 			pushed++
 			break
 		}

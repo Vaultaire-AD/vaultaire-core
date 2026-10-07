@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **166**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **176**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -68,7 +68,7 @@ journal ne disait pas où LogonUI s'arrêtait. La cause de l'écran vide, elle,
 le fournisseur s'inscrit sous le CLSID `{` — **traités** le jour même, voir
 `DO/2.2/2.2.md` ; le **149** en est la suite),
 proxy (**141** la configuration des relais se pilote depuis le core —
-**traité**, voir `DO/2.2/2.2.md` ; les **158** et **160** en sont la suite), GPO
+**traité**, voir `DO/2.2/2.2.md` ; le **158**, **traité** en 2.3, et le **160** en sont la suite), GPO
 (**142** cadence de la vérification utilisateur — **traité** —, **143** une ligne
 par machine dans la page Conformité), comptes et LDAP (**144** créer un compte sans mot de
 passe provisoire, **145** journal LDAP illisible en debug — **traité**, voir
@@ -88,6 +88,46 @@ faux selon son démarrage (**165**). Deux points en restent : **163** (les
 modules utilisateur sans vérificateur) et **164** (voir où en est un ordre de
 révocation, machine par machine).
 
+**Banc du 07/10 (points 49, 86, 112, 143 et 163).** Tous traités, voir
+`DO/2.3/2.3.md`. Le **86** demandait d'abord de reproduire : le premier
+symptôme (« audit ne se distingue pas d'enforce ») est **établi et corrigé** —
+en portée machine, un écart corrigé restait affiché une cadence entière, comme
+un écart en audit ; le second (« une GPO modifiée ne repart pas ») **n'est pas
+reproduit**, et ce qui y ressemble est désormais dit par les actions. Un défaut
+que personne n'avait relevé est sorti en chemin et **traité** dans le même lot :
+une machine dont la politique ne change pas passait « en retard » pour toujours
+(**166**). Trois points en restent : **167** (le client Windows n'acquitte aucun
+ordre, et le core le relance sans fin), **168** (cloisonner le service de
+l'agent) et **169** (demander un cycle depuis le portail).
+
+**Banc du 07/10, second lot (points 158, 159, 164 et 169).** Tous traités, voir
+`DO/2.3/2.3.md`. Le **159** demandait de lire avant de toucher : la panique
+fermait bien la session refusée, et rien d'autre ne le faisait — la fermeture
+est maintenant décidée, des deux côtés. Deux choses que sa description ne
+disait pas sont sorties : un agent refusé revenait toutes les **deux secondes**,
+sans fin (le délai de reprise repartait de zéro à chaque connexion) ; et le
+`02_07` n'est **pas** sur le chemin d'une personne qui se connecte — PAM passe
+par `03_01` —, c'est le tunnel de la machine qui le reçoit. Le motif d'un refus
+`03_03`, lui, n'était écrit nulle part sur le poste. Un défaut du portail est
+sorti en ouvrant enfin les pages dans un navigateur, et il est **traité** dans
+le même lot (**170**) : les étiquettes d'état n'avaient aucune règle de style,
+« non vérifié » ne ressortait donc pas. Deux points en restent : **171** (le
+motif d'un refus ne va pas jusqu'à l'écran de la personne) et **172** (demander
+un cycle n'atteint que les machines connectées à ce core). Le **167** est
+élargi : un proxy ou un Nexus rangé dans un groupe avec des comptes est visé par
+les ordres de révocation, et ne les acquitte pas plus qu'un poste Windows.
+
+**Banc du 07/10, troisième lot (points 71, 150, 154 et 155).** Tous traités,
+voir `DO/2.3/2.3.md`. Le **150** supposait un ordre d'initialisation : ce n'en
+était pas un. Des dix échecs de `--test`, **un** était un défaut — deux
+écritures qui se contentaient d'un domaine (`gpo.refresh`,
+`cluster.refresh_nodes`), rendues strictes —, deux étaient des filtres jamais
+éprouvés, et sept décrivaient un registre d'avant `PorteeOuverte`. La suite est
+désormais jouée par `go test`. Trois points en restent : **173** (les modules
+natifs sont compilés une fois pour toutes les distributions), **174** (donner à
+`rocky.sh` les précautions de `debian.sh`) et **175** (une recherche `base`
+rend un compte sans groupe quand la base flanche).
+
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
 ---
@@ -97,29 +137,25 @@ révocation, machine par machine).
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 158 | PROXY        | Un proxy démarré sans core n'ouvre aucun relais             | À faire — **la copie locale ne sert pas à froid** |
-| 159 | DUCKY        | Un refus `02_07` à une ligne fait paniquer le poste         | À faire — petit, à lire avant de toucher |
 | 160 | DOC          | « Pas de port sous 1024 en UID 10001 » : à vérifier         | À faire — petit, une commande           |
 | 161 | RÉGLAGES     | Prévenir quand la cadence dépasse ce que tolère le parc     | À faire — petit, la version est en base |
 | 146 | CLUSTER      | Retirer à la main un nœud hors ligne                        | À faire — petit                         |
 | 147 | CLUSTER      | Maintenance et purge d'un nœud                              | À faire — après le 148                  |
 | 148 | CLUSTER      | Sessions actives par core, en page et en commande           | À faire                                 |
-| 155 | LDAP         | `memberOf` dépend de la base de recherche                   | À faire — un client synchronisé sur un sous-domaine perd des groupes |
-| 150 | TESTS        | La suite `--test` échoue sur dix points                     | À faire — **un échec masque les autres** |
 | 151 | DOC          | Les mots de passe d'exemple sont refusés par la politique   | À faire — petit, bloque la formation    |
+| 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 144 | COMPTES      | Créer un compte de service sans mot de passe provisoire     | À faire — petit, l'action le sait déjà  |
 | 153 | JOURNAL      | Dix-huit écritures directes sur la sortie standard          | À faire — petit                         |
-| 154 | JOURNAL      | Le tampon mémoire est recopié à chaque ligne une fois plein | À faire — petit, **2,4 ms par ligne de journal** |
-| 143 | GPO          | Page Conformité : une seule ligne par machine               | À faire — moins urgent                  |
-| 163 | GPO          | Modules utilisateur encore sans vérificateur                | À faire — petit, un module à la fois    |
-| 86  | GPO          | Le mode audit ne se distingue pas — à reproduire           | À faire — à préciser d'abord            |
-| 164 | RÉVOCATION   | Voir, machine par machine, où en est un ordre               | À faire — la lecture existe, sans appelant |
+| 167 | RÉVOCATION   | Windows et les services n'acquittent aucun ordre : rejeu sans fin | À faire — petit, lié au 79         |
+| 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
+| 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
 | 157 | WINDOWS      | L'écran de connexion reste vide une fois la tuile inscrite  | **À faire — bloque la recette Windows** |
 | 149 | WINDOWS      | Éprouver la DLL du fournisseur dans la fabrication (wine)   | À faire — petit                         |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
-| 71  | CLIENT       | `-join` ne sait installer que Rocky                        | À faire                                 |
-| 112 | AGENT        | Durcir le service de l'agent (relance bornée, `--check`)    | À faire — **à faire en premier**        |
+| 173 | AGENT        | Les modules natifs sont compilés une fois, pour toutes les distributions | À faire — **debian.sh le détecte, rien ne le résout** |
+| 174 | AGENT        | `rocky.sh` : éprouver les modules et `sshd_config` avant PAM | À faire — petit, `debian.sh` le fait |
+| 168 | AGENT        | Cloisonner le service de l'agent (`ProtectSystem`…)         | À faire — à éprouver directive par directive |
 | 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
 | 113 | AGENT-UPDATE | Clé `pkg_signing` et format du manifeste signé              | À faire                                 |
 | 114 | AGENT-UPDATE | Dépôt Nexus en lecture anonyme, découvert par `04_15`       | À faire                                 |
@@ -128,82 +164,12 @@ révocation, machine par machine).
 | 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 22  | SELINUX      | Domaine dédié pour l'agent                                 | En cours                                |
-| 49  | RÉVOCATION   | Retenter les révocations poussées en échec                 | À faire — l'agent le borne déjà à dix minutes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
 
 ---
 
 ## Réseau Ducky
-
-### 159. [DUCKY] Un refus `02_07` à une seule ligne fait paniquer le poste
-
-**Constat** (relevé en traitant le 138). Le poste lit un refus d'authentification
-ainsi (`userauth/UserAuthentificationManager.go`, `case "07"`) :
-
-```go
-lines := strings.Split(trames_content.Content, "\n")
-logs.Write_log("WARNING", fmt.Sprintf("Authentification failed for user %s : %s", lines[0], lines[1]))
-```
-
-Il attend donc **deux** lignes de contenu : le compte, puis le motif. Or neuf
-des onze `02_07` de `CheckAuthentification.go` n'en portent qu'**une** —
-`Wrong login Data`, `Auth Failed please retry`, `You are not authentificate`,
-`Password expired…`. `lines[1]` sort alors du tableau et le traitement de la
-trame panique. La panique est récupérée par `handleConnection`
-(`serveur_communication/GoroutineConnection.go`), qui **ferme la connexion et
-retire la session**. Le journal du poste porte donc « Panic récupéré dans
-handleConnection … index out of range » là où il devrait porter le motif du
-refus — « mot de passe expiré » compris, que l'utilisateur ne lit nulle part.
-
-Deuxième défaut au même endroit : le refus de la ligne 213 du même fichier
-(`Something go wrong contact you administrator`) est composé **sans** la ligne
-de destination `serveur_central`. Tous ses champs sont décalés d'un rang.
-
-Le refus ajouté par le 138 (« trop de clés ») porte, lui, le compte et le
-motif : il s'affiche correctement.
-
-**Pourquoi ce n'est pas corrigé en passant.** La panique a un effet de bord :
-c'est elle qui **ferme** la connexion d'un essai refusé. Écrire la ligne
-proprement la laisserait ouverte. *À vérifier avant de toucher* : ce qui, dans
-`vaultaire_client`, conclut à l'échec — la fermeture, ou un délai — et ce que
-voit `sshd` dans chaque cas.
-
-**À faire.** Côté poste, lire le motif sans supposer le nombre de lignes (une
-ligne : c'est le motif, le compte est inconnu), puis fermer la session
-**explicitement**. Côté core, donner à tous les
-`02_07` la même forme — compte, motif — et réparer celui qui n'a pas de
-destination. Un test par forme de trame, des deux côtés.
-
-### 158. [PROXY] Un proxy démarré sans core joignable n'ouvre aucun relais
-
-**Constat** (relevé en traitant le 141). L'ordre de `vaultaire_proxy/main.go` est :
-`ducky.Start` — qui attend une session authentifiée, **trente secondes** au
-plus — puis le raccordement au cluster, puis les relais. Sans core joignable,
-`Start` rend une erreur et le proxy s'arrête (`aucune session authentifiée
-après 30s`) **avant** d'avoir ouvert un seul port.
-
-Ce n'est pas neuf, mais le 141 le rend plus visible : le proxy garde maintenant
-sur disque la dernière liste de relais reçue du core (`relais_du_core.json`),
-précisément pour repartir sans lui. À froid, cette copie n'est jamais lue. Un
-site dont le proxy redémarre pendant une coupure du lien perd donc aussi ses
-relais `https` vers des cibles **locales** (`source: liste`), qui n'ont pas
-besoin du core pour fonctionner. En conteneur, la politique de redémarrage
-relance le proxy toutes les trente secondes, sans effet.
-
-Un proxy **déjà démarré** qui perd ses cores n'est pas concerné : il garde tous
-ses relais ouverts — vérifié sur le banc.
-
-**Ce qu'il faut trancher.** Le relais **Ducky** sans core n'a rien vers quoi
-relayer : l'ouvrir donne des refus francs, ce qui est le comportement voulu
-(l'agent passe au nœud suivant). Mais le proxy doit-il rester en vie sans
-session, et pour combien de temps ? Aujourd'hui l'arrêt sert d'alarme.
-
-**À faire.** Ouvrir les relais **avant** d'attendre la session — depuis la copie
-locale, sinon depuis le fichier —, et faire de l'absence de session un état
-journalisé et retenté plutôt qu'un arrêt. Le raccordement au cluster et le
-compte rendu attendent la session, eux. Un test : proxy démarré sans core, un
-relais `liste` relaie.
 
 ### 160. [DOC] [PROXY] « Pas de port sous 1024 en UID 10001 » : à vérifier
 
@@ -437,80 +403,69 @@ wine. Ce n'est pas LogonUI — la tuile elle-même reste une recette manuelle.
 
 ## Agent
 
-### 71. [CLIENT] `create -c … -join` ne sait installer que Rocky
+### 173. [AGENT] [CLIENT] Les modules natifs sont compilés une fois, pour toutes les distributions
 
-**Constat.** `ExecuterCommandesSSHAvecCle` choisit `debian.sh`, `ubuntu.sh` ou
-`rocky.sh` selon `/etc/os-release`, mais seul `rocky.sh` existe dans
-`automatisation/auto_deployements/` : sur Debian ou Ubuntu, l'installation
-échoue au transfert du script. `rocky.sh` est aussi propre à dnf et aux chemins
-`/usr/lib64`.
+**Origine.** Relevé en traitant le **71**. Les trois modules PAM et la
+bibliothèque NSS que le core envoie à un poste sont ceux de
+`/opt/vaultaire/vaultaire_client/` : compilés une fois, là où le core a été
+fabriqué. Un module compilé contre une glibc plus récente que celle du poste ne
+s'y charge pas — et derrière une ligne `default=die`, un module PAM qui ne se
+charge pas refuse **tout le monde**, `root` et les comptes locaux compris
+(mesuré le 07/10 sur Ubuntu 24.04 : « Module is unknown »).
 
-**À faire.** Un `debian.sh` (apt, `/lib/x86_64-linux-gnu/security`) commun à
-Debian et Ubuntu, avec la même section 4 (liste des cores déposée par le core,
-repli sur `SSH_CONNECTION`).
+`debian.sh` le **détecte** (`ldd`, avant de toucher à PAM) et s'arrête. Rien ne
+le **résout** : sur un poste plus ancien que la machine de fabrication,
+l'installation est refusée, proprement, et c'est tout.
 
-### 143. [GPO] [WEB] Page Conformité : une seule ligne par machine
+Au passage : `pam_module/auto_compil.sh` lie les modules à `libcurl`
+(`-lcurl`), qu'aucun d'eux n'appelle. C'est une dépendance à installer pour
+rien sur chaque poste.
 
-**Constat** (recette du 03/10, moins urgent). La page Conformité liste une ligne
-par **couple** (machine, scope) : le scope machine, puis une ligne par
-utilisateur passé sur le poste. Toutes ouvrent pourtant la **même** page de
-détail, qui montre déjà tous les scopes de la machine.
+**À faire.** Décider où les modules sont fabriqués — une image par famille
+(RHEL 9, Debian 12) dans la CI, la plus ancienne glibc prise en charge faisant
+foi — et les ranger par famille dans ce que le core envoie
+(`vaultaire_client/rocky/`, `vaultaire_client/debian/`). Retirer `-lcurl`. C'est
+aussi un préalable du lot « Mise à jour du parc » (**116**, **117**), qui devra
+remplacer ces modules sur des postes en service.
 
-**À faire.** Une ligne par machine, portant l'état du scope **machine**. Les
-scopes utilisateur vont dans la page de détail — et remontent dans la liste
-**seulement en cas d'écart** : une machine dont un `HOME` a dérivé ne doit pas
-s'afficher conforme parce que son scope machine l'est. Le résumé du parc
-(`ResumerParc`) et le tri (`TrierConformite`) comptent aujourd'hui des lignes :
-les faire compter des machines, sans perdre « le pire état l'emporte ».
-`vlt gpo status` doit suivre la même règle (invariant § 6.1).
+### 174. [AGENT] `rocky.sh` : éprouver les modules et `sshd_config` avant PAM
 
-**Depuis le 135**, la ligne d'un compte porte un vrai état — `ok (N)`, ou des
-écarts — au lieu de rester « non vérifié » : la règle « remonte seulement en cas
-d'écart » a maintenant de quoi se nourrir. `ResumerParc` compte déjà des
-machines, y compris pour « une portée jamais vérifiée ».
+**Origine.** Reste du **71**. `debian.sh` prend deux précautions que `rocky.sh`
+n'a pas : il vérifie par `ldd` que les modules natifs se chargent **avant** de
+brancher PAM, et il valide `sshd_config` par `sshd -t` avant de le garder (en
+le remettant comme il était sinon). `rocky.sh` réécrit les trois piles et
+recharge `sshd` sans avoir vérifié ni l'un ni l'autre.
 
-### 163. [GPO] [CLIENT] Les modules utilisateur encore sans vérificateur
+Il réécrit aussi les piles **en entier** : ce qu'un administrateur ou
+`authselect` y avait mis disparaît, sans copie.
 
-**Origine.** Reste du **135**. Le scope utilisateur est inventorié, mais trois
-modules n'y laissent rien que le scan sache relire. Un compte qui ne reçoit
-qu'eux reste « non vérifié » — silence, et non fausse conformité.
+**À faire.** Reprendre dans `rocky.sh` l'étape 3 de `debian.sh` (chargement des
+modules) et la validation de `sshd_config` ; garder une copie
+`.avant-vaultaire` des trois piles avant de les écrire. L'essai à blanc
+(`VAULTAIRE_RACINE`) permettrait de le garder par les mêmes tests. À faire sur
+un Rocky, pas à l'aveugle.
 
-| Module | Ce qui manque |
-|---|---|
-| `user_git_config` | un vérificateur de la clé. Le fichier est à la personne : pas de hachage. Relire `~/.gitconfig` par `lireFichierUtilisateur`, le copier hors du dossier, `git config --file <copie> --get <clé>` — jamais `git` sous le `HOME` (voir 162) |
-| `user_password_policy` | relire `chage -l <compte>` ; `force_change` ne se vérifie pas (il se consomme à la connexion) |
-| `user_cron` | les deux unités sont inventoriées ; l'**activation** du timer ne l'est pas (`systemctl --user is-enabled` demande le bus de la personne, absent hors session) |
+### 168. [AGENT] Cloisonner le service de l'agent
 
-**Deux lectures par chemin restent**, sans rien écrire :
+**Origine.** Reste du **112**. L'unité de l'agent a maintenant une relance bornée
+et un contrôle avant démarrage ; elle n'a toujours aucune des protections que
+porte l'unité de Nexus (`ProtectSystem`, `ProtectHome`, `NoNewPrivileges`,
+`RestrictAddressFamilies`…).
 
-- le scan des **fichiers** d'un `HOME` (`scanFromState`) refuse le lien posé à la
-  place du fichier, mais traverse un répertoire intermédiaire devenu lien : root
-  hache alors un autre fichier. Le hachage ne sort pas de la machine. Le passer
-  par la descente sûre demande de résoudre le `HOME` et l'uid dans le scan ;
-- le vérificateur d'ACL (`verifierACL`) appelle `getfacl <chemin>`. Même
-  remède que l'appliqueur : `designerSousHome`, puis `/proc/<pid>/fd/<n>`.
+**Pourquoi ce n'est pas fait.** L'agent crée des comptes, écrit dans les
+dossiers personnels et applique des politiques sur tout le système. Chaque
+directive couperait un appliqueur de GPO — `ProtectHome` tout le scope
+utilisateur, `ProtectSystem=strict` tout dépôt de fichier sous `/etc`,
+`NoNewPrivileges` une transition SELinux (TO-DO 22). Les poser sans les avoir
+éprouvées casserait des postes pour une promesse non tenue.
 
-**À faire.** Un module à la fois, chacun avec son test qui part du vrai
-appliqueur — c'est la règle du paquet : une vérification approximative est pire
-qu'aucune.
-
-### 86. [GPO] Le mode audit ne se distingue pas d'enforce, et une GPO modifiée ne semble pas repartir
-
-> **Banc du 06/10.** En scope **utilisateur**, avec un agent réel, `audit` se
-> distingue bien : fichier supprimé, reconnexion, `gpo status` affiche
-> « 1 écart(s) », le journal de l'agent dit « mode audit, 1 module(s) en ecart
-> signale(s) sans correction », et le fichier n'est pas reposé. Avant le **135**
-> il ne pouvait rien montrer dans ce scope — aucun écart n'y était jamais vu —,
-> ce qui est peut-être tout le premier symptôme. Le scope **machine** n'a pas
-> été rejoué.
-
-**Constat** (recette du 24/09, **à préciser**). Deux symptômes rapportés, aucun reproduit ici : le mode `audit` ne produit pas de différence visible, et une GPO mise à jour ne semble rien changer chez un client qui l'avait déjà appliquée.
-
-**À faire.** D'abord **reproduire et décrire** : que voit-on exactement, et où — `vlt gpo status`, le journal de l'agent, ou l'état réel des fichiers sur la machine ? Tant que le symptôme n'est pas posé, toute correction serait une supposition.
-
-Une piste pour le second symptôme : l'empreinte porte sur la **politique effective**. Si elle ne bouge pas quand on modifie un module, le client reçoit un `05_03` « rien à faire » — ce qui est cohérent de son point de vue et faux du nôtre. Vérifier ce qui entre dans le calcul de l'empreinte, et si la version de la GPO est bien incrémentée à la modification d'un module.
-
----
+**À faire.** Sur un vrai poste, une directive à la fois, la suite de GPO de la
+formation rejouée après chacune. Garder celles qui ne coûtent rien
+(`ProtectKernelTunables` est exclu d'office par le module `sysctl`,
+`LockPersonality` ou `RestrictRealtime` ne le sont probablement pas), écrire
+pourquoi les autres ne peuvent pas l'être. Le gabarit vit dans
+`src/vaultaire_client/unite/unite.go` : c'est lui qu'on modifie, et
+`vaultaire_client --install-unit` qui le pose.
 
 ## Sécurité et authentification
 
@@ -540,42 +495,75 @@ Une fois tranché : chiffrement d'enveloppe des colonnes `private_key_data` et `
 
 **Reste à faire.** Un domaine dédié pour l'agent — il tourne aujourd'hui en `unconfined_service_t`.
 
-### 49. [RÉVOCATION] Retenter les révocations poussées en échec
+### 167. [RÉVOCATION] [WINDOWS] Windows et les services n'acquittent aucun ordre
 
-**Origine.** Reste noté dans `DO/2.0/2.0.md` (kill switch) et jamais reporté ici.
+**Origine.** Conséquence du **49**. Le client Windows V1 reçoit les trames `06`
+et les journalise **sans les appliquer** ni les acquitter (c'est le **79**). Le
+core, qui rejoue désormais ce qui n'est pas acquitté, lui remet donc ses ordres
+toutes les cinq minutes, pour toujours. C'est exact — le compte n'est **pas**
+coupé sur ce poste, et le journal le dit en toutes lettres au cinquième essai —
+mais c'est du bruit sans remède tant que le 79 n'est pas fait.
 
-**Constat.** La révocation poussée ne touche que les machines connectées au moment du déclenchement. Une machine absente récupère ses ordres en attente à sa reconnexion (`revocation_manager/trames.go`), mais une machine **connectée dont le push a échoué** attend elle aussi la reconnexion suivante, qui peut ne jamais venir tant que le tunnel tient.
+**Élargi le 07/10 (banc du 164).** Ce n'est pas propre à Windows. Les cibles
+d'un ordre sont « les machines qui partagent un groupe avec le compte »
+(`MachinesSharingGroupWith`), **quel que soit leur type** : un proxy ou un Nexus
+rangé dans un groupe où se trouvent des comptes est visé, reçoit la `06_05`, n'a
+aucun gestionnaire pour elle (`trames: catégorie 06 reçue sans gestionnaire
+branché`) et reste « en attente » indéfiniment. `kill -u <compte> --status` le
+montre maintenant — « remis N fois, aucune réponse de la machine » —, ce qui le
+rend visible sans le régler.
 
-**À faire.** Une tâche de fond côté core qui renvoie périodiquement les ordres en attente aux clients connectés.
+**À faire.** Deux gestes, indépendants :
 
-**Borné par le point 134 (06/10).** Un agent à jour redemande ses ordres en
-attente à chaque tunnel rétabli **et toutes les dix minutes** : un ordre poussé
-en vain, ou appliqué en échec, est donc rejoué dans les dix minutes sans rien
-demander au core. Ce point reste ouvert pour ramener ce délai à quelques
-secondes, et pour les agents antérieurs, qui ne redemandent qu'à leur démarrage.
+- ne **viser** que ce qui peut porter un compte local : filtrer les cibles par
+  type de client (le catalogue des types dit lesquels ont le droit d'émettre
+  l'acquittement `06_02`), pour qu'un service ne soit jamais une cible ;
+- pour le client Windows, le plus petit geste honnête : qu'il réponde `06_03`
+  avec un code que le core reconnaisse (« non pris en charge par ce client »),
+  et que le core range alors la cible dans un état à part, affiché tel quel par
+  `--status`, sans plus la relancer. Ne **pas** acquitter : un ordre acquitté se
+  lit comme un compte coupé.
 
-### 164. [RÉVOCATION] Voir, machine par machine, où en est un ordre
+### 171. [PAM] [CLIENT] Un mot de passe expiré se lit au journal du poste, pas à l'écran
 
-**Origine.** Reste du **133**. Le compte rendu de `kill -u` dit combien de
-machines ont **reçu** l'ordre. Ce qu'elles en ont fait — acquitté, en échec parce
-que des processus survivent, toujours en attente — ne se lit que dans le journal
-du core (`revocation: ordre 12 acquitté par <machine> (applied)`).
+**Origine.** Reste du **159**. Le core donne un motif précis à deux refus, et
+seulement après un mot de passe **prouvé** : `password expired` et
+`mfa required` (trame `03_03`). Depuis le 159 l'agent l'écrit dans son journal ;
+la personne devant l'invite, elle, ne voit toujours qu'un refus ordinaire, retape
+son mot de passe, puis appelle le support — exactement ce que le commentaire de
+`CheckAuthentification.go` dit vouloir éviter.
 
-Or depuis le 133 un ordre peut **échouer** sur une machine, et c'est précisément
-l'information qu'on cherche pendant un incident : « où ce compte travaille-t-il
-encore ? ».
+**Ce qu'il faut trancher.** L'agent ne transmet aujourd'hui un texte au module
+PAM que sur un **succès** (`Notice`, TO-DO 99), et c'est voulu : dire quoi que ce
+soit après un mot de passe faux apprendrait qu'un compte existe. Ces deux
+motifs-là ne tombent pas sous cette objection — qui les lit connaît déjà le mot
+de passe du compte —, mais la règle « rien sur un refus » est simple, et
+l'entamer demande de s'assurer que **seuls** ces deux motifs passent.
 
-**Ce qui existe.** `dbrevocation.TargetsOf` lit l'état de chaque cible d'un
-ordre — et n'a **aucun appelant**. La table `user_revocation_target` porte le
-statut, la date de la dernière tentative et le détail.
+**À faire.** Une liste fermée de motifs affichables, côté agent ; le module PAM
+les montre par la conversation PAM ; tout autre refus reste muet. Un test par motif, et
+un test qui garde le silence sur `permission denied`.
 
-**À faire.** Une action au registre (lecture, clé à choisir : `write:killswitch`
-couvre déjà qui a le droit de déclencher), exposée en commande — par exemple
-`vlt kill -u <compte> --status` — **et** sur la fiche du compte du portail, sous
-l'historique des ordres qui s'y trouve déjà. Colonnes : machine, statut, dernière
-tentative, détail. Mettre devant ce qui n'est pas acquitté.
+### 172. [GPO] [CLUSTER] « Demander un cycle » n'atteint que les machines de ce core
 
-**Déjà corrigé par le point 89 (24/09).** Une partie des « push en échec sur une machine connectée » ne venait pas du réseau : la session était choisie au hasard parmi celles qui portaient l'identifiant de la machine — poignée de main, session d'un utilisateur. `pushToOnline` passe désormais par `sessionmgr.SessionsMachine`. Reste le vrai sujet de ce point : rejouer un ordre dont l'envoi a réellement échoué.
+**Constat** (relevé en traitant le **169**, **non vérifié** faute de cluster sur
+le banc). `gpo.refresh` pousse la trame `05_18` par le registre des sessions du
+core qui exécute l'action. Sur un cluster, une machine connectée à un **autre**
+core y est inconnue : `vlt gpo refresh --all` ne la compte pas, et le bouton
+« Demander un cycle » d'une GPO la range parmi les « hors ligne ou non
+jointes ». Le bilan est donc juste — elle n'a pas été jointe — mais le motif
+annoncé (« elles rafraîchiront à leur reconnexion ») ne l'est pas : elle est en
+ligne, ailleurs.
+
+Le rejeu des révocations (**49**) a le même découpage et le résout par la base
+commune : chaque core sert ses machines. Rien d'équivalent n'existe pour une
+demande de cycle, qui n'est écrite nulle part.
+
+**À faire.** D'abord **vérifier** sur un cluster à deux cores. Si c'est
+confirmé : soit le dire dans le bilan (« N machine(s) sont peut-être tenues par
+un autre core »), soit faire porter la demande par la base — une ligne que le
+core qui tient la machine relève, comme pour les relais d'un proxy (**141**).
+
 
 ---
 
@@ -588,38 +576,23 @@ tentative, détail. Mettre devant ce qui n'est pas acquitté.
 > **Tous les points de l'audit sont traités dans la 2.2** : 119 à 132. Ce qui
 > reste ici en est sorti en chemin.
 
-### 155. [LDAP] `memberOf` dépend de la base de recherche
-
-**Constat** (relevé en traitant le 132, mesuré sur un core lancé). Le même
-compte, lu par le même compte de service, ne porte pas le même `memberOf` selon
-la base de la recherche :
-
-| Recherche | `memberOf` d'alice |
-|---|---|
-| `sub` sur `dc=acme,dc=lan` | `Equipe`, `Dev`, `Secrets` |
-| `sub` sur `dc=dev,dc=acme,dc=lan` | `Dev`, `Secrets` — **`Equipe` manque** |
-| `base` sur le DN d'alice | `Equipe`, `Dev`, `Secrets` |
-
-**Pourquoi.** `loadGroupsAndUsers` (`scope/resolver.go`) compose `memberOf` à
-partir des groupes qu'il vient de **charger**, c'est-à-dire ceux du domaine
-demandé et de ses sous-domaines. Les groupes du compte qui vivent **au-dessus**
-ou **à côté** de la base n'y sont pas. La recherche `base`, elle, passe par
-`memberOfForUser`, qui lit tous les groupes du compte.
-
-Ce n'est pas une fuite — il manque des valeurs, il n'en sort pas de trop, et le
-132 filtre de la même façon sur les deux chemins. C'est une réponse **fausse par
-omission** : une application synchronisée sur un sous-domaine croit qu'un compte
-a quitté un groupe du domaine parent, et peut lui retirer les droits qui vont
-avec.
-
-**À faire.** Composer `memberOf` de la même façon sur les deux chemins : lire les
-appartenances de tous les comptes rendus en **une** requête — le pendant, en lot,
-de `GetMemberOfByUsername` —, puis laisser `Restreinte` retirer ce que
-l'appelant ne peut pas lire. Le lot 131 a montré comment faire sans requête par
-compte. À éprouver par les trois recherches du tableau, qui doivent rendre la
-même chose.
-
 ---
+
+### 175. [LDAP] Une recherche `base` rend un compte SANS groupe quand la base flanche
+
+**Origine.** Relevé en traitant le **155**. Les recherches `one` et `sub`
+**échouent** si la lecture des appartenances échoue : l'erreur remonte, le
+client reçoit une erreur. La recherche `base` sur le DN d'un compte, elle,
+journalise l'erreur et rend le compte **avec un `memberOf` vide**
+(`memberOfForUser`, `scope/base_scope.go`).
+
+Un client qui lit cette réponse y voit un compte qui a quitté tous ses groupes.
+C'est le chemin qu'emprunte JumpServer après chaque authentification.
+
+**À faire.** Faire remonter l'erreur de `memberOfForUser` jusqu'au
+gestionnaire, qui répond `operationsError` — comme il le fait déjà quand la
+résolution `sub` échoue. Un test avec une base qui refuse (le connecteur
+défaillant de `handler_nilsession_test.go`).
 
 ### 144. [COMPTES] [LDAP] Créer un compte de service sans mot de passe provisoire
 
@@ -649,38 +622,6 @@ recasse.
    provisoire, et par qui : c'est une dérogation de sécurité.
 4. Mettre à jour le jalon 8.1 de la formation (« Un compte de service LDAP ») et
    `MAN.md` § 5 : ce sont eux qui font créer le compte qui cassera le lendemain.
-
-### 150. [TESTS] La suite `--test` échoue sur dix points
-
-**Constat** (relevé en traitant les 128 à 130). `vaultaire_serveur --test` rend
-**306 sur 316**. Les dix échecs existaient avant ce lot — même liste sur le
-commit précédent, 304 sur 314 — et aucun ne touche LDAP. Mais une suite qui
-échoue « comme d'habitude » ne signale plus rien : le prochain vrai défaut s'y
-perdra.
-
-Les dix, en trois familles :
-
-- **un ordre d'initialisation** — `Filtrage.LExecuteurApplique` : « catalogue
-  d'actions vide : `action.EnregistrerTout()` n'a pas été appelé ». `main()`
-  lance `testrunner.RunFromMain()` **avant** `EnregistrerTout()`. Il est
-  probable que plusieurs des échecs RBAC et GPO ci-dessous en découlent, ou au
-  contraire qu'ils soient masqués par lui : à vérifier en premier ;
-- **des invariants RBAC et GPO** — `RBAC.RefusHorsDomaine` (`client.list`),
-  `RBAC.LectureVoitSonPerimetre`, `RBAC.AucuneEcritureNeSeContenteDUnDomaine`,
-  `GPO.CleSpecifiqueAuxGPO` et `GPO.LectureResteDeleguee`
-  (`gpo.get_signature_policy`, contrôlée par `read:log`), `GPO.EcrituresStrictes`
-  et `GPO.PorteeNonExtensible` (`gpo.refresh`), `Filtrage.ChaqueFiltreEstEprouve`.
-  Le README de `how it work` § 6.2 en annonce un comme « défaut connu » ; les
-  autres ne sont écrits nulle part ;
-- **un chemin** — `Empreinte/nom partagé (agent)` lit un fichier du module
-  `vaultaire_client` par un chemin relatif : il échoue dès que le binaire n'est
-  pas lancé depuis l'endroit attendu.
-
-**À faire.** Appeler `EnregistrerTout()` avant la suite, relancer, et trier ce
-qui reste : chaque échec est soit un défaut à corriger — et alors c'est une
-entrée de sécurité, `gpo.refresh` qui se contente d'un domaine en est une —,
-soit un test à corriger. Puis brancher `--test` dans `tests.yaml` : aujourd'hui
-rien ne lance cette suite, c'est pour cela qu'elle a dérivé.
 
 ### 151. [DOC] Les mots de passe d'exemple de la formation sont refusés
 
@@ -733,47 +674,6 @@ groupe de l'annuaire**, à chaque recherche LDAP de portée `one`.
 Puis un test de sentinelle : aucun `fmt.Print` hors de `core/command`,
 `core/testrunner`, `core/logs/rotation.go` et `main`.
 
-### 154. [JOURNAL] Le tampon mémoire est recopié à chaque ligne une fois plein
-
-**Constat** (relevé en traitant le 145, en mesurant l'ancien journal LDAP).
-`LogBuffer.addEntry` (`core/logs/rfc5424.go`) garde les 10 000 dernières lignes
-pour le repli de `vlt logs` quand la base ne répond pas. Une fois ce nombre
-atteint, **chaque** ligne ajoutée alloue une tranche neuve et y recopie les
-10 000 entrées :
-
-```go
-if len(b.entries) > b.maxSize {
-	keep := b.entries[len(b.entries)-b.maxSize:]
-	b.entries = make([]LogEntry, len(keep), b.maxSize)
-	copy(b.entries, keep)
-}
-```
-
-Sous le verrou du tampon, donc en série pour toutes les goroutines qui
-journalisent.
-
-**Mesuré** (sortie standard vers `/dev/null`, pour ne compter que le tampon) :
-
-| | Par ligne de journal |
-|---|---:|
-| tampon pas encore plein | **1,6 µs** |
-| tampon plein | **2,4 ms** — mille cinq cents fois plus |
-
-Le tampon se remplit une fois pour toutes : un core qui a écrit dix mille lignes
-depuis son démarrage paie ensuite 2,4 ms **à chaque ligne**, `INFO` comprises.
-Un bind LDAP réussi en écrit deux. Le core entier ne peut donc pas journaliser
-plus de quatre cents lignes par seconde environ, et tout ce qui journalise
-attend son tour.
-
-C'est aussi ce qui faisait durer plus de deux minutes, en mode debug, une
-conversation LDAP de trois recherches. Le 145 a retiré la cause du volume, pas
-ce coût.
-
-**À faire.** Un tampon circulaire : un tableau fixe et un indice d'écriture,
-sans allocation ni recopie. `recentes()` le déroule à la lecture. Un test de
-performance simple suffit à le garder : dix mille lignes au-delà du plein ne
-doivent pas coûter dix mille recopies.
-
 ## Idées à cadrer
 
 ### 8. [LDAP] Mode synchro avec un annuaire existant
@@ -809,38 +709,11 @@ Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 1
 > qui a été écarté sont dans [`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md) —
 > le lire **avant** d'ouvrir l'un de ces points.
 >
-> **L'ordre compte.** Le 112 est un préalable de sûreté qui vaut par lui-même ;
-> le 111 est le socle sans lequel rien n'est pilotable ; le 116 est le cœur du
-> lot et ne doit pas être écrit avant que 112 ne soit en place.
-
-### 112. [AGENT] Durcir le service de l'agent : relance bornée et validation au démarrage
-
-**À faire en premier, et il vaut par lui-même** — indépendamment de toute mise à
-jour.
-
-**Constat.** `/etc/systemd/system/vaultaire_client.service`, écrit par
-`rocky.sh:96-112`, ne porte que `Restart=on-failure`. Pas de `RestartSec`, pas de
-`StartLimitBurst`, pas d'`ExecStartPre`, aucun durcissement. L'unité de Nexus
-(`src/vaultaire_nexus/deploy/vaultaire_nexus.service`) a tout cela ; l'agent est
-très en retard sur elle.
-
-**Pourquoi c'est grave ici et pas ailleurs.** Les trois piles PAM sont en
-`default=die` sans repli : un agent qui ne démarre pas rend la machine
-inaccessible à **tous** les comptes du domaine, sur console, SSH et GDM. Sans
-borne de relance, un binaire corrompu boucle indéfiniment et rien ne distingue
-« en cours de démarrage » de « ne démarrera jamais ».
-
-**À faire.**
-
-1. `RestartSec=5s`, `StartLimitBurst=3`, `StartLimitIntervalSec=60`.
-2. Un mode `vaultaire_client --check` : le binaire s'exécute, lit sa
-   configuration, trouve ses clés, et **sort** — sans ouvrir de socket ni de
-   tunnel. Branché en `ExecStartPre`.
-3. Le même durcissement dans `rocky.sh`, pour les installations neuves, **et** un
-   rattrapage sur les unités déjà posées.
-4. Un test-sentinelle sur le gabarit des piles PAM : le `PAM_IGNORE` qui laisse
-   passer les comptes **hors du domaine** vers `system-auth` est la seule porte
-   de secours du produit. Le jour où quelqu'un le retire, plus rien ne le dira.
+> **L'ordre compte.** Le 112 était le préalable de sûreté : il est **traité**
+> (voir `DO/2.3/2.3.md`) — l'unité de l'agent a une relance bornée, un contrôle
+> avant démarrage (`vaultaire_client --check`), et c'est le binaire qui la pose
+> (`--install-unit`). Le 111 est le socle sans lequel rien n'est pilotable ; le
+> 116 est le cœur du lot, et s'appuie sur le 112.
 
 ### 111. [AGENT-UPDATE] La version attendue, et la vue « constaté vs attendu »
 

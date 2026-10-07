@@ -105,10 +105,14 @@ type ScopeState struct {
 // versionInventaire est la règle d'inventaire que cet agent applique.
 //
 //	1 — les fichiers et les blocs du scope utilisateur sont inventoriés (135).
+//	2 — une clé git, le vieillissement du mot de passe et l'activation d'un
+//	    timer y entrent (163). Un compte qui ne recevait que ces modules-là
+//	    avait un état sans aucune attente : sans ce rejeu, il serait resté
+//	    « non vérifié » jusqu'à la prochaine modification de sa politique.
 //
 // À incrémenter le jour où une autre famille d'effets entre dans l'inventaire
 // et où les états déjà écrits doivent être rejoués pour l'y faire entrer.
-const versionInventaire = 1
+const versionInventaire = 2
 
 // ModuleMode rend le mode de dérive enregistré pour un module.
 //

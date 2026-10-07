@@ -85,6 +85,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			Revocations []dbrevocation.Record
 			KillReasons []revocation.Reason
 			CanKill     bool
+			// Suivi : où en est chaque ordre récent, machine par machine
+			// (TO-DO 164). SuiviIndisponible dit pourquoi il n'est pas montré,
+			// le cas échéant ; la fiche ne dépend pas de cette lecture.
+			Suivi             []ordreSuiviVue
+			SuiviPlusAnciens  int
+			SuiviIndisponible string
 			// Second facteur : état du compte affiché, et droit de le
 			// réinitialiser. HasActionAnywhere et non un contrôle sur « * » — le
 			// droit se délègue par domaine, comme le kill switch, et le contrôle
@@ -218,6 +224,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		detailData.IsRevoked = dbrevocation.IsRevoked(db, detailUser)
 		detailData.Revocations, _ = dbrevocation.HistoryFor(db, detailUser)
 		detailData.CanKill = permission.HasActionAnywhere(groupIDs, permission.ActionKillSwitch)
+		// Le suivi par machine, seulement pour qui voit la section où il
+		// s'affiche, et seulement s'il y a un ordre à suivre.
+		if detailData.CanKill && len(detailData.Revocations) > 0 {
+			detailData.Suivi, detailData.SuiviPlusAnciens, detailData.SuiviIndisponible =
+				suiviPourLaFiche(username, groupIDs, detailUser)
+		}
 
 		// Second facteur, relu après les actions pour la même raison : une
 		// réinitialisation qui vient d'avoir lieu doit se voir sans recharger.

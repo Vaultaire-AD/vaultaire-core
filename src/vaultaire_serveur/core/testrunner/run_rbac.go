@@ -8,6 +8,7 @@ import (
 
 	"vaultaire/core/action"
 	dbgpo "vaultaire/core/database/db_gpo"
+	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/gpo"
 	"vaultaire/core/storage"
 )
@@ -217,6 +218,42 @@ func testGPORespecteLeRBAC() []Result {
 		}
 	}
 
+	// Les actions nommées « gpo.* » qui ne portent PAS sur une GPO.
+	//
+	// # Pourquoi une table, et pourquoi elle est courte (TO-DO 150)
+	//
+	// Le repérage se fait sur le nom, pour qu'une action ajoutée demain soit
+	// éprouvée sans que personne y pense. Mais trois actions portent « gpo »
+	// dans leur nom sans agir sur une politique, et leur clé le dit — à
+	// dessein. La suite les comptait en défaut depuis leur création ; comme
+	// rien ne la lançait, personne ne l'a vu, et un vrai défaut pouvait se
+	// loger au milieu de ces trois lignes rouges « habituelles ».
+	//
+	// Chaque entrée dit pourquoi, et la table est vérifiée dans les deux sens :
+	// une entrée dont l'action a disparu, ou qui porte désormais une clé
+	// « :gpo », est une exemption morte, et fait échouer.
+	horsModele := map[string]string{
+		"gpo.refresh": "agit sur la MACHINE et non sur la politique : elle lui fait réappliquer " +
+			"ce qu'elle aurait reçu de toute façon, d'où write:update:client sur les domaines du poste",
+		"gpo.get_signature_policy": "lit un réglage du CLUSTER — les politiques non signées sont-elles " +
+			"refusées — qui ne se délègue pas par domaine, d'où read:log et la portée globale",
+		"gpo.set_signature_policy": "écrit ce même réglage du CLUSTER : il vaut pour tout le parc, " +
+			"d'où write:server et la portée globale",
+	}
+	var exemptionsMortes, exemptionsBaclees []string
+	for nom, pourquoi := range horsModele {
+		d, connue := catalogueReel().Definition(nom)
+		switch {
+		case !connue:
+			exemptionsMortes = append(exemptionsMortes, nom+" (action absente du catalogue)")
+		case strings.HasSuffix(d.CleRBAC, ":gpo"):
+			exemptionsMortes = append(exemptionsMortes, nom+" (porte désormais une clé :gpo)")
+		}
+		if len(strings.Fields(pourquoi)) < 6 {
+			exemptionsBaclees = append(exemptionsBaclees, nom)
+		}
+	}
+
 	if len(gpoActions) == 0 {
 		out = append(out, Result{"GPO.ActionsPresentes", false,
 			"aucune action GPO au catalogue — les GPO ne seraient contrôlées par rien"})
@@ -233,7 +270,7 @@ func testGPORespecteLeRBAC() []Result {
 	// qu'on croit lire dans le nom de la permission.
 	var mauvaiseCle, superadminInattendu, ecritureSouple []string
 	for _, d := range gpoActions {
-		if !strings.HasSuffix(d.CleRBAC, ":gpo") {
+		if _, exempte := horsModele[d.Nom]; !exempte && !strings.HasSuffix(d.CleRBAC, ":gpo") {
 			mauvaiseCle = append(mauvaiseCle, d.Nom+" → "+d.CleRBAC)
 		}
 		// 2. Aucune action GPO ne doit exiger le groupe protégé.
@@ -261,6 +298,8 @@ func testGPORespecteLeRBAC() []Result {
 	out = append(out,
 		verdictGPO("GPO.CleSpecifiqueAuxGPO", mauvaiseCle,
 			"actions GPO contrôlées par une clé qui ne parle pas de GPO"),
+		verdictGPO("GPO.ExemptionsVivantesEtJustifiees", append(exemptionsMortes, exemptionsBaclees...),
+			"exemptions du modèle GPO mortes, ou sans justification relisible"),
 		verdictGPO("GPO.DeleguablesParDomaine", superadminInattendu,
 			"actions GPO réservées au groupe protégé — plus déléguables par domaine"),
 		verdictGPO("GPO.EcrituresStrictes", ecritureSouple,
@@ -305,6 +344,12 @@ func testGPORespecteLeRBAC() []Result {
 	var lectureTropDure []string
 	for _, d := range gpoActions {
 		if !strings.HasPrefix(d.CleRBAC, "read:") {
+			continue
+		}
+		// Un réglage du cluster ne se délègue pas par domaine : il exige « * »,
+		// et c'est voulu. Seules les lectures qui portent sur des GPO ou sur
+		// des machines doivent rester ouvertes au délégué.
+		if d.PorteeEstGlobale() && !d.PorteeOuverte {
 			continue
 		}
 		ex, _ := executeurDeTest(
@@ -552,6 +597,24 @@ func testFiltrageDesListes() []Result {
 			{Policy: gpo.Policy{Name: "bureau"}},
 			{Policy: gpo.Policy{Name: "serveurs"}},
 		},
+
+		// Les groupes SOUS un domaine : le droit sur le domaine demandé ne
+		// couvre pas toujours ses sous-domaines, d'où le filtre — le même que
+		// celui de l'arborescence.
+		"domain.list_groups": []storage.GroupDomain{
+			{GroupName: "g1", DomainName: "paris.fr"},
+			{GroupName: "g2", DomainName: "lyon.fr"},
+		},
+
+		// Suivi d'une révocation : un ordre vise des MACHINES, pas toutes
+		// visibles de qui lit. Celle hors périmètre est retirée et comptée.
+		"revocation.get_status": dbrevocation.Suivi{
+			Ordres: []dbrevocation.OrdreSuivi{{
+				Cibles: []dbrevocation.TargetRecord{
+					{ComputeurID: "poste-paris"}, {ComputeurID: "poste-lyon"},
+				},
+			}},
+		},
 	}
 
 	var nonMasques, sansEchantillon, masquesEnGlobal []string
@@ -628,18 +691,29 @@ func testFiltrageDesListes() []Result {
 	// premiers cas, ne l'aurait signalé.
 	//
 	// Une action-sonde plutôt que user.list : celle-ci interrogerait la base.
+	//
+	// La sonde est déclarée comme le sont les vraies listes : PorteeOuverte.
+	// Elle portait l'ancienne combinaison — PorteeGlobale, UnDomaineSuffit et
+	// un filtre —, que le registre REFUSE depuis qu'il sait qu'elle ne filtre
+	// jamais. L'erreur d'enregistrement était ignorée, le registre restait
+	// vide, et le test échouait sur « catalogue vide », qui envoyait chercher
+	// du côté de l'ordre d'initialisation (TO-DO 150).
 	reg := action.NouveauRegistre()
-	_ = reg.Enregistrer(action.Definition{
-		Nom:             "test.list_sonde",
-		CleRBAC:         "read:get:user",
-		Portee:          action.PorteeGlobale,
-		UnDomaineSuffit: true,
-		Filtre:          d.Filtre,
-		Resume:          "sonde de filtrage",
+	if errSonde := reg.Enregistrer(action.Definition{
+		Nom:           "test.list_sonde",
+		CleRBAC:       "read:get:user",
+		Portee:        action.PorteeGlobale,
+		PorteeOuverte: true,
+		Filtre:        d.Filtre,
+		Resume:        "sonde de filtrage",
 		Executer: func(action.Appelant, action.Params) (action.Resultat, error) {
 			return action.Resultat{Message: "3 utilisateur(s).", Donnees: brut}, nil
 		},
-	})
+	}); errSonde != nil {
+		out = append(out, Result{"Filtrage.LExecuteurApplique", false,
+			"la sonde n'a pas pu être enregistrée : " + errSonde.Error()})
+		return out
+	}
 	exSonde := &action.Executeur{
 		Registre:   reg,
 		Droits:     droitsFictifs{accordes: map[string]bool{"read:get:user|*": true}},
@@ -744,6 +818,11 @@ func testMatriceDesDroits() []Result {
 		if d.UnDomaineSuffit && !strings.HasPrefix(d.CleRBAC, "read:") {
 			ecritureTropLaxiste = append(ecritureTropLaxiste, d.Nom+" ("+d.CleRBAC+")")
 		}
+		// PorteeOuverte est plus large encore : la clé détenue n'importe où
+		// suffit. Sur une écriture, ce serait la fin de la délégation.
+		if d.PorteeOuverte && !strings.HasPrefix(d.CleRBAC, "read:") {
+			ecritureTropLaxiste = append(ecritureTropLaxiste, d.Nom+" (PorteeOuverte, "+d.CleRBAC+")")
+		}
 
 		// ... et RÉCIPROQUEMENT, toute lecture doit le déclarer.
 		//
@@ -753,9 +832,25 @@ func testMatriceDesDroits() []Result {
 		// la mauvaise raison. Une lecture durcie par mégarde rend invisibles
 		// aux délégués les entités à cheval sur deux domaines, sans qu'aucun
 		// message ne le dise.
-		if strings.HasPrefix(d.CleRBAC, "read:") && !d.UnDomaineSuffit {
+		//
+		// Cette règle vaut pour la lecture d'une ENTITÉ — un compte, une
+		// machine, une GPO —, c'est-à-dire quand la portée est une liste de
+		// domaines. Les deux autres sortes de portée n'ont rien à déclarer
+		// (TO-DO 150) :
+		//
+		//   - PorteeOuverte : la clé détenue quelque part ouvre la liste, et
+		//     le filtre la réduit. C'est lui qui est éprouvé, plus bas ;
+		//   - PorteeGlobale : la liste des domaines est `["*"]`, et « un seul
+		//     suffit » y exige toujours `*`. Le champ est sans effet — le
+		//     registre le dit, et ces actions ne le portent donc pas.
+		//
+		// La suite exigeait le champ partout. Dix-sept actions qui n'ont aucun
+		// défaut étaient comptées ici, et ce bruit cachait la seule question
+		// utile : une lecture d'entité a-t-elle été durcie par mégarde ?
+		entite := !d.PorteeOuverte && !d.PorteeEstGlobale()
+		if strings.HasPrefix(d.CleRBAC, "read:") && entite && !d.UnDomaineSuffit {
 			lectureTropStricte = append(lectureTropStricte,
-				d.Nom+" : lecture sans UnDomaineSuffit")
+				d.Nom+" : lecture d'une entité sans UnDomaineSuffit")
 		}
 
 		appelant := action.Appelant{Username: "testeur", GroupIDs: []int{1}}
@@ -784,6 +879,22 @@ func testMatriceDesDroits() []Result {
 		// C'est le cœur de la délégation : un délégué de lyon n'agit pas sur
 		// paris. Sans ce cas, un contrôle qui ignorerait les domaines
 		// passerait les trois autres.
+		//
+		// Une liste à PorteeOuverte fait exception, et c'est sa définition : le
+		// contrôle laisse entrer qui détient la clé où que ce soit, et c'est le
+		// FILTRE qui retire ce qui n'est pas à lui. Le refus n'est donc pas
+		// attendu ici. Ce qui garde ces actions est ailleurs : le registre
+		// refuse d'enregistrer une portée ouverte sans filtre ni justification
+		// écrite, et chaque filtre est éprouvé par Filtrage.MasqueHorsPerimetre
+		// et Filtrage.ChaqueFiltreEstEprouve.
+		if d.PorteeOuverte {
+			ex, _ = executeurDeTest(map[string]bool{d.CleRBAC + "|" + domB: true}, membres, []string{domA})
+			if _, err := ex.Controler(d.Nom, appelant, action.Params{}); err != nil {
+				lectureTropStricte = append(lectureTropStricte,
+					fmt.Sprintf("%s (liste ouverte refusée à qui détient la clé ailleurs : %v)", d.Nom, err))
+			}
+			continue
+		}
 		ex, _ = executeurDeTest(map[string]bool{d.CleRBAC + "|" + domB: true}, membres, []string{domA})
 		if _, err := ex.Controler(d.Nom, appelant, action.Params{}); !estRefus(err) {
 			refusMauvaisDomaine = append(refusMauvaisDomaine, fmt.Sprintf("%s (err=%v)", d.Nom, err))

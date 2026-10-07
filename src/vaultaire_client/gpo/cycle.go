@@ -121,7 +121,7 @@ func RunUserCycle(sessionKey, username string) Report {
 	// constaterApresApplication, le scope utilisateur n'a pas de tour suivant
 	// qui le ferait à sa place.
 	if corriges > 0 || rapport.Counts()[ResultApplied] > 0 {
-		constaterApresApplication(sessionKey, username)
+		constaterApresApplication(sessionKey, ScopeUser, username)
 	}
 	return rapport
 }
@@ -345,9 +345,24 @@ func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) b
 	//
 	// Le scan ne touche qu'à l'état local et ne relance aucun service : c'est
 	// le cycle qui fait le travail, à un moment prévisible.
-	scanMachineDrift(sessionKey)
+	corriges := scanMachineDrift(sessionKey)
 
-	return RunMachineCycle(sessionKey).Status != StatusFailed
+	rapport := RunMachineCycle(sessionKey)
+
+	// Ce que le core sait de la conformité date d'AVANT le cycle : le rapport
+	// d'écart part avant la correction (voir scanMachineDrift), et une
+	// politique qui vient d'être posée n'a pas encore été vérifiée. On lui dit
+	// ce qu'il en est maintenant — TO-DO 86.
+	//
+	// Sans ce constat, une machine en ENFORCE dont l'écart venait d'être
+	// corrigé affichait « 1 écart(s) » jusqu'au tour suivant, une heure plus
+	// tard : exactement ce qu'affiche une machine en AUDIT, qui ne corrige
+	// rien. Les deux modes ne se distinguaient pas dans « gpo status ».
+	if corriges > 0 || rapport.Counts()[ResultApplied] > 0 {
+		constaterApresApplication(sessionKey, ScopeMachine, "")
+	}
+
+	return rapport.Status != StatusFailed
 }
 
 // waitForSessionKey attend qu'une session mère utilisable soit disponible.
@@ -380,13 +395,15 @@ func waitForSessionKey(provider func() string, timeout time.Duration) string {
 // Le rapport part vers le core AVANT la correction : si la machine s'arrête
 // entre les deux, l'écart reste visible côté serveur. L'inverse effacerait la
 // trace d'un problème qu'on n'a pas encore résolu.
-func scanMachineDrift(sessionKey string) {
+//
+// Rend le nombre de modules marqués pour réapplication.
+func scanMachineDrift(sessionKey string) int {
 	report := ScanScope(ScopeMachine, "")
 	if report.Checked == 0 {
 		// Aucun inventaire : rien n'a encore été appliqué, ou l'état vient d'une
 		// version antérieure. Se taire plutôt que d'envoyer un rapport vide qui
 		// ferait croire à une vérification réelle.
-		return
+		return 0
 	}
 
 	if report.Conforming() {
@@ -400,5 +417,5 @@ func scanMachineDrift(sessionKey string) {
 		logs.Write_log("WARNING", "GPO: rapport de conformite non transmis : "+err.Error())
 	}
 
-	EnforceDrift(ScopeMachine, "", report)
+	return EnforceDrift(ScopeMachine, "", report)
 }

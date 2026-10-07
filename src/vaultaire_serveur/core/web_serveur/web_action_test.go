@@ -295,6 +295,11 @@ func TestToutesLesActionsDesGabaritsSontRoutees(t *testing.T) {
 
 		// Réglage du serveur, pas une entité de l'annuaire.
 		"set_debug": "réglage serveur",
+
+		// Demander un cycle aux machines d'une GPO (TO-DO 169) : une boucle sur
+		// `gpo.refresh`, une machine à la fois — action.RafraichirMachinesDeLaGPO,
+		// appelée par adminGPODetail. Le bouton d'UNE machine, lui, est routé.
+		"refresh_gpo_machines": "boucle sur gpo.refresh",
 	}
 
 	gabarits, err := actionsDesGabarits()

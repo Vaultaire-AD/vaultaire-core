@@ -598,6 +598,14 @@ session    required      pam_limits.so
 -session   optional      pam_systemd.so
 ```
 
+> **Depuis la 2.3**, un agent installé par `rocky.sh` (binaire dans
+> `/usr/bin/vaultaire_client`) écrit lui-même son unité, avec un contrôle avant
+> démarrage et une relance bornée : `vaultaire_client --install-unit`. Voir
+> [Agent_configuration_et_debug.md § 3](../exploitation/Agent_configuration_et_debug.md#3-le-service--contrôle-de-démarrage-et-relance-bornée).
+> L'exemple ci-dessous reste celui d'une installation à la main sous `/opt`.
+> Avant de démarrer le service, `vaultaire_client --check` dit si l'agent a tout
+> ce qu'il lui faut — configuration, identité, clé privée.
+
 il vous reste plus qu'a ecrire un fichier de service et ca sera bon voila un example
 vi /etc/systemd/system/vaultaire_client.service
 ```bash
@@ -670,6 +678,13 @@ systemctl restart vaultaire
 ### 2. Client
 
 si aucune update sur les modules pam voir le patch note de votre version sinon resuivre la doc d'installation   
+
+> **Passage à la 2.3** : une fois le nouveau binaire en place dans
+> `/usr/bin/vaultaire_client`, lancez `vaultaire_client --install-unit` avant de
+> redémarrer le service — c'est ce qui pose le contrôle de démarrage et la
+> relance bornée. **Ne recopiez pas l'unité d'un poste à jour sur un poste qui
+> ne l'est pas** : un agent antérieur ne connaît pas `--check`, et son service
+> ne démarrerait plus.
 
 ```bash
 systemctl stop vaultaire

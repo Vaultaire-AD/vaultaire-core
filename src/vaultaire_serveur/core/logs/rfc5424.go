@@ -6,7 +6,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 )
 
@@ -50,66 +49,6 @@ type LogEntry struct {
 	Hostname  string    `json:"hostname"`
 	RequestID string    `json:"request_id,omitempty"`
 	UserID    string    `json:"user_id,omitempty"`
-}
-
-// LogBuffer stocke les logs en mémoire pour la web UI (limite de taille)
-type LogBuffer struct {
-	mu       sync.RWMutex
-	entries  []LogEntry
-	maxSize  int
-	hostname string
-}
-
-var (
-	globalBuffer *LogBuffer
-	bufferOnce   sync.Once
-)
-
-// getBuffer retourne le buffer global (singleton)
-func getBuffer() *LogBuffer {
-	bufferOnce.Do(func() {
-		hostname, _ := os.Hostname()
-		if hostname == "" {
-			hostname = "localhost"
-		}
-		globalBuffer = &LogBuffer{
-			entries:  make([]LogEntry, 0, 1000),
-			maxSize:  10000, // Limite: 10000 entrées max
-			hostname: hostname,
-		}
-	})
-	return globalBuffer
-}
-
-// addEntry ajoute une entrée au buffer (thread-safe, avec limite)
-func (b *LogBuffer) addEntry(entry LogEntry) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
-	b.entries = append(b.entries, entry)
-
-	// Si on dépasse la limite, supprimer les plus anciennes entrées
-	if len(b.entries) > b.maxSize {
-		// Garder les maxSize dernières entrées
-		keep := b.entries[len(b.entries)-b.maxSize:]
-		b.entries = make([]LogEntry, len(keep), b.maxSize)
-		copy(b.entries, keep)
-	}
-}
-
-// recentes rend une copie des entrées, la plus récente en premier.
-//
-// Une COPIE : l'appelant filtre et pagine hors du verrou. Garder le verrou
-// pendant ce travail bloquerait toutes les écritures de journal du core le
-// temps d'une consultation.
-func (b *LogBuffer) recentes() []LogEntry {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	out := make([]LogEntry, len(b.entries))
-	for i, e := range b.entries {
-		out[len(b.entries)-1-i] = e
-	}
-	return out
 }
 
 // levelToSeverity converts log level to RFC 5424 severity (0-7).

@@ -413,6 +413,15 @@ seulement un tunnel machine en plus.
 
 Le port de `-join` est facultatif et vaut 22. Une adresse IPv6 suivie d'un port s'écrit entre crochets.
 
+**Distributions installées par `-join`** *(TO-DO 71)* : Rocky Linux (`rocky.sh`),
+**Debian et Ubuntu** (`debian.sh`, depuis la 2.3). La distribution est lue sur
+la ligne `ID=` de `/etc/os-release` ; toute autre est refusée en la nommant —
+une distribution « voisine » ne reçoit pas le script d'une autre, il touche à
+PAM. Sur Debian et Ubuntu, `openssh-server` doit être installé, les piles PAM de
+la distribution sont **gardées** (une ligne y est insérée, l'original copié sous
+`.avant-vaultaire`), et l'installation s'arrête avant d'y toucher si les modules
+envoyés ne se chargent pas sur le poste.
+
 **Le type de client n'est plus demandé.** Cette commande ne peut créer qu'un
 **agent** — un programme installé sur une machine du parc, dont le core génère la
 paire de clés et produit la configuration.
@@ -1066,7 +1075,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Imposer le second facteur à un groupe | `mfa -g IT_Group --require` |
 | Émettre une clé d'enrôlement de service | `enroll create --type proxy --uses 1 --expires 30m` |
 | Machines en écart de conformité GPO | `gpo drift` |
-| Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --all` |
+| Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --gpo <nom>` ; `gpo refresh --all` |
 | Voir les durées d'exploitation | `settings list` |
 | Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
 | Arborescence LDAP | `eyes -g` |
@@ -1122,6 +1131,7 @@ kill -u <username>                  # verrouille (mode par défaut)
 kill -u <username> --unlock         # lève le verrouillage
 kill -u <username> --hard           # SUPPRIME le compte de l'annuaire et des machines
 kill -u <username> --reason <code>  # compromised (défaut) | offboarding | admin_request
+kill -u <username> --status         # où en est l'ordre, machine par machine (lecture)
 ```
 
 > `--hard` est irréversible : il ne verrouille pas, il supprime.
@@ -1146,21 +1156,67 @@ Ordre 12 — verrouillage du compte sur bob.durand
   Machines visées : 5 — dont 2 où une session du compte est ouverte
   Ordre remis immédiatement : 3 machine(s) en ligne
     chacune verrouille le compte local, puis ferme ses sessions et tue ses processus ;
-    son acquittement — ou son échec — s'inscrit au journal du core (logs --since 10m)
-  En attente (machines hors ligne) : 2 — l'ordre sera rejoué à leur reconnexion
+    son acquittement — ou son échec — se lit avec « kill -u bob.durand --status » ;
+    un ordre en échec ou resté sans réponse est rejoué par le core, de plus en plus espacé
+  En attente (machines hors ligne) : 2 — l'ordre leur sera remis dès leur retour
   Réversible : kill -u bob.durand --unlock
 ```
 
 > ⚠️ **« Remis » n'est pas « appliqué ».** Le core sait qu'il a transmis l'ordre ;
 > c'est l'agent qui verrouille et coupe, puis acquitte. Tant que la ligne « En
 > attente » n'est pas à zéro, le compte travaille peut-être encore sur une
-> machine hors ligne : l'ordre y sera appliqué à son retour. Un agent connecté
-> redemande ses ordres en attente à chaque tunnel rétabli et toutes les dix
-> minutes (TO-DO 134).
+> machine hors ligne : l'ordre y sera appliqué à son retour.
 >
-> L'acquittement de chaque machine se lit aujourd'hui dans le journal du core —
-> `revocation: ordre 12 acquitté par <machine> (applied)`, ou `EN ÉCHEC` s'il
-> reste des processus. Aucune commande ne le montre encore (TO-DO 164).
+> **Le core rejoue de lui-même** *(TO-DO 49)* : un ordre qui n'a pas abouti du
+> premier coup — envoi perdu, processus qui refusent de mourir — repart dix
+> secondes plus tard, puis de plus en plus espacé, jusqu'à toutes les cinq
+> minutes, **sans jamais renoncer**. Au cinquième essai sans réponse, le journal
+> du core le dit en WARNING : la révocation n'est pas effective sur cette
+> machine. De son côté, un agent connecté redemande ses ordres à chaque tunnel
+> rétabli et toutes les dix minutes (TO-DO 134).
+>
+> **`--unlock` annule ce qui n'était pas encore appliqué.** Une machine restée
+> hors ligne pendant tout le verrouillage ne recevra que la levée ; et la levée
+> atteint aussi une machine verrouillée que le compte ne partage plus par aucun
+> groupe.
+>
+> **Postes Windows** : le client Windows n'acquitte aucun ordre. Un poste
+> Windows visé reste « en attente » indéfiniment *(TO-DO 167)*.
+
+### Où en est l'ordre — `kill -u <compte> --status` *(TO-DO 164)*
+
+Le compte rendu de `kill` dit combien de machines ont **reçu** l'ordre. Ce
+qu'elles en ont fait se lit ici, et sur la **fiche du compte** du portail :
+
+```text
+Compte bob.durand — VERROUILLÉ
+
+Ordre 20 — verrouillage du compte (compte compromis), par vaultaire le 2026-10-07 17:11:25
+  2 machine(s) : 1 en échec, 1 en attente
+  MACHINE   ÉTAT        REMISES  DERNIER ÉCHANGE  DÉTAIL
+  web01     en échec    2        il y a 13 s      command_failed : bob.durand@acme.lan : verrouillage du mot de passe : …
+  poste-42  en attente  0        —                jamais remis : machine hors ligne depuis l'ordre
+```
+
+| État | Ce qu'il veut dire |
+|---|---|
+| **en échec** | la machine a répondu qu'elle n'a pas pu : le compte y est **peut-être encore ouvert**. Le détail est le motif qu'elle a rendu. Le core rejoue |
+| **en attente**, 0 remise | la machine est hors ligne depuis l'ordre : il lui sera remis à son retour |
+| **en attente**, N remises | la machine est **là, et ne répond pas** — ce n'est pas le même incident. Agent bloqué, ou client qui n'acquitte pas (Windows, un service : TO-DO 167) |
+| **levé avant application** | le verrouillage a été levé avant que la machine ne l'applique : il ne lui sera pas remis |
+| **appliqué** | la machine a acquitté |
+
+Ce qui n'est pas réglé est en tête. Les cinq derniers ordres sont détaillés ; un
+ordre ancien et réglé tient en une ligne.
+
+- **`--status` est une lecture** et ne se combine avec aucune autre option :
+  `kill -u bob --hard --status` est refusé, et rien ne part.
+- **Droit** : `read:status:user` sur un domaine du compte — la clé de
+  `status -u`, pas `write:killswitch`. Voir où en est un ordre ne donne pas le
+  pouvoir d'en émettre un.
+- **Périmètre** : seules les machines que vous avez le droit de voir sont
+  listées ; les autres sont **comptées**, ordre par ordre. Tant qu'il en reste,
+  la commande ne dit pas « réglé partout ».
 
 > ⚠️ **Agents antérieurs à ce correctif** : ils ne verrouillent rien quand le nom
 > est donné sans domaine, et ne coupent aucune session. Tant que le parc n'est
@@ -1292,6 +1348,7 @@ gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
 gpo drift                  # uniquement les machines en écart
 gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
 gpo refresh <computeur_id>           # cycle immédiat sur une machine
+gpo refresh --gpo <nom_gpo>          # cycle immédiat sur les machines liées à cette GPO
 gpo refresh --all                    # cycle immédiat sur tout le parc connecté
 gpo signature                        # les politiques non signées sont-elles refusées ?
 gpo signature <on|off>               # les refuser, ou non
@@ -1305,7 +1362,34 @@ gpo signature <on|off>               # les refuser, ou non
 | **APPLICATION** | le dernier rapport de l’agent — la politique a-t-elle **pu être posée** ? |
 | **CONFORMITÉ**  | le dernier scan de l’agent — est-elle **encore en place** ? |
 
-> « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
+> « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié. « rien à vérifier » : la portée n'applique plus aucun module.
+
+**Une ligne par machine** *(TO-DO 143)*. Elle porte l'état de sa portée
+**machine** ; les comptes passés sur le poste sont résumés dans la colonne
+COMPTES. Un compte n'a sa propre ligne, sous sa machine (`↳`), que s'il y a
+quelque chose à y lire : un écart, un module en échec, ou une politique jamais
+vérifiée.
+
+```text
+MACHINE            SUIVI   APPLICATION  MODULES  CONFORMITÉ  COMPTES           VU
+PC-02              à jour  applied      3/3      ok (7)      1 en écart sur 2  à l'instant
+  ↳ dora@acme.lan          applied      4/4      2 écart(s)                    à l'instant
+PC-01              à jour  applied      3/3      ok (7)      2 ok              à l'instant
+
+2 machine(s) sur 2 suivie(s).
+2 machine(s) : 1 avec écarts.
+```
+
+Il y avait une ligne par **portée** : une machine et trois comptes en faisaient
+quatre, et le résumé comptait quatre « machines ». Tous les comptes restent
+dans le détail, `gpo status <computeur_id>`.
+
+**SUIVI se juge sur la machine**, pas sur ses comptes : une personne qui ne s'est
+pas connectée depuis une semaine n'est pas une machine muette. Et une machine
+dont la politique **ne change pas** parle quand même *(TO-DO 166)* : à chaque
+cycle elle annonce l'empreinte qu'elle applique, et le core, qui lui répond
+« rien à faire », date sa ligne. Jusque-là seule une application la datait — un
+parc stable finissait tout entier « en retard », agents en marche.
 
 **Les deux scopes sont vérifiés.** La machine l'est avant chaque cycle machine ;
 un compte l'est à sa connexion, au plus une fois par `gpo_user_check_minutes` —
@@ -1375,9 +1459,22 @@ ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
 ### Déclencher un cycle tout de suite — `gpo refresh`
 
 ```bash
-gpo refresh poste-42     # cette machine redemande sa politique maintenant
-gpo refresh --all        # toutes les machines connectées
+gpo refresh poste-42          # cette machine redemande sa politique maintenant
+gpo refresh --gpo ssh-baseline   # les machines des groupes liés à cette GPO
+gpo refresh --all             # toutes les machines connectées
 ```
+
+*(TO-DO 169.)* Le même geste est sur le **portail** : un bouton « Demander un
+cycle » sur la fiche d'une machine (**Admin → Conformité → la machine**) et sur
+la fiche d'une GPO de portée machine. Les trois formes passent par la même
+boucle, et chaque machine par **son** contrôle de droits
+(`write:update:client` sur **tous** ses domaines — un seul suffisait avant la
+2.3, TO-DO 150) : celles que vous n'avez pas le droit de toucher sont
+comptées, jamais nommées.
+
+Une GPO de **compte** n'a pas de cycle à demander — elle s'applique à
+l'ouverture de session. La page le dit à la place du bouton, et
+`gpo refresh --gpo` le refuse sans solliciter aucune machine.
 
 Entre la correction d'une GPO et son application, il s'écoule sinon jusqu'à une
 cadence entière. `gpo refresh` supprime cette attente : le core pousse une
@@ -1415,10 +1512,20 @@ gpo mode durcissement_ssh enforce   # les écarts sont corrigés au cycle suivan
 ```
 
 **La détection ne change jamais.** Un écart est constaté, journalisé et remonté
-dans les deux modes ; il apparaît dans `gpo drift` de la même façon. Seule change
-la suite : en `enforce`, le module dérivé est réappliqué au cycle suivant de la
-machine — jamais immédiatement, pour ne pas relancer un service pendant qu'on le
-débogue. En `audit`, rien n'est corrigé.
+dans les deux modes. Seule change la suite : en `enforce`, le module dérivé est
+réappliqué au cycle suivant de la machine — jamais immédiatement, pour ne pas
+relancer un service pendant qu'on le débogue. En `audit`, rien n'est corrigé.
+
+**Et cela se lit** *(TO-DO 86)* :
+
+| | Dans `gpo status` après le cycle | Dans le détail de la machine |
+|---|---|---|
+| `enforce` | `ok (N)` — l'écart a été corrigé, l'agent l'a constaté ; il reste au **journal du core** | plus d'écart |
+| `audit` | `N écart(s)`, tant qu'il n'est pas réparé à la main | le détail de l'écart commence par `[audit : signale, non corrige]` |
+
+Un écart qui **reste** affiché est donc en `audit`, ou n'a pas pu être corrigé.
+Les deux modes affichaient la même ligne : en `enforce`, la machine restait à
+« 1 écart(s) » une cadence entière après l'avoir réparé. *(Agent à jour requis.)*
 
 Le mode est porté par la **GPO** et hérité par ses modules. Une machine qui reçoit
 une GPO en audit et une autre en enforce applique la règle de chacune sur les
@@ -1439,11 +1546,34 @@ réglage.
 Le mode se **relit** dans `get -gpo` (colonne « Dérive ») et sur la fiche
 `get -gpo "nom"`, comme dans l'onglet Réglages de la page web.
 
+### Quand une GPO modifiée atteint le parc *(TO-DO 86)*
+
+Rien ne part quand on modifie une GPO, un module ou un mode :
+
+| Portée | La modification est appliquée |
+|---|---|
+| machine | au **prochain cycle** de chaque machine liée — `gpo_refresh_minutes` au plus, une heure par défaut. Ou tout de suite : le bouton « Demander un cycle » de la fiche de la GPO, ou `gpo refresh --gpo <nom>` |
+| compte | à la **prochaine ouverture de session** de chaque compte. Une session déjà ouverte ne change pas |
+
+Chaque écriture le rappelle, avec la cadence réellement en vigueur, sur la ligne
+de commande comme sur le portail :
+
+```text
+Module file_deploy mis à jour. Les machines liées l'appliqueront à leur prochain
+cycle, dans 1 h au plus — ou tout de suite : « Demander un cycle » sur la fiche
+de la GPO, ou « vlt gpo refresh --gpo ssh-baseline ».
+```
+
+**Retirer un module ne défait rien** : ce qu'il avait posé reste sur les postes.
+Pour le retirer, passez d'abord le module à l'état `absent`, laissez un cycle
+passer, puis retirez-le.
+
 ### La même vue sur le portail
 
 **Admin → Conformité** (`/admin/gpo/compliance`) affiche exactement le même état :
-résumé du parc, tableau trié dans le même ordre, détail d'une machine au clic, et
-un filtre « écarts seulement » équivalent à `gpo drift`.
+résumé du parc, une ligne par machine triée dans le même ordre, les comptes à
+signaler en retrait sous la leur, détail d'une machine au clic, et un filtre
+« écarts seulement » équivalent à `gpo drift`.
 
 Le tri, les états de fraîcheur et les libellés viennent du **même code** que la
 ligne de commande — c'est délibéré. Deux vues qui les recalculeraient séparément
@@ -1454,11 +1584,12 @@ Droit : `read:get:gpo`, comme en ligne de commande. La vue est réduite au
 périmètre de l'appelant, et le nombre de lignes masquées est annoncé.
 
 Le tri place devant ce dont on ne sait rien — les muettes —, puis les modules en
-échec, puis les écarts. Un échec est visible et chiffré ; un silence ne dit rien,
+échec, puis les écarts ; ceux d'un compte font remonter sa machine. Un échec est visible et chiffré ; un silence ne dit rien,
 et c’est pour cela qu’il passe en premier.
 
 `gpo drift` ne masque **pas** les machines muettes : elles ont zéro écart
-constaté parce que plus personne ne regarde, pas parce qu’elles sont saines.
+constaté parce que plus personne ne regarde, pas parce qu’elles sont saines. Il
+retient aussi une machine dont **seul un compte** a un écart.
 
 ### Les GPO d'un compte : vérifiées à sa connexion *(TO-DO 135, 142)*
 
@@ -1483,12 +1614,20 @@ Ce qui est vérifié dans un dossier personnel :
 | `file_deploy`, `templated_file_deploy` | le fichier entier : contenu et droits | supprimé, modifié, droits changés, remplacé par un lien |
 | `user_env` | `.vaultaire_env` en entier, et **le bloc** de chargement dans `.bashrc`, `.profile`… | fichier modifié ; bloc retiré ou modifié |
 | `user_ssh_client_config` | **le bloc** de l'alias dans `~/.ssh/config` | bloc retiré ou modifié |
-| `user_cron` | les deux unités systemd | supprimées, modifiées |
+| `user_cron` | les deux unités systemd, et **l'activation** du timer | supprimées, modifiées ; timer désactivé ou masqué |
+| `user_git_config` | **les clés** posées dans `~/.gitconfig`, une à une | clé retirée, valeur changée |
+| `user_password_policy` | la durée maximale et le délai d'avertissement (`chage`) | valeurs changées |
 | `file_acl`, `user_shell`, `user_group_membership` | l'état, par la commande système | ACL retirée, shell changé, groupe quitté |
 
-Le reste d'un `.bashrc` ou d'un `~/.ssh/config` appartient à la personne : y
-ajouter un alias ou un hôte **n'est pas un écart**. `user_git_config` et
-`user_password_policy` ne sont pas encore vérifiés (TO-DO 163).
+Le reste d'un `.bashrc`, d'un `~/.ssh/config` ou d'un `~/.gitconfig` appartient à
+la personne : y ajouter un alias, un hôte ou une clé **n'est pas un écart**.
+
+*(TO-DO 163.)* `user_git_config`, `user_password_policy` et l'activation de
+`user_cron` n'étaient pas vérifiés. Deux limites voulues : le **changement forcé**
+du mot de passe à la prochaine connexion n'est pas surveillé — il s'éteint quand
+la personne obéit, ce ne serait pas un écart ; et pour un timer, seul ce dont on
+est sûr est un écart (lien disparu, ou masqué). Autre chose à sa place est
+« non vérifiable ».
 
 **Dans `gpo status`**, la ligne d'un compte passe à `ok (N)` dès sa première
 connexion, et y revient après chaque correction. Le résumé du parc ne dit plus
@@ -1501,7 +1640,8 @@ connexion, et y revient après chaque correction. Le résumé du parc ne dit plu
 > **Après la mise à jour de l'agent**, la première connexion de chaque compte
 > rejoue une fois tous ses modules — c'est ce qui fait entrer ses fichiers dans
 > l'inventaire. Le journal de l'agent le dit. Les modules d'une GPO en `audit`
-> ne sont pas rejoués.
+> ne sont pas rejoués. Cela s'est produit en 2.2, et se reproduit **une fois** en
+> 2.3 pour les trois modules ci-dessus.
 
 La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’interface web.
 

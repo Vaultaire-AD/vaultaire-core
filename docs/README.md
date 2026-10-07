@@ -111,7 +111,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | --- | --- |
 | [`../src/vaultaire_nexus/README.md`](../src/vaultaire_nexus/README.md) | Nexus, le dépôt de paquets du parc : installation, dépôts RPM/Debian/Docker, releases, droits |
 | [`exploitation/Releases.md`](./exploitation/Releases.md) | Releases automatiques, numérotation, rétention, mise à jour de la préprod, purge de l'historique |
-| [`exploitation/Agent_configuration_et_debug.md`](./exploitation/Agent_configuration_et_debug.md) | Agent : liste des cores (installation, apprise, persistée) et rapport de debug `vlt_client-Debug.log` |
+| [`exploitation/Agent_configuration_et_debug.md`](./exploitation/Agent_configuration_et_debug.md) | Agent : liste des cores (installation, apprise, persistée), rapport de debug `vlt_client-Debug.log`, et le service — `--check`, `--install-unit`, relance bornée |
 | [`exploitation/Changement_de_version.md`](./exploitation/Changement_de_version.md) | Passer à la série suivante (2.1 → 2.2) : fichiers à modifier, documentation à clore et à ouvrir |
 | [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
 | [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |

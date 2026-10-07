@@ -93,6 +93,16 @@ serveur_central
 Plafonné à 200 ordres par trame ; au-delà, le client rappelle 06_04. Un ordre
 pèse une centaine d'octets, la limite utile d'une trame est d'environ 48 Kio.
 
+**Réponse à une `06_04`, ou poussée** *(TO-DO 49)*. Le core l'envoie aussi de
+lui-même quand il rejoue : voir
+[Quand le core rejoue de lui-même](./01-principe-et-sequence.md#quand-le-core-rejoue-de-lui-même).
+La trame est la même dans les deux cas, et l'agent ne les distingue pas : il
+applique la liste dans l'ordre et acquitte chaque ordre. C'est ce qui permet au
+rejeu d'atteindre un agent antérieur, sans trame nouvelle.
+
+Elle ne porte que ce qui reste **à rejouer** : les cibles `pending` ou `failed`.
+Un verrouillage levé avant d'avoir été acquitté (`lifted`) n'y figure plus.
+
 ### 06_06 — revocations_error (serveur → client)
 
 ```
@@ -105,8 +115,9 @@ serveur_central
 
 ## Idempotence
 
-Un ordre peut arriver deux fois : poussé puis rejoué après une reconnexion, ou
-réémis après un acquittement perdu. Les trois modes sont naturellement
+Un ordre peut arriver deux fois — et, depuis que le core rejoue, bien plus :
+poussé, rejoué par le core, redemandé par l'agent, réémis après un acquittement
+perdu. Les trois modes sont naturellement
 idempotents (`usermod -L` deux fois de suite, `userdel` sur un compte absent),
 et l'agent tient la liste des `order_id` déjà appliqués dans son état local, à
 côté de `applied_policies.json`. Un ordre déjà appliqué est ré-acquitté sans

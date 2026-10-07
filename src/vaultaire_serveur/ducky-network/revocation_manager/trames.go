@@ -18,7 +18,7 @@ import (
 //	  06_02  revoke_ack          client → serveur
 //	  06_03  revoke_error        client → serveur
 //	06_04  ask_revocations       client → serveur
-//	  06_05  revocations_list    serveur → client
+//	  06_05  revocations_list    serveur → client   (réponse, et rejeu du core)
 //	  06_06  revocations_error   serveur → client
 
 // maxOrdersPerFrame borne le nombre d'ordres transmis en une fois.
@@ -136,7 +136,7 @@ func handleError(trames storage.Trames_struct_client) string {
 	// Niveau ERROR : une machine qui n'a pas pu couper un compte reste un accès
 	// ouvert pour la personne révoquée. C'est un incident, pas une information.
 	logs.Write_Log("ERROR", fmt.Sprintf(
-		"revocation: ordre %d EN ÉCHEC sur %s — %s : %s (sera rejoué)",
+		"revocation: ordre %d EN ÉCHEC sur %s — %s : %s (rejoué par le core, voir rejeu.go)",
 		orderID, trames.ClientSoftwareID, code, message))
 
 	return ""
@@ -169,7 +169,26 @@ func handleAskRevocations(trames storage.Trames_struct_client) string {
 			"revocation: %d ordre(s) en attente remis à %s", len(orders), trames.ClientSoftwareID))
 	}
 
-	parts := []string{"06_05", "serveur_central", trames.SessionIntegritykey, strconv.Itoa(len(orders))}
+	// Ce qui part ici est un essai comme un autre : inscrit, il évite que le
+	// rejeu du core (TO-DO 49) remette la même liste dans la seconde qui suit.
+	if len(orders) > 0 {
+		ids := make([]int, len(orders))
+		for i, o := range orders {
+			ids[i] = o.ID
+		}
+		noterLEssai(trames.ClientSoftwareID, ids)
+	}
+
+	return buildListFrame(trames.SessionIntegritykey, orders)
+}
+
+// buildListFrame construit la trame 06_05 : les ordres qu'une machine n'a pas
+// acquittés, du plus ancien au plus récent.
+//
+// Deux émetteurs : la réponse à une 06_04, et le rejeu du core, qui la pousse
+// sans qu'on la lui demande.
+func buildListFrame(sessionKey string, orders []revocation.Order) string {
+	parts := []string{"06_05", "serveur_central", sessionKey, strconv.Itoa(len(orders))}
 	for _, o := range orders {
 		parts = append(parts, strings.Join([]string{
 			strconv.Itoa(o.ID), string(o.Mode), o.Username, string(o.Reason),

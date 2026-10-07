@@ -190,42 +190,31 @@ type ResumeParc struct {
 // dont deux portées sont en échec est un problème, pas deux. Compter les lignes
 // gonflerait les chiffres à proportion du nombre d'utilisateurs connectés, et
 // « 47 échecs » sur un parc de 12 machines ne veut rien dire.
+//
+// # « En retard » se juge sur la portée machine (TO-DO 143)
+//
+// Chaque ligne était jugée comme une machine. Or une portée utilisateur ne
+// rapporte qu'à la connexion de la personne : passé la tolérance, sa ligne
+// était « en retard », et la machine comptée avec elle — un parc dont les
+// bureaux sont vides s'annonçait en retard tous les soirs. Le regroupement par
+// machine porte la règle ; ce résumé ne fait plus que compter ce qu'il rend.
 func ResumerParc(rows []ComplianceRow, maintenant time.Time) ResumeParc {
 	var out ResumeParc
-	vues := map[string]bool{}
-	jamais := map[string]bool{}
-	retard := map[string]bool{}
-	echec := map[string]bool{}
-	ecarts := map[string]bool{}
-	nonVerifiees := map[string]bool{}
-
-	for _, r := range rows {
-		if !vues[r.ComputeurID] {
-			vues[r.ComputeurID] = true
-			out.Machines++
-		}
-		switch r.Fraicheur(maintenant) {
+	for _, l := range RegrouperParMachine(rows, maintenant) {
+		out.Machines++
+		switch l.Fraicheur(maintenant) {
 		case RapportJamais:
-			if !jamais[r.ComputeurID] {
-				jamais[r.ComputeurID] = true
-				out.Jamais++
-			}
+			out.Jamais++
 		case RapportEnRetard:
-			if !retard[r.ComputeurID] {
-				retard[r.ComputeurID] = true
-				out.EnRetard++
-			}
+			out.EnRetard++
 		}
-		if r.ModulesFailed > 0 && !echec[r.ComputeurID] {
-			echec[r.ComputeurID] = true
+		if l.EnEchec() {
 			out.EnEchec++
 		}
-		if r.DriftCount > 0 && !ecarts[r.ComputeurID] {
-			ecarts[r.ComputeurID] = true
+		if l.Ecarts() > 0 {
 			out.AvecEcarts++
 		}
-		if r.NonVerifiee() && !nonVerifiees[r.ComputeurID] {
-			nonVerifiees[r.ComputeurID] = true
+		if l.NonVerifiee() {
 			out.NonVerifiees++
 		}
 	}

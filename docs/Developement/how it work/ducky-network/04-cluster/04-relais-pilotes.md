@@ -34,9 +34,30 @@ vide ferait d'« ajouter un relais » le retrait de tous les autres. Rendre la
 main (`cluster.relay_release`) fait réappliquer le fichier.
 
 Le proxy garde sur son disque la dernière liste reçue (`relais_du_core.json`,
-dans le répertoire des clés), et la rouvre à son démarrage. Elle ne le fait
-**pas** relayer sans core : les relais ne s'ouvrent qu'une fois la session
-établie (TO-DO 158).
+dans le répertoire des clés), et la rouvre à son démarrage.
+
+**Y compris sans core** *(2.3, TO-DO 158)*. `main` attendait une session
+authentifiée — trente secondes au plus — **avant** d'ouvrir le moindre relais :
+sans core joignable le proxy s'arrêtait sans avoir ouvert un port, et la copie,
+faite pour repartir sans le core, n'était jamais lue à froid. L'ordre est
+maintenant :
+
+1. lire les relais, copie locale puis fichier (une faute arrête tout) ;
+2. **lancer** la session — `ducky.Lancer` : configuration, identité, connexion
+   en fond ;
+3. **ouvrir** les relais ;
+4. raccorder en fond (`raccordement.go`) : `ducky.Attendre`, puis s'annoncer au
+   cluster, apprendre cores et services, rendre compte des relais.
+
+L'arrêt au bout de trente secondes servait d'alarme. Il est remplacé par une
+ligne `ERROR` au même instant, puis par un rappel toutes les cinq minutes
+(`RappelSansCore`, la période du bilan des relais) qui dit depuis quand, et
+combien de relais restent ouverts. La connexion est retentée sans fin.
+
+Ce qui ne change pas : sans **identité** le proxy doit s'enrôler, donc un premier
+démarrage demande un core ; un relais Ducky sans core écoute et refuse
+franchement, ce qui fait passer l'agent au nœud suivant ; un relais du fichier
+qui ne peut pas écouter reste fatal. Une sentinelle garde l'ordre de `main`.
 
 ## Arbitrage 2 — le core demande, le proxy dit ce qu'il a obtenu
 

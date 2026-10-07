@@ -3,6 +3,7 @@ package dbrevocation
 import (
 	"database/sql"
 	"fmt"
+	"vaultaire/core/database/schematools"
 	"vaultaire/core/logs"
 )
 
@@ -38,13 +39,15 @@ func CreateTables(db *sql.DB) error {
 		// user_revocation_target : une ligne par machine visée par un ordre.
 		//
 		// C'est ce qui rend le rejeu possible : tant qu'une ligne est en
-		// « pending » ou « failed », la machine correspondante recevra l'ordre à
-		// sa prochaine connexion.
+		// « pending » ou « failed », la machine correspondante recevra l'ordre —
+		// quand elle le réclame (06_04), et sans attendre si elle est connectée
+		// (rejeu du core, TO-DO 49). « acked » et « lifted » sont les deux fins.
 		`CREATE TABLE IF NOT EXISTS user_revocation_target (
 			d_id_revocation INT NOT NULL,
 			computeur_id    VARCHAR(255) NOT NULL,
 			status          VARCHAR(16) NOT NULL DEFAULT 'pending',
 			last_attempt    DATETIME NULL,
+			attempts        INT NOT NULL DEFAULT 0,
 			detail          TEXT NULL,
 			PRIMARY KEY (d_id_revocation, computeur_id),
 			INDEX idx_target_pending (computeur_id, status),
@@ -58,6 +61,22 @@ func CreateTables(db *sql.DB) error {
 				"revocation: création de table échouée: "+err.Error())
 			return fmt.Errorf("création du schéma de révocation : %w", err)
 		}
+	}
+
+	// attempts : combien de fois l'ordre a été REMIS à cette machine — TO-DO 49.
+	//
+	// C'est ce qui espace les rejeux du core : dix secondes après le premier
+	// envoi, puis le double à chaque fois. Sans ce compte, il aurait fallu
+	// déduire l'espacement de l'âge de l'ordre, et une machine revenue trois
+	// jours après aurait attendu cinq minutes son deuxième essai.
+	//
+	// Le CREATE ci-dessus ne fait rien sur une base où la table existe déjà.
+	// Le DEFAULT vaut pour les lignes en place : zéro essai, donc rejouées au
+	// premier tour si leur machine est connectée — ce qui est exactement ce
+	// qu'on veut d'un ordre resté sans réponse.
+	if err := schematools.EnsureColumn(db, "revocation", "user_revocation_target", "attempts",
+		"INT NOT NULL DEFAULT 0"); err != nil {
+		return err
 	}
 
 	logs.Write_Log("INFO", "revocation: schéma vérifié")

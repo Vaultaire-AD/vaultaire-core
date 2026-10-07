@@ -102,50 +102,6 @@ func GetUsersByUsernames(db *sql.DB, usernames []string) (map[string]ldapstorage
 	return résultat, nil
 }
 
-// GetMemberOfByUsername rend les groupes d'un utilisateur, avec leur domaine.
-//
-// # Pourquoi ça existe
-//
-// memberOfForUser lisait TOUS les groupes du domaine, puis interrogeait chacun
-// d'eux pour savoir s'il contenait l'utilisateur. Avec 500 groupes, cela faisait
-// 501 requêtes pour lire un seul compte — sur le chemin exact qu'emprunte
-// JumpServer après chaque authentification.
-//
-// Une jointure répond à la même question en une requête.
-func GetMemberOfByUsername(db *sql.DB, username string) ([]GroupDomain, error) {
-	if err := database.SanitizeIdentifier(username); err != nil {
-		return nil, err
-	}
-
-	query := `
-		SELECT g.group_name, dg.domain_name
-		FROM users u
-		JOIN users_group ug ON u.id_user = ug.d_id_user
-		JOIN groups g ON ug.d_id_group = g.id_group
-		JOIN domain_group dg ON dg.d_id_group = g.id_group
-		WHERE u.username = ?
-		GROUP BY g.group_name, dg.domain_name`
-
-	rows, err := db.Query(query, username)
-	if err != nil {
-		return nil, fmt.Errorf("lecture des groupes de %s : %w", username, err)
-	}
-	defer rows.Close()
-
-	var groupes []GroupDomain
-	for rows.Next() {
-		var g GroupDomain
-		if err := rows.Scan(&g.GroupName, &g.DomainName); err != nil {
-			return nil, fmt.Errorf("lecture d'une ligne de groupe : %w", err)
-		}
-		groupes = append(groupes, g)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("parcours des groupes : %w", err)
-	}
-	return groupes, nil
-}
-
 // GroupDomain associe un groupe à son domaine.
 type GroupDomain struct {
 	GroupName  string

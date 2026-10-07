@@ -91,6 +91,18 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 				trames_content.ClientSoftwareID,
 			),
 		)
+		// Le refus d'une ouverture de session est un 03_03, pas un 02_07
+		// (TO-DO 159). Le 02_07 dit « l'authentification de CETTE session est
+		// refusée » : or cette trame-ci voyage dans le tunnel de la machine,
+		// qui est authentifié. Et il ne libérait personne : le module PAM qui
+		// attend le verdict de ce compte patientait jusqu'à son délai. Le
+		// 03_03 le lui rend tout de suite.
+		//
+		// Sans nom de compte lisible il n'y a personne à qui répondre : on
+		// garde alors l'ancienne trame, que le poste journalise.
+		if compte := strings.TrimSpace(content[0]); compte != "" {
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + compte + "\ninvalid request"
+		}
 		return "02_07\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}

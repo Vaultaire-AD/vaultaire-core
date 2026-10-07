@@ -78,8 +78,15 @@ func TestLaPageNeRecalculeAucunEtat(t *testing.T) {
 			"la page décide elle-même de l'état de conformité au lieu d'appeler EtatConformite"},
 		{regexp.MustCompile(`ModulesTotal\s*-\s*ModulesFailed`),
 			"la page recompose « appliqués / total » au lieu d'appeler ModulesAppliques"},
+		{regexp.MustCompile(`ModulesFailed\s*[><!=]|\.Scope\s*[!=]=`),
+			"la page décide elle-même de ce qui remonte ou de ce qu'est une portée : RegrouperParMachine le fait"},
 		{regexp.MustCompile(`time\.Since`),
 			"la page calcule un âge : AgeRelatif le fait, et prend l'instant en paramètre"},
+		// La fiche d'une machine décidait « jamais vérifiée » sur l'absence de
+		// date de scan : elle l'affichait pour une portée SANS MODULE, que la
+		// liste dit « rien à vérifier ».
+		{regexp.MustCompile(`!\s*\w+\.DriftAt\.Valid`),
+			"la page décide elle-même qu'une portée n'est pas vérifiée : NonVerifiee le fait, et connaît la portée sans module"},
 	}
 
 	for _, ligne := range strings.Split(source, "\n") {
@@ -113,6 +120,11 @@ func TestLaPageEmprunteLesFonctionsPartagees(t *testing.T) {
 		"dbgpo.AgeRelatif(",
 		"dbgpo.ResumerParc(",
 		"ARetenirDansLaVueDesEcarts(",
+		// Une ligne par machine (TO-DO 143) : le regroupement, l'état des
+		// comptes et le choix de ceux qui remontent se décident dans le paquet.
+		"dbgpo.RegrouperParMachine(",
+		"EtatDesComptes()",
+		"ARemonter()",
 	} {
 		if !strings.Contains(source, attendu) {
 			t.Errorf("%s n'appelle pas %s : soit la colonne est vide, soit elle "+
@@ -135,6 +147,9 @@ func TestLesGabaritsNeDecidentDeRien(t *testing.T) {
 		contenu := lireGabarit(t, nom)
 		for _, interdit := range []string{
 			"DriftCount", // l'état de conformité vient de EtatConformite
+			"DriftAt",    // « non vérifié » vient de NonVerifiee
+			// Un libellé d'état écrit dans le gabarit ne suit plus le paquet.
+			"jamais vérifiée",
 			"ReportedAt", // l'âge vient de AgeRelatif
 			"JamaisRapporte",
 		} {

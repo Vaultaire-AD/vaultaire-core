@@ -7,6 +7,7 @@ import (
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"duckynetworkclient/V1/duckynetwork/storage/stosession"
+	"duckynetworkclient/V1/duckynetwork/userauth"
 	"duckynetworkclient/V1/serveur_communication/module"
 	"duckynetworkclient/V1/sessionmgr"
 	"time"
@@ -45,10 +46,10 @@ func EnableServerCommunication(user, pass string) {
 				continue
 			}
 
-			// La connexion a abouti : on repart du délai court, sinon une
-			// coupure brève après une longue absence coûterait le délai
-			// maximal.
-			attente.Reset()
+			// La connexion a abouti. Le délai de reprise n'est PAS remis à zéro
+			// ici : à ce stade on ne sait pas encore si le core acceptera
+			// l'authentification. Il l'est à la fin de la session, si elle
+			// n'a pas été refusée — voir userauth.DelaiDeReprise (TO-DO 159).
 
 			// La session machine "vaultaire" utilise toujours la clé réservée
 			// MotherSessionID, quel que soit l'ID généré par défaut à la
@@ -101,8 +102,15 @@ func EnableServerCommunication(user, pass string) {
 			}
 
 			<-done // Attend la fin de la connexion
-			d := attente.Prochain()
-			logs.Write_log("WARNING", fmt.Sprintf("Flux arrêté. Reconnexion dans %s...", d))
+			d, refusee := userauth.DelaiDeReprise(attente, ds)
+			if refusee {
+				// Le core a refusé l'authentification (02_07). Ce n'est pas une
+				// coupure : revenir aussitôt redonnerait le même refus.
+				logs.Write_log("WARNING", fmt.Sprintf(
+					"Authentification refusée par le core (%s). Nouvel essai dans %s...", ds.Refus, d))
+			} else {
+				logs.Write_log("WARNING", fmt.Sprintf("Flux arrêté. Reconnexion dans %s...", d))
+			}
 			time.Sleep(d)
 		}
 	} else {

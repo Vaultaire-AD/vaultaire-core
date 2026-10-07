@@ -113,7 +113,17 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			sshUser = lines[0]
 		}
 
-		logs.Write_log("ERROR", "Le serveur central a refusé l'accès SSH pour : "+sshUser)
+		// Le MOTIF est journalisé (TO-DO 159). Le core le donne déjà — « password
+		// expired », « mfa required », « permission denied » — et il n'était lu
+		// nulle part : devant un refus, le journal du poste ne distinguait pas
+		// un mot de passe faux d'un mot de passe expiré. Le core ne dit rien de
+		// plus précis que « permission denied » tant que le mot de passe n'est
+		// pas prouvé ; ce journal n'est lisible que de root.
+		motif := "motif non precise"
+		if len(lines) > 1 {
+			motif = strings.Join(lines[1:], " ")
+		}
+		logs.Write_log("ERROR", "Le serveur central a refusé l'accès SSH pour : "+sshUser+" ("+motif+")")
 
 		// Un REFUS EXPLICITE, et non plus une simple fermeture du canal.
 		//

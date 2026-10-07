@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 	"vaultaire_client/config"
+	"vaultaire_client/controle"
 	"vaultaire_client/debugreport"
 	"vaultaire_client/gpo"
 	pamcommunication "vaultaire_client/pam_communication"
@@ -22,6 +23,7 @@ import (
 	"vaultaire_client/sshauth"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
+	"vaultaire_client/unite"
 	"vaultaire_client/version"
 	yaml_vaultaire "vaultaire_client/yaml"
 )
@@ -197,8 +199,49 @@ func purgerGroupesOrphelins(confirmer bool) {
 func main() {
 	brancherSocleDucky()
 
+	// Les options d'abord, AVANT toute lecture — TO-DO 112.
+	//
+	// Elles étaient déclarées après le chargement de la configuration : un
+	// `--check` n'aurait jamais pu dire qu'elle est illisible, puisque le
+	// programme serait mort sur elle avant de savoir qu'on le lui demandait.
+	verifier := flag.Bool("check", false,
+		"Contrôle que l'agent peut démarrer (configuration, identité, clés) et sort — sans rien ouvrir ni modifier")
+	installerUnite := flag.Bool("install-unit", false,
+		"Écrit l'unité systemd de l'agent (relance bornée, contrôle avant démarrage) si elle diffère")
+	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
+	purgeGroupes := flag.Bool("purge-groups", false,
+		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
+	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
+	// Rapport de debug périodique (vlt_client-Debug.log). La ligne de commande
+	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
+	debugRapport := flag.Bool("debug", false,
+		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
+	debugIntervalle := flag.Int("debug-interval", 0,
+		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
+	flag.Parse()
+
+	// Le contrôle de démarrage : il lit, dit, et sort.
+	//
+	// Avant tout le reste, et sans le journal de l'agent : c'est la commande
+	// que systemd joue avant chaque lancement (ExecStartPre), et celle qu'on
+	// tape sur une machine dont l'agent ne tient pas. Sa sortie est sa réponse.
+	if *verifier {
+		constats := controle.Verifier(controle.CheminsReels())
+		if controle.Rapport(os.Stdout, "vaultaire_client "+version.Info().Complete()+" — contrôle de démarrage", constats) > 0 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if *installerUnite {
+		if err := unite.Installer(unite.Reel(), os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "Erreur :", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	// ... chargement config ...
-	err := config.LoadConfig("/etc/vaultaire_client/client_conf.json")
+	err := config.LoadConfig(controle.CheminConfiguration)
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
@@ -211,18 +254,6 @@ func main() {
 		logs.Write_log("CRITICAL", "identité de la machine illisible ("+
 			storage.SoftwarePathResolu()+") : aucune session ne pourra s'ouvrir")
 	}
-
-	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
-	purgeGroupes := flag.Bool("purge-groups", false,
-		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
-	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
-	// Rapport de debug périodique (vlt_client-Debug.log). La ligne de commande
-	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
-	debugRapport := flag.Bool("debug", false,
-		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
-	debugIntervalle := flag.Int("debug-interval", 0,
-		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
-	flag.Parse()
 
 	if *purgeGroupes {
 		purgerGroupesOrphelins(*confirmer)

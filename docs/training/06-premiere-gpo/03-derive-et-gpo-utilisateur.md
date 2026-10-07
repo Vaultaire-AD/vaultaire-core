@@ -23,20 +23,37 @@ utilisateur.
 2. Côté serveur :
 
    ```bash
-   vlt gpo drift
+   vlt gpo status
+   vlt logs --level WARNING --since 10m
    ```
 
-   La machine apparaît en écart. En mode **enforce** (le défaut), le module est
-   **réappliqué au cycle suivant** — relancez l'agent une seconde fois et la
-   bannière revient.
+   En mode **enforce** (le défaut), tout s'est joué dans le même cycle : l'agent
+   a vu l'écart, **reposé** la bannière, puis constaté que tout était en place.
+   `gpo status` dit `ok`, et `gpo drift` ne montre rien. L'écart n'est pas
+   perdu pour autant — il est au journal : `gpo: dérive machine sur web01 —
+   1 écart(s)…`.
 
-3. Passez la GPO en **audit**, et recommencez :
+3. Passez la GPO en **audit**, faites-le savoir à la machine, puis recommencez
+   l'étape 1 :
 
    ```bash
    vlt gpo mode ssh-baseline audit
+   vlt gpo refresh --gpo ssh-baseline   # le mode voyage avec la politique : il lui faut un cycle
+   # … étape 1 sur web01 …
+   vlt gpo drift
+   vlt gpo status <computeur_id>
    ```
 
-   L'écart est signalé, **rien n'est corrigé**. Revenez ensuite en `enforce`.
+   Cette fois l'écart est signalé et **rien n'est corrigé** : la machine reste
+   dans `gpo drift`, et le détail de l'écart commence par
+   `[audit : signale, non corrige]`. C'est à cela qu'on reconnaît les deux
+   modes : un écart qui **reste** affiché est en audit — ou n'a pas pu être
+   corrigé.
+
+   Revenez ensuite en `enforce`. Lisez la réponse de la commande : elle dit
+   **quand** les machines appliqueront le changement — à leur prochain cycle —
+   et comment ne pas attendre : le bouton « Demander un cycle » de la fiche de
+   la GPO, ou `vlt gpo refresh --gpo ssh-baseline`.
 
 ## Partie B — une GPO utilisateur
 
@@ -58,7 +75,7 @@ utilisateur.
 
 ## ✅ Vous avez réussi si
 
-- `gpo drift` a montré l'écart, puis plus rien après correction ;
+- en `enforce` la bannière est revenue seule et le journal garde l'écart ; en `audit` la machine reste dans `gpo drift` ;
 - `ACME_ENV` vaut `lab` dans la session d'Alice.
 
 ## 🧪 Exercice
@@ -80,7 +97,8 @@ privilèges. La règle est vérifiée par le serveur **et** par l'agent.
 > Essayez : dans la session d'Alice, `rm ~/.vaultaire_env`, déconnectez-vous,
 > attendez cinq minutes — ou `vlt settings set gpo_user_check_minutes 1` — et
 > reconnectez-vous. `ACME_ENV` vaut de nouveau `lab`, et `vlt gpo status`
-> affiche `ok` sur la ligne d'Alice. Ajouter un alias à son `.bashrc`, en
+> compte Alice parmi les comptes `ok` de `web01` (un compte n'a sa propre ligne,
+> sous sa machine, que s'il a un écart). Ajouter un alias à son `.bashrc`, en
 > revanche, n'est pas un écart : seul le bloc que Vaultaire y tient est
 > surveillé.
 

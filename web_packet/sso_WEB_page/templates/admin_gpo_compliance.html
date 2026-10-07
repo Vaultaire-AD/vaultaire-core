@@ -60,7 +60,7 @@
     {{ if not .Lignes }}
       <div class="alert alert-success">
         Aucun écart de conformité, et aucune machine muette, sur les
-        {{ .Total }} ligne(s) suivie(s).
+        {{ .Total }} machine(s) suivie(s).
       </div>
     {{ else }}
     <div class="table-wrap">
@@ -68,12 +68,11 @@
         <thead>
           <tr>
             <th>Machine</th>
-            <th>Portée</th>
-            <th>Utilisateur</th>
             <th>Suivi</th>
             <th>Application</th>
             <th>Modules</th>
             <th>Conformité</th>
+            <th>Comptes</th>
             <th>Vu</th>
           </tr>
         </thead>
@@ -83,26 +82,45 @@
               data-href="/admin/gpo/compliance?machine={{ .ComputeurID }}"
               data-label="Machine {{ .ComputeurID }}">
             <td><a href="/admin/gpo/compliance?machine={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
-            <td>{{ .Scope }}</td>
-            <td>{{ if .TargetUser }}{{ .TargetUser }}{{ else }}—{{ end }}</td>
             <td>
               {{ if eq .Etat "à jour" }}<span class="badge">{{ .Etat }}</span>
               {{ else }}<span class="badge badge-danger">{{ .Etat }}</span>{{ end }}
             </td>
-            <td>{{ if .Status }}{{ .Status }}{{ else }}—{{ end }}</td>
+            <td>{{ .Application }}</td>
             <td>{{ .Modules }}</td>
             <td>
               {{ if .NonVerifiee }}<span class="badge badge-danger">{{ .Conformite }}</span>
               {{ else }}{{ .Conformite }}{{ end }}
             </td>
+            <td>
+              {{ if .ARemonter }}<span class="badge badge-danger">{{ .Comptes }}</span>
+              {{ else }}{{ .Comptes }}{{ end }}
+            </td>
             <td class="muted small">{{ .VuIlYA }}</td>
           </tr>
+          {{ $machine := .ComputeurID }}
+          {{ range .ARemonter }}
+          <tr class="row-context"
+              data-href="/admin/gpo/compliance?machine={{ $machine }}"
+              data-label="Machine {{ $machine }}">
+            <td class="muted">&#8627; {{ .Utilisateur }}</td>
+            <td></td>
+            <td>{{ .Application }}</td>
+            <td>{{ .Modules }}</td>
+            <td>
+              {{ if .NonVerifiee }}<span class="badge badge-danger">{{ .Conformite }}</span>
+              {{ else }}{{ .Conformite }}{{ end }}
+            </td>
+            <td></td>
+            <td class="muted small">{{ .VuIlYA }}</td>
+          </tr>
+          {{ end }}
         {{ end }}
         </tbody>
       </table>
     </div>
     <p class="muted small">
-      {{ len .Lignes }} ligne(s) sur {{ .Total }} suivie(s).
+      {{ len .Lignes }} machine(s) sur {{ .Total }} suivie(s).
       Le total est rappelé même en vue filtrée : « 3 machines en dérive » ne veut
       rien dire sans savoir si le parc en compte 4 ou 4000.
     </p>
@@ -110,6 +128,13 @@
     {{ end }}
 
     <hr>
+    <p class="muted small">
+      <strong>Une ligne par machine.</strong> Elle porte l'état de sa portée
+      <em>machine</em> ; « suivi » dit si l'agent rapporte encore. Les comptes
+      qui s'y sont connectés sont dans la fiche de la machine, et ne remontent
+      ici, sous elle, que lorsqu'il y a quelque chose à y lire : un écart, un
+      module en échec, ou une politique que personne n'a vérifiée.
+    </p>
     <p class="muted small">
       <strong>« non vérifié » n'est pas « conforme ».</strong> Une machine que
       personne n'a scannée affiche zéro écart parce que rien n'a été regardé.

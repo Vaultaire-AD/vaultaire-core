@@ -8,9 +8,13 @@ import (
 )
 
 // TargetsOf retourne l'état de toutes les machines visées par un ordre.
+//
+// Elle existait sans aucun appelant : l'état de chaque cible était écrit en
+// base et ne se lisait que dans le journal du core. Voir SuiviPour (TO-DO 164).
 func TargetsOf(db *sql.DB, orderID int) ([]TargetRecord, error) {
 	rows, err := db.Query(
-		`SELECT computeur_id, status, last_attempt, COALESCE(detail, '')
+		`SELECT computeur_id, status, last_attempt, COALESCE(detail, ''),
+		        attempts, TIMESTAMPDIFF(SECOND, last_attempt, NOW())
 		   FROM user_revocation_target
 		  WHERE d_id_revocation = ?
 		  ORDER BY computeur_id`, orderID)
@@ -27,7 +31,8 @@ func TargetsOf(db *sql.DB, orderID int) ([]TargetRecord, error) {
 	for rows.Next() {
 		var t TargetRecord
 		var status string
-		if err := rows.Scan(&t.ComputeurID, &status, &t.LastAttempt, &t.Detail); err != nil {
+		if err := rows.Scan(&t.ComputeurID, &status, &t.LastAttempt, &t.Detail,
+			&t.Attempts, &t.DepuisLeDernier); err != nil {
 			return nil, fmt.Errorf("lecture d'une cible : %w", err)
 		}
 		t.Status = revocation.TargetStatus(status)

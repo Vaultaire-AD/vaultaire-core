@@ -1017,6 +1017,30 @@ li.row-context:hover {
   color: var(--accent);
 }
 .perm-badge-admin { background: var(--success-subtle); color: var(--success); }
+
+/* Étiquette d'état.
+ *
+ * Les gabarits l'employaient — Conformité, Certificats, Réglages — sans qu'aucune
+ * règle n'existe : « non vérifié », « en retard » ou « jamais vérifiée », écrits
+ * pour RESSORTIR, s'affichaient en texte nu, entre deux « ok ». La variante
+ * -danger est celle de ce qui demande un regard. */
+.badge {
+  display: inline-block;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 0.1rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  white-space: nowrap;
+}
+.badge-danger { background: var(--danger-subtle); color: var(--danger); font-weight: 600; }
+
+/* Suivi d'une révocation, machine par machine (fiche d'un compte). */
+.suivi-ordre { margin: 0.6rem 0; }
+.suivi-ordre > summary { cursor: pointer; font-weight: 600; padding: 0.3rem 0; }
+.suivi-ordre > summary .muted { font-weight: 400; margin-left: 0.4rem; }
 .perm-card-actions {
   display: flex;
   align-items: center;
