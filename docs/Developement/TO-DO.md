@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **176**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **179**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -35,7 +35,7 @@ compatibilité avec les clients LDAP du marché. Les constats sont détaillés d
 aux points **119 à 131**. **Tous sont traités dans la 2.2**, 119 à 131, ainsi que
 le **132**, relevé en traitant le 120 — le dernier constat de sécurité de
 l'audit. Quatre points en sont sortis en les traitant : **150** (la suite
-`--test`), **151** (les mots de passe de la formation), **152** (les bornes
+`--test`), **151** (les mots de passe de la formation — **traité**), **152** (les bornes
 LDAP ne se réglaient pas — **traité**) et **155** (`memberOf` dépend de la base
 de recherche).
 
@@ -66,15 +66,17 @@ journal ne disait pas où LogonUI s'arrêtait. La cause de l'écran vide, elle,
 **Recette du 03/10 (retours de Lorens sur `A_TESTER.md`).** Dix points ouverts,
 **139 à 148** : Windows (**139** la DLL dépend de `libwinpthread-1.dll`, **140**
 le fournisseur s'inscrit sous le CLSID `{` — **traités** le jour même, voir
-`DO/2.2/2.2.md` ; le **149** en est la suite),
+`DO/2.2/2.2.md` ; le **149** en est la suite — **traité** en 2.3),
 proxy (**141** la configuration des relais se pilote depuis le core —
-**traité**, voir `DO/2.2/2.2.md` ; le **158**, **traité** en 2.3, et le **160** en sont la suite), GPO
+**traité**, voir `DO/2.2/2.2.md` ; le **158** et le **160**, **traités** en 2.3, en sont la suite), GPO
 (**142** cadence de la vérification utilisateur — **traité** —, **143** une ligne
 par machine dans la page Conformité), comptes et LDAP (**144** créer un compte sans mot de
-passe provisoire, **145** journal LDAP illisible en debug — **traité**, voir
-`DO/2.2/2.2.md` ; les **153** et **154** en sont la suite) et cluster (**146**
-retirer un nœud à la main, **147** maintenance et purge, **148** sessions
-actives par core). Le retour sur le § 26 — une suppression ou une modification
+passe provisoire — **traité**, voir `DO/2.3/2.3.md` —, **145** journal LDAP
+illisible en debug — **traité**, voir `DO/2.2/2.2.md` ; les **153** et **154**
+en sont la suite, **traités** en 2.3) et cluster (**146**
+retirer un nœud à la main, **147** maintenance et purge — **traités**, voir
+`DO/2.3/2.3.md` ; les **176** et **177** en sont la suite —, **148** sessions
+actives par core — **traité**). Le retour sur le § 26 — une suppression ou une modification
 dans un `HOME` n'est pas détectée — n'ouvre pas de point : c'est le **135**,
 confirmé, et **traité** depuis.
 
@@ -124,8 +126,9 @@ voir `DO/2.3/2.3.md`. Le **150** supposait un ordre d'initialisation : ce n'en
 `cluster.refresh_nodes`), rendues strictes —, deux étaient des filtres jamais
 éprouvés, et sept décrivaient un registre d'avant `PorteeOuverte`. La suite est
 désormais jouée par `go test`. Trois points en restent : **173** (les modules
-natifs sont compilés une fois pour toutes les distributions), **174** (donner à
-`rocky.sh` les précautions de `debian.sh`) et **175** (une recherche `base`
+natifs sont compilés une fois pour toutes les distributions) et **174** (donner
+à `rocky.sh` les précautions de `debian.sh`) — **traités**, voir
+`DO/2.3/2.3.md` ; le **178** en est la suite —, et **175** (une recherche `base`
 rend un compte sans groupe quand la base flanche).
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -137,24 +140,16 @@ rend un compte sans groupe quand la base flanche).
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 160 | DOC          | « Pas de port sous 1024 en UID 10001 » : à vérifier         | À faire — petit, une commande           |
-| 161 | RÉGLAGES     | Prévenir quand la cadence dépasse ce que tolère le parc     | À faire — petit, la version est en base |
-| 146 | CLUSTER      | Retirer à la main un nœud hors ligne                        | À faire — petit                         |
-| 147 | CLUSTER      | Maintenance et purge d'un nœud                              | À faire — après le 148                  |
-| 148 | CLUSTER      | Sessions actives par core, en page et en commande           | À faire                                 |
-| 151 | DOC          | Les mots de passe d'exemple sont refusés par la politique   | À faire — petit, bloque la formation    |
+| 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
+| 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
-| 144 | COMPTES      | Créer un compte de service sans mot de passe provisoire     | À faire — petit, l'action le sait déjà  |
-| 153 | JOURNAL      | Dix-huit écritures directes sur la sortie standard          | À faire — petit                         |
+| 178 | CI           | Les PR ne compilent pas les modules natifs de chaque famille | À faire — petit, voir le 173            |
 | 167 | RÉVOCATION   | Windows et les services n'acquittent aucun ordre : rejeu sans fin | À faire — petit, lié au 79         |
 | 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
 | 157 | WINDOWS      | L'écran de connexion reste vide une fois la tuile inscrite  | **À faire — bloque la recette Windows** |
-| 149 | WINDOWS      | Éprouver la DLL du fournisseur dans la fabrication (wine)   | À faire — petit                         |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
-| 173 | AGENT        | Les modules natifs sont compilés une fois, pour toutes les distributions | À faire — **debian.sh le détecte, rien ne le résout** |
-| 174 | AGENT        | `rocky.sh` : éprouver les modules et `sshd_config` avant PAM | À faire — petit, `debian.sh` le fait |
 | 168 | AGENT        | Cloisonner le service de l'agent (`ProtectSystem`…)         | À faire — à éprouver directive par directive |
 | 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
 | 113 | AGENT-UPDATE | Clé `pkg_signing` et format du manifeste signé              | À faire                                 |
@@ -171,122 +166,35 @@ rend un compte sans groupe quand la base flanche).
 
 ## Réseau Ducky
 
-### 160. [DOC] [PROXY] « Pas de port sous 1024 en UID 10001 » : à vérifier
+### 176. [CLUSTER] Purger un proxy en maintenance de ses connexions
 
-**Constat** (relevé en écrivant la documentation du 141). Trois pages affirment
-que le conteneur `vlt-proxy`, parce qu'il tourne en UID 10001, ne peut pas
-écouter sous 1024 : `docs/proxy/https-et-ldaps.md`,
-`deployments/pre-prod/vlt-proxy/README.md` et `config.example.yaml`. C'est vrai
-d'un processus non root sur un hôte. *À vérifier* dans un conteneur : depuis
-Docker 20.10, l'espace réseau d'un conteneur reçoit par défaut
-`net.ipv4.ip_unprivileged_port_start=0`, ce qui autorise justement les ports
-bas à un utilisateur ordinaire. La règle ne tiendrait alors que hors conteneur,
-en réseau `host`, ou sur un moteur plus ancien.
+**Origine** (relevé en traitant le 147). La purge ne vise que les **cores** : ce
+sont eux qui tiennent les sessions, dans leur mémoire. Un **proxy** en maintenance
+sort bien de toutes les listes, mais les connexions qu'il relaie restent ouvertes
+jusqu'à ce que les agents s'en aillent d'eux-mêmes — à leur prochaine 04_04, ou à
+une coupure. `cluster purge <proxy>` est refusé en le disant.
 
-Sans conséquence sur le fonctionnement : un port refusé remonte « refusé » avec
-son motif (141), un port accepté fonctionne. Seule la documentation dirait une
-chose fausse — et ferait choisir 1636 là où 636 conviendrait.
+**À concevoir.** Deux voies : un ordre au proxy (trame nouvelle, ou une révision
+de relais pilotés qui ferme puis rouvre ses écoutes), ou une 04_17 poussée par
+chaque core aux machines dont la session arrive **par** ce proxy. La seconde
+réemploie la purge des cores ; elle demande de savoir, sur chaque core, quelles
+sessions sont relayées par quel proxy — *à vérifier* : un relais Ducky transporte
+sans lire, le core devrait voir l'adresse du proxy comme source TCP de la session
+(`Session.RemoteAddr`), mais derrière une redirection ce n'est pas garanti.
 
-**À faire.** Une commande sur la préprod :
-`vlt cluster relais <proxy> set essai --type ldaps --ecoute :636`, lire l'état,
-retirer le relais. Puis corriger les trois pages dans le sens constaté.
+### 177. [CLUSTER] Un core en maintenance accepte encore les connexions
 
-### 161. [RÉGLAGES] Prévenir quand `check_online_minutes` dépasse ce que tolère le parc
+**Origine** (relevé en traitant le 147). La maintenance retire un core des
+**listes** ; elle ne l'empêche pas d'accepter une connexion. Un agent qui ne
+connaît que son fichier de configuration (agent ancien, ou liste jamais reçue)
+peut donc y revenir après une purge. C'est visible — le compteur SESSIONS de
+`cluster show` remonte —, mais la purge ne l'empêche pas.
 
-**Constat** (reste du 110). Depuis la 2.2, le core et les postes à jour suivent
-la cadence du battement. Un agent **antérieur** garde son délai fixe : il ferme
-son tunnel après dix minutes sans trafic. Régler `check_online_minutes` à 10 ou
-plus le fait donc se reconnecter en boucle — le symptôme même que le 110 a
-retiré pour les autres. Aujourd'hui seule la `Consequence` affichée du réglage
-le dit ; rien ne l'empêche à la saisie.
-
-Le core a pourtant ce qu'il faut : `id_logiciels.agent_version`, remontée par
-`02_12`.
-
-**À faire.** À `settings set check_online_minutes <n>` avec `n` ≥ 10 (et sur la
-page des durées), compter les machines dont la version est antérieure à la 2.2,
-ou inconnue. S'il y en a : le dire, les nommer (les cinq premières et le
-compte), et demander une confirmation explicite — pas un refus, un parc peut
-vouloir assumer. Même calcul dans `settings list`, en avertissement à côté de la
-valeur. Partage sa lecture de version avec le **111**.
-
-### 148. [CLUSTER] Les sessions actives d'un core, en page et en commande
-
-**Demande de Lorens** (recette du 03/10). Voir le nombre de sessions actives sur
-chaque core, dans la page Cluster et par une commande.
-
-**Aujourd'hui.** Les proxies remontent leurs compteurs par relais ; un **core**
-ne publie rien de tel. Ses sessions Ducky vivent dans son registre en mémoire
-(`sessionmgr.Sessions`), que les autres cores ne voient pas — *à vérifier* : la
-table `user_sessions` a pour clé (compte, machine), sans le core qui porte la
-session.
-
-**À faire.** Chaque core publie avec son battement le nombre de ses sessions —
-au moins : tunnels machine, sessions utilisateur authentifiées, connexions en
-cours de poignée de main — dans les métriques de nœud (`metriques_noeud.go`,
-déjà là pour les proxies). Affichage dans la liste et la fiche de la page
-Cluster, et dans `vlt cluster list` / une fiche `vlt cluster show <nœud>`.
-Mesure **déclarative**, comme celles des proxies : elle s'affiche, elle n'ordonne
-pas la liste servie aux agents.
-
-**Préalable du 147** : on ne purge pas un nœud sans voir son compteur descendre.
-
-### 147. [CLUSTER] Mettre un nœud en maintenance, et le purger de ses sessions
-
-**Demande de Lorens** (recette du 03/10). Deux gestes distincts :
-
-- **maintenance** — le nœud reste dans le cluster, mais il est retiré de la
-  liste de tout le monde : plus personne ne doit l'utiliser ;
-- **purge** — le nœud se vide de toutes ses sessions.
-
-**Ce qui existe déjà.** `vlt cluster rotation <nœud> out` retire un nœud de la
-liste servie aux agents (`expose_aux_agents`), et la page Cluster porte le même
-réglage. C'est la moitié de la maintenance. Ce qui manque :
-
-- les sessions **déjà ouvertes** sur le nœud y restent : sortir de la rotation
-  n'en ferme aucune, et un agent ne redemande la liste qu'à son rythme
-  (`cluster refresh` le force, à la main) ;
-- *à vérifier* : que « out » retire bien le nœud de **toutes** les listes — la
-  `04_04` des agents, celle que reçoivent les proxies, les cibles `source: cores`
-  des relais LDAPS, la `04_16` pour un Nexus — et pas seulement de la première ;
-- aucun état nommé « maintenance » : un nœud sorti de la rotation ne se
-  distingue pas, dans la liste, d'un nœud qu'on a oublié d'y remettre.
-
-**À faire.**
-
-1. Un état **maintenance** explicite, visible dans la liste et la fiche, posé et
-   levé par un bouton et par `vlt cluster maintenance <nœud> <on|off>`. Il
-   implique la sortie de toutes les listes.
-2. La **purge** : le nœud en maintenance ferme ses sessions pour que les agents
-   se reconnectent ailleurs. À trancher : fermeture immédiate, ou échelonnée
-   pour ne pas faire reconnecter tout un site dans la même seconde ; et le sort
-   des sessions web d'administration ouvertes sur ce core — on ne doit pas se
-   couper la branche depuis laquelle on purge.
-3. **Garde-fou** : refuser de mettre en maintenance le **dernier** core en
-   rotation, ou l'exiger avec une confirmation explicite. C'est la commande qui
-   coupe le parc.
-4. Le suivi : le compteur du **148** descend à zéro, et la fiche le dit.
-
-### 146. [CLUSTER] Retirer à la main un nœud hors ligne
-
-**Demande de Lorens** (recette du 03/10). Un bouton pour supprimer du cluster un
-service hors ligne, sans attendre.
-
-**Aujourd'hui.** Un nœud absent n'est oublié que par `CleanupStaleNodes`, au
-terme de `cluster purge-delay` (24 h par défaut). Aucune action, ni en page ni
-en commande, ne le retire avant. Un proxy de test démonté reste donc un jour
-entier dans la liste.
-
-**À faire.** Une action `cluster.forget` — bouton sur la fiche du nœud et
-`vlt cluster forget <nœud>` — **réservée aux nœuds hors ligne** : retirer un
-nœud vivant ne sert à rien, il se réinscrit au battement suivant s'il est un
-core comme s'il est un proxy (depuis le **109**, traité : le core refuse son
-battement et il se réenregistre au tour suivant). Refuser franchement un nœud
-dont le dernier battement est récent. Retirer aussi ce que le core lui demandait
-d'exposer — les lignes `cluster_relays` et `cluster_relay_state` de ce nœud
-(141) restent sinon en base, sans effet mais sans fin. Ligne d'audit, et rappel
-de ce qui part avec la ligne : ses réglages d'exposition, de priorité et
-d'affinité (TO-DO 85 les fait survivre à l'absence, pas à l'oubli).
+**À trancher.** Refuser les nouvelles connexions sur un core en maintenance
+ferait partir ces agents vers le core suivant de leur fichier ; mais c'est aussi
+ce qui coupe un parc dont tous les autres cores seraient tombés pendant la
+maintenance. Un refus seulement tant qu'un autre core est **en ligne**, relu à
+chaque connexion ? Et que faire des connexions des autres cores et des proxies ?
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
@@ -364,27 +272,10 @@ celui de l'agent ne porte rien.
    fournisseur n'implémente pas `ICredentialProviderSetUserArray`. À essayer un
    par un, sur le poste.
 
-**Lié.** Le 149 : le faux LogonUI qui a servi ici est exactement l'essai que le
-149 demande d'ajouter à la fabrication.
-
-### 149. [WINDOWS] [TESTS] Éprouver la DLL du fournisseur dans la fabrication
-
-**Constat** (relevé en traitant les 139 et 140). Les deux défauts — une
-dépendance manquante, une inscription sous le mauvais CLSID — n'ont été vus qu'à
-l'écran de connexion d'un vrai Windows Server, alors qu'un essai de vingt lignes
-les montre tous les deux : `regsvr32` sous **wine**, lecture des clés créées,
-puis un `CoCreateInstance` du CLSID. C'est ce qui a servi à les reproduire et à
-valider le correctif, à la main.
-
-Le contrôle des imports et celui des formats sont désormais dans `build-cp.sh` :
-ils ferment ces deux défauts-là. Rien n'éprouve encore que la DLL **s'inscrit et
-s'active**.
-
-**À faire.** Un script `credential_provider/essai-wine.sh`, lancé par `build.sh`
-quand `wine` est présent (et sauté, en le disant, quand il ne l'est pas) :
-inscription, GUID attendu sous les deux clés, activation par COM, retrait, plus
-rien dans le registre. À brancher dans `tests.yaml` si l'image de CI peut porter
-wine. Ce n'est pas LogonUI — la tuile elle-même reste une recette manuelle.
+**Lié.** Le faux LogonUI est dans le dépôt depuis le 149
+(`credential_provider/essai/faux_logonui.cpp`) et tourne à chaque fabrication
+qui dispose de wine : chaque variante de l'étape 4 y passe avant d'aller sur le
+poste. Il ne voit pas l'écran — c'est exactement ce qui reste à trouver ici.
 
 ### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
 
@@ -403,47 +294,19 @@ wine. Ce n'est pas LogonUI — la tuile elle-même reste une recette manuelle.
 
 ## Agent
 
-### 173. [AGENT] [CLIENT] Les modules natifs sont compilés une fois, pour toutes les distributions
+### 178. [CI] Les PR ne compilent pas les modules natifs de chaque famille
 
-**Origine.** Relevé en traitant le **71**. Les trois modules PAM et la
-bibliothèque NSS que le core envoie à un poste sont ceux de
-`/opt/vaultaire/vaultaire_client/` : compilés une fois, là où le core a été
-fabriqué. Un module compilé contre une glibc plus récente que celle du poste ne
-s'y charge pas — et derrière une ligne `default=die`, un module PAM qui ne se
-charge pas refuse **tout le monde**, `root` et les comptes locaux compris
-(mesuré le 07/10 sur Ubuntu 24.04 : « Module is unknown »).
+**Origine** (relevé en traitant le 173). Les modules natifs sont compilés par
+famille — Rocky 9 et Ubuntu 22.04 — et `auto_compil.sh` refuse un fichier qui
+exige une glibc plus récente que sa famille (`VAULTAIRE_GLIBC_MAX`). Mais cela ne
+se joue qu'au **workflow de release**, après la fusion vers `main` : une
+modification du C qui appellerait une fonction trop récente ne serait vue qu'au
+moment de publier.
 
-`debian.sh` le **détecte** (`ldd`, avant de toucher à PAM) et s'arrête. Rien ne
-le **résout** : sur un poste plus ancien que la machine de fabrication,
-l'installation est refusée, proprement, et c'est tout.
-
-Au passage : `pam_module/auto_compil.sh` lie les modules à `libcurl`
-(`-lcurl`), qu'aucun d'eux n'appelle. C'est une dépendance à installer pour
-rien sur chaque poste.
-
-**À faire.** Décider où les modules sont fabriqués — une image par famille
-(RHEL 9, Debian 12) dans la CI, la plus ancienne glibc prise en charge faisant
-foi — et les ranger par famille dans ce que le core envoie
-(`vaultaire_client/rocky/`, `vaultaire_client/debian/`). Retirer `-lcurl`. C'est
-aussi un préalable du lot « Mise à jour du parc » (**116**, **117**), qui devra
-remplacer ces modules sur des postes en service.
-
-### 174. [AGENT] `rocky.sh` : éprouver les modules et `sshd_config` avant PAM
-
-**Origine.** Reste du **71**. `debian.sh` prend deux précautions que `rocky.sh`
-n'a pas : il vérifie par `ldd` que les modules natifs se chargent **avant** de
-brancher PAM, et il valide `sshd_config` par `sshd -t` avant de le garder (en
-le remettant comme il était sinon). `rocky.sh` réécrit les trois piles et
-recharge `sshd` sans avoir vérifié ni l'un ni l'autre.
-
-Il réécrit aussi les piles **en entier** : ce qu'un administrateur ou
-`authselect` y avait mis disparaît, sans copie.
-
-**À faire.** Reprendre dans `rocky.sh` l'étape 3 de `debian.sh` (chargement des
-modules) et la validation de `sshd_config` ; garder une copie
-`.avant-vaultaire` des trois piles avant de les écrire. L'essai à blanc
-(`VAULTAIRE_RACINE`) permettrait de le garder par les mêmes tests. À faire sur
-un Rocky, pas à l'aveugle.
+**À faire.** Un job de `tests.yaml`, sur les PR, qui joue
+`src/vaultaire_client/pam_module/auto_compil.sh` dans `rockylinux:9`
+(`VAULTAIRE_GLIBC_MAX=2.34`) et dans `ubuntu:22.04` (`2.35`) — les mêmes commandes
+que `release.yaml`. Une minute de CI.
 
 ### 168. [AGENT] Cloisonner le service de l'agent
 
@@ -594,86 +457,6 @@ gestionnaire, qui répond `operationsError` — comme il le fait déjà quand la
 résolution `sub` échoue. Un test avec une base qui refuse (le connecteur
 défaillant de `handler_nilsession_test.go`).
 
-### 144. [COMPTES] [LDAP] Créer un compte de service sans mot de passe provisoire
-
-**Constat** (recette du 03/10). Tout compte créé naît avec un mot de passe
-**provisoire**, valable 24 heures (TO-DO 99). C'est le bon défaut pour une
-personne. Pour un compte de service — celui qu'on donne à Keycloak ou à GitLab
-pour se lier à l'annuaire — c'est une panne programmée : le lendemain, le bind
-est refusé, et personne n'est là pour « changer le mot de passe à la première
-connexion ».
-
-**Ce que le code fait.** La dérogation existe déjà dans l'action : `user.create`
-lit le paramètre `temporary` et ne pose pas le drapeau s'il vaut `non`
-(`core/action/actions_users.go`). Mais **rien ne le transmet** — ni `create -u`
-en ligne de commande, ni le formulaire du portail. Elle est donc inatteignable.
-Et la réinitialisation par un tiers (`update -u … -p`) marque **toujours**
-provisoire, sans dérogation : renouveler le secret d'un compte de service le
-recasse.
-
-**À faire.**
-
-1. Une option sur `create -u` (`--service`, ou `--permanent`) et sur
-   `update -u -p`, qui passe `temporary=non`.
-2. Le même choix dans le formulaire du portail — un `<select>` à deux valeurs,
-   pas une case à cocher (piège § 6.4) — avec le défaut sur **provisoire**.
-3. Le défaut ne bouge pas : l'absence du champ doit continuer de produire un
-   compte provisoire. Une ligne d'audit dit qu'un compte a été créé **sans**
-   provisoire, et par qui : c'est une dérogation de sécurité.
-4. Mettre à jour le jalon 8.1 de la formation (« Un compte de service LDAP ») et
-   `MAN.md` § 5 : ce sont eux qui font créer le compte qui cassera le lendemain.
-
-### 151. [DOC] Les mots de passe d'exemple de la formation sont refusés
-
-**Constat** (relevé en montant une pile d'essai pour le 130). Trois commandes
-données en exemple échouent telles quelles, sur la politique de mots de passe :
-
-| Où | Commande | Refus |
-|---|---|---|
-| `README.md`, démarrage rapide | `create -u alice.martin … 'Ch4ngeMe!'` | 9 caractères, il en faut 12 |
-| formation, jalon 2.2 | `'Alice-2026!'`, `'David-2026!'` | 11 caractères |
-| formation, jalon 8.1 | `create -u svc_keycloak … 'Svc-Keycloak-2026!'` | « il contient keycloak, trop prévisible » |
-
-Le premier geste de la formation échoue donc, et le lecteur ne sait pas si c'est
-lui ou le produit.
-
-**À faire.** Remplacer les exemples par des mots de passe que la politique
-accepte, et les **éprouver** : un test qui extrait les `create -u` de `README.md`
-et de `docs/training/` et les passe à la politique, pour que le prochain
-durcissement ne recasse pas la formation en silence. À traiter avec le **144** :
-le jalon 8.1 crée justement le compte de service qui cassera le lendemain.
-
-### 153. [JOURNAL] Dix-huit écritures directes sur la sortie standard
-
-**Constat** (relevé en traitant le 145). Le serveur écrit encore sur la sortie
-standard **hors du journal** : dix-huit `fmt.Print…` dans dix fichiers, sans
-compter les commandes — dont c'est le rôle — ni la rotation des journaux, qui ne
-peut pas se journaliser elle-même.
-
-| Fichier | Lignes | Ce qu'elles écrivent |
-|---|---:|---|
-| `core/global/security/keymanagement/GenerateKeyPair.go` | 5 | création de paire de clés, y compris ses erreurs |
-| `ducky-network/new_client/AUTO_ADD_client.go/send_file_to_client.go` | 3 | « 📦 Envoi du fichier avec SCP… » |
-| `ducky-network/new_client/AUTO_ADD_client.go/execute_list_of_command_on_client.go` | 3 | détection de l'OS d'un poste |
-| `core/dns/DNS_Database/` (`DNS_CHECK_Domain`, `DNS_DELETE_Reccord`, `DNS_ADD_EntryToZone`) | 3 | **des erreurs** : « ❌ Erreur lors de la vérification du domaine » |
-| `core/database/db_permission/add_user_permission_to_group.go`, `add_permission_to_software_group.go` | 2 | « ✅ La permission … a été ajoutée » |
-| `core/global/security/generateCert.go` | 1 | certificat déjà présent |
-| `ducky-network/authentification/client/GenerateChallenge.go` | 1 | **une erreur** brute : `fmt.Println(err)` |
-
-Ces lignes n'ont ni horodatage ni niveau, ne partent pas dans le journal commun
-des cores, et ne s'éteignent pas. Plusieurs sont des **erreurs** — les trois du
-DNS, celle du défi d'authentification, deux de la création de clés : elles ne
-figurent donc dans aucun journal consultable, ni `vlt logs` ni la page Logs.
-
-Le 145 en a retiré une dix-neuvième, qui était la pire :
-`GetGroupsDirectlyUnderDomainExact` écrivait « DEBUG: checking… » une fois **par
-groupe de l'annuaire**, à chaque recherche LDAP de portée `one`.
-
-**À faire.** Chacune devient une ligne de journal au niveau qui convient —
-`ERROR` pour les erreurs, `INFO` ou `DEBUG` pour le reste — ou disparaît.
-Puis un test de sentinelle : aucun `fmt.Print` hors de `core/command`,
-`core/testrunner`, `core/logs/rotation.go` et `main`.
-
 ## Idées à cadrer
 
 ### 8. [LDAP] Mode synchro avec un annuaire existant
@@ -721,8 +504,10 @@ Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 1
 seul : savoir quelles machines sont en retard.
 
 **Constat.** Le core **stocke** la version d'un agent (`id_logiciels.agent_version`,
-remontée par `02_12`) et l'**affiche**. Il ne la compare à rien. Aucune notion de
-version attendue n'existe nulle part : ni table, ni réglage, ni écart calculé.
+remontée par `02_12`) et l'**affiche**. Depuis le **161**, il la compare à un
+minimum en un seul endroit — l'avertissement de `check_online_minutes` —, pour
+prévenir, jamais pour refuser. Aucune notion de version **attendue** n'existe :
+ni table, ni réglage, ni écart calculé.
 
 **À faire.**
 
@@ -739,9 +524,13 @@ version attendue n'existe nulle part : ni table, ni réglage, ni écart calculé
    et pour la même raison.
 4. Une colonne **VERSION** dans la liste des machines du portail, qui n'en a
    aucune, avec l'écart mis en évidence.
-5. Comparaison de versions sémantiques : à écrire une fois, proprement, et à
-   éprouver — c'est elle qui décide de « la plus haute » et du refus de
-   rétrogradation du point 116.
+5. Comparaison de versions sémantiques : **écrite au 161** —
+   `core/parcversion` (`Lire`, `Avant`, `Recenser`) et la lecture du parc
+   `dbclients.VersionsDuParc`. À reprendre, pas à réécrire : c'est elle qui
+   décidera de « la plus haute » et du refus de rétrogradation du point 116. Ce
+   qu'elle tranche déjà : seul le triplet de tête compte (`+…` et ` (date)` sont
+   ignorés), et une version vide ou illisible n'est **jamais** tenue pour à
+   jour.
 
 ### 113. [AGENT-UPDATE] [SÉCURITÉ] La clé de signature des paquets et le format signé
 

@@ -48,10 +48,13 @@ func lire(t *testing.T, chemin string) string {
 }
 
 // pilesPAM extrait du script les piles qu'il écrit : nom de la pile → lignes.
+//
+// Depuis le TO-DO 174, rocky.sh les PRÉPARE à côté des originales
+// (« .vaultaire-nouveau ») et les pose à la fin : c'est cette forme qui est lue.
 func pilesPAM(t *testing.T) map[string][]string {
 	t.Helper()
 	script := lire(t, scriptDInstallation)
-	debut := regexp.MustCompile(`cat > /etc/pam\.d/([a-z-]+) <<'EOF'`)
+	debut := regexp.MustCompile(`cat > "\$R/etc/pam\.d/([a-z-]+)\.vaultaire-nouveau" <<'EOF'`)
 	piles := map[string][]string{}
 	nom := ""
 	for _, ligne := range strings.Split(script, "\n") {
@@ -215,11 +218,11 @@ func TestLeScriptControleLAgentAvantDeToucherAPAM(t *testing.T) {
 	if controle < 0 {
 		t.Fatal("le script n'appelle plus « vaultaire_client --install-unit »")
 	}
-	configuration := strings.Index(script, "/etc/vaultaire_client/client_conf.json")
+	configuration := strings.Index(script, `"$CONF/client_conf.json"`)
 	if configuration < 0 || configuration > controle {
 		t.Error("le contrôle est joué avant que client_conf.json ne soit écrit : il échouerait sur toute machine neuve")
 	}
-	for _, etape := range []string{"/etc/nsswitch.conf", `SSHD_CONF="/etc/ssh/sshd_config"`, "cat > /etc/pam.d/"} {
+	for _, etape := range []string{`"$R/etc/nsswitch.conf"`, `SSHD_CONF="$R/etc/ssh/sshd_config"`, `cat > "$R/etc/pam.d/`} {
 		k := strings.Index(script, etape)
 		if k < 0 {
 			t.Errorf("repère « %s » introuvable dans le script", etape)

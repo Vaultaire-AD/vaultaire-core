@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
 
@@ -101,26 +102,65 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 	}
 	remoteScriptPath := "/tmp/vaultaire_install.sh"
 
-	fmt.Printf("✅ OS détecté : %s. Transfert du script %s...\n", distribution, script)
+	logs.Write_Log("INFO", fmt.Sprintf("autoadd : %s détecté sur %s, transfert du script %s", distribution, host, script))
 
 	// 2. Transférer le script sur le serveur distant via SCP
 	scpCmd := exec.Command("scp", "-i", privateKeyPath, "-P", portStr, localScriptPath, fmt.Sprintf("%s:%s", remote, remoteScriptPath))
+	var scpErr bytes.Buffer
+	scpCmd.Stderr = &scpErr
 	if err := scpCmd.Run(); err != nil {
-		return fmt.Errorf("❌ Erreur lors du transfert du script via SCP : %v", err)
+		return fmt.Errorf("❌ Erreur lors du transfert du script via SCP : %v\n%s", err, scpErr.String())
 	}
 
-	// 3. Exécuter le script distant en tant que root/bash
+	// 3. Exécuter le script distant en tant que root/bash.
+	//
+	// La sortie du script allait sur la sortie standard du core (TO-DO 153) :
+	// invisible pour l'administrateur qui lançait la commande à distance, et
+	// absente du journal. Elle est maintenant gardée — sa fin seulement, le
+	// script d'installation est bavard — et jointe à l'erreur en cas d'échec.
 	runCmd := exec.Command("ssh", "-i", privateKeyPath, "-p", portStr, remote, fmt.Sprintf("bash %s", remoteScriptPath))
-	runCmd.Stdout = os.Stdout
-	runCmd.Stderr = os.Stderr
+	sortie := &FinDeSortie{Max: TailleFinDeSortie}
+	runCmd.Stdout = sortie
+	runCmd.Stderr = sortie
 
-	fmt.Println("▶️ Exécution du script distant...")
+	logs.Write_Log("DEBUG", "autoadd : exécution du script d'installation sur "+host)
 	if err := runCmd.Run(); err != nil {
-		return fmt.Errorf("❌ Erreur lors de l'exécution du script distant : %v", err)
+		return fmt.Errorf("❌ Erreur lors de l'exécution du script distant : %v\n--- fin de la sortie du script ---\n%s", err, sortie.String())
 	}
 
-	fmt.Println("✅ Toutes les commandes ont été exécutées avec succès.")
+	logs.Write_Log("INFO", "autoadd : script d'installation joué avec succès sur "+host)
 	return nil
+}
+
+// TailleFinDeSortie borne ce qu'on garde de la sortie du script distant : assez
+// pour voir l'erreur d'apt ou de dnf qui l'a fait échouer, pas tout le journal
+// d'installation des paquets.
+const TailleFinDeSortie = 4096
+
+// FinDeSortie est un io.Writer qui ne garde que les Max derniers octets écrits.
+// Stdout et Stderr d'une même commande peuvent le partager : exec ne les
+// écrit pas en parallèle quand c'est le même Writer.
+type FinDeSortie struct {
+	Max     int
+	donnees []byte
+	coupe   bool
+}
+
+func (f *FinDeSortie) Write(p []byte) (int, error) {
+	f.donnees = append(f.donnees, p...)
+	if f.Max > 0 && len(f.donnees) > f.Max {
+		f.donnees = append(f.donnees[:0:0], f.donnees[len(f.donnees)-f.Max:]...)
+		f.coupe = true
+	}
+	return len(p), nil
+}
+
+// String rend la fin gardée, précédée de « … » si le début a été coupé.
+func (f *FinDeSortie) String() string {
+	if f.coupe {
+		return "…" + string(f.donnees)
+	}
+	return string(f.donnees)
 }
 
 func escapeSingleQuotes(cmd string) string {

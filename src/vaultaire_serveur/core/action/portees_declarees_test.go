@@ -161,13 +161,17 @@ var porteesAttendues = map[string]string{
 	"cluster.set_node_groups":       "PorteeGlobale",
 	"cluster.client_targets":        "PorteeGlobale",
 	// Relais des proxies (TO-DO 141) : un proxy n'appartient à aucun domaine.
-	"cluster.relay_list":     "PorteeGlobale",
-	"cluster.relay_set":      "PorteeGlobale",
-	"cluster.relay_remove":   "PorteeGlobale",
-	"cluster.relay_release":  "PorteeGlobale",
-	"certificate.list":       "PorteeGlobale",
-	"certificate.get":        "PorteeGlobale",
-	"certificate.regenerate": "PorteeGlobale",
+	"cluster.relay_list":    "PorteeGlobale",
+	"cluster.relay_set":     "PorteeGlobale",
+	"cluster.relay_remove":  "PorteeGlobale",
+	"cluster.relay_release": "PorteeGlobale",
+	// Oubli, maintenance, purge (TO-DO 146, 147) : la topologie du parc.
+	"cluster.forget":          "PorteeGlobale",
+	"cluster.set_maintenance": "PorteeGlobale",
+	"cluster.purge":           "PorteeGlobale",
+	"certificate.list":        "PorteeGlobale",
+	"certificate.get":         "PorteeGlobale",
+	"certificate.regenerate":  "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
 	"gpo.list_compliance":      "PorteeGlobale",
@@ -338,19 +342,22 @@ var clesAttendues = map[string]string{
 	"cluster.client_targets":        "read:cluster",
 	// Relais des proxies (TO-DO 141). Lire fait partie de l'état du cluster ;
 	// écrire déplace un point d'entrée du réseau, et a sa clé.
-	"cluster.relay_list":     "read:cluster",
-	"cluster.relay_set":      "write:relay",
-	"cluster.relay_remove":   "write:relay",
-	"cluster.relay_release":  "write:relay",
-	"certificate.list":       "read:certificate",
-	"certificate.get":        "read:certificate",
-	"certificate.regenerate": "write:certificate",
-	"dns.list_zones":         "read:dns",
-	"dns.list_records":       "read:dns",
-	"enroll.list_keys":       "read:enrollment",
-	"server.set_debug":       "write:server",
-	"server.get_debug":       "read:log",
-	"server.clear_sessions":  "write:server",
+	"cluster.relay_list":      "read:cluster",
+	"cluster.relay_set":       "write:relay",
+	"cluster.relay_remove":    "write:relay",
+	"cluster.relay_release":   "write:relay",
+	"cluster.forget":          "write:cluster",
+	"cluster.set_maintenance": "write:cluster",
+	"cluster.purge":           "write:cluster",
+	"certificate.list":        "read:certificate",
+	"certificate.get":         "read:certificate",
+	"certificate.regenerate":  "write:certificate",
+	"dns.list_zones":          "read:dns",
+	"dns.list_records":        "read:dns",
+	"enroll.list_keys":        "read:enrollment",
+	"server.set_debug":        "write:server",
+	"server.get_debug":        "read:log",
+	"server.clear_sessions":   "write:server",
 
 	// Enrôlement, écriture : reste sur write:create:client, et délibérément.
 	// Émettre une clé, c'est accorder le droit d'ajouter un programme au
@@ -503,6 +510,7 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsConformiteGPO(r)
 	EnregistrerActionsRafraichissementGPO(r)
 	EnregistrerActionsRafraichissementCluster(r)
+	EnregistrerActionsMaintenanceCluster(r)
 	EnregistrerActionsSignatureGPO(r)
 	EnregistrerActionsMFADucky(r)
 	EnregistrerActionsArborescence(r)

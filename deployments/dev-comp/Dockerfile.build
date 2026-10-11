@@ -4,7 +4,7 @@
 #
 # Compile le dépôt tel qu'il est sur le poste (modifications non commitées
 # comprises), avec la MÊME recette que la CI de release :
-# rockylinux:9, gcc, pam-devel, libcurl-devel, libxcrypt-devel, Go épinglé.
+# rockylinux:9, gcc, pam-devel, libxcrypt-devel, Go épinglé.
 #
 # Pourquoi Rocky 9 et pas l'hôte : compilés ailleurs, le serveur (cgo) et les
 # modules PAM seraient liés à une autre glibc que celle de l'image d'exécution
@@ -19,7 +19,7 @@ ARG GO_VERSION=1.26.5
 
 RUN dnf install -y --setopt=install_weak_deps=False \
         git gcc tar gzip findutils which \
-        pam-devel libcurl-devel libxcrypt-devel \
+        pam-devel libxcrypt-devel \
     && dnf clean all \
     && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" \
         | tar -C /usr/local -xz

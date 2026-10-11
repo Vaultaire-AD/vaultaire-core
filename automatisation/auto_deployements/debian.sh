@@ -20,8 +20,8 @@
 #   - le service SSH s'appelle « ssh » ;
 #   - rien n'est installé par apt tant que rien ne manque.
 #
-# Deux précautions de plus que rocky.sh, parce qu'un module PAM qui ne se
-# charge pas ferme la machine à TOUT le monde, comptes locaux compris :
+# Deux précautions, que rocky.sh a reprises (TO-DO 174), parce qu'un module PAM
+# qui ne se charge pas ferme la machine à TOUT le monde, comptes locaux compris :
 #
 #   - les modules sont éprouvés (ldd) AVANT que PAM ne soit touché ;
 #   - sshd_config est validé (sshd -t) avant d'être gardé.
@@ -108,11 +108,31 @@ mkdir -p "$SRC/vaultaire_client" "$CONF/.ssh" "$R/var/log/vaultaire" "$R/usr/bin
 
 chmod 700 "$R/var/log/vaultaire"
 
+# Les modules natifs de CETTE famille — TO-DO 173.
+#
+# Le core envoie un jeu par famille de distributions, chacun compilé sur la
+# plus ancienne version prise en charge : vaultaire_client/debian/ (Ubuntu
+# 22.04, glibc 2.35, libcrypt.so.1) et vaultaire_client/rocky/. Ceux de Rocky
+# ne se chargent pas ici : ils exigent libcrypt.so.2.
+#
+# Repli : des modules NON CLASSÉS à la racine — ceux d'un poste de
+# développement, compilés sur sa propre machine. Ils ne sont pris que si la
+# famille manque, et l'étape 3 refuse ceux qui ne se chargent pas.
+MODS="$SRC/vaultaire_client/debian"
+if [[ -f "$MODS/pam_login_custom_module.so" ]]; then
+    log_info "Modules natifs de la famille Debian."
+else
+    MODS="$SRC/vaultaire_client"
+    if [[ -f "$MODS/pam_login_custom_module.so" ]]; then
+        log_warn "Modules natifs non classés par famille (compilation de développement) : leur chargement sera vérifié."
+    fi
+fi
+
 # Déplacement sécurisé (si les fichiers source existent)
-[[ -f "$SRC/vaultaire_client/pam_login_custom_module.so" ]] && mv -f "$SRC"/vaultaire_client/pam*.so "$PAM_DIR/"
+[[ -f "$MODS/pam_login_custom_module.so" ]] && mv -f "$MODS"/pam*.so "$PAM_DIR/"
 [[ -f "$SRC/vaultaire_client/vaultaire_client" ]] && mv -f "$SRC/vaultaire_client/vaultaire_client" "$R/usr/bin/"
 [[ -f "$SRC/client_software.yaml" ]] && mv -f "$SRC/client_software.yaml" "$CONF/.ssh/"
-[[ -f "$SRC/vaultaire_client/libnss_vaultaire.so.2" ]] && mv -f "$SRC/vaultaire_client/libnss_vaultaire.so.2" "$NSS_DIR/"
+[[ -f "$MODS/libnss_vaultaire.so.2" ]] && mv -f "$MODS/libnss_vaultaire.so.2" "$NSS_DIR/"
 compgen -G "$SRC/*.pem" > /dev/null && mv -f "$SRC"/*.pem "$CONF/.ssh/"
 
 # Empreinte de la clé publique du core.
@@ -170,7 +190,7 @@ manques_de() {
 
 paquet_pour() {
     case "$1" in
-        libcurl.so.4*) echo libcurl4 ;;
+        libcurl.so.4*) echo libcurl4 ;;   # modules d'avant le TO-DO 173 seulement
         libcrypt.so.1*) echo libcrypt1 ;;
         libpam.so.0*) echo libpam0g ;;
         *) echo "" ;;

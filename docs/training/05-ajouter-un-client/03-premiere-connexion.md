@@ -23,6 +23,10 @@ droits d'administration.
   de `infra.acme.lan`, se connecte comme `alice.martin@acme.lan`. Un nom sans
   domaine désigne un compte **local** de la machine, et
   `alice.martin@infra.acme.lan` est refusé.
+- Le mot de passe posé au jalon 2.2 est **provisoire** et ne vaut que **24 h**.
+  S'il date de plus d'un jour, la connexion est refusée : reposez-le avec
+  `vlt update -u alice.martin -p 'Lune-Orange-Velo-42'`. La session s'ouvre, et
+  rappelle de le changer sur le portail.
 
 ## Étapes
 

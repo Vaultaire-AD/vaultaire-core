@@ -18,6 +18,7 @@ import (
 	"vaultaire/core/version"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
+	"vaultaire/ducky-network/sessionmgr"
 )
 
 // StartManager initialise l'enregistrement du nœud courant et les tâches périodiques
@@ -159,7 +160,34 @@ func startHeartbeatLoop(db *sql.DB, node clusterstorage.Node) {
 				"cluster_nodes — réenregistré. Ses réglages d'exposition, de priorité "+
 				"et d'affinité sont à refaire s'il en avait.")
 		}
+
+		publierSessions(db, node)
+		// La purge demandée sur SA ligne (TO-DO 147). Lue au battement : c'est
+		// le seul canal entre l'action, reçue par n'importe quel core, et le
+		// core qui détient les sessions.
+		lancerPurgeSiDemandee(db, node)
 	})
+}
+
+// publierSessions écrit ce que ce core porte, avec son battement (TO-DO 148).
+//
+// Après le battement et non avant : une mesure sans ligne de nœud ne
+// s'afficherait nulle part. Un échec est journalisé et n'arrête rien — le
+// battement, lui, est passé, et c'est lui qui garde le core dans le cluster.
+//
+// Le registre lu est celui de CE processus : chaque core ne publie que ses
+// propres sessions, qu'il est seul à voir.
+func publierSessions(db *sql.DB, node clusterstorage.Node) {
+	c := sessionmgr.Sessions.Compter()
+	m := clusterstorage.MetriquesSessions{
+		Machines: int64(c.Machines),
+		Tunnels:  int64(c.Tunnels),
+		Comptes:  int64(c.Comptes),
+		Poignees: int64(c.Poignees),
+	}
+	if err := clusterdatabase.EnregistrerMetriquesSessions(db, node.Hostname, node.IPAddress, m); err != nil {
+		logs.Write_Log("WARNING", "cluster: sessions de ce core non publiées : "+err.Error())
+	}
 }
 
 // startCleanupLoop applique périodiquement les règles de mise hors ligne / purge.

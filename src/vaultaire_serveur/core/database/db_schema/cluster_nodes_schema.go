@@ -62,6 +62,15 @@ var colonnesAjoutees = []struct{ Nom, Definition string }{
 	{ColonneProprietaire, DefinitionProprietaire},
 	{ColonneAdressePublique, DefinitionAdressePublique},
 	{ColonnePortPublic, DefinitionPortPublic},
+	// Maintenance et purge (TO-DO 147).
+	{"maintenance", "BOOLEAN NOT NULL DEFAULT FALSE"},
+	{"maintenance_par", "VARCHAR(255) NOT NULL DEFAULT ''"},
+	{"maintenance_le", "DATETIME NULL DEFAULT NULL"},
+	{"purge_demandee_le", "DATETIME NULL DEFAULT NULL"},
+	{"purge_par", "VARCHAR(255) NOT NULL DEFAULT ''"},
+	{"purge_etalement_s", "INT NOT NULL DEFAULT 0"},
+	{"purge_terminee_le", "DATETIME NULL DEFAULT NULL"},
+	{"purge_fermees", "INT NOT NULL DEFAULT 0"},
 }
 
 // EnsureClusterNodesSchema complète cluster_nodes sur une base existante.
@@ -126,10 +135,17 @@ func EnsureClusterNodesSchema(db *sql.DB) error {
 	// peuvent parfaitement partager une adresse publique — c'est même le cas
 	// courant de deux services derrière la même redirection, distingués par le
 	// port.
-	if err := schematools.EnsureColumn(db, "cluster",
-		TableNoeuds, ColonneAdressePublique, DefinitionAdressePublique); err != nil {
-		return err
+	// Les colonnes sans index ni purge : exposition (TO-DO 85), maintenance et
+	// purge (TO-DO 147). Lues dans colonnesAjoutees — la liste que le test
+	// confronte au CREATE TABLE — pour qu'une colonne ajoutée à l'un ne puisse
+	// pas manquer à l'autre.
+	for _, c := range colonnesAjoutees {
+		if c.Nom == ColonneProprietaire {
+			continue // posée plus haut, avant la purge et l'index
+		}
+		if err := schematools.EnsureColumn(db, "cluster", TableNoeuds, c.Nom, c.Definition); err != nil {
+			return err
+		}
 	}
-	return schematools.EnsureColumn(db, "cluster",
-		TableNoeuds, ColonnePortPublic, DefinitionPortPublic)
+	return nil
 }

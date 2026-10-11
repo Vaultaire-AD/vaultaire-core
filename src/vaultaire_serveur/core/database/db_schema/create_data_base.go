@@ -340,6 +340,27 @@ func Create_DataBase(db *sql.DB) {
     		-- proxy qui écoute bien sur 6666.
     		port_public INT NOT NULL DEFAULT 0,
 
+    		-- MAINTENANCE (TO-DO 147). Une colonne à part, et non une valeur de
+    		-- status : status est réécrit par chaque battement et chaque
+    		-- réenregistrement, la maintenance est une décision d'exploitation
+    		-- qui doit leur survivre — comme priorite et expose_aux_agents.
+    		-- Un nœud en maintenance sort de TOUTES les listes (04_04, 04_16)
+    		-- sans que son réglage de rotation soit touché : lever la
+    		-- maintenance le rend tel qu'il était.
+    		maintenance BOOLEAN NOT NULL DEFAULT FALSE,
+    		maintenance_par VARCHAR(255) NOT NULL DEFAULT '',
+    		maintenance_le DATETIME NULL DEFAULT NULL,
+
+    		-- PURGE d'un core en maintenance (TO-DO 147). Le core qui la reçoit
+    		-- ne peut pas la faire : les sessions vivent dans la mémoire du
+    		-- core visé. La demande est donc écrite ICI, et le core visé la lit
+    		-- à son battement, l'exécute, et écrit la fin et le compte.
+    		purge_demandee_le DATETIME NULL DEFAULT NULL,
+    		purge_par VARCHAR(255) NOT NULL DEFAULT '',
+    		purge_etalement_s INT NOT NULL DEFAULT 0,
+    		purge_terminee_le DATETIME NULL DEFAULT NULL,
+    		purge_fermees INT NOT NULL DEFAULT 0,
+
     		UNIQUE KEY uk_owner (owner_client_id)
 		);`,
 

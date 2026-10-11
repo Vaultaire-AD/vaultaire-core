@@ -341,19 +341,48 @@ cp "$ROOT_DIR/src/vaultaire_nexus/deploy/ducky.example.yaml" "$BUILD_DIR/vaultai
 cp "$ROOT_DIR/src/vaultaire_nexus/deploy/vaultaire_nexus.service" "$BUILD_DIR/vaultaire_nexus/"
 
 # -------------------------
-# Build modules PAM
+# Build modules PAM et NSS — TO-DO 173
 # -------------------------
-echo "🛠 Build modules PAM..."
-cd "$ROOT_DIR/src/vaultaire_client/pam_module"
-
+# Une seule recette : src/vaultaire_client/pam_module/auto_compil.sh.
+#
+# Ces modules sont liés à la glibc et à la libcrypt de CETTE machine, et ne se
+# chargent que sur un poste au moins aussi récent. Le core les envoie par
+# famille de distributions : vaultaire_client/rocky/ et vaultaire_client/debian/,
+# chaque famille compilée sur sa plus ancienne version prise en charge.
+#
+#   VAULTAIRE_FAMILLE_MODULES   rocky | debian | (vide)
+#
+#   vide (défaut) : poste de développement. Les modules vont à la racine de
+#                   vaultaire_client/, NON CLASSÉS : les scripts d'installation
+#                   ne les prennent que si leur famille manque, et leur
+#                   contrôle ldd refuse ceux qui ne se chargent pas ;
+#   rocky|debian  : la CI. Les modules vont dans le sous-répertoire de la
+#                   famille, et la glibc exigée est bornée à celle de sa plus
+#                   ancienne version (2.34 pour Rocky 9, 2.35 pour Ubuntu 22.04)
+#                   — au-delà, la compilation échoue.
+echo "🛠 Build modules PAM et NSS..."
+PAM_OUT="$BUILD_DIR/vaultaire_client"
+FAMILLE_MODULES="${VAULTAIRE_FAMILLE_MODULES:-}"
+case "$FAMILLE_MODULES" in
+    "")     MODULES_OUT="$PAM_OUT" ;;
+    rocky)  MODULES_OUT="$PAM_OUT/rocky";  export VAULTAIRE_GLIBC_MAX="${VAULTAIRE_GLIBC_MAX:-2.34}" ;;
+    debian) MODULES_OUT="$PAM_OUT/debian"; export VAULTAIRE_GLIBC_MAX="${VAULTAIRE_GLIBC_MAX:-2.35}" ;;
+    *)
+        echo "❌ VAULTAIRE_FAMILLE_MODULES doit valoir rocky, debian ou rester vide (reçu : $FAMILLE_MODULES)"
+        exit 1
+        ;;
+esac
+# Des modules d'une compilation précédente, rangés ailleurs, seraient envoyés
+# avec ceux-ci : on ne laisse que ceux qu'on vient de produire.
+if [ -z "$FAMILLE_MODULES" ]; then
+    rm -f "$PAM_OUT"/pam_*.so "$PAM_OUT"/libnss_vaultaire.so.2
+fi
 # Sortie directement dans BUILD_DIR : compiler dans src/ laissait des .so au
 # milieu des sources, qui finissaient versionnés.
-PAM_OUT="$BUILD_DIR/vaultaire_client"
-gcc -fPIC -shared -o "$PAM_OUT/pam_login_custom_module.so"  pam_login_custom_module.c  pam_common.c -lcurl -lpam -lcrypt
-gcc -fPIC -shared -o "$PAM_OUT/pam_logout_custom_module.so" pam_logout_custom_module.c pam_common.c -lcurl -lpam -lcrypt
-gcc -fPIC -shared -o "$PAM_OUT/pam_ssh_auth_module.so"      pam_ssh_auth_module.c      pam_common.c -lcurl -lpam -lcrypt
-gcc -fPIC -shared -o "$PAM_OUT/libnss_vaultaire.so.2"       nss_vaultaire.c
-chmod 755 "$PAM_OUT"/*.so "$PAM_OUT/libnss_vaultaire.so.2"
+if ! bash "$ROOT_DIR/src/vaultaire_client/pam_module/auto_compil.sh" "$MODULES_OUT"; then
+    echo "❌ Build des modules natifs échoué — arrêt."
+    exit 1
+fi
 # Le transfert vers la préproduction ne passe plus par ce script : la CI publie
 # une release, et l'hôte la télécharge (deployments/pre-prod/docker-update.sh).
 

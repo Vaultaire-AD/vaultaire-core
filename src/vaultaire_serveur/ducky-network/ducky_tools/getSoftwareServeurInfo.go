@@ -1,7 +1,7 @@
 package ducky_tools
 
 import (
-	"log"
+	"fmt"
 	"strings"
 	"vaultaire/core/database"
 	dbclients "vaultaire/core/database/db_clients"
@@ -13,7 +13,9 @@ import (
 func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) {
 	information := strings.Split(trames_content.Content, "\n")
 	if len(information) < 4 {
-		log.Println("Erreur : données incomplètes dans le contenu GetSoftwareServeurInformation")
+		logs.Write_LogCode("WARNING", logs.CodeNetParse, fmt.Sprintf(
+			"02_12 : inventaire incomplet de %s (%d ligne(s), 4 au minimum) — ignoré",
+			trames_content.ClientSoftwareID, len(information)))
 		return
 	}
 	// Les VERSIONS sont facultatives : un agent d'une version antérieure
@@ -66,6 +68,8 @@ func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) 
 		err = dbsessions.RefreshSessionValidity(db, []byte(trames_content.SessionIntegritykey))
 	}
 	if err != nil {
-		log.Println(err)
+		logs.Write_LogCode("WARNING", logs.CodeDBSession, fmt.Sprintf(
+			"02_12 : validité de la session de %s non rafraîchie : %v",
+			trames_content.ClientSoftwareID, err))
 	}
 }

@@ -2,10 +2,10 @@ package dnsparser
 
 import (
 	"fmt"
-	"log"
 	"net"
 	dnsstorage "vaultaire/core/dns/DNS_Storage"
 	dnstools "vaultaire/core/dns/DNS_Tools"
+	"vaultaire/core/logs"
 )
 
 func BuildDNSResponse(req *dnsstorage.DNSMessage, result string) ([]byte, error) {
@@ -16,7 +16,9 @@ func BuildDNSResponse(req *dnsstorage.DNSMessage, result string) ([]byte, error)
 	question := req.Questions[0]
 	var rdata []byte
 
-	log.Printf("🧠 Type de requête reçu : %d (%s)", question.Type, question.Name)
+	// DEBUG et non une ligne inconditionnelle : elle partait sur la sortie
+	// standard à CHAQUE requête DNS du parc (TO-DO 153).
+	logs.Write_Log("DEBUG", fmt.Sprintf("dns : requête de type %d pour %s", question.Type, question.Name))
 
 	switch question.Type {
 	case 1: // Type A

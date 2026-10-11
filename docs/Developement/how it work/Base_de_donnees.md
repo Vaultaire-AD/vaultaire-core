@@ -269,7 +269,7 @@ proxy_metrics (
     id_metric      INT AUTO_INCREMENT PRIMARY KEY,
     proxy_hostname VARCHAR(255) NOT NULL,   -- celui de la ligne du DEMANDEUR
     proxy_ip       VARCHAR(45)  NOT NULL,
-    metric_type    VARCHAR(64)  NOT NULL,   -- « relais » pour un vlt-proxy
+    metric_type    VARCHAR(64)  NOT NULL,   -- « relais » (vlt-proxy), « sessions » (core)
     metric_value   DOUBLE       NOT NULL,   -- connexions actives
     extra          JSON,                    -- tous les autres compteurs
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -293,6 +293,37 @@ proxy_metrics (
   purge par lots de 10 000. Débit borné à 60 écritures par nœud et par minute.
 - **Rien ne s'en sert pour décider.** Le tri de la liste servie aux agents ne lit
   pas cette table, et c'est volontaire : une `04_05` est déclarative.
+- **Les cores y écrivent aussi** *(TO-DO 148)* : une ligne `sessions` à chacun de
+  leurs battements, écrite par le core lui-même (pas de `04_05`), `extra` portant
+  `machines`, `tunnels`, `comptes`, `poignees`. Lue par
+  `GarnirMetriquesSessions`, avec une fraîcheur de trois battements (trois
+  minutes au moins). Même rétention.
+
+## Maintenance et purge — colonnes de `cluster_nodes` *(TO-DO 147)*
+
+```sql
+maintenance        BOOLEAN NOT NULL DEFAULT FALSE,
+maintenance_par    VARCHAR(255) NOT NULL DEFAULT '',
+maintenance_le     DATETIME NULL DEFAULT NULL,
+purge_demandee_le  DATETIME NULL DEFAULT NULL,
+purge_par          VARCHAR(255) NOT NULL DEFAULT '',
+purge_etalement_s  INT NOT NULL DEFAULT 0,
+purge_terminee_le  DATETIME NULL DEFAULT NULL,
+purge_fermees      INT NOT NULL DEFAULT 0
+```
+
+- **Une colonne et non une valeur de `status`** : `status` est réécrit par chaque
+  battement et chaque réenregistrement. La maintenance est une décision, comme
+  `priorite` et `expose_aux_agents`, et `RegisterNode` ne la touche pas.
+- **Filtrée par les deux requêtes des listes** — `NoeudsPourAgents` (04_04) et
+  `servicesEnLigne` (04_16) —, sans toucher à `expose_aux_agents` : lever la
+  maintenance rend le nœud tel qu'il était. Un test-sentinelle vérifie les deux.
+- **La purge est une demande écrite ici**, exécutée par le core visé à son
+  battement (`PurgeAFaire`, `TerminerPurge`) : lui seul tient ses sessions.
+  `TerminerPurge` ne marque faite que la demande qu'il a exécutée — une seconde
+  demande pendant la première reste « en cours ».
+- **Posées par `EnsureClusterNodesSchema`** sur une base existante, depuis la même
+  liste (`colonnesAjoutees`) que le test confronte au `CREATE TABLE`.
 
 ## Relais pilotés — `cluster_relays` et `cluster_relay_state` *(TO-DO 141)*
 
@@ -352,7 +383,9 @@ cluster_relay_state (                       -- une ligne par proxy
   est recopié dans `cluster_relays` hors de la première prise en main, qui part
   de lui pour ne pas fermer ce qui tourne.
 - **Pas de clé étrangère** vers `cluster_nodes` ni de purge automatique : les
-  lignes d'un proxy retiré restent, sans effet, jusqu'à un `release`.
+  lignes d'un proxy retiré restent, sans effet, jusqu'à un `release` — ou un
+  **oubli manuel** (`cluster forget`, TO-DO 146), qui les retire avec le nœud :
+  l'oubli automatique les garde, l'oubli décidé non.
 
 Voir [`04-relais-pilotes.md`](./ducky-network/04-cluster/04-relais-pilotes.md).
 

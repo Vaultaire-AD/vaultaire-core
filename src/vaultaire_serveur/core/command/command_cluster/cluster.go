@@ -3,6 +3,7 @@ package commandcluster
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
@@ -14,6 +15,10 @@ import (
 //
 //	cluster list                  tous les nœuds
 //	cluster list <role>           nœuds actifs d'un rôle
+//	cluster show <nœud>           la fiche d'un nœud, sessions comprises
+//	cluster maintenance <nœud> <on|off> [--confirm]
+//	cluster purge <nœud> [--etalement <s>]
+//	cluster forget <nœud>         oublie un nœud hors ligne
 //	cluster purge-delay           lit le délai de purge
 //	cluster purge-delay <heures>  le règle
 //	cluster metrics-retention          lit la rétention des métriques
@@ -65,6 +70,22 @@ func Cluster_Command(args []string, sender_groupsIDs []int, sender_Username stri
 			return res.Message
 		}
 		return display.DisplayClusterNodes(d.Role, d.Noeuds)
+
+	case "show":
+		return montrerNoeud(args[1:], appelant)
+
+	case "maintenance":
+		return maintenance(args[1:], sender_groupsIDs, sender_Username)
+
+	case "purge":
+		return purger(args[1:], sender_groupsIDs, sender_Username)
+
+	case "forget":
+		if len(args) < 2 {
+			return "Requête invalide : cluster forget <nœud>"
+		}
+		return commandaction.ExecuterAction("cluster.forget",
+			action.Params{"node": args[1]}, sender_groupsIDs, sender_Username)
 
 	case "expose":
 		return exposer(args[1:], appelant)
@@ -397,6 +418,17 @@ func aide() string {
 
   cluster list                       tous les nœuds enregistrés
   cluster list <role>                nœuds actifs d'un rôle
+  cluster show <nœud>                la fiche d'un nœud : accès, rotation, sessions d'un core
+  cluster maintenance <nœud> <on|off> [--confirm]
+                                     retire un nœud de TOUTES les listes (agents, proxies,
+                                     services) sans le retirer du cluster ; --confirm pour
+                                     le dernier core servi
+  cluster purge <nœud> [--etalement <s>]
+                                     vide un core en maintenance de ses sessions : chaque
+                                     machine redemande sa liste, puis le reste est fermé,
+                                     étalé (60 s par défaut)
+  cluster forget <nœud>              oublie un nœud hors ligne depuis plus de 3 min, sans
+                                     attendre le délai de purge — ses réglages partent avec
   cluster purge-delay                délai avant suppression d'un service ou d'un nœud parti
   cluster purge-delay <heures>       règle ce délai (0 désactive la purge)
   cluster metrics-retention          conservation des métriques de nœuds
@@ -608,4 +640,71 @@ Le relais Ducky ne se retire pas et ne change pas de port : c'est le port que
 le proxy a annoncé au cluster (-listen-port), et celui que reçoivent les agents.
 
 Droits : read:cluster pour consulter, write:relay pour modifier.`
+}
+
+// montrerNoeud affiche la fiche d'un nœud (TO-DO 148).
+//
+// Par l'action de la LISTE, filtrée ici : même droit, mêmes mesures garnies, et
+// aucune action de plus à déclarer pour ce qui n'est qu'une autre vue des
+// mêmes données.
+func montrerNoeud(args []string, appelant action.Appelant) string {
+	if len(args) < 1 {
+		return "Requête invalide : cluster show <nœud>"
+	}
+	nom := strings.TrimSpace(args[0])
+	res, err := action.Executer("cluster.list_nodes", appelant, action.Params{})
+	if err != nil {
+		return commandaction.MessageDErreur(err)
+	}
+	d, _ := res.Donnees.(action.NoeudsCluster)
+	for _, n := range d.Noeuds {
+		if strings.EqualFold(n.Hostname, nom) {
+			return display.DisplayClusterNode(n, time.Now())
+		}
+	}
+	return "Aucun nœud « " + nom + " » dans le cluster. Voir « cluster list »."
+}
+
+// maintenance : cluster maintenance <nœud> <on|off> [--confirm] (TO-DO 147).
+func maintenance(args []string, groupes []int, qui string) string {
+	reste, confirmer := extraireDrapeau(args, "--confirm")
+	if len(reste) < 2 {
+		return "Requête invalide : cluster maintenance <nœud> <on|off> [--confirm]"
+	}
+	p := action.Params{"node": reste[0], "mode": reste[1]}
+	if confirmer {
+		p["confirm"] = "yes"
+	}
+	return commandaction.ExecuterAction("cluster.set_maintenance", p, groupes, qui)
+}
+
+// purger : cluster purge <nœud> [--etalement <s>] (TO-DO 147).
+func purger(args []string, groupes []int, qui string) string {
+	if len(args) < 1 {
+		return "Requête invalide : cluster purge <nœud> [--etalement <secondes>]"
+	}
+	p := action.Params{"node": args[0]}
+	for i := 1; i < len(args); i++ {
+		if strings.EqualFold(args[i], "--etalement") && i+1 < len(args) {
+			p["spread"] = args[i+1]
+			i++
+			continue
+		}
+		return "Option inconnue « " + args[i] + " ». Attendu : cluster purge <nœud> [--etalement <secondes>]"
+	}
+	return commandaction.ExecuterAction("cluster.purge", p, groupes, qui)
+}
+
+// extraireDrapeau retire un drapeau des arguments, où qu'il soit.
+func extraireDrapeau(args []string, drapeau string) ([]string, bool) {
+	reste := make([]string, 0, len(args))
+	trouve := false
+	for _, a := range args {
+		if strings.EqualFold(a, drapeau) {
+			trouve = true
+			continue
+		}
+		reste = append(reste, a)
+	}
+	return reste, trouve
 }

@@ -438,10 +438,10 @@ devrait être fait en premier, et séparément.
 
 | Fichier | Écrit aujourd'hui par | Risque |
 |---|---|---|
-| `/etc/pam.d/login` | `rocky.sh`, réécriture intégrale ; `debian.sh` (2.3), **insertion** d'une ligne marquée `# vaultaire`, original gardé | **le plus élevé** — aucun validateur n'existe |
+| `/etc/pam.d/login` | `rocky.sh`, réécriture intégrale, original gardé sous `.avant-vaultaire` (2.3) ; `debian.sh` (2.3), **insertion** d'une ligne marquée `# vaultaire`, original gardé | **le plus élevé** — aucun validateur n'existe |
 | `/etc/pam.d/sshd` | idem | idem, plus la perte de l'accès distant |
 | `/etc/pam.d/gdm-password` | idem, si le fichier préexiste | idem, poste graphique |
-| `/etc/ssh/sshd_config` | `sed -i` destructif puis `>>` | validable par `sshd -t` |
+| `/etc/ssh/sshd_config` | `sed -i` destructif puis `>>` ; validé par `sshd -t` et remis s'il est refusé, original sous `.avant-vaultaire` (2.3, les deux scripts) | validable par `sshd -t` |
 | `/etc/nsswitch.conf` | ajout idempotent | faible |
 | `/etc/dconf/db/gdm.d/10-vaultaire-userlist` | création + `dconf update` | faible |
 

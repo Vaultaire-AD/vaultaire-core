@@ -131,6 +131,41 @@ catalogue y entre sans rien écrire.
 Les services ne sont **pas** supprimés ici : `PurgeDepartedServices` le fait,
 avec leur client.
 
+**L'oubli manuel** *(TO-DO 146)* — `cluster forget <nœud>` — retire la ligne sans
+attendre, à deux conditions tenues dans la même transaction que le `DELETE` :
+`status` différent de `online`, **et** dernier battement plus vieux que trois
+battements du cluster (trois minutes au moins). Un nœud vivant se réinscrirait au
+battement suivant ; un nœud « offline » depuis une seconde est peut-être en train
+de revenir. Contrairement à l'oubli automatique, il retire aussi les relais que le
+core demandait au nœud (`cluster_relays`, `cluster_relay_state`) : l'oubli est ici
+une décision, et le compte rendu nomme tout ce qui part.
+
+### Maintenance et purge *(TO-DO 147)*
+
+**Maintenance** : colonne `maintenance` de `cluster_nodes`, filtrée par les deux
+requêtes des listes (`04_04` pour les agents et les proxies — dont les cibles
+`source: cores` des relais —, `04_16` pour les services). Le nœud continue de
+battre et reste dans `cluster list` ; sa rotation et sa priorité ne sont pas
+touchées. Garde-fou : le **dernier** core servi (en ligne, en rotation, pas en
+maintenance) n'y passe qu'avec une confirmation explicite.
+
+**Purge** d'un core en maintenance : le core qui reçoit la commande ne peut pas
+la faire — les sessions vivent dans la mémoire du core visé. Elle est donc
+**écrite** sur la ligne du nœud, et le core visé la lit à son battement :
+
+1. une `04_17` à chaque machine qui tient un tunnel ici. Le core n'étant plus dans
+   la liste, un agent à jour voit son nœud courant disparaître (`bascule.go`),
+   ferme son tunnel et se reconnecte ailleurs ;
+2. après une minute de grâce, ce qui reste — agents anciens, postes Windows,
+   proxies, sessions de compte, poignées de main — est fermé une session à la
+   fois, **étalé** (60 s par défaut, `--etalement`) ;
+3. la fin et le nombre de sessions fermées **par la purge** sont écrits sur la
+   ligne ; celles parties d'elles-mêmes ne sont pas comptées.
+
+Les sessions du portail et de l'API ne sont pas des sessions Ducky : la purge
+ne les touche pas. Un processus n'exécute qu'une fois une même demande, même si
+l'écriture de la fin échoue — sinon la purge se rejouerait à chaque battement.
+
 > Jusqu'au TO-DO 85, la suppression tombait à **cinq minutes**, pour tous. Un
 > proxy redémarré lentement ou un hôte en veille revenait par un `INSERT` neuf,
 > aux valeurs par défaut : les décisions d'exploitation étaient perdues, et le

@@ -20,7 +20,9 @@ const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps();
 
 class CVaultaireProvider : public ICredentialProvider {
  public:
-  CVaultaireProvider() : references_(1), scenario_(CPUS_INVALID), credential_(nullptr) {}
+  CVaultaireProvider() : references_(1), scenario_(CPUS_INVALID), credential_(nullptr) {
+    ObjetCree();
+  }
 
   IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
     if (ppv == nullptr) return E_POINTER;
@@ -176,6 +178,7 @@ class CVaultaireProvider : public ICredentialProvider {
   // Virtuel : détruit par « delete this » à travers un pointeur d'interface.
   virtual ~CVaultaireProvider() {
     if (credential_ != nullptr) credential_->Release();
+    ObjetDetruit();
   }
 
   LONG references_;

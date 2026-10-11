@@ -62,8 +62,9 @@ Droits : `read:cluster` pour voir, **`write:relay`** pour changer.
 
 Le core **demande** ; seul le proxy sait s'il a **obtenu**. Un port est peut-être
 déjà pris sur la machine, l'adresse demandée n'est pas la sienne, ou le proxy
-tourne sans le droit d'ouvrir un port bas (il n'est pas root : UID 10001 dans le
-conteneur `vlt-proxy`).
+tourne là où un port bas lui est interdit (réseau `host`, Docker antérieur à
+20.10, service hors conteneur — dans le conteneur `vlt-proxy` d'un Docker récent,
+il est permis : voir [les ports privilégiés](./https-et-ldaps.md#le-port-443-et-les-ports-privilégiés)).
 
 | État | Ce que cela veut dire |
 |---|---|

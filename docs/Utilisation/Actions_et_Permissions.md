@@ -226,6 +226,9 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `cluster.relay_set` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> set <nom> …` | **Registre** (page Cluster) |
 | `cluster.relay_remove` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> remove <nom>` | **Registre** (page Cluster) |
 | `cluster.relay_release` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> release` | **Registre** (page Cluster) |
+| `cluster.set_maintenance` | `write:cluster` | Globale | — | **Registre** — `cluster maintenance <nœud> <on\|off>` | **Registre** (page Cluster, fiche) |
+| `cluster.purge` | `write:cluster` | Globale | — | **Registre** — `cluster purge <nœud>` | **Registre** (page Cluster, fiche d'un core) |
+| `cluster.forget` | `write:cluster` | Globale | — | **Registre** — `cluster forget <nœud>` | **Registre** (page Cluster, fiche d'un nœud hors ligne) |
 | `certificate.list` | `read:certificate` | Globale | — | **Registre** — `certificate list` | — |
 | `certificate.get` | `read:certificate` | Globale | — | **Registre** — `certificate show` | — |
 | `certificate.regenerate` | `write:certificate` | Globale | — | **Registre** — `certificate regenerate` | — |

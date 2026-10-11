@@ -84,7 +84,11 @@ func Generate_Challenge(id string) ([]byte, string) {
 	}
 	uncrypttext, Alphacheck, err := encryptAndGenerateID(publickey)
 	if err != nil {
-		fmt.Println(err)
+		// ERROR et non une ligne brute sur la sortie standard (TO-DO 153) : un
+		// défi qui ne se chiffre pas est un refus d'authentification, et il
+		// doit se lire dans le journal commun.
+		logs.Write_LogCode("ERROR", logs.CodeAuthFailed,
+			"défi d'authentification non chiffré pour "+id+" : "+err.Error())
 	}
 	return uncrypttext, Alphacheck
 }

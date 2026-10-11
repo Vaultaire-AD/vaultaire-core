@@ -12,6 +12,7 @@ import (
 	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/reglages"
 	hosthandler "vaultaire/ducky-network/host_handler"
 )
 
@@ -290,6 +291,14 @@ func listerNoeuds(_ Appelant, p Params) (Resultat, error) {
 	// Les compteurs de relais (TO-DO 108), pour la même raison et avec la même
 	// tolérance : une colonne vide vaut mieux qu'un refus d'afficher le cluster.
 	clusterdatabase.GarnirMetriquesRelais(db, noeuds)
+
+	// Les sessions que chaque core publie avec son battement (TO-DO 148). La
+	// fraîcheur suit la cadence du battement : un core réglé lentement ne doit
+	// pas voir sa colonne se vider un tour sur deux.
+	clusterdatabase.GarnirMetriquesSessions(db, noeuds,
+		clusterdatabase.FraicheurPour(reglages.Duree(reglages.CleBattementCluster)))
+	// La maintenance et la purge (TO-DO 147).
+	clusterdatabase.GarnirMaintenance(db, noeuds)
 
 	message := fmt.Sprintf("%d nœud(s).", len(noeuds))
 	if role != "" {

@@ -15,12 +15,12 @@ func Generate_Serveur_Key_Pair(keyName string) (privateKeyPath, publicKeyPath st
 	privateKeyPath = storage.Client_Conf_path + ".ssh/" + keyName + "_private.pem"
 	publicKeyPath = storage.Client_Conf_path + ".ssh/" + keyName + "_public.pem"
 	if _, err := os.Stat(privateKeyPath); !os.IsNotExist(err) {
-		fmt.Println("private key already exist", privateKeyPath)
+		logs.Write_Log("DEBUG", "clés du serveur : "+privateKeyPath+" existe déjà, rien à générer")
 		return privateKeyPath, publicKeyPath, nil
 	}
 
 	if _, err := os.Stat(publicKeyPath); !os.IsNotExist(err) {
-		fmt.Println("Public key already exist", publicKeyPath)
+		logs.Write_Log("DEBUG", "clés du serveur : "+publicKeyPath+" existe déjà, rien à générer")
 		return privateKeyPath, publicKeyPath, nil
 	}
 
@@ -32,19 +32,17 @@ func Generate_Serveur_Key_Pair(keyName string) (privateKeyPath, publicKeyPath st
 
 	err = SavePEMKey(privateKeyPath, privateKey)
 	if err != nil {
-		fmt.Println("Error during the save of the pubkey:", err)
-		logs.Write_Log("ERROR", "Error during the save of the pubkey:"+err.Error())
+		logs.Write_Log("ERROR", "clés du serveur : enregistrement de la clé PRIVÉE "+privateKeyPath+" impossible : "+err.Error())
 		return privateKeyPath, publicKeyPath, err
 	}
 
 	err = SavePEMKeyPublic(publicKeyPath, publicKey)
 	if err != nil {
-		fmt.Println("Error during the save of the pubkey:", err)
-		logs.Write_Log("ERROR", "Error during the save of the pubkey:"+err.Error())
+		logs.Write_Log("ERROR", "clés du serveur : enregistrement de la clé publique "+publicKeyPath+" impossible : "+err.Error())
 		return privateKeyPath, publicKeyPath, err
 	}
 
-	fmt.Println("Key pair generated with succes.")
+	logs.Write_Log("INFO", "clés du serveur : paire "+keyName+" générée ("+privateKeyPath+")")
 	return privateKeyPath, publicKeyPath, nil
 }
 

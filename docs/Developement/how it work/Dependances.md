@@ -112,9 +112,9 @@ Relevé dans les commandes d'installation écrites en clair. Un `go.mod` est lu 
 
 | Dockerfile | Paquets |
 |---|---|
-| `deployments/dev-comp/Dockerfile.build` | `findutils`, `gcc`, `git`, `gzip`, `libcurl-devel`, `libxcrypt-devel`, `pam-devel`, `tar`, `which` |
+| `deployments/dev-comp/Dockerfile.build` | `findutils`, `gcc`, `git`, `gzip`, `libxcrypt-devel`, `pam-devel`, `tar`, `which` |
 | `deployments/dev-comp/Dockerfile.nexus` | `ca-certificates`, `curl`, `gnupg`, `tzdata` |
-| `deployments/dev/Dockerfile.rocky-ssh` | `epel-release`, `gcc`, `libcurl-devel`, `make`, `openssh-clients`, `openssh-server`, `pam-devel`, `pamtester`, `passwd` |
+| `deployments/dev/Dockerfile.rocky-ssh` | `epel-release`, `gcc`, `make`, `openssh-clients`, `openssh-server`, `pam-devel`, `pamtester`, `passwd` |
 | `deployments/dev/dockerfile` | `ca-certificates`, `git`, `gzip`, `openssh-clients`, `openssh-server`, `sudo`, `tar` |
 | `deployments/pre-prod/Dockerfile` | `openssh-clients`, `openssh-server`, `sudo` |
 | `deployments/pre-prod/vlt-proxy/Dockerfile` | `ca-certificates`, `tzdata`, `util-linux` |

@@ -30,6 +30,11 @@ Le critère de rangement est **le lecteur, pas le sujet** :
 Le même sujet peut avoir une page dans deux dossiers. GPO en a deux : le
 mécanisme ici, les commandes dans `Utilisation/MAN.md`.
 
+> **Toute fonctionnalité nouvelle visible d'un administrateur s'ajoute aussi
+> au parcours de formation** (`docs/training/`), dans le même passage que le
+> code : une étape dans le jalon voisin, ou un jalon nouveau. La règle et ses
+> exceptions sont dans le [pense-bête](./Pense-bete_developpement.md#toute-fonctionnalité-nouvelle-entre-dans-la-formation).
+
 ---
 
 ## 2. Le dépôt en une page

@@ -2,7 +2,7 @@ package dnsdatabase
 
 import (
 	"database/sql"
-	"fmt"
+	"vaultaire/core/logs"
 )
 
 // domainIsTrue vérifie si le domaine (zone) existe dans la table dns_zones
@@ -12,7 +12,7 @@ func DomainIsTrue(domain string, db *sql.DB) bool {
 	if err == sql.ErrNoRows {
 		return false
 	} else if err != nil {
-		fmt.Printf("❌ Erreur lors de la vérification du domaine : %v\n", err)
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "dns : zone "+domain+" non vérifiable : "+err.Error())
 		return false
 	}
 	return true

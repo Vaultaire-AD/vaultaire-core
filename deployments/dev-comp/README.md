@@ -53,9 +53,15 @@ calcul voie les dernières releases.)
 ## La compilation
 
 Dans un conteneur `rockylinux:9` (`Dockerfile.build`) avec la recette de la CI de
-release : gcc, `pam-devel`, `libcurl-devel`, `libxcrypt-devel`, Go épinglé
+release : gcc, `pam-devel`, `libxcrypt-devel`, Go épinglé
 (`GO_VERSION`, 1.26.5). Le serveur (cgo) et les modules PAM sont ainsi liés à la
-glibc de Rocky 9, celle de l'image d'exécution et du parc. Le cache Go vit dans
+glibc de Rocky 9, celle de l'image d'exécution et du parc.
+
+Les modules natifs sortent **non classés**, à la racine de `vaultaire_client/` :
+ils conviennent à un poste Rocky, pas à un poste Debian ou Ubuntu — ils lient la
+`libcrypt.so.2` de Rocky, que ces distributions n'ont pas, et `debian.sh` refuse
+alors l'installation avant de toucher à PAM. Les releases, elles, portent un jeu
+par famille (`rocky/`, `debian/`), compilé par la CI (TO-DO 173). Le cache Go vit dans
 le volume `devcomp_gocache` : seule la première compilation est longue.
 
 La sortie est rendue à votre utilisateur (`chown` en fin de compilation).

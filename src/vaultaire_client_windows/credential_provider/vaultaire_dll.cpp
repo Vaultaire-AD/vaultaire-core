@@ -59,10 +59,9 @@ class CFabrique : public IClassFactory {
     vaultaire::Passage p(L"Fabrique::CreateInstance", L"interface=%ls",
                          vaultaire::NomDeLInterface(riid).c_str());
     if (agregat != nullptr) return p.Rendre(CLASS_E_NOAGGREGATION);
-    InterlockedIncrement(&g_objets);
-    HRESULT hr = vaultaire::CreerFournisseur(riid, ppv);
-    if (FAILED(hr)) InterlockedDecrement(&g_objets);
-    return p.Rendre(hr);
+    // Le compte d'objets n'est plus tenu ici : chaque objet se compte lui-même
+    // (ObjetCree / ObjetDetruit, plus bas).
+    return p.Rendre(vaultaire::CreerFournisseur(riid, ppv));
   }
 
   IFACEMETHODIMP LockServer(BOOL verrouiller) override {
@@ -159,6 +158,25 @@ void RetirerInscriptionTronquee() {
 }
 
 }  // namespace
+
+// Le compte des objets vivants du module, que lit DllCanUnloadNow.
+//
+// # Tenu par les objets eux-mêmes (TO-DO 149)
+//
+// La fabrique l'incrémentait à chaque fournisseur créé, et rien ne le
+// décrémentait jamais : passé la première activation, DllCanUnloadNow répondait
+// « encore utilisée » pour toujours, et COM ne déchargeait jamais la DLL. Sans
+// effet visible dans LogonUI, qui meurt à chaque fermeture de l'écran ; c'est
+// l'essai sous wine qui l'a montré.
+//
+// Le fournisseur ET la tuile se comptent, dans leur constructeur et leur
+// destructeur : LogonUI peut garder une tuile après avoir rendu le
+// fournisseur, et la DLL doit rester chargée tant que le code de cette tuile
+// peut être appelé.
+namespace vaultaire {
+void ObjetCree() { InterlockedIncrement(&g_objets); }
+void ObjetDetruit() { InterlockedDecrement(&g_objets); }
+}  // namespace vaultaire
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE module, DWORD raison, LPVOID) {
   if (raison == DLL_PROCESS_ATTACH) {

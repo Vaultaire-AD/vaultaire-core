@@ -24,6 +24,7 @@ import (
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/reglages"
 	"vaultaire/core/revocation"
 	"vaultaire/core/storage"
 	newclient "vaultaire/ducky-network/new_client"
@@ -1173,6 +1174,18 @@ type donneesCluster struct {
 	// sont montrés qu'à lui — et c'est l'ACTION qui contrôle, pas ce
 	// drapeau : un formulaire forgé sans le droit est refusé pareil.
 	PeutPiloter bool
+
+	// Confirmation : une demande que l'action n'a PAS appliquée et
+	// appliquera si on la confirme — le dernier core mis en maintenance
+	// (TO-DO 147). La page la rejoue telle quelle.
+	Confirmation *confirmationCluster
+}
+
+// confirmationCluster rejoue un formulaire de la page Cluster, « confirm » en plus.
+type confirmationCluster struct {
+	Motif  string
+	Action string
+	Champs act.Params
 }
 
 // AdminClusterHandler affiche l'état des nœuds du cluster et règle leur accès.
@@ -1199,6 +1212,8 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 
 	db := database.GetDatabase()
 	message, errMsg := "", ""
+	var confirmation *confirmationCluster
+	oublie := false
 
 	// Le POST est traité AVANT la lecture, pour que la page rendue montre l'état
 	// d'après. L'ordre inverse afficherait l'ancienne adresse à côté du message
@@ -1207,11 +1222,18 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		joindreValeursMultiples(r, "groups")
 
 		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs, act.Params{})
+		var attente *act.ErrConfirmationRequise
 		switch {
+		case errors.As(err, &attente):
+			confirmation = &confirmationCluster{Motif: attente.Motif,
+				Action: r.PostFormValue("action"), Champs: attente.Rejouer}
 		case err != nil:
 			errMsg = MessageDActionPourAffichage(res, err)
 		case traite:
 			message = res.Message
+			// Un nœud oublié n'a plus de fiche : ne pas la rouvrir, ce qui
+			// afficherait « introuvable » juste sous « oublié ».
+			oublie = r.PostFormValue("action") == "forget_node"
 		}
 	}
 
@@ -1237,6 +1259,10 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	// Les compteurs de relais remontés par les nœuds (04_05, TO-DO 108). Même
 	// tolérance : une colonne vide plutôt qu'une page d'état indisponible.
 	clusterdatabase.GarnirMetriquesRelais(db, nodes)
+	// Les sessions des cores (TO-DO 148), même tolérance.
+	clusterdatabase.GarnirMetriquesSessions(db, nodes,
+		clusterdatabase.FraicheurPour(reglages.Duree(reglages.CleBattementCluster)))
+	clusterdatabase.GarnirMaintenance(db, nodes)
 
 	// La liste complète des groupes garnit le sélecteur du formulaire. Sans
 	// elle, l'administrateur devrait taper les noms de mémoire — et une faute de
@@ -1259,6 +1285,9 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	choisi := strings.TrimSpace(r.URL.Query().Get("noeud"))
 	if choisi == "" && r.Method == http.MethodPost {
 		choisi = strings.TrimSpace(r.PostFormValue("node"))
+	}
+	if oublie {
+		choisi = ""
 	}
 	selection := noeudChoisi(nodes, choisi)
 	if choisi != "" && selection == nil && errMsg == "" {
@@ -1294,6 +1323,8 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		Section:     "cluster",
 		RelaisProxy: relaisDuProxy,
 		PeutPiloter: permission.HasActionAnywhere(groupIDs, permission.ActionWriteRelay),
+
+		Confirmation: confirmation,
 	}
 
 	if err := executeAdminPage(w, "admin_cluster.html", data); err != nil {

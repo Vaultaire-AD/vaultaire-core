@@ -55,7 +55,8 @@ type Software struct {
 	// inventaire (trame 02_12). Vides tant qu'elle ne les a pas envoyées —
 	// agent d'une version antérieure, ou machine créée et jamais connectée.
 	//
-	// Le core ne les interprète jamais : il les stocke et les affiche.
+	// Le core les stocke et les affiche, et ne s'en sert jamais pour refuser.
+	// Seule lecture comparée : l'avertissement de cadence (TO-DO 161).
 	AgentVersion string
 	SDKVersion   string
 }

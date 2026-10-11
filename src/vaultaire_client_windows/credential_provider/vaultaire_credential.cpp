@@ -40,11 +40,14 @@ HRESULT Copier(const std::wstring& source, wchar_t** sortie) {
 const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps() { return kChamps; }
 
 CVaultaireCredential::CVaultaireCredential()
-    : references_(1), scenario_(CPUS_LOGON), evenements_(nullptr) {}
+    : references_(1), scenario_(CPUS_LOGON), evenements_(nullptr) {
+  ObjetCree();
+}
 
 CVaultaireCredential::~CVaultaireCredential() {
   EffacerMotDePasse();
   EffacerCode();
+  ObjetDetruit();
 }
 
 // EffacerMotDePasse écrase la mémoire, et ne se contente pas de vider la chaîne.

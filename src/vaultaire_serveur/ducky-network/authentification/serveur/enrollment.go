@@ -276,7 +276,11 @@ func decodeSubmittedPublicKey(encoded string) (string, error) {
 	if bits := rsaKey.N.BitLen(); bits < minimumKeyBits {
 		return "", fmt.Errorf("clé de %d bits, minimum %d", bits, minimumKeyBits)
 	}
-	return keymanagement.Convert_Public_Key_To_String(rsaKey), nil
+	pemTexte := keymanagement.Convert_Public_Key_To_String(rsaKey)
+	if pemTexte == "" {
+		return "", errors.New("clé publique non convertible")
+	}
+	return pemTexte, nil
 }
 
 // newServiceID tire un identifiant de machine pour le service.

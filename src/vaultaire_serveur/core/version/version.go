@@ -17,7 +17,9 @@
 //
 // # Le core n'interprète aucune version
 //
-// Aucun refus, aucun seuil, aucune comparaison — arbitrage retenu au point 39.
+// Aucun refus, aucune coupure — arbitrage retenu au point 39. La seule
+// comparaison (paquet parcversion, TO-DO 161) prévient et demande
+// confirmation ; elle ne ferme rien.
 // La version est une donnée d'INVENTAIRE : elle répond à « qui est en retard »,
 // question du point 40, sans jamais décider de fermer une porte.
 //

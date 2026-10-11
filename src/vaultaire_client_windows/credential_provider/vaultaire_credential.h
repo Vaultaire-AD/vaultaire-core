@@ -8,6 +8,12 @@
 
 namespace vaultaire {
 
+// Le compte des objets vivants du module (vaultaire_dll.cpp) : chaque objet
+// COM l'incrémente dans son constructeur et le décrémente dans son
+// destructeur. C'est ce que lit DllCanUnloadNow.
+void ObjetCree();
+void ObjetDetruit();
+
 // Les champs de la tuile, dans l'ordre où Windows les affiche.
 //
 // L'ordre EST l'interface : Winlogon les identifie par leur rang, et insérer un

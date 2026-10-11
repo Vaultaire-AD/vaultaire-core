@@ -82,13 +82,14 @@ func typeDeServiceRelayable(typ string) bool {
 // servicesEnLigne lit les services d'un type en ligne et exposés.
 //
 // `expose_aux_agents` est respecté : c'est le geste qui retire un nœud de la
-// rotation — maintenance d'un Nexus, dépôt pas encore synchronisé.
+// rotation — dépôt pas encore synchronisé, par exemple. La maintenance aussi
+// (TO-DO 147) : un nœud en maintenance sort de TOUTES les listes.
 func servicesEnLigne(db *sql.DB, typ string) ([]ServiceJoignable, error) {
 	if db == nil {
 		return nil, fmt.Errorf("connexion base indisponible")
 	}
 	rows, err := db.Query(`SELECT hostname, ip_address, priorite FROM cluster_nodes
-		WHERE role = ? AND status = 'online' AND expose_aux_agents = TRUE`, typ)
+		WHERE role = ? AND status = 'online' AND expose_aux_agents = TRUE AND maintenance = FALSE`, typ)
 	if err != nil {
 		return nil, err
 	}

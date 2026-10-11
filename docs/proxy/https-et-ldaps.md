@@ -29,7 +29,7 @@ relais:
       source: "service:vaultaire_nexus"
   - nom: ldaps
     type: ldaps
-    ecoute: ":1636"            # port haut : le conteneur tourne en UID 10001
+    ecoute: ":1636"            # port haut : accepté partout (voir « ports privilégiés »)
     cibles:
       source: cores            # port 636 des cores, par défaut
 ```
@@ -150,9 +150,30 @@ celui qu'on protège le moins bien.
 
 ## Le port 443 et les ports privilégiés
 
-Le conteneur `vlt-proxy` tourne en UID 10001 : il ne peut pas écouter sous
-1024. Écoutez sur un port haut (`:8843`, `:1636`) et publiez 443 ou 636 sur
-l'hôte, ou donnez `CAP_NET_BIND_SERVICE` au conteneur.
+Le proxy tourne en UID 10001, sans root. Qu'il puisse écouter sous 1024 ne
+dépend **pas** de cet UID, mais d'un réglage du noyau propre à son espace
+réseau, `net.ipv4.ip_unprivileged_port_start` (vérifié au TO-DO 160) :
+
+| Où tourne le proxy | Port bas (443, 636) |
+|---|---|
+| conteneur `vlt-proxy` sur un réseau Docker ordinaire (bridge — le `docker-compose.yml` fourni), **Docker 20.10 ou plus récent** | **accepté** : Docker pose le réglage à 0 dans chaque conteneur qui a son propre réseau |
+| conteneur en `network_mode: host`, ou Docker 19.03 et antérieur | **refusé** (`permission denied`) : c'est le réglage de l'hôte, 1024 |
+| service systemd, hors conteneur | **refusé**, sauf `AmbientCapabilities=CAP_NET_BIND_SERVICE` dans l'unité |
+| autre moteur (Podman, Kubernetes) | à vérifier : ce comportement est celui de Docker |
+
+Pour savoir ce qu'il en est d'un proxy en place, une commande suffit :
+
+```bash
+docker exec vlt-proxy cat /proc/sys/net/ipv4/ip_unprivileged_port_start
+# 0     -> tout port est permis, 636 compris
+# 1024  -> ports bas refusés : écouter sur :1636 et publier 636 sur l'hôte
+```
+
+Dans le doute, un port haut dans le conteneur fonctionne **partout** — c'est
+pourquoi les exemples l'emploient. Dans tous les cas, le port écouté dans le
+conteneur doit être **publié** dans `docker-compose.yml` (`"636:636"` ou
+`"636:1636"`) : sans quoi personne ne l'atteint. Et si le port est refusé, le
+relais revient « refusé » avec le motif de la machine : rien ne casse.
 
 ---
 

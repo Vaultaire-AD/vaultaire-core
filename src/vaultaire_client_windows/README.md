@@ -91,6 +91,7 @@ Conséquences assumées en V1 :
 ./build.sh                    # dist/vaultaire-client-windows-<version>.tar
 ./build.sh --version 2.2.1
 ./build.sh --sans-dll         # sans le Credential Provider
+./build.sh --sans-essai-wine  # ne pas éprouver la DLL sous wine
 ```
 
 Depuis Linux, sans Windows : `GOOS=windows go build` suffit (aucun CGO), et la
@@ -107,6 +108,34 @@ chacune ferme un défaut qui ne se voyait qu'à l'écran de connexion d'un poste
 
 Le troisième vaut aussi sous MSVC, où `%s` large « marche » : le code doit se
 compiler à l'identique avec les deux chaînes.
+
+### La DLL éprouvée sous wine (TO-DO 149)
+
+Ces contrôles disent que la DLL est bien **faite**. Quand `wine` est présent
+(`apt install wine64`), `build.sh` vérifie ensuite qu'elle **marche**, avec
+`credential_provider/essai-wine.sh` — une demi-minute, dans un préfixe wine
+neuf :
+
+| Étape | Ce qui est vérifié |
+|---|---|
+| poste existant | un autre fournisseur et les clés `{` d'une DLL d'avant le TO-DO 140 sont posés d'abord |
+| inscription | `regsvr32` rend 0 ; le GUID de `vaultaire_guid.h` (lu dans `DEFINE_GUID`) sous `CLSID` **et** `Credential Providers`, la DLL pour `InprocServer32`, `Apartment` ; plus aucune clé `{` |
+| activation | `essai/faux_logonui.exe` : `CoCreateInstance` du CLSID, puis la suite d'appels de LogonUI — scénarios, champs, tuile — face à un agent **absent**, **muet** et **en marche** ; `SetSelected` borné, refus nommés, aucun bloc d'ouverture sur un refus, `DllCanUnloadNow` à la fin |
+| trace | la même suite, témoin posé : chaque `> Méthode` a son `< Méthode`, et ni le mot de passe ni le code tapés ne sont dans le journal |
+| retrait | `regsvr32 /u` : plus rien de Vaultaire, l'autre fournisseur intact |
+
+Un échec arrête la fabrication, sans archive. Sans wine, la DLL est fabriquée
+comme avant, mais `build.sh` le dit et `VERSION.txt` porte « DLL : NON
+eprouvee ». Le même essai tourne en CI (`tests.yaml`, à chaque merge dans
+`dev`).
+
+`faux_logonui.exe` n'appelle que des API Windows : il est écrit pour tourner
+aussi sur un vrai poste (DLL inscrite, **service Vaultaire arrêté** — le
+programme tient lui-même le rôle de l'agent). Cela n'a pas encore été essayé.
+
+**Ce n'est pas LogonUI.** Une tuile qui n'apparaît pas alors que chaque méthode
+répond juste (TO-DO 157) passe à travers : la tuile reste une recette manuelle
+sur un poste (`A_TESTER.md`).
 
 ### Compiler la DLL avec MSVC
 

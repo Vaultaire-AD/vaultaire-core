@@ -7,7 +7,6 @@ import (
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
-	"log"
 	"os"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -17,11 +16,15 @@ func GenerateSelfSignedCert(keyPath, certName string) (certPath string, err erro
 	path := storage.Client_Conf_path + ".ssh/"
 	certPath = path + certName + ".pem"
 	if _, err := os.Stat(certPath); os.IsNotExist(err) {
+		// L'erreur est RENDUE (TO-DO 153). log.Fatal arrêtait le processus
+		// entier depuis une fonction qui déclare pourtant rendre une erreur —
+		// et écrivait sur la sortie d'erreur, hors du journal.
 		if err := createSelfSignedCert(certPath, keyPath); err != nil {
-			log.Fatal("Erreur génération certificat:", err)
+			return certPath, fmt.Errorf("génération du certificat %s : %w", certPath, err)
 		}
+		logs.Write_Log("INFO", "certificat auto-signé généré : "+certPath)
 	} else {
-		fmt.Println("INFO: Certificat déjà existant, pas de génération nécessaire.")
+		logs.Write_Log("DEBUG", "certificat "+certPath+" déjà présent, rien à générer")
 	}
 	return certPath, nil
 }

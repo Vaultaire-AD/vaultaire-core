@@ -17,6 +17,9 @@ cluster expose <nœud> <adresse> [port] | --clear
 cluster affinity <nœud> <groupe…> | --none
 cluster priority <nœud> <valeur>
 cluster rotation <nœud> <in|out>
+cluster show <nœud>
+cluster maintenance <nœud> <on|off> [--confirm]
+cluster purge <nœud> [--etalement <s>]
 ```
 
 ## Étapes
@@ -46,9 +49,43 @@ cluster rotation <nœud> <in|out>
    vlt cluster rotation <nœud-proxy> in
    ```
 
+4. Regardez ce que porte chaque core :
+
+   ```bash
+   vlt cluster list               # colonne SESSIONS : « m » machines, « c » comptes, « p » poignées
+   vlt cluster show <nœud-core>   # le détail, et l'âge de la mesure
+   ```
+
+   Chaque core publie ses sessions avec son battement : lui seul les voit.
+   `web01` y compte pour **une** machine, même s'il tient plusieurs tunnels.
+   Sortir un nœud de la rotation ne ferme **aucune** session : son compteur ne
+   descend qu'au fil des reconnexions des agents.
+
+5. Mettez le proxy en **maintenance**, puis essayez avec le core :
+
+   ```bash
+   vlt cluster maintenance <nœud-proxy> on
+   vlt get -c <computeur_id-web01> --targets   # le proxy a disparu de la liste
+   vlt cluster list                            # ÉTAT « online · maint. »
+   vlt cluster maintenance <nœud-core> on      # refusé : c'est le dernier core
+   vlt cluster maintenance <nœud-proxy> off
+   ```
+
+   La maintenance, c'est la rotation `out` **partout** — liste des agents, des
+   proxies, des services — sans toucher au réglage de rotation. Sur le core, la
+   commande s'arrête : en maintenance, votre unique core ne serait plus servi à
+   personne. **Ne confirmez pas.** Sur un cluster à deux cores, `vlt cluster
+   purge <nœud-core>` viderait ensuite le core en maintenance de ses sessions :
+   chaque poste redemande sa liste et part de lui-même, le reste est fermé, étalé
+   sur une minute.
+
 ## ✅ Vous avez réussi si
 
-`--targets` reflète chaque changement, avec la raison de chaque rang.
+- `--targets` reflète chaque changement, avec la raison de chaque rang ;
+- `cluster show <nœud-core>` compte `web01` parmi ses machines, avec une mesure
+  de moins d'une minute ;
+- en maintenance, le proxy disparaît de `--targets` et y revient au `off` ; la
+  maintenance du core est **refusée** sans `--confirm`.
 
 ## 🧪 Exercice
 

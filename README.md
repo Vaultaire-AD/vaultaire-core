@@ -90,7 +90,7 @@ alias vlt='docker exec -it vaultaire-ad /opt/vaultaire/bin/vaultaire_cli'
 
 vlt version                                           # version du core
 vlt create -g Infra infra.acme.lan                    # un groupe et son domaine
-vlt create -u alice.martin infra.acme.lan 'Ch4ngeMe!' 14/03/1990
+vlt create -u alice.martin infra.acme.lan 'Lune-Orange-Velo-42' 14/03/1990
 vlt add -u alice.martin -g Infra
 vlt get -g Infra
 vlt eyes -g                                           # l'arborescence des domaines
@@ -148,7 +148,7 @@ besoin.
 | | |
 | --- | --- |
 | **Go** | **1.26** pour les sept modules (`toolchain go1.26.5`). Un Go plus ancien suffit : `GOTOOLCHAIN=auto`, le défaut, télécharge le toolchain réclamé. |
-| **GCC, `pam-devel`, `libcurl-devel`, `libxcrypt-devel`** | Modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) — `libpam0g-dev`, `libcurl4-openssl-dev` sur Debian/Ubuntu |
+| **GCC, `pam-devel`, `libxcrypt-devel`** | Modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) — `libpam0g-dev`, `libcrypt-dev` sur Debian/Ubuntu. Ils ne se chargent que sur un poste dont la glibc est au moins celle de la machine qui les compile : les releases en portent un jeu par famille, compilé sur Rocky 9 et sur Ubuntu 22.04 |
 | **Docker / Docker Compose** | ≥ 24.x |
 | **Git** | ≥ 2.30 |
 

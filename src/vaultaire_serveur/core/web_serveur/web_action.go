@@ -148,6 +148,10 @@ var actionsFormulaire = map[string]string{
 	// cluster
 	"set_node_exposure": "cluster.set_node_exposure",
 	"set_node_groups":   "cluster.set_node_groups",
+	// Maintenance, purge, oubli (TO-DO 146, 147).
+	"set_maintenance": "cluster.set_maintenance",
+	"purge_node":      "cluster.purge",
+	"forget_node":     "cluster.forget",
 
 	// Les relais d'un proxy (TO-DO 141). Les mêmes actions que
 	// « vlt cluster relais » : c'est le registre qui contrôle write:relay.

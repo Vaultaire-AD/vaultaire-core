@@ -72,6 +72,13 @@ func ExecuterAction(nom string, params action.Params, groupIDs []int, sender str
 		return "Erreur interne : l'action " + inconnue.Nom + " n'est pas enregistrée."
 	}
 
+	// Une demande de confirmation n'est pas une erreur : rien n'a échoué, rien
+	// n'a été fait, et le motif dit quoi taper (TO-DO 161).
+	var attente *action.ErrConfirmationRequise
+	if errors.As(err, &attente) {
+		return "⚠ Confirmation requise — " + attente.Motif
+	}
+
 	return "Erreur : " + err.Error()
 }
 

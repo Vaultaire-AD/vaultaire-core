@@ -164,7 +164,46 @@ jobs:
           go vet ./...
 
   # --------------------------------------------------------------------
-  # 4. Le verdict
+  # 4. La DLL du Credential Provider, éprouvée sous wine (TO-DO 149)
+  # --------------------------------------------------------------------
+  #
+  # Le job précédent compile l'agent Go ; la DLL, elle, est en C++ et n'était
+  # fabriquée qu'à la main, par build.sh. Les deux défauts des TO-DO 139 et 140
+  # — une dépendance manquante, une inscription sous le CLSID « { » — n'ont été
+  # vus qu'à l'écran de connexion d'un vrai Windows Server.
+  #
+  # Ici : build-cp.sh (imports et formats), puis essai-wine.sh — inscription par
+  # regsvr32, GUID sous les deux clés, activation par COM, suite d'appels de
+  # LogonUI jouée par un faux LogonUI (agent absent, muet, en marche), trace,
+  # retrait. Ce n'est pas LogonUI : la tuile reste une recette manuelle.
+  #
+  # wine64 et wine seulement, sans architecture i386 : la DLL et le faux
+  # LogonUI sont en 64 bits. « bash » devant les scripts : ils sont en 100644
+  # dans le dépôt (le clone de travail est sur NTFS).
+  credential-provider:
+    name: "🪟 Credential Provider sous wine"
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: src/vaultaire_client_windows/credential_provider
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: mingw-w64 et wine
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends mingw-w64 wine64 wine
+          x86_64-w64-mingw32-g++ --version | head -n1
+          wine --version
+
+      - name: Fabrication de la DLL (contrôles des imports et des formats)
+        run: bash build-cp.sh build
+
+      - name: Essai sous wine
+        run: bash essai-wine.sh build/VaultaireCredentialProvider.dll
+
+  # --------------------------------------------------------------------
+  # 5. Le verdict
   # --------------------------------------------------------------------
   #
   # Un seul job à exiger dans les règles de protection de branche : la liste
@@ -173,7 +212,7 @@ jobs:
     name: "📊 Verdict des tests"
     runs-on: ubuntu-latest
     if: always()
-    needs: [modules, tests, croise-windows]
+    needs: [modules, tests, croise-windows, credential-provider]
     steps:
       - name: Résumé
         run: |
@@ -187,10 +226,11 @@ jobs:
             echo "| Découverte des modules | ${{ needs.modules.result }} |"
             echo "| Tests (\`go build\`, \`go vet\`, \`go test -race\`) | ${{ needs.tests.result }} |"
             echo "| Compilation croisée Windows | ${{ needs.croise-windows.result }} |"
+            echo "| Credential Provider sous wine | ${{ needs.credential-provider.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Échouer si un contrôle a échoué
-        if: needs.modules.result != 'success' || needs.tests.result != 'success' || needs.croise-windows.result != 'success'
+        if: needs.modules.result != 'success' || needs.tests.result != 'success' || needs.croise-windows.result != 'success' || needs.credential-provider.result != 'success'
         run: |
           echo "::error::des tests ont échoué sur dev — voir les jobs ci-dessus"
           exit 1

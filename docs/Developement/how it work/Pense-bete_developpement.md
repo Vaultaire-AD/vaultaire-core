@@ -48,6 +48,7 @@ Dans le même passage que le code — pas « après ».
 |---|---|
 | une action, un droit | [`Utilisation/Actions_et_Permissions.md`](../../Utilisation/Actions_et_Permissions.md), [`Utilisation/MAN.md`](../../Utilisation/MAN.md) |
 | une commande `vlt` | [`Utilisation/MAN.md`](../../Utilisation/MAN.md), et la formation si le geste est enseigné |
+| **une fonctionnalité nouvelle**, visible d'un administrateur | le [parcours de formation](../../training/README.md) — **obligatoire**, voir ci-dessous |
 | une trame Ducky | le chapitre de [`ducky-network/`](./ducky-network/README.md) correspondant |
 | le cluster, le proxy, le relais | [`docs/proxy/`](../../proxy/README.md) et `ducky-network/04-cluster/` |
 | les GPO | [`GPO.md`](./GPO.md) |
@@ -56,6 +57,27 @@ Dans le même passage que le code — pas « après ».
 | une dépendance (ajout, retrait, montée de version) | `./automatisation/dependances.sh`, et l'explication dans [`dependances.roles`](../dependances.roles) |
 | un mot de vocabulaire | [`Utilisation/Lexique.md`](../../Utilisation/Lexique.md) |
 | une nouvelle page de doc | l'index [`docs/README.md`](../../README.md) |
+
+### Toute fonctionnalité nouvelle entre dans la formation
+
+Une commande, une page, une option ou un comportement qu'un administrateur
+peut voir ou utiliser s'ajoute au [parcours de formation](../../training/README.md)
+**dans le même passage que le code**. Une fonctionnalité que la formation
+ignore n'existe pas pour qui apprend Vaultaire — et un geste enseigné qui ne
+marche plus casse la formation sans que personne ne le voie (TO-DO 151).
+
+- **Où** : dans le jalon qui enseigne déjà le sujet voisin — une étape de plus,
+  et une ligne dans « ✅ Vous avez réussi si » qui la vérifie. Un sujet sans
+  jalon voisin en reçoit un nouveau, dans le chapitre qui convient : sommaire
+  du chapitre, sommaire de [`training/README.md`](../../training/README.md) et
+  liens précédent / suivant mis à jour, compte des jalons compris.
+- **Comment** : dans le fil rouge Acme, avec des commandes **qui passent telles
+  quelles** sur le laboratoire de la formation. Un mot de passe d'exemple passe
+  la politique : `exemples_documentation_test.go` le vérifie.
+- **Ce qui n'y va pas** : ce qui ne change rien pour un administrateur —
+  refonte interne, test, chaîne de fabrication, intégration continue. Le dire
+  dans l'entrée de `DO/` (« formation : sans objet, interne »), pour que
+  l'absence soit une décision et non un oubli.
 
 Règle du lecteur, pas du sujet : « comment ça marche » va dans
 `how it work/`, « que taper » dans `Utilisation/`, « comment l'exploiter » dans
@@ -67,7 +89,8 @@ Trois gestes, toujours dans le même passage :
 
 1. **Retirer** l'entrée de `TO-DO.md` et l'écrire dans
    `DO/<version en cours>/<version>.md` : ce qui a été fait, ce qui a été
-   mesuré, ce qui n'a **pas** été traité.
+   mesuré, ce qui n'a **pas** été traité — et le **jalon de formation** qui
+   enseigne la fonctionnalité, ou « formation : sans objet » et pourquoi.
 2. **Renuméroter** ce qui reste (numéro neuf) et mettre à jour le compteur.
 3. **Consigner** en haut de `docs/Version/<majeure>/<mineure>.md`, en une ligne
    qui parle à un exploitant, pas à un compilateur.
@@ -91,6 +114,7 @@ le **quoi** et le **pourquoi**, et cite le numéro de tâche.
   personne en dehors du code.
 - Le **relevé** des défauts croisés en chemin : c'est ainsi qu'ils se perdent.
 - `gofmt`, parce que rien ne le rappelle avant l'intégration continue.
-- La page de formation quand le geste enseigné change.
+- La **formation** : un jalon pour toute fonctionnalité nouvelle, et la mise
+  à jour du jalon quand un geste enseigné change.
 - Un changement de version de série : la procédure est dans
   [`exploitation/Changement_de_version.md`](../../exploitation/Changement_de_version.md).

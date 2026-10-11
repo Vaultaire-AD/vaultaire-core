@@ -349,8 +349,16 @@ Le point 26 de [`TO-DO.md`](../TO-DO.md) demandait aussi :
 Le second — « user X s'est connecté en LDAPS via le compte X » — est fait
 depuis le TO-DO 145 : la ligne de bind réussi porte le canal.
 
-Un reste relevé en traitant le 145 : des écritures directes sur la sortie
-standard, hors du journal (**TO-DO 153**).
+Un reste relevé en traitant le 145 — des écritures directes sur la sortie
+standard, hors du journal — est traité *(2.3, TO-DO 153)*. La règle est gardée
+par un test, `core/logs/ecriture_directe_test.go` : hors de `core/command`,
+`core/testrunner`, `main` et `core/logs`, **aucun** `fmt.Print*`, `os.Stdout`,
+`os.Stderr`, fonction du paquet `log` ni `print`/`println`. Seule exception :
+`log.Fatal` dans les trois fichiers d'**amorçage** (`create_data_base.go`,
+`create_default_admin_user.go`, `startWEBserver.go`), où s'arrêter est voulu.
+Partout ailleurs, une erreur se **rend** ou se **journalise** : un `log.Fatal`
+dans la goroutine DNS ou sur le chemin d'enrôlement arrêtait tout le core, sans
+une ligne au journal.
 
 Le second est traité *(2.3, TO-DO 154)* : le tampon mémoire — les 10 000
 dernières lignes de ce core, repli de `vlt logs` quand la base ne répond pas —

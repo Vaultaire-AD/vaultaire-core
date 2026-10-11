@@ -35,6 +35,15 @@ en plus un tunnel machine). Le port de `-join` vaut 22 par défaut.
    > peut apparaître : il vient de l'ancienne méthode d'échange de clé et n'empêche
    > pas l'installation, la clé ayant été posée au jalon précédent.
 
+   > 🛟 **Ce que le script vérifie avant de toucher à l'authentification.** Que
+   > les modules PAM envoyés **se chargent** sur `web01` — le core envoie ceux de
+   > sa famille de distributions —, que l'agent peut démarrer, et que `sshd`
+   > accepte sa nouvelle configuration. Si l'une de ces vérifications échoue, il
+   > s'arrête en le disant, et la machine reste telle qu'elle était : `root` s'y
+   > connecte comme avant. Les piles PAM et `sshd_config` d'origine sont gardées
+   > sous `.avant-vaultaire` : c'est par elles qu'on sort une machine de
+   > Vaultaire.
+
 2. **Sur `web01`**, vérifiez l'adresse du serveur dans la configuration de
    l'agent, puis démarrez-le :
 
@@ -60,6 +69,8 @@ en plus un tunnel machine). Le port de `-join` vaut 22 par défaut.
 ## ✅ Vous avez réussi si
 
 - `get -c` liste la machine ;
+- sur `web01`, `ls /etc/pam.d/*.avant-vaultaire` montre les piles d'origine
+  (`login`, `sshd`) ;
 - `status -c` la montre connectée ;
 - `get -g Infra` la compte parmi ses clients.
 

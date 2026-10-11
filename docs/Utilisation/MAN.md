@@ -350,18 +350,32 @@ Exemple : `create -g "IT_Group" "it.company.com"`
 ### 5.4 Utilisateur
 
 ```bash
-create -u username domain password birthdate(JJ/MM/AAAA) email
-# Option : firstname.lastname pour remplir prénom/nom
-create -u user.name domain password birthdate email
-# Option : firstname lastname en fin pour priorité
-create -u user.name domain password birthdate email firstname lastname
+create -u <identifiant> <domaine> <motdepasse> <JJ/MM/AAAA> [prénom] [nom] [--permanent]
 ```
+
+Sans prénom ni nom, ils se déduisent d'un identifiant `prénom.nom`. Il n'y a
+**pas** d'argument e-mail : un cinquième mot serait lu comme le prénom.
+
+Le mot de passe passe la politique de robustesse : **12 caractères** au moins
+par défaut, et ni le nom du compte, ni un libellé de son domaine, ni
+« vaultaire », ni un grand classique (« password », « azerty »…). Il est
+**provisoire** : valable 24 h, à changer par son titulaire sur le portail.
+
+**`--permanent`** crée un mot de passe **définitif** : c'est celui d'un **compte
+de service** — le compte avec lequel Keycloak, GitLab ou une sonde se lient à
+l'annuaire. Provisoire, il cesserait de fonctionner le lendemain, et personne ne
+viendrait le changer sur le portail. L'option se place n'importe où après
+`-u` ; c'est une dérogation, et le journal la porte en `SECURITY`, avec
+l'administrateur qui l'a faite (`logs --level WARNING`). Sur le portail : la
+liste **Nature du mot de passe** du formulaire de création, sur **Provisoire**
+par défaut.
 
 Exemples :
 
 ```bash
-create -u alice company.com secret123 06/02/1992 alice@company.com
-create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
+create -u alice company.com 'Galet-Hibou-Sapin-24' 06/02/1992
+create -u bob.lenon company.com 'Brume-Violon-Canal-73' 09/12/1988 Bob Lenon
+create -u svc_gitlab company.com 'Rivet-Cobalt-Phare-57' 01/01/2000 --permanent
 ```
 
 ### 5.5 Client
@@ -419,8 +433,12 @@ la ligne `ID=` de `/etc/os-release` ; toute autre est refusée en la nommant —
 une distribution « voisine » ne reçoit pas le script d'une autre, il touche à
 PAM. Sur Debian et Ubuntu, `openssh-server` doit être installé, les piles PAM de
 la distribution sont **gardées** (une ligne y est insérée, l'original copié sous
-`.avant-vaultaire`), et l'installation s'arrête avant d'y toucher si les modules
-envoyés ne se chargent pas sur le poste.
+`.avant-vaultaire`). Sur Rocky, les piles sont réécrites, mais les originales
+sont copiées sous `.avant-vaultaire` *(2.3)*. Les deux scripts s'arrêtent **avant**
+de toucher à NSS, SSH et PAM si les modules envoyés ne se chargent pas sur le
+poste, et remettent `sshd_config` si `sshd -t` le refuse. Le core envoie un jeu
+de modules par famille (`rocky/`, `debian/`), compilé sur sa plus ancienne
+version prise en charge *(TO-DO 173)*.
 
 **Le type de client n'est plus demandé.** Cette commande ne peut créer qu'un
 **agent** — un programme installé sur une machine du parc, dont le core génère la
@@ -814,10 +832,21 @@ delete -gpo "gpo_name"
 ### 12.1 Changer le mot de passe d’un utilisateur
 
 ```bash
-update -u "username" -p <nouveau mot de passe>
+update -u "username" [--permanent] -p <nouveau mot de passe>
 ```
 
 Le mot de passe occupe **tous les arguments restants** : les espaces qu’il contient sont conservés.
+
+Posé par un administrateur, le nouveau mot de passe est **provisoire** (24 h, à
+changer par le titulaire). **`--permanent`** le rend **définitif** et lève un
+éventuel provisoire en cours : c'est ainsi qu'on renouvelle le secret d'un
+compte de service sans le recasser le lendemain. L'option se place **avant**
+`-p` — après, elle ferait partie du mot de passe. Journalisé en `SECURITY`.
+Sur le portail : la liste **Nature du mot de passe** de la fiche du compte.
+
+```bash
+update -u svc_gitlab --permanent -p 'Orage-Tilleul-Vague-84'
+```
 
 > ⚠️ Ce manuel documentait `update -u "username" -uu "new_username"`. Le renommage **n’existe pas en ligne de commande** ; il se fait depuis la page profil ou l’administration web, qui reporte le nom sur les sessions ouvertes et émet un jeton neuf — ce qu’un simple `UPDATE` ne ferait pas.
 
@@ -1048,7 +1077,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 
 | Besoin | Commande type |
 |--------|----------------|
-| Créer un user | `create -u user domain pass JJ/MM/AAAA email` |
+| Créer un user | `create -u <id> <domaine> <motdepasse> JJ/MM/AAAA [prénom] [nom] [--permanent]` |
 | Créer un groupe | `create -g "Nom" "domain"` |
 | Voir les sessions | `status -u` / `status -c` |
 | Détail d’un groupe | `get -g "group_name"` |
@@ -1652,6 +1681,10 @@ La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’int
 ```bash
 cluster list                  # tous les nœuds enregistrés
 cluster list <role>           # nœuds actifs d'un rôle
+cluster show <nœud>           # la fiche d'un nœud : accès, rotation, sessions d'un core
+cluster maintenance <nœud> <on|off> [--confirm]   # hors de toutes les listes, sans quitter le cluster
+cluster purge <nœud> [--etalement <s>]           # vide un core en maintenance de ses sessions
+cluster forget <nœud>         # oublie un nœud hors ligne, sans attendre le délai de purge
 cluster purge-delay           # délai avant suppression d'un service ou d'un nœud parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 
@@ -1700,6 +1733,63 @@ les agents. `cluster list` montre les deux : **ACCÈS AGENTS** est ce qui est
 distribué, **VU PAR LE NŒUD** ce que la machine rapporte — renseigné seulement
 quand il diffère, parce que c'est leur écart qu'on cherche quand une connexion ne
 passe pas.
+
+### Ce que porte un core *(TO-DO 148)*
+
+La colonne **SESSIONS** de `cluster list` porte ce qu'un **core** publie de
+lui-même, à chacun de ses battements : ses sessions vivent dans sa mémoire, et
+aucun autre core ne les voit.
+
+```
+SESSIONS   42 m · 3 c · 2 p   42 machines au tunnel ouvert (une machine compte une fois),
+                              3 sessions de compte de l'annuaire, 2 poignées de main en cours
+```
+
+`cluster show <nœud>` en donne le détail — dont le nombre de **tunnels**, plus
+grand que celui des machines quand des `--fetch-key` de sshd sont en cours — et
+l'**âge** de la mesure. Les sessions SSH ouvertes sur les postes ne sont pas des
+« sessions de compte » : elles passent dans le tunnel de leur machine.
+
+La colonne est vide pour un proxy, et pour un core qui n'a rien publié depuis
+trois battements (trois minutes au moins) : un core arrêté, ou d'une version
+antérieure. Jamais zéro par défaut — un nœud qu'on croirait vide est celui
+qu'on purgerait. Mesure **déclarative**, comme celle des relais : elle
+s'affiche, elle n'ordonne pas la liste servie aux agents. Les lignes vont dans
+la même table que les mesures des proxies, purgée par `cluster
+metrics-retention`.
+
+### Maintenance, purge, oubli *(TO-DO 146 et 147)*
+
+**`cluster maintenance <nœud> on`** retire le nœud de **toutes** les listes : celle
+des agents, celle des proxies (et donc les cibles `source: cores` de leurs relais),
+celle des services. Il reste dans le cluster, continue de battre, et `cluster
+list` le marque `· maint.`. Sa rotation et sa priorité ne sont pas touchées : `off`
+le rend tel qu'il était.
+
+> ⚠️ Le **dernier core** servi ne passe en maintenance qu'avec `--confirm` (ou le
+> bouton Confirmer de la page) : sans lui, un poste qui redemande sa liste n'a
+> plus que son fichier de configuration.
+
+Les sessions déjà ouvertes **restent** sur un nœud en maintenance. **`cluster
+purge <nœud>`** les déplace — sur un core en maintenance seulement :
+
+1. à son prochain battement, le core demande à chaque machine connectée de
+   redemander sa liste ; un agent à jour, ne l'y trouvant plus, s'en va seul ;
+2. une minute après, le reste est fermé, étalé sur 60 s (`--etalement <s>`, de 0
+   à 3600) pour ne pas faire reconnecter un site dans la même seconde.
+
+Les sessions du **portail** et de l'**API** ne sont pas touchées : on purge depuis
+la page du core qu'on vide. Suivi : `cluster show <nœud>` (purge en cours, puis
+terminée avec le nombre de sessions fermées ; le compteur SESSIONS descend). Un
+agent qui ne connaît que son fichier de configuration peut revenir : il se voit
+dans le compteur.
+
+**`cluster forget <nœud>`** retire un nœud parti sans attendre le délai de purge
+(24 h) : un proxy de test démonté, par exemple. Refusé tant que le nœud est en
+ligne ou a battu depuis moins de trois minutes. Partent avec lui : son adresse
+déclarée, sa priorité, son affinité, sa maintenance et les relais que le core lui
+demandait — le compte rendu les nomme. S'il revient, il se réinscrit seul, aux
+valeurs par défaut.
 
 ### Ce qu'un proxy relaie
 
@@ -1889,6 +1979,7 @@ session web, synchronisation des groupes.
 ```bash
 settings list                  # les durées, leur valeur et leur défaut
 settings set <clé> <valeur>    # règle une durée
+settings set <clé> <valeur> --confirm   # la pose malgré un avertissement (ci-dessous)
 settings reset <clé>           # la ramène à son défaut codé
 ```
 
@@ -1936,6 +2027,24 @@ question qu'on se pose devant un serveur qu'on ne connaît pas.
 > (5 et 10 min) : un battement de six minutes ou plus coupait tout le parc en
 > boucle. **Un agent antérieur à la 2.2 garde ses dix minutes** : ne dépassez pas
 > 8 tant que le parc n'est pas à jour.
+>
+> **Au-delà de 8, le réglage le vérifie** *(TO-DO 161)*. `settings set
+> check_online_minutes 10` compte les machines dont la version déclarée est
+> antérieure à la 2.2, ou inconnue (jamais déclarée, illisible), en nomme cinq
+> avec leur version, et **ne change rien** :
+>
+> ```
+> ⚠ Confirmation requise — check_online_minutes à 10 min : RIEN n'a été changé.
+> 2 machine(s) : pc-b (2.1.4), pc-c (jamais déclarée) ne suivent pas cette cadence — …
+> Mettez ces machines à jour, ou confirmez : « settings set check_online_minutes 10 --confirm ».
+> ```
+>
+> Ce n'est pas un refus : `--confirm` (ou le bouton de la page des durées) pose
+> la valeur, et une ligne `WARNING` du journal dit qui l'a assumée. Une base
+> illisible demande aussi confirmation — ne pas pouvoir compter n'est pas
+> compter zéro. `settings list` répète l'avertissement sous la valeur, tant que
+> des machines ne suivent pas. Proxies et Nexus sont comptés comme les postes :
+> ils emploient le même tunnel.
 
 ### Ce qui n'est pas ici
 

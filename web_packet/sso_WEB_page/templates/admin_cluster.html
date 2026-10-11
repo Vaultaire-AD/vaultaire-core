@@ -30,8 +30,21 @@
       <div class="app-content">
         <div class="app-container animate-in">
           <h1>Cluster</h1>
-          {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
-          {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+          {{ if .Message }}<div class="alert alert-success" style="white-space:pre-line">{{ .Message }}</div>{{ end }}
+          {{ if .Error }}<div class="alert alert-error" style="white-space:pre-line">{{ .Error }}</div>{{ end }}
+          {{/* Une demande que l'action n'a PAS appliquée : le dernier core mis en
+               maintenance (TO-DO 147). Le bouton la rejoue, « confirm » en plus. */}}
+          {{ with .Confirmation }}
+          <div class="alert alert-warning">
+            <p style="white-space:pre-line">{{ .Motif }}</p>
+            <form method="post" action="/admin/cluster?noeud={{ .Champs.node }}" style="display:inline">
+              <input type="hidden" name="action" value="{{ .Action }}">
+              {{ range $cle, $valeur := .Champs }}<input type="hidden" name="{{ $cle }}" value="{{ $valeur }}">{{ end }}
+              <button type="submit" class="btn btn-primary">Confirmer malgré tout</button>
+            </form>
+            <a href="/admin/cluster?noeud={{ .Champs.node }}" class="btn btn-ghost">Annuler</a>
+          </div>
+          {{ end }}
 
           <h2 class="h2">Nœuds enregistrés</h2>
           <p class="muted small">Cliquez un nœud pour ouvrir sa fiche : adresse d'accès, priorité, rotation et groupes servis.</p>
@@ -45,6 +58,7 @@
                   <th>Accès des agents</th>
                   <th>Priorité</th>
                   <th>Sert en priorité</th>
+                  <th>Sessions</th>
                   <th>Relais</th>
                   <th>Trafic</th>
                   <th>Dernier battement</th>
@@ -55,7 +69,10 @@
                 <tr{{ if and $.Selection (eq $.Selection.Hostname .Hostname) }} class="cluster-choisi"{{ end }}>
                   <td><a href="/admin/cluster?noeud={{ .Hostname }}">{{ .Hostname }}</a></td>
                   <td>{{ if eq .Role "vaultaire_nexus" }}Nexus{{ else if eq .Role "vaultaire_web" }}Interface web{{ else }}{{ .Role }}{{ end }}</td>
-                  <td>{{ .Status }}</td>
+                  <td>{{ .Status }}
+                    {{ with .Maintenance }}{{ if .Active }}<br><span class="badge">maintenance</span>
+                      {{ if .PurgeEnCours }}<span class="muted small">purge en cours</span>{{ end }}{{ end }}{{ end }}
+                  </td>
                   <td>
                     {{ if .LienService }}<a href="{{ .LienService }}" target="_blank" rel="noopener noreferrer">{{ .LienService }}</a>
                     {{ else if .ExpositionDeclaree }}<strong>{{ .Acces }}</strong> <span class="muted small">déclaré</span>
@@ -67,6 +84,11 @@
                     {{ if .GroupesAffins }}{{ range $i, $g := .GroupesAffins }}{{ if $i }}, {{ end }}{{ $g }}{{ end }}
                     {{ else }}<span class="muted small">tout le parc</span>{{ end }}
                   </td>
+                  {{/* Les sessions qu'un CORE publie avec son battement
+                       (TO-DO 148) : m machines au tunnel ouvert, c sessions de
+                       compte, p poignées de main. Vide sur un proxy, et sur un
+                       core qui ne publie plus — jamais zéro par défaut. */}}
+                  <td>{{ with .Sessions }}{{ .Lisible }}{{ else }}<span class="muted small">—</span>{{ end }}</td>
                   {{/* Les compteurs remontés par le nœud lui-même (04_05).
                        Vide sur un core — il ne relaie rien — et sur un proxy
                        silencieux depuis plus de trois minutes : un compteur de
@@ -105,6 +127,101 @@
               l'emporte, et c'est elle que reçoivent les agents. Elle est conservée tant que le nœud
               n'est pas oublié (délai de purge du cluster, 24 h d'absence par défaut).
             </p>
+
+            {{/* MAINTENANCE, PURGE, OUBLI (TO-DO 146, 147). Les boutons sont
+                 toujours montrés, comme les autres réglages de la fiche : c'est
+                 l'action qui contrôle write:cluster, et qui dit ce qui manque. */}}
+            {{ $enMaintenance := and .Maintenance .Maintenance.Active }}
+            <div class="card" style="margin:1rem 0">
+              <h3>Maintenance</h3>
+              {{ with .Maintenance }}
+                {{ if .Active }}
+                <p class="alert alert-warning">En maintenance depuis le {{ .Depuis.Local.Format "2006-01-02 15:04:05" }},
+                  par {{ .Par }} : retiré de la liste des agents, des proxies et des services. Il reste dans le
+                  cluster et continue de battre.</p>
+                {{ end }}
+                {{ if .PurgeEnCours }}
+                <p class="muted small">Purge demandée le {{ .PurgeDemandee.Local.Format "2006-01-02 15:04:05" }} par
+                  {{ .PurgePar }} — <strong>en cours</strong> : le core la lance à son battement. Le compteur de
+                  sessions ci-dessous descend.</p>
+                {{ else if .PurgeFaite }}
+                <p class="muted small">Dernière purge terminée le {{ .PurgeTerminee.Local.Format "2006-01-02 15:04:05" }} :
+                  {{ .Fermees }} session(s) fermée(s) par la purge — les autres étaient parties d'elles-mêmes.</p>
+                {{ end }}
+              {{ end }}
+
+              {{ if $enMaintenance }}
+              <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" style="display:inline">
+                <input type="hidden" name="action" value="set_maintenance">
+                <input type="hidden" name="node" value="{{ .Hostname }}">
+                <input type="hidden" name="mode" value="off">
+                <button type="submit" class="btn btn-ghost">Lever la maintenance</button>
+              </form>
+                {{ if eq .Role "core" }}
+              <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" style="display:inline; margin-left:0.6rem">
+                <input type="hidden" name="action" value="purge_node">
+                <input type="hidden" name="node" value="{{ .Hostname }}">
+                <input name="spread" type="number" min="0" max="3600" placeholder="60" style="width:6rem"
+                       aria-label="Étalement en secondes">
+                <button type="submit" class="btn btn-primary">Purger ses sessions</button>
+              </form>
+              <p class="muted small">
+                La purge prévient chaque machine (« redemande ta liste ») : un agent à jour quitte seul ce core,
+                absent de sa liste. Une minute après, le reste est fermé, étalé sur la durée indiquée (60 s par
+                défaut) pour ne pas faire reconnecter un site entier dans la même seconde. Les sessions du
+                portail et de l'API ne sont pas touchées.
+              </p>
+                {{ end }}
+              {{ else }}
+              <form method="post" action="/admin/cluster?noeud={{ .Hostname }}">
+                <input type="hidden" name="action" value="set_maintenance">
+                <input type="hidden" name="node" value="{{ .Hostname }}">
+                <input type="hidden" name="mode" value="on">
+                <button type="submit" class="btn btn-ghost">Mettre en maintenance</button>
+              </form>
+              <p class="muted small">
+                Le nœud sort de <strong>toutes</strong> les listes servies, sans que sa rotation ni sa priorité
+                soient touchées : lever la maintenance le rend tel qu'il était. Les sessions déjà ouvertes y
+                restent — la purge les déplace.
+              </p>
+              {{ end }}
+
+              {{ if ne .Status "online" }}
+              <form method="post" action="/admin/cluster" style="margin-top:0.8rem">
+                <input type="hidden" name="action" value="forget_node">
+                <input type="hidden" name="node" value="{{ .Hostname }}">
+                <button type="submit" class="btn btn-ghost">Oublier ce nœud</button>
+                <span class="muted small">Hors ligne : sa ligne, son adresse déclarée, sa priorité, son affinité et
+                  ses relais partent maintenant, sans attendre le délai de purge du cluster. Refusé s'il a battu
+                  depuis moins de trois minutes.</span>
+              </form>
+              {{ end }}
+            </div>
+
+            {{/* LES SESSIONS D'UN CORE (TO-DO 148). Avec l'âge de la mesure :
+                 c'est ce qu'on regarde avant de purger un nœud (TO-DO 147). */}}
+            {{ if eq .Role "core" }}
+            <h3>Sessions</h3>
+            {{ with .Sessions }}
+            <div class="table-wrap">
+              <table class="cluster-liste">
+                <thead><tr><th>Machines</th><th>Tunnels ouverts</th><th>Sessions de compte</th><th>Poignées de main</th><th>Mesure</th></tr></thead>
+                <tbody><tr>
+                  <td>{{ .Machines }}</td><td>{{ .Tunnels }}</td><td>{{ .Comptes }}</td><td>{{ .Poignees }}</td>
+                  <td class="muted small">{{ .Mesure.Format "15:04:05" }}</td>
+                </tr></tbody>
+              </table>
+            </div>
+            <p class="muted small">
+              Publié par le core avec son battement. Une machine compte une fois, quel que soit le nombre de ses
+              tunnels. Les sessions SSH ouvertes sur les postes passent dans le tunnel de leur machine : elles ne
+              sont pas des « sessions de compte ». Mesure <em>déclarative</em> : affichée, elle n'ordonne pas la
+              liste servie aux agents.
+            </p>
+            {{ else }}
+            <p class="muted small">Aucune mesure récente : core arrêté, ou d'une version qui ne publie pas encore ses sessions.</p>
+            {{ end }}
+            {{ end }}
 
             {{/* LES RELAIS DU PROXY (TO-DO 141).
 

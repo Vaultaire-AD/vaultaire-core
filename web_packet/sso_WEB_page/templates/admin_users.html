@@ -46,6 +46,16 @@
         <input name="firstname">
         <label>Nom</label>
         <input name="lastname">
+        <!--
+          Une LISTE et non une case à cocher (TO-DO 144) : une case décochée
+          n'est pas envoyée, et l'absence du champ doit continuer de valoir
+          « provisoire ». La valeur par défaut est la première, et c'est elle.
+        -->
+        <label>Nature du mot de passe</label>
+        <select name="temporary">
+          <option value="oui" selected>Provisoire — le titulaire le change sous 24 h (une personne)</option>
+          <option value="non">Définitif — compte de service (Keycloak, GitLab…), journalisé</option>
+        </select>
         <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Créer</button></div>
       </form>
     </section>

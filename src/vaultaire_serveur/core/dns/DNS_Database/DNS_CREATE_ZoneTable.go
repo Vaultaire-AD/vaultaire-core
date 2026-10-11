@@ -3,7 +3,7 @@ package dnsdatabase
 import (
 	"database/sql"
 	"fmt"
-	"log"
+	"vaultaire/core/logs"
 )
 
 // Crée une table de zone et l'enregistre dans dns_zones
@@ -47,9 +47,9 @@ func CreateZoneTable(db *sql.DB, zone string) error {
 		if err != nil {
 			return fmt.Errorf("erreur insertion dans dns_zones : %v", err)
 		}
-		log.Printf("✅ Zone '%s' enregistrée dans la table '%s'\n", zone, safeTableName)
+		logs.Write_Log("INFO", fmt.Sprintf("dns : zone %s enregistrée (table %s)", zone, safeTableName))
 	} else {
-		log.Printf("ℹ️ Zone '%s' déjà enregistrée avec la table '%s'\n", zone, existingTable)
+		logs.Write_Log("DEBUG", fmt.Sprintf("dns : zone %s déjà enregistrée (table %s)", zone, existingTable))
 	}
 
 	return nil

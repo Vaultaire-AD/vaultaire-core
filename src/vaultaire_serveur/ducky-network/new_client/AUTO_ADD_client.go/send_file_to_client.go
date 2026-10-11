@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"os/exec"
+	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
 
@@ -33,10 +34,11 @@ func envoyerFichierSCPAvecCleSSH(user, privateKeyPath, client_softwareID, host s
 	var scpErr bytes.Buffer
 	cmdSCP.Stderr = &scpErr
 
-	fmt.Println("📦 Envoi du fichier avec SCP...")
+	logs.Write_Log("DEBUG", "autoadd : envoi du client Vaultaire vers "+host+" (scp)")
 	if err := cmdSCP.Run(); err != nil {
 		return fmt.Errorf("❌ Erreur SCP : %v\n%s", err, scpErr.String())
 	}
+	scpErr.Reset()
 	cmdSCP = exec.Command(
 		"sh", "-c",
 		fmt.Sprintf(
@@ -46,11 +48,11 @@ func envoyerFichierSCPAvecCleSSH(user, privateKeyPath, client_softwareID, host s
 	)
 	cmdSCP.Stderr = &scpErr
 
-	fmt.Println("📦 Envoi du fichier avec SCP...")
+	logs.Write_Log("DEBUG", "autoadd : envoi de la configuration "+client_softwareID+" vers "+host+" (scp)")
 	if err := cmdSCP.Run(); err != nil {
 		return fmt.Errorf("❌ Erreur SCP : %v\n%s", err, scpErr.String())
 	}
 
-	fmt.Println("✅ Fichier envoyé avec succès")
+	logs.Write_Log("INFO", "autoadd : client et configuration "+client_softwareID+" copiés sur "+host)
 	return nil
 }

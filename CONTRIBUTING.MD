@@ -124,6 +124,7 @@ Cette rigueur dans les commits rendra la collaboration et la maintenance du proj
   - Les tests passent (unitaires, lint)  
   - Le code respecte les conventions (formatage, commentaires)  
   - La documentation est mise à jour si besoin  
+  - Toute fonctionnalité nouvelle visible d'un administrateur est ajoutée au **parcours de formation** (`docs/training/`) — voir le [pense-bête](./docs/Developement/how%20it%20work/Pense-bete_developpement.md)  
 - Demandez une revue de code à au moins un autre membre de l’équipe.  
 - Corrigez les retours avant fusion.
 

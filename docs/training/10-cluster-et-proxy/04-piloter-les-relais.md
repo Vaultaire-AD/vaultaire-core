@@ -48,6 +48,12 @@ cluster relais <proxy> release
    Deux relais, **appliqué** l'un et l'autre : le premier ajout a pris la main
    en gardant ce qui tournait. La révision est passée à 1.
 
+   > Pourquoi `:1636` et pas `:636` ? Un port haut marche **partout**. Dans le
+   > conteneur `vlt-proxy`, sur un Docker récent en réseau bridge, `:636` serait
+   > accepté aussi, malgré l'UID non root. Pour le savoir sur votre hôte :
+   > `docker exec vlt-proxy cat /proc/sys/net/ipv4/ip_unprivileged_port_start`
+   > — `0`, tout port est permis ; `1024`, ports hauts seulement.
+
 3. Changez un seul réglage, puis demandez une écoute que le proxy ne peut pas
    ouvrir — une adresse que sa machine ne porte pas :
 
@@ -102,11 +108,30 @@ joignable aussitôt.
 > droit est **`write:relay`**, distinct de `write:cluster`. Un proxy peut aussi
 > refuser d'être piloté (`pilotage_par_le_core: false` dans son fichier).
 
+## 🧪 Exercice — fin de chapitre
+
+Le proxy de ce chapitre était un essai. Démontez-le, et faites qu'il disparaisse
+de `vlt cluster list` **aujourd'hui**, pas dans vingt-quatre heures.
+
+<details><summary>Solution</summary>
+
+```bash
+docker compose -f deployments/pre-prod/vlt-proxy/docker-compose.yml down   # sur son hôte
+# attendre trois minutes : un nœud qui vient de battre ne s'oublie pas
+vlt cluster forget <nœud-proxy>
+```
+
+Le compte rendu nomme ce qui part avec lui : son adresse déclarée, son affinité,
+ses relais. S'il revient, il se réinscrit seul, aux valeurs par défaut. Plus tôt,
+la commande refuse : il pourrait être en train de redémarrer.
+</details>
+
 ## 📚 Référence
 
 [`proxy/pilotage.md`](../../proxy/pilotage.md) ·
 [`MAN.md` §21](../../Utilisation/MAN.md) ·
 [protocole, page 4.4](../../Developement/how%20it%20work/ducky-network/04-cluster/04-relais-pilotes.md)
+
 
 ---
 

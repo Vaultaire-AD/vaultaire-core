@@ -21,8 +21,11 @@ import "strings"
 //
 // # Ce que le core NE fait PAS de ces valeurs
 //
-// Il ne les interprète jamais : aucun refus, aucun seuil, aucune comparaison.
-// Elles sont stockées et affichées, rien de plus.
+// Il ne s'en sert jamais pour refuser ou couper une machine. Une seule
+// comparaison existe, et elle ne décide rien : l'avertissement de
+// « settings set check_online_minutes » (TO-DO 161, paquet parcversion), qui
+// compte les machines trop anciennes pour suivre une cadence et demande une
+// confirmation. Elles sont stockées, affichées, et comptées pour prévenir.
 //
 // C'est l'arbitrage du point 39, et il tient à une chose : une règle de
 // comparaison de versions se trompe sur les cas limites, et se tromper ici
