@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **180**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **181**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -159,7 +159,7 @@ rend un compte sans groupe quand la base flanche).
 | 116 | AGENT-UPDATE | Basculement survivable et retour arrière automatique        | À faire — **cœur du lot**, après 112    |
 | 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
-| 22  | SELINUX      | Domaine dédié pour l'agent                                 | En cours                                |
+| 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
 
@@ -294,7 +294,8 @@ porte l'unité de Nexus (`ProtectSystem`, `ProtectHome`, `NoNewPrivileges`,
 dossiers personnels et applique des politiques sur tout le système. Chaque
 directive couperait un appliqueur de GPO — `ProtectHome` tout le scope
 utilisateur, `ProtectSystem=strict` tout dépôt de fichier sous `/etc`,
-`NoNewPrivileges` une transition SELinux (TO-DO 22). Les poser sans les avoir
+`NoNewPrivileges` les transitions SELinux de l'agent vers `useradd_t` et
+`setfiles_t` (TO-DO 22). Les poser sans les avoir
 éprouvées casserait des postes pour une promesse non tenue.
 
 **À faire.** Sur un vrai poste, une directive à la fois, la suite de GPO de la
@@ -325,13 +326,25 @@ Une fois tranché : chiffrement d'enveloppe des colonnes `private_key_data` et `
 
 **Ne pas commencer par le code.** Ce point demande une décision d'exploitation, pas une implémentation.
 
-### 22. [EN COURS] [SELINUX] Politique pour les clients
+### 180. [SELINUX] Confiner l'agent : règles des GPO, puis enforcing
 
-**Contexte.** Le module NSS lit désormais un fichier et ouvre un socket. Sous `sshd_t`, SELinux refuse : d'où « Invalid user » sans aucun journal Vaultaire, alors que `getent` lancé à la main réussit. Détails : `docs/exploitation/selinux.md`.
+**Origine** (reste du **22**). L'agent a son domaine, `vaultaire_t`, mais il est
+installé **permissif** : ses règles sont écrites d'après le code et n'ont jamais
+tourné, et celles des appliers de GPO ne sont pas écrites du tout — ils écrivent
+dans des fichiers de types très variés (`sshd_config.d`, `sudoers.d`,
+`sysctl.d`, dépôts, ancres de certificats, règles d'audit, journald, resolved,
+grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit.
 
-**Fait.** `deployments/selinux/` : `collect.sh`, `vaultaire.te`, `vaultaire.fc`, `install.sh`.
+**À faire, sur une Rocky de test** (`A_TESTER.md`, § 81) :
 
-**Reste à faire.** Un domaine dédié pour l'agent — il tourne aujourd'hui en `unconfined_service_t`.
+1. `deployments/selinux/install.sh`, puis faire vivre l'agent : la suite de GPO
+   de la formation, une révocation, un provisionnement de compte.
+2. `collect.sh --agent` : chaque couple (type, classe, permissions) refusé.
+   Ajouter à `vaultaire.te`, type par type, ceux qu'une GPO du produit
+   justifie ; un refus qu'aucune ne justifie désigne une action inattendue de
+   l'agent — à comprendre, pas à accorder. `/etc/selinux/config` reste refusé.
+3. Quand une collecte complète ne rend plus rien : `install.sh
+   --agent-enforcing`, puis la même suite, en enforcing.
 
 ### 167. [RÉVOCATION] [WINDOWS] Windows et les services n'acquittent aucun ordre
 

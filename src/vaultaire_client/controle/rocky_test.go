@@ -381,3 +381,23 @@ func TestUneSeuleRecetteDesModulesNatifs(t *testing.T) {
 		t.Error("la recette ne vérifie plus la version de glibc exigée")
 	}
 }
+
+// TO-DO 22 : le binaire et les modules arrivent par « mv », qui garde
+// l'etiquette SELinux du fichier source. Sans restorecon, l'agent ne tourne
+// pas dans son domaine (vaultaire_t), et la politique Vaultaire refuse la
+// resolution NSS des comptes du domaine.
+func TestLesScriptsReEtiquettentCeQuIlsDeplacent(t *testing.T) {
+	for _, chemin := range []string{scriptRocky, scriptDebian} {
+		script := lire(t, chemin)
+		mv := strings.Index(script, `mv -f "$SRC/vaultaire_client/vaultaire_client" "$R/usr/bin/"`)
+		etiquette := strings.Index(script, "restorecon -F /usr/bin/vaultaire_client")
+		pam := strings.Index(script, `log_info "Configuration de NSS..."`)
+		if mv < 0 || etiquette < 0 || pam < 0 {
+			t.Errorf("%s : repère introuvable (mv %d, restorecon %d, NSS %d)", chemin, mv, etiquette, pam)
+			continue
+		}
+		if !(mv < etiquette && etiquette < pam) {
+			t.Errorf("%s : le restorecon du binaire doit suivre son déplacement et précéder NSS", chemin)
+		}
+	}
+}

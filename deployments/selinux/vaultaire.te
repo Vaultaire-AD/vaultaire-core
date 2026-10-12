@@ -1,4 +1,4 @@
-policy_module(vaultaire, 1.0.0)
+policy_module(vaultaire, 1.1.0)
 
 ########################################################################
 #
@@ -63,6 +63,16 @@ require {
 	type sshd_t;
 	type local_login_t;
 
+	# Les fichiers systeme que l'agent ecrit lui-meme (domaine dedie, plus
+	# bas). Types de base, presents dans toute politique de reference.
+	type var_run_t;
+	type var_log_t;
+	type var_lib_t;
+	type etc_t;
+	type passwd_file_t;
+	type shadow_t;
+	attribute userdomain;
+
 	class sock_file { write getattr };
 	class unix_stream_socket connectto;
 	class dir { search getattr open read write add_name };
@@ -92,6 +102,158 @@ files_pid_file(vaultaire_var_run_t)
 # /var/log/vaultaire — journaux de l'agent ET des modules PAM.
 type vaultaire_log_t;
 logging_log_file(vaultaire_log_t)
+
+# /etc/vaultaire_client — l'identite de la machine : sa CLE PRIVEE, la cle du
+# core, client_conf.json (TO-DO 22).
+#
+# Un type distinct de vaultaire_conf_t, parce que les deux n'ont pas les memes
+# lecteurs : la carte des UID est lue par TOUS les domaines NSS, la cle privee
+# par l'agent SEUL. En etc_t, comme jusqu'ici, n'importe quel domaine autorise
+# a lire la configuration systeme pouvait lire la cle qui authentifie la
+# machine aupres du core.
+type vaultaire_secret_t;
+files_type(vaultaire_secret_t)
+
+# /var/lib/vaultaire — l'etat de l'agent : GPO appliquees, revocations.
+type vaultaire_var_lib_t;
+files_type(vaultaire_var_lib_t)
+
+########################################################################
+# Le domaine de l'agent (TO-DO 22)
+########################################################################
+#
+# Jusqu'ici, /usr/bin/vaultaire_client portait bin_t et l'agent tournait en
+# unconfined_service_t, le domaine de tout service sans politique. Deux
+# consequences :
+#
+#   - les regles NSS et PAM plus bas devaient autoriser la connexion a
+#     unconfined_service_t — c'est-a-dire aux sockets de N'IMPORTE QUEL service
+#     non confine de la machine, pas seulement a celui de l'agent ;
+#   - rien ne distinguait l'agent dans les journaux d'audit.
+#
+# L'agent a maintenant son domaine, vaultaire_t, dans lequel systemd le fait
+# entrer en executant vaultaire_exec_t.
+#
+# # PERMISSIVE a l'installation
+#
+# install.sh le declare permissif (« semanage permissive -a vaultaire_t ») :
+# rien n'est bloque, tout refus est JOURNALISE. Les regles ci-dessous sont
+# ecrites d'apres le code ; elles n'ont jamais tourne sur une vraie machine, et
+# l'agent applique des GPO qui ecrivent un peu partout dans /etc. Un refus en
+# enforcing couperait une revocation ou une GPO sans bruit.
+#
+# Le passage en enforcing est un GESTE, apres une collecte (collect.sh) sur une
+# machine qui a exerce les GPO du parc : « install.sh --agent-enforcing ».
+# Docs : docs/exploitation/selinux.md, « Le domaine de l'agent ».
+type vaultaire_t;
+type vaultaire_exec_t;
+init_daemon_domain(vaultaire_t, vaultaire_exec_t)
+
+# Repli d'urgence : si l'agent tourne encore en unconfined_service_t — binaire
+# depose sans etre re-etiquete —, la resolution NSS des comptes du domaine
+# echoue (« Invalid user »). Ce booleen rend l'ancienne regle, le temps de
+# reparer l'etiquette : « setsebool -P vaultaire_agent_non_confine on ».
+gen_tunable(vaultaire_agent_non_confine, false)
+
+# --- Ce qui fait l'agent, d'apres le code ------------------------------------
+
+# Root, et les droits de root dont il se sert : proprietaire des fichiers qu'il
+# cree (chown, fowner), lecture de /etc/shadow et des repertoires personnels
+# (dac_*), signaux aux processus d'un compte revoque (kill), changement
+# d'identite pour copier /etc/skel (setuid, setgid), lecture de /proc des
+# autres processus pour l'inventaire des sessions (sys_ptrace).
+allow vaultaire_t self:capability { chown dac_override dac_read_search fowner fsetid kill setgid setuid sys_ptrace };
+allow vaultaire_t self:process { signal sigkill getsched setsched };
+allow vaultaire_t self:fifo_file rw_fifo_file_perms;
+allow vaultaire_t self:unix_stream_socket { create_stream_socket_perms connectto };
+allow vaultaire_t self:unix_dgram_socket create_socket_perms;
+allow vaultaire_t self:tcp_socket create_stream_socket_perms;
+allow vaultaire_t self:udp_socket create_socket_perms;
+allow vaultaire_t self:netlink_route_socket r_netlink_socket_perms;
+
+# Ses fichiers.
+manage_dirs_pattern(vaultaire_t, vaultaire_conf_t, vaultaire_conf_t)
+manage_files_pattern(vaultaire_t, vaultaire_conf_t, vaultaire_conf_t)
+manage_dirs_pattern(vaultaire_t, vaultaire_secret_t, vaultaire_secret_t)
+manage_files_pattern(vaultaire_t, vaultaire_secret_t, vaultaire_secret_t)
+manage_dirs_pattern(vaultaire_t, vaultaire_var_lib_t, vaultaire_var_lib_t)
+manage_files_pattern(vaultaire_t, vaultaire_var_lib_t, vaultaire_var_lib_t)
+manage_dirs_pattern(vaultaire_t, vaultaire_log_t, vaultaire_log_t)
+manage_files_pattern(vaultaire_t, vaultaire_log_t, vaultaire_log_t)
+manage_dirs_pattern(vaultaire_t, vaultaire_var_run_t, vaultaire_var_run_t)
+manage_files_pattern(vaultaire_t, vaultaire_var_run_t, vaultaire_var_run_t)
+manage_sock_files_pattern(vaultaire_t, vaultaire_var_run_t, vaultaire_var_run_t)
+
+# Les repertoires qu'il cree prennent le bon type des leur creation, sans
+# attendre un restorecon.
+type_transition vaultaire_t var_run_t:dir vaultaire_var_run_t;
+type_transition vaultaire_t var_log_t:dir vaultaire_log_t;
+type_transition vaultaire_t var_lib_t:dir vaultaire_var_lib_t;
+allow vaultaire_t { var_run_t var_log_t var_lib_t }:dir { search getattr open read write add_name };
+
+# Le reseau Ducky : connexion TCP aux cores et aux proxies, sur leur port
+# (6666 par defaut, configurable, toujours au-dessus de 1024).
+corenet_tcp_sendrecv_generic_if(vaultaire_t)
+corenet_tcp_sendrecv_generic_node(vaultaire_t)
+corenet_tcp_connect_all_unreserved_ports(vaultaire_t)
+sysnet_dns_name_resolve(vaultaire_t)
+
+# Les comptes locaux : l'agent ecrit LUI-MEME /etc/passwd, /etc/shadow et
+# /etc/group (tools/local_user_management), sans passer par useradd. Et il
+# lance usermod, chage, gpasswd pour verrouiller ou rattacher un compte.
+allow vaultaire_t etc_t:dir { search getattr open read write add_name remove_name };
+allow vaultaire_t passwd_file_t:file { manage_file_perms relabelfrom relabelto };
+allow vaultaire_t shadow_t:file { manage_file_perms relabelfrom relabelto };
+usermanage_domtrans_useradd(vaultaire_t)
+usermanage_domtrans_groupadd(vaultaire_t)
+
+# Les repertoires personnels des comptes du domaine : creation, copie de
+# /etc/skel, authorized_keys. Puis restorecon, qui donne a .ssh son type
+# ssh_home_t (local_user_management/selinux.go).
+userdom_manage_user_home_dirs(vaultaire_t)
+userdom_manage_user_home_content_dirs(vaultaire_t)
+userdom_manage_user_home_content_files(vaultaire_t)
+userdom_home_filetrans_user_home_dir(vaultaire_t)
+files_list_home(vaultaire_t)
+seutil_domtrans_setfiles(vaultaire_t)
+
+# La revocation : fermer les sessions d'un compte (loginctl, pkill).
+allow vaultaire_t userdomain:process { signal sigkill };
+systemd_exec_systemctl(vaultaire_t)
+systemd_dbus_chat_logind(vaultaire_t)
+
+# Les outils qu'il lance : who, lastlog, free, nproc, git, getfacl/setfacl,
+# et « bash -c » des appliers de GPO. Executes DANS son domaine.
+corecmd_exec_bin(vaultaire_t)
+corecmd_exec_shell(vaultaire_t)
+
+# Inventaire et etat du systeme.
+kernel_read_system_state(vaultaire_t)
+kernel_read_kernel_sysctls(vaultaire_t)
+domain_read_all_domains_state(vaultaire_t)
+fs_getattr_xattr_fs(vaultaire_t)
+dev_read_urand(vaultaire_t)
+files_read_etc_files(vaultaire_t)
+files_search_var_lib(vaultaire_t)
+auth_use_nsswitch(vaultaire_t)
+logging_send_syslog_msg(vaultaire_t)
+miscfiles_read_localization(vaultaire_t)
+
+# --- Ce qui n'est PAS encore ecrit -------------------------------------------
+#
+# Les appliers de GPO ecrivent dans des fichiers de types tres varies :
+# sshd_config.d, sudoers.d, sysctl.d, depots dnf/apt, ancres de certificats,
+# regles d'audit, journald, resolved, grub, modprobe.d, limits.d... Chacun a son
+# type, et les ecrire tous ferait de vaultaire_t un domaine aussi large qu'un
+# domaine non confine — sans le dire.
+#
+# Ils sont laisses a la COLLECTE : en permissif, chaque GPO appliquee laisse
+# ses refus dans le journal d'audit ; collect.sh les rassemble, et l'on ajoute
+# ici, type par type, ceux qui correspondent a une GPO du produit. TO-DO 180.
+#
+# Et un refus volontaire, a garder : /etc/selinux/config (selinux_config_t).
+# Une GPO qui desactive SELinux depuis le domaine que SELinux confine n'a rien
+# a faire dans un agent confine.
 
 ########################################################################
 # Ce dont tout domaine faisant du NSS a besoin
@@ -125,11 +287,15 @@ allow nsswitch_domain vaultaire_var_run_t:sock_file { write getattr };
 # connectto cible le DOMAINE du serveur, pas le fichier. Les deux sont
 # necessaires : write sur le sock_file, connectto sur le domaine.
 #
-# unconfined_service_t est le domaine d'un service systemd dont le binaire n'a
-# pas d'etiquette dediee — le cas de l'agent aujourd'hui. Si vous lui donnez un
-# jour son propre domaine, c'est cette ligne qu'il faudra changer, et
-# contextes.txt (produit par collect.sh) vous dira lequel.
-allow nsswitch_domain unconfined_service_t:unix_stream_socket connectto;
+# Depuis le TO-DO 22, la cible est vaultaire_t, le domaine de l'agent, et lui
+# seul. Avant, c'etait unconfined_service_t — tout service non confine.
+allow nsswitch_domain vaultaire_t:unix_stream_socket connectto;
+
+tunable_policy(`vaultaire_agent_non_confine',`
+	allow nsswitch_domain unconfined_service_t:unix_stream_socket connectto;
+	allow sshd_t unconfined_service_t:unix_stream_socket connectto;
+	allow local_login_t unconfined_service_t:unix_stream_socket connectto;
+')
 
 ########################################################################
 # Ce dont les modules PAM ont besoin
@@ -141,8 +307,8 @@ allow nsswitch_domain unconfined_service_t:unix_stream_socket connectto;
 # Le canal PAM, dans le meme repertoire mais en 0600 root.
 allow sshd_t vaultaire_var_run_t:sock_file { write getattr };
 allow local_login_t vaultaire_var_run_t:sock_file { write getattr };
-allow sshd_t unconfined_service_t:unix_stream_socket connectto;
-allow local_login_t unconfined_service_t:unix_stream_socket connectto;
+allow sshd_t vaultaire_t:unix_stream_socket connectto;
+allow local_login_t vaultaire_t:unix_stream_socket connectto;
 
 # Le journal des modules PAM : /var/log/vaultaire/vaultaire_pam.log.
 #
@@ -187,7 +353,5 @@ allow local_login_t vaultaire_log_t:file { append open getattr create };
 #   La correction est dans le code : restorecon apres creation. Voir
 #   install.sh, qui repare aussi les repertoires existants.
 #
-# - Aucun domaine dedie pour l'agent. Il en meriterait un — il tourne en root,
-#   ouvre le reseau, ecrit dans /etc et execute des commandes systeme — mais
-#   cela demande une transition de domaine et un jeu de regles nettement plus
-#   large. C'est une etape ulterieure, pas un prealable a la remise en service.
+# - Aucun acces de nsswitch_domain, sshd_t ou local_login_t a vaultaire_secret_t :
+#   la cle privee de la machine n'est lue que par l'agent.

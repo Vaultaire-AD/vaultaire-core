@@ -1,7 +1,8 @@
 #!/bin/sh
 # Phase 1 — collecte des refus SELinux liés aux modules Vaultaire.
 #
-#   sudo ./collect.sh
+#   sudo ./collect.sh [utilisateur@domaine]
+#   sudo ./collect.sh --agent [depuis]      refus du domaine de l'agent (TO-DO 22)
 #
 # A executer SUR UNE MACHINE CLIENTE, de preference une machine de test.
 #
@@ -50,6 +51,46 @@ UTILISATEUR="${1:-}"
 
 [ "$(id -u)" -eq 0 ] || { echo "Ce script doit tourner en root."; exit 1; }
 command -v getenforce >/dev/null 2>&1 || { echo "SELinux absent de cette machine."; exit 1; }
+
+# ---------------------------------------------------------------------------
+# --agent : ce que l'agent a fait, depuis son domaine permissif (TO-DO 22)
+# ---------------------------------------------------------------------------
+#
+# Rien a exercer ici : vaultaire_t est permissif, et CHAQUE action de l'agent
+# que vaultaire.te n'accorde pas laisse un refus « permissive=1 » dans le
+# journal d'audit — sans rien bloquer. Il suffit de laisser l'agent vivre
+# (cycles de GPO, revocations, provisionnements), puis de relever.
+#
+# « depuis » est une date au sens d'ausearch : today, this-week, boot,
+# 10/01/2026... this-week par defaut, pour couvrir plusieurs cycles de GPO.
+if [ "${1:-}" = "--agent" ]; then
+    DEPUIS="${2:-this-week}"
+    mkdir -p "$SORTIE"
+    AGENT="$SORTIE/avc-agent.log"
+    command -v ausearch >/dev/null 2>&1 || { ko "ausearch absent (paquet audit)"; exit 1; }
+    ausearch -m avc -ts "$DEPUIS" 2>/dev/null | grep 'scontext=[^ ]*:vaultaire_t:' > "$AGENT" || true
+    NBA="$(grep -c 'denied' "$AGENT" 2>/dev/null || true)"
+    titre "Refus du domaine de l'agent depuis $DEPUIS"
+    if semanage permissive -l 2>/dev/null | grep -qx 'vaultaire_t'; then
+        ok "vaultaire_t est permissif : ces refus n'ont rien bloque"
+    else
+        avert "vaultaire_t n'est PAS permissif : ces refus ont BLOQUE l'agent"
+    fi
+    info "${NBA:-0} refus → $AGENT"
+    if [ "${NBA:-0}" -gt 0 ]; then
+        # Une ligne par couple (type cible, classe, permissions) : c'est ce que
+        # vaultaire.te doit trancher, pas la liste brute des occurrences.
+        sed -n 's/.*denied *{ \([^}]*\)}.*tcontext=[^ ]*:\([^: ]*\):[^ ]* tclass=\([^ ]*\).*/\2 \3 { \1}/p' "$AGENT" \
+            | sort | uniq -c | sort -rn | sed 's/^/         /' | head -40
+        if command -v audit2allow >/dev/null 2>&1; then
+            audit2allow -i "$AGENT" > "$SORTIE/audit2allow-agent.te" 2>/dev/null || true
+            ok "proposition brute d'audit2allow → $SORTIE/audit2allow-agent.te"
+            info "A LIRE type par type : une GPO du produit justifie la regle,"
+            info "sinon le refus designe une action inattendue de l'agent."
+        fi
+    fi
+    exit 0
+fi
 
 MODE_INITIAL="$(getenforce)"
 MAP_SAUVE=""
@@ -108,6 +149,7 @@ titre "2. Contexte des acteurs"
     echo
     echo "## Types des fichiers Vaultaire"
     ls -dZ /etc/vaultaire /etc/vaultaire/uid.map \
+           /etc/vaultaire_client /var/lib/vaultaire \
            /run/vaultaire /run/vaultaire/pam.sock \
            /run/vaultaire/public /run/vaultaire/public/uid.sock \
            /var/log/vaultaire \

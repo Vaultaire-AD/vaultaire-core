@@ -20,8 +20,14 @@
 
 /var/log/vaultaire(/.*)?		gen_context(system_u:object_r:vaultaire_log_t,s0)
 
-# Le binaire de l'agent garde le type bin_t par defaut, ce qui lui donne le
-# domaine unconfined_service_t sous systemd. Le jour ou on lui ecrira un domaine
-# dedie, c'est ici qu'il faudra ajouter :
+# Le binaire de l'agent : systemd le fait entrer dans vaultaire_t (TO-DO 22).
 #
-#     /usr/bin/vaultaire_client	--	gen_context(system_u:object_r:vaultaire_exec_t,s0)
+# ATTENTION : « mv » garde l'etiquette du fichier SOURCE. Un binaire depose dans
+# /opt puis deplace ici garderait usr_t, et l'agent tournerait de nouveau en
+# unconfined_service_t — la resolution NSS des comptes du domaine echouerait.
+# Les scripts d'installation font donc un restorecon apres le deplacement.
+/usr/bin/vaultaire_client	--	gen_context(system_u:object_r:vaultaire_exec_t,s0)
+
+# L'identite de la machine (cle privee) et l'etat de l'agent.
+/etc/vaultaire_client(/.*)?		gen_context(system_u:object_r:vaultaire_secret_t,s0)
+/var/lib/vaultaire(/.*)?		gen_context(system_u:object_r:vaultaire_var_lib_t,s0)
