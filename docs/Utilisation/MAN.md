@@ -1231,9 +1231,14 @@ Ordre 20 — verrouillage du compte (compte compromis), par vaultaire le 2026-10
 |---|---|
 | **en échec** | la machine a répondu qu'elle n'a pas pu : le compte y est **peut-être encore ouvert**. Le détail est le motif qu'elle a rendu. Le core rejoue |
 | **en attente**, 0 remise | la machine est hors ligne depuis l'ordre : il lui sera remis à son retour |
-| **en attente**, N remises | la machine est **là, et ne répond pas** — ce n'est pas le même incident. Agent bloqué, ou client qui n'acquitte pas (Windows, un service : TO-DO 167) |
+| **en attente**, N remises | la machine est **là, et ne répond pas** — ce n'est pas le même incident : agent bloqué, à aller voir |
+| **non pris en charge** | le client de la machine ne sait pas révoquer (agent Windows V1) : le compte y est refusé à la prochaine authentification, mais une session **ouverte** n'y est pas fermée. L'ordre ne lui est plus remis *(TO-DO 167)* |
 | **levé avant application** | le verrouillage a été levé avant que la machine ne l'applique : il ne lui sera pas remis |
 | **appliqué** | la machine a acquitté |
+
+Un **service** (proxy, Nexus) rangé dans un groupe du compte n'est pas visé : il
+ne porte aucun compte local. Seuls les types qui savent acquitter une
+révocation le sont — le journal du core nomme les machines écartées.
 
 Ce qui n'est pas réglé est en tête. Les cinq derniers ordres sont détaillés ; un
 ordre ancien et réglé tient en une ligne.

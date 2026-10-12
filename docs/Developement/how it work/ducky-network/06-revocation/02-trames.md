@@ -56,9 +56,15 @@ dont des processus survivent est un `06_03` (`command_failed`), pas un `06_02`.
 06_03
 ...
 <order_id>
-<code>                unknown_mode | command_failed | permission_denied | internal
+<code>                unknown_mode | command_failed | permission_denied | internal | unsupported
 <message>
 ```
+
+`unsupported` *(TO-DO 167)* : le client ne sait pas appliquer de révocation —
+l'agent Windows V1. Il vaut pour **tous** les ordres de la machine : le core range
+toutes ses cibles encore à rejouer dans l'état « non pris en charge », et ne les
+lui remet plus. Ce n'est jamais un `06_02` : un ordre acquitté se lit comme un
+compte coupé.
 
 ### 06_04 — ask_revocations (client → serveur)
 

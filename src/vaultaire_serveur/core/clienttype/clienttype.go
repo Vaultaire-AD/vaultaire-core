@@ -383,3 +383,21 @@ func All() []Definition {
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	return out
 }
+
+// TypesQuiAcquittent rend, triés, les types autorisés à émettre l'acquittement
+// d'une révocation (06_02) — TO-DO 167.
+//
+// C'est la définition de « ce qui peut porter un compte local » : un type qui
+// ne peut pas acquitter ne peut pas appliquer, et un ordre qui lui est remis
+// reste « en attente » pour toujours. Lue dans le catalogue, et non écrite à
+// part : un type neuf qui apprendrait à acquitter serait visé le jour même.
+func TypesQuiAcquittent() []string {
+	var out []string
+	for _, d := range catalogue {
+		if MayEmit(d.Name, "06_02") {
+			out = append(out, d.Name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}

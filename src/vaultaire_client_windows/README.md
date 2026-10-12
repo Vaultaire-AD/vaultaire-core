@@ -26,7 +26,7 @@ de passe. Rien d'autre, volontairement.
 | ✅ | **liste des cores et proxies** : découverte `04_04`, ordre servi (affinité, priorité), persistance dans `client_conf.json`, repli sur la configuration |
 | ✅ | tuile Vaultaire à l'écran de connexion (Credential Provider) |
 | ⏸ | **GPO** : trames reçues et journalisées, **jamais appliquées** |
-| ⏸ | **révocations** : même chose — un compte révoqué ne pourra plus s'authentifier, mais sa session en cours n'est pas fermée |
+| ⏸ | **révocations** : reçues et **non appliquées** — un compte révoqué ne pourra plus s'authentifier, mais sa session en cours n'est pas fermée. L'agent répond « non pris en charge » (`06_03 unsupported`), que `kill -u <compte> --status` affiche tel quel, et le core cesse de lui remettre l'ordre *(TO-DO 167)* |
 | ❌ | SSH, clés publiques, groupes du domaine : pas de `sshd` ici |
 | ❌ | second facteur, changement de mot de passe depuis l'écran de connexion |
 

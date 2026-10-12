@@ -232,3 +232,28 @@ func TestLesOrdresAnciensReglesNeNoientPasLeSuivi(t *testing.T) {
 		t.Errorf("un ordre ancien NON réglé a perdu son tableau :\n%s", rendu)
 	}
 }
+
+// TO-DO 167 : une machine qui ne sait pas révoquer n'est ni « réglée » ni
+// « à rejouer » — et le compte y garde sa session. Le suivi le dit à part.
+func TestLeSuiviDitCeQuiNEstPasPrisEnCharge(t *testing.T) {
+	s := suiviDEssai()
+	s.Ordres[0].Masquees = 0
+	s.Ordres[0].Cibles = []dbrevocation.TargetRecord{
+		{ComputeurID: "PC-01", Status: revocation.StatusAcked, Attempts: 1, Detail: "applied"},
+		{ComputeurID: "WIN-01", Status: revocation.StatusNonPrisEnCharge, Attempts: 3,
+			Detail: "agent Windows V1 : révocation non appliquée, session ouverte non fermée"},
+	}
+	rendu := rendreSuivi(s, "")
+	if strings.Contains(rendu, "réglé sur toutes les machines") {
+		t.Errorf("l'ordre est dit réglé alors qu'une machine ne l'applique pas :\n%s", rendu)
+	}
+	for _, attendu := range []string{"non pris en charge", "n'est PAS appliqué sur 1 machine(s) dont le client ne sait pas révoquer",
+		"une session ouverte n'y est pas fermée"} {
+		if !strings.Contains(rendu, attendu) {
+			t.Errorf("le suivi ne dit pas %q :\n%s", attendu, rendu)
+		}
+	}
+	if strings.Contains(rendu, "le core le leur remet de lui-même") {
+		t.Errorf("le suivi annonce un rejeu qui n'aura pas lieu :\n%s", rendu)
+	}
+}

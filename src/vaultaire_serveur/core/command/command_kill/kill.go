@@ -227,11 +227,20 @@ func rendreSuivi(suivi dbrevocation.Suivi, message string) string {
 	// l'ordre le plus récent, reste-t-il une machine où le compte n'est pas
 	// coupé ?
 	dernier := suivi.Ordres[0]
-	if reste := dbrevocation.Compter(dernier.Cibles).ResteAFaire(); reste > 0 {
+	decompte := dbrevocation.Compter(dernier.Cibles)
+	if reste := decompte.ResteAFaire(); reste > 0 {
 		fmt.Fprintf(&b, "\nL'ordre %d n'est PAS appliqué sur %d machine(s) : le core le leur remet de lui-même, "+
 			"de plus en plus espacé, sans renoncer.\n", dernier.ID, reste)
-	} else if dernier.Masquees == 0 {
+	} else if decompte.NonPrisEnCharge == 0 && dernier.Masquees == 0 {
 		fmt.Fprintf(&b, "\nL'ordre %d est réglé sur toutes les machines visées.\n", dernier.ID)
+	}
+	// TO-DO 167 : dit À PART, et jamais comme « réglé ». Sur ces machines, le
+	// compte est refusé à sa prochaine authentification — le core la refuse —,
+	// mais une session déjà ouverte n'y est pas fermée.
+	if n := decompte.NonPrisEnCharge; n > 0 {
+		fmt.Fprintf(&b, "\nL'ordre %d n'est PAS appliqué sur %d machine(s) dont le client ne sait pas révoquer "+
+			"(agent Windows V1) : le compte y est refusé à la prochaine authentification, mais une session "+
+			"ouverte n'y est pas fermée. L'ordre ne leur est plus remis.\n", dernier.ID, n)
 	}
 	return b.String()
 }

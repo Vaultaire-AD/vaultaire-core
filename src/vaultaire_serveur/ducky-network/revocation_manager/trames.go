@@ -128,6 +128,25 @@ func handleError(trames storage.Trames_struct_client) string {
 	if db == nil {
 		return ""
 	}
+
+	// TO-DO 167 : le client ne SAIT PAS révoquer (agent Windows V1). Ce n'est
+	// pas un échec à rejouer — il répondrait la même chose à chaque fois —,
+	// et ce n'est pas un acquittement : le compte n'est pas coupé là-bas. Toutes
+	// les cibles de la machine passent dans un état à part, que --status
+	// affiche tel quel, et ne lui sont plus remises.
+	if code == revocation.ErrUnsupported {
+		n, err := dbrevocation.MarquerMachineNonPriseEnCharge(db, trames.ClientSoftwareID, message)
+		if err != nil {
+			logs.Write_Log("ERROR", "revocation: enregistrement du « non pris en charge » impossible : "+err.Error())
+			return ""
+		}
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: %s ne sait pas appliquer une révocation (%s) — %d ordre(s) rangé(s) « non pris en "+
+				"charge », plus remis. Le compte y est refusé à l'authentification suivante, une session ouverte "+
+				"n'y est pas fermée", trames.ClientSoftwareID, message, n))
+		return ""
+	}
+
 	if err := dbrevocation.MarkTarget(db, orderID, trames.ClientSoftwareID,
 		revocation.StatusFailed, code+" : "+message); err != nil {
 		logs.Write_Log("ERROR", "revocation: enregistrement de l'échec impossible : "+err.Error())

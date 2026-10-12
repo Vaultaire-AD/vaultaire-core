@@ -84,12 +84,14 @@ func rangDe(s revocation.TargetStatus) int {
 		return 0 // la machine a essayé et n'a pas pu : le compte y travaille peut-être encore
 	case revocation.StatusPending:
 		return 1 // rien n'est encore revenu
+	case revocation.StatusNonPrisEnCharge:
+		return 2 // ne sera jamais appliqué, et le compte y garde sa session
 	case revocation.StatusLifted:
-		return 2 // sans objet, mais jamais appliqué
+		return 3 // sans objet, mais jamais appliqué
 	case revocation.StatusAcked:
-		return 3
+		return 4
 	}
-	return 4
+	return 5
 }
 
 // TrierCibles met devant ce qui n'est pas réglé : les échecs, puis ce qui
@@ -111,6 +113,10 @@ func TrierCibles(cibles []TargetRecord) {
 // Decompte compte les cibles par état.
 type Decompte struct {
 	EnEchec, EnAttente, Levees, Appliquees int
+	// NonPrisEnCharge : machines qui ne savent pas révoquer (TO-DO 167). Ni
+	// « à faire » — l'ordre ne leur sera plus remis — ni « réglées » : le
+	// compte n'y est pas coupé.
+	NonPrisEnCharge int
 }
 
 // Compter rend le décompte des cibles données.
@@ -126,13 +132,17 @@ func Compter(cibles []TargetRecord) Decompte {
 			d.Levees++
 		case revocation.StatusAcked:
 			d.Appliquees++
+		case revocation.StatusNonPrisEnCharge:
+			d.NonPrisEnCharge++
 		}
 	}
 	return d
 }
 
 // Total des cibles comptées.
-func (d Decompte) Total() int { return d.EnEchec + d.EnAttente + d.Levees + d.Appliquees }
+func (d Decompte) Total() int {
+	return d.EnEchec + d.EnAttente + d.Levees + d.Appliquees + d.NonPrisEnCharge
+}
 
 // ResteAFaire : machines où l'ordre n'est pas appliqué et sera encore remis.
 func (d Decompte) ResteAFaire() int { return d.EnEchec + d.EnAttente }
@@ -150,6 +160,7 @@ func (d Decompte) Lisible() string {
 	}
 	ajouter(d.EnEchec, "en échec")
 	ajouter(d.EnAttente, "en attente")
+	ajouter(d.NonPrisEnCharge, "non pris en charge par le client")
 	ajouter(d.Levees, "levé(s) avant application")
 	ajouter(d.Appliquees, "appliqué(s)")
 	return fmt.Sprintf("%d machine(s) : %s", d.Total(), strings.Join(parts, ", "))
@@ -176,6 +187,11 @@ func (t TargetRecord) Commentaire() string {
 		return "échec signalé sans motif"
 	case revocation.StatusLifted:
 		return "verrouillage levé avant que la machine ne l'applique : il ne lui sera plus remis"
+	case revocation.StatusNonPrisEnCharge:
+		if d := strings.TrimSpace(t.Detail); d != "" {
+			return d + " — plus remis"
+		}
+		return "ce client ne sait pas appliquer une révocation — plus remis"
 	case revocation.StatusPending:
 		if t.Attempts == 0 {
 			return "jamais remis : machine hors ligne depuis l'ordre"

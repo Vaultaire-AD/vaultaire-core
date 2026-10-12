@@ -100,7 +100,7 @@ reproduit**, et ce qui y ressemble est désormais dit par les actions. Un défau
 que personne n'avait relevé est sorti en chemin et **traité** dans le même lot :
 une machine dont la politique ne change pas passait « en retard » pour toujours
 (**166**). Trois points en restent : **167** (le client Windows n'acquitte aucun
-ordre, et le core le relance sans fin), **168** (cloisonner le service de
+ordre, et le core le relance sans fin — **traité**, voir `DO/2.3/2.3.md`), **168** (cloisonner le service de
 l'agent) et **169** (demander un cycle depuis le portail).
 
 **Banc du 07/10, second lot (points 158, 159, 164 et 169).** Tous traités, voir
@@ -116,7 +116,7 @@ sorti en ouvrant enfin les pages dans un navigateur, et il est **traité** dans
 le même lot (**170**) : les étiquettes d'état n'avaient aucune règle de style,
 « non vérifié » ne ressortait donc pas. Deux points en restent : **171** (le
 motif d'un refus ne va pas jusqu'à l'écran de la personne) et **172** (demander
-un cycle n'atteint que les machines connectées à ce core). Le **167** est
+un cycle n'atteint que les machines connectées à ce core). Le **167** — **traité** depuis — a été
 élargi : un proxy ou un Nexus rangé dans un groupe avec des comptes est visé par
 les ordres de révocation, et ne les acquitte pas plus qu'un poste Windows.
 
@@ -145,7 +145,6 @@ rend un compte sans groupe quand la base flanche).
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 178 | CI           | Les PR ne compilent pas les modules natifs de chaque famille | À faire — petit, voir le 173            |
-| 167 | RÉVOCATION   | Windows et les services n'acquittent aucun ordre : rejeu sans fin | À faire — petit, lié au 79         |
 | 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
 | 179 | WINDOWS      | Écran vide : valider le correctif du 157 sur un poste       | **À faire — bloque la recette Windows** |
@@ -345,35 +344,6 @@ grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit
    l'agent — à comprendre, pas à accorder. `/etc/selinux/config` reste refusé.
 3. Quand une collecte complète ne rend plus rien : `install.sh
    --agent-enforcing`, puis la même suite, en enforcing.
-
-### 167. [RÉVOCATION] [WINDOWS] Windows et les services n'acquittent aucun ordre
-
-**Origine.** Conséquence du **49**. Le client Windows V1 reçoit les trames `06`
-et les journalise **sans les appliquer** ni les acquitter (c'est le **79**). Le
-core, qui rejoue désormais ce qui n'est pas acquitté, lui remet donc ses ordres
-toutes les cinq minutes, pour toujours. C'est exact — le compte n'est **pas**
-coupé sur ce poste, et le journal le dit en toutes lettres au cinquième essai —
-mais c'est du bruit sans remède tant que le 79 n'est pas fait.
-
-**Élargi le 07/10 (banc du 164).** Ce n'est pas propre à Windows. Les cibles
-d'un ordre sont « les machines qui partagent un groupe avec le compte »
-(`MachinesSharingGroupWith`), **quel que soit leur type** : un proxy ou un Nexus
-rangé dans un groupe où se trouvent des comptes est visé, reçoit la `06_05`, n'a
-aucun gestionnaire pour elle (`trames: catégorie 06 reçue sans gestionnaire
-branché`) et reste « en attente » indéfiniment. `kill -u <compte> --status` le
-montre maintenant — « remis N fois, aucune réponse de la machine » —, ce qui le
-rend visible sans le régler.
-
-**À faire.** Deux gestes, indépendants :
-
-- ne **viser** que ce qui peut porter un compte local : filtrer les cibles par
-  type de client (le catalogue des types dit lesquels ont le droit d'émettre
-  l'acquittement `06_02`), pour qu'un service ne soit jamais une cible ;
-- pour le client Windows, le plus petit geste honnête : qu'il réponde `06_03`
-  avec un code que le core reconnaisse (« non pris en charge par ce client »),
-  et que le core range alors la cible dans un état à part, affiché tel quel par
-  `--status`, sans plus la relancer. Ne **pas** acquitter : un ordre acquitté se
-  lit comme un compte coupé.
 
 ### 171. [PAM] [CLIENT] Un mot de passe expiré se lit au journal du poste, pas à l'écran
 
