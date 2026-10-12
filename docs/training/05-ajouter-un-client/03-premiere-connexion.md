@@ -77,7 +77,7 @@ Pour couper **tous** ses accès d'un coup, voir `kill` au
 
 | Symptôme | Piste |
 |---|---|
-| `Invalid user` sans rien dans le journal Vaultaire | SELinux bloque le module NSS sous `sshd` : [`docs/exploitation/selinux.md`](../../exploitation/selinux.md), script `deployments/selinux/install.sh` |
+| `Invalid user` sans rien dans le journal Vaultaire | SELinux bloque le module NSS sous `sshd` : [`docs/exploitation/selinux.md`](../../exploitation/selinux.md), script `deployments/selinux/install.sh`. Politique installée : `ps -eZ \| grep vaultaire_client` doit montrer **`vaultaire_t`** — sinon `restorecon /usr/bin/vaultaire_client` et redémarrer l'agent |
 | l'agent ne se connecte pas | adresses dans `client_conf.json`, port 6666 filtré, `journalctl -u vaultaire_client` ; pour un état complet, lancez l'agent avec `-debug` et lisez `/var/log/vaultaire/vlt_client-Debug.log` ([détail](../../exploitation/Agent_configuration_et_debug.md)) |
 | « Permission denied » pour un compte du domaine | pas de groupe commun avec la machine : `get -u <compte>`, `get -g -c <groupe>` |
 

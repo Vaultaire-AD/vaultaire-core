@@ -173,6 +173,23 @@ for mod in "${MODULES[@]}"; do
     fi
 done
 
+# Etiquettes SELinux des fichiers DEPLACES (TO-DO 22).
+#
+# « mv » garde l'etiquette du fichier source : venus de /opt, le binaire et les
+# modules garderaient usr_t. Le binaire doit porter vaultaire_exec_t pour que
+# systemd fasse entrer l'agent dans son domaine, vaultaire_t — sinon il tourne
+# en unconfined_service_t, et la politique Vaultaire, qui ne laisse la
+# resolution NSS joindre que vaultaire_t, refuse les comptes du domaine.
+# Sans SELinux ou sans politique Vaultaire, restorecon remet les types par
+# defaut : sans effet.
+if ! essai && command -v restorecon >/dev/null 2>&1; then
+    restorecon -F /usr/bin/vaultaire_client "$NSS_DIR/libnss_vaultaire.so.2" 2>/dev/null || true
+    for mod in "${MODULES[@]}"; do
+        [[ -f "$PAM_DIR/$mod" ]] && restorecon -F "$PAM_DIR/$mod" 2>/dev/null || true
+    done
+    restorecon -RF "$CONF" 2>/dev/null || true
+fi
+
 # ------------------------------------------------------------------------------
 # 3. Les modules se chargent-ils sur CETTE machine ?
 # ------------------------------------------------------------------------------

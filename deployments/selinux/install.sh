@@ -1,8 +1,9 @@
 #!/bin/sh
 # Phase 2 — compilation, installation et verification de la politique SELinux.
 #
-#   sudo ./install.sh              installe et verifie
-#   sudo ./install.sh --remove     desinstalle et retire les etiquettes
+#   sudo ./install.sh                    installe et verifie
+#   sudo ./install.sh --agent-enforcing  sort l'agent du mode permissif (TO-DO 22)
+#   sudo ./install.sh --remove           desinstalle et retire les etiquettes
 #
 # A executer APRES collect.sh, sur la machine cliente.
 #
@@ -15,9 +16,13 @@
 #    moment du build : les interfaces de la politique de reference different
 #    entre Rocky, Debian et leurs versions ;
 # 2. installe le module et etiquette les fichiers ;
-# 3. remet SELinux en enforcing ;
-# 4. VERIFIE qu'aucun refus ne subsiste — sans quoi on ne saurait pas si la
-#    politique fonctionne ou si l'on a simplement cesse de regarder.
+# 3. declare le domaine de l'agent, vaultaire_t, PERMISSIF : ses refus sont
+#    journalises, rien n'est bloque (voir vaultaire.te, « Le domaine de
+#    l'agent ») ;
+# 4. remet SELinux en enforcing ;
+# 5. VERIFIE que l'agent tourne dans son domaine et qu'aucun refus BLOQUANT ne
+#    subsiste — sans quoi on ne saurait pas si la politique fonctionne ou si
+#    l'on a simplement cesse de regarder.
 set -eu
 
 VERT=""; ROUGE=""; JAUNE=""; NEUTRE=""
@@ -34,14 +39,34 @@ ICI="$(cd "$(dirname "$0")" && pwd)"
 [ "$(id -u)" -eq 0 ] || { echo "Ce script doit tourner en root."; exit 1; }
 
 # ---------------------------------------------------------------------------
+if [ "${1:-}" = "--agent-enforcing" ]; then
+    # Le geste qui CONFINE l'agent. A ne faire qu'apres une collecte
+    # (« collect.sh --agent ») sur une machine qui a applique les GPO du parc,
+    # et une fois vaultaire.te complete de ce qu'elle a montre : un refus en
+    # enforcing couperait une GPO ou une revocation sans bruit.
+    titre "Agent confine (vaultaire_t en enforcing)"
+    semodule -l 2>/dev/null | grep -q '^vaultaire' || { ko "module vaultaire absent : sudo ./install.sh d'abord"; exit 1; }
+    if semanage permissive -l 2>/dev/null | grep -qx 'vaultaire_t'; then
+        semanage permissive -d vaultaire_t && ok "vaultaire_t n'est plus permissif"
+    else
+        info "vaultaire_t n'etait pas permissif"
+    fi
+    info "Retour arriere : sudo semanage permissive -a vaultaire_t"
+    exit 0
+fi
+
 if [ "${1:-}" = "--remove" ]; then
     titre "Desinstallation"
+    semanage permissive -d vaultaire_t 2>/dev/null || true
     semodule -r vaultaire 2>/dev/null && ok "module retire" || info "module deja absent"
     for chemin in '/etc/vaultaire(/.*)?' '/run/vaultaire(/.*)?' \
                   '/var/run/vaultaire(/.*)?' '/var/log/vaultaire(/.*)?'; do
         semanage fcontext -d "$chemin" 2>/dev/null || true
     done
-    restorecon -RF /etc/vaultaire /var/log/vaultaire 2>/dev/null || true
+    restorecon -RF /etc/vaultaire /var/log/vaultaire /etc/vaultaire_client \
+        /var/lib/vaultaire /usr/bin/vaultaire_client 2>/dev/null || true
+    # L'agent reprend unconfined_service_t a son redemarrage.
+    systemctl try-restart vaultaire_client 2>/dev/null || true
     ok "etiquettes retirees"
     info "Les fichiers reprennent les types par defaut de la distribution."
     exit 0
@@ -114,8 +139,9 @@ titre "4. Etiquetage des fichiers"
 # Le module declare les types ; semanage/restorecon les POSENT sur les fichiers
 # existants. Sans cette etape, la politique est en place mais aucun fichier ne
 # porte les types qu'elle protege — et rien ne change.
-for repertoire in /etc/vaultaire /var/log/vaultaire /run/vaultaire; do
-    [ -d "$repertoire" ] || continue
+for repertoire in /etc/vaultaire /etc/vaultaire_client /var/lib/vaultaire \
+                  /var/log/vaultaire /run/vaultaire /usr/bin/vaultaire_client; do
+    [ -e "$repertoire" ] || continue
     if restorecon -RF "$repertoire" 2>/dev/null; then
         ok "$repertoire etiquete"
     else
@@ -148,7 +174,23 @@ fi
 info "/run est volatil : ses etiquettes se reappliquent seules au demarrage"
 
 # ---------------------------------------------------------------------------
-titre "5. Retour en enforcing et verification"
+titre "5. Domaine de l'agent : permissif"
+# ---------------------------------------------------------------------------
+#
+# vaultaire_t est ecrit d'apres le code, jamais eprouve sur une machine qui
+# applique les GPO du parc. Permissif, il ne bloque rien et journalise tout ;
+# « ./install.sh --agent-enforcing » le confine, apres collecte.
+#
+# Une reinstallation le remet permissif : apres une mise a jour de la
+# politique, c'est l'etat sur, et le confinement se redecide.
+if semanage permissive -a vaultaire_t 2>/dev/null || semanage permissive -l 2>/dev/null | grep -qx 'vaultaire_t'; then
+    ok "vaultaire_t permissif (refus journalises, rien de bloque)"
+else
+    ko "vaultaire_t n'a pas pu etre declare permissif"
+fi
+
+# ---------------------------------------------------------------------------
+titre "6. Retour en enforcing et verification"
 # ---------------------------------------------------------------------------
 setenforce 1 2>/dev/null && ok "SELinux en enforcing"
 
@@ -157,6 +199,21 @@ setenforce 1 2>/dev/null && ok "SELinux en enforcing"
 if systemctl is-active vaultaire_client >/dev/null 2>&1; then
     systemctl restart vaultaire_client && ok "agent redemarre"
     sleep 2
+fi
+
+# L'agent doit maintenant tourner dans SON domaine. Sinon, la resolution NSS
+# des comptes du domaine est refusee (elle ne vise plus que vaultaire_t).
+DOMAINE="$(ps -eZ 2>/dev/null | awk '/vaultaire_client/ && !/awk/ {split($1, c, ":"); print c[3]; exit}')"
+if [ "$DOMAINE" = "vaultaire_t" ]; then
+    ok "agent dans son domaine : vaultaire_t"
+elif [ -n "$DOMAINE" ]; then
+    ko "agent dans le domaine $DOMAINE, et non vaultaire_t"
+    info "Le binaire n'est pas etiquete : ls -Z /usr/bin/vaultaire_client"
+    info "doit montrer vaultaire_exec_t. restorecon /usr/bin/vaultaire_client,"
+    info "puis systemctl restart vaultaire_client. En attendant :"
+    info "  setsebool -P vaultaire_agent_non_confine on"
+else
+    info "agent arrete : domaine non verifie"
 fi
 
 DEBUT="$(date '+%m/%d/%Y %H:%M:%S')"
@@ -185,21 +242,33 @@ fi
 
 # --- Refus residuels -------------------------------------------------------
 sleep 1
+# Seuls les refus BLOQUANTS (permissive=0) sont des echecs. Ceux de
+# vaultaire_t en mode permissif (permissive=1) sont attendus : c'est la
+# collecte du domaine de l'agent, a lire avec « collect.sh --agent ».
 RESIDUS=0
+PERMISSIFS=0
 if command -v ausearch >/dev/null 2>&1; then
-    RESIDUS="$(ausearch -m avc -ts $DEBUT 2>/dev/null | grep -ci 'vaultaire' || echo 0)"
+    AVC="$(ausearch -m avc -ts $DEBUT 2>/dev/null | grep -i 'vaultaire' || true)"
+    RESIDUS="$(printf '%s\n' "$AVC" | grep -c 'permissive=0' || true)"
+    PERMISSIFS="$(printf '%s\n' "$AVC" | grep -c 'permissive=1' || true)"
 fi
-if [ "$RESIDUS" -eq 0 ]; then
-    ok "aucun refus residuel concernant Vaultaire"
+if [ "${RESIDUS:-0}" -eq 0 ]; then
+    ok "aucun refus bloquant concernant Vaultaire"
 else
-    ko "$RESIDUS refus subsistent"
-    ausearch -m avc -ts $DEBUT 2>/dev/null | grep -i vaultaire | sed 's/^/         /' | head -10
+    ko "$RESIDUS refus bloquant(s) subsistent"
+    printf '%s\n' "$AVC" | grep 'permissive=0' | sed 's/^/         /' | head -10
+fi
+if [ "${PERMISSIFS:-0}" -gt 0 ]; then
+    info "$PERMISSIFS refus de vaultaire_t journalises sans blocage :"
+    info "ce que l'agent fait et que vaultaire.te n'accorde pas encore."
+    info "  sudo ./collect.sh --agent"
 fi
 
 printf "\n"
 titre "Etat final"
 info "SELinux        : $(getenforce)"
 info "Module installe: $(semodule -l 2>/dev/null | grep -c '^vaultaire') "
+info "Agent          : $(semanage permissive -l 2>/dev/null | grep -qx vaultaire_t && echo 'vaultaire_t, PERMISSIF' || echo 'vaultaire_t, confine')"
 info ""
 info "Testez maintenant une VRAIE connexion SSH depuis un autre poste."
 info "En cas de probleme : sudo ./install.sh --remove, puis setenforce 0."
