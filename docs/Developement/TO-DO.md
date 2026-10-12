@@ -27,7 +27,6 @@ Trois gestes, dans le même passage que le code :
 | 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
-| 178 | CI           | Les PR ne compilent pas les modules natifs de chaque famille | À faire — petit, voir le 173            |
 | 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
 | 179 | WINDOWS      | Écran vide : valider le correctif du 157 sur un poste       | **À faire — bloque la recette Windows** |
@@ -150,20 +149,6 @@ acceptée (`DO/2.3/2.3.md`). Rien de cela n'a tourné dans un vrai LogonUI.
 ---
 
 ## Agent
-
-### 178. [CI] Les PR ne compilent pas les modules natifs de chaque famille
-
-**Origine** (relevé en traitant le 173). Les modules natifs sont compilés par
-famille — Rocky 9 et Ubuntu 22.04 — et `auto_compil.sh` refuse un fichier qui
-exige une glibc plus récente que sa famille (`VAULTAIRE_GLIBC_MAX`). Mais cela ne
-se joue qu'au **workflow de release**, après la fusion vers `main` : une
-modification du C qui appellerait une fonction trop récente ne serait vue qu'au
-moment de publier.
-
-**À faire.** Un job de `tests.yaml`, sur les PR, qui joue
-`src/vaultaire_client/pam_module/auto_compil.sh` dans `rockylinux:9`
-(`VAULTAIRE_GLIBC_MAX=2.34`) et dans `ubuntu:22.04` (`2.35`) — les mêmes commandes
-que `release.yaml`. Une minute de CI.
 
 ### 168. [AGENT] Cloisonner le service de l'agent
 

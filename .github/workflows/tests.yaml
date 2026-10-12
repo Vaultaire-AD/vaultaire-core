@@ -203,7 +203,53 @@ jobs:
         run: bash essai-wine.sh build/VaultaireCredentialProvider.dll
 
   # --------------------------------------------------------------------
-  # 5. Le verdict
+  # 5. Les modules natifs, compilés par famille (TO-DO 178)
+  # --------------------------------------------------------------------
+  #
+  # Les modules PAM et la bibliothèque NSS ne se chargent que sur une glibc au
+  # moins aussi récente que celle qui les a compilés (TO-DO 173). La release
+  # les compile dans les deux familles, chacune sur sa plus ancienne version
+  # prise en charge, et auto_compil.sh échoue si un fichier exige davantage.
+  #
+  # Mais la release ne tourne qu'au passage vers main. Une modification du C
+  # qui appellerait une fonction trop récente — une redirection C23 des
+  # en-têtes, par exemple, exige glibc 2.38 — ne se verrait qu'au moment de
+  # publier. Ici, elle se voit au merge dans dev, avec les MÊMES images, les
+  # MÊMES plafonds et la MÊME recette que release.yaml.
+  modules-natifs:
+    name: "🧩 Modules natifs (${{ matrix.famille }})"
+    runs-on: ubuntu-latest
+    container: ${{ matrix.image }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - famille: rocky
+            image: rockylinux:9
+            glibc: "2.34"
+          - famille: debian
+            image: ubuntu:22.04
+            glibc: "2.35"
+    steps:
+      - name: Dépendances de compilation
+        run: |
+          if command -v dnf >/dev/null; then
+            dnf install -y --setopt=install_weak_deps=False gcc binutils pam-devel libxcrypt-devel
+          else
+            apt-get update -q
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+              gcc libc6-dev libpam0g-dev libcrypt-dev binutils
+          fi
+
+      - uses: actions/checkout@v4
+
+      - name: Compilation, plafond glibc ${{ matrix.glibc }}
+        env:
+          VAULTAIRE_GLIBC_MAX: ${{ matrix.glibc }}
+        run: bash src/vaultaire_client/pam_module/auto_compil.sh "dist/${{ matrix.famille }}"
+
+  # --------------------------------------------------------------------
+  # 6. Le verdict
   # --------------------------------------------------------------------
   #
   # Un seul job à exiger dans les règles de protection de branche : la liste
@@ -212,7 +258,7 @@ jobs:
     name: "📊 Verdict des tests"
     runs-on: ubuntu-latest
     if: always()
-    needs: [modules, tests, croise-windows, credential-provider]
+    needs: [modules, tests, croise-windows, credential-provider, modules-natifs]
     steps:
       - name: Résumé
         run: |
@@ -227,10 +273,11 @@ jobs:
             echo "| Tests (\`go build\`, \`go vet\`, \`go test -race\`) | ${{ needs.tests.result }} |"
             echo "| Compilation croisée Windows | ${{ needs.croise-windows.result }} |"
             echo "| Credential Provider sous wine | ${{ needs.credential-provider.result }} |"
+            echo "| Modules natifs, par famille | ${{ needs.modules-natifs.result }} |"
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Échouer si un contrôle a échoué
-        if: needs.modules.result != 'success' || needs.tests.result != 'success' || needs.croise-windows.result != 'success' || needs.credential-provider.result != 'success'
+        if: needs.modules.result != 'success' || needs.tests.result != 'success' || needs.croise-windows.result != 'success' || needs.credential-provider.result != 'success' || needs.modules-natifs.result != 'success'
         run: |
           echo "::error::des tests ont échoué sur dev — voir les jobs ci-dessus"
           exit 1
