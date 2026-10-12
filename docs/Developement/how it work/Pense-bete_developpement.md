@@ -105,6 +105,10 @@ Branche de travail (`feature/…`, `hotfix/…`) — jamais directement sur `mai
 `preprod` ; voir [`CONTRIBUTING.MD`](../../../CONTRIBUTING.MD). Le message dit
 le **quoi** et le **pourquoi**, et cite le numéro de tâche.
 
+**Une branche par point, développeurs et IA.** Créée depuis `dev` au début du
+point, fusionnée dans `dev` (`--no-ff`) une fois le point traité et ses
+fichiers à jour, puis supprimée. La pousser n'est pas obligatoire.
+
 ---
 
 ## Ce qu'on oublie le plus souvent

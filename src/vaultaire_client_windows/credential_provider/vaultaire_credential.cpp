@@ -10,9 +10,9 @@ namespace vaultaire {
 namespace {
 
 // Description des champs. L'ordre suit l'énumération Champ.
-// guidFieldType est posé explicitement à GUID_NULL : aucun de ces champs n'a de
-// rôle connu de Windows (le champ « nom d'utilisateur » d'une tuile rattachée à
-// un compte, par exemple). Le laisser non initialisé enverrait à Winlogon les
+// guidFieldType est posé explicitement pour chacun : GUID_NULL pour les champs
+// sans rôle connu de Windows, le rôle exact pour l'image et le libellé du
+// fournisseur (TO-DO 157). Le laisser non initialisé enverrait à Winlogon les
 // octets qui traînent en mémoire.
 const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR kChamps[kNombreDeChamps] = {
     {kChampTitre,       CPFT_LARGE_TEXT,    const_cast<wchar_t*>(L"Vaultaire"),           GUID_NULL},
@@ -24,7 +24,69 @@ const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR kChamps[kNombreDeChamps] = {
     {kChampCode,        CPFT_PASSWORD_TEXT, const_cast<wchar_t*>(L"Code a 6 chiffres (0000 si vous n'en avez pas)"), GUID_NULL},
     {kChampValider,     CPFT_SUBMIT_BUTTON, const_cast<wchar_t*>(L"Se connecter"),        GUID_NULL},
     {kChampMessage,     CPFT_SMALL_TEXT,    const_cast<wchar_t*>(L""),                    GUID_NULL},
+    // TO-DO 157 : les deux champs que LogonUI attend d'un fournisseur V2. Sans
+    // eux, rien ne représente Vaultaire dans les « Options de connexion » de la
+    // tuile « Autre utilisateur », où se range une tuile sans compte rattaché
+    // (GetUserSid rend S_FALSE).
+    {kChampImage,       CPFT_TILE_IMAGE,    const_cast<wchar_t*>(L"Image"),               VAULTAIRE_CPFG_LOGO},
+    {kChampLibelle,     CPFT_SMALL_TEXT,    const_cast<wchar_t*>(L"Vaultaire"),           VAULTAIRE_CPFG_LABEL},
 };
+
+// LireUneVariante lit une valeur DWORD sous la clé des variantes d'essai.
+// Absente, illisible ou d'un autre type : 0, le comportement par défaut.
+bool LireUneVariante(const wchar_t* nom) {
+  DWORD valeur = 0;
+  DWORD taille = sizeof(valeur);
+  const LONG r = RegGetValueW(HKEY_LOCAL_MACHINE, L"SOFTWARE\\Vaultaire\\CredentialProvider", nom,
+                              RRF_RT_REG_DWORD, nullptr, &valeur, &taille);
+  return r == ERROR_SUCCESS && valeur != 0;
+}
+
+// L'image de la tuile, dessinée et non chargée depuis une ressource : la DLL
+// n'a pas de fichier .rc, et un échec de chargement de ressource dans LogonUI
+// ne se voit pas. Un carré de 128 pixels, le « V » de Vaultaire au centre.
+// L'appelant — LogonUI — en devient propriétaire et la détruit.
+HBITMAP DessinerImage() {
+  const int cote = 128;
+  BITMAPINFO info = {};
+  info.bmiHeader.biSize = sizeof(info.bmiHeader);
+  info.bmiHeader.biWidth = cote;
+  info.bmiHeader.biHeight = -cote;  // de haut en bas
+  info.bmiHeader.biPlanes = 1;
+  info.bmiHeader.biBitCount = 32;
+  info.bmiHeader.biCompression = BI_RGB;
+  void* pixels = nullptr;
+  HDC ecran = GetDC(nullptr);
+  HBITMAP image = CreateDIBSection(ecran, &info, DIB_RGB_COLORS, &pixels, nullptr, 0);
+  if (image == nullptr) {
+    if (ecran != nullptr) ReleaseDC(nullptr, ecran);
+    return nullptr;
+  }
+  HDC dc = CreateCompatibleDC(ecran);
+  if (ecran != nullptr) ReleaseDC(nullptr, ecran);
+  if (dc == nullptr) return image;  // un carré noir vaut mieux que pas d'image
+  HGDIOBJ ancienne = SelectObject(dc, image);
+  RECT tout = {0, 0, cote, cote};
+  HBRUSH fond = CreateSolidBrush(RGB(0x1F, 0x4E, 0x79));
+  if (fond != nullptr) {
+    FillRect(dc, &tout, fond);
+    DeleteObject(fond);
+  }
+  HFONT police = CreateFontW(96, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE, DEFAULT_CHARSET,
+                             OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, ANTIALIASED_QUALITY,
+                             DEFAULT_PITCH | FF_SWISS, L"Segoe UI");
+  HGDIOBJ ancienne_police = police ? SelectObject(dc, police) : nullptr;
+  SetBkMode(dc, TRANSPARENT);
+  SetTextColor(dc, RGB(0xFF, 0xFF, 0xFF));
+  DrawTextW(dc, L"V", 1, &tout, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+  if (police != nullptr) {
+    SelectObject(dc, ancienne_police);
+    DeleteObject(police);
+  }
+  SelectObject(dc, ancienne);
+  DeleteDC(dc);
+  return image;
+}
 
 // Copier duplique une chaîne dans la mémoire que Windows libérera.
 HRESULT Copier(const std::wstring& source, wchar_t** sortie) {
@@ -38,6 +100,14 @@ HRESULT Copier(const std::wstring& source, wchar_t** sortie) {
 }  // namespace
 
 const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps() { return kChamps; }
+
+Variantes LireVariantes() {
+  Variantes v;
+  v.tuile_par_defaut = LireUneVariante(L"TuileParDefaut");
+  v.mode_v1 = LireUneVariante(L"ModeV1");
+  v.sans_image = LireUneVariante(L"SansImage");
+  return v;
+}
 
 CVaultaireCredential::CVaultaireCredential()
     : references_(1), scenario_(CPUS_LOGON), evenements_(nullptr) {
@@ -74,15 +144,19 @@ void CVaultaireCredential::EffacerCode() {
   code_.clear();
 }
 
-HRESULT CVaultaireCredential::Initialiser(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario) {
+HRESULT CVaultaireCredential::Initialiser(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario,
+                                          const Variantes& variantes) {
   scenario_ = scenario;
+  variantes_ = variantes;
   return S_OK;
 }
 
 IFACEMETHODIMP CVaultaireCredential::QueryInterface(REFIID riid, void** ppv) {
   if (ppv == nullptr) return E_POINTER;
+  // En variante ModeV1, la tuile ne se dit pas V2 : LogonUI la traite alors
+  // comme les fournisseurs d'avant Windows 8.
   if (riid == IID_IUnknown || riid == IID_ICredentialProviderCredential ||
-      riid == IID_ICredentialProviderCredential2) {
+      (riid == IID_ICredentialProviderCredential2 && !variantes_.mode_v1)) {
     *ppv = static_cast<ICredentialProviderCredential2*>(this);
     AddRef();
     if (TraceActive()) Tracer(L"Tuile::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
@@ -126,10 +200,11 @@ IFACEMETHODIMP CVaultaireCredential::UnAdvise() {
 //
 // # Cet appel est BORNÉ, et il doit le rester (TO-DO 156)
 //
-// La tuile se déclare tuile par défaut : LogonUI la sélectionne donc dès
-// l'affichage de l'écran, sans clic de personne. Le temps passé ici est du
-// temps où LogonUI est retenu sur son propre fil. Etat() rend la main en
-// kDelaiEtatMs au plus, que l'agent réponde ou non.
+// La tuile ne se déclare plus tuile par défaut (TO-DO 157), mais LogonUI peut
+// encore la sélectionner seul — c'est la seule de « Autre utilisateur », ou la
+// variante TuileParDefaut est posée. Le temps passé ici est du temps où
+// LogonUI est retenu sur son propre fil. Etat() rend la main en kDelaiEtatMs
+// au plus, que l'agent réponde ou non.
 IFACEMETHODIMP CVaultaireCredential::SetSelected(BOOL* auto_ouvrir) {
   Passage p(L"Tuile::SetSelected");
   if (auto_ouvrir == nullptr) return p.Rendre(E_INVALIDARG);
@@ -190,6 +265,15 @@ IFACEMETHODIMP CVaultaireCredential::GetFieldState(
     case kChampCode:
       *interaction = CPFIS_NONE;
       break;
+    case kChampImage:
+      // Visible partout, comme dans l'exemple de Microsoft : c'est ce qui
+      // représente le fournisseur quand la tuile n'est pas sélectionnée.
+      *etat = variantes_.sans_image ? CPFS_HIDDEN : CPFS_DISPLAY_IN_BOTH;
+      break;
+    case kChampLibelle:
+      // Jamais affiché dans la tuile : LogonUI le lit pour l'info-bulle.
+      *etat = CPFS_HIDDEN;
+      break;
     default:
       break;
   }
@@ -212,15 +296,18 @@ HRESULT CVaultaireCredential::ValeurDuChamp(DWORD champ, wchar_t** valeur) {
     case kChampCode:        return Copier(L"", valeur);
     case kChampValider:     return Copier(L"Se connecter", valeur);
     case kChampMessage:     return Copier(message_, valeur);
+    case kChampLibelle:     return Copier(L"Vaultaire", valeur);
     default:                return E_INVALIDARG;
   }
 }
 
 // Les méthodes des types de champ que la tuile n'a pas. Tracées quand même :
 // un appel ici dit que LogonUI lit un champ autrement qu'on l'a décrit.
-IFACEMETHODIMP CVaultaireCredential::GetBitmapValue(DWORD champ, HBITMAP*) {
+IFACEMETHODIMP CVaultaireCredential::GetBitmapValue(DWORD champ, HBITMAP* image) {
   Passage p(L"Tuile::GetBitmapValue", L"champ=%lu", (unsigned long)champ);
-  return p.Rendre(E_NOTIMPL);
+  if (champ != kChampImage || image == nullptr) return p.Rendre(E_INVALIDARG);
+  *image = DessinerImage();
+  return p.Rendre(*image != nullptr ? S_OK : E_OUTOFMEMORY);
 }
 IFACEMETHODIMP CVaultaireCredential::GetCheckboxValue(DWORD champ, BOOL*, wchar_t**) {
   Passage p(L"Tuile::GetCheckboxValue", L"champ=%lu", (unsigned long)champ);

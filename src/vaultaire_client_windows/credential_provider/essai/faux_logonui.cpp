@@ -34,12 +34,22 @@
 // et les journaux de CI ne s'entendent pas toujours sur l'encodage. Le code de
 // sortie est le nombre d'échecs — 0 quand tout est juste.
 //
+// # Les variantes d'essai (TO-DO 157)
+//
+//   faux_logonui.exe --variantes
+//
+// La même suite, quand essai-wine.sh a posé les trois valeurs de
+// HKLM\SOFTWARE\Vaultaire\CredentialProvider (TuileParDefaut, ModeV1,
+// SansImage) : ce qui doit changer change, et rien d'autre.
+//
 // Format large : une chaîne large s'écrit %ls, jamais %s (voir build-cp.sh).
 
 #include "vaultaire_guid.h"
 
 #include <windows.h>
 #include <credentialprovider.h>
+// Les rôles de champ du SDK, pour les comparer à ceux que la DLL recopie.
+#include <shlguid.h>
 #include <stdarg.h>
 #include <stdio.h>
 
@@ -54,13 +64,25 @@ namespace {
 // essai qui lit ses attentes dans le code qu'il éprouve ne trouve jamais
 // l'erreur qu'ils partagent. Si l'un change, l'essai rougit, et c'est voulu —
 // l'ordre des champs EST l'interface avec Winlogon.
-const DWORD kNombreDeChamps = 6;
+const DWORD kNombreDeChamps = 8;
 const DWORD kChampTitre = 0, kChampUtilisateur = 1, kChampMotDePasse = 2, kChampCode = 3,
-            kChampValider = 4, kChampMessage = 5;
+            kChampValider = 4, kChampMessage = 5, kChampImage = 6, kChampLibelle = 7;
 const CREDENTIAL_PROVIDER_FIELD_TYPE kTypes[kNombreDeChamps] = {
     CPFT_LARGE_TEXT, CPFT_EDIT_TEXT, CPFT_PASSWORD_TEXT,
     CPFT_PASSWORD_TEXT, CPFT_SUBMIT_BUTTON, CPFT_SMALL_TEXT,
+    CPFT_TILE_IMAGE, CPFT_SMALL_TEXT,
 };
+
+// Le rôle attendu de chaque champ (TO-DO 157) : celui du SDK, lu dans shlguid.h.
+const GUID kAucunRole = {0, 0, 0, {0, 0, 0, 0, 0, 0, 0, 0}};
+const GUID* RoleAttendu(DWORD champ) {
+  if (champ == kChampImage) return &CPFG_CREDENTIAL_PROVIDER_LOGO;
+  if (champ == kChampLibelle) return &CPFG_CREDENTIAL_PROVIDER_LABEL;
+  return &kAucunRole;
+}
+
+// --variantes : les trois valeurs d'essai sont posées.
+bool g_variantes = false;
 
 const wchar_t kTube[] = L"\\\\.\\pipe\\vaultaire_agent";
 
@@ -329,6 +351,40 @@ void Arreter(Serveur* s) {
 typedef HRESULT(WINAPI* FnGetClassObject)(REFCLSID, REFIID, void**);
 typedef HRESULT(WINAPI* FnCanUnloadNow)();
 
+// Une liste de comptes vide, comme LogonUI en passe une à SetUserArray. Seul
+// son compte de références compte : le fournisseur doit la garder, puis la
+// rendre.
+class CComptes : public ICredentialProviderUserArray {
+ public:
+  LONG references = 1;
+  IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
+    if (ppv == nullptr) return E_POINTER;
+    if (riid == IID_IUnknown || riid == IID_ICredentialProviderUserArray) {
+      *ppv = static_cast<ICredentialProviderUserArray*>(this);
+      AddRef();
+      return S_OK;
+    }
+    *ppv = nullptr;
+    return E_NOINTERFACE;
+  }
+  IFACEMETHODIMP_(ULONG) AddRef() override { return InterlockedIncrement(&references); }
+  IFACEMETHODIMP_(ULONG) Release() override { return InterlockedDecrement(&references); }
+  IFACEMETHODIMP SetProviderFilter(REFGUID) override { return S_OK; }
+  IFACEMETHODIMP GetAccountOptions(CREDENTIAL_PROVIDER_ACCOUNT_OPTIONS* options) override {
+    if (options) *options = CPAO_EMPTY_LOCAL;
+    return S_OK;
+  }
+  IFACEMETHODIMP GetCount(DWORD* nombre) override {
+    if (nombre) *nombre = 0;
+    return S_OK;
+  }
+  IFACEMETHODIMP GetAt(DWORD, ICredentialProviderUser** compte) override {
+    if (compte) *compte = nullptr;
+    return E_INVALIDARG;
+  }
+};
+CComptes g_comptes;
+
 // Le fournisseur, tel que LogonUI le trouve : par son CLSID, à travers le
 // registre. C'est ce qui prouve que l'inscription mène à la DLL.
 ICredentialProvider* Activer() {
@@ -354,6 +410,24 @@ void PhaseFournisseur(ICredentialProvider* f) {
   hr = f->SetUsageScenario(CPUS_LOGON, 0);
   Verifier(hr == S_OK, "SetUsageScenario(LOGON) accepte = 0x%08lx", (unsigned long)hr);
 
+  // LogonUI passe la liste des comptes AVANT de demander les tuiles (TO-DO 157).
+  Section("fournisseur : liste des comptes (ICredentialProviderSetUserArray)");
+  ICredentialProviderSetUserArray* liste = nullptr;
+  hr = f->QueryInterface(IID_ICredentialProviderSetUserArray, (void**)&liste);
+  if (g_variantes) {
+    Verifier(hr == E_NOINTERFACE && liste == nullptr,
+             "variante ModeV1 : ICredentialProviderSetUserArray refusee = 0x%08lx", (unsigned long)hr);
+  } else {
+    Verifier(hr == S_OK && liste != nullptr, "QueryInterface(ICredentialProviderSetUserArray) = 0x%08lx",
+             (unsigned long)hr);
+  }
+  if (liste != nullptr) {
+    hr = liste->SetUserArray(&g_comptes);
+    Verifier(hr == S_OK && g_comptes.references == 2, "SetUserArray = 0x%08lx, liste gardee (%ld ref.)",
+             (unsigned long)hr, (long)g_comptes.references);
+    liste->Release();
+  }
+
   Section("fournisseur : description des champs");
   DWORD nombre = 0;
   hr = f->GetFieldDescriptorCount(&nombre);
@@ -364,8 +438,8 @@ void PhaseFournisseur(ICredentialProvider* f) {
     CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* d = nullptr;
     hr = f->GetFieldDescriptorAt(i, &d);
     const bool bon = hr == S_OK && d != nullptr && d->dwFieldID == i && d->cpft == kTypes[i] &&
-                     d->pszLabel != nullptr;
-    Verifier(bon, "GetFieldDescriptorAt(%lu) : rang, type %d, libelle \"%s\"", (unsigned long)i,
+                     d->pszLabel != nullptr && IsEqualGUID(d->guidFieldType, *RoleAttendu(i));
+    Verifier(bon, "GetFieldDescriptorAt(%lu) : rang, type %d, role, libelle \"%s\"", (unsigned long)i,
              d ? (int)d->cpft : -1, d ? Ascii(d->pszLabel).c_str() : "(nul)");
     // Libérés comme LogonUI les libère. Un libellé qui ne viendrait pas de
     // CoTaskMemAlloc ferait tomber LogonUI ici — wine le laisse parfois passer,
@@ -385,7 +459,12 @@ void PhaseFournisseur(ICredentialProvider* f) {
   BOOL auto_ouvrir = TRUE;
   hr = f->GetCredentialCount(&tuiles, &par_defaut, &auto_ouvrir);
   Verifier(hr == S_OK && tuiles == 1, "GetCredentialCount = %lu tuile(s)", (unsigned long)tuiles);
-  Verifier(par_defaut == 0, "tuile par defaut = %lu", (unsigned long)par_defaut);
+  if (g_variantes) {
+    Verifier(par_defaut == 0, "variante TuileParDefaut : tuile par defaut = %lu", (unsigned long)par_defaut);
+  } else {
+    Verifier(par_defaut == CREDENTIAL_PROVIDER_NO_DEFAULT,
+             "aucune tuile par defaut (CREDENTIAL_PROVIDER_NO_DEFAULT) = 0x%08lx", (unsigned long)par_defaut);
+  }
   Verifier(auto_ouvrir == FALSE, "jamais d'ouverture automatique");
 
   ICredentialProviderCredential* t = nullptr;
@@ -424,8 +503,13 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
 
   ICredentialProviderCredential2* t2 = nullptr;
   hr = t->QueryInterface(IID_ICredentialProviderCredential2, (void**)&t2);
-  Verifier(hr == S_OK && t2 != nullptr, "QueryInterface(ICredentialProviderCredential2) = 0x%08lx",
-           (unsigned long)hr);
+  if (g_variantes) {
+    Verifier(hr == E_NOINTERFACE && t2 == nullptr,
+             "variante ModeV1 : ICredentialProviderCredential2 refusee = 0x%08lx", (unsigned long)hr);
+  } else {
+    Verifier(hr == S_OK && t2 != nullptr, "QueryInterface(ICredentialProviderCredential2) = 0x%08lx",
+             (unsigned long)hr);
+  }
   if (t2 != nullptr) {
     wchar_t* sid = (wchar_t*)1;
     hr = t2->GetUserSid(&sid);
@@ -438,8 +522,10 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
   hr = t->Advise(&evenements);
   Verifier(hr == S_OK, "Advise = 0x%08lx", (unsigned long)hr);
 
-  // SetSelected : LogonUI l'appelle dès l'affichage, la tuile étant celle par
-  // défaut. C'est ici qu'un agent muet figeait l'écran (TO-DO 156).
+  // SetSelected : LogonUI l'appelle à la sélection de la tuile — dès
+  // l'affichage si elle est seule sous « Autre utilisateur », ou si la variante
+  // TuileParDefaut est posée. C'est ici qu'un agent muet figeait l'écran
+  // (TO-DO 156).
   BOOL auto_ouvrir = TRUE;
   DWORD debut = GetTickCount();
   hr = t->SetSelected(&auto_ouvrir);
@@ -465,17 +551,34 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
     if (t->GetFieldState(i, &etat, &interaction) != S_OK) etats_bons = false;
     if (i == kChampTitre && etat != CPFS_DISPLAY_IN_BOTH) etats_bons = false;
     if (i == kChampUtilisateur && interaction != CPFIS_FOCUSED) etats_bons = false;
+    if (i == kChampImage && etat != (g_variantes ? CPFS_HIDDEN : CPFS_DISPLAY_IN_BOTH)) etats_bons = false;
+    if (i == kChampLibelle && etat != CPFS_HIDDEN) etats_bons = false;
   }
-  Verifier(etats_bons, "GetFieldState : six champs, titre visible partout, focus sur l'identifiant");
+  Verifier(etats_bons, "GetFieldState : huit champs, titre et image visibles partout, libelle masque, "
+                       "focus sur l'identifiant");
+
+  // L'image : un bitmap que l'appelant détruit, comme LogonUI.
+  HBITMAP image = nullptr;
+  hr = t->GetBitmapValue(kChampImage, &image);
+  BITMAP infos = {};
+  const bool image_lisible = image != nullptr && GetObjectW(image, sizeof(infos), &infos) == sizeof(infos);
+  Verifier(hr == S_OK && image_lisible && infos.bmWidth == 128 && infos.bmHeight == 128,
+           "GetBitmapValue(image) = 0x%08lx, %ldx%ld", (unsigned long)hr, (long)infos.bmWidth,
+           (long)infos.bmHeight);
+  if (image != nullptr) DeleteObject(image);
+  image = nullptr;
+  hr = t->GetBitmapValue(kChampTitre, &image);
+  Verifier(hr == E_INVALIDARG && image == nullptr, "GetBitmapValue(titre) refuse = 0x%08lx", (unsigned long)hr);
 
   bool chaines_bonnes = true;
   for (DWORD i = 0; i < kNombreDeChamps; ++i) {
-    if (kTypes[i] == CPFT_SUBMIT_BUTTON) continue;
+    if (kTypes[i] == CPFT_SUBMIT_BUTTON || kTypes[i] == CPFT_TILE_IMAGE) continue;
     HRESULT r;
     std::wstring v = Lire(t, i, &r);
     if (r != S_OK) chaines_bonnes = false;
     if (i == kChampTitre && v != L"Vaultaire") chaines_bonnes = false;
     if (i == kChampMessage && v != attendu) chaines_bonnes = false;
+    if (i == kChampLibelle && v != L"Vaultaire") chaines_bonnes = false;
   }
   Verifier(chaines_bonnes, "GetStringValue : chaque champ texte rend une valeur liberable");
 
@@ -564,8 +667,10 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
 
 }  // namespace
 
-int main() {
-  printf("faux LogonUI - essai du Credential Provider Vaultaire (TO-DO 149)\n");
+int main(int argc, char** argv) {
+  g_variantes = argc > 1 && strcmp(argv[1], "--variantes") == 0;
+  printf("faux LogonUI - essai du Credential Provider Vaultaire (TO-DO 149)%s\n",
+         g_variantes ? " - variantes d'essai posees (TO-DO 157)" : "");
   HANDLE chien = CreateThread(nullptr, 0, ChienDeGarde, nullptr, 0, nullptr);
   if (chien != nullptr) CloseHandle(chien);
 
@@ -610,6 +715,7 @@ int main() {
   Section("liberation");
   ULONG restantes = f->Release();
   Verifier(restantes == 0, "le fournisseur se libere (references restantes : %lu)", (unsigned long)restantes);
+  Verifier(g_comptes.references == 1, "la liste des comptes est rendue (%ld ref.)", (long)g_comptes.references);
   // Le compte d'objets du module : sans lui, DllCanUnloadNow dit « encore
   // utilisée » pour toujours, et COM ne décharge jamais la DLL.
   if (can_unload != nullptr) {

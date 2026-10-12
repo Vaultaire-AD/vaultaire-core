@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **179**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **180**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Audit de sécurité du 25/09.** Les points 95 à 107 viennent d'une relecture du
 code existant, pas d'une recette. Les constats **sérieux** (101 à 107) sont
@@ -60,8 +60,9 @@ attente : la DLL a été recompilée, l'essai n'a pas encore eu lieu.
 charge, mais l'écran de connexion reste **vide** — aucune tuile, pas même celles
 de Windows. Deux défauts trouvés en cherchant sont **traités** (**156**, voir
 `DO/2.2/2.2.md`) : l'échange avec l'agent n'avait aucune échéance côté DLL, et le
-journal ne disait pas où LogonUI s'arrêtait. La cause de l'écran vide, elle,
-**n'est pas établie** : c'est le **157**.
+journal ne disait pas où LogonUI s'arrêtait. La cause de l'écran vide n'est
+pas établie ; le **157** l'a corrigée à l'aveugle — **traité**, voir
+`DO/2.3/2.3.md` —, et le **179** est la validation sur un poste.
 
 **Recette du 03/10 (retours de Lorens sur `A_TESTER.md`).** Dix points ouverts,
 **139 à 148** : Windows (**139** la DLL dépend de `libwinpthread-1.dll`, **140**
@@ -147,7 +148,7 @@ rend un compte sans groupe quand la base flanche).
 | 167 | RÉVOCATION   | Windows et les services n'acquittent aucun ordre : rejeu sans fin | À faire — petit, lié au 79         |
 | 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
-| 157 | WINDOWS      | L'écran de connexion reste vide une fois la tuile inscrite  | **À faire — bloque la recette Windows** |
+| 179 | WINDOWS      | Écran vide : valider le correctif du 157 sur un poste       | **À faire — bloque la recette Windows** |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 168 | AGENT        | Cloisonner le service de l'agent (`ProtectSystem`…)         | À faire — à éprouver directive par directive |
@@ -229,53 +230,27 @@ des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
 
-### 157. [WINDOWS] L'écran de connexion reste vide une fois la tuile inscrite
+### 179. [WINDOWS] Écran vide : valider le correctif du 157 sur un poste
 
-**Constat** (recette du 05/10, DLL compilée depuis `hotfix`). Après
-Ctrl+Alt+Suppr, l'écran de connexion n'affiche **aucune tuile** — ni celle de
-Vaultaire, ni celles de Windows. Seuls restent le bouton du réseau et celui de
-l'accessibilité. Le Bureau à distance ne passe pas non plus. Le journal de la
-DLL porte « fournisseur charge » et « scenario 1 accepte », rien d'autre ;
-celui de l'agent ne porte rien.
+**Origine.** Le **157** a corrigé à l'aveugle l'écran de connexion vide de la
+recette du 05/10 : la DLL fait désormais ce que fait l'exemple « V2 » de
+Microsoft sur les trois points où elle s'en écartait — plus de tuile par défaut,
+une image et un libellé de fournisseur, `ICredentialProviderSetUserArray`
+acceptée (`DO/2.3/2.3.md`). Rien de cela n'a tourné dans un vrai LogonUI.
 
-**Ce qui est établi.**
+**À faire, sur le poste de la recette** (`A_TESTER.md`, § 80) :
 
-- Ces deux lignes sont aussi celles d'une ouverture de session **réussie** : le
-  journal d'avant le 156 ne distinguait pas un écran vide d'un écran sain. Elles
-  ne disent donc rien de la cause.
-- Rejouée sous wine par un faux LogonUI (toute la suite d'appels d'un
-  fournisseur, scénarios 1 et 2), la DLL de `hotfix` rend un résultat correct à
-  chaque méthode, agent arrêté comme agent en marche.
-- Un seul cas reproduit le symptôme : un tube **présent** dont l'agent ne répond
-  pas. `SetSelected` y restait bloquée sans limite. C'est corrigé (156) — mais
-  rien ne prouve que ce soit le cas de la recette.
-- L'en-tête MinGW des interfaces (ordre des méthodes, identifiants, énumérations,
-  taille des structures) a été relu contre les définitions de Windows : il est
-  juste. Le faux LogonUI et la DLL partagent cet en-tête ; une erreur commune
-  aux deux n'aurait pas été vue autrement.
-
-**À faire, dans l'ordre.** Chaque étape tranche une hypothèse.
-
-1. Refaire l'archive depuis une branche qui porte le 156, réinstaller, poser le
-   témoin `C:\ProgramData\Vaultaire\logs\credential_provider.trace`, refaire
-   l'essai, lire `credential_provider.log` (`A_TESTER.md`, §48). Une entrée
-   « > Méthode » sans sa sortie « < Méthode » nomme l'endroit. Une suite
-   complète dit que la DLL a tout rendu, et que la panne est en aval.
-2. Valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur : si les tuiles de
-   Windows reviennent, c'est bien notre DLL ; sinon, chercher ailleurs.
-3. Observateur d'événements, journal Application, sources « Application Error »
-   (1000) et « Application Hang » (1002) pour `LogonUI.exe` : le module fautif
-   y est nommé.
-4. Si la trace est complète et que l'écran reste vide : ce qui distingue notre
-   tuile de l'exemple de Microsoft — elle se déclare tuile **par défaut**
-   (`GetCredentialCount`), n'a **pas d'image** (`CPFT_TILE_IMAGE`), et le
-   fournisseur n'implémente pas `ICredentialProviderSetUserArray`. À essayer un
-   par un, sur le poste.
-
-**Lié.** Le faux LogonUI est dans le dépôt depuis le 149
-(`credential_provider/essai/faux_logonui.cpp`) et tourne à chaque fabrication
-qui dispose de wine : chaque variante de l'étape 4 y passe avant d'aller sur le
-poste. Il ne voit pas l'écran — c'est exactement ce qui reste à trouver ici.
+1. Archive refaite depuis `dev`, réinstallée, témoin de trace posé. Si les tuiles
+   reviennent — celles de Windows et « Autre utilisateur » avec Vaultaire dans
+   ses options de connexion —, se connecter, et fermer ce point.
+2. Sinon, rétablir les écarts **un par un** par les variantes d'essai
+   (`TuileParDefaut`, `ModeV1`, `SansImage`, sous
+   `HKLM\SOFTWARE\Vaultaire\CredentialProvider`) : celle qui ramène les tuiles
+   nomme la cause. Aucune ne les ramène : les étapes 2 et 3 de l'ancien 157 —
+   `Disabled` = 1 sous la clé du fournisseur pour savoir si c'est bien notre
+   DLL, puis l'Observateur d'événements (`LogonUI.exe`, 1000 et 1002).
+3. Une fois la cause établie : retirer les variantes devenues inutiles du code,
+   et le dire dans `README.md` du client Windows.
 
 ### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
 
