@@ -59,6 +59,21 @@ Nous utilisons un modèle inspiré de **Gitflow** adapté :
 - **Faire des commits atomiques et bien nommés** (ex : `fix: corrige l’erreur de connexion LDAP`)  
 - Poussez la branche sur le dépôt distant régulièrement.
 
+### Une branche par point de la TO-DO — développeurs **et IA**
+
+Chaque point de `docs/Developement/TO-DO.md` se traite sur **sa** branche :
+
+1. la créer depuis `dev` : `git switch -c fix/<description>-<numéro> dev`
+   (ou `feature/…`) ;
+2. y traiter le point en entier — code, tests, et les fichiers que la
+   convention demande (`TO-DO.md`, `DO/`, `Version/`, `A_TESTER.md`, formation) ;
+3. la fusionner dans `dev` (`git switch dev && git merge --no-ff <branche>`) ;
+4. la supprimer (`git branch -d <branche>`).
+
+La pousser n'est pas obligatoire : elle ne vit que le temps du point. Un point
+= une branche = un commit de fusion dans `dev`, qui se lit et s'annule d'un
+seul geste.
+
 ## 2.1 Commits atomiques et messages clairs
 
 Un **commit atomique** signifie que chaque commit :  

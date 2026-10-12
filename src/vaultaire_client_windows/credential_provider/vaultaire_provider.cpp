@@ -18,16 +18,38 @@ namespace vaultaire {
 // Défini dans vaultaire_credential.cpp.
 const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps();
 
-class CVaultaireProvider : public ICredentialProvider {
+// ICredentialProviderSetUserArray (TO-DO 157) : c'est l'interface par laquelle
+// LogonUI, depuis Windows 8, passe au fournisseur la liste des comptes qu'il
+// affiche, AVANT de lui demander ses tuiles. L'exemple V2 de Microsoft
+// l'implémente toujours avec une tuile V2 (ICredentialProviderCredential2) ;
+// celle-ci ne l'implémentait pas. Le fournisseur n'a pas l'usage de la liste —
+// sa tuile n'est rattachée à aucun compte — mais il la reçoit et la garde,
+// comme l'exemple.
+class CVaultaireProvider : public ICredentialProvider, public ICredentialProviderSetUserArray {
  public:
-  CVaultaireProvider() : references_(1), scenario_(CPUS_INVALID), credential_(nullptr) {
+  CVaultaireProvider()
+      : references_(1), scenario_(CPUS_INVALID), credential_(nullptr), comptes_(nullptr),
+        variantes_(LireVariantes()) {
     ObjetCree();
+    // Une variante active se lit au journal : une recette qui en oublierait
+    // une posée conclurait sur le mauvais comportement.
+    if (variantes_.tuile_par_defaut || variantes_.mode_v1 || variantes_.sans_image) {
+      Journaliser(L"variantes d'essai actives : TuileParDefaut=%d ModeV1=%d SansImage=%d",
+                  (int)variantes_.tuile_par_defaut, (int)variantes_.mode_v1,
+                  (int)variantes_.sans_image);
+    }
   }
 
   IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override {
     if (ppv == nullptr) return E_POINTER;
     if (riid == IID_IUnknown || riid == IID_ICredentialProvider) {
       *ppv = static_cast<ICredentialProvider*>(this);
+      AddRef();
+      if (TraceActive()) Tracer(L"Fournisseur::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
+      return S_OK;
+    }
+    if (riid == IID_ICredentialProviderSetUserArray && !variantes_.mode_v1) {
+      *ppv = static_cast<ICredentialProviderSetUserArray*>(this);
       AddRef();
       if (TraceActive()) Tracer(L"Fournisseur::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
       return S_OK;
@@ -94,7 +116,17 @@ class CVaultaireProvider : public ICredentialProvider {
     }
     credential_ = new (std::nothrow) CVaultaireCredential();
     if (credential_ == nullptr) return p.Rendre(E_OUTOFMEMORY);
-    return p.Rendre(credential_->Initialiser(scenario));
+    return p.Rendre(credential_->Initialiser(scenario, variantes_));
+  }
+
+  // SetUserArray : la liste des comptes que LogonUI affiche. Gardée (une
+  // référence) et rendue à la destruction ; rien d'autre.
+  IFACEMETHODIMP SetUserArray(ICredentialProviderUserArray* comptes) override {
+    Passage p(L"Fournisseur::SetUserArray");
+    if (comptes_ != nullptr) comptes_->Release();
+    comptes_ = comptes;
+    if (comptes_ != nullptr) comptes_->AddRef();
+    return p.Rendre(S_OK);
   }
 
   // SetSerialization : Windows propose des identifiants déjà sérialisés
@@ -155,7 +187,12 @@ class CVaultaireProvider : public ICredentialProvider {
       return p.Rendre(E_INVALIDARG);
     }
     *nombre = 1;
-    *par_defaut = 0;
+    // PAS de tuile par défaut (TO-DO 157), comme l'exemple V2 de Microsoft.
+    // Une tuile sans compte rattaché se range sous « Autre utilisateur » ; se
+    // déclarer en plus tuile par défaut demandait à LogonUI de la sélectionner
+    // avant les tuiles des comptes — la première hypothèse de l'écran vide.
+    // La variante TuileParDefaut rend le comportement d'avant, pour l'essai.
+    *par_defaut = variantes_.tuile_par_defaut ? 0 : CREDENTIAL_PROVIDER_NO_DEFAULT;
     // JAMAIS d'ouverture automatique : il n'y a pas d'identifiants à rejouer,
     // et une tuile qui se soumet seule ferait boucler l'écran de connexion.
     *auto_ouvrir = FALSE;
@@ -178,12 +215,15 @@ class CVaultaireProvider : public ICredentialProvider {
   // Virtuel : détruit par « delete this » à travers un pointeur d'interface.
   virtual ~CVaultaireProvider() {
     if (credential_ != nullptr) credential_->Release();
+    if (comptes_ != nullptr) comptes_->Release();
     ObjetDetruit();
   }
 
   LONG references_;
   CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario_;
   CVaultaireCredential* credential_;
+  ICredentialProviderUserArray* comptes_;
+  const Variantes variantes_;
 };
 
 // CreerFournisseur est appelée par la fabrique de classe (vaultaire_dll.cpp).

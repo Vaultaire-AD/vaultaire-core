@@ -79,7 +79,7 @@ fi
     -O2 -std=c++17 -Wall -Wextra -Wno-unused-parameter \
     -DUNICODE -D_UNICODE -DWIN32_LEAN_AND_MEAN \
     -static -static-libgcc -static-libstdc++ \
-    -lole32 -loleaut32 -luuid -lsecur32 -ladvapi32 -lshlwapi
+    -lole32 -loleaut32 -luuid -lsecur32 -ladvapi32 -lshlwapi -lgdi32 -luser32
 
 # --- contrôle des imports (TO-DO 139) ---------------------------------------
 #
@@ -90,6 +90,10 @@ fi
 #
 # La liste est CLOSE : une DLL système de plus s'y ajoute en connaissance de
 # cause, le jour où le code en a besoin.
+#
+# gdi32 depuis le TO-DO 157 : l'image de la tuile est dessinée par la DLL
+# (CreateDIBSection, DrawText). Elle est chargée dans tout processus graphique
+# de Windows, LogonUI compris.
 OBJDUMP="${MINGW_OBJDUMP:-x86_64-w64-mingw32-objdump}"
 command -v "$OBJDUMP" >/dev/null || OBJDUMP="objdump"
 command -v "$OBJDUMP" >/dev/null || {
@@ -109,7 +113,7 @@ grep -q 'file format pei-x86-64' <<<"$entete" || {
     exit 1
 }
 
-SYSTEME='^(advapi32|kernel32|msvcrt|ole32|oleaut32|secur32|shlwapi|user32|rpcrt4)\.dll$'
+SYSTEME='^(advapi32|gdi32|kernel32|msvcrt|ole32|oleaut32|secur32|shlwapi|user32|rpcrt4)\.dll$'
 imports="$(sed -n 's/^[[:space:]]*DLL Name: //p' <<<"$entete" | tr -d '\r')"
 etrangers="$(grep -viE "$SYSTEME" <<<"$imports" || true)"
 if [ -n "$etrangers" ]; then

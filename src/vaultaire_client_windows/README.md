@@ -122,6 +122,7 @@ neuf :
 | inscription | `regsvr32` rend 0 ; le GUID de `vaultaire_guid.h` (lu dans `DEFINE_GUID`) sous `CLSID` **et** `Credential Providers`, la DLL pour `InprocServer32`, `Apartment` ; plus aucune clé `{` |
 | activation | `essai/faux_logonui.exe` : `CoCreateInstance` du CLSID, puis la suite d'appels de LogonUI — scénarios, champs, tuile — face à un agent **absent**, **muet** et **en marche** ; `SetSelected` borné, refus nommés, aucun bloc d'ouverture sur un refus, `DllCanUnloadNow` à la fin |
 | trace | la même suite, témoin posé : chaque `> Méthode` a son `< Méthode`, et ni le mot de passe ni le code tapés ne sont dans le journal |
+| variantes | les trois variantes d'essai du TO-DO 157 posées dans le registre : la suite voit ce qu'elles changent, et le journal les nomme |
 | retrait | `regsvr32 /u` : plus rien de Vaultaire, l'autre fournisseur intact |
 
 Un échec arrête la fabrication, sans archive. Sans wine, la DLL est fabriquée
@@ -264,7 +265,7 @@ réellement le compte.
 | Symptôme | Cause probable |
 |---|---|
 | La tuile n'apparaît pas | Lire `credential_provider.log`. **Aucune ligne « fournisseur inscrit »** : `regsvr32` a échoué — code 3, la DLL ne se charge pas (dépendance manquante : archive d'avant le TO-DO 139). **« inscrit » mais jamais « charge »** : la clé n'est pas celle que LogonUI lit — `reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers"` doit montrer `{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}` ; une clé nommée `{` est la trace d'une DLL d'avant le TO-DO 140, refaire l'archive |
-| L'écran de connexion n'affiche **aucune** tuile, pas même celles de Windows | Un fournisseur retient LogonUI. Poser le témoin de trace (ci-dessous) et refaire l'essai : une ligne `> Méthode` sans sa ligne `<` nomme l'endroit. Pour reprendre la main : valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur, ou `uninstall.ps1 -CredentialProviderSeulement`. L'Observateur d'événements (Application, 1000 et 1002, `LogonUI.exe`) nomme le module en cas de plantage |
+| L'écran de connexion n'affiche **aucune** tuile, pas même celles de Windows | Constaté à la recette du 05/10 (TO-DO 157), corrigé à l'aveugle depuis — voir « Les variantes d'essai » ci-dessous. Poser le témoin de trace (ci-dessous) et refaire l'essai : une ligne `> Méthode` sans sa ligne `<` nomme l'endroit. Pour reprendre la main : valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur, ou `uninstall.ps1 -CredentialProviderSeulement`. L'Observateur d'événements (Application, 1000 et 1002, `LogonUI.exe`) nomme le module en cas de plantage |
 | « Le service Vaultaire de ce poste ne répond pas » | le tube existe mais l'agent n'a pas répondu en 1,5 s : agent figé ou surchargé. Son journal, puis `sc stop` / `sc start VaultaireAgent` |
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` ; le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu, ou `servers` faux dans `client_conf.json` |
@@ -307,3 +308,43 @@ quand le journal dépasse 8 Mo.
 
 Sans trace, un appel qui retient LogonUI plus d'une seconde laisse quand même
 une ligne `lent : <méthode> a retenu LogonUI N ms`.
+
+### Les variantes d'essai de l'écran de connexion (TO-DO 157)
+
+À la recette du 05/10, l'écran de connexion n'affichait plus **aucune** tuile.
+Toutes les méthodes de la DLL répondaient juste sous le faux LogonUI ; la cause
+n'a pas pu être établie sans poste. Depuis, la DLL fait ce que fait l'exemple
+« V2 » de Microsoft (`SampleV2CredentialProvider`), sur les trois points où
+elle s'en écartait :
+
+| | Avant | Depuis le 157 |
+|---|---|---|
+| tuile par défaut | oui (`GetCredentialCount` rend 0) | **non** (`CREDENTIAL_PROVIDER_NO_DEFAULT`) |
+| image de la tuile | aucune | un champ image, rôle `CPFG_CREDENTIAL_PROVIDER_LOGO`, et un libellé masqué, rôle `CPFG_CREDENTIAL_PROVIDER_LABEL` |
+| liste des comptes | `ICredentialProviderSetUserArray` refusée | acceptée |
+
+Si l'écran reste vide, chaque écart se **rétablit** un par un, sans recompiler ni
+réinstaller, par une valeur DWORD = 1 sous
+`HKLM\SOFTWARE\Vaultaire\CredentialProvider` :
+
+| Valeur | Rétablit |
+|---|---|
+| `TuileParDefaut` | la tuile par défaut |
+| `ModeV1` | un fournisseur V1 : ni `ICredentialProviderCredential2` ni `ICredentialProviderSetUserArray` |
+| `SansImage` | une tuile sans image (le champ reste déclaré, masqué) |
+
+```powershell
+New-Item HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Force | Out-Null
+New-ItemProperty HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Name ModeV1 -PropertyType DWord -Value 1 -Force
+# ... essai à l'écran de connexion, puis :
+Remove-Item HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Recurse
+```
+
+Elles sont relues à chaque affichage de l'écran de connexion, et le journal de
+la DLL porte une ligne `variantes d'essai actives : …` tant qu'une est posée —
+une recette qui en oublierait une conclurait sur le mauvais comportement.
+`uninstall.ps1` retire la clé. Depuis un autre poste, quand l'écran est vide :
+`reg add \\<poste>\HKLM\SOFTWARE\Vaultaire\CredentialProvider /v ModeV1 /t REG_DWORD /d 1`
+(service Registre à distance), ou depuis le mode sans échec.
+
+La manœuvre complète est dans `A_TESTER.md`, § 80.

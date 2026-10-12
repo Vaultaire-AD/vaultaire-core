@@ -72,6 +72,15 @@ foreach ($id in @("{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}", "{")) {
     }
 }
 
+# Les variantes d'essai de l'écran de connexion (TO-DO 157) : posées à la main
+# pour une recette, elles n'ont plus de sens sans la DLL. Une réinstallation
+# repartirait sinon avec la variante oubliée.
+$cleVariantes = "HKLM:\SOFTWARE\Vaultaire\CredentialProvider"
+if (Test-Path -LiteralPath $cleVariantes) {
+    Remove-Item -LiteralPath $cleVariantes -Recurse -Force -ErrorAction SilentlyContinue
+    Info "variantes d'essai retirées : $cleVariantes"
+}
+
 if ($dllPresente -or $clesRetirees -gt 0) {
     Info "Credential Provider retiré de l'écran de connexion"
 } else {

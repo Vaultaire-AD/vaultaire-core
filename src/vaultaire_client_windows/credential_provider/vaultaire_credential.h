@@ -30,14 +30,42 @@ enum Champ {
   kChampCode,
   kChampValider,        // bouton
   kChampMessage,        // petit texte : état de l'agent, motif d'un refus
+  // Ajoutés par le TO-DO 157, À LA FIN pour ne décaler aucun rang existant.
+  // Ce sont les deux champs que porte tout fournisseur « V2 » de Microsoft
+  // (SampleV2CredentialProvider) : LogonUI les retrouve par leur rôle
+  // (guidFieldType), pas par leur rang.
+  kChampImage,          // image de la tuile, rôle CPFG_CREDENTIAL_PROVIDER_LOGO
+  kChampLibelle,        // nom du fournisseur, rôle CPFG_CREDENTIAL_PROVIDER_LABEL, masqué
   kNombreDeChamps,
 };
+
+// Les variantes d'essai du TO-DO 157.
+//
+// L'écran de connexion vide ne se reproduit que sur un vrai poste. Chaque
+// hypothèse s'y essaie en posant une valeur DWORD sous
+// HKLM\SOFTWARE\Vaultaire\CredentialProvider — sans recompiler ni
+// réinstaller la DLL. Valeur absente ou 0 : le comportement par défaut.
+//
+//   TuileParDefaut = 1  la tuile se déclare par défaut (comportement d'avant
+//                       le 157) ;
+//   ModeV1 = 1          ni ICredentialProviderCredential2 ni
+//                       ICredentialProviderSetUserArray : un fournisseur V1 ;
+//   SansImage = 1       l'image de la tuile est masquée.
+//
+// Lues à la création du fournisseur, c'est-à-dire à chaque affichage de l'écran
+// de connexion. Une variante active est écrite au journal de la DLL.
+struct Variantes {
+  bool tuile_par_defaut = false;
+  bool mode_v1 = false;
+  bool sans_image = false;
+};
+Variantes LireVariantes();
 
 class CVaultaireCredential : public ICredentialProviderCredential2 {
  public:
   CVaultaireCredential();
 
-  HRESULT Initialiser(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario);
+  HRESULT Initialiser(CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario, const Variantes& variantes);
 
   // IUnknown
   IFACEMETHODIMP QueryInterface(REFIID riid, void** ppv) override;
@@ -93,6 +121,7 @@ class CVaultaireCredential : public ICredentialProviderCredential2 {
 
   LONG references_;
   CREDENTIAL_PROVIDER_USAGE_SCENARIO scenario_;
+  Variantes variantes_;
   ICredentialProviderCredentialEvents* evenements_;
 
   std::wstring utilisateur_;
