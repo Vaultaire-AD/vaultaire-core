@@ -79,6 +79,17 @@ func CreateTables(db *sql.DB) error {
 		return err
 	}
 
+	// Les services visés avant le TO-DO 167 : rangés une fois pour toutes,
+	// sans quoi le rejeu leur remettrait leurs ordres pour toujours. Un échec
+	// ne bloque pas le démarrage — le rangement se rejouera au suivant.
+	if n, err := RangerLesCiblesSansCompte(db); err != nil {
+		logs.Write_Log("WARNING", "revocation: "+err.Error())
+	} else if n > 0 {
+		logs.Write_Log("INFO", fmt.Sprintf(
+			"revocation: %d cible(s) de services rangée(s) « non pris en charge » — ils ne portent aucun compte, "+
+				"l'ordre ne leur est plus remis", n))
+	}
+
 	logs.Write_Log("INFO", "revocation: schéma vérifié")
 	return nil
 }

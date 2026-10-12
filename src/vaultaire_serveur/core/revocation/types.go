@@ -177,6 +177,14 @@ const (
 	// verrouillage « à rejouer » : rejoué SEUL, il refermait un compte que
 	// l'annuaire dit ouvert. La levée range donc ce qu'elle rend sans objet.
 	StatusLifted TargetStatus = "lifted"
+	// StatusNonPrisEnCharge : la machine ne sait pas appliquer une révocation
+	// — TO-DO 167. Ne sera plus rejoué, et n'est PAS un acquittement : le
+	// compte n'est pas coupé sur cette machine, et l'état le dit.
+	//
+	// Deux sources : un client qui répond 06_03 « unsupported » (l'agent
+	// Windows V1), et les cibles d'avant le 167 qui étaient des SERVICES —
+	// un proxy, un Nexus — rangés dans un groupe du compte.
+	StatusNonPrisEnCharge TargetStatus = "unsupported"
 )
 
 // Libelle dit l'état d'une cible en français — TO-DO 164.
@@ -194,6 +202,8 @@ func (s TargetStatus) Libelle() string {
 		return "appliqué"
 	case StatusLifted:
 		return "levé avant application"
+	case StatusNonPrisEnCharge:
+		return "non pris en charge"
 	}
 	return string(s)
 }
@@ -246,4 +256,9 @@ const (
 	ErrPermissionDenied = "permission_denied"
 	ErrInternal         = "internal"
 	ErrMalformedOrder   = "malformed_order"
+	// ErrUnsupported : le client ne sait pas appliquer de révocation — TO-DO
+	// 167. Il vaut pour TOUS les ordres de cette machine, pas seulement pour
+	// celui qui porte la réponse : le core range donc toutes ses cibles en
+	// attente dans StatusNonPrisEnCharge.
+	ErrUnsupported = "unsupported"
 )

@@ -185,6 +185,24 @@ func Trigger(senderUsername string, senderGroupIDs []int,
 		}
 	}
 
+	// TO-DO 167 : seules les machines qui savent appliquer un ordre sont
+	// visées. Un service (proxy, Nexus) rangé dans un groupe du compte ne porte
+	// aucun compte local, et l'ordre lui serait remis pour toujours. Une
+	// lecture en échec ne retire rien : mieux vaut un ordre qui attend qu'une
+	// machine oubliée.
+	if types, err := dbrevocation.TypesDesMachines(db, targets); err != nil {
+		logs.Write_Log("WARNING", "revocation: type des machines visées illisible, aucune n'est écartée : "+err.Error())
+	} else {
+		var ecartees []string
+		targets, ecartees = dbrevocation.GarderLesRevocables(targets, types)
+		out.TargetCount = len(targets)
+		if len(ecartees) > 0 {
+			logs.Write_Log("INFO", fmt.Sprintf(
+				"revocation: %d machine(s) d'un type qui ne porte aucun compte écartée(s) des cibles : %s",
+				len(ecartees), strings.Join(ecartees, ", ")))
+		}
+	}
+
 	orderID, err := dbrevocation.CreateOrder(db, directoryUser, mode, reason, senderUsername, targets)
 	if err != nil {
 		return out, err
