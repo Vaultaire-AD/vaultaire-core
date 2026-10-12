@@ -96,14 +96,53 @@ jobs:
           done
 
   # --------------------------------------------------------------------
-  # 2. Compilation — sur Rocky Linux 9, la cible
+  # 2a. Modules natifs de la famille Debian — sur Ubuntu 22.04 (TO-DO 173)
+  # --------------------------------------------------------------------
+  # Les modules PAM et NSS ne se chargent que sur une glibc au moins aussi
+  # récente que celle qui les a compilés, et avec la libcrypt qu'ils ont vue.
+  # Ceux de Rocky 9 exigent libcrypt.so.2, que Debian et Ubuntu n'ont pas : la
+  # famille Debian a donc les siens, compilés sur sa plus ancienne version prise
+  # en charge — Ubuntu 22.04, glibc 2.35 (Debian 12 : 2.36, Ubuntu 24.04 : 2.39).
+  # auto_compil.sh échoue si un fichier exige davantage.
+  modules-debian:
+    name: "🧩 Modules natifs (Ubuntu 22.04)"
+    needs: version
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+    steps:
+      - name: Dépendances de compilation
+        run: |
+          apt-get update -q
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            gcc libc6-dev libpam0g-dev libcrypt-dev binutils
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Compilation
+        env:
+          VAULTAIRE_GLIBC_MAX: "2.35"
+        run: bash src/vaultaire_client/pam_module/auto_compil.sh dist/debian
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modules-debian-${{ needs.version.outputs.tag }}
+          path: dist/debian/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------
+  # 2b. Compilation — sur Rocky Linux 9, la cible
   # --------------------------------------------------------------------
   # Compiler sur ubuntu-latest lierait les binaires et les modules PAM à une
   # glibc plus récente que celle de Rocky 9 : ils refuseraient de se charger
-  # sur les machines du parc.
+  # sur les machines du parc. Les modules natifs de CETTE image vont dans
+  # vaultaire_client/rocky/ ; ceux de la famille Debian arrivent du job
+  # précédent, dans vaultaire_client/debian/.
   build:
     name: "🛠️ Compilation (Rocky 9)"
-    needs: version
+    needs: [version, modules-debian]
     runs-on: ubuntu-latest
     container: rockylinux:9
     env:
@@ -113,8 +152,8 @@ jobs:
       - name: Dépendances de compilation
         run: |
           dnf install -y --setopt=install_weak_deps=False \
-            git gcc tar gzip findutils which \
-            pam-devel libcurl-devel libxcrypt-devel
+            git gcc binutils tar gzip findutils which \
+            pam-devel libxcrypt-devel
           dnf clean all
 
       - uses: actions/checkout@v4
@@ -135,8 +174,31 @@ jobs:
       - name: Compilation
         env:
           VAULTAIRE_BUILD_DIR: ${{ github.workspace }}/dist/build
+          VAULTAIRE_FAMILLE_MODULES: rocky
           GOTOOLCHAIN: local
         run: ./auto-compil.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: modules-debian-${{ needs.version.outputs.tag }}
+          path: dist/build/vaultaire_client/debian
+
+      # Un paquet client sans l'une des deux familles laisserait ses postes
+      # sans modules : l'installation y serait refusée, au mieux.
+      - name: Modules natifs des deux familles
+        run: |
+          set -euo pipefail
+          for famille in rocky debian; do
+            for f in pam_login_custom_module.so pam_logout_custom_module.so \
+                     pam_ssh_auth_module.so libnss_vaultaire.so.2; do
+              test -s "dist/build/vaultaire_client/$famille/$f" \
+                || { echo "::error::$famille/$f absent du paquet client"; exit 1; }
+            done
+            chmod 755 dist/build/vaultaire_client/$famille/*
+          done
+          if compgen -G "dist/build/vaultaire_client/*.so*" > /dev/null; then
+            echo "::error::modules non classés à la racine du paquet client"; exit 1
+          fi
 
       # Une archive par composant : on ne déploie pas un proxy avec le serveur.
       - name: Paquets
