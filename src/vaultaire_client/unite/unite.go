@@ -58,14 +58,16 @@ const (
 // `ExecStartPre=… --check` : un agent qui ne peut pas démarrer n'est pas lancé,
 // et son échec dit pourquoi — voir le paquet controle.
 //
-// # Ce qui n'y est PAS : le cloisonnement
+// # Le cloisonnement — TO-DO 168
 //
-// Pas de `ProtectSystem`, `ProtectHome`, `NoNewPrivileges`… L'unité de Nexus les
-// porte ; celle-ci ne le peut pas telle quelle. L'agent crée des comptes,
-// écrit dans les dossiers personnels et applique des politiques sur tout le
-// système : chacune de ces protections couperait un appliqueur de GPO, et
-// aucune n'a été éprouvée sur un poste. Les poser à l'aveugle casserait des
-// machines pour une promesse non tenue.
+// L'agent crée des comptes, écrit dans les dossiers personnels et applique des
+// politiques sur tout le système : il ne peut pas porter le cloisonnement de
+// l'unité de Nexus. Mais il peut porter ce qui ne lui coûte RIEN — les
+// directives qui interdisent une chose qu'aucun de ses chemins ne fait, lui
+// ni les commandes qu'il lance (systemctl, nft, chage, usermod, gpasswd,
+// setfacl, sysctl, auditctl, modprobe, grub2-mkconfig, restorecon…). Chacune
+// a été confrontée au code ; voir Cloisonnement ci-dessous, et ce qui est
+// refusé dans Exclues.
 const Gabarit = `# Écrit par « vaultaire_client --install-unit ». Ne pas modifier ici : ce
 # fichier est réécrit à chaque mise à jour de l'agent. Un réglage local se
 # pose dans /etc/systemd/system/vaultaire_client.service.d/*.conf.
@@ -90,10 +92,57 @@ Environment=USER=root
 LimitNOFILE=4096
 Restart=on-failure
 RestartSec=5s
-
+` + Cloisonnement + `
 [Install]
 WantedBy=multi-user.target
 `
+
+// Cloisonnement : les directives que l'agent porte, chacune parce qu'aucun de
+// ses chemins ne fait ce qu'elle interdit (TO-DO 168).
+//
+// Une directive inconnue d'un systemd ancien (ProtectKernelLogs avant la 244 —
+// Rocky 8) est ignorée par lui avec un avertissement : jamais un refus de
+// démarrer.
+const Cloisonnement = `# Cloisonnement (TO-DO 168) : ce que l'agent ne fait jamais. Ce qu'il fait —
+# écrire dans /etc, /home et /boot, régler /proc/sys, décharger un module,
+# changer de domaine SELinux — reste permis : voir unite.go, « Exclues ».
+# Changer de domaine d'exécution (personality) : jamais.
+LockPersonality=yes
+# Ordonnancement temps réel : jamais.
+RestrictRealtime=yes
+# Créer un fichier setuid ou setgid : jamais — les GPO n'expriment que trois
+# chiffres de permissions (gpo/registry.go, parseFileMode).
+RestrictSUIDSGID=yes
+# Créer un espace de noms : ni l'agent, ni les commandes qu'il lance.
+RestrictNamespaces=yes
+# Appels système d'une autre architecture (32 bits sur 64) : jamais.
+SystemCallArchitectures=native
+# Lire le tampon du noyau (dmesg, /dev/kmsg) : jamais.
+ProtectKernelLogs=yes
+# /sys/fs/cgroup en lecture seule : les limites des comptes passent par des
+# fichiers de /etc/systemd et « systemctl daemon-reload », pas par cgroupfs.
+ProtectControlGroups=yes
+# Unix (PAM, NSS, D-Bus), IP (le réseau Ducky, le DNS), netlink (nft,
+# auditctl, les interfaces réseau). Rien d'autre — AF_PACKET compris.
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+`
+
+// Exclues : les directives que l'agent ne peut PAS porter, et pourquoi. Un test
+// vérifie qu'aucune n'est dans le gabarit ; les ajouter demande de lever la
+// raison d'abord.
+var Exclues = map[string]string{
+	"ProtectSystem":          "les GPO écrivent dans /etc (sshd, sudoers, dépôts, journald…) et /boot (grub2-mkconfig)",
+	"ProtectHome":            "l'agent crée les dossiers personnels et y applique le scope utilisateur",
+	"NoNewPrivileges":        "elle interdit les transitions SELinux de l'agent (vers useradd_t, setfiles_t — TO-DO 22)",
+	"ProtectKernelTunables":  "le module sysctl règle /proc/sys (sysctl -p), setenforce écrit dans /sys/fs/selinux",
+	"ProtectKernelModules":   "le durcissement décharge des modules (modprobe -r)",
+	"ProtectClock":           "elle pose une liste de périphériques autorisés, que les commandes des GPO n'ont jamais été éprouvées sous",
+	"PrivateTmp":             "l'ancien tube PAM vit dans /tmp (pamstate.LegacySocketPath) : sshd ne le verrait plus",
+	"PrivateDevices":         "même raison que ProtectClock, et grub2-mkconfig lit les disques",
+	"MemoryDenyWriteExecute": "elle vaut aussi pour les commandes lancées, dont certaines (interpréteurs) écrivent du code exécutable",
+	"ProtectHostname":        "un espace de noms UTS privé : un nom de machine posé par une commande ne vaudrait que pour l'agent",
+	"SystemCallFilter":       "useradd, chage, setfacl, auditctl… : un filtre demande de relever leurs appels système sur un poste",
+}
 
 // Environnement réunit ce dont l'installation dépend. Des fonctions, pour qu'un
 // test la joue sans être root ni toucher à systemd.
