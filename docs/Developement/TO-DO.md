@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **181**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **182**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -32,7 +32,7 @@ Trois gestes, dans le même passage que le code :
 | 179 | WINDOWS      | Écran vide : valider le correctif du 157 sur un poste       | **À faire — bloque la recette Windows** |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
-| 168 | AGENT        | Cloisonner le service de l'agent (`ProtectSystem`…)         | À faire — à éprouver directive par directive |
+| 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
 | 113 | AGENT-UPDATE | Clé `pkg_signing` et format du manifeste signé              | À faire                                 |
 | 114 | AGENT-UPDATE | Dépôt Nexus en lecture anonyme, découvert par `04_15`       | À faire                                 |
@@ -150,28 +150,24 @@ acceptée (`DO/2.3/2.3.md`). Rien de cela n'a tourné dans un vrai LogonUI.
 
 ## Agent
 
-### 168. [AGENT] Cloisonner le service de l'agent
+### 181. [AGENT] Cloisonnement de l'agent, la suite
 
-**Origine.** Reste du **112**. L'unité de l'agent a maintenant une relance bornée
-et un contrôle avant démarrage ; elle n'a toujours aucune des protections que
-porte l'unité de Nexus (`ProtectSystem`, `ProtectHome`, `NoNewPrivileges`,
-`RestrictAddressFamilies`…).
+**Origine** (reste du **168**). L'unité porte maintenant huit directives qui ne
+coûtent rien à l'agent ; onze sont exclues, chacune avec sa raison
+(`unite.Exclues`). Deux de ces raisons peuvent tomber :
 
-**Pourquoi ce n'est pas fait.** L'agent crée des comptes, écrit dans les
-dossiers personnels et applique des politiques sur tout le système. Chaque
-directive couperait un appliqueur de GPO — `ProtectHome` tout le scope
-utilisateur, `ProtectSystem=strict` tout dépôt de fichier sous `/etc`,
-`NoNewPrivileges` les transitions SELinux de l'agent vers `useradd_t` et
-`setfiles_t` (TO-DO 22). Les poser sans les avoir
-éprouvées casserait des postes pour une promesse non tenue.
+- **`PrivateTmp`** n'est exclue que par l'ancien tube PAM de `/tmp`
+  (`pamstate.LegacySocketPath`). Le jour où plus aucun module PAM du parc ne s'y
+  connecte — c'est-à-dire après une mise à jour du parc (111 à 118) —, le
+  retirer et poser `PrivateTmp=yes`.
+- **`SystemCallFilter`** demande de relever, sur un poste, les appels système
+  de l'agent ET des commandes qu'il lance pendant la suite de GPO de la
+  formation (`strace -f -c`, ou `SystemCallLog=` en systemd ≥ 247), puis de
+  partir de `@system-service` et d'y ajouter ce qui manque.
 
-**À faire.** Sur un vrai poste, une directive à la fois, la suite de GPO de la
-formation rejouée après chacune. Garder celles qui ne coûtent rien
-(`ProtectKernelTunables` est exclu d'office par le module `sysctl`,
-`LockPersonality` ou `RestrictRealtime` ne le sont probablement pas), écrire
-pourquoi les autres ne peuvent pas l'être. Le gabarit vit dans
-`src/vaultaire_client/unite/unite.go` : c'est lui qu'on modifie, et
-`vaultaire_client --install-unit` qui le pose.
+Les autres exclusions tiennent à ce que fait le produit (écrire dans `/etc`,
+`/home`, `/boot`, régler `/proc/sys`, décharger un module, changer de domaine
+SELinux) : elles ne tomberont pas.
 
 ## Sécurité et authentification
 

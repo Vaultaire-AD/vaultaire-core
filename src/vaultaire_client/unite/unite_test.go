@@ -290,3 +290,25 @@ func TestUnRechargementEnEchecSeDit(t *testing.T) {
 		t.Fatalf("erreur %v : un rechargement manqué passe pour un succès — systemd garderait l'ancienne unité", err)
 	}
 }
+
+// TO-DO 168 : le cloisonnement que l'agent porte, et celui qu'il ne peut pas.
+func TestLeCloisonnementEstCeluiQuiNeCouteRien(t *testing.T) {
+	service := sections(t, Gabarit)["Service"]
+	for cle, valeur := range map[string]string{
+		"LockPersonality": "yes", "RestrictRealtime": "yes", "RestrictSUIDSGID": "yes",
+		"RestrictNamespaces": "yes", "SystemCallArchitectures": "native", "ProtectKernelLogs": "yes",
+		"ProtectControlGroups":    "yes",
+		"RestrictAddressFamilies": "AF_UNIX AF_INET AF_INET6 AF_NETLINK",
+	} {
+		if v := service[cle]; len(v) != 1 || v[0] != valeur {
+			t.Errorf("[Service] %s = %v, attendu %q", cle, v, valeur)
+		}
+	}
+	for d, pourquoi := range Exclues {
+		for _, section := range sections(t, Gabarit) {
+			if _, posee := section[d]; posee {
+				t.Errorf("%s est posée, alors que : %s", d, pourquoi)
+			}
+		}
+	}
+}
