@@ -30,6 +30,14 @@
 #define VAULTAIRE_MAX_BUF        4096
 #define VAULTAIRE_CMD_SIZE       512
 
+/* Echeance de la reponse de l'agent, pour toute la reponse (TO-DO 198).
+ * Au-dessus du pire cas de l'agent : 7 s pour le core, 5 s pour la phase GPO
+ * de compte, plus la creation du compte. Redefinissable a la compilation pour
+ * les tests. */
+#ifndef VAULTAIRE_DELAI_REPONSE_MS
+#define VAULTAIRE_DELAI_REPONSE_MS 20000
+#endif
+
 /* Taille du message presente a l'utilisateur a l'ouverture de session
  * (champ « notice », TO-DO 99).
  *

@@ -40,7 +40,6 @@ Trois gestes, dans le même passage que le code :
 | 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | À faire — voir le rapport du 190 |
-| 198 | PAM          | Aucun budget global pour l'ouverture d'une session         | À faire — après 196 et 197              |
 | 199 | JOURNAL      | Journaux mesurables : horodatage du module PAM, millisecondes | À faire — petit                       |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
@@ -324,19 +323,6 @@ une fois par clé refusée présentée avant elle.
 3. Démon arrêté : ne rien rendre, vite — c'est le comportement d'aujourd'hui
    quand le core est injoignable.
 4. Mesurer avant et après (`A_TESTER.md`, § 86).
-
-### 198. [PAM] [GPO] Aucun budget global pour l'ouverture d'une session
-
-**Origine** (rapport du **190**, § 2.3). Les bornes s'additionnent : le module
-PAM attend l'agent **sans délai** (`recv` en boucle), l'agent attend `03_02`
-7 s, la politique de compte 6 s, chaque commande de module 10 s, et
-`user_resource_limits` lance un `daemon-reload` du système.
-
-**À faire.** Un délai de réception dans le module PAM (`SO_RCVTIMEO`) ; un
-plafond pour la phase GPO de compte, au-delà duquel l'accès est rendu et le
-cycle poursuivi en arrière-plan (la règle « un incident GPO n'empêche pas de se
-connecter » existe déjà) ; le dire au journal. Après le 196 et le 197, et
-d'après la mesure du § 86.
 
 ### 199. [JOURNAL] Des journaux qui permettent de mesurer une connexion
 
