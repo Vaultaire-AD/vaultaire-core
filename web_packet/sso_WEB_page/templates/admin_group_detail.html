@@ -82,7 +82,7 @@
     <section class="section">
       <h2>Clients</h2>
       <ul style="list-style:none;padding:0">
-        {{ range .Clients }}<li><a href="/admin/clients?client={{ . }}">{{ . }}</a></li>{{ else }}<li class="muted">Aucun client.</li>{{ end }}
+        {{ range .Clients }}{{ $nom := index $.NomsClients . }}<li><a href="/admin/clients?client={{ . }}">{{ if $nom }}{{ $nom }} <span class="muted small">{{ . }}</span>{{ else }}{{ . }}{{ end }}</a></li>{{ else }}<li class="muted">Aucun client.</li>{{ end }}
       </ul>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.75rem">
         <input type="hidden" name="action" value="add_client">
@@ -91,8 +91,8 @@
         <label>Ajouter des clients</label>
         <select name="computeur_id" multiple data-vlt-picker
                 data-placeholder="Choisir un ou plusieurs clients"
-                data-search-placeholder="Rechercher une machine…"
-                data-empty="Aucun client ne correspond">{{ range .AllClients }}<option value="{{ .ComputeurID }}">{{ .ComputeurID }}</option>{{ end }}</select>
+                data-search-placeholder="Rechercher par nom ou identifiant…"
+                data-empty="Aucun client ne correspond">{{ range .AllClients }}<option value="{{ .ComputeurID }}">{{ if .Hostname }}{{ .Hostname }} — {{ end }}{{ .ComputeurID }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-primary" style="margin-top:0.5rem">Ajouter</button>
       </form>
       <form method="post" action="/admin/groups?group={{ .Group }}" style="margin-top:0.5rem">
@@ -102,8 +102,8 @@
         <label>Retirer des clients</label>
         <select name="computeur_id" multiple data-vlt-picker
                 data-placeholder="Choisir un ou plusieurs clients du groupe"
-                data-search-placeholder="Rechercher une machine…"
-                data-empty="Aucun client ne correspond">{{ range .Clients }}<option value="{{ . }}">{{ . }}</option>{{ end }}</select>
+                data-search-placeholder="Rechercher par nom ou identifiant…"
+                data-empty="Aucun client ne correspond">{{ range .Clients }}{{ $nom := index $.NomsClients . }}<option value="{{ . }}">{{ if $nom }}{{ $nom }} — {{ end }}{{ . }}</option>{{ end }}</select>
         <button type="submit" class="btn btn-secondary" style="margin-top:0.5rem">Retirer</button>
       </form>
     </section>

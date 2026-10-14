@@ -66,13 +66,19 @@ en plus un tunnel machine). Le port de `-join` vaut 22 par défaut.
    vlt status -c
    ```
 
+   Depuis le portail : **Groupes › Infra › Ajouter des clients**. Les machines
+   y sont proposées par leur nom (`web01 — <computeur_id>`), et la recherche
+   prend l'un comme l'autre.
+
 ## ✅ Vous avez réussi si
 
 - `get -c` liste la machine ;
 - sur `web01`, `ls /etc/pam.d/*.avant-vaultaire` montre les piles d'origine
   (`login`, `sshd`) ;
 - `status -c` la montre connectée ;
-- `get -g Infra` la compte parmi ses clients.
+- `get -g Infra` la compte parmi ses clients ;
+- dans le portail, la fiche du groupe `Infra` la nomme `web01`, et non par son
+  seul identifiant.
 
 ## 🧪 Exercice
 
