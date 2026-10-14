@@ -23,6 +23,18 @@
 #   ./deployments/dev-comp/dev-comp.sh --noeuds           liste les nœuds ajoutés après coup
 #   ./deployments/dev-comp/dev-comp.sh --rm-noeud <nom>   retire un nœud ajouté (et son identité)
 #
+# Publier des ports en plus (TO-DO 185), répétable :
+#
+#   --port <hôte>:<conteneur>[/udp]   avec --proxy, --add-proxy ou --add-core
+#
+#   ./deployments/dev-comp/dev-comp.sh --no-build --proxy --port 8443:8443 --port 636:1636
+#   ./deployments/dev-comp/dev-comp.sh --add-proxy lyon --port 9443:8443
+#
+# Un proxy ne publie que son port Ducky : ses relais pilotés (https, ldaps —
+# TO-DO 141) écoutent DANS le conteneur, et rien ne les joint depuis l'hôte sans
+# cette option. Sur --proxy, les ports s'ajoutent au proxy du compose, par un
+# fichier de surcharge écrit dans build/ ; relancer sans --port les retire.
+#
 # « Monter une version » : sans --version, la version injectée est la
 # PROCHAINE release de la série en cours — VERSION (2.2) et le plus grand tag
 # v2.2.N connu localement donnent 2.2.(N+1), ou 2.2.0 sans tag. Le commit et
@@ -55,6 +67,8 @@ NEXUS=0
 VERSION_IMPOSEE=""
 ACTION="up"
 NOM_NOEUD=""
+# Ports publiés en plus, « hôte:conteneur[/udp] » (TO-DO 185).
+PORTS_EN_PLUS=()
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -80,18 +94,77 @@ while [ $# -gt 0 ]; do
         --add-core)  ACTION="add-core"
                      case "${2:-}" in ""|-*) : ;; *) NOM_NOEUD="$2"; shift ;; esac ;;
         --noeuds)   ACTION="noeuds" ;;
+        # Même garde que --version : la valeur est obligatoire.
+        --port)     case "${2:-}" in ""|-*) erreur "--port attend <hôte>:<conteneur>, par exemple --port 636:1636" ;;
+                                     *) PORTS_EN_PLUS+=("$2"); shift ;; esac ;;
         # Même garde que ci-dessus, et pour une raison de plus : un « shift »
         # inconditionnel sur « --rm-noeud » seul vide la pile d'arguments, le
         # shift de fin de boucle échoue, et « set -e » arrête le script SANS
         # message — le contraire de ce que doit faire une option mal employée.
         --rm-noeud) ACTION="rm-noeud"
                     case "${2:-}" in ""|-*) : ;; *) NOM_NOEUD="$2"; shift ;; esac ;;
-        -h|--help)  sed -n '2,36p' "$0"; exit 0 ;;
+        # L'aide est l'en-tête du fichier, jusqu'au « set -euo » : le compte de
+        # lignes figé qu'elle avait cessait de suivre l'en-tête dès qu'il grandissait.
+        -h|--help)  awk 'NR>1 && /^set -euo/ {exit} NR>1' "$0"; exit 0 ;;
         "") erreur "argument vide (voir --help)" ;;
         *) erreur "option inconnue : $1 (voir --help)" ;;
     esac
     shift
 done
+
+# --- ports en plus (TO-DO 185) ---------------------------------------------
+#
+# Validés AVANT tout : un « -p » mal formé ne se découvre qu'au docker run, après
+# la clé d'enrôlement consommée et le volume créé — c'est-à-dire trop tard.
+port_valide() { [[ "$1" =~ ^[0-9]{1,5}$ ]] && [ "$1" -ge 1 ] && [ "$1" -le 65535 ]; }
+for spec in ${PORTS_EN_PLUS[@]+"${PORTS_EN_PLUS[@]}"}; do
+    # Les deux numéros sont lus AVANT port_valide : son propre « =~ » écrase
+    # BASH_REMATCH.
+    hote_spec="" cont_spec=""
+    if [[ "$spec" =~ ^([0-9]{1,5}):([0-9]{1,5})(/(tcp|udp))?$ ]]; then
+        hote_spec="${BASH_REMATCH[1]}" cont_spec="${BASH_REMATCH[2]}"
+    fi
+    if [ -z "$hote_spec" ] || ! port_valide "$hote_spec" || ! port_valide "$cont_spec"; then
+        erreur "--port $spec : forme attendue <hôte>:<conteneur>[/udp], ports de 1 à 65535"
+    fi
+done
+if [ "${#PORTS_EN_PLUS[@]}" -gt 0 ]; then
+    case "$ACTION" in
+        add-proxy|add-core) : ;;
+        up) [ "$PROXY" = 1 ] || erreur "--port s'applique à un proxy ou à un core ajouté : --proxy, --add-proxy ou --add-core" ;;
+        *)  erreur "--port n'a pas de sens avec cette action (voir --help)" ;;
+    esac
+fi
+
+# Les « -p » d'un docker run, pour --add-proxy et --add-core. Chaque port de
+# l'hôte est contrôlé comme ceux que le script choisit lui-même.
+OPTIONS_PORTS=()
+options_ports_en_plus() {
+    local spec hote
+    for spec in ${PORTS_EN_PLUS[@]+"${PORTS_EN_PLUS[@]}"}; do
+        hote="${spec%%:*}"
+        port_libre "$hote" || erreur "--port $spec : le port $hote de l'hôte est déjà pris"
+        OPTIONS_PORTS+=(-p "$spec")
+    done
+}
+
+# La surcharge du compose, pour --proxy. Réécrite à chaque lancement : vide
+# sans --port, elle rend au proxy ses seuls ports du compose.
+SURCHARGE_PORTS="$BUILD/ports-en-plus.yml"
+FICHIERS_COMPOSE=(-f docker-compose.yml)
+if [ "$ACTION" = up ] && [ "$PROXY" = 1 ] && [ "${#PORTS_EN_PLUS[@]}" -gt 0 ]; then
+    mkdir -p "$BUILD"
+    {
+        echo "# Écrit par dev-comp.sh --port (TO-DO 185). Ne pas éditer : réécrit à chaque lancement."
+        echo "services:"
+        echo "  vlt-proxy:"
+        echo "    ports:"
+        for spec in "${PORTS_EN_PLUS[@]}"; do echo "      - \"$spec\""; done
+    } > "$SURCHARGE_PORTS"
+    FICHIERS_COMPOSE+=(-f "$SURCHARGE_PORTS")
+else
+    rm -f "$SURCHARGE_PORTS"
+fi
 
 # Profils des CONTENEURS à démarrer. Les IMAGES, elles, sont toutes
 # construites : voir TOUS plus bas.
@@ -330,6 +403,7 @@ ajouter_proxy() {
     nom="${NOM_NOEUD:-proxy$n}"
     port="$(ports_de proxy "$n")"
     exiger_nom_libre "$nom"
+    options_ports_en_plus
     reseau="$(reseau_de_la_pile)"
     volume="devcomp_keys_$nom"
 
@@ -402,6 +476,7 @@ $(printf '%s\n' "$sortie" | sed -E 's/VLT-ENR-[0-9a-f]{32}/VLT-ENR-…(masquée)
         -v "$BUILD/vaultaire_proxy:/opt/vaultaire/bin:ro" \
         -v "$volume:/var/lib/vaultaire_proxy/keys" \
         -p "$port:6666" \
+        ${OPTIONS_PORTS[@]+"${OPTIONS_PORTS[@]}"} \
         vlt-proxy-devcomp:latest >/dev/null
 
     info "proxy « $nom » démarré — port $port, identité dans le volume $volume"
@@ -424,6 +499,7 @@ ajouter_core() {
     n="$(indice_libre core)"
     nom="${NOM_NOEUD:-core$n}"
     exiger_nom_libre "$nom"
+    options_ports_en_plus
     reseau="$(reseau_de_la_pile)"
     read -r p_ducky p_web p_api p_ldap p_ldaps <<<"$(ports_de core "$n")"
 
@@ -459,6 +535,7 @@ ajouter_core() {
         -p "$p_api:6643" \
         -p "$p_ldap:389" \
         -p "$p_ldaps:636" \
+        ${OPTIONS_PORTS[@]+"${OPTIONS_PORTS[@]}"} \
         vaultaire-devcomp:latest >/dev/null
 
     info "core « $nom » démarré sur la base de la pile :"
@@ -623,11 +700,11 @@ docker compose "${TOUS[@]}" build vaultaire-ad vlt-proxy vaultaire-nexus
 # --- démarrage -------------------------------------------------------------
 # Les binaires étant montés, un redémarrage suffit à prendre en compte une
 # recompilation.
-docker compose "${PROFILS[@]}" up -d
+docker compose "${FICHIERS_COMPOSE[@]}" "${PROFILS[@]}" up -d
 A_REDEMARRER=(vaultaire-ad)
 [ "$PROXY" = 1 ] && A_REDEMARRER+=(vlt-proxy)
 [ "$NEXUS" = 1 ] && A_REDEMARRER+=(vaultaire-nexus)
-docker compose "${PROFILS[@]}" restart "${A_REDEMARRER[@]}" >/dev/null
+docker compose "${FICHIERS_COMPOSE[@]}" "${PROFILS[@]}" restart "${A_REDEMARRER[@]}" >/dev/null
 
 info "pile démarrée :"
 # Le mot de passe d'amorçage n'est plus « admin123 » : le core refuse de
