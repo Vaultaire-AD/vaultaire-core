@@ -51,7 +51,6 @@ Trois gestes, dans le même passage que le code :
 | 193 | DEV          | Modules natifs du core de développement : les deux familles | À faire — bloque `-join` Debian en dev  |
 | 185 | DEV          | `dev-comp.sh --port` : publier des ports en plus            | À faire — petit                         |
 | 191 | PORTAIL      | Sélection des clients : le nom en plus de l'identifiant     | À faire — petit                         |
-| 192 | PORTAIL      | Tableau de bord : « Exécuter une commande » en haut         | À faire — petit                         |
 | 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
@@ -446,11 +445,6 @@ en le disant. Puis rejouer § 70 sur Debian 12 et 13, Ubuntu 22.04 et 24.04.
 **Constat** (recette du 12/10, `A_TESTER.md`). Là où le portail fait choisir des clients, il ne
 montre que leur identifiant unique : illisible. Afficher le nom de la machine à
 côté.
-
-### 192. [PORTAIL] Tableau de bord : « Exécuter une commande » en haut
-
-**Constat** (recette du 12/10, `A_TESTER.md`). Remettre le bloc « Exécuter une commande » tout en
-haut du tableau de bord, au-dessus de la partie debug.
 
 ---
 
