@@ -656,12 +656,30 @@ if [ "$COMPILER" = 1 ]; then
     if [ "$LOCAL" = 1 ]; then
         # Sur l'hôte : plus rapide, mais les binaires suivent la glibc de
         # l'hôte. À réserver à un hôte Rocky 9 / RHEL 9.
+        #
+        # Une seule famille, celle de l'hôte, et NON CLASSÉE : un poste de
+        # l'autre famille la refusera au -join (TO-DO 193). Dit maintenant
+        # plutôt qu'à la première installation.
         VAULTAIRE_ROOT="$RACINE" VAULTAIRE_BUILD_DIR="$BUILD" VAULTAIRE_VERSION="$VERSION_DEV" \
             "$RACINE/auto-compil.sh"
+        info "⚠ --local : modules natifs de l'hôte seulement, non classés par famille —"
+        info "  un -join vers l'autre famille (Debian/Ubuntu depuis un hôte Rocky) sera refusé."
+        info "  Sans --local, dev-comp compile les deux familles, comme la release."
     else
-        # Dans le conteneur Rocky 9 : même recette que la CI de release.
+        # Dans le conteneur Rocky 9 : même recette que la CI de release —
+        # binaires et modules de la famille rocky.
         HOST_UID="$(id -u)" HOST_GID="$(id -g)" VAULTAIRE_VERSION="$VERSION_DEV" \
             docker compose --profile build run --rm --build builder
+        # Puis les modules de la famille debian, dans Ubuntu 22.04 (TO-DO 193).
+        # APRÈS le builder Rocky : c'est lui qui (re)crée l'arborescence de
+        # build/ et retire les modules non classés d'une compilation d'avant.
+        HOST_UID="$(id -u)" HOST_GID="$(id -g)" \
+            docker compose --profile build run --rm --build builder-debian
+        for famille in rocky debian; do
+            n="$(find "$BUILD/vaultaire_client/$famille" -maxdepth 1 \( -name 'pam_*.so' -o -name 'libnss_vaultaire.so.2' \) 2>/dev/null | wc -l)"
+            [ "$n" -eq 4 ] || erreur "modules natifs de la famille $famille incomplets ($n sur 4) dans $BUILD/vaultaire_client/$famille"
+        done
+        info "modules natifs : rocky/ (Rocky 9) et debian/ (Ubuntu 22.04)"
     fi
 fi
 

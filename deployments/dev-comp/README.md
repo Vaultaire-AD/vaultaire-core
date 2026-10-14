@@ -26,9 +26,9 @@ release installée par la préprod ne sont pas touchés.
 
 | Option | Effet |
 |---|---|
-| *(aucune)* | compile dans un conteneur Rocky 9, puis `up -d` et redémarrage du core |
+| *(aucune)* | compile dans un conteneur Rocky 9 (et les modules Debian dans Ubuntu 22.04), puis `up -d` et redémarrage du core |
 | `--version X.Y.Z` | impose la version injectée dans les binaires |
-| `--local` | compile sur l'hôte avec `auto-compil.sh` (plus rapide ; hôte Rocky/RHEL 9 seulement, sinon glibc différente) |
+| `--local` | compile sur l'hôte avec `auto-compil.sh` (plus rapide ; hôte Rocky/RHEL 9 seulement, sinon glibc différente ; modules d'une seule famille) |
 | `--no-build` | redémarre sans recompiler |
 | `--proxy` | démarre aussi un proxy (relais Ducky) |
 | `--nexus` | démarre aussi un Nexus (dépôt de paquets) |
@@ -58,11 +58,24 @@ release : gcc, `pam-devel`, `libxcrypt-devel`, Go épinglé
 (`GO_VERSION`, 1.26.5). Le serveur (cgo) et les modules PAM sont ainsi liés à la
 glibc de Rocky 9, celle de l'image d'exécution et du parc.
 
-Les modules natifs sortent **non classés**, à la racine de `vaultaire_client/` :
-ils conviennent à un poste Rocky, pas à un poste Debian ou Ubuntu — ils lient la
-`libcrypt.so.2` de Rocky, que ces distributions n'ont pas, et `debian.sh` refuse
-alors l'installation avant de toucher à PAM. Les releases, elles, portent un jeu
-par famille (`rocky/`, `debian/`), compilé par la CI (TO-DO 173). Le cache Go vit dans
+Les modules natifs sortent **par famille**, comme ceux d'une release (TO-DO
+193) :
+
+| Répertoire | Compilé dans | Pour |
+|---|---|---|
+| `vaultaire_client/rocky/` | le conteneur ci-dessus, glibc bornée à 2.34 | Rocky, RHEL, Alma 9 |
+| `vaultaire_client/debian/` | `ubuntu:22.04` (`Dockerfile.build-debian`, service `builder-debian`), glibc bornée à 2.35 | Debian 12 et 13, Ubuntu 22.04 et 24.04 |
+
+Les deux familles ne lient pas la même `libcrypt` (`.so.2` côté Rocky, `.so.1`
+côté Debian) : un seul jeu ne peut pas servir les deux. Avant le 193, dev-comp
+ne produisait que celui de Rocky, non classé, et un `-join` vers une Debian
+s'arrêtait sur `libcrypt.so.2 => not found`.
+
+`--local` compile toujours sur l'hôte, sans conteneur : **une seule** famille,
+celle de l'hôte, non classée — le script le rappelle à la fin de la
+compilation, et `debian.sh` dit quoi faire s'il la reçoit.
+
+Le cache Go vit dans
 le volume `devcomp_gocache` : seule la première compilation est longue.
 
 La sortie est rendue à votre utilisateur (`chown` en fin de compilation).

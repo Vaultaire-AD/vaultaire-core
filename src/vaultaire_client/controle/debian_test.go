@@ -483,3 +483,39 @@ func TestDebianControleLAgentPuisLesModulesAvantPAM(t *testing.T) {
 		t.Error("VAULTAIRE_LDD doit rester sans effet hors d'un essai à blanc")
 	}
 }
+
+// TO-DO 193 : des modules de la famille Rocky (libcrypt.so.2) sur un poste
+// Debian. Le refus existait ; il doit dire QUOI faire — changer les modules,
+// aucun paquet n'y peut rien.
+func TestDebianNommeLesModulesDeLaFamilleRocky(t *testing.T) {
+	p := nouveauPoste(t, "x86_64-linux-gnu")
+	p.deposer()
+	fauxLdd := filepath.Join(t.TempDir(), "ldd")
+	if err := os.WriteFile(fauxLdd, []byte("#!/bin/sh\necho \"	libcrypt.so.2 => not found\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sortie, err := p.installer("VAULTAIRE_LDD=" + fauxLdd)
+	if err == nil {
+		t.Fatalf("le script a continué avec des modules Rocky :\n%s", sortie)
+	}
+	for _, attendu := range []string{"famille Rocky (libcrypt.so.2)", "vaultaire_client/debian/", "SANS --local"} {
+		if !strings.Contains(sortie, attendu) {
+			t.Errorf("l'arrêt ne dit pas « %s » :\n%s", attendu, sortie)
+		}
+	}
+	p.rienNAEteTouche("modules de la famille Rocky")
+}
+
+// Et un module qui ne se charge pas pour une AUTRE raison ne parle pas de Rocky.
+func TestDebianNeParlePasDeRockyPourUneAutreCause(t *testing.T) {
+	p := nouveauPoste(t, "x86_64-linux-gnu")
+	p.deposer()
+	fauxLdd := filepath.Join(t.TempDir(), "ldd")
+	if err := os.WriteFile(fauxLdd, []byte("#!/bin/sh\necho \"$1: version \\`GLIBC_2.38' not found\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	sortie, _ := p.installer("VAULTAIRE_LDD=" + fauxLdd)
+	if strings.Contains(sortie, "famille Rocky") {
+		t.Errorf("un manque de glibc est attribué aux modules Rocky :\n%s", sortie)
+	}
+}
