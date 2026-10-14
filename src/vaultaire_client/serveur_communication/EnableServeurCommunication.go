@@ -59,6 +59,8 @@ func EnableServerCommunication(user, pass string) {
 				handleConnection(user, ds)
 				close(done)
 			}()
+			// La liste des nœuds, redemandée quand elle a pu changer (TO-DO 187).
+			relireListeSiBesoin(module.Etat())
 			// Persistent, et non IsServeur.
 			//
 			// IsServeur dit « cette machine est un serveur membre du domaine »

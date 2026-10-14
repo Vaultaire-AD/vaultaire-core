@@ -34,7 +34,6 @@ Trois gestes, dans le même passage que le code :
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 184 | PROXY        | LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies | À faire — à concevoir      |
-| 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
@@ -109,17 +108,6 @@ usage.
    core voit vraiment), et la verser à la liste de confiance de `proxyproto`.
 3. Garder le refus pour tout pair qui n'a pas de session de proxy.
 4. Rejouer `A_TESTER.md` § 22b et 22c dans des conteneurs (voir le **185**).
-
-### 187. [AGENT] [CLUSTER] La liste des cores n'est pas relue quand un proxy change d'adresse de publication
-
-**Constat** (recette du 12/10, `A_TESTER.md`). Un proxy, premier de la liste d'un client, change
-d'adresse de publication : à la reconnexion, le client ne tente pas de mettre
-sa liste à jour et reste sur l'ancienne adresse. C'est ce qui a déclenché le
-**186**.
-
-**À faire.** À la reconnexion (et après un échec sur un pair), redemander la
-liste (`04_04`) au premier pair joint, et la réécrire. Vérifier qu'un pair qui
-a changé d'adresse n'est pas gardé sous les deux.
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
