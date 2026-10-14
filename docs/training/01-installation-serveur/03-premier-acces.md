@@ -104,7 +104,8 @@ Deux comptes existent dès le premier démarrage :
 
 ## ✅ Vous avez réussi si
 
-- vous voyez le tableau de bord du portail ;
+- vous voyez le tableau de bord du portail, « Exécuter une commande » en tête de
+  page ;
 - `vlt get -u` liste au moins `vaultaire` et `admin` ;
 - l'ancien mot de passe d'amorçage est refusé sur le portail ;
 - le portail ne vous a laissé aller nulle part avant que vous n'en ayez posé un

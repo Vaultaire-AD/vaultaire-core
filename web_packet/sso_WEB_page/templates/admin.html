@@ -29,6 +29,27 @@
           <h1>Tableau de bord</h1>
           <p class="muted">Connecté : {{.Username}} · <a href="/profil">Profil</a></p>
 
+          <!-- La commande en tête de page (TO-DO 192) : c'est l'usage courant du
+               tableau de bord, et son résultat juste dessous. Le debug suit. -->
+          <section class="section">
+            <h2>Exécuter une commande</h2>
+            <p class="small muted">Même logique que le CLI. Les permissions sont contrôlées côté serveur.</p>
+            <form method="post" action="/admin">
+              <label for="command">Commande</label>
+              <textarea id="command" name="command" placeholder="Ex: get -u, get -g, status"></textarea>
+              <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Exécuter</button></div>
+            </form>
+          </section>
+
+          <section class="section">
+            <h2>Résultat</h2>
+            {{if .Output}}
+            <pre class="output">{{.Output}}</pre>
+            {{else}}
+            <p class="muted">Aucun résultat. Exécutez une commande ci-dessus.</p>
+            {{end}}
+          </section>
+
           <section class="section">
             <h2>Mode debug</h2>
             <p class="small muted">Active ou désactive les logs de niveau DEBUG pour tout le serveur. État actuel : <strong>{{if .Debug}}activé{{else}}désactivé{{end}}</strong></p>
@@ -69,25 +90,6 @@
                 {{end}}
               </tbody>
             </table>
-          </section>
-
-          <section class="section">
-            <h2>Exécuter une commande</h2>
-            <p class="small muted">Même logique que le CLI. Les permissions sont contrôlées côté serveur.</p>
-            <form method="post" action="/admin">
-              <label for="command">Commande</label>
-              <textarea id="command" name="command" placeholder="Ex: get -u, get -g, status"></textarea>
-              <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Exécuter</button></div>
-            </form>
-          </section>
-
-          <section class="section">
-            <h2>Résultat</h2>
-            {{if .Output}}
-            <pre class="output">{{.Output}}</pre>
-            {{else}}
-            <p class="muted">Aucun résultat. Exécutez une commande ci-dessus.</p>
-            {{end}}
           </section>
 
           {{ if .LoginClientPublicKey }}
