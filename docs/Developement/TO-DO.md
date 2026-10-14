@@ -34,7 +34,6 @@ Trois gestes, dans le même passage que le code :
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 184 | PROXY        | LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies | À faire — à concevoir      |
-| 186 | AGENT        | `--fetch-key` échoue si le premier pair ne répond pas       | À faire                                 |
 | 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
@@ -110,23 +109,6 @@ usage.
    core voit vraiment), et la verser à la liste de confiance de `proxyproto`.
 3. Garder le refus pour tout pair qui n'a pas de session de proxy.
 4. Rejouer `A_TESTER.md` § 22b et 22c dans des conteneurs (voir le **185**).
-
-### 186. [AGENT] `--fetch-key` échoue si le premier pair ne répond pas
-
-**Constat** (recette du 12/10, `A_TESTER.md`). Si le premier core (ou proxy) de la liste du client ne
-répond pas, `vaultaire_client --fetch-key` s'arrête en erreur au lieu de tenter
-le suivant : sshd ne reçoit aucune clé, la connexion par clé échoue.
-
-**À faire.** Le mode une-passe (`main.go`, `serveur_communication/superviseur.go`
-« pas de relance ») doit parcourir la liste, avec un délai court par pair —
-sshd attend la réponse. Test : premier pair injoignable, second répond.
-
-**Précisé par le 190** ([`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 4.2). `EstablishDuckySession` parcourt
-bien la liste, mais `net.DialTimeout` donne 10 s à chaque pair, alors que
-`WaitForSSHFetch` abandonne à 6 s au total ; et la poignée de main du socle
-n'a **aucun délai de lecture** — un pair qui accepte sans répondre retient
-l'appel jusqu'à l'abandon. Le **196** rendrait ce chemin sans objet pour sshd ;
-le délai de lecture reste à poser pour le tunnel du démon.
 
 ### 187. [AGENT] [CLUSTER] La liste des cores n'est pas relue quand un proxy change d'adresse de publication
 

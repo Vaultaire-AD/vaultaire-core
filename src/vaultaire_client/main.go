@@ -21,6 +21,7 @@ import (
 	pamcommunication "vaultaire_client/pam_communication"
 	"vaultaire_client/revocation"
 	serveurcommunication "vaultaire_client/serveur_communication"
+	"vaultaire_client/serveur_communication/module"
 	"vaultaire_client/sshauth"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
@@ -269,6 +270,11 @@ func main() {
 			return
 		}
 		storage.SilentConsole = true
+		// sshd attend la réponse : des bornes courtes PAR PAIR, pour qu'un
+		// premier pair muet laisse le temps d'en essayer d'autres dans
+		// l'attente de WaitForSSHFetch (TO-DO 186).
+		module.DelaiConnexionPair = serveurcommunication.DelaiConnexionFetch
+		module.DelaiPoigneePair = serveurcommunication.DelaiPoigneeFetch
 		// Le chronométrage suit le réglage de debug du fichier : sshd lance ce
 		// mode sans « -debug » (TO-DO 199).
 		chrono.Activer(config.GetDebug().Enabled)
