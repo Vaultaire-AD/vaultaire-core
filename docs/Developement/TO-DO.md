@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **182**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **196**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -24,15 +24,25 @@ Trois gestes, dans le même passage que le code :
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
+| 188 | SSH          | Les clés publiques du compte ne sont pas écrites dans `authorized_keys` | À faire — **critique**, recette du 12/10 |
+| 195 | WINDOWS      | Après la première connexion, le CP Vaultaire n'est plus proposé : plus de TOTP | À faire — **critique**, recette du 12/10 |
 | 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
+| 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
-| 179 | WINDOWS      | Écran vide : valider le correctif du 157 sur un poste       | **À faire — bloque la recette Windows** |
+| 179 | WINDOWS      | Écran vide : cause établie (V2), passer la DLL en V1 par défaut | **À faire — bloque la recette Windows** |
+| 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
+| 184 | PROXY        | LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies | À faire — à concevoir      |
+| 186 | AGENT        | `--fetch-key` échoue si le premier pair ne répond pas       | À faire                                 |
+| 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
+| 190 | GPO          | 20 s pour ouvrir une session SSH avec 5 modules : rapport d'analyse | À faire — mesurer d'abord      |
+| 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
+| 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
 | 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
 | 113 | AGENT-UPDATE | Clé `pkg_signing` et format du manifeste signé              | À faire                                 |
 | 114 | AGENT-UPDATE | Dépôt Nexus en lecture anonyme, découvert par `04_15`       | À faire                                 |
@@ -41,6 +51,10 @@ Trois gestes, dans le même passage que le code :
 | 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
+| 193 | DEV          | Modules natifs du core de développement : les deux familles | À faire — bloque `-join` Debian en dev  |
+| 185 | DEV          | `dev-comp.sh --port` : publier des ports en plus            | À faire — petit                         |
+| 191 | PORTAIL      | Sélection des clients : le nom en plus de l'identifiant     | À faire — petit                         |
+| 192 | PORTAIL      | Tableau de bord : « Exécuter une commande » en haut         | À faire — petit                         |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
 
@@ -78,6 +92,52 @@ ce qui coupe un parc dont tous les autres cores seraient tombés pendant la
 maintenance. Un refus seulement tant qu'un autre core est **en ligne**, relu à
 chaque connexion ? Et que faire des connexions des autres cores et des proxies ?
 
+### 184. [PROXY] [LDAP] LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies
+
+**Constat** (recette du 12/10, `A_TESTER.md`), § 22b. Proxy et core en conteneurs : le core voit
+le proxy sous l'adresse de la **passerelle** docker et ferme la connexion —
+`ldap: connexion LDAPS de 172.19.0.1 refusée : en-tête PROXY reçu d'un pair qui
+n'est pas un proxy enregistré (172.19.0.1)` (`core/proxyproto/proxyproto.go`,
+`ErrNonDeConfiance`).
+
+**Le problème de fond.** Une seule adresse d'exposition sert deux usages
+contraires : les **clients** ont besoin de l'adresse du proxy dans le vrai LAN
+(comme pour un cluster) ; la **confiance** LDAPS du core, de l'adresse sous
+laquelle le core le voit — ici la passerelle du LAN des cores. Le contournement
+du § 22c (`cluster expose <proxy> <IP vue par le core>`) casse donc l'autre
+usage.
+
+**À faire.**
+
+1. L'adresse d'exposition est celle qu'utilisent les **clients**, et rien
+   d'autre.
+2. Les cores font confiance aux proxies **sans configuration** : retenir
+   l'adresse source TCP de la session Ducky de chaque proxy enrôlé (celle que le
+   core voit vraiment), et la verser à la liste de confiance de `proxyproto`.
+3. Garder le refus pour tout pair qui n'a pas de session de proxy.
+4. Rejouer `A_TESTER.md` § 22b et 22c dans des conteneurs (voir le **185**).
+
+### 186. [AGENT] `--fetch-key` échoue si le premier pair ne répond pas
+
+**Constat** (recette du 12/10, `A_TESTER.md`). Si le premier core (ou proxy) de la liste du client ne
+répond pas, `vaultaire_client --fetch-key` s'arrête en erreur au lieu de tenter
+le suivant : sshd ne reçoit aucune clé, la connexion par clé échoue.
+
+**À faire.** Le mode une-passe (`main.go`, `serveur_communication/superviseur.go`
+« pas de relance ») doit parcourir la liste, avec un délai court par pair —
+sshd attend la réponse. Test : premier pair injoignable, second répond.
+
+### 187. [AGENT] [CLUSTER] La liste des cores n'est pas relue quand un proxy change d'adresse de publication
+
+**Constat** (recette du 12/10, `A_TESTER.md`). Un proxy, premier de la liste d'un client, change
+d'adresse de publication : à la reconnexion, le client ne tente pas de mettre
+sa liste à jour et reste sur l'ancienne adresse. C'est ce qui a déclenché le
+**186**.
+
+**À faire.** À la reconnexion (et après un échec sur un pair), redemander la
+liste (`04_04`) au premier pair joint, et la réécrire. Vérifier qu'un pair qui
+a changé d'adresse n'est pas gardé sous les deux.
+
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 
 **Demande de Lorens** (point 15 de la liste du 21/09) : « la liste des services
@@ -111,27 +171,33 @@ des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
 
-### 179. [WINDOWS] Écran vide : valider le correctif du 157 sur un poste
+### 179. [WINDOWS] Écran vide : passer la DLL en V1 par défaut
 
 **Origine.** Le **157** a corrigé à l'aveugle l'écran de connexion vide de la
-recette du 05/10 : la DLL fait désormais ce que fait l'exemple « V2 » de
-Microsoft sur les trois points où elle s'en écartait — plus de tuile par défaut,
-une image et un libellé de fournisseur, `ICredentialProviderSetUserArray`
-acceptée (`DO/2.3/2.3.md`). Rien de cela n'a tourné dans un vrai LogonUI.
+recette du 05/10 en suivant l'exemple « V2 » de Microsoft (pas de tuile par
+défaut, une image et un libellé, `ICredentialProviderSetUserArray`).
 
-**À faire, sur le poste de la recette** (`A_TESTER.md`, § 80) :
+**Cause établie** (recette du 12/10). C'est le V2 qui casse l'écran : avec les
+fonctionnalités V2 (énumération des utilisateurs, interfaces étendues), les
+tuiles restent vides ou l'interface Vaultaire est masquée. Poser `ModeV1` = 1
+(DWORD) sous `HKLM\SOFTWARE\Vaultaire\CredentialProvider` — clé à créer, elle
+n'existait pas — rétablit aussitôt l'affichage, et la connexion d'un compte du
+domaine passe.
 
-1. Archive refaite depuis `dev`, réinstallée, témoin de trace posé. Si les tuiles
-   reviennent — celles de Windows et « Autre utilisateur » avec Vaultaire dans
-   ses options de connexion —, se connecter, et fermer ce point.
-2. Sinon, rétablir les écarts **un par un** par les variantes d'essai
-   (`TuileParDefaut`, `ModeV1`, `SansImage`, sous
-   `HKLM\SOFTWARE\Vaultaire\CredentialProvider`) : celle qui ramène les tuiles
-   nomme la cause. Aucune ne les ramène : les étapes 2 et 3 de l'ancien 157 —
-   `Disabled` = 1 sous la clé du fournisseur pour savoir si c'est bien notre
-   DLL, puis l'Observateur d'événements (`LogonUI.exe`, 1000 et 1002).
-3. Une fois la cause établie : retirer les variantes devenues inutiles du code,
-   et le dire dans `README.md` du client Windows.
+**À faire.**
+
+1. Faire du comportement `ModeV1` le comportement **par défaut** de la DLL, sans
+   clé de registre ; `install.ps1` n'a rien à poser.
+2. Retirer les variantes d'essai devenues inutiles (`ModeV1`, `TuileParDefaut`,
+   `SansImage`) ou n'en garder qu'une, documentée, pour revenir au V2 — et le
+   dire dans `README.md` du client Windows.
+3. Mettre le faux LogonUI à jour (ses contrôles V2) ; rejouer `A_TESTER.md`
+   § 14, 48 et 72.
+4. Le V2 lui-même — savoir **pourquoi** il casse l'écran — n'est utile que si
+   l'on veut un jour l'énumération des comptes : à noter, pas à traiter ici.
+
+Lié : **194** (RDP) et **195** (CP contourné après la première connexion), à
+regarder dans le même passage.
 
 ### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
 
@@ -145,6 +211,45 @@ acceptée (`DO/2.3/2.3.md`). Rien de cela n'a tourné dans un vrai LogonUI.
 - Les groupes du domaine n'ont pas d'équivalent local posé par l'agent : faut-il créer des groupes Windows locaux, comme on crée les comptes ?
 
 **Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
+
+**Recette du 12/10.** `kill` ne ferme pas la session d'un compte sur un poste
+Windows — c'est l'état attendu tant que ce point n'est pas fait (le 167 dit
+« non pris en charge »), mais c'est ce qu'un administrateur remarque en premier.
+
+### 194. [WINDOWS] La connexion par RDP ne marche pas
+
+**Constat** (recette du 12/10, `A_TESTER.md`). La connexion d'un compte du domaine par le Bureau à
+distance échoue ; seule la connexion à la console a été validée (avec
+`ModeV1`).
+
+**À faire.** D'abord après le 179 : un fournisseur doit accepter
+`CPUS_LOGON` **et** `CPUS_CREDUI` (l'invite du client RDP avec la NLA), et le
+sérialiser pour `CredUIPromptForWindowsCredentials` ; sans NLA, c'est LogonUI
+sur le poste distant, comme à la console. Relever avec le témoin de trace quel
+scénario `SetUsageScenario` reçoit, et ce que rend `GetSerialization`.
+Vérifier aussi que le compte local créé par l'agent est dans « Utilisateurs du
+Bureau à distance ».
+
+### 195. [WINDOWS] [SÉCURITÉ] Après la première connexion, le CP Vaultaire n'est plus proposé
+
+**Constat** (recette du 12/10, `A_TESTER.md`). Une fois la première connexion faite par Vaultaire,
+les suivantes ne passent plus par le Credential Provider : Windows propose la
+tuile du **compte local** et son mot de passe, et le code TOTP n'est plus
+demandé. **Le second facteur est contourné** — c'est le plus grave des
+constats Windows.
+
+**À faire.**
+
+1. Établir le chemin : tuile du compte local créée par l'agent (fournisseur
+   mot de passe de Microsoft), ou dernier utilisateur connecté qui préempte la
+   tuile Vaultaire.
+2. Le mot de passe du compte local ne doit pas suffire : soit il est aléatoire
+   et inconnu de l'utilisateur (le CP le pose au moment de la sérialisation),
+   soit le fournisseur mot de passe de Microsoft est filtré
+   (`ICredentialProviderFilter`) pour les comptes du domaine.
+3. Garder une issue pour les comptes locaux d'administration : un filtre trop
+   large ferme le poste.
+
 
 ---
 
@@ -169,7 +274,60 @@ Les autres exclusions tiennent à ce que fait le produit (écrire dans `/etc`,
 `/home`, `/boot`, régler `/proc/sys`, décharger un module, changer de domaine
 SELinux) : elles ne tomberont pas.
 
+### 182. [GPO] Audit : un `sshd_config` non conforme n'est pas signalé
+
+**Constat** (recette du 12/10, `A_TESTER.md`), § 7d. Le mode audit ne corrige pas — c'est validé —,
+mais un `sshd_config` rendu non conforme à la main n'est **pas** remonté en
+écart, malgré plusieurs cycles et rafraîchissements.
+
+**À faire.** Reproduire avec le module SSH de la formation ; regarder si son
+contrôle relit vraiment le fichier (ou seulement l'empreinte de ce qu'il a
+posé), et si l'écart est perdu à l'agent ou au core (`gpo drift`). Un test qui
+casse le fichier et attend l'écart.
+
+### 183. [GPO] Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique
+
+**Constat** (recette du 12/10, `A_TESTER.md`), § 7e. Une GPO en audit, une autre en enforce sur la
+même machine : l'écart signalé de la première **disparaît** quand la seconde,
+modifiée, est appliquée. On ne sait pas si c'est l'application d'une GPO ou de
+deux dans le même cycle.
+
+**À faire.** Reproduire les deux cas séparément. Piste : le rapport de
+conformité d'un cycle remplace celui de la machine entière au lieu de ne
+remplacer que les GPO appliquées. Le mode doit suivre le module (`A_TESTER.md`
+§ 7e).
+
+### 190. [GPO] [PAM] 20 secondes pour ouvrir une session SSH : un rapport d'analyse
+
+**Constat** (recette du 12/10, `A_TESTER.md`), § 53. Les GPO de compte s'appliquent bien, mais il
+faut **20 secondes** pour avoir le terminal d'une connexion SSH avec seulement
+5 modules — sans montage NFS, sur une VM normale et peu chargée.
+
+**À faire : un vrai rapport d'analyse** de l'ouverture d'une session SSH, avant
+toute correction.
+
+1. Chronométrer chaque étape, du `--fetch-key` de sshd au shell : clés, PAM
+   auth (TOTP), PAM session, provisionnement, demande des GPO de compte,
+   réponse du core, application module par module, rapport.
+2. Situer le temps : la VM, l'agent, le core ou le réseau (allers-retours
+   Ducky, attentes à délai fixe, DNS inverse de sshd, `UseDNS`).
+3. Écrire le rapport dans `docs/Developement/`, et en tirer les points à
+   corriger.
+
 ## Sécurité et authentification
+
+### 188. [SSH] Les clés publiques du compte ne sont pas écrites dans `authorized_keys`
+
+**Constat** (recette du 12/10, `A_TESTER.md`). **Important.** Les clés publiques d'un compte du
+domaine n'arrivent pas dans son `~/.ssh/authorized_keys`. (La dérive des GPO de
+compte, elle, est bien vue et corrigée.)
+
+**À faire.** Établir le chemin attendu — `--fetch-key` pour sshd, ou écriture
+par l'agent (`tools/local_user_management/authorized_keys.go`) — et pourquoi il
+ne pose rien : compte créé avant que les clés soient connues, droits ou
+contexte SELinux de `~/.ssh`, cloisonnement de l'unité (168). Rejouer avec le
+**186** et le **187** corrigés : un `--fetch-key` en échec peut masquer le
+défaut.
 
 ### 98. [SÉCURITÉ] Les secrets sont en clair dans la base
 
@@ -278,6 +436,52 @@ C'est le chemin qu'emprunte JumpServer après chaque authentification.
 gestionnaire, qui répond `operationsError` — comme il le fait déjà quand la
 résolution `sub` échoue. Un test avec une base qui refuse (le connecteur
 défaillant de `handler_nilsession_test.go`).
+
+### 189. [LDAP] `entryUUID` : recette NON, à reproduire
+
+**Constat** (recette du 12/10, `A_TESTER.md`), § 39. Le point 129 (identifiant stable des entrées)
+est en échec, sans détail relevé.
+
+**À faire.** Relever la sortie exacte (Directory Studio, sous-schéma,
+`entryUUID` d'un compte et d'un groupe), puis Keycloak, qui n'a jamais été
+éprouvé ; ouvrir le correctif selon ce qui manque.
+
+---
+
+## Portail et outillage
+
+### 185. [DEV] `dev-comp.sh --port` : publier des ports en plus
+
+**Constat** (recette du 12/10, `A_TESTER.md`). Les proxies de `dev-comp.sh` ne publient ni https ni
+ldaps par défaut : impossible d'essayer les relais (§ 22) sans retoucher le
+script. Ajouter `--port <hôte>:<conteneur>` (répétable) pour publier des ports
+en plus.
+
+### 193. [DEV] Les modules natifs du core de développement : les deux familles
+
+**Constat** (recette du 12/10, `A_TESTER.md`), § 70 et 79. `-join` échoue sur Debian 13
+(glibc 2.41) : le core de développement sert des modules « non classés »,
+compilés pour la famille rocky et liés à `libcrypt.so.2`, absente de Debian
+(`libcrypt.so.2 => not found`). `dev-comp.sh` et `auto-compil.sh` ne
+construisent qu'une famille.
+
+**À faire.** Que le poste de développement construise `rocky/` **et**
+`debian/` (`VAULTAIRE_FAMILLE_MODULES`, dans un conteneur par famille comme la
+CI), ou au minimum que `debian.sh` refuse des modules liés à `libcrypt.so.2`
+en le disant. Puis rejouer § 70 sur Debian 12 et 13, Ubuntu 22.04 et 24.04.
+
+### 191. [PORTAIL] Sélection des clients : le nom en plus de l'identifiant
+
+**Constat** (recette du 12/10, `A_TESTER.md`). Là où le portail fait choisir des clients, il ne
+montre que leur identifiant unique : illisible. Afficher le nom de la machine à
+côté.
+
+### 192. [PORTAIL] Tableau de bord : « Exécuter une commande » en haut
+
+**Constat** (recette du 12/10, `A_TESTER.md`). Remettre le bloc « Exécuter une commande » tout en
+haut du tableau de bord, au-dessus de la partie debug.
+
+---
 
 ## Idées à cadrer
 
