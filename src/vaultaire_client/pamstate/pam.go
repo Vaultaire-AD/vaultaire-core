@@ -115,4 +115,10 @@ type AuthResult struct {
 	// `false` par défaut : un émetteur qui oublie de le poser refuse, il
 	// n'accepte pas. C'est le sens dans lequel un oubli doit se tromper.
 	Accepte bool `json:"accepte"`
+
+	// MotifRefus est le motif d'un refus tel que le core l'écrit dans 03_03
+	// (« password expired », « permission denied »…). Il ne voyage PAS tel
+	// quel jusqu'à l'écran : le gestionnaire PAM le passe par une liste fermée
+	// (MessageDeRefus, TO-DO 171). Vide sur une acceptation.
+	MotifRefus string `json:"-"`
 }

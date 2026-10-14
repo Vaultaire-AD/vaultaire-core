@@ -139,8 +139,10 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		// plus précis que « permission denied » tant que le mot de passe n'est
 		// pas prouvé ; ce journal n'est lisible que de root.
 		motif := "motif non precise"
+		motifBrut := ""
 		if len(lines) > 1 {
-			motif = strings.Join(lines[1:], " ")
+			motifBrut = strings.TrimSpace(strings.Join(lines[1:], " "))
+			motif = motifBrut
 		}
 		logs.Write_log("ERROR", "Le serveur central a refusé l'accès SSH pour : "+sshUser+" ("+motif+")")
 
@@ -156,7 +158,10 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		// suit, pour qu'un lecteur qui arriverait après l'envoi ne reste pas
 		// bloqué — il lira le refus, puis le canal fermé.
 		if respChan, ok := sshreq.Pop(sshUser); ok {
-			respChan <- pamstate.AuthResult{Type: "AUTH", Accepte: false}
+			// Le motif suit, pour que le gestionnaire PAM puisse dire à la
+			// personne les deux refus qui lui sont utiles (TO-DO 171) — et ceux-là
+			// seulement : le filtre est de l'autre côté, dans MessageDeRefus.
+			respChan <- pamstate.AuthResult{Type: "AUTH", Accepte: false, MotifRefus: motifBrut}
 			close(respChan)
 		}
 	case "05":

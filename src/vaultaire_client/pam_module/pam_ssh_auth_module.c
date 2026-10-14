@@ -110,6 +110,17 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
 
     if (strcmp(status, "success") != 0) {
         vaultaire_log_err("SSH pre-auth rejected for %s", username);
+        /* LE MOTIF D'UN REFUS — TO-DO 171. Present seulement pour les deux
+         * refus que la personne peut corriger seule (mot de passe expire,
+         * second facteur manquant), rendus par le core APRES un mot de passe
+         * prouve. Le texte est compose par l'agent, sur une liste fermee : tout
+         * autre refus arrive sans ce champ, et reste muet comme avant.
+         * pam_error et non pam_info : c'est un echec, et sshd le transmet au
+         * client avant de fermer l'echange keyboard-interactive. */
+        char refus[VAULTAIRE_NOTICE_MAX] = {0};
+        if (vaultaire_json_get_string(resp, "refus", refus, sizeof(refus)) == 0 && refus[0]) {
+            (void)pam_error(pamh, "%s", refus);
+        }
         vaultaire_chrono_rapport(&chrono, "sshd", username, resp, status[0] ? status : "refus");
         return PAM_PERM_DENIED;
     }

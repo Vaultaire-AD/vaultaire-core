@@ -63,6 +63,8 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	// passe est provisoire » après un mot de passe faux lui apprendrait que le
 	// compte existe.
 	notice := ""
+	// refus : le texte d'un refus affichable, vide sinon (TO-DO 171).
+	refus := ""
 	// Non nil dès le départ : voir parseSSHKeys, une tranche nil se sérialise en
 	// `null` et le module PAM y lit « réponse illisible », donc « ne touche pas
 	// à authorized_keys ».
@@ -133,6 +135,9 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 			logs.Write_log("WARNING", fmt.Sprintf(
 				"[%s] Authentification REFUSEE pour %s : %s", reqType, req.User, motif))
 			statusRep = "failed"
+			// Seuls les deux motifs que la personne peut corriger seule
+			// traversent (TO-DO 171) ; tout autre refus reste muet.
+			refus = MessageDeRefus(result.MotifRefus)
 			break
 		}
 
@@ -173,6 +178,7 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		IsAdmin: isAdminResult,
 		SSHKeys: sshKeys,
 		Notice:  notice,
+		Refus:   refus,
 	})
 }
 

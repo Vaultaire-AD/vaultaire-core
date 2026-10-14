@@ -26,7 +26,8 @@ droits d'administration.
   domaine désigne un compte **local** de la machine, et
   `alice.martin@infra.acme.lan` est refusé.
 - Le mot de passe posé au jalon 2.2 est **provisoire** et ne vaut que **24 h**.
-  S'il date de plus d'un jour, la connexion est refusée : reposez-le avec
+  S'il date de plus d'un jour, la connexion est refusée, et l'écran le dit
+  (« Votre mot de passe a expiré… ») : reposez-le avec
   `vlt update -u alice.martin -p 'Lune-Orange-Velo-42'`. La session s'ouvre, et
   rappelle de le changer sur le portail.
 
@@ -58,7 +59,10 @@ droits d'administration.
 - Alice obtient un shell, `id` montre `wheel` (ou `sudo` sur Debian) ;
 - `~/.ssh/authorized_keys` porte les clés publiques d'Alice — il était vide
   avant la version 2.3 ;
-- Chloé est refusée ;
+- Chloé est refusée — sans autre précision : un refus ordinaire ne dit jamais
+  pourquoi ;
+- avec un mot de passe expiré, Alice lit « Votre mot de passe a expiré » au lieu
+  d'un refus sec ;
 - `alice.martin@infra.acme.lan` est refusée : ce n'est pas un domaine principal ;
 - `web01` figure dans `status -c`, et y reste après la déconnexion d'Alice.
 
