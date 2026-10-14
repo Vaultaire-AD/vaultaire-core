@@ -49,7 +49,6 @@ Trois gestes, dans le même passage que le code :
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
 | 193 | DEV          | Modules natifs du core de développement : les deux familles | À faire — bloque `-join` Debian en dev  |
-| 185 | DEV          | `dev-comp.sh --port` : publier des ports en plus            | À faire — petit                         |
 | 191 | PORTAIL      | Sélection des clients : le nom en plus de l'identifiant     | À faire — petit                         |
 | 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
@@ -419,13 +418,6 @@ est en échec, sans détail relevé.
 ---
 
 ## Portail et outillage
-
-### 185. [DEV] `dev-comp.sh --port` : publier des ports en plus
-
-**Constat** (recette du 12/10, `A_TESTER.md`). Les proxies de `dev-comp.sh` ne publient ni https ni
-ldaps par défaut : impossible d'essayer les relais (§ 22) sans retoucher le
-script. Ajouter `--port <hôte>:<conteneur>` (répétable) pour publier des ports
-en plus.
 
 ### 193. [DEV] Les modules natifs du core de développement : les deux familles
 

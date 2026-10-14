@@ -40,6 +40,7 @@ release installée par la préprod ne sont pas touchés.
 | `--add-core [nom]` | **un core de plus**, sur la même base |
 | `--noeuds` | liste les nœuds ajoutés après coup |
 | `--rm-noeud <nom>` | retire un nœud ajouté : son conteneur, et son identité enrôlée s'il en a une |
+| `--port <hôte>:<conteneur>[/udp]` | publie un port de plus (répétable), avec `--proxy`, `--add-proxy` ou `--add-core` — voir plus bas |
 
 ## La version affichée
 
@@ -107,6 +108,34 @@ docker exec vlt-dev-ad /opt/vaultaire/bin/vaultaire_cli cluster expose <proxy> <
 ```
 
 Voir [`docs/proxy/`](../../docs/proxy/README.md).
+
+## Publier des ports en plus — `--port` *(TO-DO 185)*
+
+Un proxy ne publie que son port Ducky. Ses relais pilotés (`https`, `ldaps`,
+TO-DO 141) écoutent **dans** le conteneur : sans publication, rien ne les joint
+depuis l'hôte, et éprouver un relais demandait de retoucher le compose ou le
+script.
+
+```bash
+# le proxy du compose, avec un relais ldaps sur :1636 et https sur :8443
+./deployments/dev-comp/dev-comp.sh --no-build --proxy --port 636:1636 --port 8443:8443
+# un proxy ajouté
+./deployments/dev-comp/dev-comp.sh --add-proxy lyon --port 9443:8443
+```
+
+- forme `<hôte>:<conteneur>`, `/udp` en option ; répétable ;
+- avec `--add-proxy` et `--add-core` : un `-p` de plus au `docker run`, et le
+  port de l'hôte est contrôlé comme ceux que le script choisit (pris : refus
+  avant de créer quoi que ce soit) ;
+- avec `--proxy` : un fichier de surcharge, `build/ports-en-plus.yml`, ajouté au
+  compose. Il est réécrit à chaque lancement : relancer **sans** `--port` rend au
+  proxy ses seuls ports du compose ;
+- refusé ailleurs (`--down`, un lancement sans `--proxy`…) : l'option ne
+  s'appliquerait à rien.
+
+Le port publié sur l'hôte n'est pas celui que le proxy annonce : pour qu'un
+client passe par le relais, déclarez l'adresse de l'hôte
+(`cluster expose`) — et voyez le TO-DO 184 pour LDAPS derrière ce NAT.
 
 ## Agrandir la pile sans la relancer
 
