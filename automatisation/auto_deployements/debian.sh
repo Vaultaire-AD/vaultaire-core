@@ -256,6 +256,18 @@ if [[ $ECHEC_CHARGEMENT -ne 0 ]]; then
     erreur "Installation interrompue AVANT la configuration de NSS, SSH et PAM : rien n'y a été changé."
     echo "         Les modules doivent être compilés pour une glibc au plus aussi récente que celle de ce poste" >&2
     echo "         ($("$LDD" --version 2>/dev/null | head -n1 || echo 'version inconnue'))." >&2
+    # Le cas de la recette du 12/10 (TO-DO 193) : des modules de la famille
+    # ROCKY, reconnaissables à libcrypt.so.2, qu'aucune Debian ni Ubuntu ne
+    # fournit. Aucun paquet ne les fera charger : ce sont les modules qu'il faut
+    # changer, et le message doit dire lesquels.
+    for f in "${A_VERIFIER[@]}"; do
+        if manques_de "$f" | grep -q 'libcrypt\.so\.2'; then
+            echo "         Ces modules viennent de la famille Rocky (libcrypt.so.2) : le core n'a pas servi" >&2
+            echo "         de modules vaultaire_client/debian/. Servez une release, ou recompilez le core" >&2
+            echo "         de développement avec dev-comp.sh SANS --local, qui produit les deux familles." >&2
+            break
+        fi
+    done
     exit 1
 fi
 

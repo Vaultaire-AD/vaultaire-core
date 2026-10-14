@@ -374,9 +374,12 @@ case "$FAMILLE_MODULES" in
 esac
 # Des modules d'une compilation précédente, rangés ailleurs, seraient envoyés
 # avec ceux-ci : on ne laisse que ceux qu'on vient de produire.
-if [ -z "$FAMILLE_MODULES" ]; then
-    rm -f "$PAM_OUT"/pam_*.so "$PAM_OUT"/libnss_vaultaire.so.2
-fi
+#
+# Les modules NON CLASSÉS de la racine sont retirés dans TOUS les cas, famille
+# demandée ou non (TO-DO 193). Laissés par une compilation de développement
+# d'avant, ils survivaient à une compilation par famille — et un poste dont la
+# famille manquait les prenait, puis refusait de les charger.
+rm -f "$PAM_OUT"/pam_*.so "$PAM_OUT"/libnss_vaultaire.so.2
 # Sortie directement dans BUILD_DIR : compiler dans src/ laissait des .so au
 # milieu des sources, qui finissaient versionnés.
 if ! bash "$ROOT_DIR/src/vaultaire_client/pam_module/auto_compil.sh" "$MODULES_OUT"; then

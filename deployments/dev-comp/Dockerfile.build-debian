@@ -1,0 +1,20 @@
+# ====================================================================
+# dev-comp — compilation des modules natifs de la famille DEBIAN (TO-DO 193)
+# ====================================================================
+#
+# La même image que le job « modules-debian » de la release : Ubuntu 22.04, la
+# plus ancienne version prise en charge de la famille (glibc 2.35,
+# libcrypt.so.1). Compilés ici, les modules PAM et NSS se chargent sur Debian
+# 12 et 13, Ubuntu 22.04 et 24.04.
+#
+# Elle ne compile QUE les modules : les binaires Go sont ceux de l'image Rocky
+# (Dockerfile.build), statiques ou liés à la glibc la plus ancienne du parc.
+
+FROM ubuntu:22.04
+
+RUN apt-get update -q \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+        gcc libc6-dev libpam0g-dev libcrypt-dev binutils \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src

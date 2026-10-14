@@ -48,7 +48,6 @@ Trois gestes, dans le même passage que le code :
 | 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
-| 193 | DEV          | Modules natifs du core de développement : les deux familles | À faire — bloque `-join` Debian en dev  |
 | 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
@@ -417,19 +416,6 @@ est en échec, sans détail relevé.
 ---
 
 ## Portail et outillage
-
-### 193. [DEV] Les modules natifs du core de développement : les deux familles
-
-**Constat** (recette du 12/10, `A_TESTER.md`), § 70 et 79. `-join` échoue sur Debian 13
-(glibc 2.41) : le core de développement sert des modules « non classés »,
-compilés pour la famille rocky et liés à `libcrypt.so.2`, absente de Debian
-(`libcrypt.so.2 => not found`). `dev-comp.sh` et `auto-compil.sh` ne
-construisent qu'une famille.
-
-**À faire.** Que le poste de développement construise `rocky/` **et**
-`debian/` (`VAULTAIRE_FAMILLE_MODULES`, dans un conteneur par famille comme la
-CI), ou au minimum que `debian.sh` refuse des modules liés à `libcrypt.so.2`
-en le disant. Puis rejouer § 70 sur Debian 12 et 13, Ubuntu 22.04 et 24.04.
 
 ---
 
