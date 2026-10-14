@@ -327,10 +327,11 @@ allow local_login_t vaultaire_log_t:file { append open getattr create };
 # - Aucune ecriture de nsswitch_domain vers vaultaire_conf_t. L'agent seul
 #   ecrit la carte.
 #
-# - Aucune permission de creation de compte local depuis les modules PAM
-#   (useradd, chpasswd, usermod). Ces appels partent depuis sshd_t et SELinux
-#   les encadre deja par la politique de reference, qui autorise sshd a gerer
-#   des comptes. S'ils apparaissent dans vos refus, ne les ajoutez pas ici sans
+# - Aucune permission de gestion de compte depuis les modules PAM. Depuis le
+#   TO-DO 197, ils ne lancent plus que chpasswd (le mot de passe local) ;
+#   useradd, usermod, gpasswd et restorecon sont le travail de l'agent, dans
+#   vaultaire_t. chpasswd part de sshd_t et la politique de reference
+#   l'encadre deja. S'ils apparaissent dans vos refus, ne les ajoutez pas ici sans
 #   reflechir : c'est le signe qu'une operation privilegiee se fait depuis un
 #   endroit inattendu.
 #
@@ -341,8 +342,8 @@ allow local_login_t vaultaire_log_t:file { append open getattr create };
 #     tcontext=system_u:object_r:home_root_t
 #
 #   C'est un probleme d'ETIQUETAGE, pas de politique. Le fichier porte
-#   home_root_t — le type de /home lui-meme — parce que l'agent et les modules
-#   PAM le creent sans poser de contexte : il herite de son parent au lieu de
+#   home_root_t — le type de /home lui-meme — parce que l'agent le cree sans
+#   poser de contexte : il herite de son parent au lieu de
 #   recevoir ssh_home_t.
 #
 #   Ecrire « allow sshd_t home_root_t:file read » corrigerait le symptome et

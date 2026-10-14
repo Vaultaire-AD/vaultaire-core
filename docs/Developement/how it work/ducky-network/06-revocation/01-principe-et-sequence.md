@@ -50,7 +50,7 @@ rafraîchissement des GPO. C'est précisément ce qu'un kill switch doit éviter
 
 **Pourquoi le verrouillage local est indispensable, y compris en `soft`.** Le
 module PAM écrit le mot de passe dans le `/etc/shadow` de chaque machine où
-l'utilisateur se connecte (`pam_common.c`, `ensure_local_user_with_password`).
+l'utilisateur se connecte (`pam_common.c`, `vaultaire_sync_local_password`).
 Une révocation limitée au serveur laisserait donc le compte utilisable en local
 sur toutes ces machines. Un kill switch qui ne coupe pas l'accès n'est pas un
 kill switch.

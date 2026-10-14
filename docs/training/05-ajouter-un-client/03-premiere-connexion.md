@@ -15,9 +15,11 @@ droits d'administration.
 
 - Alice et `web01` sont tous deux dans `Infra` : Alice peut se connecter.
 - `Infra` porte la permission client `serveurs-admin` (chapitre 4) : Alice est
-  placée dans le groupe d'administration local (`wheel` sur Rocky).
-- Le compte local est **créé à la première connexion**, avec son répertoire
-  personnel.
+  placée dans le groupe d'administration local (`wheel` sur Rocky, `sudo` sur
+  Debian et Ubuntu). Le droit suit l'annuaire dans les **deux** sens : retirez
+  la permission, et Alice quitte ce groupe à sa connexion suivante.
+- Le compte local est **créé à la première connexion** par l'agent, avec son
+  répertoire personnel et ses clés publiques dans `~/.ssh/authorized_keys`.
 - On se connecte sous `compte@domaine`, où le domaine est le **domaine
   principal** d'un groupe du compte — les deux derniers labels : Alice, membre
   de `infra.acme.lan`, se connecte comme `alice.martin@acme.lan`. Un nom sans
@@ -36,6 +38,7 @@ droits d'administration.
    ssh -l alice.martin@acme.lan <IP-web01>
    id
    sudo -l
+   cat ~/.ssh/authorized_keys
    ```
 
 2. Pendant la session, côté serveur, vérifiez que la machine est en ligne :
@@ -52,7 +55,9 @@ droits d'administration.
 
 ## ✅ Vous avez réussi si
 
-- Alice obtient un shell, `id` montre `wheel` ;
+- Alice obtient un shell, `id` montre `wheel` (ou `sudo` sur Debian) ;
+- `~/.ssh/authorized_keys` porte les clés publiques d'Alice — il était vide
+  avant la version 2.3 ;
 - Chloé est refusée ;
 - `alice.martin@infra.acme.lan` est refusée : ce n'est pas un domaine principal ;
 - `web01` figure dans `status -c`, et y reste après la déconnexion d'Alice.

@@ -10,7 +10,12 @@ import (
 	"strings"
 )
 
-// ProvisionVaultaireUser : La fonction maîtresse (Brute Force + UID Dynamique)
+// ProvisionVaultaireUser crée et tient à jour le compte local d'un utilisateur
+// du domaine : compte, dossier, authorized_keys, contexte SELinux, droit
+// d'administration.
+//
+// C'est le SEUL endroit qui le fait (TO-DO 197). Le module PAM n'aligne plus
+// que le mot de passe local, qui demande crypt() pour être comparé.
 func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error {
 	const startUID = 5000
 	var uid int
@@ -105,24 +110,27 @@ func ProvisionVaultaireUser(username string, isAdmin bool, pubKeys string) error
 	// Relevé sur une machine réelle :
 	//   denied { open } path="/home/<user>/.ssh/authorized_keys"
 	//   tcontext=system_u:object_r:home_root_t
-	RestaurerContexteSELinux(home)
+	//
+	// Tout le dossier à la CRÉATION (il vient d'être rempli depuis /etc/skel) ;
+	// ensuite, seulement ce que l'agent réécrit à chaque connexion — le dossier
+	// lui-même et .ssh. Le parcours complet, à chaque connexion et une seconde
+	// fois par le module PAM, était l'un des coûts relevés par le 190.
+	if !exists {
+		RestaurerContexteSELinux(home)
+	} else {
+		RestaurerContexteSELinuxCompte(home)
+	}
 
-	// 4. SUDO : Gestion du groupe wheel/sudo
-	if isAdmin {
-		logs.Write_log("INFO", "Ajout de "+username+" au groupe wheel")
-		// L'échec est dit, pas fatal : le compte est créé et ses clés posées.
-		// Refuser la session parce que le groupe d'administration manque
-		// laisserait l'utilisateur dehors, alors qu'il lui reste un accès valide
-		// — sans les droits sudo, ce que le journal permet de diagnostiquer.
-		switch pose, err := addUserToGroupManual("wheel", username); {
-		case err != nil:
-			logs.Write_log("WARNING", fmt.Sprintf(
-				"Ajout de %s au groupe wheel impossible : %v", username, err))
-		case !pose:
-			logs.Write_log("WARNING", fmt.Sprintf(
-				"Groupe wheel absent de cette machine : %s n'aura pas les droits "+
-					"d'administration", username))
-		}
+	// 4. LE DROIT D'ADMINISTRATION, aligné sur l'annuaire dans les deux sens.
+	//
+	// Le module PAM ne s'en occupe plus (TO-DO 197). L'échec est dit, pas
+	// fatal : le compte est créé et ses clés posées. Refuser la session parce
+	// que le groupe d'administration manque laisserait l'utilisateur dehors,
+	// alors qu'il lui reste un accès valide — sans les droits sudo, ce que le
+	// journal permet de diagnostiquer.
+	if _, _, err := AppliquerDroitAdministration(username, isAdmin); err != nil {
+		logs.Write_log("WARNING", fmt.Sprintf(
+			"Droit d'administration de %s non appliqué : %v", username, err))
 	}
 
 	return nil

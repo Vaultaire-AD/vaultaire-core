@@ -1,7 +1,11 @@
 package localusermanagement
 
 import (
+	"errors"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
 )
@@ -39,29 +43,71 @@ import (
 // où SELinux l'est, et son absence est précisément le signe qu'il n'y a rien à
 // restaurer.
 
-// RestaurerContexteSELinux applique le contexte attendu à un chemin.
+// lancerRestorecon est une variable pour que les tests voient les appels sans
+// SELinux ni restorecon. Rend la sortie combinée et l'erreur ; un binaire
+// absent rend errRestoreconAbsent.
+var lancerRestorecon = func(args ...string) ([]byte, error) {
+	binaire, err := exec.LookPath("restorecon")
+	if err != nil {
+		return nil, errRestoreconAbsent
+	}
+	return exec.Command(binaire, args...).CombinedOutput()
+}
+
+var errRestoreconAbsent = errors.New("restorecon absent")
+
+// RestaurerContexteSELinux applique le contexte attendu à un chemin, et à
+// TOUT ce qu'il contient.
 //
-// Récursif : le répertoire personnel, `.ssh` et les fichiers qu'il contient
-// portent chacun un type différent, et seul `restorecon -R` les distingue.
+// Réservé à la CRÉATION du compte : le répertoire personnel vient d'être rempli
+// depuis /etc/skel, et chacun de ces fichiers a hérité de `home_root_t`. Sur un
+// compte existant, voir RestaurerContexteSELinuxCompte — parcourir tout le
+// dossier à chaque connexion coûtait le temps d'un `find` sur l'ensemble du
+// `HOME`, et deux fois (TO-DO 197).
 //
 // Sans effet et sans erreur sur une machine sans SELinux : `restorecon` y est
 // absent, et l'on n'a alors rien à corriger.
 func RestaurerContexteSELinux(chemin string) {
-	binaire, err := exec.LookPath("restorecon")
-	if err != nil {
-		// Ni erreur ni avertissement : sur une machine sans SELinux, c'est le
-		// cas NORMAL. Le signaler à chaque création de compte remplirait le
-		// journal d'un bruit qui n'appelle aucune action.
+	restorecon(chemin, "-RF", chemin)
+}
+
+// RestaurerContexteSELinuxCompte remet le contexte de ce que l'agent écrit à
+// chaque connexion : le répertoire personnel LUI-MÊME (sans descendre), et
+// `.ssh` avec ce qu'il contient.
+//
+// C'est exactement ce que sshd lit — le dossier pour y entrer, `.ssh` et
+// `authorized_keys` pour les clés. Le reste du dossier appartient à
+// l'utilisateur : l'agent n'y crée rien à la connexion, et n'a pas à en
+// relabelliser des milliers de fichiers.
+func RestaurerContexteSELinuxCompte(home string) {
+	if !restorecon(home, "-F", home) {
 		return
 	}
+	ssh := filepath.Join(home, ".ssh")
+	if _, err := os.Lstat(ssh); err != nil {
+		return
+	}
+	restorecon(ssh, "-RF", ssh)
+}
 
+// restorecon lance la commande et dit si elle a tourné. Faux aussi quand
+// restorecon est absent : il n'y a alors rien d'autre à essayer.
+func restorecon(chemin string, args ...string) bool {
+	out, err := lancerRestorecon(args...)
+	if errors.Is(err, errRestoreconAbsent) {
+		// Ni erreur ni avertissement : sur une machine sans SELinux, c'est le
+		// cas NORMAL. Le signaler à chaque connexion remplirait le journal d'un
+		// bruit qui n'appelle aucune action.
+		return false
+	}
 	// -F force la réécriture même si le contexte semble déjà correct. Sans lui,
 	// un fichier étiqueté par héritage — donc avec un contexte plausible mais
 	// faux — serait laissé tel quel.
-	if out, err := exec.Command(binaire, "-RF", chemin).CombinedOutput(); err != nil {
+	if err != nil {
 		logs.Write_log("WARNING", "selinux: contexte non restauré sur "+chemin+
 			" : "+err.Error()+" "+string(out))
-		return
+		return false
 	}
-	logs.Write_log("DEBUG", "selinux: contexte restauré sur "+chemin)
+	logs.Write_log("DEBUG", "selinux: contexte restauré sur "+chemin+" ("+strings.Join(args[:len(args)-1], " ")+")")
+	return true
 }

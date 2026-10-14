@@ -66,11 +66,6 @@ int socket_is_trustworthy(const char *path);
 /* --- Username validation (injection-safe) --- */
 bool vaultaire_is_valid_username(const char *username);
 
-/* --- Sudo group: detect and add/remove user --- */
-int vaultaire_detect_sudo_group(char *group, size_t gsize);
-int vaultaire_add_user_to_sudo_group(const char *username);
-int vaultaire_remove_user_from_sudo_group(const char *username);
-
 /* --- Phase « account » : le compte peut-il encore ouvrir une session ? --- */
 /* Lit l'etat LOCAL : verrouillage, expiration du compte, expiration du mot de
  * passe au-dela du delai de grace, shell interdit. Aucun appel reseau — cette
@@ -113,24 +108,8 @@ int vaultaire_json_get_string(const char *json, const char *key, char *out, size
 /* Get boolean for key "key". Returns 0 on success, -1 if not found. */
 int vaultaire_json_get_bool(const char *json, const char *key, bool *out);
 
-/* --- SSH keys array: parse "ssh_keys":["...","..."] into allocated array. Caller frees keys[]. ---
- *
- * Rend 0 SEULEMENT si le tableau a ete lu en entier — un tableau vide compte
- * pour un succes, avec *count_out a 0. Rend -1 si le champ manque, s'il ne
- * porte pas un tableau, ou si la reponse est coupee.
- *
- * Cette distinction est le coeur du contrat : l'appelant reecrit
- * authorized_keys, donc « plus aucune cle » (ecrire un fichier vide) et
- * « reponse illisible » (ne rien toucher) ne peuvent pas se ressembler. */
-int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *count_out);
-int ensure_local_user_with_password(const char *username, const char *password);
-int setup_user_ssh_keys(const char *username, char **keys, size_t key_count);
-
-/* Ecrit authorized_keys dans un repertoire personnel DONNE.
- * Separee pour etre testable : un test du garde-fou contre les liens
- * symboliques doit fournir son propre repertoire, faute de quoi la fonction
- * renonce avant d'ecrire et le test ne mesure rien. */
-int vaultaire_write_ssh_keys(const char *home, uid_t uid, gid_t gid,
-                              char **keys, size_t key_count);
+/* --- Mot de passe local (TO-DO 197) ---
+ * Le compte lui-meme est gere par l'agent : voir pam_common.c. */
+int vaultaire_sync_local_password(const char *username, const char *password);
 
 #endif /* PAM_VAULTAIRE_COMMON_H */
