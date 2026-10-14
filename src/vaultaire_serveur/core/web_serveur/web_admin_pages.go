@@ -320,14 +320,17 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		// Command_GET_GroupInfo mais n'étaient exposées nulle part dans
 		// l'interface : elles n'étaient gérables qu'en ligne de commande.
 		detailData := struct {
-			Group          string
-			Users          []string
-			Clients        []string
-			Perms          []string
-			ClientPerms    []string
-			GPOs           []string
-			AllUsers       []storage.GetUsers
-			AllClients     []storage.GetClientsByPermission
+			Group       string
+			Users       []string
+			Clients     []string
+			Perms       []string
+			ClientPerms []string
+			GPOs        []string
+			AllUsers    []storage.GetUsers
+			AllClients  []storage.GetClientsByPermission
+			// NomsClients : identifiant de machine -> nom d'hôte, pour les
+			// listes qui ne portent que l'identifiant (TO-DO 191).
+			NomsClients    map[string]string
 			AllPerms       []storage.UserPermission
 			AllClientPerms []storage.ClientPermission
 			AllGPOs        []string
@@ -405,6 +408,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		allPerms, _ := dbpermission.Command_GET_AllUserPermissions(db)
 		allClientPerms, _ := dbpermission.Command_GET_AllClientPermissions(db)
 		detailData.AllUsers, detailData.AllClients = allUsers, allClients
+		detailData.NomsClients = NomsDesClients(allClients)
 		detailData.AllPerms, detailData.AllClientPerms = allPerms, allClientPerms
 
 		// Seules les GPO non encore liées sont proposées à l'ajout : offrir une
