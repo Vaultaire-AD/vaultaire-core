@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 	"vaultaire_client/pamstate"
 	localusermanagement "vaultaire_client/tools/local_user_management"
 	"vaultaire_client/tools/sshreq"
@@ -44,6 +45,7 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		pubKeys := strings.Join(reste, "\n")
 
 		// 🔥 ACTION SYSTÈME : On crée le user et on pose les clés
+		debutProvisionnement := time.Now()
 		err := provisionner(sshUser, isAdmin, pubKeys)
 
 		// Les APPARTENANCES DE GROUPE, alignées sur ce que le serveur vient de
@@ -110,6 +112,8 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 				IsAdmin:       isAdmin,
 				Avertissement: avertissement,
 				SSHKeys:       pubKeys,
+
+				DureeProvisionnement: time.Since(debutProvisionnement),
 			}
 			select {
 			case respChan <- result:

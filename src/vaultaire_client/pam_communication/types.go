@@ -22,10 +22,20 @@ type PamPayload struct {
 }
 
 // Réponse unifiée renvoyée vers PAM
+//
+// L'ORDRE DES CHAMPS compte : le module PAM lit la réponse dans un tampon de
+// 4 Kio, et une réponse plus longue y est coupée. Les clés publiques peuvent
+// le remplir ; tout ce que le module à jour lit (statut, message, chrono) passe
+// donc AVANT elles. Les clés ne servent plus qu'aux modules restés à l'ancienne
+// version (TO-DO 197), qui les lisent en dernier comme avant.
 type Response struct {
-	Status  string   `json:"status"`
-	IsAdmin bool     `json:"is_admin"`
-	SSHKeys []string `json:"ssh_keys"`
+	Status string `json:"status"`
+
+	// Chrono dit au module PAM que le mode debug est actif : il écrit alors
+	// ses propres durées (saisie, attente de l'agent) dans le journal de debug
+	// des connexions — TO-DO 199. Omis hors debug, pour que la réponse
+	// ordinaire ne change pas.
+	Chrono bool `json:"chrono,omitempty"`
 
 	// Notice est le message à afficher à l'utilisateur au moment où sa session
 	// s'ouvre — mot de passe provisoire, expiration prochaine (TO-DO 99).
@@ -38,6 +48,9 @@ type Response struct {
 	// « success ». Un motif de refus voyagerait dans `status`, que le module
 	// compare déjà.
 	Notice string `json:"notice,omitempty"`
+
+	IsAdmin bool     `json:"is_admin"`
+	SSHKeys []string `json:"ssh_keys"`
 }
 
 // parseSSHKeys nettoie les clés SSH reçues (brutes, séparées par \n).

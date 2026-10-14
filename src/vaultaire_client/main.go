@@ -13,6 +13,7 @@ import (
 	"log"
 	"os"
 	"time"
+	"vaultaire_client/chrono"
 	"vaultaire_client/config"
 	"vaultaire_client/controle"
 	"vaultaire_client/debugreport"
@@ -268,6 +269,9 @@ func main() {
 			return
 		}
 		storage.SilentConsole = true
+		// Le chronométrage suit le réglage de debug du fichier : sshd lance ce
+		// mode sans « -debug » (TO-DO 199).
+		chrono.Activer(config.GetDebug().Enabled)
 		// Mode One-Shot pour SSH
 		logs.Go("communication serveur", func() {
 			serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
@@ -322,6 +326,9 @@ func main() {
 		// Rapport de debug : dans la branche du démon SEULEMENT. En mode
 		// --fetch-key, la sortie standard est la réponse lue par sshd.
 		reglage := config.GetDebug()
+		// Le journal de debug des connexions suit le même interrupteur que le
+		// rapport de debug (TO-DO 199).
+		chrono.Activer(*debugRapport || reglage.Enabled)
 		if *debugRapport || reglage.Enabled {
 			secondes := reglage.IntervalSeconds
 			if *debugIntervalle > 0 {

@@ -811,3 +811,58 @@ int vaultaire_json_get_bool(const char *json, const char *key, bool *out) {
     *out = (strncmp(p, "true", 4) == 0);
     return 0;
 }
+
+/* --- Chronometrage des connexions (TO-DO 199) --- */
+
+void vaultaire_chrono_marquer(struct timespec *t) {
+    if (t) clock_gettime(CLOCK_MONOTONIC, t);
+}
+
+static long ms_entre(const struct timespec *a, const struct timespec *b) {
+    if (!a || !b || (a->tv_sec == 0 && a->tv_nsec == 0) || (b->tv_sec == 0 && b->tv_nsec == 0)) {
+        return -1;
+    }
+    return (b->tv_sec - a->tv_sec) * 1000L + (b->tv_nsec - a->tv_nsec) / 1000000L;
+}
+
+void vaultaire_chrono_rapport_vers(const char *chemin, const struct vaultaire_chrono *c,
+                                   const char *service, const char *username,
+                                   const char *resp, const char *issue) {
+    bool actif = false;
+    if (!chemin || !c || !resp || vaultaire_json_get_bool(resp, "chrono", &actif) != 0 || !actif) {
+        return;
+    }
+    struct timespec fin;
+    vaultaire_chrono_marquer(&fin);
+
+    /* L'heure murale a la milliseconde, comme la ligne de l'agent : les deux
+     * se lisent cote a cote dans le meme fichier. */
+    struct timespec mur;
+    clock_gettime(CLOCK_REALTIME, &mur);
+    struct tm tm;
+    char horodatage[32] = "?";
+    if (localtime_r(&mur.tv_sec, &tm)) {
+        strftime(horodatage, sizeof(horodatage), "%Y-%m-%d %H:%M:%S", &tm);
+    }
+
+    /* Meme ouverture que vaultaire_pam.log : mode explicite, pas de lien. */
+    mkdir("/var/log/vaultaire", 0750);
+    /* 0600 comme les journaux de l'agent, qui en fait la rotation. */
+    int fd = open(chemin, O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC | O_NOFOLLOW, 0600);
+    if (fd < 0) {
+        return;
+    }
+    dprintf(fd, "%s.%03ld pam %s [%s] %s : saisie %ld ms, attente agent %ld ms, "
+                "mot de passe local %ld ms, total module %ld ms\n",
+            horodatage, mur.tv_nsec / 1000000L,
+            username ? username : "?", service ? service : "?", issue ? issue : "?",
+            ms_entre(&c->debut, &c->saisie), ms_entre(&c->saisie, &c->reponse),
+            ms_entre(&c->reponse, &fin), ms_entre(&c->debut, &fin));
+    close(fd);
+}
+
+void vaultaire_chrono_rapport(const struct vaultaire_chrono *c, const char *service,
+                              const char *username, const char *resp, const char *issue) {
+    vaultaire_chrono_rapport_vers(VAULTAIRE_CHRONO_PATH, c, service, username, resp, issue);
+}
+

@@ -23,6 +23,11 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         return PAM_IGNORE;
     }
 
+    /* Chronometrage, ecrit seulement en mode debug (TO-DO 199). */
+    struct vaultaire_chrono chrono;
+    memset(&chrono, 0, sizeof(chrono));
+    vaultaire_chrono_marquer(&chrono.debut);
+
     // Optionnel : Récupération du password MFA si transmis via la conv SSH
     pam_get_authtok(pamh, PAM_AUTHTOK, &password, NULL);
     vaultaire_log_info("Password retrieved (len=%zu)", password ? strlen(password) : 0);
@@ -66,6 +71,8 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         }
     }
 
+    vaultaire_chrono_marquer(&chrono.saisie);
+
     // 1. Demande des clés au Daemon Vaultaire
     char req[VAULTAIRE_MAX_BUF];
     char resp[VAULTAIRE_MAX_BUF];
@@ -96,12 +103,14 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
      *
      * On journalise ce qui sert au diagnostic : la longueur, et le statut une
      * fois extrait. */
+    vaultaire_chrono_marquer(&chrono.reponse);
     vaultaire_log_info("Reponse du daemon pour %s (%zu octets)", username, strlen(resp));
     char status[32] = {0};
     vaultaire_json_get_string(resp, "status", status, sizeof(status));
 
     if (strcmp(status, "success") != 0) {
         vaultaire_log_err("SSH pre-auth rejected for %s", username);
+        vaultaire_chrono_rapport(&chrono, "sshd", username, resp, status[0] ? status : "refus");
         return PAM_PERM_DENIED;
     }
 
@@ -126,8 +135,11 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
      * avant de repondre. Il ne reste ici que le mot de passe local, qui demande
      * crypt() pour etre compare sans reecrire /etc/shadow a chaque connexion.
      * Voir vaultaire_sync_local_password. */
-    if (!vaultaire_sync_local_password(username, password))
+    if (!vaultaire_sync_local_password(username, password)) {
+        vaultaire_chrono_rapport(&chrono, "sshd", username, resp, "mot de passe local en echec");
         return PAM_AUTH_ERR;
+    }
+    vaultaire_chrono_rapport(&chrono, "sshd", username, resp, "success");
 
     vaultaire_log_info("SSH provisioning complete for %s. Passing control to OpenSSH.", username);
 

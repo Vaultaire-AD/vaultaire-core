@@ -83,6 +83,15 @@ cc -Wall -Wextra -Werror -I"$ICI" -DVAULTAIRE_DELAI_REPONSE_MS=400 -o "$TMP/dela
 
 # ---------------------------------------------------------------------------
 echo
+echo "=== TO-DO 199 : chronometrage, en mode debug seulement ==="
+# ---------------------------------------------------------------------------
+
+cc -Wall -Wextra -Werror -I"$ICI" -o "$TMP/chrono" \
+   "$ICI/chrono_test.c" "$ICI/pam_common.c" -lcrypt
+"$TMP/chrono"
+
+# ---------------------------------------------------------------------------
+echo
 echo "=== TO-DO 197 : le module ne gere plus le compte ==="
 # ---------------------------------------------------------------------------
 #
