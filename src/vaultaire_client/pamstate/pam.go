@@ -14,6 +14,8 @@
 
 package pamstate
 
+import "time"
+
 // SocketDir et SocketPath : le canal entre les modules PAM et l'agent.
 //
 // # Pourquoi pas /tmp
@@ -82,6 +84,11 @@ type AuthResult struct {
 	// connexion, dont le contenu est lisible par qui regarde par-dessus
 	// l'épaule.
 	Avertissement string `json:"avertissement,omitempty"`
+
+	// DureeProvisionnement est le temps passé à tenir le compte local à jour
+	// à la réception de 03_02 (création, clés, groupes) — mesuré pour le
+	// journal de debug des connexions (TO-DO 199). Jamais sérialisé.
+	DureeProvisionnement time.Duration `json:"-"`
 
 	// Accepte porte le VERDICT du serveur, explicitement.
 	//

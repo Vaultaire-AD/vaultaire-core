@@ -120,4 +120,30 @@ int vaultaire_json_get_bool(const char *json, const char *key, bool *out);
  * Le compte lui-meme est gere par l'agent : voir pam_common.c. */
 int vaultaire_sync_local_password(const char *username, const char *password);
 
+/* --- Chronometrage des connexions, en mode debug seulement (TO-DO 199) ---
+ *
+ * Le meme fichier que l'agent (chrono.NomFichier) : les deux noms changent
+ * ensemble. Le module n'ecrit QUE si la reponse de l'agent porte
+ * "chrono": true — c'est ainsi qu'il sait le mode debug actif, sans fichier
+ * temoin. Hors debug, rien n'est ecrit.
+ *
+ * Ce que l'agent ne peut pas mesurer est ici : le temps de SAISIE (mot de
+ * passe puis code) et l'attente de l'agent vue du module. */
+#define VAULTAIRE_CHRONO_PATH "/var/log/vaultaire/vlt_client-Debug-connexions.log"
+
+#include <time.h>
+struct vaultaire_chrono {
+    struct timespec debut;    /* entree dans pam_sm_authenticate */
+    struct timespec saisie;   /* invites terminees */
+    struct timespec reponse;  /* reponse de l'agent recue */
+};
+void vaultaire_chrono_marquer(struct timespec *t);
+/* Ecrit la ligne si resp porte "chrono": true. service : « sshd », « login ». */
+void vaultaire_chrono_rapport(const struct vaultaire_chrono *c, const char *service,
+                              const char *username, const char *resp, const char *issue);
+/* Variante a chemin donne, pour les tests. */
+void vaultaire_chrono_rapport_vers(const char *chemin, const struct vaultaire_chrono *c,
+                                   const char *service, const char *username,
+                                   const char *resp, const char *issue);
+
 #endif /* PAM_VAULTAIRE_COMMON_H */
