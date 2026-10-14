@@ -29,7 +29,6 @@ Trois gestes, dans le même passage que le code :
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
-| 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
@@ -358,26 +357,6 @@ grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit
    l'agent — à comprendre, pas à accorder. `/etc/selinux/config` reste refusé.
 3. Quand une collecte complète ne rend plus rien : `install.sh
    --agent-enforcing`, puis la même suite, en enforcing.
-
-### 171. [PAM] [CLIENT] Un mot de passe expiré se lit au journal du poste, pas à l'écran
-
-**Origine.** Reste du **159**. Le core donne un motif précis à deux refus, et
-seulement après un mot de passe **prouvé** : `password expired` et
-`mfa required` (trame `03_03`). Depuis le 159 l'agent l'écrit dans son journal ;
-la personne devant l'invite, elle, ne voit toujours qu'un refus ordinaire, retape
-son mot de passe, puis appelle le support — exactement ce que le commentaire de
-`CheckAuthentification.go` dit vouloir éviter.
-
-**Ce qu'il faut trancher.** L'agent ne transmet aujourd'hui un texte au module
-PAM que sur un **succès** (`Notice`, TO-DO 99), et c'est voulu : dire quoi que ce
-soit après un mot de passe faux apprendrait qu'un compte existe. Ces deux
-motifs-là ne tombent pas sous cette objection — qui les lit connaît déjà le mot
-de passe du compte —, mais la règle « rien sur un refus » est simple, et
-l'entamer demande de s'assurer que **seuls** ces deux motifs passent.
-
-**À faire.** Une liste fermée de motifs affichables, côté agent ; le module PAM
-les montre par la conversation PAM ; tout autre refus reste muet. Un test par motif, et
-un test qui garde le silence sur `permission denied`.
 
 ### 172. [GPO] [CLUSTER] « Demander un cycle » n'atteint que les machines de ce core
 

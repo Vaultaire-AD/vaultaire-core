@@ -134,5 +134,25 @@ fi
 echo "  [PASS] le controle detecte bien un usermod reintroduit"
 [ "$ECHEC197" -eq 0 ] || exit 1
 
+# ---------------------------------------------------------------------------
+echo
+echo "=== TO-DO 171 : le motif d'un refus affichable ==="
+# ---------------------------------------------------------------------------
+#
+# Le filtre (liste fermee) est dans l'agent : MessageDeRefus, teste en Go. Ici,
+# que les deux modules presentent le champ « refus » par pam_error, et
+# seulement dans la branche du refus : avant le « return PAM_PERM_DENIED ».
+
+for f in "$ICI/pam_ssh_auth_module.c" "$ICI/pam_login_custom_module.c"; do
+    bloc="$(awk '/strcmp\(status, "success"\) != 0/{dedans=1} dedans{print} dedans&&/return PAM_PERM_DENIED/{exit}' "$f")"
+    if printf '%s' "$bloc" | grep -q 'vaultaire_json_get_string(resp, "refus"' \
+        && printf '%s' "$bloc" | grep -q 'pam_error(pamh, "%s", refus)'; then
+        echo "  [PASS] $(basename "$f") presente le motif d'un refus affichable"
+    else
+        echo "  [FAIL] $(basename "$f") ne presente pas le champ « refus » dans la branche du refus"
+        exit 1
+    fi
+done
+
 echo
 echo "Tous les tests sont passes."

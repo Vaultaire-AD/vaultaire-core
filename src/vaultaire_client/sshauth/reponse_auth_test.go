@@ -57,3 +57,24 @@ func TestLesClesDe0302ArriventAuCanalPAM(t *testing.T) {
 		t.Errorf("une ligne de contrôle est partie avec les clés : %q", r.SSHKeys)
 	}
 }
+
+// TO-DO 171 : le motif de 03_03 arrive jusqu'au canal PAM, tel que le core
+// l'a écrit — le filtre est dans le gestionnaire PAM.
+func TestLeMotifDe0303ArriveAuCanalPAM(t *testing.T) {
+	canal := make(chan pamstate.AuthResult, 1)
+	sshreq.Register("bob@dom", canal)
+	t.Cleanup(func() { sshreq.Remove("bob@dom") })
+
+	SSH_Auth_Manager(storage.Trames_struct_client{
+		Message_Order: []string{"03", "03"},
+		Content:       "bob@dom\npassword expired",
+	}, nil)
+
+	r, ok := <-canal
+	if !ok {
+		t.Fatal("canal fermé sans verdict")
+	}
+	if r.Accepte || r.MotifRefus != "password expired" {
+		t.Errorf("verdict = %+v, attendu un refus portant « password expired »", r)
+	}
+}

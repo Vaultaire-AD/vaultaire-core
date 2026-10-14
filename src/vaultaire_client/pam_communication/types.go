@@ -49,6 +49,13 @@ type Response struct {
 	// compare déjà.
 	Notice string `json:"notice,omitempty"`
 
+	// Refus est le texte à présenter sur un REFUS, quand le motif est l'un des
+	// deux que la personne peut corriger seule — mot de passe expiré, second
+	// facteur manquant (TO-DO 171, MessageDeRefus). Vide pour tout autre refus,
+	// et sur un succès. Omis quand il est vide : la réponse ordinaire ne change
+	// pas, et un module PAM ancien ne le lit pas.
+	Refus string `json:"refus,omitempty"`
+
 	IsAdmin bool     `json:"is_admin"`
 	SSHKeys []string `json:"ssh_keys"`
 }
