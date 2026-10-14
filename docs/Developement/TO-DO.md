@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **200**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **201**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -31,7 +31,6 @@ Trois gestes, dans le même passage que le code :
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 171 | PAM          | Un mot de passe expiré se lit au journal du poste, pas à l'écran | À faire — petit, à trancher         |
 | 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
-| 179 | WINDOWS      | Écran vide : cause établie (V2), passer la DLL en V1 par défaut | **À faire — bloque la recette Windows** |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
@@ -54,6 +53,7 @@ Trois gestes, dans le même passage que le code :
 | 185 | DEV          | `dev-comp.sh --port` : publier des ports en plus            | À faire — petit                         |
 | 191 | PORTAIL      | Sélection des clients : le nom en plus de l'identifiant     | À faire — petit                         |
 | 192 | PORTAIL      | Tableau de bord : « Exécuter une commande » en haut         | À faire — petit                         |
+| 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
 
@@ -177,34 +177,6 @@ des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
 
-### 179. [WINDOWS] Écran vide : passer la DLL en V1 par défaut
-
-**Origine.** Le **157** a corrigé à l'aveugle l'écran de connexion vide de la
-recette du 05/10 en suivant l'exemple « V2 » de Microsoft (pas de tuile par
-défaut, une image et un libellé, `ICredentialProviderSetUserArray`).
-
-**Cause établie** (recette du 12/10). C'est le V2 qui casse l'écran : avec les
-fonctionnalités V2 (énumération des utilisateurs, interfaces étendues), les
-tuiles restent vides ou l'interface Vaultaire est masquée. Poser `ModeV1` = 1
-(DWORD) sous `HKLM\SOFTWARE\Vaultaire\CredentialProvider` — clé à créer, elle
-n'existait pas — rétablit aussitôt l'affichage, et la connexion d'un compte du
-domaine passe.
-
-**À faire.**
-
-1. Faire du comportement `ModeV1` le comportement **par défaut** de la DLL, sans
-   clé de registre ; `install.ps1` n'a rien à poser.
-2. Retirer les variantes d'essai devenues inutiles (`ModeV1`, `TuileParDefaut`,
-   `SansImage`) ou n'en garder qu'une, documentée, pour revenir au V2 — et le
-   dire dans `README.md` du client Windows.
-3. Mettre le faux LogonUI à jour (ses contrôles V2) ; rejouer `A_TESTER.md`
-   § 14, 48 et 72.
-4. Le V2 lui-même — savoir **pourquoi** il casse l'écran — n'est utile que si
-   l'on veut un jour l'énumération des comptes : à noter, pas à traiter ici.
-
-Lié : **194** (RDP) et **195** (CP contourné après la première connexion), à
-regarder dans le même passage.
-
 ### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
 
 **Contexte.** La V1 Windows (voir `DO/2.2/2.2.md`, entrée 77) reçoit les trames `05` (GPO) et `06` (révocation) et les journalise **sans les appliquer**. C'est assumé : les modules GPO existants posent des fichiers, des unités systemd et des réglages PAM, dont aucun n'a d'équivalent direct.
@@ -226,9 +198,9 @@ Windows — c'est l'état attendu tant que ce point n'est pas fait (le 167 dit
 
 **Constat** (recette du 12/10, `A_TESTER.md`). La connexion d'un compte du domaine par le Bureau à
 distance échoue ; seule la connexion à la console a été validée (avec
-`ModeV1`).
+`ModeV1`, devenu le comportement par défaut au 179).
 
-**À faire.** D'abord après le 179 : un fournisseur doit accepter
+**À faire.** Un fournisseur doit accepter
 `CPUS_LOGON` **et** `CPUS_CREDUI` (l'invite du client RDP avec la NLA), et le
 sérialiser pour `CredUIPromptForWindowsCredentials` ; sans NLA, c'est LogonUI
 sur le poste distant, comme à la console. Relever avec le témoin de trace quel
@@ -504,6 +476,19 @@ haut du tableau de bord, au-dessus de la partie debug.
 ---
 
 ## Idées à cadrer
+
+### 200. [WINDOWS] Pourquoi le Credential Provider V2 vide l'écran de connexion
+
+**Origine** (reste du **179**). Le 179 a fait de la DLL un fournisseur V1 :
+c'est ce qui rétablit l'écran, constaté à la recette du 12/10. Le V2
+(`ICredentialProviderCredential2`, `ICredentialProviderSetUserArray`) le vide,
+sans que l'on sache pourquoi — toutes les méthodes répondent juste sous le faux
+LogonUI.
+
+**À cadrer, seulement si** l'on veut un jour que la tuile Vaultaire s'attache
+aux comptes déjà affichés (énumération, `GetUserSid`). Le code V2 est toujours
+là, derrière la variante d'essai `ModeV2` (README du client Windows) : poser
+la valeur, le témoin de trace, et lire où LogonUI s'arrête.
 
 ### 8. [LDAP] Mode synchro avec un annuaire existant
 

@@ -378,6 +378,19 @@ if (DemanderOuiNon "Aligner la politique locale (longueur 0, aucun historique, c
 
 # --- 6. Le Credential Provider ---------------------------------------------
 Titre "Écran de connexion"
+
+# Les anciennes variantes d'essai du TO-DO 157 (ModeV1, TuileParDefaut,
+# SansImage) : la DLL ne les lit plus depuis le TO-DO 179 — le V1 est son
+# comportement par défaut. Retirées pour qu'un poste de recette ne garde pas un
+# réglage trompeur. ModeV2, la seule variante qui reste, n'est PAS touchée :
+# posée, c'est un essai en cours.
+$cleVariantes = "HKLM:\SOFTWARE\Vaultaire\CredentialProvider"
+foreach ($ancienne in @("ModeV1", "TuileParDefaut", "SansImage")) {
+    if (Get-ItemProperty -LiteralPath $cleVariantes -Name $ancienne -ErrorAction SilentlyContinue) {
+        Remove-ItemProperty -LiteralPath $cleVariantes -Name $ancienne -ErrorAction SilentlyContinue
+        Info "ancienne variante d'essai retirée : $ancienne (le V1 est le comportement par défaut)"
+    }
+}
 $dll = Join-Path $Source "VaultaireCredentialProvider.dll"
 if (-not (Test-Path $dll)) {
     Info "DLL absente de l'archive : l'écran de connexion Windows n'est pas modifié."

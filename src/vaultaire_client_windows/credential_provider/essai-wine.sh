@@ -22,9 +22,9 @@
 #   4. trace            la même suite, témoin de trace posé : chaque entrée de
 #                       méthode a sa sortie, et ni le mot de passe ni le code
 #                       tapés n'apparaissent dans le journal ;
-#   4bis. variantes     les trois variantes d'essai du TO-DO 157 posées dans le
-#                       registre : la suite voit ce qu'elles changent, et le
-#                       journal les nomme ;
+#   4bis. ModeV2        la variante d'essai du TO-DO 179 posée dans le
+#                       registre : les interfaces V2 sont accordées, le journal
+#                       la nomme ; les anciennes variantes n'y changent rien ;
 #   5. retrait          regsvr32 /u : plus rien de Vaultaire dans le registre,
 #                       l'autre fournisseur intact.
 #
@@ -251,26 +251,31 @@ for secret in "MotDePasse-Essai-149" "314159"; do
 done
 [ "$fuite" = 0 ] && ok "journal : ni le mot de passe ni le code tapés"
 
-# --- 4bis. les variantes d'essai (TO-DO 157) ---------------------------------------
+# --- 4bis. la variante d'essai ModeV2 (TO-DO 179) ---------------------------------
+#
+# Par défaut, la DLL est un fournisseur V1 (étape 4). ModeV2 = 1 rend les deux
+# interfaces V2 du 157, pour un essai : elles doivent l'être, et le journal le
+# dire. Les anciennes valeurs (ModeV1, TuileParDefaut, SansImage) sont posées
+# aussi : elles ne doivent plus rien changer.
 echo
-info "4bis. variantes d'essai posées (TuileParDefaut, ModeV1, SansImage)"
+info "4bis. variante d'essai ModeV2 posée (et les anciennes, ignorées)"
 CLE_VARIANTES='HKLM\Software\Vaultaire\CredentialProvider'
-for v in TuileParDefaut ModeV1 SansImage; do
+for v in ModeV2 ModeV1 TuileParDefaut SansImage; do
     w reg add "$CLE_VARIANTES" /v "$v" /t REG_DWORD /d 1 /f >/dev/null
 done
 : > "$JOURNAL"
-if lancer_faux_logonui "$TRAVAIL/suite-variantes.txt" --variantes >/dev/null; then
-    ok "faux LogonUI, variantes posées : aucun échec"
+if lancer_faux_logonui "$TRAVAIL/suite-mode-v2.txt" --mode-v2 >/dev/null; then
+    ok "faux LogonUI, ModeV2 posée : aucun échec"
 else
-    echec "faux LogonUI, variantes posées : $(grep -c 'ECHEC' "$TRAVAIL/suite-variantes.txt" || true) échec(s)"
-    tr -d '\r' < "$TRAVAIL/suite-variantes.txt" | grep 'ECHEC' | sed 's/^/    /'
+    echec "faux LogonUI, ModeV2 posée : $(grep -c 'ECHEC' "$TRAVAIL/suite-mode-v2.txt" || true) échec(s)"
+    tr -d '\r' < "$TRAVAIL/suite-mode-v2.txt" | grep 'ECHEC' | sed 's/^/    /'
 fi
-# Une recette qui oublierait une variante posée conclurait sur le mauvais
-# comportement : la DLL les nomme au journal.
-if tr -d '\r' < "$JOURNAL" | grep -q "variantes d'essai actives : TuileParDefaut=1 ModeV1=1 SansImage=1"; then
-    ok "journal : les variantes actives sont nommées"
+# Une recette qui oublierait la variante posée conclurait sur le mauvais
+# comportement : la DLL la nomme au journal.
+if tr -d '\r' < "$JOURNAL" | grep -q "variante d'essai active : ModeV2=1"; then
+    ok "journal : la variante active est nommée"
 else
-    echec "journal : aucune ligne « variantes d'essai actives »"
+    echec "journal : aucune ligne « variante d'essai active : ModeV2=1 »"
 fi
 w reg delete 'HKLM\Software\Vaultaire' /f >/dev/null
 

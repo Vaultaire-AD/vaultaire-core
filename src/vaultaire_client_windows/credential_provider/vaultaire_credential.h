@@ -39,25 +39,30 @@ enum Champ {
   kNombreDeChamps,
 };
 
-// Les variantes d'essai du TO-DO 157.
+// La variante d'essai qui reste du TO-DO 157 — TO-DO 179.
 //
-// L'écran de connexion vide ne se reproduit que sur un vrai poste. Chaque
-// hypothèse s'y essaie en posant une valeur DWORD sous
-// HKLM\SOFTWARE\Vaultaire\CredentialProvider — sans recompiler ni
-// réinstaller la DLL. Valeur absente ou 0 : le comportement par défaut.
+// Le 157 avait rendu la DLL « V2 » à l'aveugle (ICredentialProviderCredential2,
+// ICredentialProviderSetUserArray), avec trois variantes pour en chercher la
+// cause sur un poste. La recette du 12/10 l'a trouvée : c'est le V2. Avec lui,
+// les tuiles restent vides ou l'interface Vaultaire est masquée ; poser
+// ModeV1 = 1 rétablit aussitôt l'écran, et la connexion passe.
 //
-//   TuileParDefaut = 1  la tuile se déclare par défaut (comportement d'avant
-//                       le 157) ;
-//   ModeV1 = 1          ni ICredentialProviderCredential2 ni
-//                       ICredentialProviderSetUserArray : un fournisseur V1 ;
-//   SansImage = 1       l'image de la tuile est masquée.
+// Le V1 est donc le comportement PAR DÉFAUT, sans rien à poser. TuileParDefaut
+// et SansImage sont retirées : elles ne ramenaient rien, et l'image et
+// l'absence de tuile par défaut sont celles qui marchent en V1.
 //
-// Lues à la création du fournisseur, c'est-à-dire à chaque affichage de l'écran
-// de connexion. Une variante active est écrite au journal de la DLL.
+// Reste une valeur, pour un essai seulement :
+//
+//   ModeV2 = 1  (DWORD, HKLM\SOFTWARE\Vaultaire\CredentialProvider)
+//               la tuile se dit ICredentialProviderCredential2 et le
+//               fournisseur accepte ICredentialProviderSetUserArray — le
+//               comportement du 157, celui qui casse l'écran.
+//
+// Elle ne sert qu'à chercher POURQUOI le V2 casse l'écran, si l'énumération
+// des comptes devient un jour utile (TO-DO 179, point 4). Lue à la création du
+// fournisseur ; active, elle est écrite au journal de la DLL.
 struct Variantes {
-  bool tuile_par_defaut = false;
-  bool mode_v1 = false;
-  bool sans_image = false;
+  bool mode_v2 = false;
 };
 Variantes LireVariantes();
 

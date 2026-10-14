@@ -309,42 +309,40 @@ quand le journal dépasse 8 Mo.
 Sans trace, un appel qui retient LogonUI plus d'une seconde laisse quand même
 une ligne `lent : <méthode> a retenu LogonUI N ms`.
 
-### Les variantes d'essai de l'écran de connexion (TO-DO 157)
+### Un fournisseur V1, et la variante d'essai `ModeV2` (TO-DO 157, 179)
 
 À la recette du 05/10, l'écran de connexion n'affichait plus **aucune** tuile.
-Toutes les méthodes de la DLL répondaient juste sous le faux LogonUI ; la cause
-n'a pas pu être établie sans poste. Depuis, la DLL fait ce que fait l'exemple
-« V2 » de Microsoft (`SampleV2CredentialProvider`), sur les trois points où
-elle s'en écartait :
+Le 157 a rendu la DLL « V2 », comme l'exemple `SampleV2CredentialProvider` de
+Microsoft, avec trois variantes pour chercher la cause sur un poste. La recette
+du 12/10 l'a trouvée : **c'est le V2**. Avec `ICredentialProviderCredential2` et
+`ICredentialProviderSetUserArray`, les tuiles restent vides ou l'interface
+Vaultaire est masquée ; sans elles, l'écran revient et la connexion passe.
 
-| | Avant | Depuis le 157 |
-|---|---|---|
-| tuile par défaut | oui (`GetCredentialCount` rend 0) | **non** (`CREDENTIAL_PROVIDER_NO_DEFAULT`) |
-| image de la tuile | aucune | un champ image, rôle `CPFG_CREDENTIAL_PROVIDER_LOGO`, et un libellé masqué, rôle `CPFG_CREDENTIAL_PROVIDER_LABEL` |
-| liste des comptes | `ICredentialProviderSetUserArray` refusée | acceptée |
+Depuis le 179, la DLL est donc un fournisseur **V1** par défaut, sans rien à
+poser :
 
-Si l'écran reste vide, chaque écart se **rétablit** un par un, sans recompiler ni
-réinstaller, par une valeur DWORD = 1 sous
-`HKLM\SOFTWARE\Vaultaire\CredentialProvider` :
-
-| Valeur | Rétablit |
+| | Comportement |
 |---|---|
-| `TuileParDefaut` | la tuile par défaut |
-| `ModeV1` | un fournisseur V1 : ni `ICredentialProviderCredential2` ni `ICredentialProviderSetUserArray` |
-| `SansImage` | une tuile sans image (le champ reste déclaré, masqué) |
+| interfaces | `ICredentialProvider` et `ICredentialProviderCredential` seulement |
+| tuile par défaut | non (`CREDENTIAL_PROVIDER_NO_DEFAULT`) — elle se range sous « Autre utilisateur » |
+| image de la tuile | le « V » bleu, rôle `CPFG_CREDENTIAL_PROVIDER_LOGO` ; libellé masqué, rôle `CPFG_CREDENTIAL_PROVIDER_LABEL` |
+
+`ModeV1`, `TuileParDefaut` et `SansImage` ne sont plus lues ; `install.ps1` les
+retire d'un poste de recette. Une seule variante reste, pour un **essai**
+seulement — chercher un jour pourquoi le V2 casse l'écran, si l'énumération des
+comptes devient utile :
 
 ```powershell
 New-Item HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Force | Out-Null
-New-ItemProperty HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Name ModeV1 -PropertyType DWord -Value 1 -Force
-# ... essai à l'écran de connexion, puis :
+New-ItemProperty HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Name ModeV2 -PropertyType DWord -Value 1 -Force
+# ... essai à l'écran de connexion — qui sera vide, c'est attendu — puis :
 Remove-Item HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Recurse
 ```
 
-Elles sont relues à chaque affichage de l'écran de connexion, et le journal de
-la DLL porte une ligne `variantes d'essai actives : …` tant qu'une est posée —
-une recette qui en oublierait une conclurait sur le mauvais comportement.
-`uninstall.ps1` retire la clé. Depuis un autre poste, quand l'écran est vide :
-`reg add \\<poste>\HKLM\SOFTWARE\Vaultaire\CredentialProvider /v ModeV1 /t REG_DWORD /d 1`
+Relue à chaque affichage de l'écran de connexion ; tant qu'elle est posée, le
+journal de la DLL porte `variante d'essai active : ModeV2=1`. `uninstall.ps1`
+retire la clé. Depuis un autre poste, quand l'écran est vide :
+`reg delete \\<poste>\HKLM\SOFTWARE\Vaultaire\CredentialProvider /f`
 (service Registre à distance), ou depuis le mode sans échec.
 
-La manœuvre complète est dans `A_TESTER.md`, § 80.
+La vérification sur un poste est dans `A_TESTER.md`, § 90.

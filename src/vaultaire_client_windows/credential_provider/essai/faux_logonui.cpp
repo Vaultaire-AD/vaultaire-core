@@ -34,13 +34,17 @@
 // et les journaux de CI ne s'entendent pas toujours sur l'encodage. Le code de
 // sortie est le nombre d'échecs — 0 quand tout est juste.
 //
-// # Les variantes d'essai (TO-DO 157)
+// # Le fournisseur V1 par défaut, et la variante d'essai ModeV2 (TO-DO 179)
 //
-//   faux_logonui.exe --variantes
+// Par défaut, la DLL est un fournisseur V1 : ni ICredentialProviderCredential2
+// ni ICredentialProviderSetUserArray — c'est ce qui a rétabli l'écran de
+// connexion à la recette du 12/10.
 //
-// La même suite, quand essai-wine.sh a posé les trois valeurs de
-// HKLM\SOFTWARE\Vaultaire\CredentialProvider (TuileParDefaut, ModeV1,
-// SansImage) : ce qui doit changer change, et rien d'autre.
+//   faux_logonui.exe --mode-v2
+//
+// La même suite, quand essai-wine.sh a posé ModeV2 = 1 sous
+// HKLM\SOFTWARE\Vaultaire\CredentialProvider : les deux interfaces V2 sont
+// accordées, et rien d'autre ne change.
 //
 // Format large : une chaîne large s'écrit %ls, jamais %s (voir build-cp.sh).
 
@@ -81,8 +85,8 @@ const GUID* RoleAttendu(DWORD champ) {
   return &kAucunRole;
 }
 
-// --variantes : les trois valeurs d'essai sont posées.
-bool g_variantes = false;
+// --mode-v2 : la variante d'essai ModeV2 est posée.
+bool g_mode_v2 = false;
 
 const wchar_t kTube[] = L"\\\\.\\pipe\\vaultaire_agent";
 
@@ -414,12 +418,12 @@ void PhaseFournisseur(ICredentialProvider* f) {
   Section("fournisseur : liste des comptes (ICredentialProviderSetUserArray)");
   ICredentialProviderSetUserArray* liste = nullptr;
   hr = f->QueryInterface(IID_ICredentialProviderSetUserArray, (void**)&liste);
-  if (g_variantes) {
-    Verifier(hr == E_NOINTERFACE && liste == nullptr,
-             "variante ModeV1 : ICredentialProviderSetUserArray refusee = 0x%08lx", (unsigned long)hr);
+  if (g_mode_v2) {
+    Verifier(hr == S_OK && liste != nullptr,
+             "variante ModeV2 : QueryInterface(ICredentialProviderSetUserArray) = 0x%08lx", (unsigned long)hr);
   } else {
-    Verifier(hr == S_OK && liste != nullptr, "QueryInterface(ICredentialProviderSetUserArray) = 0x%08lx",
-             (unsigned long)hr);
+    Verifier(hr == E_NOINTERFACE && liste == nullptr,
+             "fournisseur V1 : ICredentialProviderSetUserArray refusee = 0x%08lx", (unsigned long)hr);
   }
   if (liste != nullptr) {
     hr = liste->SetUserArray(&g_comptes);
@@ -459,12 +463,8 @@ void PhaseFournisseur(ICredentialProvider* f) {
   BOOL auto_ouvrir = TRUE;
   hr = f->GetCredentialCount(&tuiles, &par_defaut, &auto_ouvrir);
   Verifier(hr == S_OK && tuiles == 1, "GetCredentialCount = %lu tuile(s)", (unsigned long)tuiles);
-  if (g_variantes) {
-    Verifier(par_defaut == 0, "variante TuileParDefaut : tuile par defaut = %lu", (unsigned long)par_defaut);
-  } else {
-    Verifier(par_defaut == CREDENTIAL_PROVIDER_NO_DEFAULT,
-             "aucune tuile par defaut (CREDENTIAL_PROVIDER_NO_DEFAULT) = 0x%08lx", (unsigned long)par_defaut);
-  }
+  Verifier(par_defaut == CREDENTIAL_PROVIDER_NO_DEFAULT,
+           "aucune tuile par defaut (CREDENTIAL_PROVIDER_NO_DEFAULT) = 0x%08lx", (unsigned long)par_defaut);
   Verifier(auto_ouvrir == FALSE, "jamais d'ouverture automatique");
 
   ICredentialProviderCredential* t = nullptr;
@@ -503,12 +503,12 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
 
   ICredentialProviderCredential2* t2 = nullptr;
   hr = t->QueryInterface(IID_ICredentialProviderCredential2, (void**)&t2);
-  if (g_variantes) {
-    Verifier(hr == E_NOINTERFACE && t2 == nullptr,
-             "variante ModeV1 : ICredentialProviderCredential2 refusee = 0x%08lx", (unsigned long)hr);
+  if (g_mode_v2) {
+    Verifier(hr == S_OK && t2 != nullptr,
+             "variante ModeV2 : QueryInterface(ICredentialProviderCredential2) = 0x%08lx", (unsigned long)hr);
   } else {
-    Verifier(hr == S_OK && t2 != nullptr, "QueryInterface(ICredentialProviderCredential2) = 0x%08lx",
-             (unsigned long)hr);
+    Verifier(hr == E_NOINTERFACE && t2 == nullptr,
+             "fournisseur V1 : ICredentialProviderCredential2 refusee = 0x%08lx", (unsigned long)hr);
   }
   if (t2 != nullptr) {
     wchar_t* sid = (wchar_t*)1;
@@ -523,8 +523,8 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
   Verifier(hr == S_OK, "Advise = 0x%08lx", (unsigned long)hr);
 
   // SetSelected : LogonUI l'appelle à la sélection de la tuile — dès
-  // l'affichage si elle est seule sous « Autre utilisateur », ou si la variante
-  // TuileParDefaut est posée. C'est ici qu'un agent muet figeait l'écran
+  // l'affichage si elle est seule sous « Autre utilisateur ». C'est ici qu'un
+  // agent muet figeait l'écran
   // (TO-DO 156).
   BOOL auto_ouvrir = TRUE;
   DWORD debut = GetTickCount();
@@ -551,7 +551,7 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
     if (t->GetFieldState(i, &etat, &interaction) != S_OK) etats_bons = false;
     if (i == kChampTitre && etat != CPFS_DISPLAY_IN_BOTH) etats_bons = false;
     if (i == kChampUtilisateur && interaction != CPFIS_FOCUSED) etats_bons = false;
-    if (i == kChampImage && etat != (g_variantes ? CPFS_HIDDEN : CPFS_DISPLAY_IN_BOTH)) etats_bons = false;
+    if (i == kChampImage && etat != CPFS_DISPLAY_IN_BOTH) etats_bons = false;
     if (i == kChampLibelle && etat != CPFS_HIDDEN) etats_bons = false;
   }
   Verifier(etats_bons, "GetFieldState : huit champs, titre et image visibles partout, libelle masque, "
@@ -668,9 +668,9 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
 }  // namespace
 
 int main(int argc, char** argv) {
-  g_variantes = argc > 1 && strcmp(argv[1], "--variantes") == 0;
+  g_mode_v2 = argc > 1 && strcmp(argv[1], "--mode-v2") == 0;
   printf("faux LogonUI - essai du Credential Provider Vaultaire (TO-DO 149)%s\n",
-         g_variantes ? " - variantes d'essai posees (TO-DO 157)" : "");
+         g_mode_v2 ? " - variante d'essai ModeV2 posee (TO-DO 179)" : "");
   HANDLE chien = CreateThread(nullptr, 0, ChienDeGarde, nullptr, 0, nullptr);
   if (chien != nullptr) CloseHandle(chien);
 

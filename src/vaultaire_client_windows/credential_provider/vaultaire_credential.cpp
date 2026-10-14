@@ -103,9 +103,7 @@ const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps() { return kCha
 
 Variantes LireVariantes() {
   Variantes v;
-  v.tuile_par_defaut = LireUneVariante(L"TuileParDefaut");
-  v.mode_v1 = LireUneVariante(L"ModeV1");
-  v.sans_image = LireUneVariante(L"SansImage");
+  v.mode_v2 = LireUneVariante(L"ModeV2");
   return v;
 }
 
@@ -153,10 +151,11 @@ HRESULT CVaultaireCredential::Initialiser(CREDENTIAL_PROVIDER_USAGE_SCENARIO sce
 
 IFACEMETHODIMP CVaultaireCredential::QueryInterface(REFIID riid, void** ppv) {
   if (ppv == nullptr) return E_POINTER;
-  // En variante ModeV1, la tuile ne se dit pas V2 : LogonUI la traite alors
-  // comme les fournisseurs d'avant Windows 8.
+  // Par défaut la tuile ne se dit PAS V2 (TO-DO 179) : LogonUI la traite
+  // comme les fournisseurs d'avant Windows 8, ce qui est le seul comportement
+  // éprouvé sur un poste. La variante d'essai ModeV2 rend celui du 157.
   if (riid == IID_IUnknown || riid == IID_ICredentialProviderCredential ||
-      (riid == IID_ICredentialProviderCredential2 && !variantes_.mode_v1)) {
+      (riid == IID_ICredentialProviderCredential2 && variantes_.mode_v2)) {
     *ppv = static_cast<ICredentialProviderCredential2*>(this);
     AddRef();
     if (TraceActive()) Tracer(L"Tuile::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
@@ -268,7 +267,7 @@ IFACEMETHODIMP CVaultaireCredential::GetFieldState(
     case kChampImage:
       // Visible partout, comme dans l'exemple de Microsoft : c'est ce qui
       // représente le fournisseur quand la tuile n'est pas sélectionnée.
-      *etat = variantes_.sans_image ? CPFS_HIDDEN : CPFS_DISPLAY_IN_BOTH;
+      *etat = CPFS_DISPLAY_IN_BOTH;
       break;
     case kChampLibelle:
       // Jamais affiché dans la tuile : LogonUI le lit pour l'info-bulle.
