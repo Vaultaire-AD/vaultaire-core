@@ -154,39 +154,6 @@ bool vaultaire_is_valid_username(const char *username) {
 }
 
 
-/* --- Commande exécutée via subprocess --- */
-static int run_useradd(const char *username) {
-    pid_t pid = fork();
-    if (pid < 0) return 0;
-    if (pid == 0) {
-        /* Ordre des arguments : chaque option porte sa valeur JUSTE APRES elle.
-         *
-         * La version precedente ecrivait :
-         *
-         *     "-m", "--shell", "-c", "vaultaire_user_account", "/bin/bash", username
-         *
-         * --shell consommait "-c" comme valeur, et il restait TROIS operandes la
-         * ou useradd en attend une seule. Verifie sur le binaire reel :
-         *
-         *     useradd: invalid shell '-c'   (code de sortie 3)
-         *
-         * run_useradd retournait donc 0 a CHAQUE appel, et aucun compte local
-         * n'a jamais ete cree par ce chemin. Le defaut restait invisible parce
-         * que getpwnam() passe par NSS, et que le module libnss_vaultaire
-         * repondait pour tout nom contenant un "@" : la condition
-         * if (!getpwnam(username)) etait fausse, et run_useradd jamais appele. */
-        execl("/usr/sbin/useradd", "useradd",
-              "-m",
-              "--shell", "/bin/bash",
-              "-c", "vaultaire_user_account",
-              username, (char *)NULL);
-        _exit(127);
-    }
-    int status;
-    if (waitpid(pid, &status, 0) < 0) return 0;
-    return WIFEXITED(status) && WEXITSTATUS(status) == 0;
-}
-
 static int run_chpasswd(const char *username, const char *password) {
     int fd[2];
     if (pipe(fd) != 0) return 0;
@@ -285,13 +252,32 @@ static int local_password_matches(const char *username, const char *password) {
     return match;
 }
 
-int ensure_local_user_with_password(const char *username, const char *password) {
+/* Aligne le mot de passe LOCAL du compte sur celui que le core vient
+ * d'accepter — la seule chose que le module fait encore au compte (TO-DO 197).
+ *
+ * # Qui gere le compte
+ *
+ * L'AGENT : creation, dossier, authorized_keys, groupe d'administration,
+ * contexte SELinux. Il le fait a la reception de 03_02, avant de repondre ici ;
+ * il a la reponse du core, et ses ecritures resistent aux liens symboliques.
+ * Le module faisait le meme travail juste apres lui, en double : useradd (en
+ * pratique jamais appele, le compte existait deja), usermod ou gpasswd a
+ * chaque connexion, et une reecriture de authorized_keys avec une liste que
+ * l'agent ne lui transmettait pas — le fichier finissait VIDE (TO-DO 188).
+ *
+ * # Pourquoi le mot de passe reste ici
+ *
+ * Ne pas reecrire /etc/shadow a chaque connexion demande de COMPARER le mot de
+ * passe au hash local, donc crypt(). Le module est lie a libcrypt ; l'agent,
+ * ecrit en Go, n'en a pas d'equivalent pour yescrypt.
+ *
+ * Un compte absent apres un succes veut dire que l'agent ne l'a pas cree : on
+ * refuse, en le disant, plutot que de le creer ici dans le dos de l'agent. */
+int vaultaire_sync_local_password(const char *username, const char *password) {
     if (!getpwnam(username)) {
-        if (!run_useradd(username)) {
-            vaultaire_log_err("useradd failed for %s", username);
-            return 0;
-        }
-        vaultaire_log_info("Created local user %s", username);
+        vaultaire_log_err("compte local %s absent apres l'authentification : "
+                          "l'agent ne l'a pas cree (voir son journal)", username);
+        return 0;
     }
 
     if (password && password[0] != '\0') {
@@ -314,224 +300,6 @@ int ensure_local_user_with_password(const char *username, const char *password) 
     }
     return 1;
 }
-
-/* Restaure le contexte SELinux d'une arborescence.
- *
- * fork/exec plutot que de lier libselinux : lier imposerait une dependance de
- * compilation supplementaire aux modules PAM, alors que restorecon est present
- * partout ou SELinux l'est. Son absence est justement le signe qu'il n'y a rien
- * a restaurer.
- *
- * Sans effet et sans erreur sur une machine sans SELinux. */
-static void vaultaire_restore_selinux(const char *chemin) {
-    if (!chemin || chemin[0] != '/') {
-        return;
-    }
-    if (access("/sbin/restorecon", X_OK) != 0 &&
-        access("/usr/sbin/restorecon", X_OK) != 0) {
-        /* Pas de SELinux : cas NORMAL, rien a journaliser. Le signaler a
-         * chaque connexion remplirait le journal d'un bruit sans action. */
-        return;
-    }
-
-    pid_t pid = fork();
-    if (pid < 0) {
-        return;
-    }
-    if (pid == 0) {
-        /* -RF : recursif et force. Sans -F, un fichier etiquete par heritage —
-         * donc avec un contexte plausible mais faux — serait laisse tel quel. */
-        execl("/sbin/restorecon", "restorecon", "-RF", chemin, (char *)NULL);
-        execl("/usr/sbin/restorecon", "restorecon", "-RF", chemin, (char *)NULL);
-        _exit(127);
-    }
-    int status;
-    if (waitpid(pid, &status, 0) < 0) {
-        return;
-    }
-    if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) {
-        vaultaire_log_err("restorecon a echoue sur %s", chemin);
-    }
-}
-
-/* --- Provisioning Clés SSH --- */
-/* Depose les cles SSH d'un utilisateur, en ROOT, sans se faire detourner.
- *
- * # Ce que faisait la version precedente
- *
- *     snprintf(ssh_dir, ..., "%s/.ssh", pw->pw_dir);
- *     mkdir(ssh_dir, 0700);
- *     FILE *f = fopen(auth_keys_path, "w");   <-- suit les liens symboliques
- *     ...
- *     chmod(auth_keys_path, 0600);            <-- APRES l'ecriture
- *
- * Trois defauts, tous exploitables parce que ce code tourne en root.
- *
- * 1. SUIVI DE LIEN SYMBOLIQUE. pw_dir vaut /home/<nom>. Un utilisateur qui
- *    controle ce repertoire — ou qui gagne la course avant sa creation — y
- *    place .ssh/authorized_keys en lien vers /etc/shadow ou
- *    /root/.ssh/authorized_keys. fopen("w") suit le lien et ECRIT EN ROOT dans
- *    la cible. Le chown qui suivait la donnait ensuite a l'attaquant.
- *
- * 2. FENETRE DE PERMISSIONS. Le fichier naissait avec le mode par defaut,
- *    souvent 0644, et n'etait ramene a 0600 qu'apres ecriture. Entre les deux,
- *    les cles etaient lisibles par tous.
- *
- * 3. ECRITURE EN PLACE. Une interruption laissait un authorized_keys
- *    tronque — donc un utilisateur qui ne peut plus se connecter, sans que
- *    rien ne le signale.
- *
- * # Ce que fait la version ci-dessous
- *
- * Le repertoire personnel est ouvert UNE FOIS, par descripteur, et tout se
- * passe ensuite relativement a lui (openat, mkdirat, unlinkat, renameat).
- * Un chemin reconstruit a chaque etape peut designer autre chose entre deux
- * appels ; un descripteur, non.
- *
- * O_NOFOLLOW a chaque ouverture : un lien symbolique fait ECHOUER l'appel au
- * lieu d'etre suivi.
- *
- * Le mode 0600 est donne a la CREATION, pas apres. Le fichier n'existe jamais
- * avec des droits plus larges.
- *
- * Enfin : ecriture dans un temporaire, puis renameat. Le remplacement est
- * atomique — authorized_keys est soit l'ancien, soit le nouveau, jamais un
- * fragment. */
-/* La resolution du compte, separee de l'ECRITURE.
- *
- * Cette separation n'est pas cosmetique : elle rend l'ecriture testable. Un
- * test du garde-fou contre les liens symboliques doit pouvoir fournir un
- * repertoire personnel a lui — sinon la fonction renonce avant d'ecrire, faute
- * de compte local, et le test passe au vert SANS RIEN MESURER.
- *
- * C'est exactement ce qui s'est produit au premier essai : la mutation
- * remplacant openat/O_NOFOLLOW par une ouverture ordinaire n'etait pas
- * detectee. */
-int setup_user_ssh_keys(const char *username, char **keys, size_t key_count) {
-    if (!vaultaire_is_valid_username(username)) {
-        vaultaire_log_err("SECURITE: nom d'utilisateur refuse pour le depot des cles");
-        return 0;
-    }
-
-    struct passwd *pw = getpwnam(username);
-    if (!pw || !pw->pw_dir || pw->pw_dir[0] != '/') {
-        return 0;
-    }
-
-    int r = vaultaire_write_ssh_keys(pw->pw_dir, pw->pw_uid, pw->pw_gid, keys, key_count);
-    if (r) {
-        vaultaire_log_info("Provisioned %2zu SSH key(s) for %s", key_count, username);
-    }
-    return r;
-}
-
-/* Ecrit authorized_keys dans un repertoire personnel DONNE. */
-int vaultaire_write_ssh_keys(const char *home, uid_t uid, gid_t gid,
-                              char **keys, size_t key_count) {
-    if (!home || home[0] != '/') {
-        return 0;
-    }
-
-    /* Le repertoire personnel, ouvert une fois. O_NOFOLLOW : s'il est lui-meme
-     * un lien, on renonce plutot que d'ecrire ailleurs. */
-    int home_fd = open(home, O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (home_fd < 0) {
-        vaultaire_log_err("SECURITE: %s inaccessible ou lien symbolique: %s", home, strerror(errno));
-        return 0;
-    }
-
-    /* .ssh, cree relativement au home. EEXIST est normal. */
-    if (mkdirat(home_fd, ".ssh", 0700) != 0 && errno != EEXIST) {
-        vaultaire_log_err("creation de .ssh impossible pour %s: %s", home, strerror(errno));
-        close(home_fd);
-        return 0;
-    }
-
-    int ssh_fd = openat(home_fd, ".ssh", O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    close(home_fd);
-    if (ssh_fd < 0) {
-        vaultaire_log_err("SECURITE: .ssh de %s inaccessible ou lien symbolique: %s",
-                          home, strerror(errno));
-        return 0;
-    }
-    if (fchown(ssh_fd, uid, gid) != 0) {
-        vaultaire_log_err("chown de .ssh echoue pour %s: %s", home, strerror(errno));
-    }
-
-    /* Temporaire, cree en 0600 des l'origine.
-     *
-     * O_EXCL : la creation echoue si le nom existe deja, quel qu'il soit —
-     * fichier ordinaire ou lien. C'est ce qui empeche un attaquant d'avoir
-     * prepare la place. */
-    const char *tmp_nom = ".authorized_keys.vaultaire";
-    unlinkat(ssh_fd, tmp_nom, 0);
-    int fd = openat(ssh_fd, tmp_nom,
-                    O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0600);
-    if (fd < 0) {
-        vaultaire_log_err("creation du fichier temporaire impossible pour %s: %s",
-                          home, strerror(errno));
-        close(ssh_fd);
-        return 0;
-    }
-
-    FILE *f = fdopen(fd, "w");
-    if (!f) {
-        close(fd);
-        unlinkat(ssh_fd, tmp_nom, 0);
-        close(ssh_fd);
-        return 0;
-    }
-
-    int ecriture_ok = 1;
-    for (size_t i = 0; i < key_count; i++) {
-        if (!keys[i]) continue;
-        /* Une cle contenant un saut de ligne en fabriquerait DEUX dans le
-         * fichier, dont la seconde serait choisie par celui qui l'a fournie. */
-        if (strpbrk(keys[i], "\n\r")) {
-            vaultaire_log_err("SECURITE: cle SSH contenant un saut de ligne ignoree pour %s", home);
-            continue;
-        }
-        if (fprintf(f, "%s\n", keys[i]) < 0) {
-            ecriture_ok = 0;
-            break;
-        }
-    }
-
-    /* fflush et fsync avant le rename : sans cela une coupure juste apres peut
-     * laisser un fichier de taille correcte mais au contenu vide — et un
-     * authorized_keys vide interdit toute connexion. */
-    if (ecriture_ok && (fflush(f) != 0 || fsync(fileno(f)) != 0)) {
-        ecriture_ok = 0;
-    }
-    if (fchown(fileno(f), uid, gid) != 0) {
-        vaultaire_log_err("chown des cles echoue pour %s: %s", home, strerror(errno));
-    }
-    fclose(f);
-
-    if (!ecriture_ok) {
-        unlinkat(ssh_fd, tmp_nom, 0);
-        close(ssh_fd);
-        vaultaire_log_err("ecriture des cles echouee pour %s, ancien fichier conserve", home);
-        return 0;
-    }
-
-    /* Publication atomique. */
-    if (renameat(ssh_fd, tmp_nom, ssh_fd, "authorized_keys") != 0) {
-        vaultaire_log_err("publication des cles echouee pour %s: %s", home, strerror(errno));
-        unlinkat(ssh_fd, tmp_nom, 0);
-        close(ssh_fd);
-        return 0;
-    }
-    close(ssh_fd);
-
-    /* Contexte SELinux : les fichiers crees heritent de /home, donc
-     * home_root_t, au lieu de ssh_home_t. sshd refuse alors de les lire. */
-    vaultaire_restore_selinux(home);
-
-    return 1;
-}
-
-
 
 /* Etat local d'un compte du domaine — phase « account » de PAM.
  *
@@ -794,118 +562,6 @@ int vaultaire_socket_send(const char *request) {
 }
 
 
-/* --- Sudo group --- */
-static const char *sudo_group_candidates[] = { "sudo", "wheel", "admin", "staff", "root" };
-
-/* Execute une commande SANS passer par un shell.
- *
- * # Pourquoi remplacer system()
- *
- * system() passe la chaine a /bin/sh, qui l'interprete : substitution de
- * commandes, expansion de variables, enchainements. Un nom d'utilisateur
- * arrivant dans cette chaine devient du code, execute EN ROOT.
- *
- * execvp recoit un TABLEAU d'arguments. Le noyau les transmet tels quels au
- * programme : aucun shell n'intervient, et un argument contenant « $(id) » est
- * simplement un argument contenant ces caracteres.
- *
- * La liste blanche sur le nom reste en place — deux barrieres valent mieux
- * qu'une, et celle-ci protege aussi les commandes qui recevraient un nom
- * commencant par un tiret.
- *
- * Retourne 0 si la commande a reussi, -1 sinon. */
-static int run_no_shell(const char *const argv[]) {
-    pid_t pid = fork();
-    if (pid < 0) {
-        return -1;
-    }
-    if (pid == 0) {
-        execvp(argv[0], (char *const *)argv);
-        _exit(127);
-    }
-    int status;
-    if (waitpid(pid, &status, 0) < 0) {
-        return -1;
-    }
-    return (WIFEXITED(status) && WEXITSTATUS(status) == 0) ? 0 : -1;
-}
-
-/* Indique si un programme est disponible, sans passer par un shell. */
-static int programme_disponible(const char *nom) {
-    char chemin[PATH_MAX];
-    static const char *repertoires[] = {
-        "/usr/sbin", "/sbin", "/usr/bin", "/bin"
-    };
-    for (size_t i = 0; i < sizeof(repertoires) / sizeof(repertoires[0]); i++) {
-        int n = snprintf(chemin, sizeof(chemin), "%s/%s", repertoires[i], nom);
-        if (n > 0 && (size_t)n < sizeof(chemin) && access(chemin, X_OK) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
-int vaultaire_detect_sudo_group(char *group, size_t gsize) {
-    for (size_t i = 0; i < sizeof(sudo_group_candidates) / sizeof(sudo_group_candidates[0]); i++) {
-        struct group *g = getgrnam(sudo_group_candidates[i]);
-        if (g) {
-            strncpy(group, sudo_group_candidates[i], gsize - 1);
-            group[gsize - 1] = '\0';
-            return 0;
-        }
-    }
-
-    strncpy(group, "sudo", gsize - 1);
-    group[gsize - 1] = '\0';
-
-    /* Aucun groupe d'administration : on le cree. Sans shell, la ou
-     * l'ancienne version enchainait deux commandes avec « || ». */
-    if (programme_disponible("groupadd")) {
-        const char *argv[] = { "groupadd", "sudo", NULL };
-        (void)run_no_shell(argv);
-    }
-    return 0;
-}
-
-int vaultaire_add_user_to_sudo_group(const char *username) {
-    /* La validation est refaite ICI, et non seulement chez l'appelant.
-     *
-     * Cette fonction est exportee : un futur appelant pourrait oublier de
-     * valider. Le controle appartient a l'endroit qui execute, pas a celui qui
-     * demande. */
-    if (!vaultaire_is_valid_username(username)) {
-        vaultaire_log_err("SECURITE: nom d'utilisateur refuse pour l'ajout au groupe sudo");
-        return -1;
-    }
-
-    char group[64];
-    if (vaultaire_detect_sudo_group(group, sizeof(group)) != 0) return -1;
-
-    if (programme_disponible("usermod")) {
-        const char *argv[] = { "usermod", "-aG", group, username, NULL };
-        return run_no_shell(argv);
-    }
-    const char *argv[] = { "adduser", username, group, NULL };
-    return run_no_shell(argv);
-}
-
-int vaultaire_remove_user_from_sudo_group(const char *username) {
-    if (!vaultaire_is_valid_username(username)) {
-        vaultaire_log_err("SECURITE: nom d'utilisateur refuse pour le retrait du groupe sudo");
-        return -1;
-    }
-
-    char group[64];
-    if (vaultaire_detect_sudo_group(group, sizeof(group)) != 0) return -1;
-
-    if (programme_disponible("gpasswd")) {
-        const char *argv[] = { "gpasswd", "-d", username, group, NULL };
-        return run_no_shell(argv);
-    }
-    const char *argv[] = { "deluser", username, group, NULL };
-    return run_no_shell(argv);
-}
-
 /* Echappe une chaine pour l'inserer dans du JSON — RFC 8259 section 7.
  *
  * # Le defaut que cela corrige
@@ -1112,98 +768,5 @@ int vaultaire_json_get_bool(const char *json, const char *key, bool *out) {
     p++;
     while (*p == ' ' || *p == '\t') p++;
     *out = (strncmp(p, "true", 4) == 0);
-    return 0;
-}
-
-/* Lit "ssh_keys":["...","..."].
- *
- * # Pourquoi le contrat de retour compte plus que l'analyse elle-meme
- *
- * L'appelant se sert du resultat pour REECRIRE authorized_keys. Il doit donc
- * pouvoir distinguer deux situations que l'ancienne version rendait
- * identiques — toutes deux « 0, zero cle » :
- *
- *   a) le serveur repond que ce compte n'a PLUS AUCUNE cle. Il faut alors
- *      ecrire un fichier vide, sinon les cles revoquees restent en place et
- *      continuent d'ouvrir la session. C'est le defaut signale.
- *
- *   b) la reponse est illisible — champ absent, tableau non ferme, chaine non
- *      terminee. Ecrire un fichier vide LA priverait de sa cle un compte qui
- *      en a une, sur un simple incident de lecture du socket.
- *
- * D'ou : 0 uniquement si le tableau a ete lu ENTIEREMENT, -1 sinon. Le cas (a)
- * rend 0 avec zero cle, le cas (b) rend -1. Confondre les deux, c'est choisir
- * entre laisser entrer un revoque et verrouiller un ayant droit.
- *
- * En cas d'echec, rien n'est rendu a l'appelant : les cles deja lues sont
- * liberees et *count_out reste a 0. Une liste partielle serait le pire des
- * deux mondes — assez credible pour etre ecrite, incomplete pour de bon.
- */
-int vaultaire_json_get_ssh_keys(const char *json, char ***keys_out, size_t *count_out) {
-    if (!json || !keys_out || !count_out) return -1;
-    *keys_out = NULL;
-    *count_out = 0;
-
-    const char *p = strstr(json, "\"ssh_keys\"");
-    if (!p) return -1;
-    p += strlen("\"ssh_keys\"");
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-    if (*p != ':') return -1;
-    p++;
-    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r') p++;
-
-    /* Un tableau, et rien d'autre. « null » arrive des qu'un encodeur JSON
-     * serialise une tranche vide non initialisee ; le prendre pour une liste
-     * vide effacerait les cles de l'utilisateur. */
-    if (*p != '[') return -1;
-    p++;
-
-    char **keys = NULL;
-    size_t count = 0;
-    int erreur = 0;
-
-    for (;;) {
-        while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') p++;
-        if (*p == ']') break;                 /* fin normale, y compris tableau vide */
-        if (*p != '"') { erreur = 1; break; } /* tronque, ou autre chose qu'une chaine */
-        p++; /* Sauter le " ouvrant */
-
-        const char *start = p;
-        /* Trouver la fin de la string en ignorant les \" (guillemets échappés) */
-        while (*p && !(*p == '"' && *(p-1) != '\\')) p++;
-        if (*p != '"') { erreur = 1; break; } /* chaine non terminee : reponse coupee */
-
-        size_t raw_len = (size_t)(p - start);
-        char *key = malloc(raw_len + 1);
-        if (!key) { erreur = 1; break; }
-
-        // Copie intelligente pour supprimer les échappements (ex: \/ -> /)
-        size_t j = 0;
-        for (size_t i = 0; i < raw_len; i++) {
-            if (start[i] == '\\' && i + 1 < raw_len) {
-                // On saute le backslash si c'est un slash ou un guillemet échappé
-                if (start[i+1] == '/' || start[i+1] == '"' || start[i+1] == '\\') {
-                    continue;
-                }
-            }
-            key[j++] = start[i];
-        }
-        key[j] = '\0';
-
-        char **tmp = realloc(keys, sizeof(char *) * (count + 1));
-        if (!tmp) { free(key); erreur = 1; break; }
-        keys = tmp;
-        keys[count++] = key;
-        p++; // Sauter le " fermant
-    }
-
-    if (erreur) {
-        for (size_t i = 0; i < count; i++) free(keys[i]);
-        free(keys);
-        return -1;
-    }
-
-    *keys_out = keys;
-    *count_out = count;
     return 0;
 }

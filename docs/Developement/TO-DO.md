@@ -24,7 +24,6 @@ Trois gestes, dans le même passage que le code :
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 188 | SSH          | Les clés publiques du compte ne sont pas écrites dans `authorized_keys` | À faire — **critique**, cause établie (190) |
 | 195 | WINDOWS      | Après la première connexion, le CP Vaultaire n'est plus proposé : plus de TOTP | À faire — **critique**, recette du 12/10 |
 | 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
@@ -41,7 +40,6 @@ Trois gestes, dans le même passage que le code :
 | 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | À faire — voir le rapport du 190 |
-| 197 | AGENT        | Provisionnement fait deux fois par connexion, `restorecon` sur tout le `HOME` | À faire — voir le rapport du 190 |
 | 198 | PAM          | Aucun budget global pour l'ouverture d'une session         | À faire — après 196 et 197              |
 | 199 | JOURNAL      | Journaux mesurables : horodatage du module PAM, millisecondes | À faire — petit                       |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
@@ -327,24 +325,6 @@ une fois par clé refusée présentée avant elle.
    quand le core est injoignable.
 4. Mesurer avant et après (`A_TESTER.md`, § 86).
 
-### 197. [AGENT] [PAM] Le provisionnement fait deux fois par connexion
-
-**Origine** (rapport du **190**, § 2.2). À chaque connexion, l'agent (réception
-de `03_02`) **puis** le module PAM refont le même travail : écrire
-`authorized_keys`, lancer `restorecon -RF` sur **tout** le dossier personnel,
-régler le groupe sudo — le module par `usermod -aG` ou `gpasswd -d` à chaque
-connexion, administrateur ou non.
-
-**À faire.**
-
-1. Un seul responsable — l'agent, qui a la réponse du core et n'a pas les
-   limites d'un module chargé dans `sshd`. Le module ne garde que ce qui doit
-   se faire dans la pile PAM.
-2. `restorecon` sur le dossier lui-même et `~/.ssh` seulement, sans `-R` sur
-   tout le `HOME`.
-3. Le groupe sudo n'est touché que si l'appartenance doit **changer**.
-4. Mesurer le gain sur un `HOME` volumineux (§ 86).
-
 ### 198. [PAM] [GPO] Aucun budget global pour l'ouverture d'une session
 
 **Origine** (rapport du **190**, § 2.3). Les bornes s'additionnent : le module
@@ -370,31 +350,6 @@ de synthèse par connexion côté agent : `ouverture <compte> : auth X ms, GPO X
 provisionnement X ms` (et le nombre d'appels `--fetch-key` vus).
 
 ## Sécurité et authentification
-
-### 188. [SSH] Les clés publiques du compte ne sont pas écrites dans `authorized_keys`
-
-**Constat** (recette du 12/10, `A_TESTER.md`). **Important.** Les clés publiques d'un compte du
-domaine n'arrivent pas dans son `~/.ssh/authorized_keys`. (La dérive des GPO de
-compte, elle, est bien vue et corrigée.)
-
-**Cause établie par le 190** ([`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 4.1), à confirmer sur un poste :
-
-1. à la réception de `03_02`, l'agent écrit **bien** les clés
-   (`ProvisionVaultaireUser` → `EcrireClesAutorisees`) ;
-2. il réveille le gestionnaire PAM avec un `pamstate.AuthResult` **sans
-   `SSHKeys`** (`sshauth/sshAuthManager.go`, cas `"02"`) ;
-3. `PAM_Handler.go` rend donc au module une liste **vide** ;
-4. le module PAM (`setup_user_ssh_keys`) lit une liste vide **lisible**, et
-   réécrit `authorized_keys`… vide — la règle « l'annuaire fait foi » appliquée
-   à une liste qui n'aurait pas dû l'être.
-
-La connexion réussit quand même : `sshd` interroge `--fetch-key`, il ne lit pas
-le fichier.
-
-**À faire.** Porter les clés de `03_02` dans l'`AuthResult` (une ligne), et un
-test qui suit la réponse de bout en bout : `03_02` avec deux clés → réponse du
-socket PAM avec deux clés. Puis trancher avec le **197** : un seul des deux
-(agent ou module) doit écrire le fichier.
 
 ### 98. [SÉCURITÉ] Les secrets sont en clair dans la base
 

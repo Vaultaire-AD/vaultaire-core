@@ -3,9 +3,12 @@
  *
  * Tests des corrections des points MAJEURS de l'audit.
  *
- *   4  authorized_keys ecrit en root sans protection contre les liens
  *   5  mot de passe injecte dans du JSON sans echappement
- *   6  injection shell dans la gestion du groupe sudo
+ *   6  liste blanche des noms (l'injection shell visait le groupe sudo, que
+ *      le module ne touche plus depuis le TO-DO 197 ; la validation reste
+ *      le garde-fou de tout ce qui suit)
+ *
+ * Les points 4 et 9 (authorized_keys) sont testes cote agent depuis le 197.
  *
  * Chaque cas correspond a une exploitation concrete, pas a une propriete
  * abstraite : c'est ce qui permet de verifier que le test echoue bien sur le
@@ -129,188 +132,10 @@ int main(void) {
     ok("vide REFUSE",    !vaultaire_is_valid_username(""));
     ok("NULL REFUSE",    !vaultaire_is_valid_username(NULL));
     
-    printf("\n--- Point 4 : ecriture des cles, liens symboliques ---\n");
-
-    /* On fabrique un repertoire personnel a nous, et on y pose un piege :
-     * authorized_keys est un LIEN vers une cible sensible.
-     *
-     * On appelle vaultaire_write_ssh_keys et non setup_user_ssh_keys : cette
-     * derniere resout le compte dans /etc/passwd et renonce avant d'ecrire pour
-     * un nom inconnu — le test passerait alors au vert SANS RIEN MESURER, ce
-     * qui s'est effectivement produit au premier essai.
-     */
-    char base[] = "/tmp/vltkeysXXXXXX";
-    if (mkdtemp(base)) {
-        char sshdir[256], lien[320], cible[320], reel[320];
-        snprintf(sshdir, sizeof(sshdir), "%s/.ssh", base);
-        snprintf(cible,  sizeof(cible),  "%s/cible-sensible", base);
-        snprintf(lien,   sizeof(lien),   "%s/authorized_keys", sshdir);
-        snprintf(reel,   sizeof(reel),   "%s/authorized_keys", sshdir);
-
-        mkdir(sshdir, 0700);
-        FILE *c = fopen(cible, "w");
-        if (c) { fputs("CONTENU D ORIGINE\n", c); fclose(c); }
-        ok("preparation du piege (authorized_keys est un lien)", symlink(cible, lien) == 0);
-
-        char *cles[] = { (char *)"ssh-ed25519 AAAAtest cle-legitime" };
-        vaultaire_write_ssh_keys(base, getuid(), getgid(), cles, 1);
-
-        /* LE test : la cible du lien ne doit pas avoir ete touchee. */
-        char tampon[64] = {0};
-        FILE *v = fopen(cible, "r");
-        if (v) { if (fgets(tampon, sizeof(tampon), v) == NULL) tampon[0] = 0; fclose(v); }
-        ok("la cible du lien n'a PAS ete ecrasee",
-           strncmp(tampon, "CONTENU D ORIGINE", 17) == 0);
-
-        /* Et le fichier reel doit porter les cles, en 0600. */
-        struct stat st;
-        int existe = (lstat(reel, &st) == 0);
-        ok("authorized_keys existe et n'est plus un lien",
-           existe && S_ISREG(st.st_mode));
-        ok("authorized_keys est en 0600 des sa creation",
-           existe && (st.st_mode & 0777) == 0600);
-
-        char ligne[128] = {0};
-        FILE *k = fopen(reel, "r");
-        if (k) { if (fgets(ligne, sizeof(ligne), k) == NULL) ligne[0] = 0; fclose(k); }
-        ok("la cle legitime a bien ete ecrite",
-           strstr(ligne, "cle-legitime") != NULL);
-
-        /* Une cle contenant un saut de ligne en fabriquerait DEUX, dont la
-         * seconde serait choisie par celui qui l'a fournie. */
-        char *malveillante[] = {
-            (char *)"ssh-ed25519 AAAAok bonne",
-            (char *)"ssh-ed25519 AAAAx x\nssh-ed25519 AAAAinjectee attaquant"
-        };
-        vaultaire_write_ssh_keys(base, getuid(), getgid(), malveillante, 2);
-        int injectee = 0;
-        FILE *r2 = fopen(reel, "r");
-        if (r2) {
-            char l[256];
-            while (fgets(l, sizeof(l), r2)) {
-                if (strstr(l, "injectee")) injectee = 1;
-            }
-            fclose(r2);
-        }
-        ok("une cle contenant un saut de ligne est ecartee", !injectee);
-
-        unlink(reel); unlink(cible); rmdir(sshdir); rmdir(base);
-    }
-
-    /* Le repertoire personnel LUI-MEME remplace par un lien.
-     *
-     * Cas reel : /home/<user> pointe vers /root ou vers le home d'un autre.
-     * Sans O_NOFOLLOW sur la premiere ouverture, on ecrirait dans la cible.
-     * Ce cas n'etait pas couvert au premier essai — revele par la mutation. */
-    char base2[] = "/tmp/vlthomeXXXXXX";
-    if (mkdtemp(base2)) {
-        char vraidir[256], faux[256], temoin[320];
-        snprintf(vraidir, sizeof(vraidir), "%s/reel", base2);
-        snprintf(faux,    sizeof(faux),    "%s/piege", base2);
-        snprintf(temoin,  sizeof(temoin),  "%s/reel/.ssh/authorized_keys", base2);
-
-        mkdir(vraidir, 0700);
-        ok("preparation : le home est un lien", symlink(vraidir, faux) == 0);
-
-        char *cles2[] = { (char *)"ssh-ed25519 AAAAtest via-lien" };
-        int r = vaultaire_write_ssh_keys(faux, getuid(), getgid(), cles2, 1);
-
-        ok("un home qui est un lien symbolique est REFUSE", r == 0);
-        ok("rien n'a ete ecrit dans la cible du lien", access(temoin, F_OK) != 0);
-
-        unlink(faux); rmdir(vraidir); rmdir(base2);
-    }
-
-    printf("\n--- Point 9 : les cles revoquees ne doivent pas survivre ---\n");
-
-    /* Le fichier est REECRIT a chaque connexion a partir de ce que le serveur
-     * rend. Encore faut-il savoir distinguer « ce compte n'a plus aucune cle »
-     * de « je n'ai pas su lire la reponse » : le premier doit vider le fichier,
-     * le second ne doit toucher a rien.
-     *
-     * L'ancienne version rendait 0 dans les deux cas, et l'appelant ajoutait un
-     * « && keys » qui sautait l'ecriture des que la liste etait vide. Revoquer
-     * la DERNIERE cle d'un compte etait donc la seule revocation sans effet :
-     * l'ancien authorized_keys restait en place et ouvrait encore la session. */
-    {
-        char **k = NULL;
-        size_t n = 99;
-
-        /* Tableau vide : succes, zero cle. C'est ce qui declenche l'effacement. */
-        int r = vaultaire_json_get_ssh_keys(
-            "{\"status\":\"success\",\"is_admin\":false,\"ssh_keys\":[]}", &k, &n);
-        ok("tableau vide : lecture REUSSIE (et non 'illisible')", r == 0);
-        ok("tableau vide : zero cle rendue", n == 0);
-        free(k); k = NULL; n = 99;
-
-        /* Champ absent : la reponse n'est pas exploitable. */
-        r = vaultaire_json_get_ssh_keys("{\"status\":\"success\",\"is_admin\":true}", &k, &n);
-        ok("champ ssh_keys absent : REFUSE", r == -1);
-        free(k); k = NULL; n = 99;
-
-        /* null : ce que produit un encodeur JSON sur une tranche non
-         * initialisee. Le prendre pour une liste vide effacerait les cles d'un
-         * utilisateur en regle. */
-        r = vaultaire_json_get_ssh_keys("{\"status\":\"success\",\"ssh_keys\":null}", &k, &n);
-        ok("ssh_keys a null : REFUSE", r == -1);
-        free(k); k = NULL; n = 99;
-
-        /* Reponse coupee au milieu du tableau : le socket a rendu un morceau. */
-        r = vaultaire_json_get_ssh_keys("{\"ssh_keys\":[\"ssh-ed25519 AAAAa a\",\"ssh-ed", &k, &n);
-        ok("tableau non ferme (reponse coupee) : REFUSE", r == -1);
-        ok("rien n'est rendu sur une lecture partielle", n == 0 && k == NULL);
-        free(k); k = NULL; n = 99;
-
-        /* Cas nominal, pour que les refus ci-dessus ne passent pas simplement
-         * parce que la fonction refuserait tout. */
-        r = vaultaire_json_get_ssh_keys(
-            "{\"ssh_keys\":[\"ssh-ed25519 AAAAa poste\",\"ssh-ed25519 AAAAb portable\"]}", &k, &n);
-        ok("deux cles bien formees : lues", r == 0 && n == 2);
-        ok("la premiere cle est intacte",
-           n == 2 && strcmp(k[0], "ssh-ed25519 AAAAa poste") == 0);
-        for (size_t i = 0; i < n; i++) free(k[i]);
-        free(k);
-    }
-
-    /* Et l'ecriture elle-meme : zero cle doit VIDER un fichier existant. */
-    char base3[] = "/tmp/vltrevokXXXXXX";
-    if (mkdtemp(base3)) {
-        char sshdir3[256], reel3[320];
-        snprintf(sshdir3, sizeof(sshdir3), "%s/.ssh", base3);
-        snprintf(reel3,   sizeof(reel3),   "%s/authorized_keys", sshdir3);
-        mkdir(sshdir3, 0700);
-
-        FILE *v = fopen(reel3, "w");
-        if (v) { fputs("ssh-ed25519 AAAAvieille portable-vole\n", v); fclose(v); }
-        ok("preparation : une ancienne cle est en place", access(reel3, F_OK) == 0);
-
-        vaultaire_write_ssh_keys(base3, getuid(), getgid(), NULL, 0);
-
-        struct stat st3;
-        int vide = (stat(reel3, &st3) == 0 && st3.st_size == 0);
-        ok("zero cle VIDE authorized_keys (revocation totale effective)", vide);
-
-        /* Une cle, puis une autre : la premiere ne doit pas subsister. */
-        char *avant[] = { (char *)"ssh-ed25519 AAAAancienne poste" };
-        char *apres[] = { (char *)"ssh-ed25519 AAAAnouvelle poste" };
-        vaultaire_write_ssh_keys(base3, getuid(), getgid(), avant, 1);
-        vaultaire_write_ssh_keys(base3, getuid(), getgid(), apres, 1);
-
-        int trouve_ancienne = 0, trouve_nouvelle = 0;
-        FILE *r3 = fopen(reel3, "r");
-        if (r3) {
-            char l[256];
-            while (fgets(l, sizeof(l), r3)) {
-                if (strstr(l, "AAAAancienne")) trouve_ancienne = 1;
-                if (strstr(l, "AAAAnouvelle")) trouve_nouvelle = 1;
-            }
-            fclose(r3);
-        }
-        ok("la cle remplacee a disparu du fichier", !trouve_ancienne);
-        ok("la nouvelle cle est bien la", trouve_nouvelle);
-
-        unlink(reel3); rmdir(sshdir3); rmdir(base3);
-    }
+    /* Points 4 et 9 (authorized_keys : liens symboliques, cles revoquees) :
+     * le module n'ecrit plus ce fichier depuis le TO-DO 197, c'est l'agent.
+     * Leurs tests sont cote Go : tools/local_user_management/
+     * authorized_keys_test.go. */
 
     printf("\n--- Point 12 : lecture socket en plusieurs segments ---\n");
 

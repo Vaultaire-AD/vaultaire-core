@@ -19,7 +19,8 @@ import "vaultaire_client/pamstate"
 //
 // La chaîne vide tombait donc dans le SUCCÈS. Le module PAM recevait
 // « status: success », ouvrait la session, et `ensure_local_user_with_password`
-// réécrivait `/etc/shadow` avec le mot de passe essayé — d'où la ligne
+// (aujourd'hui `vaultaire_sync_local_password`) réécrivait `/etc/shadow` avec
+// le mot de passe essayé — d'où la ligne
 // « Local password updated (differed from central) » sur un mot de passe faux.
 //
 // Le serveur, lui, faisait son travail : son journal disait « SSH: mot de passe

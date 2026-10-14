@@ -60,10 +60,11 @@ echo
 echo "=== Durcissement : points majeurs de l'audit ==="
 # ---------------------------------------------------------------------------
 #
-#   4  authorized_keys ecrit en root sans protection contre les liens
 #   5  mot de passe injecte dans du JSON sans echappement
-#   6  injection shell dans la gestion du groupe sudo
+#   6  liste blanche des noms
 #   8  phase account qui ne refusait jamais rien
+#
+# (4 et 9, authorized_keys : cote agent depuis le TO-DO 197.)
 
 cc -Wall -Wextra -Werror -I"$ICI" -o "$TMP/hardening" \
    "$ICI/hardening_test.c" "$ICI/pam_common.c" -lcrypt
@@ -71,68 +72,47 @@ cc -Wall -Wextra -Werror -I"$ICI" -o "$TMP/hardening" \
 
 # ---------------------------------------------------------------------------
 echo
-echo "=== Arguments de useradd ==="
+echo "=== TO-DO 197 : le module ne gere plus le compte ==="
 # ---------------------------------------------------------------------------
 #
-# Les arguments etaient dans le desordre : --shell consommait -c comme valeur,
-# et useradd refusait la commande a CHAQUE appel. Le defaut restait invisible
-# parce que l'ancien module NSS repondait pour tout nom du domaine, si bien que
-# getpwnam reussissait et que useradd n'etait jamais appele.
+# Le compte est l'affaire de l'agent : creation, authorized_keys, groupe
+# d'administration, SELinux. Le module les refaisait juste apres lui, a chaque
+# connexion — et reecrivait authorized_keys VIDE, faute de recevoir les cles
+# (TO-DO 188). Il ne garde que le mot de passe local.
 #
-# On extrait les arguments du code source et on les soumet au vrai binaire.
-# Verifier a la main ne protege de rien : c'est l'ordre dans le CODE qui doit
-# rester correct.
+# Le controle porte sur le SOURCE compile dans les modules, hors commentaires :
+# aucune des commandes ni des fonctions du compte ne doit y reapparaitre.
 
-if [ -x /usr/sbin/useradd ]; then
-    "$ICI/check_useradd_args.sh" "$ICI/pam_common.c"
-else
-    echo "  [SKIP] useradd absent de cette machine"
-fi
-
-# ---------------------------------------------------------------------------
-echo
-echo "=== Point 9 : les cles revoquees ne survivent pas a la connexion ==="
-# ---------------------------------------------------------------------------
-#
-# Le comportement du parseur est verifie par hardening_test.c. Ce qui suit
-# verifie ses APPELANTS, qu'aucun test ne peut exercer sans un daemon vivant et
-# un serveur au bout : les deux modules PAM appellent le parseur depuis
-# pam_sm_authenticate.
-#
-# Le defaut tenait a trois caracteres. « == 0 && keys » sautait l'ecriture des
-# que la liste etait vide, donc laissait l'ancien authorized_keys intact apres
-# une revocation totale — la seule revocation qui ne prenait jamais effet.
-#
-# On verifie les deux sens : que la forme fautive est absente, ET que l'appel
-# attendu est bien present. Sans le second controle, deplacer ou renommer
-# l'appel ferait passer ce garde-fou au vert sans plus rien surveiller.
-
-verif_point9() {
+verif_197() {
     fichier="$1"
-    if grep -q 'vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0 && keys' "$fichier"; then
-        echo "  [FAIL] $(basename "$fichier") : l'ecriture des cles est sautee quand la liste est vide"
+    if grep -nE '"(/usr/sbin/)?(useradd|usermod|gpasswd|groupadd|adduser|deluser|restorecon)"|setup_user_ssh_keys|write_ssh_keys|sudo_group' "$fichier" \
+        | grep -vE '^[0-9]+:[[:space:]]*(/\*|\*|//)' >/dev/null; then
+        echo "  [FAIL] $(basename "$fichier") touche encore au compte"
         return 1
     fi
-    if ! grep -q 'vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0)' "$fichier"; then
-        echo "  [FAIL] $(basename "$fichier") : appel a vaultaire_json_get_ssh_keys introuvable sous la forme attendue"
-        return 1
-    fi
-    echo "  [PASS] $(basename "$fichier") reecrit authorized_keys meme sans aucune cle"
+    echo "  [PASS] $(basename "$fichier") ne touche qu'au mot de passe local"
     return 0
 }
 
-verif_point9 "$ICI/pam_ssh_auth_module.c"
-verif_point9 "$ICI/pam_login_custom_module.c"
+ECHEC197=0
+for f in "$ICI/pam_common.c" "$ICI/pam_ssh_auth_module.c" "$ICI/pam_login_custom_module.c"; do
+    verif_197 "$f" || ECHEC197=1
+done
+for f in "$ICI/pam_ssh_auth_module.c" "$ICI/pam_login_custom_module.c"; do
+    if ! grep -q 'vaultaire_sync_local_password(username, password)' "$f"; then
+        echo "  [FAIL] $(basename "$f") n'aligne plus le mot de passe local"
+        ECHEC197=1
+    fi
+done
 
-# Le garde-fou teste sur lui-meme : soumis a la forme fautive, il doit refuser.
-# Un controle par grep qui ne verrait plus rien passerait silencieusement.
-sed 's/&key_count) == 0)/\&key_count) == 0 \&\& keys)/' \
-    "$ICI/pam_ssh_auth_module.c" > "$TMP/fautif.c"
-if verif_point9 "$TMP/fautif.c" >/dev/null 2>&1; then
-    echo "  [FAIL] le controle ci-dessus ne detecte PAS la forme fautive"
+# Le garde-fou teste sur lui-meme : un usermod reintroduit doit etre vu.
+printf 'static void f(void){ const char *a[]={"usermod","-aG","sudo",0}; (void)a; }\n' > "$TMP/fautif197.c"
+if verif_197 "$TMP/fautif197.c" >/dev/null 2>&1; then
+    echo "  [FAIL] le controle ci-dessus ne detecte PAS un usermod reintroduit"
     exit 1
 fi
-echo "  [PASS] le controle detecte bien la forme fautive"
+echo "  [PASS] le controle detecte bien un usermod reintroduit"
+[ "$ECHEC197" -eq 0 ] || exit 1
 
 echo
 echo "Tous les tests sont passes."

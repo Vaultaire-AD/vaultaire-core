@@ -11,6 +11,13 @@ import (
 	"vaultaire_client/tools/sshreq"
 )
 
+// provisionner et appliquerGroupes sont des variables pour qu'un test suive la
+// réponse 03_02 jusqu'au canal PAM sans toucher à /etc/passwd.
+var (
+	provisionner     = localusermanagement.ProvisionVaultaireUser
+	appliquerGroupes = localusermanagement.AppliquerGroupesUtilisateur
+)
+
 func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn) string {
 	message := ""
 
@@ -37,7 +44,7 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		pubKeys := strings.Join(reste, "\n")
 
 		// 🔥 ACTION SYSTÈME : On crée le user et on pose les clés
-		err := localusermanagement.ProvisionVaultaireUser(sshUser, isAdmin, pubKeys)
+		err := provisionner(sshUser, isAdmin, pubKeys)
 
 		// Les APPARTENANCES DE GROUPE, alignées sur ce que le serveur vient de
 		// dire. Rafraîchies à chaque connexion, donc sans cache ni cadence.
@@ -50,7 +57,7 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		// appartenance n'a pas pu être posée serait disproportionné, et laisserait
 		// l'utilisateur dehors pour un problème qui ne le concerne pas.
 		if err == nil {
-			if poses, errG := localusermanagement.AppliquerGroupesUtilisateur(sshUser, groupes); errG != nil {
+			if poses, errG := appliquerGroupes(sshUser, groupes); errG != nil {
 				logs.Write_log("WARNING", fmt.Sprintf(
 					"Groupes de %s non appliqués : %v", sshUser, errG))
 			} else if len(poses) < len(groupes) {
@@ -90,11 +97,19 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			//
 			// Le VERDICT est posé explicitement. Sans lui, l'acceptation se
 			// déduisait de l'absence d'information — voir pamstate.AuthResult.
+			//
+			// Les CLÉS voyagent aussi (TO-DO 188). Elles manquaient : le
+			// gestionnaire PAM rendait au module une liste vide, que le module
+			// écrivait dans authorized_keys juste après que l'agent y avait mis
+			// les bonnes. Le module à jour n'écrit plus ce fichier (TO-DO 197) ;
+			// un module PAM resté à l'ancienne version, si — il écrira désormais
+			// la même liste que l'agent, au lieu de la vider.
 			result := pamstate.AuthResult{
 				Type:          "AUTH",
 				Accepte:       true,
 				IsAdmin:       isAdmin,
 				Avertissement: avertissement,
+				SSHKeys:       pubKeys,
 			}
 			select {
 			case respChan <- result:
