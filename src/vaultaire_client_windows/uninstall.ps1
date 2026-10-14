@@ -72,9 +72,9 @@ foreach ($id in @("{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}", "{")) {
     }
 }
 
-# Les variantes d'essai de l'écran de connexion (TO-DO 157) : posées à la main
-# pour une recette, elles n'ont plus de sens sans la DLL. Une réinstallation
-# repartirait sinon avec la variante oubliée.
+# La variante d'essai de l'écran de connexion (ModeV2, TO-DO 179 ; et les
+# anciennes du 157) : posée à la main pour un essai, elle n'a plus de sens sans
+# la DLL. Une réinstallation repartirait sinon avec la variante oubliée.
 $cleVariantes = "HKLM:\SOFTWARE\Vaultaire\CredentialProvider"
 if (Test-Path -LiteralPath $cleVariantes) {
     Remove-Item -LiteralPath $cleVariantes -Recurse -Force -ErrorAction SilentlyContinue

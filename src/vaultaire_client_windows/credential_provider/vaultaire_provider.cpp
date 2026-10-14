@@ -21,22 +21,24 @@ const CREDENTIAL_PROVIDER_FIELD_DESCRIPTOR* DescriptionDesChamps();
 // ICredentialProviderSetUserArray (TO-DO 157) : c'est l'interface par laquelle
 // LogonUI, depuis Windows 8, passe au fournisseur la liste des comptes qu'il
 // affiche, AVANT de lui demander ses tuiles. L'exemple V2 de Microsoft
-// l'implémente toujours avec une tuile V2 (ICredentialProviderCredential2) ;
-// celle-ci ne l'implémentait pas. Le fournisseur n'a pas l'usage de la liste —
-// sa tuile n'est rattachée à aucun compte — mais il la reçoit et la garde,
-// comme l'exemple.
+// l'implémente avec une tuile V2 (ICredentialProviderCredential2).
+//
+// Depuis le TO-DO 179, elle n'est accordée qu'en variante d'essai ModeV2 : la
+// recette du 12/10 a montré que le V2 casse l'écran de connexion, et que le V1
+// le rétablit. Le code reste, pour chercher un jour la cause.
+//
+// SetSerialization reste NON gérée (« Non géré en V1 ») : elle sert au Bureau à
+// distance avec NLA — c'est le TO-DO 194.
 class CVaultaireProvider : public ICredentialProvider, public ICredentialProviderSetUserArray {
  public:
   CVaultaireProvider()
       : references_(1), scenario_(CPUS_INVALID), credential_(nullptr), comptes_(nullptr),
         variantes_(LireVariantes()) {
     ObjetCree();
-    // Une variante active se lit au journal : une recette qui en oublierait
-    // une posée conclurait sur le mauvais comportement.
-    if (variantes_.tuile_par_defaut || variantes_.mode_v1 || variantes_.sans_image) {
-      Journaliser(L"variantes d'essai actives : TuileParDefaut=%d ModeV1=%d SansImage=%d",
-                  (int)variantes_.tuile_par_defaut, (int)variantes_.mode_v1,
-                  (int)variantes_.sans_image);
+    // Une variante active se lit au journal : une recette qui l'oublierait
+    // posée conclurait sur le mauvais comportement.
+    if (variantes_.mode_v2) {
+      Journaliser(L"variante d'essai active : ModeV2=1 (fournisseur V2, celui qui casse l'ecran — TO-DO 179)");
     }
   }
 
@@ -48,7 +50,7 @@ class CVaultaireProvider : public ICredentialProvider, public ICredentialProvide
       if (TraceActive()) Tracer(L"Fournisseur::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
       return S_OK;
     }
-    if (riid == IID_ICredentialProviderSetUserArray && !variantes_.mode_v1) {
+    if (riid == IID_ICredentialProviderSetUserArray && variantes_.mode_v2) {
       *ppv = static_cast<ICredentialProviderSetUserArray*>(this);
       AddRef();
       if (TraceActive()) Tracer(L"Fournisseur::QueryInterface %ls = accordee", NomDeLInterface(riid).c_str());
@@ -187,12 +189,10 @@ class CVaultaireProvider : public ICredentialProvider, public ICredentialProvide
       return p.Rendre(E_INVALIDARG);
     }
     *nombre = 1;
-    // PAS de tuile par défaut (TO-DO 157), comme l'exemple V2 de Microsoft.
-    // Une tuile sans compte rattaché se range sous « Autre utilisateur » ; se
-    // déclarer en plus tuile par défaut demandait à LogonUI de la sélectionner
-    // avant les tuiles des comptes — la première hypothèse de l'écran vide.
-    // La variante TuileParDefaut rend le comportement d'avant, pour l'essai.
-    *par_defaut = variantes_.tuile_par_defaut ? 0 : CREDENTIAL_PROVIDER_NO_DEFAULT;
+    // PAS de tuile par défaut (TO-DO 157). C'est la configuration validée par
+    // la recette du 12/10, avec le V1 : la tuile ne demande pas à LogonUI de
+    // la sélectionner avant les tuiles des comptes.
+    *par_defaut = CREDENTIAL_PROVIDER_NO_DEFAULT;
     // JAMAIS d'ouverture automatique : il n'y a pas d'identifiants à rejouer,
     // et une tuile qui se soumet seule ferait boucler l'écran de connexion.
     *auto_ouvrir = FALSE;
