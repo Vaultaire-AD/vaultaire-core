@@ -39,7 +39,7 @@ Trois gestes, dans le même passage que le code :
 | 186 | AGENT        | `--fetch-key` échoue si le premier pair ne répond pas       | À faire                                 |
 | 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
-| 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | À faire — voir le rapport du 190 |
+| 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
 | 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
@@ -321,7 +321,31 @@ une fois par clé refusée présentée avant elle.
 2. Retirer l'attente fixe ; garder une borne totale courte (sshd attend).
 3. Démon arrêté : ne rien rendre, vite — c'est le comportement d'aujourd'hui
    quand le core est injoignable.
-4. Mesurer avant et après (`A_TESTER.md`, § 86).
+4. Mesurer avant et après (`A_TESTER.md`, § 86 et 89 — le journal de debug
+   des connexions du 199 donne la ligne `fetch-key` de chaque appel).
+
+**Mis en pause le 14/10**, au profit de 197, 198 et 199. Le plan proposé, à
+reprendre tel quel ou à revoir :
+
+- une requête `{"fetch":{"user":…}}` sur le socket du démon, à côté de `auth`
+  et `check` ; le démon envoie `03_06` par son tunnel et attend `03_07` 3 s au
+  plus (le core ne répond **rien** sur un refus : c'est l'attente de 10 s
+  d'aujourd'hui) ; il rend `{"status":"success","ssh_keys":[…]}` ou un refus ;
+- `--fetch-key` ne fait plus que vérifier le domaine, joindre le socket, lire
+  la réponse 4 s au plus et écrire les clés — plus de configuration, d'identité
+  ni de réseau ; démon arrêté : rien, tout de suite ;
+- **défaut à corriger au passage** : `sshreq` n'a qu'une entrée par compte,
+  partagée par `auth` et `fetch` — une demande de clés et une authentification
+  du même compte qui se croisent prennent la réponse l'une de l'autre. Deux
+  registres, et les demandes de clés simultanées d'un même compte attendent la
+  même réponse ;
+- `WaitForSSHFetch.go` disparaît ; SELinux n'a rien à accorder (sshd joint
+  déjà le socket de l'agent).
+
+**À trancher à la reprise : une mémoire de 5 s** des clés rendues, par compte,
+pour que le second appel de sshd (la signature) ne refasse pas l'aller-retour —
+effacée dès qu'un ordre de révocation arrive pour ce compte. Laissée en
+suspens le 14/10.
 
 ## Sécurité et authentification
 
