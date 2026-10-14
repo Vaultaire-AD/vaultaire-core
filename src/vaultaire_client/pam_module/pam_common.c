@@ -23,6 +23,7 @@
 #include <sys/un.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
+#include <poll.h>
 #include <sys/types.h>
 #include <linux/limits.h>
 
@@ -530,8 +531,48 @@ int vaultaire_socket_send_recv_path(const char *chemin, const char *request,
          *
          * Le cas se declenche d'autant plus facilement que la reponse porte les
          * cles SSH : une seule cle RSA-4096 en base64 depasse le kilo-octet. */
+        /* UNE ECHEANCE pour toute la reponse — TO-DO 198.
+         *
+         * La lecture n'avait aucune borne : le module attendait l'agent tant
+         * qu'il ne fermait pas, et l'agent additionnait ses propres attentes
+         * (7 s pour le core, la phase GPO de compte, les commandes des
+         * modules). Une session pouvait rester figee sans fin, et sans
+         * message.
+         *
+         * Une echeance TOTALE, et non SO_RCVTIMEO : ce dernier vaut pour CHAQUE
+         * recv, et un agent qui rendrait un octet de temps en temps la
+         * repousserait indefiniment. poll() avec le temps qui RESTE.
+         *
+         * La valeur est au-dessus du pire cas de l'agent (7 s + 5 s de GPO de
+         * compte, plus la creation du compte) : passe ce delai, l'agent ne
+         * repondra plus utilement, et « service indisponible » vaut mieux
+         * qu'un ecran fige. */
+        struct timespec debut;
+        clock_gettime(CLOCK_MONOTONIC, &debut);
         size_t total = 0;
         for (;;) {
+            struct timespec maintenant;
+            clock_gettime(CLOCK_MONOTONIC, &maintenant);
+            long ecoule = (maintenant.tv_sec - debut.tv_sec) * 1000L
+                        + (maintenant.tv_nsec - debut.tv_nsec) / 1000000L;
+            long reste = (long)VAULTAIRE_DELAI_REPONSE_MS - ecoule;
+            if (reste <= 0) {
+                vaultaire_log_err("l'agent n'a pas repondu en %d ms : abandon",
+                                  VAULTAIRE_DELAI_REPONSE_MS);
+                close(sock);
+                return -1;
+            }
+            struct pollfd pfd = { .fd = sock, .events = POLLIN };
+            int pr = poll(&pfd, 1, (int)reste);
+            if (pr < 0) {
+                if (errno == EINTR) continue;
+                vaultaire_log_err("poll(): %s", strerror(errno));
+                close(sock);
+                return -1;
+            }
+            if (pr == 0) {
+                continue; /* l'echeance est constatee au tour suivant */
+            }
             ssize_t n = recv(sock, resp + total, resp_size - 1 - total, 0);
             if (n < 0) {
                 if (errno == EINTR) continue;

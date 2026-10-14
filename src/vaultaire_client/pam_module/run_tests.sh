@@ -72,6 +72,17 @@ cc -Wall -Wextra -Werror -I"$ICI" -o "$TMP/hardening" \
 
 # ---------------------------------------------------------------------------
 echo
+echo "=== TO-DO 198 : le module n'attend pas l'agent sans fin ==="
+# ---------------------------------------------------------------------------
+#
+# Echeance ramenee a 400 ms pour le test : la logique est la meme qu'a 20 s.
+
+cc -Wall -Wextra -Werror -I"$ICI" -DVAULTAIRE_DELAI_REPONSE_MS=400 -o "$TMP/delai" \
+   "$ICI/delai_test.c" "$ICI/pam_common.c" -lcrypt
+"$TMP/delai"
+
+# ---------------------------------------------------------------------------
+echo
 echo "=== TO-DO 197 : le module ne gere plus le compte ==="
 # ---------------------------------------------------------------------------
 #
