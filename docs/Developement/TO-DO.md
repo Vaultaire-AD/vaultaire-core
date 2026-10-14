@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **196**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **200**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -24,7 +24,7 @@ Trois gestes, dans le même passage que le code :
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 188 | SSH          | Les clés publiques du compte ne sont pas écrites dans `authorized_keys` | À faire — **critique**, recette du 12/10 |
+| 188 | SSH          | Les clés publiques du compte ne sont pas écrites dans `authorized_keys` | À faire — **critique**, cause établie (190) |
 | 195 | WINDOWS      | Après la première connexion, le CP Vaultaire n'est plus proposé : plus de TOTP | À faire — **critique**, recette du 12/10 |
 | 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
@@ -40,7 +40,10 @@ Trois gestes, dans le même passage que le code :
 | 186 | AGENT        | `--fetch-key` échoue si le premier pair ne répond pas       | À faire                                 |
 | 187 | AGENT        | Liste des cores non relue quand un proxy change d'adresse de publication | À faire                    |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
-| 190 | GPO          | 20 s pour ouvrir une session SSH avec 5 modules : rapport d'analyse | À faire — mesurer d'abord      |
+| 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | À faire — voir le rapport du 190 |
+| 197 | AGENT        | Provisionnement fait deux fois par connexion, `restorecon` sur tout le `HOME` | À faire — voir le rapport du 190 |
+| 198 | PAM          | Aucun budget global pour l'ouverture d'une session         | À faire — après 196 et 197              |
+| 199 | JOURNAL      | Journaux mesurables : horodatage du module PAM, millisecondes | À faire — petit                       |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
 | 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
@@ -126,6 +129,13 @@ le suivant : sshd ne reçoit aucune clé, la connexion par clé échoue.
 **À faire.** Le mode une-passe (`main.go`, `serveur_communication/superviseur.go`
 « pas de relance ») doit parcourir la liste, avec un délai court par pair —
 sshd attend la réponse. Test : premier pair injoignable, second répond.
+
+**Précisé par le 190** ([`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 4.2). `EstablishDuckySession` parcourt
+bien la liste, mais `net.DialTimeout` donne 10 s à chaque pair, alors que
+`WaitForSSHFetch` abandonne à 6 s au total ; et la poignée de main du socle
+n'a **aucun délai de lecture** — un pair qui accepte sans répondre retient
+l'appel jusqu'à l'abandon. Le **196** rendrait ce chemin sans objet pour sshd ;
+le délai de lecture reste à poser pour le tunnel du démon.
 
 ### 187. [AGENT] [CLUSTER] La liste des cores n'est pas relue quand un proxy change d'adresse de publication
 
@@ -297,22 +307,67 @@ conformité d'un cycle remplace celui de la machine entière au lieu de ne
 remplacer que les GPO appliquées. Le mode doit suivre le module (`A_TESTER.md`
 § 7e).
 
-### 190. [GPO] [PAM] 20 secondes pour ouvrir une session SSH : un rapport d'analyse
+### 196. [AGENT] [SSH] `--fetch-key` : une session Ducky neuve à chaque appel de sshd
 
-**Constat** (recette du 12/10, `A_TESTER.md`), § 53. Les GPO de compte s'appliquent bien, mais il
-faut **20 secondes** pour avoir le terminal d'une connexion SSH avec seulement
-5 modules — sans montage NFS, sur une VM normale et peu chargée.
+**Origine** (rapport du **190**, [`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 2.1). À chaque appel,
+`sshd` lance un processus `vaultaire_client --fetch-key` qui refait toute la
+connexion — TCP, poignée de main, authentification machine, inventaire `02_12`
+— puis **attend une seconde sans condition** (`time.Sleep` dans
+`WaitForSSHFetch`) avant de demander les clés. Soit **≈ 1,2 s par appel au
+minimum**, et `sshd` appelle d'ordinaire deux fois pour la clé acceptée, plus
+une fois par clé refusée présentée avant elle.
 
-**À faire : un vrai rapport d'analyse** de l'ouverture d'une session SSH, avant
-toute correction.
+**À faire.**
 
-1. Chronométrer chaque étape, du `--fetch-key` de sshd au shell : clés, PAM
-   auth (TOTP), PAM session, provisionnement, demande des GPO de compte,
-   réponse du core, application module par module, rapport.
-2. Situer le temps : la VM, l'agent, le core ou le réseau (allers-retours
-   Ducky, attentes à délai fixe, DNS inverse de sshd, `UseDNS`).
-3. Écrire le rapport dans `docs/Developement/`, et en tirer les points à
-   corriger.
+1. Que `--fetch-key` demande les clés **au démon**, par son socket local (une
+   requête de plus à côté de `AUTH` et `CHECK`), qui les obtient par le tunnel
+   machine déjà ouvert. Plus de session Ducky par appel, plus de `02_05`.
+2. Retirer l'attente fixe ; garder une borne totale courte (sshd attend).
+3. Démon arrêté : ne rien rendre, vite — c'est le comportement d'aujourd'hui
+   quand le core est injoignable.
+4. Mesurer avant et après (`A_TESTER.md`, § 86).
+
+### 197. [AGENT] [PAM] Le provisionnement fait deux fois par connexion
+
+**Origine** (rapport du **190**, § 2.2). À chaque connexion, l'agent (réception
+de `03_02`) **puis** le module PAM refont le même travail : écrire
+`authorized_keys`, lancer `restorecon -RF` sur **tout** le dossier personnel,
+régler le groupe sudo — le module par `usermod -aG` ou `gpasswd -d` à chaque
+connexion, administrateur ou non.
+
+**À faire.**
+
+1. Un seul responsable — l'agent, qui a la réponse du core et n'a pas les
+   limites d'un module chargé dans `sshd`. Le module ne garde que ce qui doit
+   se faire dans la pile PAM.
+2. `restorecon` sur le dossier lui-même et `~/.ssh` seulement, sans `-R` sur
+   tout le `HOME`.
+3. Le groupe sudo n'est touché que si l'appartenance doit **changer**.
+4. Mesurer le gain sur un `HOME` volumineux (§ 86).
+
+### 198. [PAM] [GPO] Aucun budget global pour l'ouverture d'une session
+
+**Origine** (rapport du **190**, § 2.3). Les bornes s'additionnent : le module
+PAM attend l'agent **sans délai** (`recv` en boucle), l'agent attend `03_02`
+7 s, la politique de compte 6 s, chaque commande de module 10 s, et
+`user_resource_limits` lance un `daemon-reload` du système.
+
+**À faire.** Un délai de réception dans le module PAM (`SO_RCVTIMEO`) ; un
+plafond pour la phase GPO de compte, au-delà duquel l'accès est rendu et le
+cycle poursuivi en arrière-plan (la règle « un incident GPO n'empêche pas de se
+connecter » existe déjà) ; le dire au journal. Après le 196 et le 197, et
+d'après la mesure du § 86.
+
+### 199. [JOURNAL] Des journaux qui permettent de mesurer une connexion
+
+**Origine** (rapport du **190**, § 2.4). `vaultaire_pam.log` n'a **aucun
+horodatage** ; `vaultaire.log` est à la seconde ; la seule durée journalisée est
+celle du cycle GPO. Impossible de situer les étapes d'une connexion sans
+`strace`.
+
+**À faire.** Horodatage à la milliseconde dans les deux journaux, et une ligne
+de synthèse par connexion côté agent : `ouverture <compte> : auth X ms, GPO X ms,
+provisionnement X ms` (et le nombre d'appels `--fetch-key` vus).
 
 ## Sécurité et authentification
 
@@ -322,12 +377,24 @@ toute correction.
 domaine n'arrivent pas dans son `~/.ssh/authorized_keys`. (La dérive des GPO de
 compte, elle, est bien vue et corrigée.)
 
-**À faire.** Établir le chemin attendu — `--fetch-key` pour sshd, ou écriture
-par l'agent (`tools/local_user_management/authorized_keys.go`) — et pourquoi il
-ne pose rien : compte créé avant que les clés soient connues, droits ou
-contexte SELinux de `~/.ssh`, cloisonnement de l'unité (168). Rejouer avec le
-**186** et le **187** corrigés : un `--fetch-key` en échec peut masquer le
-défaut.
+**Cause établie par le 190** ([`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 4.1), à confirmer sur un poste :
+
+1. à la réception de `03_02`, l'agent écrit **bien** les clés
+   (`ProvisionVaultaireUser` → `EcrireClesAutorisees`) ;
+2. il réveille le gestionnaire PAM avec un `pamstate.AuthResult` **sans
+   `SSHKeys`** (`sshauth/sshAuthManager.go`, cas `"02"`) ;
+3. `PAM_Handler.go` rend donc au module une liste **vide** ;
+4. le module PAM (`setup_user_ssh_keys`) lit une liste vide **lisible**, et
+   réécrit `authorized_keys`… vide — la règle « l'annuaire fait foi » appliquée
+   à une liste qui n'aurait pas dû l'être.
+
+La connexion réussit quand même : `sshd` interroge `--fetch-key`, il ne lit pas
+le fichier.
+
+**À faire.** Porter les clés de `03_02` dans l'`AuthResult` (une ligne), et un
+test qui suit la réponse de bout en bout : `03_02` avec deux clés → réponse du
+socket PAM avec deux clés. Puis trancher avec le **197** : un seul des deux
+(agent ou module) doit écrire le fichier.
 
 ### 98. [SÉCURITÉ] Les secrets sont en clair dans la base
 
