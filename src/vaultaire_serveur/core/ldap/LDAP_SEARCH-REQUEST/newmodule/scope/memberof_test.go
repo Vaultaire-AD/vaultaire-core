@@ -74,7 +74,8 @@ func TestLesDeuxCheminsComposentLeMemberOfAuMemeEndroit(t *testing.T) {
 		t.Error("resolver.go ne lit plus les appartenances par dbldap.GetMemberOfByUsernames : " +
 			"une recherche one ou sub ne rendrait plus tous les groupes d'un compte")
 	}
-	if !strings.Contains(base, "dbldap.GetMemberOfByUsername(") {
+	// Par la variable lireAppartenances depuis le TO-DO 175 : la panne s'y simule.
+	if !strings.Contains(base, "lireAppartenances = dbldap.GetMemberOfByUsername\n") {
 		t.Error("base_scope.go ne lit plus les appartenances par dbldap.GetMemberOfByUsername")
 	}
 	for nom, source := range map[string]string{"resolver.go": resolveur, "base_scope.go": base} {
@@ -83,7 +84,10 @@ func TestLesDeuxCheminsComposentLeMemberOfAuMemeEndroit(t *testing.T) {
 			if strings.HasPrefix(l, "//") || !strings.HasPrefix(l, "Groups:") {
 				continue
 			}
-			if !strings.Contains(l, "appartenancesLDAP(") && !strings.Contains(l, "memberOfForUser(") {
+			// « Groups: groupes » : la valeur rendue par memberOfForUser, lue juste
+			// avant pour que son erreur remonte (TO-DO 175).
+			parMemberOf := strings.Contains(l, "groupes,") && strings.Contains(source, "groupes, err := memberOfForUser(")
+			if !strings.Contains(l, "appartenancesLDAP(") && !strings.Contains(l, "memberOfForUser(") && !parMemberOf {
 				t.Errorf("%s : %q — le memberOf d'un compte doit passer par appartenancesLDAP, "+
 					"sinon les deux chemins ne rendent plus la même chose", nom, l)
 			}

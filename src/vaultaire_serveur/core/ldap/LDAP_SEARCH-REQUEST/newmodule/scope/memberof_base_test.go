@@ -11,6 +11,7 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 
+	dbldap "vaultaire/core/database/db_ldap"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate"
 )
 
@@ -190,4 +191,43 @@ func TestEnBaseLesRattachementsRestentCeuxDeLaRecherche(t *testing.T) {
 		return
 	}
 	t.Fatal("alice n'est pas rendue")
+}
+
+// TO-DO 175 : la recherche `base` sur un compte ne rend plus un `memberOf`
+// VIDE quand la lecture des groupes échoue. L'erreur remonte, le gestionnaire
+// répond `operationsError` — comme pour `one` et `sub`.
+func TestEnBaseUneLectureDesGroupesEnEchecEstUneErreur(t *testing.T) {
+	a := monterLAnnuaire(t, baseDAnnuaire(t))
+	dnAlice := "uid=" + a.alice + ",ou=users," + dnDe(a.racine)
+
+	// D'abord la base qui répond : alice et ses quatre groupes.
+	if g := memberOfDe(t, a, a.racine, 0, dnAlice, a.alice); len(g) != 4 {
+		t.Fatalf("recherche base : %d groupe(s), attendu 4", len(g))
+	}
+
+	ancien := lireAppartenances
+	t.Cleanup(func() { lireAppartenances = ancien })
+	lireAppartenances = func(*sql.DB, string) ([]dbldap.GroupDomain, error) {
+		return nil, fmt.Errorf("base en difficulté (essai)")
+	}
+
+	entrees, err := Resolve(a.db, a.racine, 0, nil, "", dnAlice, nil)
+	if err == nil {
+		for _, e := range entrees {
+			if u, ok := e.(candidate.UserEntry); ok {
+				t.Fatalf("le compte est rendu avec %d groupe(s) malgré la panne : un client y lirait "+
+					"un compte sorti de ses groupes", len(u.Groups))
+			}
+		}
+		t.Fatal("la panne de lecture des groupes ne remonte pas")
+	}
+	if !strings.Contains(err.Error(), a.alice) {
+		t.Errorf("l'erreur ne nomme pas le compte : %v", err)
+	}
+
+	// Un compte INEXISTANT reste « pas d'entrée », pas une erreur : la panne
+	// simulée ne doit pas être atteinte avant de savoir que le compte existe.
+	if entrees, err := Resolve(a.db, a.racine, 0, nil, "", "uid=personne"+a.alice+",ou=users,"+dnDe(a.racine), nil); err != nil || len(entrees) != 0 {
+		t.Errorf("compte inexistant : %d entrée(s), erreur %v — attendu ni l'un ni l'autre", len(entrees), err)
+	}
 }

@@ -232,6 +232,14 @@ rendait que les groupes de ce sous-domaine : une application synchronisée là
 croyait que le compte avait quitté les autres. À la première synchronisation
 après la mise à jour, ces groupes **reviennent**.
 
+**Une panne n'est jamais un `memberOf` vide** *(2.3, TO-DO 175)*. Si la base
+du core ne peut pas lire les groupes d'un compte, la recherche échoue —
+`operationsError` (code 1), la cause au journal du core — quelle que soit sa
+portée, y compris la relecture d'un compte par son DN qu'emploie JumpServer
+après chaque authentification. Jusque-là, cette relecture rendait le compte
+**sans aucun groupe**, et l'application lui retirait ses droits. Même chose si
+ses domaines sont illisibles : une erreur, et non « ce compte n'existe pas ».
+
 ---
 
 # 🔎 Comprendre ce que fait un client : le journal
