@@ -78,6 +78,9 @@ cluster purge <nœud> [--etalement <s>]
    purge <nœud-core>` viderait ensuite le core en maintenance de ses sessions :
    chaque poste redemande sa liste et part de lui-même, le reste est fermé, étalé
    sur une minute.
+   Un core en maintenance **accepte** encore les connexions : un agent qui ne
+   connaît que son fichier peut y revenir. C'est voulu — si les autres cores
+   tombaient pendant la maintenance, il resterait le dernier recours.
 
 ## ✅ Vous avez réussi si
 
