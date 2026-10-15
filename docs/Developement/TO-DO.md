@@ -26,7 +26,6 @@ Trois gestes, dans le même passage que le code :
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
 | 195 | WINDOWS      | Après la première connexion, le CP Vaultaire n'est plus proposé : plus de TOTP | À faire — **critique**, recette du 12/10 |
 | 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
-| 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
@@ -68,20 +67,6 @@ réemploie la purge des cores ; elle demande de savoir, sur chaque core, quelles
 sessions sont relayées par quel proxy — *à vérifier* : un relais Ducky transporte
 sans lire, le core devrait voir l'adresse du proxy comme source TCP de la session
 (`Session.RemoteAddr`), mais derrière une redirection ce n'est pas garanti.
-
-### 177. [CLUSTER] Un core en maintenance accepte encore les connexions
-
-**Origine** (relevé en traitant le 147). La maintenance retire un core des
-**listes** ; elle ne l'empêche pas d'accepter une connexion. Un agent qui ne
-connaît que son fichier de configuration (agent ancien, ou liste jamais reçue)
-peut donc y revenir après une purge. C'est visible — le compteur SESSIONS de
-`cluster show` remonte —, mais la purge ne l'empêche pas.
-
-**À trancher.** Refuser les nouvelles connexions sur un core en maintenance
-ferait partir ces agents vers le core suivant de leur fichier ; mais c'est aussi
-ce qui coupe un parc dont tous les autres cores seraient tombés pendant la
-maintenance. Un refus seulement tant qu'un autre core est **en ligne**, relu à
-chaque connexion ? Et que faire des connexions des autres cores et des proxies ?
 
 ### 184. [PROXY] [LDAP] LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies
 

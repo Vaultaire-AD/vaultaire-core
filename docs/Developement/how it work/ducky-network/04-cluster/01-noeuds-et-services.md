@@ -166,6 +166,17 @@ Les sessions du portail et de l'API ne sont pas des sessions Ducky : la purge
 ne les touche pas. Un processus n'exécute qu'une fois une même demande, même si
 l'écriture de la fin échoue — sinon la purge se rejouerait à chaque battement.
 
+**Un core en maintenance accepte toujours les connexions** *(TO-DO 177,
+tranché le 15/10 : on ne refuse pas)*. La maintenance retire le core des
+**listes** ; elle ne ferme pas son écoute. Un agent qui ne connaît que son
+fichier de configuration (agent ancien, liste jamais reçue) peut donc y revenir
+après une purge, et le compteur SESSIONS de `cluster show` remonte : c'est
+visible, et c'est voulu. Refuser ferait partir ces agents vers le core suivant
+de leur fichier — mais couperait aussi tout le parc si les autres cores
+tombaient pendant la maintenance, au moment précis où ce core est le dernier
+recours. Un agent à jour, lui, reçoit la liste sans ce core et en repart
+(`bascule.go`).
+
 > Jusqu'au TO-DO 85, la suppression tombait à **cinq minutes**, pour tous. Un
 > proxy redémarré lentement ou un hôte en veille revenait par un `INSERT` neuf,
 > aux valeurs par défaut : les décisions d'exploitation étaient perdues, et le
