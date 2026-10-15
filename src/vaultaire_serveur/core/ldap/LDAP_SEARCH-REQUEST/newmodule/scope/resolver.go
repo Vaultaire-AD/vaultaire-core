@@ -59,10 +59,9 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 
 	switch scope {
 	case 0:
-		if exact := resolveBaseScope(db, baseObject, j); exact != nil {
-			return exact, nil
-		}
-		return nil, nil
+		// Une lecture en échec REMONTE (TO-DO 175) : le gestionnaire répond
+		// `operationsError`, comme pour `one` et `sub`.
+		return resolveBaseScope(db, baseObject, j)
 
 	case 1:
 		groupDomain := []string{baseDN}

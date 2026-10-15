@@ -19,41 +19,53 @@ import (
 // resolveBaseScope gère les recherches LDAP scope=base (0).
 // JumpServer/django-auth-ldap relit les attributs utilisateur (cn, uid, mail)
 // via une recherche BASE sur le DN exact après authentification.
-func resolveBaseScope(db *sql.DB, baseObject string, j *ldapjournal.Operation) []ldapinterface.LDAPEntry {
+//
+// # Une panne de lecture est une ERREUR — TO-DO 175
+//
+// L'erreur remonte au gestionnaire, qui répond `operationsError`, comme pour
+// une recherche `one` ou `sub`. Jusqu'au 175, la lecture des groupes en échec
+// rendait le compte avec un `memberOf` VIDE : un client — JumpServer relit ainsi
+// chaque compte après l'authentification — y lisait un compte sorti de tous ses
+// groupes, et retirait ses droits.
+func resolveBaseScope(db *sql.DB, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
 	baseObject = strings.TrimSpace(baseObject)
 	baseLower := strings.ToLower(baseObject)
 
 	if uid, ok := firstRDNValue(baseObject, "uid="); ok && dnHasOU(baseObject, "users") {
-		if entry, ok := buildUserEntryForDN(db, uid, baseLower, j); ok {
-			return []ldapinterface.LDAPEntry{entry}
+		entry, ok, err := buildUserEntryForDN(db, uid, baseLower, j)
+		if err != nil {
+			return nil, err
 		}
-		return nil
+		if ok {
+			return []ldapinterface.LDAPEntry{entry}, nil
+		}
+		return nil, nil
 	}
 
 	if groupName, ok := firstRDNValue(baseObject, "cn="); ok && dnHasOU(baseObject, "groups") {
 		if entry, ok := buildGroupEntryForDN(db, groupName, baseLower); ok {
-			return []ldapinterface.LDAPEntry{entry}
+			return []ldapinterface.LDAPEntry{entry}, nil
 		}
-		return nil
+		return nil, nil
 	}
 
 	if ouName, ok := ouFromBaseObject(baseObject); ok {
 		domain := ldaptools.ConvertLDAPBaseToDomainName(baseObject)
 		entry := candidate.OUEntry{Name: ouName, BaseDN: domain}
 		if strings.ToLower(entry.DN()) == baseLower {
-			return []ldapinterface.LDAPEntry{entry}
+			return []ldapinterface.LDAPEntry{entry}, nil
 		}
-		return nil
+		return nil, nil
 	}
 
 	domain := ldaptools.ConvertLDAPBaseToDomainName(baseObject)
 	if domain != "" && isDomainOnlyDN(baseObject) {
 		entry := candidate.DomainEntry{DNName: domain}
 		if strings.ToLower(entry.DN()) == baseLower {
-			return []ldapinterface.LDAPEntry{entry}
+			return []ldapinterface.LDAPEntry{entry}, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func firstRDNValue(dn, prefix string) (string, bool) {
@@ -91,10 +103,15 @@ func isDomainOnlyDN(dn string) bool {
 	return true
 }
 
-func buildUserEntryForDN(db *sql.DB, username, expectedDN string, j *ldapjournal.Operation) (candidate.UserEntry, bool) {
+// buildUserEntryForDN compose l'entrée d'un compte demandé par son DN.
+//
+// Trois issues : l'entrée ; « pas d'entrée » (compte absent, sans domaine, ou
+// dont le DN ne correspond pas) ; une ERREUR, quand une lecture a échoué après
+// que le compte a été trouvé — ses domaines ou ses groupes (TO-DO 175).
+func buildUserEntryForDN(db *sql.DB, username, expectedDN string, j *ldapjournal.Operation) (candidate.UserEntry, bool, error) {
 	userObj, err := dbldap.GetUserByUsername(username, db)
 	if err != nil {
-		return candidate.UserEntry{}, false
+		return candidate.UserEntry{}, false, nil
 	}
 
 	domaineDuDN := ldaptools.ConvertLDAPBaseToDomainName(expectedDN)
@@ -108,9 +125,13 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string, j *ldapjournal
 		// DEMANDÉ, celui que l'appelant venait de se voir autoriser. Le contrôle
 		// d'accès se serait alors autorisé lui-même — le défaut du point 120,
 		// reproduit sur un autre chemin et déclenchable par une erreur transitoire.
+		//
+		// Une ERREUR, et non « pas d'entrée » (TO-DO 175) : `noSuchObject` dirait
+		// au client que le compte n'existe plus, et un client qui synchronise
+		// le supprimerait.
 		j.Ecrire("ERROR", logs.CodeDBQuery, "domaines de "+username+
 			" illisibles — entrée non rendue")
-		return candidate.UserEntry{}, false
+		return candidate.UserEntry{}, false, fmt.Errorf("lecture des domaines de %s impossible", username)
 	}
 
 	// UN COMPTE SANS AUCUN DOMAINE N'EST PAS RENDU — point 122.
@@ -129,7 +150,7 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string, j *ldapjournal
 	// inexistant. C'est voulu : pour LDAP, il n'existe pas.
 	if len(rattachements) == 0 {
 		j.Trace("%s n'appartient à aucun domaine — non rendu (point 122)", username)
-		return candidate.UserEntry{}, false
+		return candidate.UserEntry{}, false, nil
 	}
 
 	baseDN := domaineDuDN
@@ -155,20 +176,25 @@ func buildUserEntryForDN(db *sql.DB, username, expectedDN string, j *ldapjournal
 		}
 	}
 
+	groupes, err := memberOfForUser(db, username, j)
+	if err != nil {
+		return candidate.UserEntry{}, false, err
+	}
+
 	entry := candidate.UserEntry{
 		User:          userObj,
 		BaseDN:        baseDN,
 		Rattachements: rattachements,
-		Groups:        memberOfForUser(db, username, j),
+		Groups:        groupes,
 		DisplayName:   userObj.Firstname + " " + userObj.Lastname,
 		GivenName:     userObj.Firstname,
 		Sn:            userObj.Lastname,
 		Uid:           userObj.Username,
 	}
 	if strings.ToLower(entry.DN()) != expectedDN {
-		return candidate.UserEntry{}, false
+		return candidate.UserEntry{}, false, nil
 	}
-	return entry, true
+	return entry, true, nil
 }
 
 // domainesDuCompte rend les domaines d'un compte, triés, et dit si la LECTURE a
@@ -236,18 +262,23 @@ func buildGroupEntryForDN(db *sql.DB, groupName, expectedDN string) (candidate.G
 // qu'emprunte JumpServer après CHAQUE authentification.
 //
 // Une jointure répond à la même question en une requête.
-func memberOfForUser(db *sql.DB, username string, j *ldapjournal.Operation) []candidate.Appartenance {
-	groupes, err := dbldap.GetMemberOfByUsername(db, username)
+func memberOfForUser(db *sql.DB, username string, j *ldapjournal.Operation) ([]candidate.Appartenance, error) {
+	groupes, err := lireAppartenances(db, username)
 	if err != nil {
-		// Journalisé plutôt que silencieux : sans cela, une base en difficulté
-		// rend un utilisateur sans aucun groupe, ce qu'un client lit comme une
-		// perte d'appartenance — et non comme une panne.
+		// L'erreur REMONTE (TO-DO 175). Elle était journalisée, et le compte
+		// rendu sans groupe : un client lisait une perte d'appartenance là où il
+		// y avait une panne. Le gestionnaire répond `operationsError` et écrit la
+		// cause au journal.
 		j.Ecrire("ERROR", logs.CodeDBQuery, "lecture des groupes de "+username+" : "+err.Error())
-		return nil
+		return nil, fmt.Errorf("lecture des groupes de %s : %w", username, err)
 	}
 
-	return appartenancesLDAP(groupes)
+	return appartenancesLDAP(groupes), nil
 }
+
+// lireAppartenances : la lecture des groupes d'un compte. Une variable, pour
+// éprouver la panne contre une base qui, elle, répond.
+var lireAppartenances = dbldap.GetMemberOfByUsername
 
 // appartenancesLDAP compose le `memberOf` d'un compte depuis ses groupes.
 //

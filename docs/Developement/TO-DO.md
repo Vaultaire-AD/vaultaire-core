@@ -25,7 +25,6 @@ Trois gestes, dans le même passage que le code :
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
 | 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — relevé du 181 d'abord, sur un poste |
-| 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
@@ -257,22 +256,6 @@ grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit
 > reste ici en est sorti en chemin.
 
 ---
-
-### 175. [LDAP] Une recherche `base` rend un compte SANS groupe quand la base flanche
-
-**Origine.** Relevé en traitant le **155**. Les recherches `one` et `sub`
-**échouent** si la lecture des appartenances échoue : l'erreur remonte, le
-client reçoit une erreur. La recherche `base` sur le DN d'un compte, elle,
-journalise l'erreur et rend le compte **avec un `memberOf` vide**
-(`memberOfForUser`, `scope/base_scope.go`).
-
-Un client qui lit cette réponse y voit un compte qui a quitté tous ses groupes.
-C'est le chemin qu'emprunte JumpServer après chaque authentification.
-
-**À faire.** Faire remonter l'erreur de `memberOfForUser` jusqu'au
-gestionnaire, qui répond `operationsError` — comme il le fait déjà quand la
-résolution `sub` échoue. Un test avec une base qui refuse (le connecteur
-défaillant de `handler_nilsession_test.go`).
 
 ### 189. [LDAP] `entryUUID` : recette NON, à reproduire
 
