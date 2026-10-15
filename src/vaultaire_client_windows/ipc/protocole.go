@@ -100,6 +100,15 @@ type Reponse struct {
 	// de Utilisateur : Windows n'accepte pas « @ » dans un nom de compte local
 	// (voir compte.NomLocal).
 	CompteLocal string `json:"local_account,omitempty"`
+	// MotDePasseLocal est le secret du compte local, tiré et gardé par l'agent
+	// (TO-DO 195). La tuile le met dans le bloc d'ouverture de session : le
+	// mot de passe du domaine ne sert plus sur le poste, et la tuile du compte
+	// local de Windows — qui le vérifierait seule, sans core ni second facteur
+	// — demande un mot de passe que personne ne connaît.
+	//
+	// Seulement sur un « auth » accepté. JAMAIS journalisé, ni affiché par
+	// vaultaire_login.
+	MotDePasseLocal string `json:"local_password,omitempty"`
 	// Message lisible, pour le journal du poste et l'écran de connexion. Jamais
 	// le motif exact d'un refus d'authentification.
 	Message string `json:"message,omitempty"`

@@ -18,8 +18,9 @@ import (
 // dérobée : sans core joignable, aucun compte n'est créé, aucun mot de passe
 // n'est posé, et la réponse dit « indisponible » plutôt que « refusé ».
 //
-// Le provisionnement vient donc après, et seulement sur acceptation — il a
-// besoin du mot de passe, qui n'existe qu'ici et n'est jamais journalisé.
+// Le provisionnement vient donc après, et seulement sur acceptation. Il ne
+// reçoit plus le mot de passe du domaine (TO-DO 195) : le compte local porte
+// un secret de l'agent, que la tuile reçoit dans la réponse.
 func Traiter(req ipc.Requete) ipc.Reponse {
 	switch req.Type {
 
@@ -75,7 +76,7 @@ func authentifier(req ipc.Requete) ipc.Reponse {
 		}
 	}
 
-	nomLocal, err := compte.Provisionner(req.Utilisateur, req.MotDePasse, verdict.Administrateur)
+	nomLocal, secret, err := compte.Provisionner(req.Utilisateur, verdict.Administrateur)
 	if err != nil {
 		// Le mot de passe était bon, mais la session ne s'ouvrira pas : mieux
 		// vaut le dire que rendre un succès sur lequel Windows butera ensuite
@@ -101,6 +102,11 @@ func authentifier(req ipc.Requete) ipc.Reponse {
 		Statut:         ipc.StatutSucces,
 		Administrateur: verdict.Administrateur,
 		CompteLocal:    nomLocal,
-		Message:        verdict.Avertissement,
+		// Le secret du compte local (TO-DO 195) : c'est lui, et non le mot de
+		// passe du domaine, que la tuile met dans le bloc d'ouverture. Seule
+		// la réponse à un « auth » accepté le porte, et elle ne part que dans
+		// le tube — SYSTEM et administrateurs.
+		MotDePasseLocal: secret,
+		Message:         verdict.Avertissement,
 	}
 }

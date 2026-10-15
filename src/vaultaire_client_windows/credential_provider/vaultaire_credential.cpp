@@ -469,8 +469,24 @@ HRESULT CVaultaireCredential::Soumettre(
     return Copier(L"Compte local indisponible sur ce poste.", texte_erreur);
   }
 
+  if (verdict.mot_de_passe_local.empty()) {
+    // Acceptation sans secret : un agent d'avant le TO-DO 195. Sérialiser le
+    // mot de passe tapé rouvrirait la porte que le 195 ferme — un compte local
+    // portant le mot de passe du domaine, que la tuile Windows ouvre seule.
+    // L'agent et la tuile s'installent ensemble : c'est l'agent à mettre à jour.
+    Journaliser(L"acceptation sans secret local pour %ls : agent a mettre a jour", utilisateur_.c_str());
+    EffacerMotDePasse();
+    EffacerCode();
+    *icone = CPSI_ERROR;
+    return Copier(L"Le service Vaultaire de ce poste est trop ancien pour cette tuile : mettez-le à jour.",
+                  texte_erreur);
+  }
+
+  // Le bloc porte le SECRET du compte local, pas le mot de passe tapé : celui-ci
+  // a servi au core, et ne sert à rien d'autre sur le poste (TO-DO 195).
   HRESULT hr = PreparerBlocOuverture(scenario_, NomDeCetteMachine(),
-                                     verdict.compte_local, mot_de_passe_, serialisation);
+                                     verdict.compte_local, verdict.mot_de_passe_local, serialisation);
+  verdict.EffacerSecret();
   EffacerMotDePasse();
   if (FAILED(hr)) {
     *icone = CPSI_ERROR;

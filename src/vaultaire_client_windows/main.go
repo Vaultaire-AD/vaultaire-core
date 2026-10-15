@@ -47,6 +47,7 @@ import (
 	yamlvaultaire "vaultaire_client/yaml"
 
 	"vaultaire_client_windows/auth"
+	"vaultaire_client_windows/compte"
 	"vaultaire_client_windows/gpo"
 	"vaultaire_client_windows/version"
 )
@@ -101,6 +102,7 @@ func poserChemins(racine string) {
 	storage.KeyPath = filepath.Join(racine, "keys")
 	storage.SoftwarePath = filepath.Join(racine, "client_software.yaml")
 	storage.LogPath = filepath.Join(racine, "logs") + string(filepath.Separator)
+	compte.DossierSecrets = filepath.Join(racine, "comptes")
 	// Un nom PROPRE à ce binaire : l'agent Linux écrit vaultaire_client.log, et
 	// partager le nom rendrait une rétention par entité impossible le jour où
 	// les deux journaux se retrouvent dans un même dépôt de collecte.

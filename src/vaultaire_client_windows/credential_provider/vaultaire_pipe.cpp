@@ -239,6 +239,13 @@ Reponse Echanger(const std::string& requete, DWORD delai_ms) {
   std::string valeur;
   if (LireChaine(brut, "local_account", &valeur)) reponse.compte_local = DepuisUtf8(valeur);
   if (LireChaine(brut, "message", &valeur))       reponse.message = DepuisUtf8(valeur);
+  // Le secret du compte local (TO-DO 195). Lu, puis effacé des deux tampons
+  // étroits qui l'ont porté : la réponse brute et la valeur extraite.
+  if (LireChaine(brut, "local_password", &valeur)) {
+    reponse.mot_de_passe_local = DepuisUtf8(valeur);
+    SecureZeroMemory(&valeur[0], valeur.size());
+  }
+  SecureZeroMemory(&brut[0], brut.size());
   return reponse;
 }
 

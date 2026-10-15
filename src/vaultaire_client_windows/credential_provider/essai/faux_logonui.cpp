@@ -102,6 +102,10 @@ const DWORD kBorneImmediateMs = 2000;
 const wchar_t kUtilisateur[] = L"essai149@vaultaire.test";
 const wchar_t kMotDePasse[] = L"MotDePasse-Essai-149";
 const wchar_t kCode[] = L"314159";
+// Le secret du compte local que rend l'agent qui accepte (TO-DO 195) : c'est
+// lui qui doit être dans le bloc d'ouverture, et lui seul.
+const char kSecretLocal[] = "Secret-Local-195-AbCd2345#";
+const char kCompteLocal[] = "essai149-1a2b3c";
 
 int g_echecs = 0;
 int g_controles = 0;
@@ -239,12 +243,16 @@ class CEvenements : public ICredentialProviderCredentialEvents {
 
 // --- l'agent simulé -----------------------------------------------------------
 
-enum class Agent { kAbsent, kMuet, kRepondant };
+// kAcceptant et kAncien (TO-DO 195) : un agent qui accepte, avec et sans le
+// secret du compte local.
+enum class Agent { kAbsent, kMuet, kRepondant, kAcceptant, kAncien };
 
 const char* NomAgent(Agent a) {
   switch (a) {
     case Agent::kAbsent: return "absent";
     case Agent::kMuet: return "muet";
+    case Agent::kAcceptant: return "acceptant";
+    case Agent::kAncien: return "ancien (sans secret local)";
     default: return "repondant";
   }
 }
@@ -308,11 +316,19 @@ DWORD WINAPI FilDeLAgent(LPVOID parametre) {
     }
     s->requetes.push_back(requete);
 
-    const char* reponse = (requete.find("\"type\":\"auth\"") != std::string::npos)
-                              ? "{\"status\":\"failed\",\"message\":\"refus de l'essai\"}\n"
-                              : "{\"status\":\"success\",\"connected\":true}\n";
+    std::string reponse = "{\"status\":\"success\",\"connected\":true}\n";
+    if (requete.find("\"type\":\"auth\"") != std::string::npos) {
+      if (s->mode == Agent::kAcceptant) {
+        reponse = std::string("{\"status\":\"success\",\"local_account\":\"") + kCompteLocal +
+                  "\",\"local_password\":\"" + kSecretLocal + "\"}\n";
+      } else if (s->mode == Agent::kAncien) {
+        reponse = std::string("{\"status\":\"success\",\"local_account\":\"") + kCompteLocal + "\"}\n";
+      } else {
+        reponse = "{\"status\":\"failed\",\"message\":\"refus de l'essai\"}\n";
+      }
+    }
     DWORD ecrits = 0;
-    WriteFile(tube, reponse, (DWORD)strlen(reponse), &ecrits, nullptr);
+    WriteFile(tube, reponse.data(), (DWORD)reponse.size(), &ecrits, nullptr);
     FlushFileBuffers(tube);
     DisconnectNamedPipe(tube);
     CloseHandle(tube);
@@ -481,6 +497,18 @@ std::wstring Lire(ICredentialProviderCredential* t, DWORD champ, HRESULT* hr) {
   return copie;
 }
 
+// BlocContient cherche une chaîne large dans le bloc d'ouverture : le mot de
+// passe y est en clair (UTF-16), à un décalage relatif.
+bool BlocContient(const CREDENTIAL_PROVIDER_CREDENTIAL_SERIALIZATION& bloc, const std::wstring& aiguille) {
+  if (bloc.rgbSerialization == nullptr || aiguille.empty()) return false;
+  const size_t n = aiguille.size() * sizeof(wchar_t);
+  const BYTE* debut = bloc.rgbSerialization;
+  for (size_t i = 0; i + n <= bloc.cbSerialization; ++i) {
+    if (memcmp(debut + i, aiguille.data(), n) == 0) return true;
+  }
+  return false;
+}
+
 void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
   char titre[64];
   snprintf(titre, sizeof(titre), "tuile, agent %s", NomAgent(agent));
@@ -538,7 +566,7 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
   switch (agent) {
     case Agent::kAbsent:    attendu = L"Service Vaultaire arrêté sur ce poste."; break;
     case Agent::kMuet:      attendu = L"Le service Vaultaire de ce poste ne répond pas."; break;
-    case Agent::kRepondant: attendu = L"Raccordé au domaine."; break;
+    default:                attendu = L"Raccordé au domaine."; break;
   }
   Verifier(Egal(evenements.chaines[kChampMessage].c_str(), attendu),
            "message pousse a l'ecran : \"%s\"", Ascii(evenements.chaines[kChampMessage].c_str()).c_str());
@@ -614,7 +642,47 @@ void PhaseTuile(ICredentialProvider* f, Agent agent, Serveur* serveur) {
     Verifier(mdp.empty() && code.empty(), "mot de passe et code relus VIDES (jamais reaffiches)");
   }
 
-  if (agent != Agent::kMuet) {
+  if (agent == Agent::kAcceptant) {
+    // TO-DO 195 : le bloc porte le SECRET rendu par l'agent, jamais le mot de
+    // passe tapé — sans quoi le compte local porterait de nouveau un mot de
+    // passe connu de l'utilisateur, que la tuile Windows ouvre seule.
+    ZeroMemory(&bloc, sizeof(bloc));
+    reponse = CPGSR_NO_CREDENTIAL_NOT_FINISHED;
+    hr = t->GetSerialization(&reponse, &bloc, &texte, &icone);
+    Verifier(hr == S_OK && reponse == CPGSR_RETURN_CREDENTIAL_FINISHED && bloc.rgbSerialization != nullptr &&
+                 bloc.cbSerialization > 0,
+             "GetSerialization : acceptation, un bloc d'ouverture (reponse %d, %lu octets)", (int)reponse,
+             (unsigned long)bloc.cbSerialization);
+    std::wstring secret_large(kSecretLocal, kSecretLocal + strlen(kSecretLocal));
+    std::wstring compte_large(kCompteLocal, kCompteLocal + strlen(kCompteLocal));
+    Verifier(BlocContient(bloc, secret_large), "le bloc porte le secret du compte local rendu par l'agent");
+    Verifier(!BlocContient(bloc, kMotDePasse), "le bloc ne porte PAS le mot de passe tape");
+    Verifier(BlocContient(bloc, compte_large), "le bloc est au nom du compte local");
+    CoTaskMemFree(texte);
+    texte = nullptr;
+    if (bloc.rgbSerialization != nullptr) {
+      SecureZeroMemory(bloc.rgbSerialization, bloc.cbSerialization);
+      CoTaskMemFree(bloc.rgbSerialization);
+    }
+  }
+
+  if (agent == Agent::kAncien) {
+    // Un agent d'avant le 195 accepte sans secret : la tuile refuse, plutôt
+    // que de sérialiser le mot de passe tapé.
+    ZeroMemory(&bloc, sizeof(bloc));
+    reponse = CPGSR_RETURN_CREDENTIAL_FINISHED;
+    hr = t->GetSerialization(&reponse, &bloc, &texte, &icone);
+    Verifier(hr == S_OK && reponse == CPGSR_NO_CREDENTIAL_NOT_FINISHED && icone == CPSI_ERROR &&
+                 bloc.rgbSerialization == nullptr,
+             "GetSerialization, agent sans secret local : refus, aucun bloc (reponse %d)", (int)reponse);
+    Verifier(texte != nullptr && wcsstr(texte, L"trop ancien") != nullptr, "texte du refus : \"%s\"",
+             Ascii(texte).c_str());
+    CoTaskMemFree(texte);
+    texte = nullptr;
+    CoTaskMemFree(bloc.rgbSerialization);
+  }
+
+  if (agent == Agent::kAbsent || agent == Agent::kRepondant) {
     // La soumission : l'agent absent ou refusant doit donner un refus NOMMÉ,
     // sans bloc d'ouverture de session.
     ZeroMemory(&bloc, sizeof(bloc));
@@ -711,6 +779,8 @@ int main(int argc, char** argv) {
   PhaseTuile(f, Agent::kAbsent, &serveur);
   PhaseTuile(f, Agent::kMuet, &serveur);
   PhaseTuile(f, Agent::kRepondant, &serveur);
+  PhaseTuile(f, Agent::kAcceptant, &serveur);
+  PhaseTuile(f, Agent::kAncien, &serveur);
 
   Section("liberation");
   ULONG restantes = f->Release();

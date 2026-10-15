@@ -96,3 +96,19 @@ func TestUnRefusNeDetaillePasLeMotif(t *testing.T) {
 		t.Errorf("réponse de refus %q : elle porte des champs de succès", tampon.String())
 	}
 }
+
+// Le secret du compte local (TO-DO 195) n'est écrit que s'il y en a un : une
+// réponse d'état ou de refus ne porte pas de champ vide qu'un lecteur pourrait
+// prendre pour un mot de passe.
+func TestLeSecretLocalNEstEcritQueSurUnSucces(t *testing.T) {
+	var b bytes.Buffer
+	_ = EcrireReponse(&b, Reponse{Statut: StatutRefus, Message: "identifiants refusés"})
+	if strings.Contains(b.String(), "local_password") {
+		t.Errorf("refus avec un champ local_password : %s", b.String())
+	}
+	b.Reset()
+	_ = EcrireReponse(&b, Reponse{Statut: StatutSucces, CompteLocal: "alice-1f4b2c", MotDePasseLocal: "S3cret-local"})
+	if !strings.Contains(b.String(), `"local_password":"S3cret-local"`) {
+		t.Errorf("succès sans le secret : %s", b.String())
+	}
+}
