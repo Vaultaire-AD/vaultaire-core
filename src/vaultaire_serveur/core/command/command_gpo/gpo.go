@@ -33,9 +33,12 @@ import (
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
 	"vaultaire/core/command/display"
+	"vaultaire/core/database"
 	dbgpo "vaultaire/core/database/db_gpo"
+	dbsessions "vaultaire/core/database/db_sessions"
 	"vaultaire/core/reglages"
 	gpomanager "vaultaire/ducky-network/gpo_manager"
+	"vaultaire/ducky-network/sessionmgr"
 )
 
 // GPO_Command traite `vlt gpo ...`.
@@ -215,7 +218,9 @@ func rafraichir(appelant action.Appelant, args []string) string {
 // La boucle n'est plus ici : elle est dans action.RafraichirMachines, que le
 // portail emprunte aussi (TO-DO 169).
 func rafraichirParc(appelant action.Appelant) string {
-	machines := gpomanager.MachinesEnLigne()
+	// Tout le CLUSTER, et pas seulement ce core (TO-DO 172) : les machines d'un
+	// autre core reçoivent leur demande par la base.
+	machines := gpomanager.MachinesDuCluster(machinesConnecteesEnBase)
 	if len(machines) == 0 {
 		return "Aucune machine connectée : il n'y a personne à qui demander un rafraîchissement."
 	}
@@ -547,4 +552,20 @@ le réglage « ` + reglages.CleRafraichissementGPO + ` », donc trois fois ` +
 redémarrage ou une maintenance en coûtent un et ne remontent pas.
 
 Le tri place devant ce dont on ne sait rien, puis les échecs, puis les écarts.`
+}
+
+// machinesConnecteesEnBase lit les tunnels MACHINE ouverts sur tout le cluster
+// (did_login, compte « vaultaire »). Variable pour les tests.
+var machinesConnecteesEnBase = func() ([]string, error) {
+	clients, err := dbsessions.Command_STATUS_GetClientsConnected(database.GetDatabase())
+	if err != nil {
+		return nil, err
+	}
+	var ids []string
+	for _, c := range clients {
+		if c.Username == sessionmgr.CompteMachine {
+			ids = append(ids, c.ComputeurID)
+		}
+	}
+	return ids, nil
 }

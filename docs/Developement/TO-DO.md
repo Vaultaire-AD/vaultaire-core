@@ -29,7 +29,6 @@ Trois gestes, dans le même passage que le code :
 | 177 | CLUSTER      | Un core en maintenance accepte encore les connexions        | À faire — à trancher                    |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
-| 172 | GPO          | « Demander un cycle » n'atteint que les machines de ce core | À faire — à vérifier sur un cluster     |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
@@ -323,27 +322,6 @@ grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit
    l'agent — à comprendre, pas à accorder. `/etc/selinux/config` reste refusé.
 3. Quand une collecte complète ne rend plus rien : `install.sh
    --agent-enforcing`, puis la même suite, en enforcing.
-
-### 172. [GPO] [CLUSTER] « Demander un cycle » n'atteint que les machines de ce core
-
-**Constat** (relevé en traitant le **169**, **non vérifié** faute de cluster sur
-le banc). `gpo.refresh` pousse la trame `05_18` par le registre des sessions du
-core qui exécute l'action. Sur un cluster, une machine connectée à un **autre**
-core y est inconnue : `vlt gpo refresh --all` ne la compte pas, et le bouton
-« Demander un cycle » d'une GPO la range parmi les « hors ligne ou non
-jointes ». Le bilan est donc juste — elle n'a pas été jointe — mais le motif
-annoncé (« elles rafraîchiront à leur reconnexion ») ne l'est pas : elle est en
-ligne, ailleurs.
-
-Le rejeu des révocations (**49**) a le même découpage et le résout par la base
-commune : chaque core sert ses machines. Rien d'équivalent n'existe pour une
-demande de cycle, qui n'est écrite nulle part.
-
-**À faire.** D'abord **vérifier** sur un cluster à deux cores. Si c'est
-confirmé : soit le dire dans le bilan (« N machine(s) sont peut-être tenues par
-un autre core »), soit faire porter la demande par la base — une ligne que le
-core qui tient la machine relève, comme pour les relais d'un proxy (**141**).
-
 
 ---
 
