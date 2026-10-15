@@ -68,6 +68,8 @@ cluster purge <nœud> [--etalement <s>]
    vlt get -c <computeur_id-web01> --targets   # le proxy a disparu de la liste
    vlt cluster list                            # ÉTAT « online · maint. »
    vlt cluster maintenance <nœud-core> on      # refusé : c'est le dernier core
+   vlt cluster purge <nœud-proxy>              # les cores ferment ce qu'il relaie
+   vlt cluster show <nœud-proxy>               # purge terminée, sessions fermées
    vlt cluster maintenance <nœud-proxy> off
    ```
 
@@ -78,6 +80,9 @@ cluster purge <nœud> [--etalement <s>]
    purge <nœud-core>` viderait ensuite le core en maintenance de ses sessions :
    chaque poste redemande sa liste et part de lui-même, le reste est fermé, étalé
    sur une minute.
+   Le proxy en maintenance, lui, se purge : ce sont les **cores** qui ferment les sessions arrivées par lui — `web01`
+   reçoit l'ordre de redemander sa liste, n'y trouve plus le proxy et repasse par
+   un core. Le proxy, lui, reste connecté : il bat toujours.
    Un core en maintenance **accepte** encore les connexions : un agent qui ne
    connaît que son fichier peut y revenir. C'est voulu — si les autres cores
    tombaient pendant la maintenance, il resterait le dernier recours.
@@ -89,6 +94,8 @@ cluster purge <nœud> [--etalement <s>]
   de moins d'une minute ;
 - en maintenance, le proxy disparaît de `--targets` et y revient au `off` ; la
   maintenance du core est **refusée** sans `--confirm`.
+- après `cluster purge <nœud-proxy>`, `cluster show <nœud-proxy>` dit la purge
+  terminée, et `web01` est compté par un core et plus par le proxy.
 
 ## 🧪 Exercice
 

@@ -622,6 +622,14 @@ func handleHostHeartbeat(db *sql.DB, tramesContent storage.Trames_struct_client,
 			" non enregistré dans cluster_nodes — refus renvoyé, il doit rejouer 04_01")
 		return RefusBattement(tramesContent, MotifBattementInconnu), nil
 	}
+	// L'adresse source vue (TO-DO 176) : pour un proxy, c'est aussi celle des
+	// sessions qu'il relaie, et c'est par elle que les cores les retrouvent
+	// quand on le purge. Un échec n'empêche pas l'accusé : le battement est passé.
+	if duckysession.Conn != nil {
+		if err := clusterdatabase.NoterAdresseVue(db, proprietaire, duckysession.Conn.RemoteAddr().String()); err != nil {
+			logs.Write_Log("WARNING", "heartbeat: adresse vue de "+proprietaire+" non notée : "+err.Error())
+		}
+	}
 	return trame.ReponseClient("04_08",
 		tramesContent.Destination_Server, tramesContent.SessionIntegritykey, "ack"), nil
 }

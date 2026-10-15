@@ -1,9 +1,13 @@
 package cluster
 
 import (
+	"database/sql"
 	"fmt"
 	"testing"
 	"time"
+
+	clusterdatabase "vaultaire/cluster/cluster_database"
+	clusterstorage "vaultaire/cluster/cluster_storage"
 )
 
 // La purge d'un core en maintenance (TO-DO 147), sans réseau ni horloge.
@@ -130,5 +134,60 @@ func TestUneSessionPartieSeuleNEstPasComptee(t *testing.T) {
 	b := p.purger(time.Minute, "x")
 	if b.Fermees != 1 {
 		t.Fatalf("fermées = %d, attendu 1 : les deux autres sont parties seules", b.Fermees)
+	}
+}
+
+// --- part d'un core dans la purge d'un proxy (TO-DO 176) ---------------------------
+
+func TestChaqueCoreNeFaitQuUneFoisSaPartDUnePurgeDeProxy(t *testing.T) {
+	demandee := time.Date(2026, 10, 15, 10, 0, 0, 0, time.UTC)
+	p := clusterdatabase.PurgeDeProxy{Hostname: "proxy-t176", Proprietaire: "owner-t176",
+		Adresses: []string{"172.18.0.4"}, Demandee: demandee, Etalement: time.Second}
+
+	l, te, vu, ex := lirePurgesDeProxies, terminerPart, vueDuProxy, executerPart
+	t.Cleanup(func() { lirePurgesDeProxies, terminerPart, vueDuProxy, executerPart = l, te, vu, ex })
+
+	lirePurgesDeProxies = func(*sql.DB) ([]clusterdatabase.PurgeDeProxy, error) {
+		return []clusterdatabase.PurgeDeProxy{p}, nil
+	}
+	var parts []int
+	terminerPart = func(_ *sql.DB, h string, d time.Time, n int) error {
+		if h != p.Hostname || !d.Equal(demandee) {
+			t.Errorf("part écrite pour %s / %v", h, d)
+		}
+		parts = append(parts, n)
+		return nil
+	}
+	lancees := 0
+	vueDuProxy = func(clusterdatabase.PurgeDeProxy) registrePurge {
+		lancees++
+		return &registreSimule{ouvertes: map[string]bool{"a1": true, "a2": true}}
+	}
+	// Exécution synchrone, et sans 04_17 réelle : le registre simulé n'a pas
+	// de machine, donc ni prévenir ni grâce.
+	executerPart = func(f func()) { f() }
+
+	node := clusterstorage.Node{Hostname: "core-1"}
+	lancerPurgesDeProxies(nil, node)
+	lancerPurgesDeProxies(nil, node) // battement suivant : même demande
+	if lancees != 1 || len(parts) != 1 || parts[0] != 2 {
+		t.Fatalf("parts : %d lancée(s), écrites %v — attendu une seule, de 2", lancees, parts)
+	}
+
+	// Une NOUVELLE demande sur le même proxy est faite.
+	p.Demandee = demandee.Add(time.Minute)
+	demandee = p.Demandee
+	lancerPurgesDeProxies(nil, node)
+	if lancees != 2 {
+		t.Errorf("une nouvelle demande n'a pas été exécutée")
+	}
+}
+
+func TestUnePartDejaEnCoursNEstPasRelancee(t *testing.T) {
+	p := clusterdatabase.PurgeDeProxy{Hostname: "proxy-encours", Demandee: time.Now()}
+	partsEnCours.Store(p.Hostname, true)
+	t.Cleanup(func() { partsEnCours.Delete(p.Hostname) })
+	if aFaire(p) {
+		t.Error("une part déjà en cours a été relancée")
 	}
 }

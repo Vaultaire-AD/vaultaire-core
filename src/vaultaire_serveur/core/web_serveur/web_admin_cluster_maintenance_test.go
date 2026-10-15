@@ -45,14 +45,27 @@ func TestUnCoreEnMaintenanceProposeLaPurgeEtDitOuEnEstLaPurge(t *testing.T) {
 	}
 }
 
-// Un proxy en maintenance ne propose pas de purge : seul un core en fait.
-func TestUnProxyEnMaintenanceNeProposePasDePurge(t *testing.T) {
+// Un proxy en maintenance propose la purge des sessions qu'il relaie (TO-DO 176).
+func TestUnProxyEnMaintenanceProposeLaPurgeDesSessionsRelayees(t *testing.T) {
 	n := coreEnService()
 	n.Role, n.Hostname = "proxy", "proxy-1"
 	n.Maintenance = &clusterstorage.EtatMaintenance{Active: true, Depuis: time.Now()}
 	html := rendreLaPageCluster(t, donneesCluster{Username: "alice", Nodes: []clusterstorage.Node{n}, Selection: &n})
+	for _, attendu := range []string{`value="purge_node"`, "Purger les sessions relayées", "NAT"} {
+		if !strings.Contains(html, attendu) {
+			t.Errorf("page du proxy sans %q", attendu)
+		}
+	}
+}
+
+// Un service en maintenance, lui, n'en propose pas : il ne relaie rien.
+func TestUnServiceEnMaintenanceNeProposePasDePurge(t *testing.T) {
+	n := coreEnService()
+	n.Role, n.Hostname = "vaultaire_nexus", "nexus-1"
+	n.Maintenance = &clusterstorage.EtatMaintenance{Active: true, Depuis: time.Now()}
+	html := rendreLaPageCluster(t, donneesCluster{Username: "alice", Nodes: []clusterstorage.Node{n}, Selection: &n})
 	if strings.Contains(html, `value="purge_node"`) {
-		t.Error("un proxy propose une purge")
+		t.Error("un service propose une purge")
 	}
 }
 
