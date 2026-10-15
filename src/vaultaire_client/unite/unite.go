@@ -131,17 +131,23 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 // vérifie qu'aucune n'est dans le gabarit ; les ajouter demande de lever la
 // raison d'abord.
 var Exclues = map[string]string{
-	"ProtectSystem":          "les GPO écrivent dans /etc (sshd, sudoers, dépôts, journald…) et /boot (grub2-mkconfig)",
-	"ProtectHome":            "l'agent crée les dossiers personnels et y applique le scope utilisateur",
-	"NoNewPrivileges":        "elle interdit les transitions SELinux de l'agent (vers useradd_t, setfiles_t — TO-DO 22)",
-	"ProtectKernelTunables":  "le module sysctl règle /proc/sys (sysctl -p), setenforce écrit dans /sys/fs/selinux",
-	"ProtectKernelModules":   "le durcissement décharge des modules (modprobe -r)",
-	"ProtectClock":           "elle pose une liste de périphériques autorisés, que les commandes des GPO n'ont jamais été éprouvées sous",
-	"PrivateTmp":             "l'ancien tube PAM vit dans /tmp (pamstate.LegacySocketPath) : sshd ne le verrait plus",
+	"ProtectSystem":         "les GPO écrivent dans /etc (sshd, sudoers, dépôts, journald…) et /boot (grub2-mkconfig)",
+	"ProtectHome":           "l'agent crée les dossiers personnels et y applique le scope utilisateur",
+	"NoNewPrivileges":       "elle interdit les transitions SELinux de l'agent (vers useradd_t, setfiles_t — TO-DO 22)",
+	"ProtectKernelTunables": "le module sysctl règle /proc/sys (sysctl -p), setenforce écrit dans /sys/fs/selinux",
+	"ProtectKernelModules":  "le durcissement décharge des modules (modprobe -r)",
+	"ProtectClock":          "elle pose une liste de périphériques autorisés, que les commandes des GPO n'ont jamais été éprouvées sous",
+	// TO-DO 181 : la raison d'avant — « l'ancien tube PAM vit dans /tmp » —
+	// ne tenait plus. L'agent n'y écoute plus depuis longtemps ; il ne fait que
+	// RETIRER au démarrage un ancien tube laissé là. La vraie raison est ailleurs.
+	"PrivateTmp": "un /tmp et un /var/tmp privés : la purge file_retention d'une GPO machine, permise sur ces deux " +
+		"dossiers, viderait ceux de l'agent et pas ceux du système — sans erreur. Et le retrait de l'ancien " +
+		"tube PAM de /tmp (pamstate.LegacySocketPath) ne verrait plus le vrai /tmp",
 	"PrivateDevices":         "même raison que ProtectClock, et grub2-mkconfig lit les disques",
 	"MemoryDenyWriteExecute": "elle vaut aussi pour les commandes lancées, dont certaines (interpréteurs) écrivent du code exécutable",
 	"ProtectHostname":        "un espace de noms UTS privé : un nom de machine posé par une commande ne vaudrait que pour l'agent",
-	"SystemCallFilter":       "useradd, chage, setfacl, auditctl… : un filtre demande de relever leurs appels système sur un poste",
+	"SystemCallFilter": "useradd, chage, setfacl, auditctl… : un filtre demande de relever leurs appels système sur " +
+		"un poste — automatisation/releve-appels-agent.sh (TO-DO 181), puis TO-DO 201",
 }
 
 // Environnement réunit ce dont l'installation dépend. Des fonctions, pour qu'un
