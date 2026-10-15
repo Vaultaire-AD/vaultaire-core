@@ -243,7 +243,7 @@ orphelines="$(awk '
 # Rien de ce qui a été tapé ne doit être écrit (vaultaire_trace.h, « Ce qui n'y
 # entre JAMAIS »). Valeurs tenues en accord avec essai/faux_logonui.cpp.
 fuite=0
-for secret in "MotDePasse-Essai-149" "314159"; do
+for secret in "MotDePasse-Essai-149" "314159" "Secret-Local-195"; do
     if grep -q -- "$secret" "$JOURNAL"; then
         echec "journal : la valeur tapée « $secret » y figure"
         fuite=1

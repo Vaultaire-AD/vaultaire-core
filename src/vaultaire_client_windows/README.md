@@ -22,13 +22,14 @@ de passe. Rien d'autre, volontairement.
 | ✅ | enrôlement, tunnel Ducky, battement, versions déclarées |
 | ✅ | **inventaire système** : nom et build de Windows, mémoire, processeurs, sessions ouvertes — par les API, jamais par `wmic` ou `systeminfo`, dont la sortie est traduite |
 | ✅ | **authentification par mot de passe** d'un compte du domaine |
-| ✅ | **provisionnement** du compte Windows local correspondant (création, mot de passe aligné, groupes Utilisateurs / Administrateurs) |
+| ✅ | **provisionnement** du compte Windows local correspondant (création, secret de l'agent comme mot de passe, groupes Utilisateurs / Administrateurs) — voir « Le compte local » |
+| ✅ | **second facteur** : le code TOTP de la tuile (`0000` pour un compte qui n'en a pas), vérifié par le core |
 | ✅ | **liste des cores et proxies** : découverte `04_04`, ordre servi (affinité, priorité), persistance dans `client_conf.json`, repli sur la configuration |
 | ✅ | tuile Vaultaire à l'écran de connexion (Credential Provider) |
 | ⏸ | **GPO** : trames reçues et journalisées, **jamais appliquées** |
 | ⏸ | **révocations** : reçues et **non appliquées** — un compte révoqué ne pourra plus s'authentifier, mais sa session en cours n'est pas fermée. L'agent répond « non pris en charge » (`06_03 unsupported`), que `kill -u <compte> --status` affiche tel quel, et le core cesse de lui remettre l'ordre *(TO-DO 167)* |
 | ❌ | SSH, clés publiques, groupes du domaine : pas de `sshd` ici |
-| ❌ | second facteur, changement de mot de passe depuis l'écran de connexion |
+| ❌ | changement de mot de passe depuis l'écran de connexion (il se change dans le portail) |
 
 ## Pourquoi deux composants, et pourquoi un tube nommé
 
@@ -63,7 +64,7 @@ Windows n'ouvre de session qu'avec une identité qu'il connaît. Vaultaire n'est
 pas un domaine Active Directory, et le devenir demanderait de parler Kerberos et
 LDAP comme un contrôleur de domaine. La V1 prend donc le chemin des
 fournisseurs d'identité tiers : **le core valide le mot de passe, l'agent crée
-un compte local qui le porte**, et Windows ouvre une session ordinaire.
+un compte local**, et Windows ouvre une session ordinaire.
 
 Le nom du compte local est déterministe et distinct :
 
@@ -77,13 +78,41 @@ de Windows, sépare deux domaines homonymes, et surtout **ne reprend jamais un
 compte local existant** — écrire le mot de passe du domaine dans le compte
 `alice` d'un poste serait une prise de contrôle, pas un provisionnement.
 
-Conséquences assumées en V1 :
+### Son mot de passe : un secret de l'agent *(TO-DO 195)*
 
-- le mot de passe local est **réaligné à chaque connexion réussie** : changer son
-  mot de passe dans le portail suffit, la connexion suivante suit ;
-- un compte dont l'utilisateur ne se connecte plus **garde son dernier mot de
-  passe**. Une révocation côté core empêche la prochaine authentification, pas
-  l'usage d'un mot de passe déjà connu.
+Jusqu'au 195, le compte local portait le **mot de passe du domaine**. Après une
+première connexion, Windows proposait la tuile de ce compte avec son propre
+fournisseur — à l'ouverture comme au **déverrouillage** — et la vérifiait seul :
+ni le core, ni le code TOTP. Le second facteur était contourné par la tuile d'à
+côté.
+
+Désormais :
+
+- le compte porte un **secret de 32 caractères** tiré par l'agent, que personne ne
+  tape et que l'utilisateur ne connaît pas. L'agent le garde, chiffré par DPAPI
+  pour la machine, dans `C:\ProgramData\Vaultaire\comptes\<compte>.secret` ;
+- après l'accord du core, l'agent le rend à la tuile Vaultaire par le tube, et
+  c'est **lui** que la tuile met dans le bloc d'ouverture de session. Le mot de
+  passe tapé n'a servi qu'au core ;
+- la tuile Windows du compte demande donc un mot de passe que personne n'a : on
+  entre **par la tuile Vaultaire**, mot de passe et code compris, déverrouillage
+  compris ;
+- l'utilisateur **ne peut pas changer** le mot de passe local (drapeau du compte),
+  et le compte est **masqué** de la liste de l'écran d'accueil
+  (`SpecialAccounts\UserList`). La tuile d'une session verrouillée reste
+  affichée par Windows : elle ne l'ouvre pas ;
+- les comptes locaux d'administration ne sont pas touchés : pas de filtre sur le
+  fournisseur de Microsoft, qui fermerait le poste à son issue de secours.
+
+Le secret **ne change pas** à chaque connexion : Windows protège les secrets d'un
+compte (mots de passe enregistrés des navigateurs, gestionnaire d'identifiants)
+par son mot de passe, et une remise à zéro les rend illisibles. Il n'est reposé
+que s'il n'ouvre plus le compte — compte d'avant le 195 (une fois, à la première
+connexion après la mise à jour), mot de passe changé par un administrateur,
+secret perdu. Le journal de l'agent le dit chaque fois.
+
+Une révocation côté core empêche réellement la connexion suivante : personne
+d'autre que l'agent ne connaît le mot de passe du compte.
 
 ## Compiler
 
@@ -224,29 +253,15 @@ manière de faire respecter la norme.
 
 ## Le mot de passe local, et la politique du poste
 
-Le compte local porte **le mot de passe du domaine**, et il n'y a pas le choix :
-c'est celui que la personne tape à l'écran de connexion, et c'est Windows qui le
-vérifie contre le compte local. En poser un autre rendrait la connexion
-impossible.
+Avant le TO-DO 195, le compte local portait le mot de passe du domaine, et une
+politique locale plus stricte que celle du domaine faisait refuser le compte
+(`NetUserAdd`, code **2245**) ; `install.ps1` proposait de l'assouplir.
 
-Conséquence : si la politique de mot de passe **du poste** est plus stricte que
-celle du domaine, `NetUserAdd` refuse la création avec le code **2245**
-(`NERR_PasswordTooShort`) — dont le nom ment, puisque Windows le rend aussi pour
-un refus de complexité ou un mot de passe encore dans l'historique. Le paramètre
-fautif vaut alors `0xFFFFFFFF`, c'est-à-dire « je ne sais pas lequel ».
-
-C'est le symptôme observé en recette : `-etat` répond, `-u … -check` répond
-`success` — il ne crée aucun compte — et `-u …` échoue.
-
-`install.ps1` affiche la politique locale et **propose** de l'aligner : longueur
-minimale à 0, historique à 0, complexité désactivée (`net accounts`, puis
-`secedit` pour la complexité, qui n'est pas exposée autrement). Rien n'est
-assoupli sans accord : c'est une politique de sécurité du poste, et la robustesse
-devient alors celle de la politique de **domaine** — qui est ce qui protège
-réellement le compte.
-
-> Sur une machine jointe à un Active Directory, une stratégie de domaine écrase
-> la politique locale à chaque actualisation : il faut la régler côté AD.
+Le secret de l'agent fait 32 caractères, les quatre familles présentes : toute
+politique ordinaire l'accepte, et `install.ps1` n'assouplit plus rien. Un code
+2245 vient donc d'une politique inhabituelle (longueur exigée au-delà de 32,
+filtre de mots de passe tiers) ; le message de l'agent le dit. Un poste assoupli
+par une version précédente le reste : `secpol.msc` pour le revoir.
 
 ## Où vivent les choses
 
@@ -255,6 +270,7 @@ réellement le compte.
 | `C:\ProgramData\Vaultaire\client_conf.json` | cores déclarés (`servers`) et appris (`learned`) |
 | `C:\ProgramData\Vaultaire\client_software.yaml` | identité de la machine, créée par le core |
 | `C:\ProgramData\Vaultaire\keys\` | clé privée, clé du core, empreintes de confiance |
+| `C:\ProgramData\Vaultaire\comptes\` | le secret de chaque compte local, chiffré par DPAPI (TO-DO 195) — le perdre fait reposer le mot de passe du compte à la connexion suivante |
 | `C:\ProgramData\Vaultaire\logs\vaultaire_client_windows.log` | journal de l'agent |
 | `C:\ProgramData\Vaultaire\logs\credential_provider.log` | journal de la DLL (écran de connexion) |
 | `C:\ProgramData\Vaultaire\logs\credential_provider.trace` | témoin, **absent** en temps normal : sa présence allume la trace de la DLL (voir Diagnostic) |
@@ -270,6 +286,8 @@ réellement le compte.
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` ; le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu, ou `servers` faux dans `client_conf.json` |
 | Refus alors que le mot de passe est bon | le compte a-t-il le droit sur cette machine ? le motif exact est dans le journal du **core** |
+| La tuile Windows du compte refuse le mot de passe du domaine | attendu depuis le TO-DO 195 : le compte porte un secret de l'agent. Passer par la tuile Vaultaire (« Autre utilisateur » ou « Options de connexion ») |
+| « Le service Vaultaire de ce poste est trop ancien pour cette tuile » | DLL mise à jour, agent pas encore : il ne rend pas le secret du compte local. Mettre à jour l'agent (`install.ps1`) |
 | Mot de passe accepté, session refusée par Windows | compte local non inscrit dans Utilisateurs, ou stratégie « Interdire l'ouverture de session locale » |
 | Le compte local existe mais le profil est vide | deux comptes ont été créés : vérifiez que l'identifiant est tapé de la même façon (le nom local est déterministe, voir plus haut) |
 

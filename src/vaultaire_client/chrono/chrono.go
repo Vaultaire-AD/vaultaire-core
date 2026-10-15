@@ -30,7 +30,6 @@ import (
 	"path/filepath"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"duckynetworkclient/V1/duckynetwork/storage"
@@ -83,7 +82,7 @@ func Ecrire(format string, args ...any) {
 		_ = os.Rename(c, c+".1")
 	}
 	// 0600, comme les autres journaux de l'agent : il nomme des comptes.
-	f, err := os.OpenFile(c, os.O_WRONLY|os.O_CREATE|os.O_APPEND|syscall.O_NOFOLLOW, 0o600)
+	f, err := os.OpenFile(c, os.O_WRONLY|os.O_CREATE|os.O_APPEND|sansLien, 0o600)
 	if err != nil {
 		return
 	}

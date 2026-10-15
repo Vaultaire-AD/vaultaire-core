@@ -24,7 +24,6 @@ Trois gestes, dans le même passage que le code :
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 195 | WINDOWS      | Après la première connexion, le CP Vaultaire n'est plus proposé : plus de TOTP | À faire — **critique**, recette du 12/10 |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
@@ -139,27 +138,6 @@ sur le poste distant, comme à la console. Relever avec le témoin de trace quel
 scénario `SetUsageScenario` reçoit, et ce que rend `GetSerialization`.
 Vérifier aussi que le compte local créé par l'agent est dans « Utilisateurs du
 Bureau à distance ».
-
-### 195. [WINDOWS] [SÉCURITÉ] Après la première connexion, le CP Vaultaire n'est plus proposé
-
-**Constat** (recette du 12/10, `A_TESTER.md`). Une fois la première connexion faite par Vaultaire,
-les suivantes ne passent plus par le Credential Provider : Windows propose la
-tuile du **compte local** et son mot de passe, et le code TOTP n'est plus
-demandé. **Le second facteur est contourné** — c'est le plus grave des
-constats Windows.
-
-**À faire.**
-
-1. Établir le chemin : tuile du compte local créée par l'agent (fournisseur
-   mot de passe de Microsoft), ou dernier utilisateur connecté qui préempte la
-   tuile Vaultaire.
-2. Le mot de passe du compte local ne doit pas suffire : soit il est aléatoire
-   et inconnu de l'utilisateur (le CP le pose au moment de la sérialisation),
-   soit le fournisseur mot de passe de Microsoft est filtré
-   (`ICredentialProviderFilter`) pour les comptes du domaine.
-3. Garder une issue pour les comptes locaux d'administration : un filtre trop
-   large ferme le poste.
-
 
 ---
 

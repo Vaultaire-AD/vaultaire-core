@@ -9,16 +9,14 @@
 // parler Kerberos et LDAP comme un contrôleur de domaine — un autre projet.
 //
 // La V1 prend donc le chemin qu'utilisent les fournisseurs d'identité tiers :
-// le core vérifie le mot de passe, et l'agent CRÉE (ou met à jour) un compte
-// local portant ce même mot de passe. Windows ouvre ensuite une session
-// ordinaire avec ce compte. Le mot de passe local reste ainsi le miroir de
-// celui du domaine, changé à chaque connexion réussie.
+// le core vérifie le mot de passe, et l'agent CRÉE un compte local. Windows
+// ouvre ensuite une session ordinaire avec ce compte.
 //
-// Ce que cela implique, et qui est assumé en V1 : le mot de passe d'un compte
-// dont l'utilisateur ne se connecte plus reste celui de sa dernière connexion.
-// Une révocation côté core n'efface pas le compte local — elle empêche la
-// PROCHAINE authentification, pas l'usage d'un mot de passe déjà connu. Le
-// traitement des révocations sur Windows viendra avec les GPO.
+// Ce compte porte un SECRET de l'agent, et non le mot de passe du domaine
+// (TO-DO 195, voir motdepasse.go) : sans quoi la tuile Windows du compte
+// l'ouvrait seule, sans core ni second facteur. Une révocation côté core
+// empêche donc vraiment la connexion suivante : personne d'autre que l'agent
+// ne connaît le mot de passe du compte.
 package compte
 
 import (

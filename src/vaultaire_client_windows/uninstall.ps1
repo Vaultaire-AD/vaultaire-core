@@ -130,6 +130,18 @@ if ($comptes) {
     Info ""
     Info "$($comptes.Count) compte(s) local(aux) créé(s) par Vaultaire, CONSERVÉ(S) :"
     $comptes | ForEach-Object { Info "  $($_.Name)" }
-    Info "  Ils gardent leur profil et leur dernier mot de passe connu."
+    Info "  Ils gardent leur profil. Leur mot de passe est un secret de l'agent, que"
+    Info "  personne ne connaît (TO-DO 195) : sans Vaultaire, un administrateur doit leur"
+    Info "  en poser un pour qu'ils resservent — net user <nom> *"
     Info "  Pour en retirer un : Remove-LocalUser -Name <nom>"
+
+    # L'agent les masquait de l'écran d'accueil (SpecialAccounts\UserList) :
+    # sans la tuile Vaultaire, ils doivent y revenir.
+    $masques = "HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon\SpecialAccounts\UserList"
+    if (Test-Path $masques) {
+        $comptes | ForEach-Object {
+            Remove-ItemProperty -Path $masques -Name $_.Name -ErrorAction SilentlyContinue
+        }
+        Info "  ils sont de nouveau proposés sur l'écran d'accueil"
+    }
 }
