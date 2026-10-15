@@ -21,9 +21,9 @@ func rafraichissementDEssai(t *testing.T, parc map[string]string) *[]Params {
 		appels = append(appels, p)
 		switch parc[p.Get("computeur_id")] {
 		case "jointe":
-			return Resultat{Donnees: true}, nil
+			return Resultat{Donnees: IssueCycle{Remise: true}}, nil
 		case "hors-ligne":
-			return Resultat{Donnees: false}, nil
+			return Resultat{Donnees: IssueCycle{}}, nil
 		default:
 			return Resultat{}, errors.New("permission refusée")
 		}

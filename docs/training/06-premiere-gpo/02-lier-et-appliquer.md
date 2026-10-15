@@ -28,6 +28,11 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
    portail. (Relancer l'agent sur `web01` — `systemctl restart
    vaultaire_client` — fait la même chose pour cette machine.)
 
+   Sur un cluster de plusieurs cores, la demande atteint aussi les machines
+   connectées à un **autre** core : le bilan les compte à part (« dont N par un
+   autre core du cluster »). Une machine dite « hors ligne » l'est alors sur
+   tout le cluster.
+
 3. Vérifiez côté machine :
 
    ```bash
@@ -59,7 +64,9 @@ a quelque chose à y lire ; tous sont dans `vlt gpo status <computeur_id>`.
 ## ✅ Vous avez réussi si
 
 - une nouvelle connexion SSH à `web01` affiche la bannière ;
-- `gpo status` montre `web01` à jour et appliquée.
+- `gpo status` montre `web01` à jour et appliquée ;
+- le bilan de `vlt gpo refresh --gpo ssh-baseline` compte `web01` parmi les
+  machines jointes.
 
 ## 🧪 Exercice
 

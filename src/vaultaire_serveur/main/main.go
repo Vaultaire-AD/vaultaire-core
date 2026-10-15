@@ -34,6 +34,7 @@ import (
 	webserveur "vaultaire/core/web_serveur"
 	duckynetwork "vaultaire/ducky-network"
 	authclient "vaultaire/ducky-network/authentification/client"
+	gpomanager "vaultaire/ducky-network/gpo_manager"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
@@ -313,6 +314,10 @@ func main() {
 
 	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
+
+	// Les demandes de cycle relayées par un autre core (TO-DO 172) : celles des
+	// machines dont CE core tient le tunnel lui reviennent.
+	gpomanager.DemarrerRelaisDesCycles(db.GetDatabase())
 
 	// Rejeu des ordres de révocation non acquittés (TO-DO 49).
 	//

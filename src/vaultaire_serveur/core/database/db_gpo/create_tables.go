@@ -19,7 +19,8 @@ func CreateTables(db *sql.DB) error {
 
 	// Le suivi de conformité est créé avec le reste : une table absente ne se
 	// verrait qu'au premier rapport d'un agent, c'est-à-dire en production.
-	for _, ddl := range append(append([]string{}, tablesDDL...), complianceTablesDDL...) {
+	// gpo_cycle_demande : les demandes de cycle relayées entre cores (TO-DO 172).
+	for _, ddl := range append(append(append([]string{}, tablesDDL...), complianceTablesDDL...), tableDemandesCycleDDL) {
 		if _, err := db.Exec(ddl); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBGeneric, "gpo: création du schéma échouée : "+err.Error())
 			return fmt.Errorf("gpo: création du schéma échouée : %v", err)

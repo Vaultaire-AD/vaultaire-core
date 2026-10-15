@@ -105,6 +105,7 @@ complet.
 |---|---|---|
 | `debian:12-slim` | `deployments/dev-comp/Dockerfile.nexus`, `deployments/pre-prod/vlt-proxy/Dockerfile` | l'image de l'environnement de compilation croisée et des essais Debian, pour vérifier que l'agent ne suppose pas une Rocky. |
 | `rockylinux:9` | `deployments/dev-comp/Dockerfile.build`, `deployments/dev/Dockerfile.rocky-ssh`, `deployments/dev/dockerfile`, `deployments/pre-prod/Dockerfile` | l'image des conteneurs de production et de préproduction. Choisie pour coller à la distribution du parc visé : ce que l'image contient est ce que l'agent trouvera sur une vraie machine. |
+| `ubuntu:22.04` | `deployments/dev-comp/Dockerfile.build-debian` | l'image où dev-comp compile les modules PAM et NSS de la famille Debian (TO-DO 193) : la plus ancienne version prise en charge de cette famille (glibc 2.35, libcrypt.so.1), comme le job « modules-debian » de la release. |
 
 ### Paquets système installés dans les images
 
@@ -113,6 +114,7 @@ Relevé dans les commandes d'installation écrites en clair. Un `go.mod` est lu 
 | Dockerfile | Paquets |
 |---|---|
 | `deployments/dev-comp/Dockerfile.build` | `findutils`, `gcc`, `git`, `gzip`, `libxcrypt-devel`, `pam-devel`, `tar`, `which` |
+| `deployments/dev-comp/Dockerfile.build-debian` | `binutils`, `gcc`, `libc6-dev`, `libcrypt-dev`, `libpam0g-dev` |
 | `deployments/dev-comp/Dockerfile.nexus` | `ca-certificates`, `curl`, `gnupg`, `tzdata` |
 | `deployments/dev/Dockerfile.rocky-ssh` | `epel-release`, `gcc`, `make`, `openssh-clients`, `openssh-server`, `pam-devel`, `pamtester`, `passwd` |
 | `deployments/dev/dockerfile` | `ca-certificates`, `git`, `gzip`, `openssh-clients`, `openssh-server`, `sudo`, `tar` |
