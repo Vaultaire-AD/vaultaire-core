@@ -96,7 +96,7 @@ limitation des binds, journaux, session LDAP.
 
 | Le pair qui envoie l'en-tête | Le core |
 |---|---|
-| un proxy **enregistré** et en ligne | croit l'en-tête : le client est compté sous son adresse |
+| un proxy **enregistré** et en ligne, reconnu à l'adresse sous laquelle le core le **voit** (sa session Ducky, TO-DO 184) — jamais à son adresse d'exposition | croit l'en-tête : le client est compté sous son adresse |
 | n'importe qui d'autre | **ferme** la connexion — `en-tête PROXY reçu d'un pair qui n'est pas un proxy enregistré` |
 | un proxy, sans en-tête | connexion ordinaire, sous l'adresse du proxy |
 

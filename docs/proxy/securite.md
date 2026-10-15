@@ -51,16 +51,20 @@ machine ne doit pas prendre toutes les places. Or, derrière un relais, **tous**
 les agents d'un site arrivent de l'adresse du proxy.
 
 Le core accorde donc **1000** connexions aux adresses d'un proxy **enregistré et
-en ligne** (`cluster_nodes`, rôle `proxy` : l'adresse déclarée et l'adresse
-exposée). La liste est relue toutes les 30 secondes. Ce n'est pas une porte
+en ligne**, sous l'adresse où le core le **voit** *(TO-DO 184)* : la source de
+la session Ducky par laquelle il bat (`adresse_vue`), celle de ses sessions sur
+ce core, et l'adresse qu'il déclare tant qu'aucune n'a encore été vue.
+L'adresse d'exposition (`cluster expose`) n'y entre pas : c'est celle des
+**clients**. La liste est relue toutes les 30 secondes. Ce n'est pas une porte
 qu'une source s'ouvre elle-même : enregistrer un nœud proxy exige une identité
 de type `vaultaire_proxy`, donc une clé d'enrôlement de ce type. Le plafond
 global reste commun à tous.
 
-> **À savoir.** L'exemption suit l'adresse **vue par le core**. Si un NAT entre
-> le proxy et le core la change, et qu'elle n'est ni l'adresse déclarée ni celle
-> de `cluster expose`, le proxy reste plafonné à 20 connexions — symptôme et
-> remède dans [`depannage.md`](./depannage.md).
+> **À savoir.** Derrière un NAT — proxy et core en conteneurs —, le core voit
+> le proxy sous l'adresse de la **passerelle** : c'est elle qui reçoit
+> l'exemption, sans réglage. Les autres programmes qui sortent par la même
+> passerelle en profitent aussi ; dans un tel montage, la passerelle EST le
+> proxy pour le core.
 
 ## Ce que le core voit d'un agent relayé
 
@@ -82,10 +86,12 @@ de quiconque d'autre l'envoie : sinon n'importe qui choisirait l'adresse sous
 laquelle il est compté. Détail : [`https-et-ldaps.md`](./https-et-ldaps.md).
 
 > **À savoir.** Comme l'exemption, la confiance suit l'adresse **vue par le
-> core**. Un proxy dont les connexions sortent par une autre adresse que celle
-> déclarée (NAT, hôte multi-cartes) voit ses connexions LDAPS **fermées** —
-> `en-tête PROXY reçu d'un pair qui n'est pas un proxy enregistré`. Remède :
-> `vlt cluster expose` à l'adresse que le core voit.
+> core**, sans configuration *(TO-DO 184)*. `cluster expose` ne sert plus qu'aux
+> clients : l'exposer à l'adresse que voit le core — le contournement de la
+> recette du 12/10 — n'est plus nécessaire, et casserait leur accès. Reste une
+> limite : un core qui ne tient pas la session du proxy le connaît par
+> l'adresse qu'a vue le core qui la tient ; deux cores derrière deux NAT
+> différents ne voient pas la même.
 
 ## Le pilotage par le core
 

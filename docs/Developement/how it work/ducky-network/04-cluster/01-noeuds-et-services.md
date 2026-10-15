@@ -187,6 +187,14 @@ registre (`sessionmgr.VueParSource`) :
 Limite connue : derrière un NAT, les machines qui sortent par la même adresse que
 le proxy sont fermées aussi ; elles se reconnectent.
 
+**La confiance des proxies suit la même adresse** *(TO-DO 184)*.
+`core/proxiesconnus` — plafond Ducky de 1000 par adresse, en-tête PROXY v2 du
+LDAPS — retient `adresse_vue` (et `ip_address` seulement tant qu'aucune adresse
+n'a été vue), plus la source des sessions **authentifiées** du proxy dans le
+registre du core qui répond. L'adresse d'exposition (`adresse_publique`) n'y
+entre plus : elle est celle des clients, et derrière un NAT elle diffère de
+celle que voit le core.
+
 **Un core en maintenance accepte toujours les connexions** *(TO-DO 177,
 tranché le 15/10 : on ne refuse pas)*. La maintenance retire le core des
 **listes** ; elle ne ferme pas son écoute. Un agent qui ne connaît que son

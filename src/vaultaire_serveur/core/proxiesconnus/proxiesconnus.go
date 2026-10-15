@@ -19,6 +19,22 @@
 // exige une identité de type vaultaire_proxy, donc une clé d'enrôlement de ce
 // type : ce n'est pas une porte qu'une source quelconque s'ouvre elle-même.
 //
+// # Quelle adresse — TO-DO 184
+//
+// Celle sous laquelle les cores VOIENT le proxy, et elle seule :
+//
+//   - adresse_vue, la source TCP de la session Ducky par laquelle il bat,
+//     écrite par le core qui reçoit le battement (TO-DO 176) ;
+//   - la source des sessions AUTHENTIFIÉES du proxy dans le registre de CE
+//     core — vue à l'instant, sans attendre la relecture ;
+//   - ip_address, ce que le proxy DÉCLARE, seulement tant qu'aucune adresse vue
+//     n'est connue (proxy pas encore revenu battre depuis la mise à jour).
+//
+// L'adresse d'exposition (cluster expose, adresse_publique) n'y entre PLUS :
+// c'est celle des CLIENTS. Derrière un NAT — proxy et core en conteneurs —
+// les deux diffèrent, et la recette du 12/10 l'a montré : la confiance exigeait
+// d'exposer l'adresse vue par le core, ce qui cassait l'accès des clients.
+//
 // La liste est relue toutes les 30 secondes et gardée en mémoire : elle est
 // consultée à chaque connexion acceptée, et ne doit jamais attendre la base.
 package proxiesconnus
@@ -32,6 +48,7 @@ import (
 
 	db "vaultaire/core/database"
 	"vaultaire/core/logs"
+	"vaultaire/ducky-network/sessionmgr"
 )
 
 // Periode est l'intervalle de relecture.
@@ -40,8 +57,17 @@ const Periode = 30 * time.Second
 var (
 	mu       sync.RWMutex
 	adresses = map[string]bool{}
-	une      sync.Once
+	// proprietaires : les identifiants des proxies en ligne, pour reconnaître
+	// leurs sessions dans le registre de ce core.
+	proprietaires []string
+	une           sync.Once
 )
+
+// sourcesVivantes rend les adresses des sessions authentifiées d'un proxy dans
+// le registre de ce core. Variable : les tests s'en passent.
+var sourcesVivantes = func(proprietaire string) []string {
+	return sessionmgr.Sessions.AdressesDe(proprietaire)
+}
 
 // EstUnProxy dit si une adresse IP est celle d'un proxy enregistré en ligne.
 //
@@ -54,8 +80,22 @@ func EstUnProxy(ip string) bool {
 		return false
 	}
 	mu.RLock()
-	defer mu.RUnlock()
-	return adresses[ip]
+	connue := adresses[ip]
+	qui := proprietaires
+	mu.RUnlock()
+	if connue {
+		return true
+	}
+	// Un proxy qui vient de se connecter à CE core, ou dont l'adresse vue a
+	// changé depuis la dernière relecture : sa session le dit déjà.
+	for _, p := range qui {
+		for _, a := range sourcesVivantes(p) {
+			if normaliser(a) == ip {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // Demarrer lance, une fois, la relecture périodique. Sans effet ensuite.
@@ -69,8 +109,9 @@ func Demarrer() {
 			}()
 			for {
 				if base := db.GetDatabase(); base != nil {
-					if liste, err := lire(base); err == nil {
+					if liste, qui, err := lire(base); err == nil {
 						Remplacer(liste)
+						poserProprietaires(qui)
 					} else {
 						logs.Write_Log("WARNING", "proxies: adresses des proxies illisibles : "+err.Error())
 					}
@@ -95,28 +136,44 @@ func Remplacer(liste []string) {
 	mu.Unlock()
 }
 
-// lire rend les adresses IP des proxies en ligne : celle vue au dernier
-// enregistrement et, si elle est une IP, l'adresse publique déclarée.
-func lire(base *sql.DB) ([]string, error) {
-	rows, err := base.Query(`SELECT ip_address, COALESCE(adresse_publique, '')
+func poserProprietaires(qui []string) {
+	mu.Lock()
+	proprietaires = qui
+	mu.Unlock()
+}
+
+// lire rend les adresses de confiance des proxies en ligne et leurs
+// identifiants (voir « Quelle adresse »).
+func lire(base *sql.DB) ([]string, []string, error) {
+	rows, err := base.Query(`SELECT ip_address, adresse_vue, owner_client_id
 		FROM cluster_nodes WHERE role = 'proxy' AND status = 'online'`)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
-	var out []string
+	var out, qui []string
 	for rows.Next() {
-		var ip, pub string
-		if err := rows.Scan(&ip, &pub); err != nil {
-			return nil, err
+		var declaree, vue, proprietaire string
+		if err := rows.Scan(&declaree, &vue, &proprietaire); err != nil {
+			return nil, nil, err
 		}
-		for _, a := range []string{ip, pub} {
-			if a = normaliser(a); a != "" {
-				out = append(out, a)
-			}
+		if a := AdresseDeConfiance(declaree, vue); a != "" {
+			out = append(out, a)
+		}
+		if strings.TrimSpace(proprietaire) != "" {
+			qui = append(qui, proprietaire)
 		}
 	}
-	return out, rows.Err()
+	return out, qui, rows.Err()
+}
+
+// AdresseDeConfiance : l'adresse vue si elle est connue, sinon la déclarée.
+// Jamais l'adresse d'exposition (TO-DO 184).
+func AdresseDeConfiance(declaree, vue string) string {
+	if v := normaliser(vue); v != "" {
+		return v
+	}
+	return normaliser(declaree)
 }
 
 // normaliser rend la forme canonique d'une IP, ou "" si ce n'en est pas une.

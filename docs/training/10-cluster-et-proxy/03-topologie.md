@@ -32,6 +32,12 @@ cluster purge <nœud> [--etalement <s>]
    vlt cluster list        # ACCÈS AGENTS vs VU PAR LE NŒUD
    ```
 
+   L'exposition ne sert **qu'aux clients**. La confiance que le core accorde au
+   proxy — son plafond de connexions, l'en-tête PROXY de ses relais LDAPS — suit
+   l'adresse sous laquelle le core le **voit**, sans réglage *(point 184)* :
+   en conteneurs, celle de la passerelle docker. N'exposez jamais le proxy à
+   cette adresse-là pour « le faire reconnaître ».
+
 2. Faites-le servir le groupe `Infra` en priorité :
 
    ```bash
@@ -90,6 +96,9 @@ cluster purge <nœud> [--etalement <s>]
 ## ✅ Vous avez réussi si
 
 - `--targets` reflète chaque changement, avec la raison de chaque rang ;
+- l'exposition posée, un relais `ldaps` du proxy est accepté par le core sans
+  autre réglage — pas de `en-tête PROXY reçu d'un pair qui n'est pas un proxy
+  enregistré` dans son journal ;
 - `cluster show <nœud-core>` compte `web01` parmi ses machines, avec une mesure
   de moins d'une minute ;
 - en maintenance, le proxy disparaît de `--targets` et y revient au `off` ; la
