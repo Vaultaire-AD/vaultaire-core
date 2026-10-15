@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **201**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **202**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -24,12 +24,12 @@ Trois gestes, dans le même passage que le code :
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
+| 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — relevé du 181 d'abord, sur un poste |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
-| 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
@@ -117,24 +117,26 @@ Bureau à distance ».
 
 ## Agent
 
-### 181. [AGENT] Cloisonnement de l'agent, la suite
+### 201. [AGENT] Poser `SystemCallFilter` sur l'unité de l'agent
 
-**Origine** (reste du **168**). L'unité porte maintenant huit directives qui ne
-coûtent rien à l'agent ; onze sont exclues, chacune avec sa raison
-(`unite.Exclues`). Deux de ces raisons peuvent tomber :
+**Origine** (reste du **181**). L'outil du relevé existe :
+`automatisation/releve-appels-agent.sh` (voir
+`docs/exploitation/Agent_configuration_et_debug.md`, « Relever les appels
+système »). Il rend les appels que l'agent et ses commandes font hors de
+`@system-service`.
 
-- **`PrivateTmp`** n'est exclue que par l'ancien tube PAM de `/tmp`
-  (`pamstate.LegacySocketPath`). Le jour où plus aucun module PAM du parc ne s'y
-  connecte — c'est-à-dire après une mise à jour du parc (111 à 118) —, le
-  retirer et poser `PrivateTmp=yes`.
-- **`SystemCallFilter`** demande de relever, sur un poste, les appels système
-  de l'agent ET des commandes qu'il lance pendant la suite de GPO de la
-  formation (`strace -f -c`, ou `SystemCallLog=` en systemd ≥ 247), puis de
-  partir de `@system-service` et d'y ajouter ce qui manque.
+**À faire.**
 
-Les autres exclusions tiennent à ce que fait le produit (écrire dans `/etc`,
-`/home`, `/boot`, régler `/proc/sys`, décharger un module, changer de domaine
-SELinux) : elles ne tomberont pas.
+1. Faire le relevé sur un poste de chaque famille (Rocky 9, Debian/Ubuntu),
+   pendant la suite de GPO de la formation et des ouvertures de session SSH.
+2. Poser `SystemCallFilter=@system-service <ajouts>` et
+   `SystemCallErrorNumber=EPERM` dans `unite.Cloisonnement` (un refus qui se
+   lit, plutôt qu'un processus tué), retirer l'entrée de `unite.Exclues`.
+3. Rejouer la suite de GPO avec le filtre posé ; tout « Operation not
+   permitted » nouveau est un appel oublié.
+4. Rocky 8 (systemd 239) : le relevé passe par `strace` ; le filtre, lui,
+   y est connu.
+
 
 ### 182. [GPO] Audit : un `sshd_config` non conforme n'est pas signalé
 
