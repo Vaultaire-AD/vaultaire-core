@@ -1688,7 +1688,7 @@ cluster list                  # tous les nœuds enregistrés
 cluster list <role>           # nœuds actifs d'un rôle
 cluster show <nœud>           # la fiche d'un nœud : accès, rotation, sessions d'un core
 cluster maintenance <nœud> <on|off> [--confirm]   # hors de toutes les listes, sans quitter le cluster
-cluster purge <nœud> [--etalement <s>]           # vide un core en maintenance de ses sessions
+cluster purge <nœud> [--etalement <s>]           # vide un core ou un proxy en maintenance de ses sessions
 cluster forget <nœud>         # oublie un nœud hors ligne, sans attendre le délai de purge
 cluster purge-delay           # délai avant suppression d'un service ou d'un nœud parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
@@ -1776,7 +1776,7 @@ le rend tel qu'il était.
 > plus que son fichier de configuration.
 
 Les sessions déjà ouvertes **restent** sur un nœud en maintenance. **`cluster
-purge <nœud>`** les déplace — sur un core en maintenance seulement :
+purge <nœud>`** les déplace — sur un core ou un proxy en maintenance :
 
 1. à son prochain battement, le core demande à chaque machine connectée de
    redemander sa liste ; un agent à jour, ne l'y trouvant plus, s'en va seul ;
@@ -1788,6 +1788,17 @@ la page du core qu'on vide. Suivi : `cluster show <nœud>` (purge en cours, puis
 terminée avec le nombre de sessions fermées ; le compteur SESSIONS descend). Un
 agent qui ne connaît que son fichier de configuration peut revenir : il se voit
 dans le compteur.
+
+**Sur un proxy** *(TO-DO 176)*, ce sont les **cores** qui purgent : les sessions
+relayées vivent chez eux, avec pour source l'adresse du proxy. Chaque core fait
+les deux temps ci-dessus sur la part qui lui arrive par ce proxy — reconnue par
+l'adresse que le proxy déclare **et** celle que le core voit à son battement. La
+session du proxy lui-même reste ouverte : il bat toujours. `cluster show
+<proxy>` cumule les sessions fermées par tous les cores.
+
+> ⚠️ Derrière un **NAT**, d'autres machines qui sortent par la même adresse que le
+> proxy sont fermées aussi. Elles se reconnectent aussitôt, à un nœud de leur
+> liste.
 
 **`cluster forget <nœud>`** retire un nœud parti sans attendre le délai de purge
 (24 h) : un proxy de test démonté, par exemple. Refusé tant que le nœud est en

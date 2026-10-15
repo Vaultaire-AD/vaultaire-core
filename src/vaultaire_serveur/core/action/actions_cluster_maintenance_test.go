@@ -109,7 +109,7 @@ func TestLaPurgeNommeSesRefus(t *testing.T) {
 	c := simulerCluster(t)
 	for errBase, attendu := range map[error]string{
 		clusterdatabase.ErrPurgeHorsMaintenance: "cluster maintenance core-1 on",
-		clusterdatabase.ErrPurgePasUnCore:       "n'est pas un core",
+		clusterdatabase.ErrPurgePasUnCore:       "ni un core ni un proxy",
 		clusterdatabase.ErrNoeudInconnu:         "aucun nœud",
 	} {
 		c.errPurge = errBase
@@ -129,6 +129,22 @@ func TestLaPurgeNommeSesRefus(t *testing.T) {
 	}
 	if !strings.Contains(res.Message, "portail web") {
 		t.Error("le message ne dit pas que le portail n'est pas touché")
+	}
+}
+
+// Un proxy se purge aussi (TO-DO 176) : le message dit que ce sont les cores
+// qui ferment, et que le proxy garde sa session.
+func TestLaPurgeDUnProxyDitQueLesCoresLaFont(t *testing.T) {
+	c := simulerCluster(t)
+	c.roles["proxy-1"] = "proxy"
+	res, err := purgerNoeud(quelquun, Params{"node": "proxy-1"})
+	if err != nil || len(c.purges) != 1 {
+		t.Fatalf("purge du proxy : %v, %v", err, c.purges)
+	}
+	for _, attendu := range []string{"Purge du proxy proxy-1", "Chaque core", "relayée", "il bat toujours", "par défaut (60 s)"} {
+		if !strings.Contains(res.Message, attendu) {
+			t.Errorf("message sans %q : %s", attendu, res.Message)
+		}
 	}
 }
 

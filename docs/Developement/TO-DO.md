@@ -25,7 +25,6 @@ Trois gestes, dans le même passage que le code :
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
 | 195 | WINDOWS      | Après la première connexion, le CP Vaultaire n'est plus proposé : plus de TOTP | À faire — **critique**, recette du 12/10 |
-| 176 | CLUSTER      | Purger un PROXY en maintenance de ses connexions            | À faire — à concevoir, voir le 147      |
 | 175 | LDAP         | Une recherche `base` rend un compte SANS groupe quand la base flanche | À faire — petit, la recherche `sub` échoue déjà |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
@@ -51,22 +50,6 @@ Trois gestes, dans le même passage que le code :
 ---
 
 ## Réseau Ducky
-
-### 176. [CLUSTER] Purger un proxy en maintenance de ses connexions
-
-**Origine** (relevé en traitant le 147). La purge ne vise que les **cores** : ce
-sont eux qui tiennent les sessions, dans leur mémoire. Un **proxy** en maintenance
-sort bien de toutes les listes, mais les connexions qu'il relaie restent ouvertes
-jusqu'à ce que les agents s'en aillent d'eux-mêmes — à leur prochaine 04_04, ou à
-une coupure. `cluster purge <proxy>` est refusé en le disant.
-
-**À concevoir.** Deux voies : un ordre au proxy (trame nouvelle, ou une révision
-de relais pilotés qui ferme puis rouvre ses écoutes), ou une 04_17 poussée par
-chaque core aux machines dont la session arrive **par** ce proxy. La seconde
-réemploie la purge des cores ; elle demande de savoir, sur chaque core, quelles
-sessions sont relayées par quel proxy — *à vérifier* : un relais Ducky transporte
-sans lire, le core devrait voir l'adresse du proxy comme source TCP de la session
-(`Session.RemoteAddr`), mais derrière une redirection ce n'est pas garanti.
 
 ### 184. [PROXY] [LDAP] LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies
 

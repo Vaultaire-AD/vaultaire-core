@@ -71,6 +71,8 @@ var colonnesAjoutees = []struct{ Nom, Definition string }{
 	{"purge_etalement_s", "INT NOT NULL DEFAULT 0"},
 	{"purge_terminee_le", "DATETIME NULL DEFAULT NULL"},
 	{"purge_fermees", "INT NOT NULL DEFAULT 0"},
+	// Adresse source vue par le core au battement (TO-DO 176).
+	{"adresse_vue", "VARCHAR(45) NOT NULL DEFAULT ''"},
 }
 
 // EnsureClusterNodesSchema complète cluster_nodes sur une base existante.

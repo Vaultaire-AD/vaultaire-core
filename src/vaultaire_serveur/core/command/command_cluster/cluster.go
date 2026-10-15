@@ -426,7 +426,8 @@ func aide() string {
   cluster purge <nœud> [--etalement <s>]
                                      vide un core en maintenance de ses sessions : chaque
                                      machine redemande sa liste, puis le reste est fermé,
-                                     étalé (60 s par défaut)
+                                     étalé (60 s par défaut). Sur un proxy en maintenance,
+                                     chaque core ferme les sessions relayées par lui
   cluster forget <nœud>              oublie un nœud hors ligne depuis plus de 3 min, sans
                                      attendre le délai de purge — ses réglages partent avec
   cluster purge-delay                délai avant suppression d'un service ou d'un nœud parti

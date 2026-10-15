@@ -260,8 +260,8 @@ func purgerNoeud(a Appelant, p Params) (Resultat, error) {
 			"rejoint — il figure encore dans la liste des agents. D'abord « cluster maintenance %s on »",
 			hostname, hostname)
 	case errors.Is(err, clusterdatabase.ErrPurgePasUnCore):
-		return Resultat{}, fmt.Errorf("%s n'est pas un core : seul un core tient des sessions qu'il "+
-			"peut fermer. Un proxy en maintenance se vide au fil des reconnexions", hostname)
+		return Resultat{}, fmt.Errorf("%s n'est ni un core ni un proxy : seuls ceux-là portent des "+
+			"sessions d'agents à fermer", hostname)
 	case err != nil:
 		return Resultat{}, err
 	}
@@ -272,6 +272,18 @@ func purgerNoeud(a Appelant, p Params) (Resultat, error) {
 	}
 	logs.Write_Log("SECURITY", fmt.Sprintf(
 		"cluster: PURGE de %s demandée par %s (étalement %s)", hostname, a.Username, affiche))
+	if role, err := roleDuNoeud(hostname); err == nil && role == "proxy" {
+		// TO-DO 176 : un proxy ne tient pas ses sessions, les cores les tiennent.
+		return Resultat{Message: fmt.Sprintf(
+			"Purge du proxy %s demandée. Chaque core la lance à son prochain battement (%s au plus), "+
+				"sur les sessions qui lui arrivent par ce proxy :\n"+
+				"  1. chaque machine relayée reçoit l'ordre de redemander sa liste — un agent à jour "+
+				"quitte seul ce proxy, absent de la liste ;\n"+
+				"  2. une minute après, le reste est fermé, étalé %s.\n"+
+				"La session du proxy lui-même n'est pas fermée : il bat toujours.\n"+
+				"Suivi : « cluster show %s » (sessions fermées, cumulées sur les cores).",
+			hostname, reglages.Duree(reglages.CleBattementCluster), affiche, hostname)}, nil
+	}
 	return Resultat{Message: fmt.Sprintf(
 		"Purge de %s demandée. Le core la lance à son prochain battement (%s au plus) :\n"+
 			"  1. chaque machine reçoit l'ordre de redemander sa liste — un agent à jour quitte "+

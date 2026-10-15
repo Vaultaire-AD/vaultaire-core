@@ -138,8 +138,10 @@ func CoresDisponiblesHors(db *sql.DB, hostname string) (int, error) {
 // agents sur le nœud même qu'on vide — il est encore dans leur liste.
 var ErrPurgeHorsMaintenance = errors.New("purge refusée : le nœud n'est pas en maintenance")
 
-// ErrPurgePasUnCore : seul un core tient des sessions qu'il peut fermer.
-var ErrPurgePasUnCore = errors.New("purge refusée : seul un core se purge de ses sessions")
+// ErrPurgePasUnCore : seuls un core et un proxy se purgent. Un core ferme ses
+// sessions ; un proxy est vidé par les cores, qui ferment celles qu'il relaie
+// (TO-DO 176). Un service — Nexus, le portail — ne relaie rien.
+var ErrPurgePasUnCore = errors.New("purge refusée : seuls un core et un proxy se purgent")
 
 // DemanderPurge écrit la demande ; le core visé l'exécutera à son battement.
 //
@@ -153,7 +155,7 @@ func DemanderPurge(db *sql.DB, hostname, par string, etalement int) error {
 	res, err := db.Exec(`UPDATE cluster_nodes
 	                        SET purge_demandee_le = NOW(), purge_par = ?, purge_etalement_s = ?,
 	                            purge_terminee_le = NULL, purge_fermees = 0
-	                      WHERE hostname = ? AND maintenance = TRUE AND role = 'core'`,
+	                      WHERE hostname = ? AND maintenance = TRUE AND role IN ('core','proxy')`,
 		par, etalement, hostname)
 	if err != nil {
 		return fmt.Errorf("demande de purge de %s : %w", hostname, err)
@@ -165,7 +167,7 @@ func DemanderPurge(db *sql.DB, hostname, par string, etalement int) error {
 	if err != nil {
 		return ErrNoeudInconnu
 	}
-	if n.Role != "core" {
+	if n.Role != "core" && n.Role != "proxy" {
 		return ErrPurgePasUnCore
 	}
 	return ErrPurgeHorsMaintenance

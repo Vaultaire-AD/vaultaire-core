@@ -3,6 +3,7 @@ package cluster
 import (
 	"database/sql"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -157,4 +158,92 @@ func lancerPurgeSiDemandee(db *sql.DB, node clusterstorage.Node) {
 				"liste statique), ou ouvertes pendant",
 			node.Hostname, b.Prevenues, b.Fermees, apres.Machines, apres.Tunnels+apres.Comptes+apres.Poignees))
 	}()
+}
+
+// --- purge d'un proxy (TO-DO 176) --------------------------------------------------
+//
+// Chaque core exécute SA part : les sessions de son registre qui arrivent par
+// le proxy. Même purgeur, mêmes deux temps — une 04_17 à chaque machine
+// relayée (le proxy n'est plus dans la liste qu'elle reçoit : elle le quitte
+// seule), puis la fermeture étalée de ce qui reste.
+
+// partsFaites retient, par proxy, la demande dont ce processus a déjà fait la
+// part — même garde-fou que derniereFaite.
+var partsFaites = struct {
+	sync.Mutex
+	par map[string]int64
+}{par: map[string]int64{}}
+
+// partsEnCours : une seule part à la fois par proxy, une purge dure plusieurs
+// battements.
+var partsEnCours sync.Map
+
+// Remplaçables par les tests.
+var (
+	lirePurgesDeProxies = clusterdatabase.PurgesDeProxiesEnCours
+	terminerPart        = clusterdatabase.TerminerPartDePurge
+	vueDuProxy          = func(p clusterdatabase.PurgeDeProxy) registrePurge {
+		adresses := append(append([]string{}, p.Adresses...), sessionmgr.Sessions.AdressesDe(p.Proprietaire)...)
+		return sessionmgr.Sessions.VueParSource(adresses, p.Proprietaire)
+	}
+	executerPart = func(f func()) { go f() }
+)
+
+// aFaire dit si la part de cette demande reste à faire, et la réserve.
+func aFaire(p clusterdatabase.PurgeDeProxy) bool {
+	partsFaites.Lock()
+	defer partsFaites.Unlock()
+	if partsFaites.par[p.Hostname] == p.Demandee.Unix() {
+		return false
+	}
+	if _, deja := partsEnCours.LoadOrStore(p.Hostname, true); deja {
+		return false
+	}
+	partsFaites.par[p.Hostname] = p.Demandee.Unix()
+	return true
+}
+
+// lancerPurgesDeProxies lit les purges de proxies demandées et fait la part de
+// ce core pour chacune.
+func lancerPurgesDeProxies(db *sql.DB, node clusterstorage.Node) {
+	purges, err := lirePurgesDeProxies(db)
+	if err != nil {
+		logs.Write_Log("WARNING", "cluster: purges de proxies illisibles : "+err.Error())
+		return
+	}
+	for _, p := range purges {
+		if !aFaire(p) {
+			continue
+		}
+		p := p
+		executerPart(func() {
+			defer partsEnCours.Delete(p.Hostname)
+			faireLaPart(db, node, p, purgeur{
+				sessions: vueDuProxy(p),
+				prevenir: hosthandler.DemanderActualisationListe,
+				dormir:   time.Sleep,
+				grace:    GracePurge,
+			})
+		})
+	}
+}
+
+// faireLaPart exécute la part d'un core et l'écrit.
+func faireLaPart(db *sql.DB, node clusterstorage.Node, p clusterdatabase.PurgeDeProxy, pg purgeur) {
+	etalement := p.Etalement
+	if etalement <= 0 {
+		etalement = EtalementParDefaut
+	}
+	if len(p.Adresses) == 0 {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"cluster: purge du proxy %s : aucune adresse connue en base — seules ses sessions "+
+				"vues par ce core servent à reconnaître ce qu'il relaie", p.Hostname))
+	}
+	b := pg.purger(etalement, "maintenance du proxy "+p.Hostname)
+	if err := terminerPart(db, p.Hostname, p.Demandee, b.Fermees); err != nil {
+		logs.Write_Log("ERROR", "cluster: part de purge du proxy "+p.Hostname+" non enregistrée : "+err.Error())
+	}
+	logs.Write_Log("WARNING", fmt.Sprintf(
+		"cluster: purge du proxy %s, part de %s : %d machine(s) prévenue(s), %d session(s) "+
+			"relayée(s) fermée(s) par la purge", p.Hostname, node.Hostname, b.Prevenues, b.Fermees))
 }

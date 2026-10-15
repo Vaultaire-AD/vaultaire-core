@@ -361,6 +361,13 @@ func Create_DataBase(db *sql.DB) {
     		purge_terminee_le DATETIME NULL DEFAULT NULL,
     		purge_fermees INT NOT NULL DEFAULT 0,
 
+    		-- ADRESSE VUE (TO-DO 176) : la source TCP de la connexion par
+    		-- laquelle le nœud bat, telle que le core la voit. Pour un proxy,
+    		-- c'est aussi la source des sessions qu'il relaie : c'est par elle
+    		-- que chaque core retrouve ces sessions quand on purge le proxy.
+    		-- Réécrite à chaque battement ; ip_address, elle, est déclarée.
+    		adresse_vue VARCHAR(45) NOT NULL DEFAULT '',
+
     		UNIQUE KEY uk_owner (owner_client_id)
 		);`,
 

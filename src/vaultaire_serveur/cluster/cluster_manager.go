@@ -166,6 +166,9 @@ func startHeartbeatLoop(db *sql.DB, node clusterstorage.Node) {
 		// le seul canal entre l'action, reçue par n'importe quel core, et le
 		// core qui détient les sessions.
 		lancerPurgeSiDemandee(db, node)
+		// Et sa part des purges de PROXIES (TO-DO 176) : les sessions qu'un
+		// proxy relaie vivent dans le registre des cores, pas chez lui.
+		lancerPurgesDeProxies(db, node)
 	})
 }
 

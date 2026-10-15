@@ -166,6 +166,27 @@ Les sessions du portail et de l'API ne sont pas des sessions Ducky : la purge
 ne les touche pas. Un processus n'exécute qu'une fois une même demande, même si
 l'écriture de la fin échoue — sinon la purge se rejouerait à chaque battement.
 
+**Purge d'un proxy** *(TO-DO 176)*. Un proxy relaie en TCP : les sessions qu'il
+porte vivent dans le registre des **cores**, et leur adresse source est celle du
+proxy (vérifié le 15/10). La demande est écrite sur la ligne du proxy comme pour
+un core ; **chaque core** la lit à son battement (`PurgesDeProxiesEnCours`, demandes
+de moins de 15 minutes) et fait sa part avec le même purgeur, sur une vue de son
+registre (`sessionmgr.VueParSource`) :
+
+- les sessions retenues sont celles dont l'hôte source est l'adresse déclarée du
+  proxy (`ip_address`), l'adresse **vue** (`adresse_vue`, réécrite par le core qui
+  reçoit son `04_07`), ou la source de la session du proxy dans CE registre ;
+- la session de contrôle du proxy (son `client_software_id`) est **exclue** : il
+  continue de battre et de recevoir `04_19` ;
+- sans aucune adresse connue, la vue est vide — on ne purge jamais tout un core
+  faute d'avoir reconnu le proxy ;
+- chaque core **additionne** ses fermetures à `purge_fermees` ; la fin écrite est
+  celle de la dernière part. Une mémoire par proxy et par date de demande empêche
+  un core de rejouer sa part.
+
+Limite connue : derrière un NAT, les machines qui sortent par la même adresse que
+le proxy sont fermées aussi ; elles se reconnectent.
+
 **Un core en maintenance accepte toujours les connexions** *(TO-DO 177,
 tranché le 15/10 : on ne refuse pas)*. La maintenance retire le core des
 **listes** ; elle ne ferme pas son écoute. Un agent qui ne connaît que son

@@ -171,6 +171,20 @@
                 défaut) pour ne pas faire reconnecter un site entier dans la même seconde. Les sessions du
                 portail et de l'API ne sont pas touchées.
               </p>
+                {{ else if eq .Role "proxy" }}
+              <form method="post" action="/admin/cluster?noeud={{ .Hostname }}" style="display:inline; margin-left:0.6rem">
+                <input type="hidden" name="action" value="purge_node">
+                <input type="hidden" name="node" value="{{ .Hostname }}">
+                <input name="spread" type="number" min="0" max="3600" placeholder="60" style="width:6rem"
+                       aria-label="Étalement en secondes">
+                <button type="submit" class="btn btn-primary">Purger les sessions relayées</button>
+              </form>
+              <p class="muted small">
+                Un proxy ne tient pas ses sessions : chaque core vide la part qui lui arrive par ce proxy.
+                Chaque machine relayée est prévenue et part seule ; une minute après, le reste est fermé, étalé.
+                Le proxy lui-même garde sa session : il bat toujours. Derrière un NAT, les machines qui
+                partagent l'adresse du proxy sont fermées aussi — elles se reconnectent.
+              </p>
                 {{ end }}
               {{ else }}
               <form method="post" action="/admin/cluster?noeud={{ .Hostname }}">
