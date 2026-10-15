@@ -36,8 +36,14 @@ func (m *Manager) VueParSource(adresses []string, exclure string) ParSource {
 	return v
 }
 
-// AdressesDe rend les hôtes sources des sessions d'une machine — pour un
-// proxy, celles par lesquelles CE core le voit, en plus de ce que dit la base.
+// AdressesDe rend les hôtes sources des sessions AUTHENTIFIÉES d'une machine —
+// pour un proxy, celles par lesquelles CE core le voit, en plus de ce que dit
+// la base.
+//
+// Authentifiées seulement : l'identifiant d'une session en poignée de main est
+// ANNONCÉ, pas prouvé. Le compter ferait accorder la confiance des proxies
+// (TO-DO 184 : l'en-tête PROXY du LDAPS) à quiconque annonce l'identifiant
+// d'un proxy.
 func (m *Manager) AdressesDe(clientSoftwareID string) []string {
 	id := strings.ToLower(strings.TrimSpace(clientSoftwareID))
 	if id == "" {
@@ -48,7 +54,8 @@ func (m *Manager) AdressesDe(clientSoftwareID string) []string {
 	vues := map[string]bool{}
 	var out []string
 	for _, s := range m.sessions {
-		if strings.ToLower(strings.TrimSpace(s.ClientSoftwareID)) != id {
+		if s.Status != SessionAuthenticated || s.DuckySession == nil ||
+			strings.ToLower(strings.TrimSpace(s.ClientSoftwareID)) != id {
 			continue
 		}
 		if h := hoteSource(s.RemoteAddr); h != "" && !vues[h] {

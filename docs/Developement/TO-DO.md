@@ -29,7 +29,6 @@ Trois gestes, dans le même passage que le code :
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
-| 184 | PROXY        | LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies | À faire — à concevoir      |
 | 181 | AGENT        | Cloisonnement de l'agent, la suite : `PrivateTmp`, filtre d'appels système | À faire — après le 168, sur un poste |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
@@ -49,31 +48,6 @@ Trois gestes, dans le même passage que le code :
 ---
 
 ## Réseau Ducky
-
-### 184. [PROXY] [LDAP] LDAPS relayé derrière un NAT : adresse d'exposition et confiance des proxies
-
-**Constat** (recette du 12/10, `A_TESTER.md`), § 22b. Proxy et core en conteneurs : le core voit
-le proxy sous l'adresse de la **passerelle** docker et ferme la connexion —
-`ldap: connexion LDAPS de 172.19.0.1 refusée : en-tête PROXY reçu d'un pair qui
-n'est pas un proxy enregistré (172.19.0.1)` (`core/proxyproto/proxyproto.go`,
-`ErrNonDeConfiance`).
-
-**Le problème de fond.** Une seule adresse d'exposition sert deux usages
-contraires : les **clients** ont besoin de l'adresse du proxy dans le vrai LAN
-(comme pour un cluster) ; la **confiance** LDAPS du core, de l'adresse sous
-laquelle le core le voit — ici la passerelle du LAN des cores. Le contournement
-du § 22c (`cluster expose <proxy> <IP vue par le core>`) casse donc l'autre
-usage.
-
-**À faire.**
-
-1. L'adresse d'exposition est celle qu'utilisent les **clients**, et rien
-   d'autre.
-2. Les cores font confiance aux proxies **sans configuration** : retenir
-   l'adresse source TCP de la session Ducky de chaque proxy enrôlé (celle que le
-   core voit vraiment), et la verser à la liste de confiance de `proxyproto`.
-3. Garder le refus pour tout pair qui n'a pas de session de proxy.
-4. Rejouer `A_TESTER.md` § 22b et 22c dans des conteneurs (voir le **185**).
 
 ### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
 

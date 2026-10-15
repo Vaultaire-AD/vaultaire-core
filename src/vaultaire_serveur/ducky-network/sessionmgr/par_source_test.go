@@ -76,3 +76,13 @@ func TestAdressesDeRendLaSourceDuProxy(t *testing.T) {
 		t.Errorf("AdressesDe = %v", got)
 	}
 }
+
+// Une session en poignée de main ANNONCE un identifiant sans l'avoir prouvé :
+// elle ne fait pas reconnaître son adresse comme celle du proxy (TO-DO 184).
+func TestUneSessionNonAuthentifieeNeFaitPasLeProxy(t *testing.T) {
+	m := NewManager()
+	ajouter(m, "faux", "198.51.100.9:40000", "proxy-1", CompteMachine, SessionPending)
+	if got := m.AdressesDe("proxy-1"); len(got) != 0 {
+		t.Errorf("une poignée de main annonçant le proxy donne son adresse : %v", got)
+	}
+}
