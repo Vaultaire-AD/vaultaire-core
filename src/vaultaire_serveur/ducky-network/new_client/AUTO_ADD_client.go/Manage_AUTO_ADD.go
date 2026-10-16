@@ -85,6 +85,17 @@ func Manage_Auto_ADD_client(hostuser, hostip, client_softwareID string) string {
 				err.Error()+" — l'agent ne vérifiera pas les signatures de politique")
 	}
 
+	// La clé de signature des PAQUETS d'agent (TO-DO 113) : même canal, même
+	// raison — c'est elle qui jugera un jour les mises à jour que le core
+	// ordonnera, elle ne peut donc pas venir de lui en route. Même règle pour
+	// l'échec : une machine sans elle s'installe, et refusera toute mise à
+	// jour automatique jusqu'à ce qu'on la lui dépose.
+	if err := duckykey.EcrireClePaquetsPourClient(repertoireClient); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeCertLoad,
+			"autoadd: clé de signature des paquets non déposée pour "+client_softwareID+" : "+
+				err.Error()+" — la machine refusera toute mise à jour automatique")
+	}
+
 	// La liste des CORES à joindre (TO-DO 61), dans le même répertoire.
 	//
 	// Le script d'installation écrivait une adresse fixe, en dur. Elle vient

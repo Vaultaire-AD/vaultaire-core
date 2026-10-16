@@ -80,9 +80,16 @@
 
     <hr>
     <h2 class="h2">Liste</h2>
+    {{ if .Versions }}
+    <p class="muted small">
+      <strong>Version</strong> : celle que l'agent déclare, et l'écart à la version
+      qu'on attend de lui (dérogation, sinon la plus haute cible de ses groupes,
+      sinon le défaut du parc). Détail et réglage : <code>vlt agent</code>.
+    </p>
+    {{ end }}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th>Version</th><th></th></tr></thead>
         <tbody>
         {{ range .Clients }}
           <tr class="row-context" data-href="/admin/clients?client={{ .ComputeurID }}" data-label="Client {{ .ComputeurID }}">
@@ -91,6 +98,16 @@
             <td><a href="/admin/clients?client={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
             <td>{{ .Hostname }}</td>
             <td>{{ .OS }}</td>
+            <td>
+              {{ $v := index $.Versions .ComputeurID }}
+              {{ if $v }}
+                {{ $v.VersionLisible }}
+                {{ if $v.Attendue.Definie }}
+                <br><span class="badge{{ if $v.Etat.AUnEcart }} badge-danger{{ end }}" title="Attendue : {{ $v.Attendue.Lisible }}">{{ $v.Etat }} · {{ $v.Attendue.Version }}</span>
+                {{ end }}
+              {{ else if .AgentVersion }}{{ .AgentVersion }}
+              {{ else }}<span class="muted">—</span>{{ end }}
+            </td>
             <td>
               <form method="post" style="display:inline" data-confirm="Produire l'identité de {{ .ComputeurID }} ?&#10;&#10;L'archive contient sa CLÉ PRIVÉE : qui la détient peut se faire passer pour cette machine.">
                 <input type="hidden" name="action" value="export_client">

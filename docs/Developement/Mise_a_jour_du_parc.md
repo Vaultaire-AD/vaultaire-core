@@ -4,9 +4,12 @@
 > Ce fichier porte la **stratégie et ses arbitrages** ; les tâches qui en
 > découlent sont les points **111 à 118** de [`TO-DO.md`](./TO-DO.md).
 >
-> Rien de tout cela n'est écrit à ce jour. Ce document dit ce qu'on va faire, et
-> surtout **pourquoi pas autrement** — c'est la partie qu'une entrée de liste ne
-> peut pas porter.
+> **Écrits** : le 112 (l'unité de l'agent, relance bornée, `--check`), le
+> **111** (la version attendue et la vue `vlt agent`, § 8), le **113** (la
+> clé et le format signé, § 2.1 et 4) et le **114** (le dépôt et sa
+> découverte, § 3.1 et 3.2). Le reste ne l'est
+> pas. Ce document dit ce qu'on va faire, et surtout **pourquoi pas
+> autrement** — c'est la partie qu'une entrée de liste ne peut pas porter.
 
 ---
 
@@ -114,6 +117,14 @@ l'autre, même si les deux clés venaient à être confondues par erreur.
 `gpo_signing` — donc partagée par le cluster sans réplication à écrire, et
 fonctionnelle dès l'installation. Un exploitant qui veut la garder hors ligne
 signe ailleurs et ne dépose que la partie publique : à documenter, pas à imposer.
+
+> **Écrit au 113, avec une précision sur QUI signe** (tranché le 16/10). La CI
+> ne détient la clé d'aucun cluster : chaque installation a la sienne. La
+> release porte donc le manifeste **non signé** ; le core le recalcule depuis
+> l'archive et le signe (`vaultaire_serveur --sign-package`) — sa signature dit
+> « ce cluster accepte ces octets ». Le schéma du § 3 (« RELEASE (CI) signe »)
+> se lit donc : la CI **décrit**, le core **signe**. Mode hors ligne, format et
+> commandes : [`Releases.md`](../exploitation/Releases.md).
 
 ### 2.2 Déclenchement — une version attendue portée par le groupe
 
@@ -228,6 +239,19 @@ trouver les Nexus vers qui relayer en HTTPS (TO-DO 72).
 Rien à écrire côté découverte : `decouverte.AdressesService` existe. Il faut
 seulement accorder `04_15` au type de client `Client`, qui ne l'a pas aujourd'hui.
 
+> **Écrit au 114, avec deux précisions.**
+>
+> - Le core ne répond à un agent que pour **les Nexus** : la `04_15` lui est
+>   accordée, pas la carte entière des services (`hosthandler.TypeDemandable`).
+> - L'agent **demande** au moment voulu (`decouverte.DemanderServices`, une
+>   `04_15` et sa réponse), il ne **suit** pas la liste toutes les cinq minutes
+>   comme le proxy : il n'en a besoin que pour télécharger, rarement, et le
+>   suivi ferait parler tout le parc pour rien. Aujourd'hui, une seule demande
+>   par démarrage, journalisée : « mise à jour : dépôt(s) … ».
+> - Les manifestes et leurs signatures sont des pièces de la release, dans le
+>   même dépôt que l'archive (`files.ParseAssetName`) : `…/download/v<version>/
+>   <archive>.<famille>.manifest[.sig]`, lus sans compte comme elle.
+
 Repli : une URL dans `client_conf.json` si le cluster n'en annonce aucun. Un parc
 peut vouloir un miroir local qui n'est pas un service enrôlé.
 
@@ -236,6 +260,11 @@ peut vouloir un miroir local qui n'est pas un service enrôlé.
 ## 4. Le format signé
 
 ### 4.1 Un manifeste, pas cinq signatures
+
+> **Écrit au 113** : un manifeste **par famille** de modules
+> (`linux-amd64-rocky`, `linux-amd64-debian` — le binaire est commun, les
+> modules non), une ligne `nom sha256` par fichier, et une enveloppe `.sig`
+> qui porte l'empreinte de la clé signataire, pour la rotation.
 
 ```
 vaultaire-pkg-v1
@@ -528,6 +557,9 @@ vlt agent pin <machine> <version|--none>
 
 Et une colonne **VERSION** dans la liste des machines du portail, qui n'en a
 aucune aujourd'hui, avec l'écart mis en évidence.
+
+> **Écrit au 111**, sauf `vlt agent update <machine>` : c'est la poussée `09_06`,
+> qui vient avec les trames au point 115. Mode d'emploi : `MAN.md` § 25.
 
 Droits : `read:log` pour lire, `write:server` pour poser une cible globale ou de
 groupe — mêmes clés que la signature des GPO et le second facteur Ducky, pour la

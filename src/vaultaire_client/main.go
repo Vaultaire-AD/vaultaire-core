@@ -18,6 +18,7 @@ import (
 	"vaultaire_client/controle"
 	"vaultaire_client/debugreport"
 	"vaultaire_client/gpo"
+	"vaultaire_client/miseajour"
 	pamcommunication "vaultaire_client/pam_communication"
 	"vaultaire_client/revocation"
 	serveurcommunication "vaultaire_client/serveur_communication"
@@ -148,13 +149,22 @@ func bootstrapDecouverte() {
 	// persistance ci-dessus.
 	serveurcommunication.ArmerBascule()
 
-	decouverte.Demarrer(func() string {
+	cleDeSession := func() string {
 		session, err := stosession.SessionsUser.WaitForVaultaireSession()
 		if err != nil || session == nil || session.DuckySession == nil {
 			return ""
 		}
 		return string(session.DuckySession.SessionKey)
-	})
+	}
+	decouverte.Demarrer(cleDeSession)
+
+	// Où l'agent prendrait ses mises à jour (TO-DO 114) : une 04_15 par
+	// démarrage, et une ligne de journal. Rien ne télécharge encore — c'est
+	// ce qui rend la découverte vérifiable avant le point 116.
+	go func() {
+		defer logs.Recover("mise à jour : découverte des dépôts")
+		miseajour.Journaliser(cleDeSession)
+	}()
 }
 
 // purgerGroupesOrphelins affiche, et n'efface que sur confirmation explicite.

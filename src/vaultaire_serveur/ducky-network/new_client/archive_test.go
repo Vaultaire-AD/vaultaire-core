@@ -27,6 +27,11 @@ func TestLArchiveWindowsNePorteJamaisLaClePolitique(t *testing.T) {
 	if strings.Contains(fichiers, duckykey.GPOPublicKeyFileName) {
 		t.Errorf("l'archive Windows porte %s : %s", duckykey.GPOPublicKeyFileName, fichiers)
 	}
+	// Même raison pour la clé des paquets : la mise à jour du poste Windows
+	// est le point 118, et rien n'y lirait cette clé aujourd'hui.
+	if strings.Contains(fichiers, duckykey.PkgPublicKeyFileName) {
+		t.Errorf("l'archive Windows porte %s : %s", duckykey.PkgPublicKeyFileName, fichiers)
+	}
 }
 
 func TestLArchiveLinuxPorteToutCeQueLAgentAttend(t *testing.T) {
@@ -42,6 +47,7 @@ func TestLArchiveLinuxPorteToutCeQueLAgentAttend(t *testing.T) {
 		duckykey.CoreFingerprintFileName, // de quoi attester la clé du core
 		autoaddclientgo.NomConfClient,    // les cores à joindre
 		duckykey.GPOPublicKeyFileName,    // la signature des politiques
+		duckykey.PkgPublicKeyFileName,    // la signature des paquets (TO-DO 113)
 	} {
 		if !index[attendu] {
 			t.Errorf("%s manque à l'archive Linux : %v", attendu, fichiers)

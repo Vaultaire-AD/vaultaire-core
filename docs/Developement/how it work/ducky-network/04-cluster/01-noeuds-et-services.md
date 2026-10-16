@@ -22,7 +22,7 @@
 | `04_12` | core | service_heartbeat | battement d'un service |
 | `04_13` | service | service_heartbeat_ack | accusé |
 | `04_14` | core | service_deregister | sortie propre, sans réponse |
-| `04_15` | core | list_services | **proxy seulement** : les services d'un type — contenu `<type>` (ex. `vaultaire_nexus`) |
+| `04_15` | core | list_services | **proxy et agent** : les services d'un type — contenu `<type>` (ex. `vaultaire_nexus`). Un **agent** n'obtient que `vaultaire_nexus` — ses dépôts de mise à jour (TO-DO 114) ; tout autre type lui rend une liste vide (`hosthandler.TypeDemandable`) |
 | `04_16` | proxy | list_services_response | `<type>`, `<nombre>`, puis `<hôte:port>` par service en ligne et exposé, **ordonnés** (priorité, puis nom). Adresse déduite de l'URL déclarée en `04_09` |
 | `04_17` | client | refresh_nodes | le core demande à une machine de redemander sa liste — contenu : le motif, aucune liste |
 | `04_18` | core | relay_state | **proxy seulement** : compte rendu de ses relais (JSON) — voir [4.4](./04-relais-pilotes.md) |

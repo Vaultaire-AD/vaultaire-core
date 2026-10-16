@@ -6,6 +6,7 @@ import (
 
 	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
+	keymanagement "vaultaire/ducky-network/key_management"
 )
 
 // Actions sur les certificats TLS.
@@ -86,6 +87,17 @@ func supprimerCertificat(a Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("certificat %d introuvable", id)
 	}
 	nom := cert.Name
+
+	// Les clés du core ne se suppriment pas (TO-DO 113) : l'amorçage en ferait
+	// naître une autre au redémarrage, et le parc entier refuserait le core,
+	// ses politiques ou ses paquets. Voir keymanagement.CertificatsIndelebiles.
+	for _, indelebile := range keymanagement.CertificatsIndelebiles {
+		if nom == indelebile {
+			return Resultat{}, fmt.Errorf("le certificat %q est une clé du core : le supprimer "+
+				"en ferait générer une autre au redémarrage, que les machines du parc refuseraient. "+
+				"Suppression refusée", nom)
+		}
+	}
 
 	if err := supprimerEnBaseCert(id); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la suppression du certificat %q : %w", nom, err)

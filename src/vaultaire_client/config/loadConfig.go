@@ -57,6 +57,12 @@ type Config struct {
 	Servers []ServerConfig `json:"servers"`
 	Learned []ServerConfig `json:"learned,omitempty"`
 	Debug   *DebugConfig   `json:"debug,omitempty"`
+
+	// UpdateRepository : le dépôt de mise à jour de REPLI (TO-DO 114), une URL
+	// de base Nexus — « https://miroir.site.lan:8843 ». Il ne sert que si le
+	// cluster n'annonce aucun Nexus : un parc peut vouloir un miroir local qui
+	// n'est pas un service enrôlé. Posé à la main ; jamais écrit par le core.
+	UpdateRepository string `json:"update_repository,omitempty"`
 }
 
 var (
@@ -145,6 +151,13 @@ func GetLearned() []ServerConfig {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 	return append([]ServerConfig(nil), Configuration.Learned...)
+}
+
+// GetUpdateRepository rend le dépôt de mise à jour de repli, tel qu'écrit.
+func GetUpdateRepository() string {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return Configuration.UpdateRepository
 }
 
 // GetDebug rend le réglage de debug, intervalle ramené au défaut s'il est absent.

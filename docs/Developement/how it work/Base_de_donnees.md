@@ -325,6 +325,42 @@ purge_fermees      INT NOT NULL DEFAULT 0
 - **Posées par `EnsureClusterNodesSchema`** sur une base existante, depuis la même
   liste (`colonnesAjoutees`) que le test confronte au `CREATE TABLE`.
 
+## Versions attendues des agents *(TO-DO 111)*
+
+```sql
+-- id_logiciels : dérogation d'une machine
+agent_target_version VARCHAR(64) NOT NULL DEFAULT ''
+-- groups : cible d'un groupe — les anneaux de déploiement
+agent_target_version VARCHAR(64) NOT NULL DEFAULT ''
+-- server_settings : défaut du parc, clé « agent_target_version »
+```
+
+- **Posées par `dbschema.EnsureVersionsCibles`** (`EnsureColumn`), sur une base
+  neuve comme ancienne — pas dans les `CREATE TABLE`. **Non fatale** : seules
+  `vlt agent` et la colonne du portail les lisent (à revoir au point 115).
+- **Vide = aucune cible** à ce niveau ; aucune cible nulle part = aucune mise à
+  jour. Une base migrée ne voit donc rien changer.
+- La cible d'un groupe s'écrit avec **`updated_at = updated_at`** : elle n'est
+  pas visible d'un client LDAP, et bumper `modifyTimestamp` ferait réimporter le
+  groupe par Keycloak.
+- Les valeurs sont validées à l'écriture (`parcversion.NormaliserCible` : trois
+  nombres) et relues avec la même règle : une valeur illisible posée à la main
+  n'est jamais prise pour une cible — voir `MAN.md` § 25.
+
+## Clés du core dans `certificates`
+
+| `name` | Rôle | Déposée sur les machines |
+|---|---|---|
+| `server_main` | transport Ducky (empreinte du core) | `core_key_fingerprint` |
+| `server_login_client` | SSH de déploiement (`--join`) | — |
+| `gpo_signing` | signature des politiques (TO-DO 52) | `gpo_signing_key.pem` |
+| `pkg_signing` | signature des paquets d'agent (TO-DO 113) | `pkg_signing_key.pem` |
+
+Amorcées au démarrage **si la ligne manque**, jamais régénérées : une clé
+nouvelle serait refusée par tout le parc. `certificate delete` les refuse.
+`pkg_signing` peut n'avoir **que** sa clé publique (`private_key_data` NULL) :
+c'est le mode hors ligne, pas un manque — voir `Releases.md`.
+
 ## Relais pilotés — `cluster_relays` et `cluster_relay_state` *(TO-DO 141)*
 
 Créées par `create_data_base.go`. Ce que le core **demande** à un proxy

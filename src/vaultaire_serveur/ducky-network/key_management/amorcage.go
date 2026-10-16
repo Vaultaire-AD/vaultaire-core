@@ -56,6 +56,13 @@ func EnsureServerKeys() error {
 		return fmt.Errorf("clé de signature des politiques GPO : %w", err)
 	}
 
+	// La clé de signature des paquets d'agent (TO-DO 113), au même moment et
+	// pour la même raison : elle est déposée à chaque « --join », qui peut
+	// arriver dès le premier démarrage.
+	if err := Generate_Pkg_Signing_Key(); err != nil {
+		return fmt.Errorf("clé de signature des paquets : %w", err)
+	}
+
 	// L'empreinte est calculée et journalisée au démarrage.
 	//
 	// C'est ce qu'un administrateur recopie sur une machine du parc, et ce qu'il

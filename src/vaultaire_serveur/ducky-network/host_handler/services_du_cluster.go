@@ -16,15 +16,24 @@ import (
 )
 
 // Les services d'un type, pour le relais HTTPS d'un proxy — 04_15 → 04_16
-// (TO-DO 72).
+// (TO-DO 72) — et, pour un AGENT, les dépôts de mise à jour (TO-DO 114).
 //
 // # Pourquoi une trame à part, et pas la 04_04
 //
 // La 04_04 part vers CHAQUE agent du parc. Y ajouter les Nexus apprendrait à
 // tout poste où sont les dépôts — le commentaire de handleListCores refuse
 // déjà d'y mettre le JSON des capacités pour la même raison : ne pas décrire
-// l'infrastructure à toutes les machines. La 04_15 n'est émise que par un
-// vaultaire_proxy (catalogue des types), et seul un relais en a l'usage.
+// l'infrastructure à toutes les machines. La 04_15 est une DEMANDE : seul la
+// reçoit qui la pose, et le catalogue des types dit qui peut la poser.
+//
+// # Ce qu'un agent peut demander (TO-DO 114)
+//
+// Le proxy demande les services de n'importe quel type relayable. L'agent, un
+// seul : les Nexus, où il prendra ses paquets de mise à jour. Le reste de la
+// carte — les interfaces web, un futur service — ne le regarde pas. Une
+// demande d'un autre type rend une liste VIDE et une ligne de journal, comme
+// un type inconnu du proxy : ce n'est pas une attaque à refuser bruyamment,
+// c'est une demande à laquelle on n'a rien à répondre.
 //
 // # Le format
 //
@@ -43,11 +52,20 @@ type ServiceJoignable struct {
 }
 
 // handleListServices : 04_15 -> 04_16.
-func handleListServices(db *sql.DB, t storage.Trames_struct_client, content string) (string, error) {
+func handleListServices(db *sql.DB, t storage.Trames_struct_client, content string,
+	session *storage.DuckySession) (string, error) {
 	typ := strings.TrimSpace(strings.SplitN(content, "\n", 2)[0])
+	demandeur := ""
+	if session != nil {
+		demandeur = session.BoundClientType
+	}
 
 	var services []ServiceJoignable
-	if typeDeServiceRelayable(typ) {
+	if !TypeDemandable(demandeur, typ) {
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"04_15 : %s (%s) demande les services de type %q, que ce type de client ne peut pas demander",
+			t.ClientSoftwareID, demandeur, typ))
+	} else if typeDeServiceRelayable(typ) {
 		var err error
 		services, err = servicesEnLigne(db, typ)
 		if err != nil {
@@ -69,6 +87,20 @@ func handleListServices(db *sql.DB, t storage.Trames_struct_client, content stri
 		contenu = append(contenu, s.Adresse)
 	}
 	return trame.ReponseClient("04_16", t.Destination_Server, t.SessionIntegritykey, contenu...), nil
+}
+
+// TypeDemandable dit si un client de ce type peut demander les services de ce
+// type. Un agent : les Nexus seulement. Les autres types qui ont la 04_15 —
+// le proxy — : tout type relayable, filtré ensuite par typeDeServiceRelayable.
+// Un demandeur de type inconnu (session sans type lié) : rien.
+func TypeDemandable(demandeur, typ string) bool {
+	switch demandeur {
+	case clienttype.Client:
+		return typ == clienttype.Nexus
+	case "":
+		return false
+	}
+	return true
 }
 
 // typeDeServiceRelayable : un type de service du catalogue, sauf le proxy.

@@ -111,7 +111,7 @@ func fichiersDeLArchive(systeme string) []string {
 		autoaddclientgo.NomConfClient,
 	}
 	if systeme == SystemeLinux {
-		fichiers = append(fichiers, duckykey.GPOPublicKeyFileName)
+		fichiers = append(fichiers, duckykey.GPOPublicKeyFileName, duckykey.PkgPublicKeyFileName)
 	}
 	return fichiers
 }
@@ -231,6 +231,14 @@ func ConstruireArchive(db *sql.DB, computeurID, systeme string) ([]byte, string,
 					err.Error()+" — l'agent ne vérifiera pas les signatures de politique")
 			manquants = append(manquants, duckykey.GPOPublicKeyFileName)
 		}
+		// La clé des paquets (TO-DO 113) : Linux seulement, comme celle des
+		// GPO — la mise à jour du poste Windows est un lot à part (point 118).
+		if err := duckykey.EcrireClePaquetsPourClient(repertoire); err != nil {
+			logs.Write_LogCode("WARNING", logs.CodeCertLoad,
+				"archive: clé de signature des paquets non produite pour "+computeurID+" : "+
+					err.Error()+" — la machine refusera toute mise à jour automatique")
+			manquants = append(manquants, duckykey.PkgPublicKeyFileName)
+		}
 	}
 	fichiers := fichiersDeLArchive(systeme)
 
@@ -333,6 +341,7 @@ func texteLisezMoi(computeurID, systeme string, manquants []string) string {
 	b.WriteString("  " + autoaddclientgo.NomConfClient + "        les cores a joindre\n")
 	if systeme == SystemeLinux {
 		b.WriteString("  " + duckykey.GPOPublicKeyFileName + "     la cle qui verifie la signature des politiques\n")
+		b.WriteString("  " + duckykey.PkgPublicKeyFileName + "     la cle qui verifie la signature des paquets d'agent\n")
 	}
 	b.WriteString("\n")
 
@@ -345,7 +354,8 @@ func texteLisezMoi(computeurID, systeme string, manquants []string) string {
 		b.WriteString("  sans core_key_fingerprint, il accepte la premiere cle du core qu'il\n")
 		b.WriteString("  recoit, et le journalise ; sans client_conf.json, il faut lui donner\n")
 		b.WriteString("  l'adresse du core a l'installation ; sans gpo_signing_key.pem, il ne\n")
-		b.WriteString("  verifie pas la signature des politiques.\n")
+		b.WriteString("  verifie pas la signature des politiques ; sans pkg_signing_key.pem, il\n")
+		b.WriteString("  refusera toute mise a jour automatique.\n")
 		b.WriteString("Relancer l'export plus tard produira une archive complete si la cause\n")
 		b.WriteString("du probleme a disparu.\n\n")
 	}

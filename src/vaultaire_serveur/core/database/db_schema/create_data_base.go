@@ -559,6 +559,19 @@ func Create_DataBase(db *sql.DB) {
 		log.Fatalf("Erreur lors de la pose des identifiants de l'annuaire : %v", err)
 	}
 
+	// Les versions attendues des agents (TO-DO 111).
+	//
+	// NON fatale : seules les commandes « agent » et la colonne VERSION du
+	// portail nomment ces colonnes, et elles rendent l'erreur de lecture. Un
+	// core qui ne démarre plus pour une vue de suivi serait une panne pour rien.
+	// ⚠️ À reconsidérer au point 115 : la demande d'ordre 09_01, émise à chaque
+	// reconnexion, les lira aussi.
+	if err := EnsureVersionsCibles(db); err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
+			"database: versions attendues des agents non posées, « vlt agent » "+
+				"échouera : "+err.Error())
+	}
+
 	// L'unicité (compte, machine) de `did_login` (TO-DO 107).
 	//
 	// NON fatale, contrairement à ce qui précède : un dédoublonnage qui échoue

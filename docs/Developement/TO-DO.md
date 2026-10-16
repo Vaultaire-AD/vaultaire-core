@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **202**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **203**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -32,9 +32,7 @@ Trois gestes, dans le même passage que le code :
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
-| 111 | AGENT-UPDATE | Version attendue par groupe, et la vue « constaté vs attendu » | À faire — socle                      |
-| 113 | AGENT-UPDATE | Clé `pkg_signing` et format du manifeste signé              | À faire                                 |
-| 114 | AGENT-UPDATE | Dépôt Nexus en lecture anonyme, découvert par `04_15`       | À faire                                 |
+| 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
 | 115 | AGENT-UPDATE | Ordre de mise à jour : catégorie de trames `09`             | À faire                                 |
 | 116 | AGENT-UPDATE | Basculement survivable et retour arrière automatique        | À faire — **cœur du lot**, après 112    |
 | 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
@@ -76,7 +74,7 @@ connaît ses cores par sa configuration.
 
 **Dépendances.** Le relais (points 38 et 72, faits : Ducky, HTTPS, LDAPS) change ce qu'un proxy
 fait pour un client ; le filtrage change qui il sert. Le 72 a déjà donné au proxy une vue
-qui lui est propre — les services d'un type, par la `04_15` réservée aux proxies : un filtre
+qui lui est propre — les services d'un type, par la `04_15` (proxy, et agent pour les Nexus seulement) : un filtre
 des nœuds servis à un proxy pourrait passer par une trame de la même famille.
 
 **Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
@@ -323,90 +321,33 @@ Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 1
 > **L'ordre compte.** Le 112 était le préalable de sûreté : il est **traité**
 > (voir `DO/2.3/2.3.md`) — l'unité de l'agent a une relance bornée, un contrôle
 > avant démarrage (`vaultaire_client --check`), et c'est le binaire qui la pose
-> (`--install-unit`). Le 111 est le socle sans lequel rien n'est pilotable ; le
-> 116 est le cœur du lot, et s'appuie sur le 112.
+> (`--install-unit`). Le 111, le socle, est **traité** aussi : la version
+> attendue par machine, groupe et parc, et la vue `vlt agent`. Le 116 est le
+> cœur du lot, et s'appuie sur le 112.
 
-### 111. [AGENT-UPDATE] La version attendue, et la vue « constaté vs attendu »
+### 202. [CI] [AGENT-UPDATE] La release produit les manifestes du paquet d'agent
 
-**Le socle.** Sans lui, rien n'est pilotable — et il vaut déjà quelque chose
-seul : savoir quelles machines sont en retard.
+**Origine** (reste du **113**). Le bloc n'a pas pu être écrit par l'IA :
+`.github/` lui est fermé. Dans `.github/workflows/release.yaml`, étape
+« Paquets », remplacer la ligne `(cd "$O" && sha256sum *.tar.gz > SHA256SUMS)`
+par :
 
-**Constat.** Le core **stocke** la version d'un agent (`id_logiciels.agent_version`,
-remontée par `02_12`) et l'**affiche**. Depuis le **161**, il la compare à un
-minimum en un seul endroit — l'avertissement de `check_online_minutes` —, pour
-prévenir, jamais pour refuser. Aucune notion de version **attendue** n'existe :
-ni table, ni réglage, ni écart calculé.
+```bash
+          # Les manifestes du paquet d'agent, NON signés (TO-DO 113) : un par
+          # famille de modules. Produits par le binaire du core lui-même — le
+          # même code qui les recalculera et les signera sur le site —, pour
+          # que la CI et le core ne puissent pas diverger sur le format. La
+          # CI ne détient la clé d'aucun cluster : chaque core signe ce qu'il
+          # adopte (« vaultaire_serveur --sign-package »).
+          "$B/vaultaire_server/vaultaire_serveur" --package-manifest \
+            "$O/vaultaire_client-${TAG}-linux-amd64.tar.gz"
+          (cd "$O" && sha256sum *.tar.gz *.manifest > SHA256SUMS)
+```
 
-**À faire.**
-
-1. Trois niveaux de cible : `id_logiciels.agent_target_version` (dérogation par
-   machine), `groups.agent_target_version` (**le niveau ordinaire**, les anneaux
-   de déploiement), `server_settings.agent_target_version` (défaut du parc).
-2. Résolution : machine, sinon **la plus haute** des cibles de ses groupes, sinon
-   le défaut global, sinon **vide**. Vide = aucune mise à jour automatique, et
-   c'est le défaut : une installation en service ne doit rien voir changer tant
-   que personne n'a posé de cible.
-3. `vlt agent`, `vlt agent -g <groupe>`, `vlt agent target [-g <groupe>] <version>`,
-   `vlt agent pin <machine> <version|--none>`. Droits `read:log` / `write:server`,
-   portée globale — mêmes clés que la signature GPO et le second facteur Ducky,
-   et pour la même raison.
-4. Une colonne **VERSION** dans la liste des machines du portail, qui n'en a
-   aucune, avec l'écart mis en évidence.
-5. Comparaison de versions sémantiques : **écrite au 161** —
-   `core/parcversion` (`Lire`, `Avant`, `Recenser`) et la lecture du parc
-   `dbclients.VersionsDuParc`. À reprendre, pas à réécrire : c'est elle qui
-   décidera de « la plus haute » et du refus de rétrogradation du point 116. Ce
-   qu'elle tranche déjà : seul le triplet de tête compte (`+…` et ` (date)` sont
-   ignorés), et une version vide ou illisible n'est **jamais** tenue pour à
-   jour.
-
-### 113. [AGENT-UPDATE] [SÉCURITÉ] La clé de signature des paquets et le format signé
-
-**À faire.**
-
-1. Clé **`pkg_signing`** dans la table `certificates`, RSA 4096, amorçage
-   idempotent — le calque de `gpo_signing` (`signature_politique.go`). Partagée
-   par le cluster sans réplication à écrire, et **jamais régénérée** : le faire
-   ferait refuser leurs paquets à toutes les machines portant l'ancienne.
-2. Dépôt de la partie publique à l'installation, par le SCP de `--join`, à côté
-   de `gpo_signing_key.pem`. **Jamais apprise en route** : faire demander à
-   l'agent la clé qui juge ce qu'on lui envoie n'aurait aucun sens (raisonnement
-   du point 52).
-3. Domaine de signature **`vaultaire-pkg-v1`**, distinct de `vaultaire-gpo-v1` :
-   une clé ne doit jamais pouvoir signer quelque chose qui passe pour le rôle de
-   l'autre.
-4. Le manifeste : version, plateforme, et le SHA-256 de chacun des cinq fichiers.
-   **Un manifeste plutôt que cinq signatures** — il lie le JEU, et empêche de
-   composer un jeu mixte fait de fichiers authentiques pris dans deux versions.
-5. Il ne nomme **aucune machine**, contrairement à la signature d'une politique :
-   un paquet est le même pour tout le monde, et le lier obligerait à signer à
-   chaque téléchargement. La rétrogradation est fermée ailleurs — voir 116.
-6. **Prévoir la rotation dès le format** : l'agent doit pouvoir accepter deux
-   clés de confiance, sinon remplacer la clé demandera de repasser sur chaque
-   machine.
-7. Signature à la release : `auto-compil.sh` et le workflow produisent le
-   manifeste signé à côté des archives. La clé privée vit sur le core par défaut ;
-   documenter le chemin pour la garder hors ligne, sans l'imposer.
-
-### 114. [AGENT-UPDATE] [NEXUS] Le dépôt de mise à jour, et sa découverte par l'agent
-
-**À faire.**
-
-1. Un dépôt Nexus de type **`vaultaire`** pour les artefacts d'agent, en
-   **lecture anonyme**. C'est un choix de sûreté, pas un relâchement : l'intégrité
-   vient de la signature, et un dépôt authentifié qui sert des paquets nus est
-   moins sûr qu'un dépôt libre qui sert des paquets signés. Cela évite aussi de
-   distribuer un jeton Nexus à chaque machine du parc.
-2. L'agent **n'a pas d'URL Nexus en configuration** : il la demande au cluster par
-   `04_15`/`04_16`, comme le proxy le fait déjà pour relayer en HTTPS (point 72).
-   `decouverte.AdressesService` existe ; il faut seulement accorder `04_15` au
-   type de client `Client`, qui ne l'a pas.
-3. Repli sur une URL de `client_conf.json` si le cluster n'annonce aucun Nexus —
-   un parc peut vouloir un miroir local qui n'est pas un service enrôlé.
-4. Documenter la procédure du site **sans Internet** : télécharger les archives
-   ailleurs, les verser par `/api/v1/repos/{repo}/upload`. C'est ce qui remplace
-   `vlt-upm`, et c'est un service de moins à écrire, enrôler, superviser et
-   mettre à jour lui-même.
+`release/*` les publie avec le reste. Vérifier sur la release suivante :
+`vaultaire_client-vX.Y.Z-linux-amd64.tar.gz.{rocky,debian}.manifest` présents
+et dans `SHA256SUMS`. `docker-update.sh` n'a rien à changer : il ne vérifie
+que les archives qu'il installe.
 
 ### 115. [AGENT-UPDATE] [DUCKY] L'ordre de mise à jour : catégorie `09`
 
@@ -423,6 +364,11 @@ ni table, ni réglage, ni écart calculé.
 09_06  ordre poussé            core → client
 ```
 
+0. **Ce que l'ordre `09_02` doit porter, depuis le 114** : la version, et le
+   **nom du dépôt** Nexus (`releases` par défaut — `miseajour.DepotParDefaut`).
+   L'agent sait déjà trouver les Nexus (`miseajour.Depots` : `04_15`, repli
+   `update_repository`) et composer les URL (`miseajour.URLFichier`, `NomArchive`,
+   `NomManifeste`, `NomSignature`).
 1. **Le modèle de la révocation (`06`), repris tel quel** : poussée opportuniste
    vers qui est connecté — un échec d'envoi n'est *pas* une erreur, personne ne
    tient de file — et **rattrapage par demande** à chaque reconnexion. C'est ce
@@ -431,6 +377,16 @@ ni table, ni réglage, ni écart calculé.
 2. Droits : `09_01` et `09_04` au type `Client`, dans `core/clienttype`.
 3. Le compte rendu `09_04` alimente la vue du point 111 : c'est lui qui distingue
    « pas encore tenté » de « tenté et revenu en arrière ».
+4. **`vlt agent update <computeur_id>`** (`Mise_a_jour_du_parc.md` § 8.2) : la
+   poussée `09_06` vers une machine, comme `gpo refresh`. Laissée hors du 111,
+   qui n'avait rien à pousser.
+5. **Rendre fatale la pose des colonnes** `agent_target_version`
+   (`dbschema.EnsureVersionsCibles`) : elle ne l'est pas au 111, où seules
+   `vlt agent` et la colonne du portail les lisent. La `09_01`, émise à chaque
+   reconnexion, les lira aussi.
+6. Retirer la phrase « Aucun agent ne se met encore à jour de lui-même »
+   (`noteProvisoire` dans `actions_agent_version.go`, l'aide de `vlt agent`,
+   `MAN.md` § 25, jalon 9.3) le jour où le 116 la rend fausse.
 
 ### 116. [AGENT-UPDATE] Le basculement survivable et le retour arrière
 
@@ -443,6 +399,17 @@ ni table, ni réglage, ni écart calculé.
    survivre au redémarrage du service. Lancé détaché par `systemd-run`. C'est le
    problème que `deployments/pre-prod/docker-update.sh` a déjà résolu en se
    recopiant dans un `mktemp` — **à relire avant d'écrire une ligne**.
+   **Le téléchargement a ses adresses depuis le 114** : `miseajour.Depots`
+   (Nexus annoncés, sinon `update_repository`), puis `URLFichier` pour
+   l'archive, le manifeste et la signature de la famille de la machine. **À
+   trancher** : la vérification TLS. Un Nexus a souvent un certificat
+   auto-signé ; la signature juge les octets quel que soit le transport, mais
+   désactiver la vérification n'en reste pas moins un choix à écrire.
+   **La vérification est écrite au 113** : `vaultaire_client/paquet` —
+   `ClesDeConfiance()` (le fichier déposé ; son ABSENCE refuse tout paquet),
+   `LireEnveloppe`, `Verifier` (rend le manifeste). Ne choisir que le
+   manifeste dont `Famille()` est celle de la machine, et refuser une
+   `Version` autre que celle de l'ordre.
 2. L'ordre : télécharger → vérifier la signature **puis** chaque SHA-256 →
    **`dlopen()` chaque `.so`** → garder la version en place → basculer → redémarrer
    → porte de santé → retour arrière si elle échoue.

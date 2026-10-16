@@ -33,6 +33,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 22. [settings — Durées d'exploitation](#22-settings--durées-dexploitation)
 23. [version — Version du core](#23-version--version-du-core)
 24. [logs — Journal commun des cores](#24-logs--journal-commun-des-cores)
+25. [agent — Version attendue des agents](#25-agent--version-attendue-des-agents)
 
 ---
 
@@ -220,6 +221,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
 | `settings`| Durées d'exploitation du serveur — voir [§22](#22-settings--durées-dexploitation) |
 | `logs`   | Journal commun des cores, filtré et paginé — voir [§24](#24-logs--journal-commun-des-cores) |
+| `agent`  | Version déclarée et version attendue des agents — voir [§25](#25-agent--version-attendue-des-agents) |
 | `help`   | Liste les commandes. Chaque commande accepte `-h`. |
 
 > Chaque commande répond à `-h` avec sa syntaxe à jour. En cas de désaccord entre ce manuel et `vlt <commande> -h`, **c’est l’aide qui fait foi** : elle vit dans le même fichier que le code qui l’applique.
@@ -394,8 +396,10 @@ create -export <computeur_id> <fichier.zip> --os <linux|windows>
 
 `--export` écrit un zip portant **tout** ce dont l'agent a besoin :
 `client_software.yaml`, `private_key.pem`, `core_key_fingerprint`,
-`client_conf.json`, et `gpo_signing_key.pem` sous Linux seulement — l'agent
-Windows ignore les trames de politique. Un `LISEZ-MOI.txt` dit ce que l'archive
+`client_conf.json`, et sous Linux seulement `gpo_signing_key.pem` et
+`pkg_signing_key.pem` (la clé des paquets d'agent, TO-DO 113 — voir
+[`Releases.md`](../exploitation/Releases.md)) — l'agent Windows ignore les
+trames de politique, et sa mise à jour est un lot à part. Un `LISEZ-MOI.txt` dit ce que l'archive
 contient, et nomme ce qui manque si le core n'a pas su le produire.
 
 Le fichier est écrit en **0600**, et il contient la **clé privée de la machine** :
@@ -1107,6 +1111,8 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --gpo <nom>` ; `gpo refresh --all` |
 | Voir les durées d'exploitation | `settings list` |
 | Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
+| Agents en retard sur leur version attendue | `agent` ; `agent -g <groupe>` |
+| Poser une version attendue | `agent target 2.3.1` ; `agent target -g pilote 2.4.0` ; `agent pin <id> 2.2.0` |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
@@ -2102,6 +2108,7 @@ droit est une commande qu'on ne peut pas taper au moment où on en a besoin.
 | | |
 |---|---|
 | une machine | `get -c <machine>` — agent et SDK |
+| tous les agents, face à leur version attendue | `agent` — voir [§25](#25-agent--version-attendue-des-agents) |
 | les nœuds du cluster | `cluster list` |
 
 ### `(build local)`
@@ -2110,11 +2117,14 @@ Un binaire compilé à la main, hors du script de build, l'affiche. Il ne porte 
 commit ni date, et **se reconnaît** ainsi dans l'inventaire du parc — c'est le
 premier binaire qu'on cherche devant une machine qui se comporte mal.
 
-### Aucune comparaison
+### Aucun refus
 
-Le core n'annonce ni « à jour » ni « obsolète », et ne refuse aucun agent sur sa
-version. Il ne connaît aucune référence — il ne sait pas ce qui existe ailleurs,
-et l'inventer serait pire que se taire.
+Le core ne refuse aucun agent sur sa version. Il compare en deux endroits, pour
+**prévenir**, jamais pour fermer : `settings set check_online_minutes` compte
+les machines qui ne suivraient pas la cadence (TO-DO 161), et `agent` situe
+chaque agent par rapport à la version **qu'on lui a fixée** (§25). Sans cible
+posée, il n'annonce ni « à jour » ni « obsolète » : il ne sait pas ce qui existe
+ailleurs, et l'inventer serait pire que se taire.
 
 Une règle de comparaison de versions se trompe sur les cas limites, et se
 tromper ici voudrait dire fermer la porte à un parc dont le seul outil de
@@ -2199,3 +2209,91 @@ l'annuaire avec elle.
 La sortie standard des cores (`docker logs`, `journalctl`) et les fichiers de
 `/var/log/vaultaire/` ne sont **pas** concernés : ils gardent leur propre
 rétention.
+
+---
+
+## 25. agent — Version attendue des agents
+
+*(TO-DO 111.)* Ce que chaque agent **déclare** (`02_12`), face à ce qu'on
+**attend** de lui.
+
+```bash
+agent                                    # tout le parc (read:log)
+agent -g <groupe>                        # les agents d'un groupe (read:log)
+agent target <version|none>              # défaut du parc (write:server)
+agent target -g <groupe> <version|none>  # cible d'un groupe — un anneau (write:server)
+agent pin <computeur_id> <version|none>  # dérogation d'une machine (write:server)
+```
+
+`agent` tapé seul affiche la vue — c'est la seule commande dont la forme nue
+n'est pas l'aide ; `agent -h` donne l'aide.
+
+```
+Défaut du parc   : 2.3.0
+Cibles de groupe : pilote 2.4.0
+
+MACHINE    COMPUTEUR ID  DÉCLARÉE  ATTENDUE                ÉTAT
+pilote-1   a1b2…         2.3.0     2.4.0 (groupe pilote)   ⚠ en retard
+web01      c3d4…         2.3.0     2.3.0 (parc)            à jour
+fragile    e5f6…         2.3.0     2.2.0 (dérogation)      en avance
+
+3 agent(s) : 1 en retard, 1 en avance, 1 à jour
+```
+
+### D'où vient la version attendue
+
+| Niveau | Où | Rôle |
+|---|---|---|
+| machine | `agent pin` → `id_logiciels.agent_target_version` | dérogation : le poste qu'on fige |
+| groupe | `agent target -g` → `groups.agent_target_version` | **le niveau ordinaire** — les anneaux |
+| parc | `agent target` → `server_settings` | le défaut |
+
+Pour chaque agent : sa **dérogation**, sinon **la plus haute** des cibles de
+ses groupes, sinon le **défaut du parc**, sinon **aucune**. La plus haute
+l'emporte entre groupes : une machine du groupe pilote et du groupe général
+doit recevoir la version du pilote. Le cas inverse — le poste qu'on laisse
+derrière — est celui de `pin`. Pour figer une machine là où elle est :
+`agent pin <id> <sa version actuelle>`.
+
+**Sans cible, aucune mise à jour.** C'est le défaut : une installation en
+service ne voit rien changer tant que personne n'a posé de cible.
+
+### Les états
+
+| État | Sens |
+|---|---|
+| **en retard** | la version déclarée précède l'attendue |
+| **inconnue** | une cible s'applique, mais la version déclarée est vide ou illisible — comptée avec ce qui est à traiter |
+| **en avance** | la machine déclare plus récent : elle ne sera jamais rétrogradée sans ordre explicite |
+| **à jour** | |
+| **sans cible** | rien ne s'applique, rien ne sera fait |
+
+### Les versions acceptées
+
+Trois nombres : `2.3.1`, ou `v2.3.1` (rangée `2.3.1`). Refusées : `2.3`
+(2.3.0, ou une saisie tronquée ?), `2.3.1-rc1` (une pré-version se lirait
+comme la version finale), `2.3.1+g…`. `none` (ou `--none`) retire la cible.
+
+### Droits
+
+`read:log` pour lire, `write:server` pour écrire, **portée globale** — les clés
+de `gpo signature` et de `mfa ducky`. Une machine appartient à des groupes de
+plusieurs domaines, et la plus haute de leurs cibles l'emporte : un délégué qui
+poserait une cible sur son groupe déciderait aussi pour les machines qu'un
+autre domaine partage avec lui.
+
+### Ce qui n'est pas encore là
+
+**Aucun agent ne se met encore à jour de lui-même.** La cible est une consigne,
+que l'ordre de mise à jour et le basculement (TO-DO 115 et 116) viendront lire.
+La vue vaut déjà seule : elle dit quelles machines sont en retard.
+
+Ni les proxies, ni Nexus, ni l'interface web n'y figurent : ils déclarent une
+version (`cluster list`, `get -c`), mais ne demanderont jamais d'ordre de mise à
+jour. `agent pin` refuse de les viser.
+
+### Sur le portail
+
+**Clients** : la colonne **Version** donne la version déclarée et, pour un
+agent, un badge « état · version attendue », rouge sur un écart. Sans
+`read:log` sur `*`, la colonne montre la version déclarée seule.

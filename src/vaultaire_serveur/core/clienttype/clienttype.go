@@ -131,7 +131,14 @@ var catalogue = []Definition{
 			// 04_01 et 04_07 ne sont PAS accordées : un agent est une machine du
 			// parc, pas un nœud du cluster, et lui laisser s'enregistrer comme
 			// tel le ferait apparaître dans la liste servie aux autres.
-			"04_03",
+			//
+			// 04_15 (TO-DO 114) : où sont les dépôts de mise à jour. Accordée
+			// pour UN type seulement — les Nexus — et le core le vérifie
+			// (host_handler/services_du_cluster.go) : un agent n'apprend rien
+			// d'autre de la carte des services. Ce qu'il apprend, les adresses
+			// des dépôts EXPOSÉS, il le lira de toute façon en téléchargeant
+			// ses paquets, et ces dépôts se lisent sans compte.
+			"04_03", "04_15",
 			"05_01", "05_05", "05_09", "05_12", "05_15",
 			"06_02", "06_03", "06_04",
 		},

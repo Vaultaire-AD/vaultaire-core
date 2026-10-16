@@ -26,6 +26,7 @@ import (
 	"vaultaire/core/dns"
 	ldap "vaultaire/core/ldap"
 	"vaultaire/core/logs"
+	"vaultaire/core/paquetagent/outil"
 	"vaultaire/core/permission"
 	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
@@ -58,6 +59,12 @@ func main() {
 		if arg == "--test" {
 			os.Exit(testrunner.RunFromMain())
 		}
+	}
+
+	// Paquets d'agent (TO-DO 113) : produire ou signer un manifeste, lire la
+	// clé. Avant tout service, et sans démarrer le core — voir paquetagent/outil.
+	if outil.EstCommande(os.Args[1:]) {
+		os.Exit(outil.Executer(os.Args[1:], os.Stdout, os.Stderr, ouvrirClesPaquets))
 	}
 
 	// Garnissage du catalogue d'actions, AVANT tout service.

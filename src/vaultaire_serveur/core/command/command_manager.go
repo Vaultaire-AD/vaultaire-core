@@ -6,6 +6,7 @@ import (
 	"strings"
 	"vaultaire/core/action"
 	commandadd "vaultaire/core/command/command_add"
+	commandagent "vaultaire/core/command/command_agent"
 	commandcertificate "vaultaire/core/command/command_certificate"
 	commandcluster "vaultaire/core/command/command_cluster"
 	commandcreate "vaultaire/core/command/command_create"
@@ -27,6 +28,14 @@ import (
 	"vaultaire/core/permission"
 )
 
+// commandesNuesPermises : les commandes dont la forme nue a un sens.
+//
+// Une commande tapée seule reçoit « -h » — la plupart n'ont rien à faire sans
+// arguments, et l'aide est la meilleure réponse. « agent » est l'exception :
+// sa forme nue est LA vue du parc (TO-DO 111), et la remplacer par l'aide
+// obligerait à taper un mot de plus pour la question qu'on pose le plus.
+var commandesNuesPermises = map[string]bool{"agent": true}
+
 // Exécute une commande et retourne le résultat
 func ExecuteCommand(input, sender string) string {
 	input = strings.TrimSpace(input)
@@ -38,7 +47,7 @@ func ExecuteCommand(input, sender string) string {
 	if len(args) == 0 {
 		return "Erreur : commande vide."
 	}
-	if len(args) == 1 {
+	if len(args) == 1 && !commandesNuesPermises[args[0]] {
 		args = append(args, "-h")
 	}
 
@@ -63,6 +72,7 @@ func ExecuteCommand(input, sender string) string {
 		"certificate": commandcertificate.Certificate_Command,
 		"settings":    commandsettings.Settings_Command,
 		"logs":        commandlogs.Logs_Command,
+		"agent":       commandagent.Agent_Command,
 	}
 
 	// `version` est traitée AVANT la table des commandes, comme `clear` et
@@ -98,6 +108,7 @@ func ExecuteCommand(input, sender string) string {
   certificate      : certificats TLS du serveur (LDAPS). Voir certificate -h.
   settings         : durées d'exploitation du serveur. Voir settings -h.
   logs   [OPTIONS] : journal commun des cores, filtré et paginé. Voir logs -h.
+  agent  [OPTIONS] : version déclarée et version attendue des agents. Voir agent -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.

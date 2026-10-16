@@ -28,7 +28,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 
 | Clé | Ce qu'elle gouverne |
 |---|---|
-| `read:log` | consultation des journaux |
+| `read:log` | consultation des journaux, et des versions attendues des agents |
 | `write:dns` / `read:dns` | modification / consultation du DNS |
 | `write:mfa` | second facteur d'un tiers |
 | `write:killswitch` | révocation d'urgence d'un compte |
@@ -36,7 +36,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 | `write:relay` | ce qu'un proxy **expose** : ses relais, leurs ports, leurs cibles (TO-DO 141) |
 | `read:certificate` / `write:certificate` | certificats TLS du serveur |
 | `read:enrollment` | consultation des clés d'enrôlement |
-| `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées** |
+| `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées**, **version attendue des agents** |
 | `read:nexus` / `write:nexus` / `write:nexus_admin` | dépôt de paquets Nexus : lire les dépôts privés / publier / administrer — voir « Droits de service » |
 
 **Pourquoi des clés spéciales et non des objets RBAC.** Un journal, un nœud de
@@ -253,12 +253,16 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `log.list` | `read:log` | Globale | — | **Registre** — `logs` | **Registre** — `/admin/logs` |
 | `mfa.get_ducky_policy` | `read:log` | Globale | — | **Registre** — `mfa ducky` | — |
 | `mfa.set_ducky_policy` | `write:server` | Globale | — | **Registre** — `mfa ducky <on\|off>` | — |
+| `agent.status` | `read:log` | Globale | — | **Registre** — `agent`, `agent -g <groupe>` | **Registre** — colonne Version de `/admin/clients` (absente sans le droit) |
+| `agent.set_target` | `write:server` | Globale | — | **Registre** — `agent target [-g <groupe>] <version\|none>` | — |
+| `agent.pin` | `write:server` | Globale | — | **Registre** — `agent pin <computeur_id> <version\|none>` | — |
 | **Certificats et politique** |
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**103 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
-ligne de commande.** *(Le compte valait 94 ici alors que le registre en portait
+**109 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+ligne de commande.** *(109 depuis les trois actions `agent.*` du TO-DO 111 ; le
+tableau annonçait 103 quand le test en comptait déjà 106. Le compte valait 94 ici alors que le registre en portait
 97 : `client.export`, `mfa.get_ducky_policy` et `mfa.set_ducky_policy` manquaient
 au tableau. Il est tenu par un test — `TestCatalogueCompletNaPasDeDoublon` — qui,
 lui, n'avait pas dérivé.)*
