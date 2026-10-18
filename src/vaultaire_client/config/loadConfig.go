@@ -63,6 +63,19 @@ type Config struct {
 	// cluster n'annonce aucun Nexus : un parc peut vouloir un miroir local qui
 	// n'est pas un service enrôlé. Posé à la main ; jamais écrit par le core.
 	UpdateRepository string `json:"update_repository,omitempty"`
+
+	// UpdateTLSCA : un fichier PEM d'autorités de confiance EN PLUS de celles
+	// du système, pour le téléchargement des paquets (TO-DO 116) — l'AC du
+	// site, ou le certificat d'un Nexus auto-signé. Il n'existe pas de réglage
+	// pour ne pas vérifier : tranché le 17/10.
+	UpdateTLSCA string `json:"update_tls_ca,omitempty"`
+
+	// ReconcileSystemConfig : false retire la machine de la réconciliation de
+	// sa configuration système (TO-DO 117) — piles PAM, sshd_config,
+	// nsswitch.conf. Absent = true. Pour une machine dont les piles sont
+	// tenues autrement ; l'état « desactivee » remonte au core, pour que ce
+	// choix se voie.
+	ReconcileSystemConfig *bool `json:"reconcile_system_config,omitempty"`
 }
 
 var (
@@ -153,11 +166,25 @@ func GetLearned() []ServerConfig {
 	return append([]ServerConfig(nil), Configuration.Learned...)
 }
 
+// GetReconcileSystemConfig rend le réglage, vrai par défaut.
+func GetReconcileSystemConfig() bool {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return Configuration.ReconcileSystemConfig == nil || *Configuration.ReconcileSystemConfig
+}
+
 // GetUpdateRepository rend le dépôt de mise à jour de repli, tel qu'écrit.
 func GetUpdateRepository() string {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 	return Configuration.UpdateRepository
+}
+
+// GetUpdateTLSCA rend le chemin de l'AC supplémentaire du téléchargement.
+func GetUpdateTLSCA() string {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return Configuration.UpdateTLSCA
 }
 
 // GetDebug rend le réglage de debug, intervalle ramené au défaut s'il est absent.

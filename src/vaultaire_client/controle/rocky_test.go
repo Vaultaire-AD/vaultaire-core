@@ -317,7 +317,9 @@ func TestRockyGardeLesOriginauxEtSeRejoue(t *testing.T) {
 		t.Errorf("des piles préparées traînent : %v", restes)
 	}
 	nss := p.lire("etc/nsswitch.conf")
-	if !strings.Contains(nss, "passwd:     sss files systemd vaultaire\n") || strings.Count(nss, "vaultaire") != 2 {
+	// Deux ajouts, plus le marqueur de version en tête (TO-DO 117).
+	if !strings.Contains(nss, "passwd:     sss files systemd vaultaire\n") || strings.Count(nss, " vaultaire\n") != 2 ||
+		!strings.HasPrefix(nss, "# vaultaire-conf v1 ") {
 		t.Errorf("nsswitch.conf :\n%s", nss)
 	}
 	if !strings.Contains(p.lire("etc/ssh/sshd_config.d/50-redhat.conf"), "#PasswordAuthentication yes disabled_by_vaultaire") {

@@ -166,6 +166,8 @@ func brancherSocle() {
 	// 05 et 06 sont REÇUES et ignorées, volontairement — voir le paquet gpo.
 	tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
 	tramesmanager.RegisterHandler("06", gpo.HandleTrameRevocation)
+	// 09 : l'ordre de mise à jour — reçu, et dit non pris en charge (TO-DO 115, 118).
+	tramesmanager.RegisterHandler("09", gpo.HandleTrameMiseAJour)
 }
 
 // brancherDecouverte arme la demande périodique de la liste des nœuds.

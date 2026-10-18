@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **203**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **210**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -33,11 +33,10 @@ Trois gestes, dans le même passage que le code :
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
 | 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
-| 115 | AGENT-UPDATE | Ordre de mise à jour : catégorie de trames `09`             | À faire                                 |
-| 116 | AGENT-UPDATE | Basculement survivable et retour arrière automatique        | À faire — **cœur du lot**, après 112    |
-| 117 | AGENT-UPDATE | Configuration système réconciliée avec la version           | À faire                                 |
+| 206 | AGENT-UPDATE | Verser le paquet signé dans Nexus sans geste manuel        | À cadrer — quel compte écrit dans Nexus |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
+| 203 | SELINUX      | Règles de `vaultaire_t` pour la mise à jour et la configuration système | À faire — avec le 180, sur un poste |
 | 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
 | 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
@@ -242,6 +241,54 @@ grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit
 3. Quand une collecte complète ne rend plus rien : `install.sh
    --agent-enforcing`, puis la même suite, en enforcing.
 
+### 203. [SELINUX] [AGENT-UPDATE] Les règles de `vaultaire_t` pour la mise à jour
+
+**Origine** (reste du **116**, complété au **117**). La préparation d'une mise
+à jour tourne DANS l'agent, donc dans `vaultaire_t` ; `vaultaire.te` n'en a pas les règles. Sans
+effet tant que le domaine est permissif (le défaut d'`install.sh`), mais en
+enforcing la mise à jour échouerait en `refuse` ou en `echec` « updater non
+lancé ». Pas écrit à l'aveugle : une règle qui ne compile pas casse
+`install.sh` sur tout le parc, et `checkmodule` n'était pas disponible.
+
+Ce que le code fait, à couvrir (`vaultaire_client/miseajour`) :
+
+1. **HTTPS vers le dépôt** — port 8843 (déjà : `corenet_tcp_connect_all_unreserved_ports`)
+   ou 443 (`http_port_t` : `corenet_tcp_connect_http_port`), et la lecture du
+   fichier `update_tls_ca` là où l'exploitant l'a posé.
+2. **Exécuter le binaire préparé** pour `--check` :
+   `/var/lib/vaultaire/updates/<v>/nouveau/vaultaire_client`, en
+   `vaultaire_var_lib_t`. Soit `can_exec(vaultaire_t, vaultaire_var_lib_t)`,
+   soit — plus étroit — une ligne `.fc` qui étiquette `nouveau/vaultaire_client`
+   en `vaultaire_exec_t` et un `restorecon` après l'extraction.
+3. **`ldd`** sur les quatre `.so` préparés : `corecmd_exec_bin` et
+   `corecmd_exec_shell` sont déjà là ; vérifier l'exécution de `ld.so` en mode
+   liste sur des fichiers `vaultaire_var_lib_t`.
+4. **Créer l'updater** : `/usr/libexec/vaultaire/` (répertoire et fichier,
+   `bin_t`), puis `restorecon`.
+5. **`systemd-run`** : démarrer une unité transitoire —
+   `init_start_transient_unit(vaultaire_t)` et le dialogue D-Bus avec systemd.
+
+Et depuis le **117**, la réconciliation de la configuration système, elle aussi
+dans `vaultaire_t` (`vaultaire_client/confsys`) :
+
+6. **Écrire dans `/etc/pam.d`, `/etc/ssh`, `/etc/nsswitch.conf`,
+   `/etc/dconf/db/gdm.d`** — fichier temporaire, `rename()`, sauvegarde à côté :
+   `etc_t` en création, écriture, renommage (le domaine n'a que
+   `files_read_etc_files` et les droits de répertoire sur `etc_t`). Vérifier le
+   type réel de `sshd_config` (`sshd_config_t` sur certaines politiques) et des
+   piles PAM.
+7. **`sshd -t -f <candidat>`**, et depuis le **209** **`sshd -T -f
+   /etc/ssh/sshd_config`** : exécuter `sshd_exec_t` SANS transition (le
+   contrôle doit tourner dans le domaine de l'agent, qui lit le candidat), et
+   lire les clés d'hôte qu'il charge ainsi que `sshd_config.d/*.conf`.
+8. **`systemctl try-reload-or-restart sshd`** (`ssh` sur Debian) — piloter une
+   unité système — et **`dconf update`**.
+
+L'updater lui-même tourne hors de `vaultaire_t` : systemd le lance depuis un
+fichier `bin_t`, il entre en `unconfined_service_t` — rien à écrire pour la
+bascule. À éprouver avec le **180** : `collect.sh --agent` après une mise à
+jour réelle, en permissif, puis en enforcing.
+
 ---
 
 ## Annuaire LDAP
@@ -322,8 +369,12 @@ Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 1
 > (voir `DO/2.3/2.3.md`) — l'unité de l'agent a une relance bornée, un contrôle
 > avant démarrage (`vaultaire_client --check`), et c'est le binaire qui la pose
 > (`--install-unit`). Le 111, le socle, est **traité** aussi : la version
-> attendue par machine, groupe et parc, et la vue `vlt agent`. Le 116 est le
-> cœur du lot, et s'appuie sur le 112.
+> attendue par machine, groupe et parc, et la vue `vlt agent`. Le 116, le cœur
+> du lot, est **traité** : l'agent Linux télécharge, vérifie, bascule, passe la
+> porte de santé et revient en arrière seul. Le 117 est **traité** : la
+> configuration système (piles PAM, `sshd_config`, `nsswitch.conf`) suit la
+> version de l'agent. Restent Windows (118) et les limites relevées en
+> faisant le lot (206 ; les 204, 205, 207, 208 et 209 sont traités).
 
 ### 202. [CI] [AGENT-UPDATE] La release produit les manifestes du paquet d'agent
 
@@ -349,120 +400,21 @@ par :
 et dans `SHA256SUMS`. `docker-update.sh` n'a rien à changer : il ne vérifie
 que les archives qu'il installe.
 
-### 115. [AGENT-UPDATE] [DUCKY] L'ordre de mise à jour : catégorie `09`
+### 206. [AGENT-UPDATE] Verser le paquet signé dans Nexus sans geste manuel
 
-**Constat.** Les catégories `01` à `08` sont prises, `09` est libre.
+**Origine** (limite du **113** et du **114**). `vaultaire_serveur
+--sign-package` écrit les `.sig` à côté de l'archive ; il faut ensuite verser à
+la main l'archive, ses deux manifestes et leurs signatures dans le dépôt Nexus
+(`Releases.md`, « Le dépôt du parc »), sur **chaque** Nexus du cluster. Un oubli
+sur l'un d'eux ne se voit qu'aux agents qui le choisissent : « téléchargement
+impossible … l'ordre sera redonné », sans fin.
 
-**À faire.**
-
-```
-09_01  demander l'ordre        client → core   au démarrage et à chaque reconnexion
-  09_02  ordre : version, dépôt
-  09_03  rien à faire
-09_04  compte rendu            client → core   version, résultat, motif
-  09_05  accusé
-09_06  ordre poussé            core → client
-```
-
-0. **Ce que l'ordre `09_02` doit porter, depuis le 114** : la version, et le
-   **nom du dépôt** Nexus (`releases` par défaut — `miseajour.DepotParDefaut`).
-   L'agent sait déjà trouver les Nexus (`miseajour.Depots` : `04_15`, repli
-   `update_repository`) et composer les URL (`miseajour.URLFichier`, `NomArchive`,
-   `NomManifeste`, `NomSignature`).
-1. **Le modèle de la révocation (`06`), repris tel quel** : poussée opportuniste
-   vers qui est connecté — un échec d'envoi n'est *pas* une erreur, personne ne
-   tient de file — et **rattrapage par demande** à chaque reconnexion. C'est ce
-   qui rend la poussée non fiable acceptable, et ce qui fait qu'une machine
-   éteinte trois semaines se met à jour à son retour.
-2. Droits : `09_01` et `09_04` au type `Client`, dans `core/clienttype`.
-3. Le compte rendu `09_04` alimente la vue du point 111 : c'est lui qui distingue
-   « pas encore tenté » de « tenté et revenu en arrière ».
-4. **`vlt agent update <computeur_id>`** (`Mise_a_jour_du_parc.md` § 8.2) : la
-   poussée `09_06` vers une machine, comme `gpo refresh`. Laissée hors du 111,
-   qui n'avait rien à pousser.
-5. **Rendre fatale la pose des colonnes** `agent_target_version`
-   (`dbschema.EnsureVersionsCibles`) : elle ne l'est pas au 111, où seules
-   `vlt agent` et la colonne du portail les lisent. La `09_01`, émise à chaque
-   reconnexion, les lira aussi.
-6. Retirer la phrase « Aucun agent ne se met encore à jour de lui-même »
-   (`noteProvisoire` dans `actions_agent_version.go`, l'aide de `vlt agent`,
-   `MAN.md` § 25, jalon 9.3) le jour où le 116 la rend fausse.
-
-### 116. [AGENT-UPDATE] Le basculement survivable et le retour arrière
-
-**Le cœur du lot. À ne pas écrire avant que le 112 ne soit en place.**
-
-**À faire.**
-
-1. **Un programme séparé**, `vaultaire_update`, dans `/usr/libexec/vaultaire/` :
-   le programme qui remplace un fichier ne peut pas être ce fichier, et il doit
-   survivre au redémarrage du service. Lancé détaché par `systemd-run`. C'est le
-   problème que `deployments/pre-prod/docker-update.sh` a déjà résolu en se
-   recopiant dans un `mktemp` — **à relire avant d'écrire une ligne**.
-   **Le téléchargement a ses adresses depuis le 114** : `miseajour.Depots`
-   (Nexus annoncés, sinon `update_repository`), puis `URLFichier` pour
-   l'archive, le manifeste et la signature de la famille de la machine. **À
-   trancher** : la vérification TLS. Un Nexus a souvent un certificat
-   auto-signé ; la signature juge les octets quel que soit le transport, mais
-   désactiver la vérification n'en reste pas moins un choix à écrire.
-   **La vérification est écrite au 113** : `vaultaire_client/paquet` —
-   `ClesDeConfiance()` (le fichier déposé ; son ABSENCE refuse tout paquet),
-   `LireEnveloppe`, `Verifier` (rend le manifeste). Ne choisir que le
-   manifeste dont `Famille()` est celle de la machine, et refuser une
-   `Version` autre que celle de l'ordre.
-2. L'ordre : télécharger → vérifier la signature **puis** chaque SHA-256 →
-   **`dlopen()` chaque `.so`** → garder la version en place → basculer → redémarrer
-   → porte de santé → retour arrière si elle échoue.
-3. Le `dlopen()` est le contrôle qui compte : le mode de défaillance réel d'un
-   module PAM est l'édition de liens — glibc trop récente, `-lcrypt` manquant — et
-   il se voit là, **avant** que sshd n'ait à le charger.
-4. Bascule par **`rename()` dans le répertoire de destination**. `rename()` n'est
-   atomique qu'au sein d'un système de fichiers : écrire dans `/var/lib` puis
-   déplacer vers `/usr/bin` ne l'est pas. Un `.so` déjà chargé n'est pas affecté,
-   l'ancien inode reste projeté.
-5. **La porte de santé**, trois conditions sous échéance : le service tient
-   au-delà de la fenêtre de relance ; le tunnel est rétabli et authentifié ; **le
-   socket PAM répond à une sonde sans identifiants**. La troisième est celle qui
-   compte — les deux premières ne disent rien du socket, dont dépendent toutes
-   les ouvertures de session.
-6. **Refus de toute version inférieure** à celle en place, sauf rétrogradation
-   explicitement demandée par l'ordre — journalisée en `SECURITY` des deux côtés.
-   C'est ce qui ferme la rejouabilité d'un manifeste non lié à une machine.
-7. **Ne jamais toucher**, dans la même opération : la configuration système (voir
-   117 — si elle est fausse, le retour arrière du binaire ne la répare pas),
-   `/etc/vaultaire_client/` (identité et clés : les perdre oblige à réenrôler),
-   `/var/lib/vaultaire/applied_policies.json` (le perdre fait réappliquer toutes
-   les GPO au cycle suivant).
-
-### 117. [AGENT-UPDATE] La configuration système réconciliée avec la version
-
-**Le cas qui rend ce point urgent.** L'invite du second facteur (point 95) a
-besoin de `KbdInteractiveAuthentication yes` dans `sshd_config`. Seul `rocky.sh`
-l'écrit, à l'installation. **Toutes les machines installées avant la 2.2 ne
-verront donc jamais l'invite** — et rien ne le signalera : le second facteur sera
-absent, en silence, sur un chemin d'authentification.
-
-**À faire.**
-
-1. L'agent porte les gabarits que **sa version** attend, chacun marqué
-   `# vaultaire-conf v<N>`. Réconciliation au démarrage, **après** que la porte de
-   santé du point 116 a été franchie — jamais dans la même opération.
-2. Concernés : `/etc/pam.d/{login,sshd,gdm-password}`, `/etc/ssh/sshd_config`,
-   `/etc/nsswitch.conf`, `/etc/dconf/db/gdm.d/10-vaultaire-userlist`. Aucun n'est
-   sauvegardé ni écrit de façon atomique aujourd'hui.
-3. Sauvegarde `<fichier>.vaultaire-bak-<horodatage>`, écriture atomique, et pour
-   `sshd_config` : **`sshd -t -f <candidat>` avant de basculer**. S'il refuse, on
-   ne touche à rien et on remonte l'écart.
-4. **Il n'existe pas de `pam -t`.** D'où les deux protections du point 112 : le
-   `PAM_IGNORE` des comptes locaux, tenu par un test-sentinelle, et la sauvegarde
-   horodatée qui rend la réparation possible en une commande.
-5. **Pas par GPO**, et c'est délibéré : `/etc/pam.d/` est en `path_deny` dans le
-   seed, avec son motif écrit — « pile d'authentification : modifiable =
-   contournement de l'auth ». Un module GPO, même typé, rendrait la pile
-   d'authentification pilotable par une politique, donc potentiellement par un
-   délégué de domaine.
-6. Éprouver sur le cas `KbdInteractiveAuthentication` avant tout autre : il est
-   réel, il est daté, et son absence est silencieuse.
+**À cadrer.** Une commande du core (`--publish-package`, ou une action
+`vlt`) qui signe puis verse sur tous les Nexus enrôlés, et dit ce qui manque à
+chacun. La vraie question est le **compte** : le dépôt se lit sans compte, mais
+s'écrit avec `write:nexus` — un jeton de service du core, par la catégorie `08`,
+ou un compte d'exploitation saisi au moment du versement. Ne pas mettre de
+jeton Nexus en clair dans la configuration du core (voir le **98**).
 
 ### 118. [AGENT-UPDATE] [WINDOWS] La mise à jour du client Windows
 

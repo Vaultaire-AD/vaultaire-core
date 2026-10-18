@@ -204,7 +204,7 @@ const (
 	EtatSansCible Etat = "sans cible"
 	EtatAJour     Etat = "à jour"
 	EtatEnRetard  Etat = "en retard"
-	// EtatEnAvance : la machine déclare plus récent que sa cible. Le point 116
+	// EtatEnAvance : la machine déclare plus récent que sa cible. L'agent
 	// refuse de rétrograder sans ordre explicite : elle restera telle quelle.
 	EtatEnAvance Etat = "en avance"
 	// EtatInconnue : une cible s'applique, mais la version déclarée est vide

@@ -97,6 +97,9 @@ var actionsFormulaire = map[string]string{
 	"export_client": "client.export",
 	"update_client": "client.update",
 	"delete_client": "client.delete",
+	// Relancer la mise à jour d'un agent depuis la liste des clients (TO-DO
+	// 205) : la même action que « vlt agent update », write:server.
+	"relaunch_agent_update": "agent.update",
 
 	// permissions
 	"create_permission":        "permission.create",

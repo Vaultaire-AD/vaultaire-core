@@ -63,6 +63,20 @@ const PrefixeCapacites = "capacites:"
 // CapaciteRelais : ce core sait piloter les relais d'un proxy (04_18, 04_19).
 const CapaciteRelais = "relais"
 
+// CapaciteMiseAJour : ce core répond aux demandes de mise à jour d'un agent —
+// catégorie 09, et 04_15 pour les Nexus (TO-DO 114, 115). Écrit aussi côté
+// core (trame.CapaciteMiseAJour).
+const CapaciteMiseAJour = "miseajour"
+
+// CapaciteConfSys : ce core range le compte rendu de configuration système
+// d'un agent (09_07, TO-DO 117). Écrit aussi côté core (trame.CapaciteConfSys).
+const CapaciteConfSys = "confsys"
+
+// CapaciteClesPaquets : ce core sert les jeux de clés de confiance des
+// paquets (09_09 → 09_10, TO-DO 207). Écrit aussi côté core
+// (trame.CapaciteClesPaquets).
+const CapaciteClesPaquets = "clespaquets"
+
 // Bornes de la cadence acceptée, en minutes : celles du réglage
 // `check_online_minutes` côté core.
 //

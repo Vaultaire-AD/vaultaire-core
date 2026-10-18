@@ -7,13 +7,18 @@ import (
 	"testing"
 
 	dbclients "vaultaire/core/database/db_clients"
+	"vaultaire/core/miseajour"
 	"vaultaire/core/parcversion"
+	miseajourmanager "vaultaire/ducky-network/miseajour_manager"
 )
 
 // parcDEssai : un pilote en avance, un groupe général sur le défaut du parc,
 // un poste figé, un poste qui n'a jamais déclaré sa version.
 func parcDEssai(t *testing.T, parc string) {
 	t.Helper()
+	reveil := reveillerLaPoussee
+	t.Cleanup(func() { reveillerLaPoussee = reveil })
+	reveillerLaPoussee = func() {}
 	ancienne := lireCibles
 	t.Cleanup(func() { lireCibles = ancienne })
 	lireCibles = sourceDesCibles{
@@ -172,7 +177,7 @@ func TestPoserUneCibleDeGroupe(t *testing.T) {
 	// pilote-1 suit le pilote et est en retard ; fragile est dans le pilote mais
 	// figé par sa dérogation.
 	for _, morceau := range []string{"2.4.0", "1 agent(s) la suivent, dont 1 à mettre à jour",
-		"1 autre(s) machine(s) du groupe", noteProvisoire} {
+		"1 autre(s) machine(s) du groupe", noteDeroule} {
 		if !strings.Contains(res.Message, morceau) {
 			t.Errorf("message sans %q :\n%s", morceau, res.Message)
 		}
@@ -184,7 +189,7 @@ func TestPoserUneCibleDeGroupe(t *testing.T) {
 	}
 
 	res, err = definirCibleAgents(Appelant{}, Params{"group": "pilote", "version": "none"})
-	if err != nil || ecrit != "pilote=" || strings.Contains(res.Message, noteProvisoire) {
+	if err != nil || ecrit != "pilote=" || strings.Contains(res.Message, noteDeroule) {
 		t.Errorf("effacement : %q, %v, %q", ecrit, err, res.Message)
 	}
 }
@@ -217,10 +222,12 @@ func TestDeroger(t *testing.T) {
 	parcDEssai(t, "2.3.0")
 	ancienne := ecrireDerogation
 	t.Cleanup(func() { ecrireDerogation = ancienne })
-	ecrireDerogation = func(id, v string) error {
+	var retrograde bool
+	ecrireDerogation = func(id, v string, r bool) error {
 		if id != "id-c" {
 			return fmt.Errorf("machine %q %w", id, dbclients.ErrIntrouvable)
 		}
+		retrograde = r
 		return nil
 	}
 	res, err := definirDerogationAgent(Appelant{}, Params{"computeur_id": "id-c", "version": "2.2.0"})
@@ -236,5 +243,73 @@ func TestDeroger(t *testing.T) {
 	}
 	if _, err := definirDerogationAgent(Appelant{}, Params{"version": "2.2.0"}); err == nil {
 		t.Error("machine manquante acceptée")
+	}
+	if retrograde {
+		t.Error("rétrogradation posée sans --downgrade")
+	}
+
+	// TO-DO 204 : --downgrade, durable.
+	res, err = definirDerogationAgent(Appelant{}, Params{"computeur_id": "id-c", "version": "2.2.0", "downgrade": "yes"})
+	if err != nil || !retrograde || !strings.Contains(res.Message, "Rétrogradation AUTORISÉE") {
+		t.Fatalf("%v %v %q", err, retrograde, res.Message)
+	}
+	if _, err := definirDerogationAgent(Appelant{}, Params{"computeur_id": "id-c", "version": "none", "downgrade": "yes"}); err == nil {
+		t.Error("--downgrade sans version accepté")
+	}
+}
+
+func TestRelancerMiseAJour(t *testing.T) {
+	avant := relancer
+	t.Cleanup(func() { relancer = avant })
+
+	cas := []struct {
+		r       miseajourmanager.Relance
+		err     error
+		retro   string
+		attendu string
+		echec   bool
+	}{
+		{r: miseajourmanager.Relance{Ordre: &miseajour.Ordre{Version: "2.4.0", Depot: "releases"}, Envoyee: true},
+			attendu: "Ordre 2.4.0 (dépôt releases) poussé à poste-1"},
+		{r: miseajourmanager.Relance{Ordre: &miseajour.Ordre{Version: "2.4.0", Depot: "releases"}},
+			attendu: "pas connectée à ce core : compte rendu effacé"},
+		{r: miseajourmanager.Relance{Ordre: &miseajour.Ordre{Version: "2.2.0", Retrograder: true}}, retro: "yes",
+			echec: true},
+		{r: miseajourmanager.Relance{Motif: "à jour (2.4.0)"}, attendu: "rien à faire — à jour"},
+		{err: fmt.Errorf("agent %q %w", "x", dbclients.ErrIntrouvable), echec: true},
+	}
+	for i, c := range cas {
+		var vuRetro bool
+		relancer = func(id string, retro bool) (miseajourmanager.Relance, error) { vuRetro = retro; return c.r, c.err }
+		res, err := relancerMiseAJour(Appelant{}, Params{"computeur_id": "poste-1", "downgrade": c.retro})
+		if (err != nil) != c.echec || !strings.Contains(res.Message, c.attendu) {
+			t.Errorf("cas %d : %q %v", i, res.Message, err)
+		}
+		if vuRetro != (c.retro == "yes") {
+			t.Errorf("cas %d : --downgrade mal transmis", i)
+		}
+	}
+	if _, err := relancerMiseAJour(Appelant{}, Params{}); err == nil {
+		t.Error("machine manquante acceptée")
+	}
+}
+
+func TestDefinirDepot(t *testing.T) {
+	avant := ecrireDepot
+	t.Cleanup(func() { ecrireDepot = avant })
+	var ecrit = "?"
+	ecrireDepot = func(d, _ string) error { ecrit = d; return nil }
+
+	if res, err := definirDepot(Appelant{}, Params{"depot": "site-paris"}); err != nil || ecrit != "site-paris" ||
+		!strings.Contains(res.Message, "site-paris") {
+		t.Errorf("%q %v %q", res.Message, err, ecrit)
+	}
+	if res, err := definirDepot(Appelant{}, Params{"depot": "none"}); err != nil || ecrit != "" ||
+		!strings.Contains(res.Message, "releases") {
+		t.Errorf("effacement : %q %v %q", res.Message, err, ecrit)
+	}
+	ecrit = "?"
+	if _, err := definirDepot(Appelant{}, Params{"depot": "Site/Paris"}); err == nil || ecrit != "?" {
+		t.Error("nom de dépôt invalide accepté")
 	}
 }

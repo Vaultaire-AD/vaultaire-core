@@ -42,6 +42,8 @@ type Cles struct {
 	Privee      func() (*rsa.PrivateKey, error)
 	PubliquePEM func() (string, error)
 	Oublier     func() error
+	// Magasin : les clés par rôle et les jeux publiés — la rotation (207).
+	Magasin paquetagent.Magasin
 }
 
 // EstCommande dit si les arguments désignent une de ces sous-commandes.
@@ -198,6 +200,10 @@ func cle(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, error)) 
 		return 2
 	}
 	sousCommande := args[0]
+	switch sousCommande {
+	case "rotate-status", "rotate-add", "rotate-switch", "rotate-retire", "compromised":
+		return rotation(sousCommande, args[1:], sortie, erreurs, ouvrir)
+	}
 	bonneForme := false
 	switch sousCommande {
 	case "show":
@@ -293,4 +299,11 @@ const Aide = `Paquets d'agent (TO-DO 113) :
   vaultaire_serveur --pkg-key show                       empreinte et clé publique
   vaultaire_serveur --pkg-key export <fichier>           clé privée dans un fichier (0600, jamais écrasé)
   vaultaire_serveur --pkg-key forget-private --confirm   retire la clé privée de la base
+
+Rotation de la clé (TO-DO 207) — trois gestes :
+  vaultaire_serveur --pkg-key rotate-status                  où en sont la rotation et le parc
+  vaultaire_serveur --pkg-key rotate-add [--key <pem>]       1. clé suivante, publiée au parc
+  vaultaire_serveur --pkg-key rotate-switch [--force]        2. la suivante signe (quand le parc a suivi)
+  vaultaire_serveur --pkg-key rotate-retire [--key <pem>]    3. l'ancienne retirée du parc
+  vaultaire_serveur --pkg-key compromised --confirm          clé compromise : remplacement hors bande
 `

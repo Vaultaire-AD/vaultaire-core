@@ -37,3 +37,46 @@ func ClesDeConfiance() ([]*rsa.PublicKey, error) {
 	}
 	return LireClesPubliques(contenu)
 }
+
+// NumeroDuJeu rend le numéro du jeu de clés que la machine tient — 0 pour le
+// fichier de l'installation, ou sans fichier (TO-DO 207).
+func NumeroDuJeu() int {
+	contenu, err := os.ReadFile(CheminCles())
+	if err != nil {
+		return 0
+	}
+	return NumeroDuFichier(string(contenu))
+}
+
+// AppliquerJeu vérifie un jeu reçu du core et, s'il est plus haut que celui
+// de la machine et signé par une clé qu'elle tient DÉJÀ, remplace son fichier.
+// Rend le jeu appliqué ; une erreur sinon — rien n'a changé.
+//
+// Écriture atomique (fichier temporaire, rename) : un fichier à moitié écrit
+// ferait refuser tous les paquets, et c'est le seul fichier qui en juge.
+func AppliquerJeu(corps string, env Enveloppe) (Jeu, error) {
+	cles, err := ClesDeConfiance()
+	if err != nil {
+		return Jeu{}, err
+	}
+	j, err := VerifierJeu(corps, env, cles)
+	if err != nil {
+		return Jeu{}, err
+	}
+	if courant := NumeroDuJeu(); j.Numero <= courant {
+		return Jeu{}, fmt.Errorf("jeu n°%d refusé : la machine tient déjà le n°%d (rejeu ?)", j.Numero, courant)
+	}
+	texte, err := FichierCles(j)
+	if err != nil {
+		return Jeu{}, err
+	}
+	tmp := CheminCles() + ".vaultaire-jeu"
+	if err := os.WriteFile(tmp, []byte(texte), 0o644); err != nil {
+		return Jeu{}, fmt.Errorf("écriture du jeu : %w", err)
+	}
+	if err := os.Rename(tmp, CheminCles()); err != nil {
+		_ = os.Remove(tmp)
+		return Jeu{}, fmt.Errorf("pose du jeu : %w", err)
+	}
+	return j, nil
+}

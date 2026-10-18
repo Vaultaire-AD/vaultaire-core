@@ -559,17 +559,26 @@ func Create_DataBase(db *sql.DB) {
 		log.Fatalf("Erreur lors de la pose des identifiants de l'annuaire : %v", err)
 	}
 
-	// Les versions attendues des agents (TO-DO 111).
+	// Les versions attendues des agents (TO-DO 111) et le compte rendu de leur
+	// mise à jour (TO-DO 115).
 	//
-	// NON fatale : seules les commandes « agent » et la colonne VERSION du
-	// portail nomment ces colonnes, et elles rendent l'erreur de lecture. Un
-	// core qui ne démarre plus pour une vue de suivi serait une panne pour rien.
-	// ⚠️ À reconsidérer au point 115 : la demande d'ordre 09_01, émise à chaque
-	// reconnexion, les lira aussi.
+	// FATALE depuis le 115 : la demande d'ordre 09_01, que chaque agent émet à
+	// chaque connexion, et le rejeu des ordres nomment ces colonnes. Non
+	// posées, le défaut ne serait plus une vue en erreur mais un « Unknown
+	// column » sur un chemin de connexion de tout le parc. Un ALTER TABLE ADD
+	// COLUMN sur id_logiciels et groups est l'opération la moins risquée de ce
+	// fichier.
 	if err := EnsureVersionsCibles(db); err != nil {
-		logs.Write_LogCode("WARNING", logs.CodeDBQuery,
-			"database: versions attendues des agents non posées, « vlt agent » "+
-				"échouera : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: versions attendues des agents non posées : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des versions attendues des agents : %v", err)
+	}
+	// Les jeux de clés de confiance des paquets (TO-DO 207) : même raison
+	// d'être fatale — chaque agent demande le sien à chaque connexion.
+	if err := EnsureJeuxDeCles(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: jeux de clés des paquets non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des jeux de clés des paquets : %v", err)
 	}
 
 	// L'unicité (compte, machine) de `did_login` (TO-DO 107).

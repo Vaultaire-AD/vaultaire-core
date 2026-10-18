@@ -42,5 +42,6 @@ func ouvrirClesPaquets() (outil.Cles, error) {
 		Privee:      keymanagement.ClePriveePaquets,
 		PubliquePEM: keymanagement.ClePubliquePaquetsPEM,
 		Oublier:     keymanagement.OublierClePriveePaquets,
+		Magasin:     keymanagement.MagasinPaquets{},
 	}, nil
 }

@@ -359,6 +359,11 @@ fi
 # une pile « login » branchée et une pile « sshd » qui ne l'est pas feraient
 # deux vérités sur la même machine.
 #
+# Chacune porte en deuxième ligne le marqueur « # vaultaire-conf v<N> » (TO-DO
+# 117) : l'agent tient ces piles à jour avec SA version, et ne réécrit que si
+# le marqueur en annonce une autre. MÊMES OCTETS que vaultaire_client/confsys —
+# un test les compare.
+#
 # Dans chacune, le module de Vaultaire ouvre l'authentification :
 #
 #   auth  [success=done ignore=ignore default=die]  pam_…_module.so
@@ -375,6 +380,7 @@ mkdir -p "$R/etc/pam.d"
 
 cat > "$R/etc/pam.d/login.vaultaire-nouveau" <<'EOF'
 #%PAM-1.0
+# vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main
 auth        [success=done ignore=ignore default=die]    pam_login_custom_module.so
 auth        substack       system-auth
 auth        include        postlogin
@@ -397,6 +403,7 @@ EOF
 
 cat > "$R/etc/pam.d/sshd.vaultaire-nouveau" <<'EOF'
 #%PAM-1.0
+# vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main
 auth        [success=done ignore=ignore default=die]    pam_ssh_auth_module.so
 auth        substack       password-auth
 auth        include        postlogin
@@ -420,6 +427,7 @@ if [[ -f "$R/etc/pam.d/gdm-password" ]]; then
     PAM_PRETS+=("$R/etc/pam.d/gdm-password")
     cat > "$R/etc/pam.d/gdm-password.vaultaire-nouveau" <<'EOF'
 #%PAM-1.0
+# vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main
 auth        [success=done ignore=ignore default=bad]    pam_login_custom_module.so
 auth        [success=done ignore=ignore default=bad]    pam_selinux_permit.so
 auth        substack       password-auth
@@ -460,6 +468,9 @@ for db in passwd group; do
         sed -i "/^${db}:/ s/$/ vaultaire/" "$R/etc/nsswitch.conf"
     fi
 done
+# Le marqueur de version, en tête (TO-DO 117) — celui que l'agent compare.
+sed -i '/^# vaultaire-conf/d' "$R/etc/nsswitch.conf"
+sed -i "1i # vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main" "$R/etc/nsswitch.conf"
 
 # ------------------------------------------------------------------------------
 # 7. Configuration SSHD, validée avant d'être gardée
@@ -474,13 +485,22 @@ fi
 [[ -f "${SSHD_CONF}.avant-vaultaire" ]] || cp -p "$SSHD_CONF" "${SSHD_CONF}.avant-vaultaire"
 cp -p "$SSHD_CONF" "${SSHD_CONF}.vaultaire-precedent"
 
-# Nettoyage des directives existantes pour éviter les conflits
+# Nettoyage des directives existantes pour éviter les conflits — et des
+# marqueurs d'un bloc posé avant (TO-DO 117) : le bloc est réécrit en entier.
+sed -i '/^# vaultaire-conf/d' "$SSHD_CONF"
 for directive in UsePAM KbdInteractiveAuthentication ChallengeResponseAuthentication AuthenticationMethods PubkeyAuthentication Include AuthorizedKeysCommand AuthorizedKeysCommandUser; do
     sed -i "/^${directive}/d" "$SSHD_CONF"
 done
 
-# Ré-injection propre
-cat >> "$SSHD_CONF" <<'EOF'
+# Ré-injection propre, entre deux marqueurs (TO-DO 117) : l'agent reconnaît
+# le bloc, sa version, et le réécrit quand la sienne en attend une autre.
+# MÊMES OCTETS que vaultaire_client/confsys — un test les compare.
+#
+# AVANT le premier « Match » (TO-DO 208), et en fin de fichier s'il n'y en a
+# pas. Ajouté après un Match, le bloc s'y retrouvait enfermé : « UsePAM » n'y
+# est pas permis, sshd -t refusait, et l'installation s'arrêtait là.
+BLOC_SSHD="$(cat <<'EOF'
+# vaultaire-conf v1 - debut du bloc Vaultaire : ne pas modifier a la main
 UsePAM yes
 PubkeyAuthentication yes
 KbdInteractiveAuthentication yes
@@ -489,7 +509,16 @@ AuthenticationMethods publickey,keyboard-interactive
 AuthorizedKeysCommand /usr/bin/vaultaire_client --fetch-key %u
 AuthorizedKeysCommandUser root
 Include /etc/ssh/sshd_config.d/*.conf
+# vaultaire-conf - fin du bloc Vaultaire
 EOF
+)"
+BLOC_SSHD="$BLOC_SSHD" awk '
+    !fait && tolower($0) ~ /^[[:space:]]*match[[:space:]]/ { print ENVIRON["BLOC_SSHD"]; fait = 1 }
+    { print }
+    END { if (!fait) print ENVIRON["BLOC_SSHD"] }
+' "$SSHD_CONF" > "${SSHD_CONF}.vaultaire-bloc"
+cat "${SSHD_CONF}.vaultaire-bloc" > "$SSHD_CONF"
+rm -f "${SSHD_CONF}.vaultaire-bloc"
 
 # Désactivation propre dans les fichiers d'inclusion (.conf)
 if [[ -d "$R/etc/ssh/sshd_config.d/" ]]; then
@@ -531,6 +560,7 @@ done
 if [[ $GDM -eq 1 ]]; then
     mkdir -p "$R/etc/dconf/db/gdm.d"
     cat > "$R/etc/dconf/db/gdm.d/10-vaultaire-userlist" <<'EOF'
+# vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main
 [org/gnome/login-screen]
 disable-user-list=true
 EOF

@@ -42,7 +42,8 @@ en plus un tunnel machine). Le port de `-join` vaut 22 par défaut.
    > s'arrête en le disant, et la machine reste telle qu'elle était : `root` s'y
    > connecte comme avant. Les piles PAM et `sshd_config` d'origine sont gardées
    > sous `.avant-vaultaire` : c'est par elles qu'on sort une machine de
-   > Vaultaire.
+   > Vaultaire. Chaque fichier écrit porte un marqueur `# vaultaire-conf v1` :
+   > l'agent le tiendra à jour avec sa version (jalon 9.3).
 
 2. **Sur `web01`**, vérifiez l'adresse du serveur dans la configuration de
    l'agent, puis démarrez-le :

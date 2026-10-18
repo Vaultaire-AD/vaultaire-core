@@ -585,7 +585,15 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		// read:log sur « * » : la colonne montre alors la version déclarée
 		// seule, que la liste porte déjà.
 		Versions map[string]*act.LigneAgent
-	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
+
+		// PeutRelancer : le bouton « Relancer » d'un agent en retard (TO-DO
+		// 205). agent.update est une action de portée GLOBALE : un write:server
+		// limité à un domaine ne la passerait pas, et un bouton qui ne mène
+		// qu'à un refus n'a rien à faire sur la page. Le registre contrôle de
+		// toute façon à l'exécution.
+		PeutRelancer bool
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients",
+		PeutRelancer: permission.DomainsWhereAllowed(groupIDs, permission.ActionWriteServer).Global}
 	if r.Method == http.MethodPost {
 		// Les actions client.create, client.export et client.delete portent leur
 		// clé RBAC.

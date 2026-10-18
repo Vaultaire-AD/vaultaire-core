@@ -217,6 +217,10 @@ var porteesAttendues = map[string]string{
 	"agent.status":     "PorteeGlobale",
 	"agent.set_target": "PorteeGlobale",
 	"agent.pin":        "PorteeGlobale",
+	// L'ordre de mise à jour (TO-DO 115) : relancer une machine, nommer le
+	// dépôt — mêmes clés, même raison.
+	"agent.update":         "PorteeGlobale",
+	"agent.set_repository": "PorteeGlobale",
 }
 
 // clesAttendues : nom d'action → clé RBAC exigée.
@@ -315,6 +319,8 @@ var clesAttendues = map[string]string{
 	"agent.status":          "read:log",
 	"agent.set_target":      "write:server",
 	"agent.pin":             "write:server",
+	"agent.update":          "write:server",
+	"agent.set_repository":  "write:server",
 	"cluster.refresh_nodes": "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et

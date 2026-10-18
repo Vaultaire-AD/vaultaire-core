@@ -122,30 +122,39 @@ func OublierClePriveePaquets() error {
 	return nil
 }
 
-// EcrireClePaquetsPourClient dépose la clé publique dans le répertoire préparé
-// pour une machine. Posée À L'INSTALLATION, jamais apprise en route : faire
-// demander à l'agent la clé qui juge ce qu'on lui envoie n'aurait aucun sens.
+// EcrireClePaquetsPourClient dépose les clés de confiance dans le répertoire
+// préparé pour une machine. Posées À L'INSTALLATION ; ensuite, l'agent ne
+// change ce fichier que sur un jeu signé par une clé qu'il y tient déjà
+// (TO-DO 207) — jamais sur la foi du réseau seul.
+//
+// Le DERNIER jeu publié, et non la seule clé active : une machine installée
+// pendant une rotation reçoit l'ancienne et la suivante, et son numéro, comme
+// celles qui l'ont suivie. Sans jeu publié : l'active, numéro 0.
 //
 // 0644 : une clé publique n'est pas un secret, et « cette machine attend-elle
 // la bonne clé » doit pouvoir se lire sans être root.
 func EcrireClePaquetsPourClient(repertoire string) error {
-	cle, err := ClePubliquePaquetsPEM()
+	jeu, err := jeuDeLInstallation()
+	if err != nil {
+		return fmt.Errorf("clés de signature des paquets : %w", err)
+	}
+	contenu, err := paquetagent.FichierCles(jeu)
 	if err != nil {
 		return err
 	}
 	if err := os.MkdirAll(repertoire, 0o700); err != nil {
 		return fmt.Errorf("création de %s : %w", repertoire, err)
 	}
-	contenu := "# Clé publique de signature des paquets d'agent du cluster Vaultaire.\n" +
-		"# Déposée à l'installation par « vlt create -join », sur le canal SSH.\n" +
-		"# Un paquet dont le manifeste n'est pas signé par une clé de ce fichier est refusé.\n" +
-		"# Ce fichier peut porter DEUX clés pendant une rotation : l'ancienne et la suivante.\n" +
-		cle
 	chemin := filepath.Join(repertoire, PkgPublicKeyFileName)
 	if err := os.WriteFile(chemin, []byte(contenu), 0o644); err != nil {
 		return fmt.Errorf("écriture de %s : %w", chemin, err)
 	}
 	return nil
+}
+
+// jeuDeLInstallation : remplaçable par les tests.
+var jeuDeLInstallation = func() (paquetagent.Jeu, error) {
+	return paquetagent.JeuDeLInstallation(MagasinPaquets{})
 }
 
 // CertificatsIndelebiles nomme les clés que `certificate delete` refuse.

@@ -9,7 +9,11 @@ import (
 	"vaultaire/core/database"
 	dbclients "vaultaire/core/database/db_clients"
 	dbsettings "vaultaire/core/database/db_settings"
+	"vaultaire/core/miseajour"
+	"vaultaire/core/paquetagent"
 	"vaultaire/core/parcversion"
+	keymanagement "vaultaire/ducky-network/key_management"
+	miseajourmanager "vaultaire/ducky-network/miseajour_manager"
 )
 
 // La version attendue des agents, et la vue « constaté vs attendu » — TO-DO 111.
@@ -18,7 +22,7 @@ import (
 //
 // Elles posent une CONSIGNE et la confrontent à ce que chaque agent déclare.
 // Aucun agent ne s'y conforme encore de lui-même : l'ordre de mise à jour
-// (point 115) et le basculement (point 116) viendront lire cette consigne. La
+// (point 115) et le basculement (point 116) lisent cette consigne. La
 // vue vaut déjà seule — elle dit quelles machines sont en retard.
 //
 // # Pourquoi read:log / write:server, portée globale
@@ -34,7 +38,8 @@ import (
 // soustraire à une cible posée par quelqu'un d'autre.
 
 // ActionsVersionAgent liste les actions de ce fichier, pour la commande.
-var ActionsVersionAgent = []string{"agent.status", "agent.set_target", "agent.pin"}
+var ActionsVersionAgent = []string{"agent.status", "agent.set_target", "agent.pin",
+	"agent.update", "agent.set_repository"}
 
 // LigneAgent est une machine de la vue.
 type LigneAgent struct {
@@ -47,6 +52,15 @@ type LigneAgent struct {
 	Attendue       parcversion.Attendue
 	Etat           parcversion.Etat
 	Groupes        []string
+	// CompteRendu : le dernier 09_04 (TO-DO 115) — ce qui distingue « pas
+	// encore tenté » de « tenté et revenu en arrière ».
+	CompteRendu dbclients.CompteRendu
+	// Configuration : le dernier 09_07 (TO-DO 117) — la configuration système
+	// de la machine face à sa version.
+	Configuration dbclients.Configuration
+	// Retrogradation : la dérogation de la machine autorise une rétrogradation
+	// et c'est elle qui décide de la version attendue (TO-DO 204).
+	Retrogradation bool
 }
 
 // Nom rend le nom d'hôte, ou l'identifiant tant que la machine n'en a pas
@@ -57,6 +71,40 @@ func (l LigneAgent) Nom() string {
 	}
 	return l.ComputeurID
 }
+
+// ConfigurationLisible rend l'état du dernier 09_07 (TO-DO 117) tel que la
+// ligne de commande et le portail l'affichent — vide sans compte rendu : un
+// agent d'avant le 117, ou face à un core qui n'annonçait pas « confsys ».
+func (l LigneAgent) ConfigurationLisible() string {
+	switch l.Configuration.Etat {
+	case "":
+		return ""
+	case miseajour.ConfConforme:
+		return "conforme"
+	case miseajour.ConfEcart:
+		return "écart"
+	case miseajour.ConfReconciliee:
+		return "réconciliée"
+	case miseajour.ConfDesactivee:
+		return "désactivée"
+	case miseajour.ConfNonPrisEnCharge:
+		return "non prise en charge"
+	}
+	return l.Configuration.Etat
+}
+
+// ConfigurationEnEcart : un contrôle a refusé, rien n'a été écrit pour le
+// fichier en cause — à traiter sur la machine.
+func (l LigneAgent) ConfigurationEnEcart() bool {
+	return l.Configuration.Etat == miseajour.ConfEcart
+}
+
+// Relancable dit si « agent.update » a quelque chose à pousser : une machine
+// en retard, ou dont la version déclarée est illisible (TO-DO 205). Une
+// machine en échec reste en retard — c'est elle que le bouton du portail
+// vise. À jour, en avance ou sans cible, l'action répondrait « rien à
+// faire » : le bouton n'est pas proposé.
+func (l LigneAgent) Relancable() bool { return l.Etat.AUnEcart() }
 
 // VueAgents est le résultat de agent.status.
 type VueAgents struct {
@@ -70,6 +118,11 @@ type VueAgents struct {
 	Groupe    string
 	Machines  []LigneAgent
 	Compteurs map[parcversion.Etat]int
+	// Depot : le dépôt Nexus nommé dans les ordres (TO-DO 115).
+	Depot string
+	// Rotation : la clé de signature des paquets et le parc (TO-DO 207) ;
+	// nil si elle n'a pas pu être lue — la vue reste utile sans elle.
+	Rotation *paquetagent.EtatRotation
 }
 
 // ParComputeurID indexe les lignes, pour la colonne du portail.
@@ -105,6 +158,7 @@ type sourceDesCibles struct {
 	parc         func() (string, bool, error)
 	groupes      func() ([]dbclients.CibleGroupe, error)
 	groupeExiste func(string) (bool, error)
+	depot        func() (string, bool, error)
 }
 
 var lireCibles = sourceDesCibles{
@@ -120,6 +174,9 @@ var lireCibles = sourceDesCibles{
 	groupeExiste: func(g string) (bool, error) {
 		return dbclients.GroupeExiste(database.GetDatabase(), g)
 	},
+	depot: func() (string, bool, error) {
+		return dbsettings.GetString(database.GetDatabase(), miseajour.CleReglageDepot)
+	},
 }
 
 // construireVue lit le parc et résout la cible de chaque agent.
@@ -128,7 +185,17 @@ var lireCibles = sourceDesCibles{
 // vide : « aucune cible » dit qu'aucune machine ne bougera, et l'afficher
 // parce que la base a flanché serait faux sur ce qui va se passer.
 func construireVue(groupe string) (VueAgents, error) {
-	vue := VueAgents{Groupe: groupe, Compteurs: map[parcversion.Etat]int{}}
+	vue := VueAgents{Groupe: groupe, Compteurs: map[parcversion.Etat]int{}, Depot: miseajour.DepotParDefaut}
+	if e, err := lireRotation(); err == nil {
+		vue.Rotation = &e
+	}
+	if lireCibles.depot != nil {
+		if d, _, err := lireCibles.depot(); err != nil {
+			return VueAgents{}, err
+		} else if d != "" {
+			vue.Depot = d
+		}
+	}
 
 	if groupe != "" {
 		ok, err := lireCibles.groupeExiste(groupe)
@@ -177,8 +244,11 @@ func construireVue(groupe string) (VueAgents, error) {
 			VersionLisible: parcversion.Machine{
 				ComputeurID: a.ComputeurID, Hostname: a.Hostname, Declaree: a.Declaree,
 			}.VersionLisible(),
-			Attendue: attendue,
-			Etat:     parcversion.Situer(a.Declaree, attendue),
+			Attendue:       attendue,
+			Etat:           parcversion.Situer(a.Declaree, attendue),
+			CompteRendu:    a.CompteRendu,
+			Configuration:  a.Configuration,
+			Retrogradation: a.DerogationRetrograder && attendue.Source == parcversion.SourceMachine,
 		}
 		for g := range a.Groupes {
 			ligne.Groupes = append(ligne.Groupes, g)
@@ -227,6 +297,20 @@ func EnregistrerActionsVersionAgent(r *Registre) {
 		Resume:   "fige ou libère la version attendue d'une machine",
 		Executer: definirDerogationAgent,
 	})
+	r.MustEnregistrer(Definition{
+		Nom:      "agent.update",
+		CleRBAC:  "write:server",
+		Portee:   PorteeGlobale,
+		Resume:   "relance la mise à jour d'une machine, ou la rétrograde explicitement",
+		Executer: relancerMiseAJour,
+	})
+	r.MustEnregistrer(Definition{
+		Nom:      "agent.set_repository",
+		CleRBAC:  "write:server",
+		Portee:   PorteeGlobale,
+		Resume:   "nomme le dépôt Nexus où les agents prennent leurs paquets",
+		Executer: definirDepot,
+	})
 }
 
 func lireVersionsAgents(_ Appelant, p Params) (Resultat, error) {
@@ -259,15 +343,26 @@ var (
 		return dbsettings.SetString(database.GetDatabase(), parcversion.CleReglageParc, version,
 			func(v string) error { _, err := parcversion.NormaliserCible(v); return err }, auteur)
 	}
-	ecrireDerogation = func(computeurID, version string) error {
-		return dbclients.DefinirDerogation(database.GetDatabase(), computeurID, version)
+	ecrireDerogation = func(computeurID, version string, retrograder bool) error {
+		return dbclients.DefinirDerogation(database.GetDatabase(), computeurID, version, retrograder)
 	}
 )
 
-// noteProvisoire est dite à chaque écriture tant que les points 115 et 116 ne
-// sont pas faits : sans elle, on croirait avoir lancé une mise à jour.
-const noteProvisoire = "Aucun agent ne se met encore à jour de lui-même : " +
-	"la cible sert pour l'instant à la vue « vlt agent »."
+// lireRotation : remplaçable par les tests.
+var lireRotation = func() (paquetagent.EtatRotation, error) {
+	return paquetagent.LireEtat(keymanagement.MagasinPaquets{})
+}
+
+// noteDeroule est dite à chaque écriture : une cible posée n'est pas une
+// version installée. Depuis le 116, chaque agent étale son départ, télécharge,
+// vérifie, bascule et passe une porte de santé — quelques minutes — puis
+// rapporte ; c'est dans « vlt agent » qu'on lit le résultat.
+const noteDeroule = "Chaque agent concerné installera dans les minutes qui viennent (départ étalé, " +
+	"porte de santé, retour arrière en cas d'échec) : le résultat se lit dans vlt agent."
+
+// reveillerLaPoussee : après une écriture, le tour de poussée de ce core part
+// tout de suite. Remplaçable par les tests.
+var reveillerLaPoussee = miseajourmanager.Reveiller
 
 func definirCibleAgents(a Appelant, p Params) (Resultat, error) {
 	version, err := versionSaisie(p)
@@ -307,8 +402,9 @@ func definirCibleAgents(a Appelant, p Params) (Resultat, error) {
 		msg += " " + bilanDeLaSource(vue, groupe)
 	}
 	if version != "" {
-		msg += "\n" + noteProvisoire
+		msg += "\n" + noteDeroule
 	}
+	reveillerLaPoussee()
 
 	res := Resultat{Message: msg}
 	if groupe == "" {
@@ -373,7 +469,11 @@ func definirDerogationAgent(_ Appelant, p Params) (Resultat, error) {
 	if err != nil {
 		return Resultat{}, err
 	}
-	if err := ecrireDerogation(machine, version); err != nil {
+	retrograder := strings.EqualFold(p.Get("downgrade"), "yes")
+	if retrograder && version == "" {
+		return Resultat{}, fmt.Errorf("--downgrade demande une version : il n'y a rien à rétrograder vers « none »")
+	}
+	if err := ecrireDerogation(machine, version, retrograder); err != nil {
 		if errors.Is(err, dbclients.ErrIntrouvable) {
 			return Resultat{}, fmt.Errorf("machine %q introuvable", machine)
 		}
@@ -385,6 +485,13 @@ func definirDerogationAgent(_ Appelant, p Params) (Resultat, error) {
 		msg = "Dérogation de " + machine + " retirée : elle suit de nouveau ses groupes ou le parc."
 	} else {
 		msg = "Dérogation posée : " + machine + " attend " + version + "."
+		if retrograder {
+			// Durable (TO-DO 204) : la machine la recevra à sa prochaine
+			// connexion, quel que soit le core qui la tient, jusqu'à ce
+			// qu'elle rende « installe » pour cette version.
+			msg += " Rétrogradation AUTORISÉE : elle sera ramenée à " + version +
+				" à sa prochaine demande, depuis n'importe quel core du cluster."
+		}
 	}
 	if vue, errV := construireVue(""); errV == nil {
 		for _, l := range vue.Machines {
@@ -395,7 +502,80 @@ func definirDerogationAgent(_ Appelant, p Params) (Resultat, error) {
 		}
 	}
 	if version != "" {
-		msg += "\n" + noteProvisoire
+		msg += "\n" + noteDeroule
 	}
+	reveillerLaPoussee()
 	return Resultat{Message: msg}, nil
+}
+
+// relancer : remplaçable par les tests.
+var relancer = miseajourmanager.Relancer
+
+// relancerMiseAJour — « vlt agent update <machine> [--downgrade] ».
+//
+// Efface le dernier compte rendu, puis pousse l'ordre si la machine est
+// connectée à ce core. Une machine en échec le reste tant qu'on ne le fait
+// pas : c'est le geste qui dit « j'ai corrigé, réessaie ».
+//
+// --downgrade est le SEUL chemin d'une rétrogradation : l'agent refuse toute
+// version inférieure à la sienne sans ce drapeau. Il n'est pas durable — il
+// ne vaut que poussé maintenant, à une machine connectée à ce core.
+func relancerMiseAJour(_ Appelant, p Params) (Resultat, error) {
+	machine := p.Get("computeur_id")
+	if machine == "" {
+		return Resultat{}, fmt.Errorf("machine manquante (computeur_id)")
+	}
+	retrograder := strings.EqualFold(p.Get("downgrade"), "yes")
+	r, err := relancer(machine, retrograder)
+	if err != nil {
+		if errors.Is(err, dbclients.ErrIntrouvable) {
+			return Resultat{}, fmt.Errorf("agent %q introuvable", machine)
+		}
+		return Resultat{}, err
+	}
+	switch {
+	case r.Ordre == nil:
+		return Resultat{Message: machine + " : rien à faire — " + r.Motif + "."}, nil
+	case r.Envoyee:
+		msg := fmt.Sprintf("Ordre %s (dépôt %s) poussé à %s.", r.Ordre.Version, r.Ordre.Depot, machine)
+		if r.Ordre.Retrograder {
+			msg += " Rétrogradation explicite : l'agent l'acceptera."
+		}
+		return Resultat{Message: msg + "\n" + noteDeroule}, nil
+	case r.Ordre.Retrograder:
+		return Resultat{}, fmt.Errorf("%s n'est pas connectée à ce core : une rétrogradation ne vaut que "+
+			"poussée, relancez-la depuis le core qui la tient (vlt status -c)", machine)
+	}
+	return Resultat{Message: fmt.Sprintf("%s n'est pas connectée à ce core : compte rendu effacé, elle aura "+
+		"l'ordre %s à sa prochaine connexion, ou au prochain tour du core qui la tient.", machine, r.Ordre.Version)}, nil
+}
+
+// ecrireDepot : remplaçable par les tests.
+var ecrireDepot = func(depot, auteur string) error {
+	return dbsettings.SetString(database.GetDatabase(), miseajour.CleReglageDepot, depot,
+		func(v string) error { _, err := miseajour.NormaliserDepot(v); return err }, auteur)
+}
+
+// definirDepot — « vlt agent depot <nom|none> ».
+func definirDepot(a Appelant, p Params) (Resultat, error) {
+	saisie := p.Get("depot")
+	depot := ""
+	if !parcversion.EstEffacement(saisie) {
+		d, err := miseajour.NormaliserDepot(saisie)
+		if err != nil {
+			return Resultat{}, err
+		}
+		depot = d
+	}
+	if err := ecrireDepot(depot, a.Username); err != nil {
+		return Resultat{}, err
+	}
+	res := Resultat{Cible: "dépôt des mises à jour"}
+	if depot == "" {
+		res.Message = "Dépôt des mises à jour : « " + miseajour.DepotParDefaut + " » (défaut)."
+	} else {
+		res.Message = "Dépôt des mises à jour : « " + depot + " ». Les ordres suivants le nommeront ; " +
+			"il doit exister, de type vaultaire et public, sur chaque Nexus du cluster."
+	}
+	return res, nil
 }

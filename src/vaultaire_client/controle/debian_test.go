@@ -212,7 +212,8 @@ func TestDebianBrancheLesPilesSansLesReecrire(t *testing.T) {
 		original := map[string]string{"login": pileLoginDebian, "sshd": pileSSHDebian}[pile]
 		var sansNous []string
 		for _, l := range strings.Split(contenu, "\n") {
-			if !strings.HasSuffix(strings.TrimSpace(l), "# vaultaire") {
+			// Ses lignes, et son marqueur de version (TO-DO 117).
+			if !strings.HasSuffix(strings.TrimSpace(l), "# vaultaire") && !strings.HasPrefix(l, "# vaultaire-conf") {
 				sansNous = append(sansNous, l)
 			}
 		}

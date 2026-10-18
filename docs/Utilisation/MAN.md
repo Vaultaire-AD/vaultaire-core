@@ -442,7 +442,9 @@ sont copiées sous `.avant-vaultaire` *(2.3)*. Les deux scripts s'arrêtent **av
 de toucher à NSS, SSH et PAM si les modules envoyés ne se chargent pas sur le
 poste, et remettent `sshd_config` si `sshd -t` le refuse. Le core envoie un jeu
 de modules par famille (`rocky/`, `debian/`), compilé sur sa plus ancienne
-version prise en charge *(TO-DO 173)*.
+version prise en charge *(TO-DO 173)*. Chaque fichier de configuration qu'ils
+écrivent porte un marqueur `# vaultaire-conf v<N>` : l'agent le tient ensuite à
+jour avec **sa** version (voir `agent`, colonne CONFIGURATION) *(TO-DO 117)*.
 
 **Le type de client n'est plus demandé.** Cette commande ne peut créer qu'un
 **agent** — un programme installé sur une machine du parc, dont le core génère la
@@ -1113,6 +1115,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
 | Agents en retard sur leur version attendue | `agent` ; `agent -g <groupe>` |
 | Poser une version attendue | `agent target 2.3.1` ; `agent target -g pilote 2.4.0` ; `agent pin <id> 2.2.0` |
+| Relancer une machine en échec | `agent update <id>` ; rétrograder : `agent pin <id> <version> --downgrade` (durable) ou `agent update <id> --downgrade` (poussé maintenant) |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
@@ -2222,7 +2225,9 @@ agent                                    # tout le parc (read:log)
 agent -g <groupe>                        # les agents d'un groupe (read:log)
 agent target <version|none>              # défaut du parc (write:server)
 agent target -g <groupe> <version|none>  # cible d'un groupe — un anneau (write:server)
-agent pin <computeur_id> <version|none>  # dérogation d'une machine (write:server)
+agent pin <computeur_id> <version|none> [--downgrade]  # dérogation d'une machine ; --downgrade : rétrogradation durable (write:server)
+agent update <computeur_id> [--downgrade] # relance une machine (write:server)
+agent depot <nom|none>                   # dépôt Nexus nommé dans les ordres (write:server)
 ```
 
 `agent` tapé seul affiche la vue — c'est la seule commande dont la forme nue
@@ -2282,11 +2287,99 @@ plusieurs domaines, et la plus haute de leurs cibles l'emporte : un délégué q
 poserait une cible sur son groupe déciderait aussi pour les machines qu'un
 autre domaine partage avec lui.
 
+### L'ordre, et le compte rendu *(TO-DO 115, 116)*
+
+Chaque agent qui a un ordre le reçoit : il le **demande** à chaque connexion, et
+le core qui le tient le lui **pousse** dans la minute qui suit une écriture de
+cible. Il en **rend compte** — colonne `DERNIER COMPTE RENDU` :
+
+| Compte rendu | Sens |
+|---|---|
+| `installe` | la version est en place — porte de santé franchie |
+| `echec` | tentée, revenue en arrière (le motif dit pourquoi) |
+| `refuse` | rien touché — rétrogradation non demandée, signature, empreinte, module qui ne se charge pas, nouveau binaire qui refuse de démarrer |
+| `non_pris_en_charge` | l'agent ne sait pas se mettre à jour : agent Windows (TO-DO 118), ou agent Linux hors systemd |
+
+**Ce que fait un agent Linux** qui reçoit l'ordre : il attend un tirage de 0 à
+2 min (pour que le parc ne télécharge pas d'un coup), télécharge le paquet de sa
+famille dans le dépôt, vérifie la signature du cluster et chaque empreinte,
+éprouve les modules (`ldd`) et le nouveau binaire (`--check`), puis bascule par
+un programme détaché, redémarre, et passe une **porte de santé** de 3 min au
+plus — service stable, tunnel rétabli, socket PAM qui répond. Sinon il remet
+l'ancienne version. Le compte rendu arrive **à la fin**, quelques minutes après
+l'ordre ; un dépôt injoignable n'en donne aucun, et l'ordre sera redonné. Détail
+et journaux :
+[Agent_configuration_et_debug.md § 4](../exploitation/Agent_configuration_et_debug.md).
+
+Une machine dont le dernier compte rendu **pour cette version** est un échec ne
+reçoit plus l'ordre : elle retenterait à chaque reconnexion. **`agent update
+<machine>`** efface le compte rendu et pousse l'ordre — le geste « j'ai corrigé,
+réessaie ».
+
+**Rétrograder** — une machine en avance n'est jamais ramenée d'office, et
+l'agent refuse toute version inférieure à la sienne sans ordre explicite. Deux
+chemins :
+
+- **`agent pin <machine> <version> --downgrade`**, durable *(TO-DO 204)* : la
+  dérogation porte le drapeau, et la machine reçoit l'ordre de rétrograder à
+  sa **prochaine demande**, quel que soit le core qui la tient — même
+  déconnectée au moment où on le tape. Le drapeau tombe quand elle rend
+  `installe` pour cette version ; une rétrogradation en échec n'est pas
+  retentée à chaque connexion (`agent update` la relance). `vlt agent` marque
+  la ligne « ↓ rétrogradation ». **Jamais** par une cible de groupe ni de parc :
+  ramener un anneau entier par erreur ne doit pas tenir en une commande.
+- `agent update <machine> --downgrade` : poussé **maintenant**, à une machine
+  connectée au core où on le tape (`status -c`).
+
+Chaque ordre de rétrogradation est journalisé en `SECURITY`, côté core et côté
+agent.
+
+**Le dépôt** nommé dans les ordres : `releases` par défaut, `agent depot <nom>`
+pour un autre. Il doit exister, de type `vaultaire` et public, sur chaque Nexus.
+
+**Clés des paquets** *(TO-DO 207)* : la ligne d'en-tête « Clés des paquets : jeu
+n°3 (2 clé(s)), rotation ajoutée — 37 agent(s) Linux sur 40 le tiennent » suit
+une rotation de la clé de signature. La rotation se fait avec le binaire du
+core (`--pkg-key rotate-add`, `rotate-switch`, `rotate-retire`) — voir
+`docs/exploitation/Releases.md`, « Faire tourner la clé ».
+
+### La configuration système *(TO-DO 117)*
+
+À chaque démarrage — et après la porte de santé d'une mise à jour, jamais
+pendant —, un agent Linux remet à la version de son code les fichiers que
+l'installation a écrits : les piles PAM `login`, `sshd` et `gdm-password`,
+`sshd_config`, `nsswitch.conf` et la liste masquée de l'écran de connexion.
+Chaque fichier porte un marqueur `# vaultaire-conf v<N>` ; à jour ou **en
+avance** (après une rétrogradation), il n'est pas touché. Sinon : sauvegarde
+`<fichier>.vaultaire-bak-<horodatage>` à côté de lui, contrôle — `sshd -t` pour
+`sshd_config`, la porte de secours des comptes locaux pour une pile PAM —, puis
+écriture atomique. Les trois piles sont écrites toutes ou aucune ; les autres
+fichiers, chacun pour soi.
+
+Colonne **CONFIGURATION** de `agent` :
+
+| Valeur | Sens |
+|---|---|
+| `conforme` | tous les fichiers à la version de l'agent |
+| `réconciliée` | des fichiers ont été réécrits au dernier démarrage (le motif les nomme) |
+| `⚠ écart` | un contrôle a refusé : **rien n'a été écrit** pour le fichier en cause — détail sous la table |
+| `désactivée` | `"reconcile_system_config": false` dans `client_conf.json` de la machine |
+| `—` | aucun compte rendu : agent d'avant le 117 |
+
+Un écart peut aussi venir de ce que **sshd applique** *(TO-DO 209)* : après
+chaque passage, l'agent compare `sshd -T` au bloc de Vaultaire. Une ligne lue
+avant le bloc (un `UsePAM no` ou un `Include` remis en tête de `sshd_config`)
+l'emporte sur lui ; le motif la nomme — « usepam no (attendu yes) — imposé par
+sshd_config:1 » — et rien n'est écrit.
+
+Sur la machine : `vaultaire_client --config-status` dit, sans rien écrire, où en
+est chaque fichier, et ce que sshd applique.
+
 ### Ce qui n'est pas encore là
 
-**Aucun agent ne se met encore à jour de lui-même.** La cible est une consigne,
-que l'ordre de mise à jour et le basculement (TO-DO 115 et 116) viendront lire.
-La vue vaut déjà seule : elle dit quelles machines sont en retard.
+L'agent **Windows** répond `non_pris_en_charge` (TO-DO 118). En SELinux
+**enforcing**, la préparation d'une mise à jour et la réconciliation seraient
+refusées (TO-DO 203) : laisser le domaine de l'agent permissif, le défaut.
 
 Ni les proxies, ni Nexus, ni l'interface web n'y figurent : ils déclarent une
 version (`cluster list`, `get -c`), mais ne demanderont jamais d'ordre de mise à
@@ -2295,5 +2388,15 @@ jour. `agent pin` refuse de les viser.
 ### Sur le portail
 
 **Clients** : la colonne **Version** donne la version déclarée et, pour un
-agent, un badge « état · version attendue », rouge sur un écart. Sans
-`read:log` sur `*`, la colonne montre la version déclarée seule.
+agent, un badge « état · version attendue », rouge sur un écart. En dessous,
+le dernier compte rendu de mise à jour et un badge **configuration :
+conforme / réconciliée / écart** (rouge sur un écart), le motif au survol
+*(TO-DO 205)*. Sans `read:log` sur `*`, la colonne montre la version déclarée
+seule.
+
+Un agent **en retard** (ou de version illisible) porte un bouton **Relancer** :
+c'est `agent update <machine>` — le dernier compte rendu est effacé, l'ordre
+poussé si la machine est connectée à ce core, sinon donné à sa prochaine
+connexion. Le bouton n'apparaît qu'à qui porte `write:server` sur tout le parc
+(l'action est de portée globale). Pas de rétrogradation depuis le portail :
+`agent pin <machine> <version> --downgrade` en ligne de commande.

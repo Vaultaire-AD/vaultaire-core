@@ -21,8 +21,8 @@
 // `update_repository` dans client_conf.json, si le cluster n'en annonce
 // aucun.
 //
-// Rien ne télécharge encore : le basculement (point 116) s'en servira, sur
-// l'ordre de mise à jour (point 115), qui nommera la version et le dépôt.
+// Le basculement (point 116) s'en sert, sur l'ordre de mise à jour (point
+// 115), qui nomme la version et le dépôt.
 package miseajour
 
 import (
@@ -67,9 +67,11 @@ type Base struct {
 // la main ne doit pas passer devant les dépôts que l'exploitant a enrôlés.
 //
 // Le schéma est HTTPS : un Nexus n'annonce que son hôte et son port, et le
-// registre Docker qu'il sert exige TLS. Le repli peut dire http:// — c'est
-// l'affaire de l'exploitant, et la signature juge les octets quel que soit le
-// transport.
+// registre Docker qu'il sert exige TLS. Le repli aussi : http:// est refusé
+// depuis le 116. La signature juge les octets quel que soit le transport, mais
+// un transport en clair laisse un tiers retenir une version (rejouer un vieux
+// manifeste signé) ou observer le parc ; une AC privée se déclare dans
+// update_tls_ca, la vérification ne se coupe pas.
 func Bases(annoncees []string, repli string) ([]Base, error) {
 	var out []Base
 	for _, a := range annoncees {
@@ -93,7 +95,7 @@ func Bases(annoncees []string, repli string) ([]Base, error) {
 	return []Base{{URL: b, Source: SourceRepli}}, nil
 }
 
-// NormaliserBase valide une URL de base : http(s), un hôte, rien après — ni
+// NormaliserBase valide une URL de base : https, un hôte, rien après — ni
 // chemin, ni requête, ni identifiants. Un chemin y ferait tout composer de
 // travers ; des identifiants n'ont rien à y faire, le dépôt se lit sans compte.
 func NormaliserBase(brute string) (string, error) {
@@ -102,8 +104,10 @@ func NormaliserBase(brute string) (string, error) {
 		return "", fmt.Errorf("URL illisible : %w", err)
 	}
 	switch {
-	case u.Scheme != "https" && u.Scheme != "http":
-		return "", fmt.Errorf("schéma %q : https:// ou http:// attendu", u.Scheme)
+	case u.Scheme == "http":
+		return "", fmt.Errorf("http:// refusé : le dépôt se lit en https:// (une AC privée se déclare dans update_tls_ca)")
+	case u.Scheme != "https":
+		return "", fmt.Errorf("schéma %q : https:// attendu", u.Scheme)
 	case u.Host == "" || u.Hostname() == "":
 		return "", fmt.Errorf("URL sans hôte")
 	case u.User != nil:

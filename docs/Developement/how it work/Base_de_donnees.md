@@ -330,14 +330,43 @@ purge_fermees      INT NOT NULL DEFAULT 0
 ```sql
 -- id_logiciels : dérogation d'une machine
 agent_target_version VARCHAR(64) NOT NULL DEFAULT ''
+agent_target_downgrade TINYINT(1) NOT NULL DEFAULT 0   -- la dérogation autorise une rétrogradation (TO-DO 204) ;
+                                                       -- remis à 0 au compte rendu « installe » de cette version
 -- groups : cible d'un groupe — les anneaux de déploiement
 agent_target_version VARCHAR(64) NOT NULL DEFAULT ''
 -- server_settings : défaut du parc, clé « agent_target_version »
+--                   dépôt nommé dans les ordres, clé « agent_update_repository » (TO-DO 115)
+
+-- id_logiciels : le dernier compte rendu 09_04 (TO-DO 115)
+agent_update_version VARCHAR(64)  NOT NULL DEFAULT ''
+agent_update_result  VARCHAR(32)  NOT NULL DEFAULT ''   -- installe, echec, refuse, non_pris_en_charge
+agent_update_reason  VARCHAR(255) NOT NULL DEFAULT ''
+agent_update_at      DATETIME NULL DEFAULT NULL
+
+-- id_logiciels : le dernier compte rendu 09_07, la configuration système (TO-DO 117)
+agent_conf_state     VARCHAR(32)  NOT NULL DEFAULT ''   -- conforme, reconciliee, ecart, desactivee, non_pris_en_charge
+agent_conf_reason    VARCHAR(255) NOT NULL DEFAULT ''
+agent_conf_at        DATETIME NULL DEFAULT NULL
+
+-- id_logiciels : le numéro du jeu de clés des paquets que la machine tient (09_09, TO-DO 207)
+agent_pkg_trust      INT NOT NULL DEFAULT 0
+
+-- les jeux de clés de confiance publiés, GARDÉS (la chaîne) — dbschema.EnsureJeuxDeCles
+CREATE TABLE pkg_trust_sets (
+  numero    INT NOT NULL PRIMARY KEY,
+  corps     TEXT NOT NULL,      -- vaultaire-pkg-trust-v1, signé
+  enveloppe TEXT NOT NULL,
+  cree_le   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+-- certificates : pkg_signing (active), pkg_signing_next (suivante, pendant une
+--                rotation), pkg_signing_previous (entre la bascule et le retrait)
 ```
 
+- **Fatale depuis le 115** : la demande `09_01`, émise par chaque agent à chaque
+  connexion, nomme ces colonnes.
+
 - **Posées par `dbschema.EnsureVersionsCibles`** (`EnsureColumn`), sur une base
-  neuve comme ancienne — pas dans les `CREATE TABLE`. **Non fatale** : seules
-  `vlt agent` et la colonne du portail les lisent (à revoir au point 115).
+  neuve comme ancienne — pas dans les `CREATE TABLE`.
 - **Vide = aucune cible** à ce niveau ; aucune cible nulle part = aucune mise à
   jour. Une base migrée ne voit donc rien changer.
 - La cible d'un groupe s'écrit avec **`updated_at = updated_at`** : elle n'est

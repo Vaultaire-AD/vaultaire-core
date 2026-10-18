@@ -133,3 +133,39 @@ var revocations atomic.Int64
 
 // Revocations rend le nombre de trames de révocation reçues.
 func Revocations() int64 { return revocations.Load() }
+
+// HandleTrameMiseAJour répond aux ordres de mise à jour (TO-DO 115) : l'agent
+// Windows ne sait pas se mettre à jour — c'est le point 118 —, il le DIT, par
+// un compte rendu « non pris en charge ». Le core le range et cesse de lui
+// pousser cet ordre ; « vlt agent » montre pourquoi la machine ne bouge pas.
+//
+// Il ne DEMANDE pas son ordre (09_01) : seules les poussées lui arrivent.
+func HandleTrameMiseAJour(trames storage.Trames_struct_client, _ *storage.DuckySession) string {
+	if len(trames.Message_Order) < 2 {
+		return ""
+	}
+	switch trames.Message_Order[1] {
+	case "02", "06":
+	default:
+		return ""
+	}
+	version := strings.TrimSpace(strings.SplitN(trames.Content, "\n", 2)[0])
+	if version == "" {
+		return ""
+	}
+	logs.Write_log("WARNING", "mise à jour : ordre de passer en "+version+
+		" reçu et NON appliqué (la mise à jour de l'agent Windows n'est pas écrite)")
+	return ReponseMiseAJourNonPriseEnCharge(trames.SessionIntegritykey, storage.Computeur_ID, version)
+}
+
+// ResultatNonPrisEnCharge : la chaîne que le core reconnaît
+// (miseajour.ResultatNonPrisEnCharge). Recopiée, comme CodeNonPrisEnCharge.
+const ResultatNonPrisEnCharge = "non_pris_en_charge"
+
+// ReponseMiseAJourNonPriseEnCharge compose la 09_04.
+func ReponseMiseAJourNonPriseEnCharge(cleDeSession, machine, version string) string {
+	return strings.Join([]string{
+		"09_04", "serveur_central", cleDeSession, "vaultaire", machine,
+		version, ResultatNonPrisEnCharge, "agent Windows : mise à jour non écrite (TO-DO 118)",
+	}, "\n")
+}

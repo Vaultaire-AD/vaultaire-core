@@ -322,7 +322,8 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// 103 depuis le suivi d'une révocation, `revocation.get_status` (TO-DO 164),
 	// 106 depuis l'oubli, la maintenance et la purge d'un nœud (TO-DO 146 et
 	// 147, trois actions), 109 depuis la version attendue des agents (TO-DO
-	// 111, trois actions).
+	// 111, trois actions), 111 depuis l'ordre de mise à jour (TO-DO 115,
+	// deux actions).
 	//
 	// Ce nombre reste écrit à la main À DESSEIN. Le déduire du catalogue le
 	// rendrait tautologique — il vaudrait toujours ce qu'il compte, et un lot
@@ -333,7 +334,7 @@ func TestCatalogueCompletNaPasDeDoublon(t *testing.T) {
 	// veut — ajouter une action sans s'en apercevoir est précisément ce qu'il
 	// empêche. Le laisser rouge des mois, en revanche, le rend inutile : on
 	// cesse de le lire.
-	const actionsAttendues = 109
+	const actionsAttendues = 111
 	if len(defs) != actionsAttendues {
 		t.Fatalf("%d actions au catalogue, attendu %d — "+
 			"un lot a disparu de EnregistrerTout, ou en a gagné une non recensée. "+

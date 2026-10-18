@@ -15,6 +15,7 @@ import (
 	"time"
 	"vaultaire_client/chrono"
 	"vaultaire_client/config"
+	"vaultaire_client/confsys"
 	"vaultaire_client/controle"
 	"vaultaire_client/debugreport"
 	"vaultaire_client/gpo"
@@ -106,6 +107,8 @@ func brancherSocleDucky() {
 	tramesmanager.RegisterHandler("04", decouverte.HandleTrame)
 	tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
 	tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
+	// 09 : l'ordre de mise à jour (TO-DO 115).
+	tramesmanager.RegisterHandler("09", miseajour.HandleTrame)
 }
 
 // bootstrapDecouverte arme la demande périodique de la liste de nœuds.
@@ -159,11 +162,50 @@ func bootstrapDecouverte() {
 	decouverte.Demarrer(cleDeSession)
 
 	// Où l'agent prendrait ses mises à jour (TO-DO 114) : une 04_15 par
-	// démarrage, et une ligne de journal. Rien ne télécharge encore — c'est
-	// ce qui rend la découverte vérifiable avant le point 116.
+	// démarrage, et une ligne de journal — la découverte se vérifie sans
+	// attendre un ordre. L'ordre (116) redemande les dépôts au moment de
+	// télécharger.
 	go func() {
 		defer logs.Recover("mise à jour : découverte des dépôts")
 		miseajour.Journaliser(cleDeSession)
+	}()
+
+	// L'ordre de mise à jour (TO-DO 115) : demandé à chaque tunnel neuf, vers
+	// un core qui annonce la capacité. Même émetteur que la découverte.
+	miseajour.Configure(func(trame string) {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "mise à jour : aucune session vaultaire valide, trame non envoyée")
+			return
+		}
+		sendmessage.SendMessage(trame, session.DuckySession)
+	})
+	miseajour.ConfigurerSession(cleDeSession)
+	go func() {
+		defer logs.Recover("mise à jour : demande des ordres")
+		miseajour.SurveillerLesOrdres(gpo.CurrentSessionKey)
+	}()
+	// Le jeu de clés de confiance des paquets (TO-DO 207) : même émetteur,
+	// une demande par session neuve et par heure.
+	go func() {
+		defer logs.Recover("clés des paquets : demande du jeu")
+		miseajour.SurveillerLesCles(gpo.CurrentSessionKey)
+	}()
+
+	// La configuration système tenue à la version de l'agent (TO-DO 117) :
+	// un passage par démarrage, APRÈS la fin d'une éventuelle mise à jour, et
+	// le compte rendu 09_07 vers un core qui annonce la capacité.
+	confsys.Configure(func(trame string) {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "configuration système : aucune session vaultaire valide, compte rendu non envoyé")
+			return
+		}
+		sendmessage.SendMessage(trame, session.DuckySession)
+	})
+	go func() {
+		defer logs.Recover("configuration système")
+		confsys.Demarrer(gpo.CurrentSessionKey)
 	}()
 }
 
@@ -228,6 +270,15 @@ func main() {
 	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
 	debugRapport := flag.Bool("debug", false,
 		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
+	// La bascule d'une mise à jour (TO-DO 116) : jouée par la COPIE de l'agent
+	// que l'agent pose dans /usr/libexec/vaultaire/ et lance par systemd-run.
+	// Pas une commande pour un humain.
+	basculer := flag.String("basculer", "",
+		"Réservé à la mise à jour : joue la bascule préparée dans ce répertoire")
+	// La configuration système (TO-DO 117), en lecture seule : ce que l'agent
+	// réécrirait au prochain démarrage, fichier par fichier.
+	etatConfig := flag.Bool("config-status", false,
+		"Dit, sans rien écrire, où en est la configuration système (piles PAM, sshd_config, nsswitch) face à cette version")
 	debugIntervalle := flag.Int("debug-interval", 0,
 		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
 	flag.Parse()
@@ -240,6 +291,17 @@ func main() {
 	if *verifier {
 		constats := controle.Verifier(controle.CheminsReels())
 		if controle.Rapport(os.Stdout, "vaultaire_client "+version.Info().Complete()+" — contrôle de démarrage", constats) > 0 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if *basculer != "" {
+		os.Exit(miseajour.ExecuterUpdater(*basculer))
+	}
+	if *etatConfig {
+		texte, resteAFaire := confsys.Etat()
+		fmt.Print(texte)
+		if resteAFaire {
 			os.Exit(1)
 		}
 		os.Exit(0)

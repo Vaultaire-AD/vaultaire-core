@@ -8,8 +8,8 @@
 // un octet de divergence ferait refuser tous les paquets du parc.
 //
 // Le format, ses raisons et ses refus sont décrits côté core ; ce paquet n'en
-// garde que ce qui sert à VÉRIFIER. Il n'est appelé par rien encore : le
-// basculement (point 116) le fera, avant de toucher un seul fichier.
+// garde que ce qui sert à VÉRIFIER. Le basculement (point 116, miseajour)
+// l'appelle avant de toucher un seul fichier.
 package paquet
 
 import (

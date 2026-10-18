@@ -256,12 +256,14 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `agent.status` | `read:log` | Globale | — | **Registre** — `agent`, `agent -g <groupe>` | **Registre** — colonne Version de `/admin/clients` (absente sans le droit) |
 | `agent.set_target` | `write:server` | Globale | — | **Registre** — `agent target [-g <groupe>] <version\|none>` | — |
 | `agent.pin` | `write:server` | Globale | — | **Registre** — `agent pin <computeur_id> <version\|none>` | — |
+| `agent.update` | `write:server` | Globale | — | **Registre** — `agent update <computeur_id> [--downgrade]` | — |
+| `agent.set_repository` | `write:server` | Globale | — | **Registre** — `agent depot <nom\|none>` | — |
 | **Certificats et politique** |
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**109 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
-ligne de commande.** *(109 depuis les trois actions `agent.*` du TO-DO 111 ; le
+**111 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+ligne de commande.** *(111 depuis les deux actions du TO-DO 115, 109 depuis les trois `agent.*` du TO-DO 111 ; le
 tableau annonçait 103 quand le test en comptait déjà 106. Le compte valait 94 ici alors que le registre en portait
 97 : `client.export`, `mfa.get_ducky_policy` et `mfa.set_ducky_policy` manquaient
 au tableau. Il est tenu par un test — `TestCatalogueCompletNaPasDeDoublon` — qui,

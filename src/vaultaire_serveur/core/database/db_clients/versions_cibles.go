@@ -26,11 +26,37 @@ type AgentEtCibles struct {
 	Declaree string
 	// Derogation : agent_target_version de la machine, brute.
 	Derogation string
+	// DerogationRetrograder : agent_target_downgrade — la dérogation autorise
+	// une rétrogradation (TO-DO 204).
+	DerogationRetrograder bool
 	// Groupes : nom → agent_target_version du groupe, brute ; vide si le groupe
 	// n'a pas de cible. TOUS les groupes de la machine y figurent, pour que la
 	// vue puisse dire « dans aucun groupe ».
 	Groupes map[string]string
+	// CompteRendu : le dernier 09_04 de la machine (TO-DO 115) ; vide si
+	// elle n'a jamais rendu compte.
+	CompteRendu CompteRendu
+	// Configuration : le dernier 09_07 (TO-DO 117) ; vide sans compte rendu.
+	Configuration Configuration
 }
+
+// Configuration est le dernier mot d'une machine sur sa configuration système.
+type Configuration struct {
+	Etat  string // voir core/miseajour : conforme, reconciliee, ecart, desactivee, non_pris_en_charge
+	Motif string
+	Le    sql.NullTime
+}
+
+// CompteRendu est le dernier mot d'une machine sur sa mise à jour.
+type CompteRendu struct {
+	Version  string // la version tentée
+	Resultat string // voir core/miseajour : installe, echec, refuse, non_pris_en_charge
+	Motif    string
+	Le       sql.NullTime
+}
+
+// Vide dit si la machine n'a jamais rendu compte.
+func (c CompteRendu) Vide() bool { return c.Resultat == "" }
 
 // AgentsEtCibles rend les AGENTS du parc — les machines de type
 // clienttype.Client, Linux et Windows — avec leurs cibles.
@@ -42,14 +68,37 @@ type AgentEtCibles struct {
 // ne concerne que l'agent : un service ne demandera jamais d'ordre de mise à
 // jour, et lui afficher une version attendue ferait croire le contraire.
 func AgentsEtCibles(db *sql.DB) ([]AgentEtCibles, error) {
+	return lireAgents(db, "")
+}
+
+// AgentEtCiblesDe rend UNE machine — pour répondre à sa 09_01 sans lire tout
+// le parc. ErrIntrouvable si elle n'existe pas ou n'est pas un agent.
+func AgentEtCiblesDe(db *sql.DB, computeurID string) (AgentEtCibles, error) {
+	l, err := lireAgents(db, computeurID)
+	if err != nil {
+		return AgentEtCibles{}, err
+	}
+	if len(l) == 0 {
+		return AgentEtCibles{}, fmt.Errorf("agent %q %w", computeurID, ErrIntrouvable)
+	}
+	return l[0], nil
+}
+
+func lireAgents(db *sql.DB, seulement string) ([]AgentEtCibles, error) {
 	if db == nil {
 		return nil, fmt.Errorf("base indisponible")
 	}
+	filtre, args := "", []any{clienttype.Client}
+	if seulement != "" {
+		filtre, args = " AND l.computeur_id = ?", append(args, seulement)
+	}
 
 	rows, err := db.Query(`
-		SELECT computeur_id, hostname, os, agent_version, agent_target_version
-		FROM id_logiciels
-		WHERE logiciel_type = ?`, clienttype.Client)
+		SELECT computeur_id, hostname, os, agent_version, agent_target_version, agent_target_downgrade,
+		       agent_update_version, agent_update_result, agent_update_reason, agent_update_at,
+		       agent_conf_state, agent_conf_reason, agent_conf_at
+		FROM id_logiciels l
+		WHERE logiciel_type = ?`+filtre, args...)
 	if err != nil {
 		return nil, erreurLecture("machines", err)
 	}
@@ -57,7 +106,9 @@ func AgentsEtCibles(db *sql.DB) ([]AgentEtCibles, error) {
 	var agents []*AgentEtCibles
 	for rows.Next() {
 		a := &AgentEtCibles{Groupes: map[string]string{}}
-		if err := rows.Scan(&a.ComputeurID, &a.Hostname, &a.OS, &a.Declaree, &a.Derogation); err != nil {
+		if err := rows.Scan(&a.ComputeurID, &a.Hostname, &a.OS, &a.Declaree, &a.Derogation, &a.DerogationRetrograder,
+			&a.CompteRendu.Version, &a.CompteRendu.Resultat, &a.CompteRendu.Motif, &a.CompteRendu.Le,
+			&a.Configuration.Etat, &a.Configuration.Motif, &a.Configuration.Le); err != nil {
 			_ = rows.Close()
 			return nil, erreurLecture("machines", err)
 		}
@@ -75,7 +126,7 @@ func AgentsEtCibles(db *sql.DB) ([]AgentEtCibles, error) {
 		FROM logiciel_group lg
 		JOIN id_logiciels l ON l.id_logiciel = lg.d_id_logiciel
 		JOIN groups g ON g.id_group = lg.d_id_group
-		WHERE l.logiciel_type = ?`, clienttype.Client)
+		WHERE l.logiciel_type = ?`+filtre, args...)
 	if err != nil {
 		return nil, erreurLecture("groupes des machines", err)
 	}
@@ -169,7 +220,11 @@ func DefinirCibleGroupe(db *sql.DB, groupe, version string) error {
 // Refusée pour une machine qui n'est pas un agent : un proxy ou un Nexus ne
 // demandera jamais d'ordre de mise à jour, et accepter la dérogation laisserait
 // croire qu'elle sert à quelque chose.
-func DefinirDerogation(db *sql.DB, computeurID, version string) error {
+//
+// retrograder (TO-DO 204) : la dérogation autorise de ramener la machine à
+// une version INFÉRIEURE à la sienne, sans autre geste, tant qu'elle n'a pas
+// rendu « installe » pour cette version. Toujours faux sans version.
+func DefinirDerogation(db *sql.DB, computeurID, version string, retrograder bool) error {
 	if db == nil {
 		return fmt.Errorf("base indisponible")
 	}
@@ -186,8 +241,11 @@ func DefinirDerogation(db *sql.DB, computeurID, version string) error {
 		return fmt.Errorf("%s est un client de type %s : seuls les agents (%s) "+
 			"suivent une version attendue", computeurID, typ, clienttype.Client)
 	}
-	if _, err := db.Exec(`UPDATE id_logiciels SET agent_target_version = ?
-		WHERE computeur_id = ?`, version, computeurID); err != nil {
+	if version == "" {
+		retrograder = false
+	}
+	if _, err := db.Exec(`UPDATE id_logiciels SET agent_target_version = ?, agent_target_downgrade = ?
+		WHERE computeur_id = ?`, version, retrograder, computeurID); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"agent-update: dérogation de "+computeurID+" non écrite : "+err.Error())
 		return fmt.Errorf("écriture de la dérogation de %s : %w", computeurID, err)
@@ -212,4 +270,76 @@ func GroupeExiste(db *sql.DB, groupe string) (bool, error) {
 		return false, erreurLecture("groupe "+groupe, err)
 	}
 	return n > 0, nil
+}
+
+// EnregistrerCompteRendu range le dernier 09_04 d'une machine. Le motif est
+// tronqué : il vient du réseau, et la colonne est bornée.
+func EnregistrerCompteRendu(db *sql.DB, computeurID, version, resultat, motif string) error {
+	if db == nil {
+		return fmt.Errorf("base indisponible")
+	}
+	if r := []rune(motif); len(r) > 250 {
+		motif = string(r[:250])
+	}
+	if len(version) > 64 {
+		version = version[:64]
+	}
+	// Le drapeau de rétrogradation (TO-DO 204) tombe quand la machine rend
+	// « installe » pour la version de sa dérogation : il a servi.
+	if _, err := db.Exec(`UPDATE id_logiciels SET agent_update_version = ?, agent_update_result = ?,
+		agent_update_reason = ?, agent_update_at = NOW(),
+		agent_target_downgrade = IF(? = 'installe' AND agent_target_version = ?, 0, agent_target_downgrade)
+		WHERE computeur_id = ?`,
+		version, resultat, motif, resultat, version, computeurID); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"agent-update: compte rendu de "+computeurID+" non écrit : "+err.Error())
+		return fmt.Errorf("écriture du compte rendu de %s : %w", computeurID, err)
+	}
+	return nil
+}
+
+// EnregistrerConfiguration range le dernier 09_07 d'une machine (TO-DO 117).
+func EnregistrerConfiguration(db *sql.DB, computeurID, etat, motif string) error {
+	if db == nil {
+		return fmt.Errorf("base indisponible")
+	}
+	if r := []rune(motif); len(r) > 250 {
+		motif = string(r[:250])
+	}
+	if _, err := db.Exec(`UPDATE id_logiciels SET agent_conf_state = ?, agent_conf_reason = ?,
+		agent_conf_at = NOW() WHERE computeur_id = ?`, etat, motif, computeurID); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"confsys: compte rendu de "+computeurID+" non écrit : "+err.Error())
+		return fmt.Errorf("écriture du compte rendu de configuration de %s : %w", computeurID, err)
+	}
+	return nil
+}
+
+// EnregistrerJeuAgent range le numéro du jeu de clés de confiance qu'une
+// machine déclare tenir (09_09, TO-DO 207).
+func EnregistrerJeuAgent(db *sql.DB, computeurID string, numero int) error {
+	if db == nil {
+		return fmt.Errorf("base indisponible")
+	}
+	if _, err := db.Exec(`UPDATE id_logiciels SET agent_pkg_trust = ? WHERE computeur_id = ?`,
+		numero, computeurID); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"agent-update: jeu de clés de "+computeurID+" non écrit : "+err.Error())
+		return fmt.Errorf("écriture du jeu de clés de %s : %w", computeurID, err)
+	}
+	return nil
+}
+
+// EffacerCompteRendu oublie le dernier compte rendu : la machine redevient
+// « pas encore tentée », et la prochaine demande lui redonne l'ordre — c'est
+// ce que fait « vlt agent update ».
+func EffacerCompteRendu(db *sql.DB, computeurID string) error {
+	if db == nil {
+		return fmt.Errorf("base indisponible")
+	}
+	if _, err := db.Exec(`UPDATE id_logiciels SET agent_update_version = '', agent_update_result = '',
+		agent_update_reason = '', agent_update_at = NULL WHERE computeur_id = ?`, computeurID); err != nil {
+		return fmt.Errorf("effacement du compte rendu de %s : %w", computeurID, err)
+	}
+	return nil
 }

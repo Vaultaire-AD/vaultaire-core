@@ -38,6 +38,7 @@ import (
 	gpomanager "vaultaire/ducky-network/gpo_manager"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
+	miseajourmanager "vaultaire/ducky-network/miseajour_manager"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
@@ -334,6 +335,11 @@ func main() {
 	// échoué, un ordre appliqué en échec, une machine tenue par un autre nœud
 	// que celui où la commande a été tapée.
 	go revocationmanager.RejouerLesOrdres()
+
+	// La poussée des ordres de mise à jour (TO-DO 115) : même modèle, pour les
+	// agents connectés à CE core qui ont un ordre. Le rattrapage, lui, est la
+	// demande 09_01 de l'agent à chaque connexion.
+	go miseajourmanager.PousserLesOrdres()
 
 	if storage.Administrateur_Enable {
 		dbschema.CreateDefaultAdminUser(db.GetDatabase())
