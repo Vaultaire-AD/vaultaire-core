@@ -223,7 +223,9 @@ Trois conséquences, toutes bonnes :
 - **aucun secret à distribuer au parc.** Donner un jeton Nexus à chaque machine
   serait un problème de distribution de secrets pour ne rien gagner ;
 - **le site sans Internet est résolu sans rien écrire.** On télécharge les
-  archives ailleurs, on les verse dans le Nexus local par `/api/v1/repos/{repo}/upload`.
+  archives ailleurs, on les verse dans le Nexus local par `/api/v1/repos/{repo}/upload`
+  — ce que fait `vaultaire_serveur --publish-package` (TO-DO 206), avec un jeton
+  d'écriture fourni au moment du versement et jamais gardé par le core.
   La signature rend le transport indifférent ;
 - **`vlt-upm` n'a plus de raison d'être.** La troisième piste du TO-DO 40 —
   un service dédié aux parcs sans Internet — disparaît. C'est un service de moins

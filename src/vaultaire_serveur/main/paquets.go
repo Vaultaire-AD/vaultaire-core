@@ -6,8 +6,11 @@ import (
 
 	configurationfile "vaultaire/core/configuration_file"
 	db "vaultaire/core/database"
+	dbsettings "vaultaire/core/database/db_settings"
+	"vaultaire/core/miseajour"
 	"vaultaire/core/paquetagent/outil"
 	"vaultaire/core/storage"
+	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
 )
 
@@ -43,5 +46,24 @@ func ouvrirClesPaquets() (outil.Cles, error) {
 		PubliquePEM: keymanagement.ClePubliquePaquetsPEM,
 		Oublier:     keymanagement.OublierClePriveePaquets,
 		Magasin:     keymanagement.MagasinPaquets{},
+		Nexus:       func() ([]outil.NexusCible, error) { return nexusDuCluster(conn) },
+		Depot: func() (string, error) {
+			d, _, err := dbsettings.GetString(conn, miseajour.CleReglageDepot)
+			return d, err
+		},
 	}, nil
+}
+
+// nexusDuCluster : les Nexus enrôlés, pour --publish-package (TO-DO 206).
+func nexusDuCluster(conn *sql.DB) ([]outil.NexusCible, error) {
+	enroles, err := hosthandler.NexusDuCluster(conn)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]outil.NexusCible, 0, len(enroles))
+	for _, n := range enroles {
+		out = append(out, outil.NexusCible{Nom: n.Nom, URL: n.URL, EnLigne: n.EnLigne,
+			ExposeAgents: n.ExposeAgents, Maintenance: n.Maintenance, Probleme: n.Probleme})
+	}
+	return out, nil
 }

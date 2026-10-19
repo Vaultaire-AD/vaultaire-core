@@ -206,3 +206,66 @@ func TrierServices(s []ServiceJoignable) {
 		return s[i].Hostname < s[j].Hostname
 	})
 }
+
+// NexusEnrole : un Nexus du cluster, pour le versement des paquets (TO-DO
+// 206). Tous, et pas seulement ceux qu'on annonce aux agents : un Nexus qu'on
+// synchronise avant de l'exposer doit déjà porter les paquets le jour où il
+// entre en rotation.
+type NexusEnrole struct {
+	Nom          string
+	URL          string // https://hôte:port, vide si le point d'accès est inutilisable
+	EnLigne      bool
+	ExposeAgents bool
+	Maintenance  bool
+	Probleme     string
+}
+
+// NexusDuCluster lit les Nexus enrôlés, triés comme pour les agents.
+func NexusDuCluster(db *sql.DB) ([]NexusEnrole, error) {
+	if db == nil {
+		return nil, fmt.Errorf("connexion base indisponible")
+	}
+	rows, err := db.Query(`SELECT hostname, ip_address, status, expose_aux_agents, maintenance, priorite
+		FROM cluster_nodes WHERE role = ?`, clienttype.Nexus)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	type ligne struct {
+		n        NexusEnrole
+		priorite int
+	}
+	var lignes []ligne
+	for rows.Next() {
+		var l ligne
+		var point, statut string
+		if err := rows.Scan(&l.n.Nom, &point, &statut, &l.n.ExposeAgents, &l.n.Maintenance, &l.priorite); err != nil {
+			return nil, err
+		}
+		l.n.EnLigne = statut == "online"
+		if adresse, err := AdresseDeService(point); err != nil {
+			l.n.Probleme = fmt.Sprintf("point d'accès %q inutilisable : %v", point, err)
+		} else {
+			l.n.URL = "https://" + adresse
+		}
+		lignes = append(lignes, l)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	sort.SliceStable(lignes, func(i, j int) bool {
+		pi, pj := lignes[i].priorite, lignes[j].priorite
+		if (pi == 0) != (pj == 0) {
+			return pi != 0
+		}
+		if pi != pj {
+			return pi < pj
+		}
+		return lignes[i].n.Nom < lignes[j].n.Nom
+	})
+	out := make([]NexusEnrole, 0, len(lignes))
+	for _, l := range lignes {
+		out = append(out, l.n)
+	}
+	return out, nil
+}

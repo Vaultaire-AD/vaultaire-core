@@ -2336,6 +2336,10 @@ agent.
 
 **Le dépôt** nommé dans les ordres : `releases` par défaut, `agent depot <nom>`
 pour un autre. Il doit exister, de type `vaultaire` et public, sur chaque Nexus.
+Le paquet signé s'y verse depuis le binaire du core, sur chaque Nexus enrôlé
+d'un geste : `vaultaire_serveur --publish-package <archive>`, avec un jeton
+`nxs_` passé par `VAULTAIRE_NEXUS_TOKEN` *(TO-DO 206)* — voir
+`docs/exploitation/Releases.md`, « Le dépôt du parc ».
 
 **Clés des paquets** *(TO-DO 207)* : la ligne d'en-tête « Clés des paquets : jeu
 n°3 (2 clé(s)), rotation ajoutée — 37 agent(s) Linux sur 40 le tiennent » suit

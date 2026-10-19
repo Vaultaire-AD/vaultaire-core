@@ -33,7 +33,6 @@ Trois gestes, dans le même passage que le code :
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
 | 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
 | 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
-| 206 | AGENT-UPDATE | Verser le paquet signé dans Nexus sans geste manuel        | À cadrer — quel compte écrit dans Nexus |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
 | 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
 | 203 | SELINUX      | Règles de `vaultaire_t` pour la mise à jour et la configuration système | À faire — avec le 180, sur un poste |
@@ -373,8 +372,8 @@ Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 1
 > du lot, est **traité** : l'agent Linux télécharge, vérifie, bascule, passe la
 > porte de santé et revient en arrière seul. Le 117 est **traité** : la
 > configuration système (piles PAM, `sshd_config`, `nsswitch.conf`) suit la
-> version de l'agent. Restent Windows (118) et les limites relevées en
-> faisant le lot (206 ; les 204, 205, 207, 208 et 209 sont traités).
+> version de l'agent. Reste Windows (118) : les limites relevées en faisant
+> le lot (204 à 209) sont traitées.
 
 ### 202. [CI] [AGENT-UPDATE] La release produit les manifestes du paquet d'agent
 
@@ -399,22 +398,6 @@ par :
 `vaultaire_client-vX.Y.Z-linux-amd64.tar.gz.{rocky,debian}.manifest` présents
 et dans `SHA256SUMS`. `docker-update.sh` n'a rien à changer : il ne vérifie
 que les archives qu'il installe.
-
-### 206. [AGENT-UPDATE] Verser le paquet signé dans Nexus sans geste manuel
-
-**Origine** (limite du **113** et du **114**). `vaultaire_serveur
---sign-package` écrit les `.sig` à côté de l'archive ; il faut ensuite verser à
-la main l'archive, ses deux manifestes et leurs signatures dans le dépôt Nexus
-(`Releases.md`, « Le dépôt du parc »), sur **chaque** Nexus du cluster. Un oubli
-sur l'un d'eux ne se voit qu'aux agents qui le choisissent : « téléchargement
-impossible … l'ordre sera redonné », sans fin.
-
-**À cadrer.** Une commande du core (`--publish-package`, ou une action
-`vlt`) qui signe puis verse sur tous les Nexus enrôlés, et dit ce qui manque à
-chacun. La vraie question est le **compte** : le dépôt se lit sans compte, mais
-s'écrit avec `write:nexus` — un jeton de service du core, par la catégorie `08`,
-ou un compte d'exploitation saisi au moment du versement. Ne pas mettre de
-jeton Nexus en clair dans la configuration du core (voir le **98**).
 
 ### 118. [AGENT-UPDATE] [WINDOWS] La mise à jour du client Windows
 

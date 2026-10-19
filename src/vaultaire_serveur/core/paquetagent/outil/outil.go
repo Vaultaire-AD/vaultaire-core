@@ -7,6 +7,7 @@
 //	vaultaire_serveur --pkg-key show                           clé publique et empreinte
 //	vaultaire_serveur --pkg-key export <fichier>               clé privée, dans un fichier 0600
 //	vaultaire_serveur --pkg-key forget-private --confirm       passage au mode hors ligne
+//	vaultaire_serveur --publish-package <archive> …            signés, versés dans les Nexus (206)
 //
 // # Qui signe : le core qui ADOPTE une release
 //
@@ -22,7 +23,7 @@
 // Une commande vlt est une ligne de texte envoyée au core : elle ne transporte
 // pas une archive de plusieurs dizaines de Mo. Signer demande l'archive, sur
 // l'hôte du core — `docker exec vaultaire-ad /opt/vaultaire/bin/vaultaire_serveur
-// --sign-package …`. Le dépôt dans Nexus (point 114) viendra s'y brancher.
+// --sign-package …`. Le versement dans les Nexus (206, versement.go) s'y branche.
 package outil
 
 import (
@@ -44,13 +45,17 @@ type Cles struct {
 	Oublier     func() error
 	// Magasin : les clés par rôle et les jeux publiés — la rotation (207).
 	Magasin paquetagent.Magasin
+	// Versement (206) : les Nexus enrôlés, et le dépôt réglé pour le parc
+	// (vide s'il n'est pas réglé).
+	Nexus func() ([]NexusCible, error)
+	Depot func() (string, error)
 }
 
 // EstCommande dit si les arguments désignent une de ces sous-commandes.
 func EstCommande(args []string) bool {
 	for _, a := range args {
 		switch a {
-		case "--package-manifest", "--sign-package", "--pkg-key":
+		case "--package-manifest", "--sign-package", "--pkg-key", "--publish-package":
 			return true
 		}
 	}
@@ -105,19 +110,41 @@ func Executer(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, err
 
 	case "--pkg-key":
 		return cle(args[1:], sortie, erreurs, ouvrir)
+
+	case "--publish-package":
+		return versement(args[1:], sortie, erreurs, ouvrir)
 	}
 	fmt.Fprint(erreurs, Aide)
 	return 2
 }
 
 func signer(archive, fichierCle string, sortie, erreurs io.Writer, ouvrir func() (Cles, error)) int {
-	echec := func(format string, a ...any) int {
-		fmt.Fprintf(erreurs, "erreur : "+format+"\n", a...)
+	if _, err := signerArchive(archive, fichierCle, ouvrir, false, sortie); err != nil {
+		fmt.Fprintf(erreurs, "erreur : %v\n", err)
 		return 1
 	}
+	return 0
+}
+
+// archiveSignee : ce que signerArchive a laissé à côté de l'archive.
+type archiveSignee struct {
+	Manifestes []paquetagent.Manifeste
+	// Signataire : la publique de la clé qui a signé — celle qui dit si une
+	// signature déjà déposée dans un Nexus vaut la nôtre (TO-DO 206).
+	Signataire *rsa.PublicKey
+}
+
+// signerArchive écrit, pour chaque famille, le manifeste et sa signature.
+//
+// garder (TO-DO 206) : une signature déjà là, qui vérifie CE manifeste avec
+// CETTE clé, est gardée telle quelle. Une signature RSA-PSS change à chaque
+// signature : resigner à chaque versement produirait un .sig différent de
+// celui déjà déposé dans Nexus, où une version publiée est immuable.
+func signerArchive(archive, fichierCle string, ouvrir func() (Cles, error), garder bool,
+	sortie io.Writer) (archiveSignee, error) {
 	manifestes, err := lireArchive(archive)
 	if err != nil {
-		return echec("%v", err)
+		return archiveSignee{}, err
 	}
 
 	// Le manifeste publié par la CI, s'il est là, doit être CELUI qu'on
@@ -129,65 +156,52 @@ func signer(archive, fichierCle string, sortie, erreurs io.Writer, ouvrir func()
 		switch {
 		case os.IsNotExist(err):
 		case err != nil:
-			return echec("lecture du manifeste publié : %v", err)
+			return archiveSignee{}, fmt.Errorf("lecture du manifeste publié : %w", err)
 		case string(existant) != corps:
-			return echec("%s ne correspond pas à l'archive : elle n'est pas celle que la "+
+			return archiveSignee{}, fmt.Errorf("%s ne correspond pas à l'archive : elle n'est pas celle que la "+
 				"release décrit — rien n'est signé", paquetagent.NomManifeste(archive, m))
 		}
 	}
 
-	var privee *rsa.PrivateKey
-	var publiques []*rsa.PublicKey
-	if fichierCle != "" {
-		contenu, err := os.ReadFile(fichierCle)
-		if err != nil {
-			return echec("lecture de la clé : %v", err)
-		}
-		if privee, err = paquetagent.LireClePrivee(contenu); err != nil {
-			return echec("%v", err)
-		}
-		publiques = []*rsa.PublicKey{&privee.PublicKey}
-	} else {
-		cles, err := ouvrir()
-		if err != nil {
-			return echec("%v", err)
-		}
-		if privee, err = cles.Privee(); err != nil {
-			return echec("%v", err)
-		}
-		pemPublique, err := cles.PubliquePEM()
-		if err != nil {
-			return echec("%v", err)
-		}
-		// La relecture se fait avec la PUBLIQUE en base — celle que les machines
-		// ont reçue — et non avec celle qu'on déduit de la privée : une base
-		// où les deux ne vont plus ensemble produirait des paquets que tout le
-		// parc refuserait.
-		if publiques, err = paquetagent.LireClesPubliques([]byte(pemPublique)); err != nil {
-			return echec("%v", err)
-		}
+	privee, publiques, err := clesDeSignature(fichierCle, ouvrir)
+	if err != nil {
+		return archiveSignee{}, err
 	}
+	signataire := []*rsa.PublicKey{&privee.PublicKey}
 
 	for _, m := range manifestes {
 		corps, _ := m.Corps()
+		chemin := paquetagent.NomManifeste(archive, m)
+		if garder {
+			if texte, err := os.ReadFile(chemin + ".sig"); err == nil {
+				if env, err := paquetagent.LireEnveloppe(string(texte)); err == nil {
+					if _, err := paquetagent.Verifier(corps, env, signataire); err == nil {
+						if err := ecrire(chemin, corps); err != nil {
+							return archiveSignee{}, err
+						}
+						fmt.Fprintf(sortie, "%s.sig  (%s %s, clé %s, déjà signé)\n", chemin, m.Version, m.Plateforme, env.EmpreinteCle)
+						continue
+					}
+				}
+			}
+		}
 		env, err := paquetagent.Signer(corps, privee)
 		if err != nil {
-			return echec("%v", err)
+			return archiveSignee{}, err
 		}
 		if _, err := paquetagent.Verifier(corps, env, publiques); err != nil {
-			return echec("la signature produite ne se vérifie pas avec la clé publique "+
+			return archiveSignee{}, fmt.Errorf("la signature produite ne se vérifie pas avec la clé publique "+
 				"déposée sur les machines (%v) — rien n'est écrit", err)
 		}
-		chemin := paquetagent.NomManifeste(archive, m)
 		if err := ecrire(chemin, corps); err != nil {
-			return echec("%v", err)
+			return archiveSignee{}, err
 		}
 		if err := ecrire(chemin+".sig", env.Texte()); err != nil {
-			return echec("%v", err)
+			return archiveSignee{}, err
 		}
 		fmt.Fprintf(sortie, "%s.sig  (%s %s, clé %s)\n", chemin, m.Version, m.Plateforme, env.EmpreinteCle)
 	}
-	return 0
+	return archiveSignee{Manifestes: manifestes, Signataire: &privee.PublicKey}, nil
 }
 
 func cle(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, error)) int {
@@ -268,6 +282,43 @@ func cle(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, error)) 
 	return 0
 }
 
+// clesDeSignature rend la clé privée qui signe et les publiques qui relisent :
+// celles du fichier hors ligne, ou celles de la base.
+func clesDeSignature(fichierCle string, ouvrir func() (Cles, error)) (*rsa.PrivateKey, []*rsa.PublicKey, error) {
+	if fichierCle != "" {
+		contenu, err := os.ReadFile(fichierCle)
+		if err != nil {
+			return nil, nil, fmt.Errorf("lecture de la clé : %w", err)
+		}
+		privee, err := paquetagent.LireClePrivee(contenu)
+		if err != nil {
+			return nil, nil, err
+		}
+		return privee, []*rsa.PublicKey{&privee.PublicKey}, nil
+	}
+	cles, err := ouvrir()
+	if err != nil {
+		return nil, nil, err
+	}
+	privee, err := cles.Privee()
+	if err != nil {
+		return nil, nil, err
+	}
+	pemPublique, err := cles.PubliquePEM()
+	if err != nil {
+		return nil, nil, err
+	}
+	// La relecture se fait avec la PUBLIQUE en base — celle que les machines
+	// ont reçue — et non avec celle qu'on déduit de la privée : une base
+	// où les deux ne vont plus ensemble produirait des paquets que tout le
+	// parc refuserait.
+	publiques, err := paquetagent.LireClesPubliques([]byte(pemPublique))
+	if err != nil {
+		return nil, nil, err
+	}
+	return privee, publiques, nil
+}
+
 func lireArchive(chemin string) ([]paquetagent.Manifeste, error) {
 	f, err := os.Open(chemin)
 	if err != nil {
@@ -306,4 +357,13 @@ Rotation de la clé (TO-DO 207) — trois gestes :
   vaultaire_serveur --pkg-key rotate-switch [--force]        2. la suivante signe (quand le parc a suivi)
   vaultaire_serveur --pkg-key rotate-retire [--key <pem>]    3. l'ancienne retirée du parc
   vaultaire_serveur --pkg-key compromised --confirm          clé compromise : remplacement hors bande
+
+Versement dans les Nexus (TO-DO 206) — jeton nxs_ par VAULTAIRE_NEXUS_TOKEN ou --token-file :
+  vaultaire_serveur --publish-package <archive>          signe, verse dans chaque Nexus enrôlé, relit
+      [--key <pem>]                signe hors ligne
+      [--repo <dépôt>]             défaut : le dépôt réglé pour le parc, sinon « releases »
+      [--nexus https://hôte:port]  ce Nexus seulement (répétable) ; défaut : tous ceux du cluster
+      [--ca <pem>]                 AC privée des Nexus
+      [--token-file <fichier>]     le jeton, dans un fichier
+      [--replace-signatures]       remplace les signatures de l'ancienne clé (après rotate-switch)
 `
