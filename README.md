@@ -155,6 +155,10 @@ besoin.
 Cible de déploiement : **Rocky Linux 9** (les releases y sont compilées). Depuis
 Windows, développer dans **WSL**.
 
+Systèmes validés pour l'agent : **Debian 13, Rocky Linux 9 et 10** — liste et
+conditions dans
+[`docs/Installation/Requirements.md`](./docs/Installation/Requirements.md#systèmes-pris-en-charge-pour-lagent).
+
 ```bash
 ./auto-compil.sh          # compile les sept modules et les modules PAM dans cmd/ (non versionné)
 ```

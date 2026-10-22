@@ -363,4 +363,4 @@ retire la clé. Depuis un autre poste, quand l'écran est vide :
 `reg delete \\<poste>\HKLM\SOFTWARE\Vaultaire\CredentialProvider /f`
 (service Registre à distance), ou depuis le mode sans échec.
 
-La vérification sur un poste est dans `A_TESTER.md`, § 90.
+Vérifié sur un poste à la recette du 22/10/2026 (point 179, voir `docs/Developement/DO/2.3/2.3.md`).

@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **210**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **214**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -24,6 +24,10 @@ Trois gestes, dans le même passage que le code :
 | #   | Domaine      | Sujet                                                      | État                                    |
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
+| 210 | SÉCURITÉ     | L'identité d'une machine ne s'exporte qu'à sa création      | À faire — **sécurité**, à cadrer (réinstallation) |
+| 183 | GPO          | Deux GPO : le mode `audit` d'une GPO déteint sur les autres | À faire — **recette NON** (12/10 et 22/10) |
+| 212 | SELINUX      | `install.sh` : la politique ne compile pas                  | À faire — **bloque** 180 et 203         |
+| 213 | AGENT        | Clés absentes d'`authorized_keys` (188) : à confirmer       | À confirmer — agent d'avant le 197 sur la VM |
 | 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — relevé du 181 d'abord, sur un poste |
 | 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
@@ -31,10 +35,10 @@ Trois gestes, dans le même passage que le code :
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
 | 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
-| 183 | GPO          | Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique | À faire — à reproduire          |
+| 211 | GPO          | Modules de compte : une valeur par compte (`%u`)            | À faire                                 |
 | 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
-| 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — sur un poste, voir le 22      |
+| 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — après le 212, sur un poste    |
 | 203 | SELINUX      | Règles de `vaultaire_t` pour la mise à jour et la configuration système | À faire — avec le 180, sur un poste |
 | 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
@@ -144,17 +148,70 @@ contrôle relit vraiment le fichier (ou seulement l'empreinte de ce qu'il a
 posé), et si l'écart est perdu à l'agent ou au core (`gpo drift`). Un test qui
 casse le fichier et attend l'écart.
 
-### 183. [GPO] Deux GPO : l'écart signalé disparaît quand une autre GPO s'applique
+### 183. [GPO] Deux GPO : le mode `audit` d'une GPO déteint sur les autres
 
 **Constat** (recette du 12/10, `A_TESTER.md`), § 7e. Une GPO en audit, une autre en enforce sur la
 même machine : l'écart signalé de la première **disparaît** quand la seconde,
 modifiée, est appliquée. On ne sait pas si c'est l'application d'une GPO ou de
 deux dans le même cycle.
 
-**À faire.** Reproduire les deux cas séparément. Piste : le rapport de
-conformité d'un cycle remplace celui de la machine entière au lieu de ne
-remplacer que les GPO appliquées. Le mode doit suivre le module (`A_TESTER.md`
-§ 7e).
+**Constat** (recette du 22/10), § 7e, plus net : une GPO en `audit` et une en
+`enforce` sur la même machine — la seconde passe **aussi en audit**, rien
+n'est corrigé. La première repassée en `enforce`, tout repart. Le mode est
+donc tranché pour la machine entière (ou pour le cycle), pas module par
+module : c'est la promesse même du § 7e qui tombe.
+
+**À faire.**
+
+1. Reproduire sur un poste, avec deux GPO d'un module chacune, et lire ce que
+   reçoit l'agent : le mode est-il porté par **chaque module** dans la
+   politique fusionnée, ou par la politique entière (le plus restrictif
+   l'emportant) ? Chercher où la fusion des GPO d'une machine (core) et la
+   boucle d'application (agent, `gpo/drift.go`, `DriftAudit`) lisent le mode.
+2. Le mode doit suivre le module de sa GPO : un test à deux GPO de modes
+   différents, un fichier cassé dans chacune — l'un corrigé, l'autre signalé
+   (le § 7e, en test automatique).
+3. Puis le premier constat : le rapport de conformité d'un cycle remplace
+   celui de la machine entière au lieu de ne remplacer que les GPO
+   appliquées — vérifier s'il disparaît une fois le mode réparé.
+
+### 211. [GPO] Modules de compte : une valeur par compte
+
+**Demande** (recette du 22/10, § 63). Un `user_git_config` pose la **même**
+valeur à tous les comptes visés : `user.name` vaut la même chose pour chaque
+membre du groupe, ce qui n'a pas de sens. Il faut des marqueurs remplacés au
+moment d'appliquer, pour chaque compte — comme `%h` (le dossier personnel)
+l'est déjà dans les chemins (`gpo/registry.go`, `expandHome`).
+
+**À faire.**
+
+1. Trancher la liste et la syntaxe : `%u` (nom du compte, `alice`), et sans
+   doute `%U` (`alice@acme.lan`), `%d` (domaine), `%n` (nom complet tiré de
+   l'annuaire), `%m` (adresse de messagerie si l'annuaire la porte), `%%`
+   (un `%` littéral). Une valeur sans marqueur ne change pas.
+2. Où : dans les **valeurs** des modules de compte (`user_git_config` d'abord ;
+   regarder `user_env`, `user_cron` et les autres), côté **agent**, qui
+   connaît le compte — la politique signée reste la même pour tout le groupe.
+3. Le contrôle de dérive compare à la valeur **remplacée** ; un marqueur
+   inconnu est refusé à l'enregistrement de la GPO (core), pas découvert sur
+   le poste.
+4. Docs : la référence des modules, la formation (chapitre 6, GPO de compte),
+   un exemple `user.name = %n`, `user.email = %m`.
+
+### 213. [AGENT] [SSH] Clés absentes d'`authorized_keys` : le 188 est-il revenu ?
+
+**Constat** (recette du 22/10, § 86). Après une connexion SSH d'un compte du
+domaine qui a des clés, `~/.ssh/authorized_keys` est toujours vide. Le **197**
+(14/10) devait fermer le **188**.
+
+**À confirmer d'abord.** Le rapport de debug joint vient d'un agent
+`2.3.0+gfadbd12-dirty (2026-10-12)`, compilé avant le 197 : sur cette VM, le
+défaut est attendu. Rejouer avec un agent **et** des modules PAM d'après le
+14/10 (archive refaite, `-join` relancé), puis :
+
+- vide encore : rouvrir, avec `vaultaire.log` de la connexion et la sortie de
+  `vaultaire_client --fetch-key <compte@domaine>` en root ;
+- rempli : le § 86 et ce point se ferment.
 
 ### 196. [AGENT] [SSH] `--fetch-key` : une session Ducky neuve à chaque appel de sshd
 
@@ -174,8 +231,8 @@ une fois par clé refusée présentée avant elle.
 2. Retirer l'attente fixe ; garder une borne totale courte (sshd attend).
 3. Démon arrêté : ne rien rendre, vite — c'est le comportement d'aujourd'hui
    quand le core est injoignable.
-4. Mesurer avant et après (`A_TESTER.md`, § 86 et 89 — le journal de debug
-   des connexions du 199 donne la ligne `fetch-key` de chaque appel).
+4. Mesurer avant et après (`A_TESTER.md`, § 86 — le journal de debug des
+   connexions du 199 donne la ligne `fetch-key` de chaque appel).
 
 **Mis en pause le 14/10**, au profit de 197, 198 et 199. Le plan proposé, à
 reprendre tel quel ou à revoir :
@@ -220,6 +277,77 @@ Une fois tranché : chiffrement d'enveloppe des colonnes `private_key_data` et `
 
 **Ne pas commencer par le code.** Ce point demande une décision d'exploitation, pas une implémentation.
 
+### 210. [SÉCURITÉ] [CLIENT] L'identité d'une machine ne s'exporte qu'à sa création
+
+**Demande** (recette du 22/10). L'archive d'installation porte la **clé privée
+de la machine** (`private_key.pem`), qui vaut son identité sur le parc.
+Aujourd'hui elle se récupère **à tout moment** : `create -export
+<computeur_id> <fichier.zip>`, et le bouton « Identité » de la page *Clients*
+du portail (action `client.export`). Le core garde pour cela la clé privée de
+chaque machine dans `<Client_Conf_path>/clientsoftware/<id>/` (voir
+`ducky-network/new_client/archive.go`) : qui obtient ce droit, ou ce
+répertoire, peut se faire passer pour n'importe quelle machine du parc.
+
+**Ce qui est voulu.** L'archive se produit **à la création** seulement
+(`create -c … --export`, la création au portail, `-join`). Une fois la
+machine créée, **aucun** chemin du serveur central ne rend sa clé privée.
+
+**À faire — à cadrer avant d'écrire.**
+
+1. Retirer `create -export <computeur_id>`, l'action `client.export` sur une
+   machine existante, et le bouton « Identité » ; leur permission et leur
+   ligne `SECURITY` avec.
+2. Ne plus **garder** la clé privée : la jeter du core une fois l'archive
+   produite ou le `-join` terminé. Vérifier ce qui la relit ensuite (le
+   `-join` d'une machine existante, la composition de l'archive, les tests).
+3. Trancher la **réinstallation** d'une machine existante, qui s'appuie
+   aujourd'hui sur la clé gardée : `vlt create -c <computeur_id> -join …`
+   (procédure du 207 « clé compromise », formation). Proposition : une
+   réinstallation tire une **nouvelle paire** (la machine garde son
+   identifiant, sa clé publique en base est remplacée, l'ancienne refusée),
+   au lieu de renvoyer l'ancienne.
+4. Les machines déjà créées : purge des clés privées existantes au premier
+   démarrage du core qui porte ce point (migration, journalisée), ou geste
+   explicite — à trancher.
+5. Docs : MAN § 5.5 (« L'archive d'installation »), `Actions_et_Permissions.md`,
+   `Client_Windows.md`, la formation (chapitre 5), `Releases.md` (clé
+   compromise).
+
+### 212. [SELINUX] `install.sh` : la politique ne compile pas
+
+**Constat** (recette du 22/10, `A_TESTER.md` § 81). Sur le poste de recette
+(SELinux, `selinux-policy-devel` installé), la compilation s'arrête :
+
+```
+vaultaire.te:11:ERROR 'Building a policy module, but no module specification found.'
+  at token '/etc/vaultaire(/.*)?' on line 1117
+/usr/bin/checkmodule:  error(s) encountered while parsing configuration
+```
+
+Les avertissements qui précèdent (`duplicate definition of passt_domtrans()`,
+`smartmon_*`) viennent de la politique de la distribution : sans gravité. La
+politique n'avait été compilée que contre la politique de référence de
+**Debian**.
+
+**Piste.** Le macro-processeur `m4` de la politique de référence se sert de
+l'apostrophe comme guillemet fermant : `vaultaire.te` porte **77**
+apostrophes dans ses commentaires en français (« l'agent », « n'avait »…),
+la première ligne 5. Une apostrophe dans un commentaire peut fermer un
+guillemet ouvert par une macro (`policy_module`, `tunable_policy`) et
+désarticuler tout ce qui suit — d'où une déclaration de module jamais vue,
+et une erreur portée sur un jeton du `.fc`.
+
+**À faire.**
+
+1. Noter la distribution exacte du poste (Rocky 9 ou 10) et la version de
+   `selinux-policy-devel`.
+2. Vérifier la piste : compiler une copie sans commentaires
+   (`sed '/^[[:space:]]*#/d' vaultaire.te`). Si elle passe : retirer les
+   apostrophes des commentaires de `vaultaire.te` (et du `.fc`), et ajouter
+   au test du dépôt un contrôle qui les refuse.
+3. Rejouer `install.sh` sur Rocky 9 **et** Rocky 10, puis le § 81.
+4. Ce point bloque le **180** et le **203**.
+
 ### 180. [SELINUX] Confiner l'agent : règles des GPO, puis enforcing
 
 **Origine** (reste du **22**). L'agent a son domaine, `vaultaire_t`, mais il est
@@ -229,7 +357,7 @@ dans des fichiers de types très variés (`sshd_config.d`, `sudoers.d`,
 `sysctl.d`, dépôts, ancres de certificats, règles d'audit, journald, resolved,
 grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit.
 
-**À faire, sur une Rocky de test** (`A_TESTER.md`, § 81) :
+**À faire, sur une Rocky de test** (`A_TESTER.md`, § 81), **après le 212** :
 
 1. `deployments/selinux/install.sh`, puis faire vivre l'agent : la suite de GPO
    de la formation, une révocation, un provisionnement de compte.

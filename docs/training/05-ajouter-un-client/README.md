@@ -13,8 +13,10 @@ Vaultaire.
 
 - chapitres [1](../01-installation-serveur/README.md) à
   [4](../04-permissions-et-delegation/README.md) terminés ;
-- une VM **Rocky Linux 9** (appelée `web01` ici), joignable en SSH par le
-  serveur, et qui joint le port **6666** du serveur.
+- une VM **Rocky Linux 9 ou 10**, ou **Debian 13** (appelée `web01` ici) —
+  les systèmes validés, voir
+  [`Requirements.md`](../../Installation/Requirements.md#systèmes-pris-en-charge-pour-lagent) —,
+  joignable en SSH par le serveur, et qui joint le port **6666** du serveur.
 
 ## Jalons
 
