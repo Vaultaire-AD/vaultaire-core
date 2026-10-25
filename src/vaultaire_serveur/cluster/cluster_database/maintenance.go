@@ -177,6 +177,9 @@ func DemanderPurge(db *sql.DB, hostname, par string, etalement int) error {
 type DemandeDePurge struct {
 	Demandee  time.Time
 	Etalement time.Duration
+	// AccesAgents : les « hôte:port » du core purgé, vus des agents — la
+	// 04_17 les nomme pour qu'ils le quittent (TO-DO 216).
+	AccesAgents []string
 }
 
 // PurgeAFaire dit au core `proprietaire` s'il a une purge à exécuter.
@@ -188,11 +191,13 @@ func PurgeAFaire(db *sql.DB, proprietaire string) (DemandeDePurge, bool, error) 
 		return DemandeDePurge{}, false, nil
 	}
 	var demandee, terminee sql.NullTime
-	var etalement int
+	var etalement, port, portPublic int
 	var maintenance bool
-	err := db.QueryRow(`SELECT purge_demandee_le, purge_terminee_le, purge_etalement_s, maintenance
+	var ip, publique string
+	err := db.QueryRow(`SELECT purge_demandee_le, purge_terminee_le, purge_etalement_s, maintenance,
+	                           ip_address, adresse_publique, ducky_port, port_public
 	                      FROM cluster_nodes WHERE owner_client_id = ?`, proprietaire).
-		Scan(&demandee, &terminee, &etalement, &maintenance)
+		Scan(&demandee, &terminee, &etalement, &maintenance, &ip, &publique, &port, &portPublic)
 	if errors.Is(err, sql.ErrNoRows) {
 		return DemandeDePurge{}, false, nil
 	}
@@ -205,7 +210,8 @@ func PurgeAFaire(db *sql.DB, proprietaire string) (DemandeDePurge, bool, error) 
 	if !maintenance || !e.PurgeEnCours() {
 		return DemandeDePurge{}, false, nil
 	}
-	return DemandeDePurge{Demandee: demandee.Time, Etalement: time.Duration(etalement) * time.Second}, true, nil
+	return DemandeDePurge{Demandee: demandee.Time, Etalement: time.Duration(etalement) * time.Second,
+		AccesAgents: AccesPourAgents(ip, publique, port, portPublic)}, true, nil
 }
 
 // TerminerPurge écrit la fin d'une purge et le nombre de sessions fermées.

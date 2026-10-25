@@ -122,11 +122,14 @@ func HandleTrame(t storage.Trames_struct_client, _ *storage.DuckySession) string
 		// filtrage par groupes, tri, empreintes, persistance — reste identique.
 		// Une trame de réveil ne pouvait pas devenir un second chemin
 		// d'apprentissage, qu'il aurait fallu tenir d'accord avec le premier.
-		motif := strings.TrimSpace(t.Content)
+		motif, quitter := LireActualisation(t.Content)
 		if motif == "" {
 			motif = "demande du core"
 		}
 		logs.Write_log("INFO", "découverte : liste redemandée hors tour ("+motif+")")
+		// Le nœud à quitter AVANT la demande : la liste qui revient, et la
+		// reconnexion qui peut suivre, le trouvent déjà en dernier.
+		Eviter(quitter)
 		DemanderMaintenant()
 	case "08":
 		traiterAccuseBattement(t.Content)

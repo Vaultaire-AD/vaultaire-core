@@ -87,6 +87,10 @@ func TestEnBaseUnProxyEnMaintenanceSePurgeEtLesCoresAdditionnent(t *testing.T) {
 		p.Proprietaire != proxy.Proprietaire {
 		t.Fatalf("purge lue : %+v", p)
 	}
+	// TO-DO 216 : l'accès des agents, que la 04_17 nommera.
+	if !reflect.DeepEqual(p.AccesAgents, []string{"172.18.0.4:6666"}) {
+		t.Errorf("accès des agents : %q", p.AccesAgents)
+	}
 
 	// Deux cores écrivent leur part : les fermetures s'additionnent, et la
 	// demande reste lisible pour un troisième.
@@ -128,5 +132,34 @@ func TestEnBaseUnProxyEnMaintenanceSePurgeEtLesCoresAdditionnent(t *testing.T) {
 	}
 	if _, ok := trouver(); ok {
 		t.Error("une purge d'il y a une heure est encore lue")
+	}
+}
+
+// TO-DO 216 : un core en maintenance purgé nomme son accès exposé.
+func TestEnBaseLaPurgeDUnCoreDonneSonAccesExpose(t *testing.T) {
+	db := baseDeTest(t)
+	suffixe := fmt.Sprint(time.Now().UnixNano())
+	core := clusterstorage.Node{Hostname: "core-" + suffixe, FQDN: "core-" + suffixe,
+		IPAddress: "172.18.0.2", Role: "core", Status: "online", VersionCode: "t",
+		Capabilities: "{}", Port: 6666, Proprietaire: "owner-" + suffixe}
+	if err := RegisterNode(db, core); err != nil {
+		t.Fatal(err)
+	}
+	adr, port := "192.168.56.106", 7666
+	if err := MettreAJourExposition(db, core.Hostname, ExpositionNoeud{AdressePublique: &adr, PortPublic: &port}); err != nil {
+		t.Fatal(err)
+	}
+	if err := PoserMaintenance(db, core.Hostname, true, "alice"); err != nil {
+		t.Fatal(err)
+	}
+	if err := DemanderPurge(db, core.Hostname, "alice", 10); err != nil {
+		t.Fatal(err)
+	}
+	d, afaire, err := PurgeAFaire(db, core.Proprietaire)
+	if err != nil || !afaire {
+		t.Fatalf("purge à faire : %v %v", afaire, err)
+	}
+	if !reflect.DeepEqual(d.AccesAgents, []string{"192.168.56.106:7666", "172.18.0.2:6666"}) {
+		t.Errorf("accès des agents : %q", d.AccesAgents)
 	}
 }

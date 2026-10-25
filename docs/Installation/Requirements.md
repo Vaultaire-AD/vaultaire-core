@@ -25,9 +25,10 @@ passé une recette complète. Liste arrêtée le 22/10/2026 :
 | **Rocky Linux 10** | `rocky.sh` | `rocky/` |
 
 Les scripts acceptent aussi **Debian 12** et **Ubuntu 22.04 / 24.04** (même
-famille de modules que Debian 13), mais ils n'ont pas passé de recette : à
-essayer sur une machine qu'on peut perdre, `A_TESTER.md` § 70 en main. Toute
-autre distribution est refusée par `-join`, qui nomme celles qu'il connaît.
+famille de modules que Debian 13), mais ces systèmes ne sont **pas visés** :
+aucune recette n'y est prévue, et un défaut qui leur serait propre ne sera pas
+traité en priorité. Toute autre distribution est refusée par `-join`, qui
+nomme celles qu'il connaît.
 
 La politique SELinux de l'agent vise les distributions RHEL — voir
 [`../exploitation/selinux.md`](../exploitation/selinux.md) ; elle ne compile pas

@@ -2,7 +2,9 @@ package serveurcommunication
 
 import (
 	"fmt"
+	"math/rand/v2"
 	"strings"
+	"time"
 
 	"duckynetworkclient/V1/duckynetwork/decouverte"
 	"duckynetworkclient/V1/duckynetwork/logs"
@@ -46,7 +48,48 @@ func ArmerBascule() {
 	decouverte.SurNouvelleListe(func(noeuds []decouverte.Noeud) {
 		EvaluerBascule(noeuds, module.Etat().Adresse)
 	})
+	// Le cluster nomme un nœud à quitter (purge, TO-DO 216) : on le quitte
+	// s'il est le nœud courant, sans attendre la liste.
+	decouverte.SurQuitter(func(acces []string) {
+		QuitterSiCourant(acces, module.Etat().Adresse)
+	})
 }
+
+// QuitterSiCourant ferme le tunnel si le nœud courant est l'un de ceux que le
+// cluster demande de quitter (TO-DO 216).
+//
+// Après un délai tiré au hasard, jusqu'à DelaiMaxQuitter : la 04_17 part vers
+// toutes les machines d'un nœud en même temps, et un site entier qui se
+// reconnecte dans la même seconde, c'est une tempête sur les autres nœuds —
+// la raison de l'étalement de la purge elle-même.
+//
+// La reconnexion prend la liste dans l'ordre ordinaire, où le nœud quitté est
+// maintenant en dernier (decouverte.Eviter) : s'il est le seul joignable, on y
+// revient — un nœud en maintenance accepte encore les connexions (TO-DO 177).
+func QuitterSiCourant(acces []string, courante string) bool {
+	for _, a := range acces {
+		if decouverte.MemeAcces(a, courante) {
+			attente := attenteAvantDeQuitter()
+			logs.Write_log("INFO", fmt.Sprintf(
+				"bascule : le cluster demande de quitter %s (maintenance) — reconnexion dans %s",
+				courante, attente.Round(time.Second)))
+			programmer(attente, fermerTunnelMachine)
+			return true
+		}
+	}
+	return false
+}
+
+// DelaiMaxQuitter borne l'étalement des départs.
+const DelaiMaxQuitter = 20 * time.Second
+
+// Remplaçables par les tests.
+var (
+	attenteAvantDeQuitter = func() time.Duration {
+		return time.Duration(rand.Int64N(int64(DelaiMaxQuitter)))
+	}
+	programmer = func(d time.Duration, f func()) { time.AfterFunc(d, f) }
+)
 
 // EvaluerBascule décide, et bascule si nécessaire.
 //

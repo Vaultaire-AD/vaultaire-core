@@ -3,6 +3,7 @@ package cluster
 import (
 	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -189,5 +190,20 @@ func TestUnePartDejaEnCoursNEstPasRelancee(t *testing.T) {
 	t.Cleanup(func() { partsEnCours.Delete(p.Hostname) })
 	if aFaire(p) {
 		t.Error("une part déjà en cours a été relancée")
+	}
+}
+
+// TO-DO 216 : la 04_17 d'une purge nomme le nœud à quitter.
+func TestLaPurgePrevientEnNommantLeNoeud(t *testing.T) {
+	avant := actualiser
+	t.Cleanup(func() { actualiser = avant })
+	var recu []string
+	actualiser = func(machine, motif string, quitter ...string) (bool, error) {
+		recu = append([]string{machine, motif}, quitter...)
+		return true, nil
+	}
+	ok, err := prevenirEnQuittant([]string{"192.168.56.10:6668"})("pc-a", "maintenance du proxy prx01")
+	if !ok || err != nil || strings.Join(recu, "|") != "pc-a|maintenance du proxy prx01|192.168.56.10:6668" {
+		t.Errorf("reçu %q (%v, %v)", recu, ok, err)
 	}
 }

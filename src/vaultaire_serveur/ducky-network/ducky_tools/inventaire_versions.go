@@ -53,6 +53,29 @@ func VersionsDeLInventaire(lignes []string) (programme, sdk string) {
 	return programme, sdk
 }
 
+// RedresserInventaire corrige l'inventaire d'un agent atteint du défaut du
+// TO-DO 214.
+//
+// Le SDK d'avant la correction laissait le retour à la ligne de `nproc` dans
+// la ligne des processeurs : la trame portait une ligne VIDE de plus, à
+// l'indice 4, et tout ce qui suivait glissait d'un cran — les sessions à la
+// place de la version de l'agent, la version de l'agent à la place de celle du
+// SDK. Ces agents sont déployés : ils ne seront corrigés que par leur mise à
+// jour, et c'est précisément la vue des versions qui la pilote. Le core lit
+// donc leur trame telle qu'elle est.
+//
+// La forme est sans ambiguïté : huit lignes, la cinquième vide. Une trame juste
+// en a sept au plus (cinq pour un agent d'avant les versions). Toute autre
+// forme est rendue telle quelle.
+func RedresserInventaire(lignes []string) []string {
+	if len(lignes) == 8 && strings.TrimSpace(lignes[4]) == "" {
+		redresse := make([]string, 0, 7)
+		redresse = append(redresse, lignes[:4]...)
+		return append(redresse, lignes[5:]...)
+	}
+	return lignes
+}
+
 // nettoyerVersion borne et assainit une version reçue du réseau.
 //
 // La valeur vient d'un client authentifié, pas de confiance pour autant : elle

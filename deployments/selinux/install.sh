@@ -95,6 +95,28 @@ if [ ! -f "$MAKEFILE" ]; then
 fi
 ok "politique de reference disponible"
 
+# Les deux sources, avant de les donner a make (TO-DO 212). A la recette du
+# 25/10, le vaultaire.te du poste portait le CONTENU de vaultaire.fc : make
+# rendait « Building a policy module, but no module specification found » au
+# premier chemin du .fc, un message qui ne dit pas qu'un fichier a pris la
+# place d'un autre. Un .te commence par sa declaration de module ; un .fc n'en
+# porte pas, et ses lignes commencent par un chemin.
+if ! grep -qE '^[[:space:]]*policy_module\(vaultaire,' "$ICI/vaultaire.te" 2>/dev/null; then
+    ko "vaultaire.te ne declare pas le module (policy_module) : fichier absent ou remplace"
+    if grep -qE '^/[^[:space:]]+[[:space:]].*gen_context' "$ICI/vaultaire.te" 2>/dev/null; then
+        info "il contient des lignes d'etiquetage : c'est le contenu de vaultaire.fc."
+    fi
+    info "Reprenez deployments/selinux/ depuis le depot (git checkout -- deployments/selinux)."
+    exit 1
+fi
+if grep -q 'policy_module' "$ICI/vaultaire.fc" 2>/dev/null || \
+   ! grep -qE '^/[^[:space:]]+[[:space:]].*gen_context' "$ICI/vaultaire.fc" 2>/dev/null; then
+    ko "vaultaire.fc n'est pas un fichier d'etiquetage : fichier absent ou remplace"
+    info "Reprenez deployments/selinux/ depuis le depot (git checkout -- deployments/selinux)."
+    exit 1
+fi
+ok "sources de la politique : vaultaire.te et vaultaire.fc"
+
 # ---------------------------------------------------------------------------
 titre "2. Compilation"
 # ---------------------------------------------------------------------------

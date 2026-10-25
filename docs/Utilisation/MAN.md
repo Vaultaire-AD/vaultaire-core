@@ -1788,7 +1788,10 @@ Les sessions déjà ouvertes **restent** sur un nœud en maintenance. **`cluster
 purge <nœud>`** les déplace — sur un core ou un proxy en maintenance :
 
 1. à son prochain battement, le core demande à chaque machine connectée de
-   redemander sa liste ; un agent à jour, ne l'y trouvant plus, s'en va seul ;
+   redemander sa liste, en **nommant** le nœud à quitter *(TO-DO 216)* : un agent
+   à jour le quitte dans les 20 s (délai tiré au hasard, pour ne pas faire
+   reconnecter tout un site d'un coup) et le place en dernier de sa liste
+   pendant 15 minutes — il y revient seulement s'il n'a rien d'autre ;
 2. une minute après, le reste est fermé, étalé sur 60 s (`--etalement <s>`, de 0
    à 3600) pour ne pas faire reconnecter un site dans la même seconde.
 

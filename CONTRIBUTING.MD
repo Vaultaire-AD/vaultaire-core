@@ -66,7 +66,10 @@ Chaque point de `docs/Developement/TO-DO.md` se traite sur **sa** branche :
 1. la créer depuis `dev` : `git switch -c fix/<description>-<numéro> dev`
    (ou `feature/…`) ;
 2. y traiter le point en entier — code, tests, et les fichiers que la
-   convention demande (`TO-DO.md`, `DO/`, `Version/`, `A_TESTER.md`, formation) ;
+   convention demande (`TO-DO.md`, `DO/`, `Version/`, `A_TESTER.md`, formation).
+   Une section d'`A_TESTER.md` commence par sa **mise en place** : les commandes
+   qui montent ce qu'elle teste (un proxy, un second core, un Nexus, un poste,
+   une GPO…), en renvoyant aux recettes communes en tête du fichier ;
 3. la fusionner dans `dev` (`git switch dev && git merge --no-ff <branche>`) ;
 4. la supprimer (`git branch -d <branche>`).
 
