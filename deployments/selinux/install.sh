@@ -225,7 +225,9 @@ fi
 
 # L'agent doit maintenant tourner dans SON domaine. Sinon, la resolution NSS
 # des comptes du domaine est refusee (elle ne vise plus que vaultaire_t).
-DOMAINE="$(ps -eZ 2>/dev/null | awk '/vaultaire_client/ && !/awk/ {split($1, c, ":"); print c[3]; exit}')"
+# ps tronque le nom du processus a 15 caracteres (« vaultaire_clien ») : on
+# filtre sur le chemin complet de la commande, pas sur la colonne COMMAND.
+DOMAINE="$(ps -eo label=,args= 2>/dev/null | awk '$2 == "/usr/bin/vaultaire_client" {split($1, c, ":"); print c[3]; exit}')"
 if [ "$DOMAINE" = "vaultaire_t" ]; then
     ok "agent dans son domaine : vaultaire_t"
 elif [ -n "$DOMAINE" ]; then
@@ -243,23 +245,60 @@ sleep 1
 
 # --- Le test qui compte ----------------------------------------------------
 #
-# runcon fait tourner getent dans le contexte de sshd. C'est la seule facon de
-# reproduire ce que vit sshd sans ouvrir une vraie connexion — et c'est
-# exactement le test qui manquait au diagnostic precedent, lequel s'executait
-# depuis un shell non confine et validait donc un chemin que sshd n'emprunte
-# pas.
+# Resoudre le compte DEPUIS le contexte de sshd — c'est le test qui manquait au
+# diagnostic precedent, lequel s'executait depuis un shell non confine et
+# validait donc un chemin que sshd n'emprunte pas. Recette du 27/10 (Rocky
+# 10.1) : runcon y est refuse a root, d'ou la connexion locale en second.
 UTILISATEUR="${1:-verif-$$@$(hostname -d 2>/dev/null || echo vaultaire.fr)}"
 
+# Deux facons, la premiere qui s'execute decide :
+#   1. runcon : getent dans le contexte de sshd. Refuse sur Rocky 10 (root
+#      unconfined_t n'a pas le droit d'entrer dans sshd_t : « contexte
+#      incorrect » ou « Permission non accordee », code 125/126) — ce refus ne
+#      dit RIEN de la politique, il ne doit pas etre lu comme un echec ;
+#   2. une vraie connexion a sshd sur 127.0.0.1, sans methode d'authentification
+#      (PreferredAuthentications=none) : sshd resout le compte avant tout, et
+#      journalise « Invalid user <compte> » si NSS ne repond pas sous sshd_t.
+VERIFIE=""
 if command -v runcon >/dev/null 2>&1; then
-    if runcon -t sshd_t getent passwd "$UTILISATEUR" >/dev/null 2>&1; then
-        ok "resolution dans le contexte sshd_t : REPOND"
-    else
-        ko "resolution dans le contexte sshd_t : ECHOUE ENCORE"
-        info "La politique ne couvre pas tout. Relancez collect.sh, puis"
-        info "comparez les nouveaux refus avec vaultaire.te."
+    # set -e : le code de retour est capture, pas subi.
+    RC=0
+    runcon -t sshd_t getent passwd "$UTILISATEUR" >/dev/null 2>&1 || RC=$?
+    if [ "$RC" -eq 0 ]; then
+        ok "resolution dans le contexte sshd_t (runcon) : REPOND"
+        VERIFIE=1
+    elif [ "$RC" -ne 125 ] && [ "$RC" -ne 126 ]; then
+        ko "resolution dans le contexte sshd_t (runcon) : ECHOUE ENCORE ($UTILISATEUR)"
+        VERIFIE=0
     fi
-else
-    info "runcon absent : verification dans le contexte sshd_t impossible"
+fi
+if [ -z "$VERIFIE" ] && command -v ssh >/dev/null 2>&1 && command -v journalctl >/dev/null 2>&1; then
+    T="$(date +%s)"
+    sleep 1
+    ssh -o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+        -o PreferredAuthentications=none -o ConnectTimeout=5 -o LogLevel=QUIET \
+        -l "$UTILISATEUR" 127.0.0.1 true >/dev/null 2>&1 || true
+    sleep 1
+    JOURNAL="$(journalctl --since "@$T" --no-pager 2>/dev/null | grep -F "$UTILISATEUR" || true)"
+    if printf '%s\n' "$JOURNAL" | grep -qi "invalid user"; then
+        ko "resolution par sshd (connexion sur 127.0.0.1) : ECHOUE ENCORE ($UTILISATEUR)"
+        VERIFIE=0
+    elif [ -n "$JOURNAL" ]; then
+        ok "resolution par sshd (connexion sur 127.0.0.1) : REPOND"
+        VERIFIE=1
+    else
+        info "sshd n'a rien journalise pour $UTILISATEUR : verification impossible"
+    fi
+fi
+if [ "$VERIFIE" = "0" ]; then
+    if [ -z "${1:-}" ]; then
+        info "Aucun compte donne : $UTILISATEUR n'existe sans doute pas."
+        info "Relancez avec un compte du domaine : ./install.sh alice@acme.lan"
+    fi
+    info "La politique ne couvre pas tout. Relancez collect.sh, puis"
+    info "comparez les nouveaux refus avec vaultaire.te."
+elif [ -z "$VERIFIE" ]; then
+    info "resolution sous sshd non verifiee : testez une vraie connexion SSH"
 fi
 
 # --- Refus residuels -------------------------------------------------------

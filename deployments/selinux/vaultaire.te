@@ -1,4 +1,4 @@
-policy_module(vaultaire, 1.1.0)
+policy_module(vaultaire, 1.2.0)
 
 ########################################################################
 #
@@ -319,6 +319,49 @@ allow sshd_t vaultaire_log_t:dir { search getattr open read add_name write };
 allow sshd_t vaultaire_log_t:file { append open getattr create };
 allow local_login_t vaultaire_log_t:dir { search getattr open read add_name write };
 allow local_login_t vaultaire_log_t:file { append open getattr create };
+
+# AuthorizedKeysCommand : sshd execute « vaultaire_client --fetch-key <compte> »
+# pour obtenir les cles publiques. Le binaire porte vaultaire_exec_t ; sans
+# regle, execve est refuse (« AuthorizedKeysCommand execve … Permission
+# denied », status 127) et AUCUNE connexion par cle n'aboutit. Recette du
+# 27/10 (Rocky 10.1). On fait entrer le processus dans vaultaire_t : il lit la
+# configuration de l'agent et parle au core comme lui, sans ouvrir
+# vaultaire_secret_t a sshd.
+domtrans_pattern(sshd_t, vaultaire_exec_t, vaultaire_t)
+
+# OpenSSH >= 9.8 separe sshd en deux binaires, et la politique de Rocky 10
+# (comme Fedora 41+) donne a sshd-session son propre domaine : sshd_session_t.
+# C'est LUI qui charge les modules PAM et lance AuthorizedKeysCommand — toutes
+# les regles sshd_t ci-dessus ne le couvrent pas. Recette du 27/10 : cle
+# refusee (execute sur vaultaire_exec_t), puis mot de passe refuse (canal PAM),
+# refus caches par des dontaudit (semodule -DB pour les voir).
+#
+# Le module PAM aligne aussi le mot de passe local sur le central (TO-DO 197) :
+# il lit le condensat local pour comparer, puis lance chpasswd s'il differe.
+# Sous sshd_t, la politique de reference l'accordait ; sous sshd_session_t,
+# non : « chpasswd failed » et la connexion par mot de passe est refusee. Memes
+# droits que sshd_t, pas davantage.
+#
+# optional_policy : Debian 13 et Rocky 9 n'ont pas ce type ; le bloc y est
+# ignore au lieu de faire echouer la compilation. AUCUNE apostrophe dans le
+# bloc, commentaires compris : m4 y lirait la fin de la citation.
+optional_policy(`
+	gen_require(`
+		type sshd_session_t;
+	')
+	domtrans_pattern(sshd_session_t, vaultaire_exec_t, vaultaire_t)
+	allow sshd_session_t vaultaire_var_run_t:dir { search getattr };
+	allow sshd_session_t vaultaire_var_run_t:sock_file { write getattr };
+	allow sshd_session_t vaultaire_t:unix_stream_socket connectto;
+	allow sshd_session_t vaultaire_log_t:dir { search getattr open read add_name write };
+	allow sshd_session_t vaultaire_log_t:file { append open getattr create };
+	# Alignement du mot de passe local (TO-DO 197), voir plus haut.
+	auth_read_shadow(sshd_session_t)
+	usermanage_domtrans_passwd(sshd_session_t)
+	tunable_policy(`vaultaire_agent_non_confine',`
+		allow sshd_session_t unconfined_service_t:unix_stream_socket connectto;
+	')
+')
 
 ########################################################################
 # Ce qui n'est PAS accorde ici, deliberement

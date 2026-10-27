@@ -103,7 +103,8 @@ func PurgeDepartedServices(db *sql.DB) error {
 	for _, t := range serviceTypes {
 		args = append(args, t)
 	}
-	args = append(args, time.Now().UTC().Add(-delay))
+	// Horloge de la base (TO-DO 231) : le battement est écrit par NOW().
+	args = append(args, int64(delay/time.Second))
 
 	// On relève les candidats AVANT de supprimer : il faut leur identifiant pour
 	// retirer aussi le client, et un DELETE ne le rend pas.
@@ -111,7 +112,7 @@ func PurgeDepartedServices(db *sql.DB) error {
 		`SELECT hostname FROM cluster_nodes
 		  WHERE role IN (`+placeholders+`)
 		    AND status = 'offline'
-		    AND last_heartbeat < ?`, args...)
+		    AND last_heartbeat < DATE_SUB(NOW(), INTERVAL ? SECOND)`, args...)
 	if err != nil {
 		return fmt.Errorf("relevé des services partis : %w", err)
 	}

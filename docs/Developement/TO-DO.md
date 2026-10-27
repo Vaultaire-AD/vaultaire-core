@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **221**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **236**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -25,9 +25,11 @@ Trois gestes, dans le même passage que le code :
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
 | 210 | SÉCURITÉ     | L'identité d'une machine ne s'exporte qu'à sa création      | À faire — **sécurité**, à cadrer (réinstallation) |
-| 220 | GPO          | § 7e à rejouer : le mode d'une GPO en audit déteint-il encore ? | À rejouer — suite du 183            |
-| 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — relevé du 181 d'abord, sur un poste |
-| 189 | LDAP         | `entryUUID` (point 129) : recette NON, à reproduire         | À faire — détails à relever             |
+| 232 | NEXUS        | `--publish-package` : un seul jeton pour tous les Nexus, alors que chaque Nexus a les siens | À trancher — bloque « Bilan 2/2 » |
+| 233 | AGENT-UPDATE | Une machine sans `pkg_signing_key.pem` est comptée comme tenant la clé des paquets | À faire — petit |
+| 235 | NEXUS        | `--publish-package` écrit une ligne de journal `ldap.limites` sur sa sortie | À faire — petit |
+| 222 | GPO          | Deux GPO qui règlent la même chose : toute la politique de la machine est refusée | À trancher                    |
+| 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — Rocky 10 relevé « (aucun) » le 27/10 ; compléter |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
@@ -40,7 +42,7 @@ Trois gestes, dans le même passage que le code :
 | 217 | AUTH         | Aucun service Vaultaire joignable : comment se connecter ?  | Idée — à cadrer                         |
 | 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
-| 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — § 81 d'abord, sur un poste    |
+| 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — 1re collecte le 27/10 (Rocky 10) |
 | 203 | SELINUX      | Règles de `vaultaire_t` pour la mise à jour et la configuration système | À faire — avec le 180, sur un poste |
 | 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
 | 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
@@ -118,6 +120,62 @@ Bureau à distance ».
 
 ## Agent
 
+### 232. [NEXUS] `--publish-package` : un jeton pour tous les Nexus
+
+**Constat** (recette du 27/10, § 115, deux Nexus enrôlés). Le versement vise
+**chaque** Nexus du cluster avec **un** jeton (`VAULTAIRE_NEXUS_TOKEN` ou
+`--token-file`). Or un jeton `nxs_` n'existe que dans le Nexus qui l'a créé :
+le second répond « jeton refusé par ce Nexus (401) », et le bilan est 1/2 —
+toujours. Contournement validé : un passage par Nexus, `--nexus <url> --repo
+releases` avec le jeton de celui-ci.
+
+**À trancher.**
+1. Un jeton par Nexus : `--token-file <url>=<fichier>` répétable, ou un
+   répertoire de jetons nommés par Nexus ;
+2. ou faire publier le core **sous sa propre identité** : les Nexus enrôlés
+   (mode `ducky`) accepteraient une publication signée par la clé du core —
+   plus de jeton du tout, mais un droit nouveau à concevoir côté Nexus.
+
+### 233. [AGENT-UPDATE] Une machine sans clé des paquets comptée comme la tenant
+
+**Constat** (recette du 27/10, § 114). Le poste du labo, installé avant le
+point 113 puis mis à jour à la main, n'a pas de
+`/etc/vaultaire_client/.ssh/pkg_signing_key.pem` : il refuse toute mise à jour
+(« cette machine n'accepte aucun paquet »). Pourtant `vlt agent` affiche
+« Clés des paquets : … rotation stable — 1 agent(s) Linux sur 1 le tiennent » :
+`paquet.NumeroDuJeu` rend 0 quand le fichier manque, le numéro du jeu de
+l'installation.
+
+**À faire.** L'agent déclare l'absence (un numéro -1, ou une ligne dédiée dans
+la 09_09) ; `vlt agent` la compte à part (« N sans clé des paquets : à
+réinstaller par `-join`, ou déposer la clé ») et la colonne ÉTAT le dit avant
+le premier ordre refusé. Contournement de la recette : le fichier déposé à la
+main depuis `--pkg-key show` (en-tête du `FichierCles`, jeu 0).
+
+### 235. [NEXUS] `--publish-package` : une ligne de journal dans la sortie
+
+**Constat** (recette du 27/10). La sortie de `vaultaire_serveur
+--publish-package` commence par `[INFO] ldap.limites : bornes en vigueur …` :
+le chargement des réglages journalise sur la sortie standard d'une commande
+d'exploitation. Ne pas initialiser les journaux du service (ou les rediriger)
+dans les sous-commandes hors ligne.
+
+### 222. [GPO] Deux GPO qui règlent la même chose : toute la politique est refusée
+
+**Constat** (recette du 27/10, § 7e, cas « attente partagée »). Deux GPO liées
+à la même machine, chacune avec un `systemd_service` sur `chronyd` à
+**l'identique** (`started`) — l'une en audit, l'autre en enforce : le core
+refuse la politique machine (« resolve_conflict : le service chronyd est réglé
+à la fois par la GPO "essai_audit" et par la GPO "essai_enforce" »), et le cycle
+est abandonné : **plus aucun** module de la machine n'est appliqué ni corrigé,
+y compris le `file_deploy` de la GPO en enforce. Le cas du 183 (deux modules
+qui partagent une attente) ne se monte donc pas avec deux modules identiques.
+
+**À trancher.** Un conflit entre GPO doit-il bloquer toute la machine, ou
+seulement les modules en conflit (les autres appliqués, le conflit signalé
+dans `gpo status`) ? Deux réglages identiques sont-ils un conflit ? Et le
+mode : en enforce chez l'une, en audit chez l'autre, lequel l'emporte ?
+
 ### 201. [AGENT] Poser `SystemCallFilter` sur l'unité de l'agent
 
 **Origine** (reste du **181**). L'outil du relevé existe :
@@ -126,10 +184,18 @@ Bureau à distance ».
 système »). Il rend les appels que l'agent et ses commandes font hors de
 `@system-service`.
 
+**Relevé du 27/10** (Rocky 10.1, agent 2.3.0, `auditd` en marche ; un cycle
+GPO avec correction d'un `file_deploy`, deux connexions SSH d'un compte du
+domaine) : **« (aucun) »** — l'agent tiendrait sous `@system-service`. Le
+mécanisme lui-même a été éprouvé à côté (`mount --bind` dans une unité
+transitoire : `open_tree`, `move_mount` relevés). Le script a été corrigé au
+passage (DO 229) : la liste « vide » du 25/10 venait d'un arrêt du script.
+
 **À faire.**
 
-1. Faire le relevé sur un poste de chaque famille (Rocky 9, Debian/Ubuntu),
-   pendant la suite de GPO de la formation et des ouvertures de session SSH.
+1. Compléter le relevé : Rocky 9 et Debian 13, et sur Rocky 10 la suite de GPO
+   **complète** de la formation (chapitre 6 : paquets, services, sysctl,
+   pare-feu…) et une révocation — le 27/10 n'a appliqué qu'un module.
 2. Poser `SystemCallFilter=@system-service <ajouts>` et
    `SystemCallErrorNumber=EPERM` dans `unite.Cloisonnement` (un refus qui se
    lit, plutôt qu'un processus tué), retirer l'entrée de `unite.Exclues`.
@@ -149,30 +215,6 @@ mais un `sshd_config` rendu non conforme à la main n'est **pas** remonté en
 contrôle relit vraiment le fichier (ou seulement l'empreinte de ce qu'il a
 posé), et si l'écart est perdu à l'agent ou au core (`gpo drift`). Un test qui
 casse le fichier et attend l'écart.
-
-### 220. [GPO] § 7e à rejouer : le mode d'une GPO en audit déteint-il encore ?
-
-**Origine** (reste du **183**, voir `DO/2.3/2.3.md`). Le chemin complet — mode
-posé par GPO au core, livré par module, retenu par module dans l'état de
-l'agent, décision de correction module par module — est maintenant éprouvé par
-un test qui part de la politique telle que le core la livre pour deux GPO de
-modes différents : il donne le bon résultat. Un défaut réel a été trouvé et
-corrigé à côté : une **attente d'état partagée** par deux modules (un service,
-une règle d'audit) n'était attribuée qu'au dernier déclarant ; s'il était en
-audit, l'écart n'était plus corrigé pour l'autre.
-
-**À faire.** Rejouer le § 7e avec l'agent à jour (`A_TESTER.md`, recette M7), et
-en relever :
-
-1. les modules de chaque GPO (type et paramètres) ;
-2. le fichier cassé pour chacune ;
-3. la ligne `GPO: machine — N module(s) sur M en audit : …` du journal de
-   l'agent, et la ligne GPO du rapport de debug (`dont N en mode audit : …`) ;
-4. les lignes `GPO: mode audit, … signale(s) sans correction` et
-   `GPO: … marque(s) pour reapplication` au cycle qui suit la casse.
-
-Si l'écart de la GPO en enforce n'est toujours pas corrigé, ces quatre relevés
-désignent le module en cause.
 
 ### 211. [GPO] Modules de compte : une valeur par compte
 
@@ -324,6 +366,28 @@ grub…). En enforcing, un refus couperait une GPO ou une révocation sans bruit
 3. Quand une collecte complète ne rend plus rien : `install.sh
    --agent-enforcing`, puis la même suite, en enforcing.
 
+**Première collecte** (27/10, Rocky 10.1, politique 1.2.0, une heure de vie :
+un `file_deploy`, des connexions SSH, la provision d'un compte) — sortie brute
+d'`audit2allow`, à lire type par type :
+
+```
+allow vaultaire_t initrc_var_run_t:file { lock open read };
+allow vaultaire_t local_login_t:process signull;
+allow vaultaire_t ssh_home_t:dir { add_name getattr open read remove_name search setattr write };
+allow vaultaire_t ssh_home_t:file { create open rename setattr unlink write };
+allow vaultaire_t sshd_exec_t:file { execute execute_no_trans getattr open read map };
+allow vaultaire_t sshd_key_t:file { getattr open read };
+allow vaultaire_t sysctl_net_t:dir search;
+allow vaultaire_t sysctl_net_t:file { open read };
+allow vaultaire_t sysfs_t:file { open read };
+allow vaultaire_t user_home_dir_t:file { create getattr open rename setattr write };
+allow vaultaire_t user_tty_device_t:chr_file getattr;
+```
+
+`ssh_home_t` et `user_home_dir_t` : la provision des clés (`authorized_keys`) ;
+`sshd_exec_t` et `sshd_key_t` : sans doute `sshd -T` (contrôle de la
+configuration) ; `initrc_var_run_t` : `utmp` (sessions de l'inventaire).
+
 ### 203. [SELINUX] [AGENT-UPDATE] Les règles de `vaultaire_t` pour la mise à jour
 
 **Origine** (reste du **116**, complété au **117**). La préparation d'une mise
@@ -382,19 +446,6 @@ jour réelle, en permissif, puis en enforcing.
 >
 > **Tous les points de l'audit sont traités dans la 2.2** : 119 à 132. Ce qui
 > reste ici en est sorti en chemin.
-
----
-
-### 189. [LDAP] `entryUUID` : recette NON, à reproduire
-
-**Constat** (recette du 12/10, `A_TESTER.md`), § 39. Le point 129 (identifiant stable des entrées)
-est en échec, sans détail relevé.
-
-**À faire.** Relever la sortie exacte (Directory Studio, sous-schéma,
-`entryUUID` d'un compte et d'un groupe), puis Keycloak, qui n'a jamais été
-éprouvé ; ouvrir le correctif selon ce qui manque.
-
----
 
 ## Portail et outillage
 

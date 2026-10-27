@@ -48,7 +48,10 @@ nom_de_l_appel() {
 # type=SECCOMP (auditd), exe="…" et syscall=N.
 analyser() {
     local source=$1
-    grep -E 'type=(1326|SECCOMP)' "$source" |
+    # « || true » : aucune ligne n'est un résultat (la liste vide), pas une
+    # erreur. Sans lui, set -o pipefail arrêtait « fin » ici, sans retirer le
+    # complément (recette du 27/10 ; la liste « vide » du 25/10 venait de là).
+    { grep -E 'type=(1326|SECCOMP)' "$source" || true; } |
         sed -nE 's/.*exe="([^"]*)".*syscall=([0-9]+).*/\2 \1/p' |
         sort -u |
         awk '{ p[$1] = (p[$1] ? p[$1] "," : "") $2 } END { for (n in p) print n, p[n] }' |
@@ -79,6 +82,9 @@ SystemCallLog=~@system-service
 FIN
     date '+%Y-%m-%d %H:%M:%S' >"$REPERE"
     systemctl daemon-reload
+    # Après plusieurs relances rapprochées (install.sh SELinux…), systemd
+    # refuse la suivante (« start-limit-hit ») et l'agent reste ARRÊTÉ.
+    systemctl reset-failed "$UNITE" 2>/dev/null || true
     systemctl restart "$UNITE"
     echo "Relevé posé, agent relancé. Appliquez maintenant la suite de GPO de la formation"
     echo "(chapitre 6), ouvrez et fermez des sessions SSH, puis : $0 fin"
@@ -94,7 +100,7 @@ fin)
     brut=$(mktemp)
     trap 'rm -f "$brut"' EXIT
     if [ -r /var/log/audit/audit.log ] && command -v ausearch >/dev/null 2>&1; then
-        ausearch -m SECCOMP --start "${depuis% *}" "${depuis#* }" --raw >"$brut" 2>/dev/null || true
+        ausearch -m SECCOMP --start "${depuis% *}" "${depuis#* }" --raw >"$brut" 2>/dev/null </dev/null || true
     fi
     journalctl -k --since "$depuis" --no-pager >>"$brut" 2>/dev/null || true
     echo "Appels hors de @system-service, depuis le $depuis :"
@@ -107,6 +113,7 @@ fin)
     rm -f "$COMPLEMENT" "$REPERE"
     rmdir "$DOSSIER" 2>/dev/null || true
     systemctl daemon-reload
+    systemctl reset-failed "$UNITE" 2>/dev/null || true
     systemctl restart "$UNITE"
     echo "Relevé retiré, agent relancé. Reportez la liste dans le TO-DO 201."
     ;;

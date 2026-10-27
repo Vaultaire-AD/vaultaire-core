@@ -1,6 +1,8 @@
 package response
 
 import (
+	"strings"
+
 	ldapinterface "vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/candidate/ldap_interface"
 	"vaultaire/core/ldap/LDAP_SEARCH-REQUEST/newmodule/ldap_types"
 )
@@ -60,6 +62,14 @@ func BuildLDAPEntryForSend(entry ldapinterface.LDAPEntry, requestedAttrs []strin
 	attrMap := entry.GetAttributes(requestedAttrs, typesOnly)
 	attrs := make([]ldap_types.PartialAttribute, 0, len(attrMap))
 	for typ, vals := range attrMap {
+		// Le DN n'est PAS un attribut (RFC 4511 § 4.5.2) : il part dans
+		// ObjectName. Le renvoyer aussi sous un attribut « dn » le faisait
+		// figurer deux fois dans l'entrée — `ldapsearch` affichait deux lignes
+		// « dn: », lues comme deux entrées à la recette du 27/10 (TO-DO 221).
+		// Il reste dans les attributs internes : les filtres s'en servent.
+		if strings.EqualFold(typ, "dn") {
+			continue
+		}
 		attrs = append(attrs, ldap_types.PartialAttribute{
 			Type: typ,
 			Vals: vals,

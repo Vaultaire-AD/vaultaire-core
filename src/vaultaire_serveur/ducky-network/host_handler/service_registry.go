@@ -92,7 +92,7 @@ func handleRegisterService(db *sql.DB, trames storage.Trames_struct_client, cont
 		`INSERT INTO cluster_nodes
 		   (hostname, fqdn, ip_address, role, status, version_code, capabilities,
 		    owner_client_id, last_heartbeat)
-		 VALUES (?, ?, ?, ?, 'online', ?, ?, ?, ?)
+		 VALUES (?, ?, ?, ?, 'online', ?, ?, ?, NOW())
 		 ON DUPLICATE KEY UPDATE
 		   ip_address     = VALUES(ip_address),
 		   role           = VALUES(role),
@@ -100,8 +100,7 @@ func handleRegisterService(db *sql.DB, trames storage.Trames_struct_client, cont
 		   version_code   = VALUES(version_code),
 		   capabilities   = VALUES(capabilities),
 		   last_heartbeat = VALUES(last_heartbeat)`,
-		hostname, hostname, endpoint, clientType, version, capsJSON, hostname,
-		time.Now().UTC()); err != nil {
+		hostname, hostname, endpoint, clientType, version, capsJSON, hostname); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "cluster: enregistrement de service échoué : "+err.Error())
 		return serviceError(trames, "server_error", "enregistrement impossible"), nil
 	}
@@ -132,9 +131,9 @@ func handleServiceHeartbeat(db *sql.DB, trames storage.Trames_struct_client, ses
 	// contrôle bouge, celui-ci devient faux sans être touché.
 	res, err := db.Exec(
 		`UPDATE cluster_nodes
-		    SET last_heartbeat = ?, status = 'online'
+		    SET last_heartbeat = NOW(), status = 'online'
 		  WHERE owner_client_id = ?`,
-		time.Now().UTC(), session.BoundClientSoftwareID)
+		session.BoundClientSoftwareID)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "cluster: battement de cœur échoué : "+err.Error())
 		return serviceError(trames, "server_error", "battement non enregistré"), nil
@@ -181,11 +180,16 @@ func MarkStaleServicesOffline(db *sql.DB) error {
 	if db == nil {
 		return fmt.Errorf("connexion base indisponible")
 	}
-	cutoff := time.Now().UTC().Add(-serviceStaleAfter)
+	// L'HORLOGE DE LA BASE, comme pour les cores et les proxies (TO-DO 231).
+	// Le battement était écrit en UTC par Go, et comparé ailleurs à NOW() — la
+	// zone de la base : sur une base en Europe/Paris, chaque service paraissait
+	// vieux d'une heure, et CleanupStaleNodes le passait hors ligne à chaque
+	// tour (recette du 27/10 : deux Nexus « offline » qui battaient).
 	res, err := db.Exec(
 		`UPDATE cluster_nodes
 		    SET status = 'offline'
-		  WHERE status = 'online' AND last_heartbeat < ?`, cutoff)
+		  WHERE status = 'online' AND last_heartbeat < DATE_SUB(NOW(), INTERVAL ? SECOND)`,
+		int64(serviceStaleAfter/time.Second))
 	if err != nil {
 		return fmt.Errorf("balayage des services hors ligne : %w", err)
 	}
