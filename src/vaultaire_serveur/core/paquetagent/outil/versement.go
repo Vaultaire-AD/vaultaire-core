@@ -4,7 +4,7 @@ package outil
 //
 //	vaultaire_serveur --publish-package <archive> [--key <pem>] [--repo <dépôt>]
 //	                  [--nexus <https://hôte:port>]… [--ca <pem>]
-//	                  [--token-file <fichier>] [--replace-signatures]
+//	                  [--token-file [<https://hôte:port>=]<fichier>]… [--replace-signatures]
 //
 // Un geste au lieu de quatre : signer l'archive (comme --sign-package), puis
 // déposer l'archive, ses manifestes et leurs signatures dans CHAQUE Nexus, et
@@ -18,6 +18,12 @@ package outil
 // fichier (--token-file) : jamais sur la ligne de commande, que ps et
 // l'historique du shell montrent à qui regarde. Le jeton n'est écrit nulle
 // part, ni affiché, ni journalisé.
+//
+// Un jeton n'existe que dans le Nexus qui l'a créé (TO-DO 232). Avec
+// plusieurs Nexus, chacun reçoit le sien : « --token-file
+// https://nexus-b:8843=/chemin/jeton-b », répétable. Le jeton par défaut
+// (variable, ou --token-file sans URL) sert aux Nexus qui n'en ont pas de
+// nommé. Un Nexus visé sans aucun jeton est refusé AVANT la signature.
 //
 // # Ce qui est déjà là
 //
@@ -84,6 +90,8 @@ type optionsVersement struct {
 	archive, cle, depot, ca, fichierJeton string
 	nexus                                 []string
 	remplacerSignatures                   bool
+	// jetonsNommes : URL normalisée du Nexus → fichier de son jeton (232).
+	jetonsNommes map[string]string
 }
 
 func lireOptionsVersement(args []string) (optionsVersement, error) {
@@ -105,7 +113,10 @@ func lireOptionsVersement(args []string) (optionsVersement, error) {
 		case "--ca":
 			o.ca, err = valeur(&i)
 		case "--token-file":
-			o.fichierJeton, err = valeur(&i)
+			var f string
+			if f, err = valeur(&i); err == nil {
+				err = o.ajouterFichierJeton(f)
+			}
 		case "--nexus":
 			var n string
 			n, err = valeur(&i)
@@ -131,26 +142,116 @@ func lireOptionsVersement(args []string) (optionsVersement, error) {
 	return o, nil
 }
 
+// ajouterFichierJeton lit une valeur de --token-file : « <fichier> », le
+// jeton par défaut, ou « https://hôte:port=<fichier> », celui d'un Nexus.
+func (o *optionsVersement) ajouterFichierJeton(valeur string) error {
+	if !strings.HasPrefix(valeur, "https://") && !strings.HasPrefix(valeur, "http://") {
+		if o.fichierJeton != "" {
+			return fmt.Errorf("--token-file sans URL donné deux fois : nommez le Nexus de chaque jeton " +
+				"(--token-file https://hôte:port=<fichier>)")
+		}
+		o.fichierJeton = valeur
+		return nil
+	}
+	adresse, fichier, ok := strings.Cut(valeur, "=")
+	if !ok || fichier == "" {
+		return fmt.Errorf("--token-file %q : attendu https://hôte:port=<fichier>", valeur)
+	}
+	u, err := NormaliserURLNexus(adresse)
+	if err != nil {
+		return err
+	}
+	if o.jetonsNommes == nil {
+		o.jetonsNommes = map[string]string{}
+	}
+	if _, deja := o.jetonsNommes[u]; deja {
+		return fmt.Errorf("--token-file : deux jetons pour %s", u)
+	}
+	o.jetonsNommes[u] = fichier
+	return nil
+}
+
 // lireJeton : la variable, ou le fichier s'il est donné. Le fichier gagne :
 // il a été nommé pour CETTE commande, la variable peut traîner dans le shell.
+// Vide sans erreur s'il n'y a ni l'un ni l'autre : jetonsDesCibles juge.
 func lireJeton(fichier string) (string, error) {
 	jeton := os.Getenv(VariableJeton)
 	if fichier != "" {
-		contenu, err := os.ReadFile(fichier)
+		lu, err := lireFichierJeton(fichier)
 		if err != nil {
-			return "", fmt.Errorf("lecture du jeton : %w", err)
+			return "", err
 		}
-		jeton = string(contenu)
+		return lu, nil
 	}
+	return verifierJeton(jeton)
+}
+
+func lireFichierJeton(fichier string) (string, error) {
+	contenu, err := os.ReadFile(fichier)
+	if err != nil {
+		return "", fmt.Errorf("lecture du jeton : %w", err)
+	}
+	j, err := verifierJeton(string(contenu))
+	if err == nil && j == "" {
+		return "", fmt.Errorf("%s : fichier de jeton vide", fichier)
+	}
+	return j, err
+}
+
+func verifierJeton(jeton string) (string, error) {
 	jeton = strings.TrimSpace(jeton)
-	switch {
-	case jeton == "":
-		return "", fmt.Errorf("aucun jeton Nexus : passez un jeton nxs_ à droit de publication par %s "+
-			"ou --token-file", VariableJeton)
-	case strings.ContainsAny(jeton, " \t\r\n"):
+	if strings.ContainsAny(jeton, " \t\r\n") {
 		return "", fmt.Errorf("jeton Nexus illisible : une seule ligne, sans espace")
 	}
 	return jeton, nil
+}
+
+// jetonsDesCibles rend le jeton de chaque Nexus visé, par URL : le sien s'il
+// est nommé, sinon le jeton par défaut. Tout ce qui manque est dit d'un coup,
+// avant la signature ; un jeton nommé pour un Nexus qui n'est pas visé est une
+// faute de frappe probable, refusée.
+func jetonsDesCibles(o optionsVersement, cibles []NexusCible) (map[string]string, error) {
+	defaut, err := lireJeton(o.fichierJeton)
+	if err != nil {
+		return nil, err
+	}
+	nommes := map[string]string{}
+	for u, f := range o.jetonsNommes {
+		j, err := lireFichierJeton(f)
+		if err != nil {
+			return nil, fmt.Errorf("jeton de %s : %w", u, err)
+		}
+		nommes[u] = j
+	}
+	vises := map[string]bool{}
+	out := map[string]string{}
+	var manquent []string
+	for _, c := range cibles {
+		if c.URL == "" {
+			continue // point d'accès inutilisable : dit au versement
+		}
+		vises[c.URL] = true
+		j := nommes[c.URL]
+		if j == "" {
+			j = defaut
+		}
+		if j == "" {
+			manquent = append(manquent, c.Nom+" ("+c.URL+")")
+			continue
+		}
+		out[c.URL] = j
+	}
+	for u := range nommes {
+		if !vises[u] {
+			return nil, fmt.Errorf("--token-file : %s n'est pas un des Nexus visés", u)
+		}
+	}
+	if len(manquent) > 0 {
+		return nil, fmt.Errorf("aucun jeton Nexus pour %s : passez un jeton nxs_ à droit de publication par %s "+
+			"ou --token-file, et pour un Nexus précis --token-file https://hôte:port=<fichier>",
+			strings.Join(manquent, ", "), VariableJeton)
+	}
+	return out, nil
 }
 
 // clientNexus : TLS vérifié, toujours. Une AC privée s'ajoute par --ca.
@@ -238,10 +339,6 @@ func versement(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, er
 	}
 
 	// Tout ce qui peut échouer sans toucher à rien vient AVANT la signature.
-	jeton, err := lireJeton(o.fichierJeton)
-	if err != nil {
-		return echec("%v", err)
-	}
 	client, err := clientNexus(o.ca)
 	if err != nil {
 		return echec("%v", err)
@@ -251,6 +348,10 @@ func versement(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, er
 		return echec("%v", err)
 	}
 	cibles, err := ciblesDuVersement(o.nexus, ouvrirUneFois)
+	if err != nil {
+		return echec("%v", err)
+	}
+	jetons, err := jetonsDesCibles(o, cibles)
 	if err != nil {
 		return echec("%v", err)
 	}
@@ -267,10 +368,11 @@ func versement(args []string, sortie, erreurs io.Writer, ouvrir func() (Cles, er
 
 	fmt.Fprintf(sortie, "\nVersement de %s (v%s) dans le dépôt « %s » de %d Nexus :\n",
 		filepath.Base(o.archive), strings.TrimPrefix(version, "v"), depot, len(cibles))
-	v := verseur{client: client, jeton: jeton, depot: depot, version: version,
+	v := verseur{client: client, depot: depot, version: version,
 		signataire: signee.Signataire, remplacer: o.remplacerSignatures, sortie: sortie}
 	reussis := 0
 	for _, c := range cibles {
+		v.jeton = jetons[c.URL]
 		if v.verser(c, fichiers) {
 			reussis++
 		}
@@ -434,10 +536,17 @@ func (v verseur) verser(c NexusCible, fichiers []fichierAVerser) bool {
 			return rate("%s est déjà publié avec d'autres octets (%s, le nôtre %s) : une version "+
 				"publiée est immuable — rien n'est versé sur ce Nexus", f.nom, court(p.Digest), court(f.empreinte))
 		default:
-			if v.signatureValide(c.URL, f, p) && !v.remplacer {
+			valide, errLecture := v.signatureValide(c.URL, f, p)
+			if valide && !v.remplacer {
 				gestes[i] = signatureGardee
 				attendu[i] = p.Digest
 				continue
+			}
+			// La signature en place n'a pas pu être LUE (dépôt devenu privé,
+			// Nexus qui flanche) : ce n'est pas une signature de l'ancienne
+			// clé, et --replace-signatures n'y changerait rien — TO-DO 234.
+			if errLecture != nil {
+				return rate("%s : signature en place illisible — %v", f.nom, errLecture)
 			}
 			if !v.remplacer {
 				return rate("%s est déjà publiée et ne se vérifie pas avec la clé qui signe (ancienne clé ?) : "+
@@ -495,21 +604,24 @@ func court(empreinte string) string {
 
 // signatureValide : la signature déjà déposée vérifie-t-elle NOTRE manifeste
 // avec la clé qui signe ? Lue sans jeton, comme l'agent la lira.
-func (v verseur) signatureValide(base string, f fichierAVerser, p paquetNexus) bool {
+// signatureValide : la signature en place vérifie-t-elle notre manifeste avec
+// la clé qui signe ? L'erreur ne dit QUE l'échec de lecture (TO-DO 234) : une
+// signature lue et fausse rend (false, nil).
+func (v verseur) signatureValide(base string, f fichierAVerser, p paquetNexus) (bool, error) {
 	texte, err := v.telecharger(base, f.nom)
 	if err != nil {
-		return false
+		return false, err
 	}
 	env, err := paquetagent.LireEnveloppe(string(texte))
 	if err != nil {
-		return false
+		return false, nil
 	}
 	corps, err := os.ReadFile(strings.TrimSuffix(f.chemin, ".sig"))
 	if err != nil {
-		return false
+		return false, fmt.Errorf("lecture de notre manifeste : %w", err)
 	}
 	_, err = paquetagent.Verifier(string(corps), env, []*rsa.PublicKey{v.signataire})
-	return err == nil
+	return err == nil, nil
 }
 
 func (v verseur) api(base string) string {

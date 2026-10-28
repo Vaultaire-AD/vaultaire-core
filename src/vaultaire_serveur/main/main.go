@@ -65,6 +65,9 @@ func main() {
 	// Paquets d'agent (TO-DO 113) : produire ou signer un manifeste, lire la
 	// clé. Avant tout service, et sans démarrer le core — voir paquetagent/outil.
 	if outil.EstCommande(os.Args[1:]) {
+		// Le journal que la commande déclenche (lecture de la configuration)
+		// ne se mêle pas à sa sortie : TO-DO 235.
+		logs.VersErreurStandard()
 		os.Exit(outil.Executer(os.Args[1:], os.Stdout, os.Stderr, ouvrirClesPaquets))
 	}
 

@@ -59,7 +59,11 @@ func LoadConfig(filePath string) error {
 
 	if err := SignalerCleMalOrthographiee(contenu); err != nil {
 		logs.Write_LogCode("CRITICAL", logs.CodeFileConfig, "config: "+err.Error())
-		return err
+		// Une VALEUR refusée : le fichier existe et se lit. Sans ce type, main
+		// le présentait comme introuvable et conseillait de recopier le
+		// fichier de référence — ce qui écraserait la configuration
+		// (recette du 28/10, second core de pré-prod).
+		return &ErreurDeValeur{Cause: err}
 	}
 
 	// Initialiser une variable pour stocker les données du fichier

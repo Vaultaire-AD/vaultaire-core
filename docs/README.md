@@ -9,7 +9,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 | Fichier | Contenu |
 | --- | --- |
-| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 10 chapitres, 31 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster |
+| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 11 chapitres, 35 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster, Nexus et mises à jour |
 
 ---
 

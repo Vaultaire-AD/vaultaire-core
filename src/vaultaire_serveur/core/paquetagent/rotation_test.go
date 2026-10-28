@@ -275,3 +275,24 @@ func TestJeuEtManifesteNeSeConfondentPas(t *testing.T) {
 		t.Error("clé en double acceptée")
 	}
 }
+
+// TO-DO 233 : une machine sans fichier de clés n'est comptée ni à jour ni en
+// retard — à part, et elle ne bloque pas une bascule qu'elle ne suivra jamais.
+func TestUneMachineSansCleEstCompteeAPart(t *testing.T) {
+	m := nouveauMagasin(t)
+	m.agents = []AgentJeu{{ComputeurID: "a", Nom: "web01", Numero: 0}, {ComputeurID: "b", Nom: "nue", Numero: SansCle}}
+	e, err := LireEtat(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e.Agents != 2 || e.AJour != 1 || len(e.EnRetard) != 0 || len(e.SansCle) != 1 || e.SansCle[0].Nom != "nue" {
+		t.Fatalf("%+v", e)
+	}
+	if _, err := Ajouter(m, nil); err != nil {
+		t.Fatal(err)
+	}
+	m.agents[0].Numero = 1
+	if err := Basculer(m, false); err != nil {
+		t.Fatalf("une machine sans clé bloque la bascule : %v", err)
+	}
+}

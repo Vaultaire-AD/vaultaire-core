@@ -9,6 +9,10 @@ import (
 // DomainEntry représente le domaine lui-même en tant qu'entrée LDAP
 type DomainEntry struct {
 	DNName string
+	// Feuille : le domaine n'a aucun enfant dans l'arbre — ni sous-domaine, ni
+	// OU (elles ne sont que sous la racine). Rendu par `hasSubordinates`.
+	// Faux par défaut : un domaine dont on ne sait rien est dit ouvrable.
+	Feuille bool
 }
 
 func (d DomainEntry) DN() string {
@@ -50,34 +54,21 @@ func (d DomainEntry) GetAttribute(attr string) []string {
 
 // GetAttributes pour gérer liste d'attributs et '*'
 func (d DomainEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
+	sub := "TRUE"
+	if d.Feuille {
+		sub = "FALSE"
+	}
 	all := map[string][]string{
-		"objectclass": d.ObjectClasses(),
-		"dc":          {d.getDC()},
-		"dn":          {d.DN()},
+		"objectclass":       d.ObjectClasses(),
+		"dc":                {d.getDC()},
+		"dn":                {d.DN()},
+		AttrHasSubordinates: {sub},
 	}
-
-	result := make(map[string][]string)
-	includeAll := len(requested) == 0 || contains(requested, "*")
-	includeOperational := contains(requested, "+")
-
-	for k, v := range all {
-		if isOperational(k) && !includeOperational {
-			// Ne pas skip si on a une vraie valeur
-			if len(v) > 0 {
-				result[k] = v
-			}
-			continue
-		}
-		if includeAll || contains(requested, k) {
-			if typesOnly {
-				result[k] = []string{}
-			} else {
-				result[k] = v
-			}
-		}
-	}
-	return result
+	// La règle commune : la version précédente servait tout attribut
+	// opérationnel PORTANT UNE VALEUR, demandé ou non — y compris sur « 1.1 ».
+	return selectionner(all, requested, typesOnly)
 }
+
 func (d DomainEntry) getDC() string {
 	parts := strings.Split(d.DNName, ".")
 	if len(parts) > 0 {

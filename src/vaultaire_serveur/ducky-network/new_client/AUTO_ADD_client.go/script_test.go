@@ -97,3 +97,18 @@ func TestChaqueScriptChoisiExiste(t *testing.T) {
 		}
 	}
 }
+
+// Recette du 28/10 : le script d'installation ne reste pas sur le poste, et ne
+// passe pas par /tmp, où un compte local aurait pu préparer le fichier que
+// root exécute.
+func TestLeScriptDistantEstEfface(t *testing.T) {
+	if strings.HasPrefix(ScriptDistant, "/") {
+		t.Fatalf("chemin absolu %q : il doit rester dans le répertoire du compte de connexion", ScriptDistant)
+	}
+	c := CommandeDistante(ScriptDistant)
+	for _, m := range []string{"bash " + ScriptDistant, "rm -f " + ScriptDistant, "exit $s"} {
+		if !strings.Contains(c, m) {
+			t.Errorf("commande %q sans %q", c, m)
+		}
+	}
+}

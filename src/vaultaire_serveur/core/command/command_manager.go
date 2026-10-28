@@ -192,6 +192,16 @@ func CommandePourJournal(input string) string {
 		return ""
 	}
 
+	// Les drapeaux « --… » ne comptent pas dans les rangs de la grammaire
+	// (recette du 28/10) : « update -u bob --permanent -p <secret> » et
+	// « create -u bob --permanent paris.fr <secret> … » sont écrits ainsi par
+	// l'aide et le MAN, et le secret, décalé d'un rang, partait EN CLAIR dans
+	// le journal. On caviarde sur les mots sans drapeaux, puis on les remet.
+	if sansDrapeaux, ou := retirerDrapeaux(mots); len(ou) > 0 {
+		caviardes := strings.Fields(CommandePourJournal(strings.Join(sansDrapeaux, " ")))
+		return remettreDrapeaux(caviardes, mots, ou)
+	}
+
 	for _, regle := range argumentsSensibles {
 		if !correspond(mots, regle.prefixe) || len(mots) <= regle.rang {
 			continue
@@ -207,6 +217,55 @@ func CommandePourJournal(input string) string {
 		break
 	}
 	return strings.Join(mots, " ")
+}
+
+// retirerDrapeaux rend les mots sans ceux qui commencent par « -- », et les
+// rangs où ils étaient.
+func retirerDrapeaux(mots []string) ([]string, []int) {
+	var garde []string
+	var ou []int
+	for i, m := range mots {
+		if strings.HasPrefix(m, "--") {
+			ou = append(ou, i)
+			continue
+		}
+		garde = append(garde, m)
+	}
+	return garde, ou
+}
+
+// remettreDrapeaux replace les drapeaux à leur rang d'origine. Quand la queue
+// a été réduite à un seul « *** », ce qui la suivait — drapeaux compris — en
+// fait partie et reste masqué.
+func remettreDrapeaux(caviardes, mots []string, ou []int) string {
+	estDrapeau := map[int]bool{}
+	for _, i := range ou {
+		estDrapeau[i] = true
+	}
+	var rangs []int // rang, dans mots, de chaque mot qui n'est pas un drapeau
+	for i := range mots {
+		if !estDrapeau[i] {
+			rangs = append(rangs, i)
+		}
+	}
+	fin := len(mots)
+	if len(caviardes) < len(rangs) && len(caviardes) > 0 {
+		fin = rangs[len(caviardes)-1] // la queue masquée commence ici
+	}
+	var out []string
+	j := 0
+	for i := 0; i < fin; i++ {
+		if estDrapeau[i] {
+			out = append(out, mots[i])
+			continue
+		}
+		out = append(out, caviardes[j])
+		j++
+	}
+	if fin < len(mots) {
+		out = append(out, "***")
+	}
+	return strings.Join(out, " ")
 }
 
 // correspond compare les mots au motif, rang par rang.

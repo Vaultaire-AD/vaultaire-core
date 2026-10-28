@@ -145,6 +145,10 @@ func AfficherEtat(e paquetagent.EtatRotation) string {
 		}
 		fmt.Fprintf(&b, "  en retard : %s (%s) — jeu n°%d\n", a.Nom, a.ComputeurID, a.Numero)
 	}
+	for _, a := range e.SansCle {
+		fmt.Fprintf(&b, "  sans clé  : %s (%s) — refuse tout paquet, à réinstaller par « vlt create -c … -join »\n",
+			a.Nom, a.ComputeurID)
+	}
 	switch e.Phase {
 	case paquetagent.PhaseAjoutee:
 		if len(e.EnRetard) == 0 {

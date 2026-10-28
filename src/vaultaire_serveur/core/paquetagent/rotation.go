@@ -40,6 +40,10 @@ import (
 // (« vlt create -c <id> -join »).
 
 // Rôles des clés en magasin.
+// SansCle : le numéro que déclare une machine sans pkg_signing_key.pem
+// (TO-DO 233) — la même valeur que paquet.SansCle côté agent.
+const SansCle = -1
+
 const (
 	RoleActive     = "active"
 	RoleSuivante   = "suivante"
@@ -90,14 +94,17 @@ type Magasin interface {
 
 // EtatRotation : où en est le cluster.
 type EtatRotation struct {
-	Phase         string
-	Jeu           int // dernier jeu publié, 0 : aucun (fichier de l'installation)
-	Active        string
-	Suivante      string
-	Precedente    string
-	Agents        int
-	AJour         int
-	EnRetard      []AgentJeu
+	Phase      string
+	Jeu        int // dernier jeu publié, 0 : aucun (fichier de l'installation)
+	Active     string
+	Suivante   string
+	Precedente string
+	Agents     int
+	AJour      int
+	EnRetard   []AgentJeu
+	// SansCle : les machines sans fichier de clés (TO-DO 233). Ni à jour ni
+	// en retard : aucun jeu ne les rattrapera, il faut les réinstaller.
+	SansCle       []AgentJeu
 	ClesDuJeu     int
 	ActiveEnLigne bool
 }
@@ -143,6 +150,10 @@ func LireEtat(m Magasin) (EtatRotation, error) {
 	}
 	e.Agents = len(agents)
 	for _, a := range agents {
+		if a.Numero == SansCle {
+			e.SansCle = append(e.SansCle, a)
+			continue
+		}
 		if a.Numero >= e.Jeu {
 			e.AJour++
 		} else {
@@ -150,6 +161,7 @@ func LireEtat(m Magasin) (EtatRotation, error) {
 		}
 	}
 	sort.Slice(e.EnRetard, func(i, j int) bool { return e.EnRetard[i].Nom < e.EnRetard[j].Nom })
+	sort.Slice(e.SansCle, func(i, j int) bool { return e.SansCle[i].Nom < e.SansCle[j].Nom })
 	return e, nil
 }
 

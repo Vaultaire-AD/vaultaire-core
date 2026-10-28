@@ -88,6 +88,8 @@ func (g GroupEntry) ObjectClasses() []string {
 // Méthode complète pour gérer "*", "+", TypesOnly
 func (g GroupEntry) GetAttributes(requested []string, typesOnly bool) map[string][]string {
 	all := map[string][]string{
+		// Un groupe n'a pas d'enfant (TO-DO 245).
+		AttrHasSubordinates: {"FALSE"},
 		"dn": {g.DN()},
 		"cn": {g.Name},
 		// "ou":          {"groups"},

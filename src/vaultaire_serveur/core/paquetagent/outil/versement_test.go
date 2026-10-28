@@ -31,14 +31,16 @@ type nexusFactice struct {
 	versions []string
 	// jetonVuAuTelechargement : un téléchargement a reçu l'en-tête.
 	jetonVuAuTelechargement bool
+	// jeton : celui que ce Nexus accepte (jetonTest par défaut).
+	jeton string
 }
 
 func nouveauNexus(t *testing.T) *nexusFactice {
 	t.Helper()
-	n := &nexusFactice{depot: "releases", fichiers: map[string][]byte{}}
+	n := &nexusFactice{depot: "releases", fichiers: map[string][]byte{}, jeton: jetonTest}
 	mux := http.NewServeMux()
 	auth := func(w http.ResponseWriter, r *http.Request) bool {
-		if r.Header.Get("Authorization") != "Bearer "+jetonTest {
+		if r.Header.Get("Authorization") != "Bearer "+n.jeton {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":"identifiants refusés"}`))
 			return false
@@ -442,5 +444,102 @@ func TestVersementSyntaxe(t *testing.T) {
 		if code, _, _ := executer(args, sansBase); code != 2 {
 			t.Errorf("%v : code %d, 2 attendu", args, code)
 		}
+	}
+}
+
+// TO-DO 232 : chaque Nexus a son jeton. Le jeton par défaut ne vaut que pour
+// les Nexus qui n'en ont pas de nommé ; un Nexus sans jeton est refusé avant
+// toute signature ; un jeton nommé pour un Nexus non visé aussi.
+func TestUnJetonParNexus(t *testing.T) {
+	t.Setenv(VariableJeton, "")
+	dir := t.TempDir()
+	a := ecrireArchive(t, dir)
+	cle := ecrireCle(t, dir, "cle.pem")
+	n1, n2 := nouveauNexus(t), nouveauNexus(t)
+	n2.jeton = "nxs_jeton-du-second"
+	ca := ecrireCA(t, dir, n1, n2)
+	j1, j2 := filepath.Join(dir, "j1"), filepath.Join(dir, "j2")
+	_ = os.WriteFile(j1, []byte(jetonTest+"\n"), 0o600)
+	_ = os.WriteFile(j2, []byte(n2.jeton+"\n"), 0o600)
+	base := []string{"--publish-package", a, "--key", cle, "--repo", "releases",
+		"--nexus", n1.srv.URL, "--nexus", n2.srv.URL, "--ca", ca}
+
+	// Un seul jeton nommé : le second Nexus n'en a pas.
+	code, _, erreurs := executer(append(append([]string{}, base...), "--token-file", n1.srv.URL+"="+j1), sansBase)
+	if code != 1 || !strings.Contains(erreurs, n2.srv.URL) {
+		t.Fatalf("Nexus sans jeton non nommé : code %d : %s", code, erreurs)
+	}
+	if _, err := os.Stat(a + ".rocky.manifest.sig"); !os.IsNotExist(err) {
+		t.Error("rien ne doit être signé quand un jeton manque")
+	}
+
+	// Un jeton pour un Nexus qui n'est pas visé : refusé.
+	code, _, erreurs = executer(append(append([]string{}, base...), "--token-file", j1,
+		"--token-file", "https://ailleurs:8843="+j2), sansBase)
+	if code != 1 || !strings.Contains(erreurs, "https://ailleurs:8843") {
+		t.Fatalf("jeton d'un Nexus non visé : code %d : %s", code, erreurs)
+	}
+
+	// Le défaut pour le premier, le nommé pour le second : 2/2.
+	t.Setenv(VariableJeton, jetonTest)
+	code, sortie, erreurs := executer(append(append([]string{}, base...), "--token-file", n2.srv.URL+"="+j2), sansBase)
+	if code != 0 || !strings.Contains(sortie, "Bilan : 2/2") {
+		t.Fatalf("code %d : %s\n%s", code, erreurs, sortie)
+	}
+	if n1.nombre() != 5 || n2.nombre() != 5 {
+		t.Errorf("fichiers : %d et %d, 5 attendus", n1.nombre(), n2.nombre())
+	}
+	if strings.Contains(sortie+erreurs, n2.jeton) || strings.Contains(sortie+erreurs, jetonTest) {
+		t.Error("un jeton est affiché")
+	}
+}
+
+func TestTokenFileSyntaxe(t *testing.T) {
+	var o optionsVersement
+	if err := o.ajouterFichierJeton("http://n:8843=/j"); err == nil {
+		t.Error("http:// accepté")
+	}
+	if err := o.ajouterFichierJeton("https://n:8843"); err == nil {
+		t.Error("URL sans fichier acceptée")
+	}
+	if err := o.ajouterFichierJeton("https://n:8843/=/j"); err != nil || o.jetonsNommes["https://n:8843"] != "/j" {
+		t.Errorf("%v %v", err, o.jetonsNommes)
+	}
+	if err := o.ajouterFichierJeton("https://n:8843=/k"); err == nil {
+		t.Error("deux jetons pour un Nexus acceptés")
+	}
+	if err := o.ajouterFichierJeton("/a"); err != nil {
+		t.Fatal(err)
+	}
+	if err := o.ajouterFichierJeton("/b"); err == nil {
+		t.Error("deux jetons par défaut acceptés")
+	}
+}
+
+// TO-DO 234 : dépôt rendu privé APRÈS un premier versement. La signature en
+// place, relue sans jeton, rend 401 : le message dit « pas public », et non
+// « ancienne clé » — --replace-signatures n'y changerait rien.
+func TestDepotDevenuPriveNEstPasUneAncienneCle(t *testing.T) {
+	t.Setenv(VariableJeton, jetonTest)
+	dir := t.TempDir()
+	a := ecrireArchive(t, dir)
+	cle := ecrireCle(t, dir, "cle.pem")
+	n := nouveauNexus(t)
+	args := []string{"--publish-package", a, "--key", cle, "--nexus", n.srv.URL, "--repo", "releases",
+		"--ca", ecrireCA(t, dir, n)}
+	if code, sortie, erreurs := executer(args, sansBase); code != 0 {
+		t.Fatalf("premier versement : %d %s\n%s", code, erreurs, sortie)
+	}
+	// Signatures locales effacées : les nouvelles diffèrent, la relecture de
+	// celles du Nexus est nécessaire.
+	for _, f := range []string{"rocky", "debian"} {
+		_ = os.Remove(a + "." + f + ".manifest.sig")
+	}
+	n.mu.Lock()
+	n.prive = true
+	n.mu.Unlock()
+	code, sortie, _ := executer(args, sansBase)
+	if code != 1 || !strings.Contains(sortie, "pas public") || strings.Contains(sortie, "ancienne clé") {
+		t.Fatalf("code %d :\n%s", code, sortie)
 	}
 }

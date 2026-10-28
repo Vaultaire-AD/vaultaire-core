@@ -235,11 +235,12 @@ func writeEntry(level string, code string, content string, meta *LogMeta) {
 		entry.UserID = meta.UserID
 	}
 
+	dest := destination()
 	if logFormatJSON {
-		os.Stdout.Write(formatJSONLine(entry))
-		os.Stdout.Write([]byte{'\n'})
+		dest.Write(formatJSONLine(entry))
+		dest.Write([]byte{'\n'})
 	} else {
-		fmt.Fprintln(os.Stdout, formatHumanReadable(level, content))
+		fmt.Fprintln(dest, formatHumanReadable(level, content))
 	}
 	getBuffer().addEntry(entry)
 	transmettre(entry)

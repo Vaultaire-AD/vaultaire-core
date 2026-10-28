@@ -211,12 +211,21 @@ const JeuAJour = "a_jour"
 // vérifie, applique, et redemande : il remonte la chaîne seul.
 func servirLeJeuDeCles(t storage.Trames_struct_client) string {
 	n, err := strconv.Atoi(strings.TrimSpace(t.Content))
-	if err != nil || n < 0 {
+	if err != nil || n < paquetagent.SansCle {
 		logs.Write_Log("WARNING", "clespaquets: demande illisible de "+t.ClientSoftwareID+" : "+t.Content)
 		return ""
 	}
 	if err := enregistrerJeuAgent(t.ClientSoftwareID, n); err != nil {
 		logs.Write_Log("ERROR", "clespaquets: jeu de "+t.ClientSoftwareID+" non enregistré : "+err.Error())
+	}
+	// Sans fichier de clés (TO-DO 233) : aucun jeu ne s'applique — il faut une
+	// clé que la machine tient déjà pour en vérifier un. Rien à remettre ; le
+	// numéro rangé la fait compter à part dans « vlt agent ».
+	if n == paquetagent.SansCle {
+		logs.Write_Log("WARNING", "clespaquets: "+t.ClientSoftwareID+" n'a pas de clé des paquets : "+
+			"elle refusera toute mise à jour — à réinstaller par « vlt create -c … -join », "+
+			"ou déposer pkg_signing_key.pem (--pkg-key show)")
+		return trame.ReponseClient("09_10", t.Destination_Server, t.SessionIntegritykey, JeuAJour)
 	}
 	j, ok, err := jeuApres(n)
 	if err != nil {

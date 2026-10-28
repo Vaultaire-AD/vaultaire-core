@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **236**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **246**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -25,10 +25,10 @@ Trois gestes, dans le même passage que le code :
 | --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
 | 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
 | 210 | SÉCURITÉ     | L'identité d'une machine ne s'exporte qu'à sa création      | À faire — **sécurité**, à cadrer (réinstallation) |
-| 232 | NEXUS        | `--publish-package` : un seul jeton pour tous les Nexus, alors que chaque Nexus a les siens | À trancher — bloque « Bilan 2/2 » |
-| 233 | AGENT-UPDATE | Une machine sans `pkg_signing_key.pem` est comptée comme tenant la clé des paquets | À faire — petit |
-| 235 | NEXUS        | `--publish-package` écrit une ligne de journal `ldap.limites` sur sa sortie | À faire — petit |
-| 222 | GPO          | Deux GPO qui règlent la même chose : toute la politique de la machine est refusée | À trancher                    |
+| 241 | SSH          | `-join` coupe l'accès de root par clé seule (`AuthenticationMethods` global) | À trancher — recette du 28/10 |
+| 243 | AGENT-UPDATE | Porte de santé : un tunnel établi puis perdu la franchit    | À trancher — recette du 28/10           |
+| 242 | AGENT        | Première connexion d'un compte : sans ses groupes du domaine | À faire — petit, Debian et Ubuntu      |
+| 244 | WINDOWS      | Journal « SSH » pour une connexion Windows, expiration en UTC | À faire — petit                        |
 | 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — Rocky 10 relevé « (aucun) » le 27/10 ; compléter |
 | 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
@@ -120,61 +120,32 @@ Bureau à distance ».
 
 ## Agent
 
-### 232. [NEXUS] `--publish-package` : un jeton pour tous les Nexus
+### 242. [AGENT] Première connexion d'un compte : sans ses groupes du domaine
 
-**Constat** (recette du 27/10, § 115, deux Nexus enrôlés). Le versement vise
-**chaque** Nexus du cluster avec **un** jeton (`VAULTAIRE_NEXUS_TOKEN` ou
-`--token-file`). Or un jeton `nxs_` n'existe que dans le Nexus qui l'a créé :
-le second répond « jeton refusé par ce Nexus (401) », et le bilan est 1/2 —
-toujours. Contournement validé : un passage par Nexus, `--nexus <url> --repo
-releases` avec le jeton de celui-ci.
+**Constat** (recette du 28/10, Debian 13 et Ubuntu 26.04, agent 2.3.3).
+`bob.recette@acme.lan`, membre d'`Infra`, se connecte en SSH pour la première
+fois sur le poste : `id` ne montre que son groupe personnel. À la deuxième
+connexion, `Infra` est là. Sur Rocky 10, déjà connu du poste, il l'avait
+d'emblée.
 
-**À trancher.**
-1. Un jeton par Nexus : `--token-file <url>=<fichier>` répétable, ou un
-   répertoire de jetons nommés par Nexus ;
-2. ou faire publier le core **sous sa propre identité** : les Nexus enrôlés
-   (mode `ducky`) accepteraient une publication signée par la clé du core —
-   plus de jeton du tout, mais un droit nouveau à concevoir côté Nexus.
+**À faire.** Reproduire sur un compte jamais vu du poste : regarder ce que
+`getent group Infra` et `id <compte>` rendent avant, pendant et après la
+première ouverture — vraisemblablement la liste des groupes est remplie par le
+provisionnement de la session, après que `initgroups` a été appelé. Un test
+d'intégration NSS : un compte neuf a ses groupes dès la première session.
 
-### 233. [AGENT-UPDATE] Une machine sans clé des paquets comptée comme la tenant
+### 244. [WINDOWS] Journal « SSH » pour une connexion Windows, expiration en UTC
 
-**Constat** (recette du 27/10, § 114). Le poste du labo, installé avant le
-point 113 puis mis à jour à la main, n'a pas de
-`/etc/vaultaire_client/.ssh/pkg_signing_key.pem` : il refuse toute mise à jour
-(« cette machine n'accepte aucun paquet »). Pourtant `vlt agent` affiche
-« Clés des paquets : … rotation stable — 1 agent(s) Linux sur 1 le tiennent » :
-`paquet.NumeroDuJeu` rend 0 quand le fichier manque, le numéro du jeu de
-l'installation.
+**Constat** (recette du 28/10, Windows Server 2022, agent 2.3.3). Deux défauts
+mineurs vus avec `vaultaire_login` :
 
-**À faire.** L'agent déclare l'absence (un numéro -1, ou une ligne dédiée dans
-la 09_09) ; `vlt agent` la compte à part (« N sans clé des paquets : à
-réinstaller par `-join`, ou déposer la clé ») et la colonne ÉTAT le dit avant
-le premier ordre refusé. Contournement de la recette : le fichier déposé à la
-main depuis `--pkg-key show` (en-tête du `FichierCles`, jeu 0).
+1. le journal du core range l'authentification d'un poste Windows sous
+   l'étiquette « SSH » — trompeur pour qui cherche une connexion SSH ;
+2. l'expiration d'un mot de passe provisoire est affichée en **UTC**, sans le
+   dire, sur un poste réglé à l'heure de Paris.
 
-### 235. [NEXUS] `--publish-package` : une ligne de journal dans la sortie
-
-**Constat** (recette du 27/10). La sortie de `vaultaire_serveur
---publish-package` commence par `[INFO] ldap.limites : bornes en vigueur …` :
-le chargement des réglages journalise sur la sortie standard d'une commande
-d'exploitation. Ne pas initialiser les journaux du service (ou les rediriger)
-dans les sous-commandes hors ligne.
-
-### 222. [GPO] Deux GPO qui règlent la même chose : toute la politique est refusée
-
-**Constat** (recette du 27/10, § 7e, cas « attente partagée »). Deux GPO liées
-à la même machine, chacune avec un `systemd_service` sur `chronyd` à
-**l'identique** (`started`) — l'une en audit, l'autre en enforce : le core
-refuse la politique machine (« resolve_conflict : le service chronyd est réglé
-à la fois par la GPO "essai_audit" et par la GPO "essai_enforce" »), et le cycle
-est abandonné : **plus aucun** module de la machine n'est appliqué ni corrigé,
-y compris le `file_deploy` de la GPO en enforce. Le cas du 183 (deux modules
-qui partagent une attente) ne se monte donc pas avec deux modules identiques.
-
-**À trancher.** Un conflit entre GPO doit-il bloquer toute la machine, ou
-seulement les modules en conflit (les autres appliqués, le conflit signalé
-dans `gpo status`) ? Deux réglages identiques sont-ils un conflit ? Et le
-mode : en enforce chez l'une, en audit chez l'autre, lequel l'emporte ?
+**À faire.** Une étiquette par chemin (SSH, Windows, LDAP…) ; l'heure locale du
+poste, ou l'UTC écrit en clair. Le tester avec le 14 (A_TESTER) en même temps.
 
 ### 201. [AGENT] Poser `SystemCallFilter` sur l'unité de l'agent
 
@@ -291,6 +262,25 @@ effacée dès qu'un ordre de révocation arrive pour ce compte. Laissée en
 suspens le 14/10.
 
 ## Sécurité et authentification
+
+### 241. [SSH] `-join` coupe l'accès de root par clé seule
+
+**Constat** (recette du 28/10, Debian 13). Après `vlt create -c … -join`,
+root ne se connecte plus au poste avec sa clé : le bloc Vaultaire de
+`sshd_config` (`confsys/gabarits.go`, `blocSSHD`) pose
+`AuthenticationMethods publickey,keyboard-interactive` **pour tous les
+comptes**, root compris — il faut la clé ET un mot de passe. Lorens a dû
+reprendre la main par la console. Contournement posé sur les postes du labo :
+`/etc/ssh/sshd_config.d/zz-lab-acces-root.conf`, `Match User root Address
+192.168.30.0/24` / `AuthenticationMethods publickey` (le bloc fait
+`Include` en dernier, un `Match` y reste valable).
+
+**À trancher.** (a) Restreindre la directive aux comptes du domaine (`Match
+User *@*`, ou un groupe), root et les comptes locaux gardant la configuration
+de la distribution ; (b) la garder globale — c'est la sécurité voulue — mais
+le dire à l'installation (`-join` prévient : « root devra fournir clé + mot
+de passe »), et documenter le `Match` d'exception. Dans les deux cas,
+`confsys` doit accepter le fichier d'exception sans le signaler en écart.
 
 ### 98. [SÉCURITÉ] Les secrets sont en clair dans la base
 
@@ -447,6 +437,7 @@ jour réelle, en permissif, puis en enforcing.
 > **Tous les points de l'audit sont traités dans la 2.2** : 119 à 132. Ce qui
 > reste ici en est sorti en chemin.
 
+
 ## Portail et outillage
 
 ### 215. [PORTAIL] La page Conformité ne montre pas le nom d'hôte des machines
@@ -556,6 +547,20 @@ Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 1
 ---
 
 ## Mise à jour du parc
+
+### 243. [AGENT-UPDATE] Porte de santé : un tunnel établi puis perdu la franchit
+
+**Constat** (recette du 28/10, § 114). La porte de santé d'une mise à jour
+demande que la nouvelle version établisse son tunnel avec le core. Un tunnel
+établi juste avant une coupure du réseau, puis perdu, compte comme franchi :
+la version est gardée alors qu'elle ne joint plus le core. L'échec attendu ne
+se reproduit qu'en coupant **dès la réception de l'ordre**, plus de 3 minutes.
+
+**À trancher.** Exiger que le tunnel soit **encore** ouvert à la fin de la
+fenêtre (ou un échange réussi — une trame 09 répondue — plutôt qu'une
+connexion) ; mesurer le risque inverse : une coupure du core pendant la
+fenêtre ferait revenir en arrière une version saine. Lire
+`Mise_a_jour_du_parc.md` (porte de santé) avant.
 
 > Découpage du point 40, arrêté le 28/09. La conception, les arbitrages et ce
 > qui a été écarté sont dans [`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md) —

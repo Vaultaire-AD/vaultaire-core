@@ -143,6 +143,12 @@ func rendre(v action.VueAgents) string {
 		}
 		fmt.Fprintf(&b, "Clés des paquets : %s, rotation %s — %d agent(s) Linux sur %d le tiennent\n",
 			jeu, r.Phase, r.AJour, r.Agents)
+		// TO-DO 233 : avant le premier ordre refusé, pas après.
+		for _, a := range r.SansCle {
+			fmt.Fprintf(&b, "                   ⚠ %s (%s) sans clé des paquets : refusera toute mise à jour — "+
+				"à réinstaller par « vlt create -c … -join », ou déposer pkg_signing_key.pem\n",
+				a.Nom, a.ComputeurID)
+		}
 	}
 	if len(v.CiblesDesGroupes) == 0 {
 		b.WriteString("Cibles de groupe : aucune\n")

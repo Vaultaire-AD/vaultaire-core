@@ -125,8 +125,11 @@ sert le plus.
 Codes : `no_groups`, `resolve_conflict`, `restrictions_unavailable`,
 `unknown_client`, `internal`.
 
-`resolve_conflict` correspond à deux GPO du même scope réglant la même clé : le
-serveur refuse de livrer plutôt que d'en choisir une arbitrairement.
+`resolve_conflict` n'est plus émis depuis le TO-DO 222 (un core antérieur
+l'envoyait pour deux GPO du même scope réglant la même clé, et ne livrait
+rien). Un conflit écarte maintenant les seuls modules en cause : la politique
+livrée porte le reste, et le conflit est rangé (`gpo_conflict`) pour `vlt gpo
+status`. Le code reste lu par l'agent.
 `restrictions_unavailable` correspond au mode fail-closed des restrictions.
 
 ### 05_05 — ask_gpo_user (client → serveur)

@@ -134,7 +134,9 @@ func TestEnBaseLeMemberOfNeDependPasDeLaBase(t *testing.T) {
 	recherches := map[string][]string{
 		"sub sur le domaine":      memberOfDe(t, a, a.racine, 2, dnDe(a.racine), a.alice),
 		"sub sur le sous-domaine": memberOfDe(t, a, a.sous, 2, dnDe(a.sous), a.alice),
-		"one sur le sous-domaine": memberOfDe(t, a, a.sous, 1, dnDe(a.sous), a.alice),
+		// `one` sous un domaine rend ses enfants dans l'arbre, plus ses comptes
+		// (TO-DO 245) : les comptes se lisent en `one` sous `ou=users`.
+		"one sous ou=users":       memberOfDe(t, a, a.racine, 1, "ou=users,"+dnDe(a.racine), a.alice),
 		"sub sur le voisin":       memberOfDe(t, a, a.cote, 2, dnDe(a.cote), a.alice),
 	}
 

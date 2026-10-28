@@ -252,7 +252,36 @@ func conformiteParc(appelant action.Appelant, driftOnly bool) string {
 		return commandaction.MessageDErreur(err)
 	}
 	rows, _ := res.Donnees.([]dbgpo.ComplianceRow)
-	return res.Message + "\n\n" + rendreConformite(rows, driftOnly)
+	conflits, errC := dbgpo.ConflitsDuParc(database.GetDatabase())
+	sortie := res.Message + "\n\n" + rendreConformite(rows, driftOnly)
+	if errC != nil {
+		return sortie + "Conflits entre GPO illisibles : " + errC.Error() + "\n"
+	}
+	return sortie + rendreConflitsDuParc(rows, conflits)
+}
+
+// rendreConflitsDuParc nomme les machines où des GPO s'opposent (TO-DO 222),
+// parmi celles de la vue — donc dans le périmètre de l'appelant. Ces machines
+// paraissent « applied » : l'agent a posé tout ce qu'il a reçu, et les
+// modules en conflit ne lui ont pas été envoyés.
+func rendreConflitsDuParc(rows []dbgpo.ComplianceRow, conflits []dbgpo.ConflitGPO) string {
+	vues := map[string]bool{}
+	for _, r := range rows {
+		vues[r.ComputeurID] = true
+	}
+	machines := map[string]bool{}
+	var liste []string
+	for _, c := range conflits {
+		if vues[c.ComputeurID] && !machines[c.ComputeurID] {
+			machines[c.ComputeurID] = true
+			liste = append(liste, c.ComputeurID)
+		}
+	}
+	if len(liste) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("⚠ %d machine(s) où des GPO s'opposent — modules écartés, le reste appliqué : %s\n"+
+		"  le détail : vlt gpo status <computeur_id>\n", len(liste), strings.Join(liste, ", "))
 }
 
 // conformiteMachine rend le détail d'une machine.
@@ -400,6 +429,26 @@ func rendreConformiteMachineA(d action.ConformiteMachine, maintenant time.Time) 
 			// plutôt qu'un zéro rassurant.
 			fmt.Fprintf(&b, "    conformité  : jamais vérifiée\n")
 		}
+	}
+
+	// Les conflits avant les échecs : ce sont des modules que la machine n'a
+	// même pas reçus, et rien d'autre sur la fiche ne le montrerait.
+	if d.ConflitsIllisibles != "" {
+		b.WriteString("\n  Conflits entre GPO illisibles : " + d.ConflitsIllisibles + "\n")
+	} else if len(d.Conflits) > 0 {
+		b.WriteString("\n  ⚠ Conflits entre GPO — ces modules ne sont PAS livrés, le reste l'est\n")
+		// En liste et non en tableau : la largeur d'une colonne coupait le
+		// détail au milieu du nom de la seconde GPO (recette du 28/10) — la
+		// seule partie qu'on vient lire.
+		for _, c := range d.Conflits {
+			fmt.Fprintf(&b, "    %s%s — %s :\n", c.Scope, userSuffix(c.TargetUser), dbgpo.AgeRelatif(c.SeenAt, maintenant))
+			for _, un := range strings.Split(c.Detail, " ; ") {
+				// Sans unLigne : il coupe à 80 octets, au milieu du nom de la
+				// seconde GPO.
+				fmt.Fprintf(&b, "      - %s\n", strings.TrimSpace(strings.ReplaceAll(un, "\n", " ")))
+			}
+		}
+		b.WriteString("    Corriger l'une des GPO, ou délier l'une d'elles du groupe : le conflit est levé au cycle suivant.\n")
 	}
 
 	if d.ModulesIllisibles != "" {

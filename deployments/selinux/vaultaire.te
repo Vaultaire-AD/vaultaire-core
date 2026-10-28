@@ -1,4 +1,4 @@
-policy_module(vaultaire, 1.2.0)
+policy_module(vaultaire, 1.2.2)
 
 ########################################################################
 #
@@ -342,12 +342,19 @@ domtrans_pattern(sshd_t, vaultaire_exec_t, vaultaire_t)
 # non : « chpasswd failed » et la connexion par mot de passe est refusee. Memes
 # droits que sshd_t, pas davantage.
 #
+# chpasswd, lancé par le module PAM, entre dans passwd_t et lit le mot de passe
+# sur la socket héritée de sshd-session : sans la règle, « chpasswd failed » dès
+# que le mot de passe central a changé (recette du 28/10 — le 27/10, le mot de
+# passe était déjà aligné, chpasswd ne tournait pas).
+#
 # optional_policy : Debian 13 et Rocky 9 n'ont pas ce type ; le bloc y est
 # ignore au lieu de faire echouer la compilation. AUCUNE apostrophe dans le
 # bloc, commentaires compris : m4 y lirait la fin de la citation.
 optional_policy(`
 	gen_require(`
 		type sshd_session_t;
+		type passwd_t;
+		class passwd { passwd rootok };
 	')
 	domtrans_pattern(sshd_session_t, vaultaire_exec_t, vaultaire_t)
 	allow sshd_session_t vaultaire_var_run_t:dir { search getattr };
@@ -358,6 +365,11 @@ optional_policy(`
 	# Alignement du mot de passe local (TO-DO 197), voir plus haut.
 	auth_read_shadow(sshd_session_t)
 	usermanage_domtrans_passwd(sshd_session_t)
+	# chpasswd lit le mot de passe sur la socket que lui passe le module PAM.
+	allow passwd_t sshd_session_t:unix_stream_socket { read write getattr ioctl };
+	# chpasswd vérifie que son appelant peut changer un mot de passe : la
+	# classe passwd, contrôlée en espace utilisateur (USER_AVC).
+	allow sshd_session_t self:passwd { passwd rootok };
 	tunable_policy(`vaultaire_agent_non_confine',`
 		allow sshd_session_t unconfined_service_t:unix_stream_socket connectto;
 	')

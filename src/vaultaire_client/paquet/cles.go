@@ -38,11 +38,19 @@ func ClesDeConfiance() ([]*rsa.PublicKey, error) {
 	return LireClesPubliques(contenu)
 }
 
+// SansCle : le numéro déclaré par une machine qui n'a PAS de fichier de clés
+// (TO-DO 233). Elle refuse tout paquet ; avec 0, le core la comptait parmi
+// celles qui tiennent le jeu de l'installation.
+const SansCle = -1
+
 // NumeroDuJeu rend le numéro du jeu de clés que la machine tient — 0 pour le
-// fichier de l'installation, ou sans fichier (TO-DO 207).
+// fichier de l'installation (TO-DO 207), SansCle sans fichier.
 func NumeroDuJeu() int {
 	contenu, err := os.ReadFile(CheminCles())
 	if err != nil {
+		if os.IsNotExist(err) {
+			return SansCle
+		}
 		return 0
 	}
 	return NumeroDuFichier(string(contenu))

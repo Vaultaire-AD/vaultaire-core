@@ -2,7 +2,7 @@
 
 # Jalon 10.4 — Décider ce qu'un proxy expose
 
-[← Topologie : exposition, affinité, rotation](./03-topologie.md) · [Fin de la formation ⌂](../README.md)
+[← Topologie : exposition, affinité, rotation](./03-topologie.md) · [Chapitre 11 — Nexus →](../11-nexus/README.md)
 
 ---
 
@@ -135,4 +135,4 @@ la commande refuse : il pourrait être en train de redémarrer.
 
 ---
 
-[← Topologie : exposition, affinité, rotation](./03-topologie.md) · [Fin de la formation ⌂](../README.md)
+[← Topologie : exposition, affinité, rotation](./03-topologie.md) · [Chapitre 11 — Nexus →](../11-nexus/README.md)

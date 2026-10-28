@@ -114,3 +114,14 @@ func TestSansFichierRienNEstApplique(t *testing.T) {
 		t.Fatal("jeu appliqué sur une machine sans clé de confiance")
 	}
 }
+
+// TO-DO 233 : sans fichier, la machine le dit — et non « 0 », le numéro du
+// fichier de l'installation, qui la faisait compter parmi celles qui le tiennent.
+func TestSansFichierLeNumeroLeDit(t *testing.T) {
+	avant := storage.KeyPath
+	storage.KeyPath = t.TempDir()
+	t.Cleanup(func() { storage.KeyPath = avant })
+	if n := NumeroDuJeu(); n != SansCle {
+		t.Fatalf("sans fichier : %d, attendu %d", n, SansCle)
+	}
+}

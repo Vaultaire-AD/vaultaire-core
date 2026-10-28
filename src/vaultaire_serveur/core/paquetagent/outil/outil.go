@@ -365,5 +365,7 @@ Versement dans les Nexus (TO-DO 206) — jeton nxs_ par VAULTAIRE_NEXUS_TOKEN ou
       [--nexus https://hôte:port]  ce Nexus seulement (répétable) ; défaut : tous ceux du cluster
       [--ca <pem>]                 AC privée des Nexus
       [--token-file <fichier>]     le jeton, dans un fichier
+      [--token-file https://hôte:port=<fichier>]
+                                   le jeton d'UN Nexus (répétable) : chacun a les siens
       [--replace-signatures]       remplace les signatures de l'ancienne clé (après rotate-switch)
 `

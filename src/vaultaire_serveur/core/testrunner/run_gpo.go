@@ -565,8 +565,11 @@ func testGPOResolution() []Result {
 	out = append(out, Result{"GPO/résolution: conflit inter-GPO détecté", res.HasConflicts(),
 		"aucun conflit signalé alors que deux GPO règlent la même clé"})
 
-	_, err := gpo.BuildPolicyForDelivery(gpo.ScopeMachine, []gpo.Policy{base, other})
-	out = append(out, Result{"GPO/résolution: livraison refusée en cas de conflit", err != nil, "devrait refuser"})
+	// TO-DO 222 : le conflit écarte les modules qui s'opposent, pas la politique.
+	livree, conflits, err := gpo.BuildPolicyForDelivery(gpo.ScopeMachine, []gpo.Policy{base, other})
+	out = append(out, Result{"GPO/résolution: conflit écarté, le reste livré",
+		err == nil && len(conflits) == 1 && len(livree.Modules) == 1 && livree.Modules[0].Type == gpo.ModuleSystemdService,
+		fmt.Sprintf("err=%v conflits=%d modules=%v", err, len(conflits), moduleTypeList(livree.Modules))})
 
 	disabled := other
 	disabled.Enabled = false

@@ -120,3 +120,29 @@ func TestRefreshConnaitLesMachinesDUneGPO(t *testing.T) {
 		}
 	}
 }
+
+// TO-DO 222 : les conflits se voient sur la fiche et sous la vue du parc,
+// pour les seules machines de la vue (le périmètre de l'appelant).
+func TestLesConflitsSeVoient(t *testing.T) {
+	maintenant := time.Now()
+	conflit := dbgpo.ConflitGPO{ComputeurID: "web01", Scope: "machine", SeenAt: maintenant,
+		Detail: `le service chronyd est réglé à la fois par la GPO "a" et par la GPO "b"`}
+	fiche := rendreConformiteMachineA(action.ConformiteMachine{ComputeurID: "web01",
+		Etats:    []dbgpo.ComplianceRow{{ComputeurID: "web01", Scope: "machine", Status: "applied", ReportedAt: maintenant}},
+		Conflits: []dbgpo.ConflitGPO{conflit}}, maintenant)
+	for _, m := range []string{"Conflits entre GPO", "ne sont PAS livrés", `par la GPO "b"`} {
+		if !strings.Contains(fiche, m) {
+			t.Errorf("fiche sans %q :\n%s", m, fiche)
+		}
+	}
+	rows := []dbgpo.ComplianceRow{{ComputeurID: "web01"}, {ComputeurID: "web02"}}
+	autre := conflit
+	autre.ComputeurID = "hors-perimetre"
+	pied := rendreConflitsDuParc(rows, []dbgpo.ConflitGPO{conflit, autre})
+	if !strings.Contains(pied, "1 machine(s)") || !strings.Contains(pied, "web01") || strings.Contains(pied, "hors-perimetre") {
+		t.Errorf("pied : %q", pied)
+	}
+	if rendreConflitsDuParc(rows, nil) != "" {
+		t.Error("pied sans conflit non vide")
+	}
+}

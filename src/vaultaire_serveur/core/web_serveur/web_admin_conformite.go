@@ -266,6 +266,9 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 		ModulesIllisibles   string
 		EcartsIllisibles    string
 		HistoriqueIllisible string
+		// Conflits entre GPO (TO-DO 222) : des modules non livrés.
+		Conflits           []dbgpo.ConflitGPO
+		ConflitsIllisibles string
 		// Demander un cycle (TO-DO 169).
 		Message             string
 		Error               string
@@ -276,6 +279,7 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 		Machine: d.ComputeurID, Echecs: d.Echecs, Ecarts: d.Ecarts,
 		ModulesIllisibles: d.ModulesIllisibles, EcartsIllisibles: d.EcartsIllisibles,
 		HistoriqueIllisible: d.HistoriqueIllisible,
+		Conflits:            d.Conflits, ConflitsIllisibles: d.ConflitsIllisibles,
 	}
 
 	for _, h := range d.Historique {

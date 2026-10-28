@@ -89,6 +89,32 @@
     </div>
     {{ end }}
 
+    {{ if .ConflitsIllisibles }}
+      <div class="alert alert-danger">Conflits entre GPO illisibles : {{ .ConflitsIllisibles }}</div>
+    {{ else if .Conflits }}
+    <h2 class="h2">Conflits entre GPO</h2>
+    <div class="alert alert-danger">
+      Ces modules ne sont <strong>pas</strong> livrés à la machine : deux GPO les
+      règlent autrement. Le reste de la politique est appliqué. Corrigez l'une
+      des GPO, ou déliez-en une du groupe : le conflit est levé au cycle suivant.
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Portée</th><th>Utilisateur</th><th>Conflit</th><th>Vu</th></tr></thead>
+        <tbody>
+        {{ range .Conflits }}
+          <tr>
+            <td>{{ .Scope }}</td>
+            <td>{{ if .TargetUser }}{{ .TargetUser }}{{ else }}—{{ end }}</td>
+            <td>{{ .Detail }}</td>
+            <td class="small">{{ .SeenAt.Format "02/01/2006 15:04" }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+
     <h2 class="h2">Modules en échec</h2>
     {{ if .ModulesIllisibles }}
       <div class="alert alert-danger">

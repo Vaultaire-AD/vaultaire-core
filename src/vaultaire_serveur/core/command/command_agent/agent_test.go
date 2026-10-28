@@ -90,7 +90,7 @@ func TestRendre(t *testing.T) {
 		Compteurs: map[parcversion.Etat]int{parcversion.EtatEnRetard: 1},
 		Depot:     "releases",
 		Rotation: &paquetagent.EtatRotation{Phase: paquetagent.PhaseAjoutee, Jeu: 3, ClesDuJeu: 2,
-			Agents: 40, AJour: 37},
+			Agents: 40, AJour: 37, SansCle: []paquetagent.AgentJeu{{ComputeurID: "id-n", Nom: "nue"}}},
 	}
 	vue.Machines[0].CompteRendu = dbclients.CompteRendu{Version: "2.4.0", Resultat: "echec",
 		Motif: "revenue en arrière : tunnel"}
@@ -101,7 +101,7 @@ func TestRendre(t *testing.T) {
 		"2.4.0 (groupe pilote)", "⚠ en retard", "2 agent(s) : 1 en retard",
 		"Dépôt            : releases", "2.4.0 echec : revenue en arrière : tunnel", "CONFIGURATION", "⚠ écart",
 		"Écarts de configuration système", "2.2.0 (dérogation) ↓ rétrogradation",
-		"Clés des paquets : jeu n°3 (2 clé(s)), rotation ajoutée — 37 agent(s) Linux sur 40 le tiennent", "  pilote-1 : refusé : ssh/sshd_config : sshd -t refuse"} {
+		"Clés des paquets : jeu n°3 (2 clé(s)), rotation ajoutée — 37 agent(s) Linux sur 40 le tiennent", "  pilote-1 : refusé : ssh/sshd_config : sshd -t refuse", "⚠ nue (id-n) sans clé des paquets"} {
 		if !strings.Contains(sortie, morceau) {
 			t.Errorf("sortie sans %q :\n%s", morceau, sortie)
 		}

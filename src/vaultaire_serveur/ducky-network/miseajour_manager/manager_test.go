@@ -183,6 +183,13 @@ func TestLeJeuDeCles(t *testing.T) {
 	if rep := Trame_Manager(trameDe("09", "x"), nil); rep != "" {
 		t.Errorf("demande illisible servie : %q", rep)
 	}
+	// TO-DO 233 : sans fichier de clés, le numéro est rangé et rien n'est servi.
+	if rep := Trame_Manager(trameDe("09", "-1"), nil); !strings.HasSuffix(rep, "\n"+JeuAJour) || range_ != "poste-1=-1" {
+		t.Errorf("machine sans clé : %q %s", rep, range_)
+	}
+	if rep := Trame_Manager(trameDe("09", "-2"), nil); rep != "" {
+		t.Errorf("numéro négatif servi : %q", rep)
+	}
 	if !strings.Contains(trame.LigneCapacites(), ","+trame.CapaciteClesPaquets) {
 		t.Error("capacité non annoncée")
 	}

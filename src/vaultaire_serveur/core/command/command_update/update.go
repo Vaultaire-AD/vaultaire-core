@@ -47,7 +47,8 @@ func Update_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		//
 		p, ok := ParamsChangementMotDePasse(command_list)
 		if !ok {
-			return "Requête invalide : update -u <username> [--permanent] -p <nouveau mot de passe>"
+			return "Requête invalide : update -u <username> [--permanent] -p <nouveau mot de passe>" +
+				" — « --permanent » se place AVANT « -p »"
 		}
 		return commandaction.ExecuterAction("user.change_password", p, sender_groupsIDs, sender_Username)
 
@@ -85,11 +86,23 @@ Note : le mot de passe peut contenir des espaces, ils sont conservés.`
 // ParamsChangementMotDePasse lit « update -u <username> [--permanent] -p <mot
 // de passe> ».
 //
-// Le drapeau se place AVANT « -p » (TO-DO 144). Après, il serait lu comme une
-// partie du mot de passe — c'est le prix des mots de passe à espaces, qui
-// occupent tous les arguments restants.
+// Le drapeau se place AVANT « -p » (TO-DO 144).
+//
+// Les arguments sont REMIS en mots : le découpage de la console
+// (SplitArgsPreserveBlocks) regroupe tout ce qui suit un « --drapeau » en un
+// seul argument, pour les descriptions à espaces. « --permanent -p X »
+// arrivait donc ici en deux arguments, « --permanent » et « -p X », et la
+// forme documentée était refusée (recette du 28/10).
+//
+// Après « -p », « --permanent » en DERNIER mot est refusé : il aurait été pris
+// pour la fin du mot de passe, en silence, et le compte se serait retrouvé
+// avec un mot de passe provisoire que personne n'a tapé (recette du 28/10).
 func ParamsChangementMotDePasse(command_list []string) (action.Params, bool) {
-	args := command_list
+	args := strings.Fields(strings.Join(command_list, " "))
+	if n := len(args); n > 0 && strings.EqualFold(args[n-1], "--permanent") &&
+		!(n >= 3 && strings.EqualFold(args[2], "--permanent")) {
+		return nil, false
+	}
 	permanent := false
 	if len(args) >= 3 && strings.EqualFold(args[2], "--permanent") {
 		permanent = true
