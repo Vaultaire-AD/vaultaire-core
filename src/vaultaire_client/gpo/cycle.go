@@ -2,6 +2,8 @@ package gpo
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -171,6 +173,7 @@ func runCycle(sessionKey, scope, username string, timeout time.Duration) (rappor
 	report := ApplyPolicy(policy, previous)
 
 	state := BuildScopeState(policy, previous, report)
+	journaliserModes(label, state)
 	if err := SaveScopeState(scope, username, state); err != nil {
 		// L'état non enregistré signifie que tout sera réappliqué au prochain
 		// cycle. Les modules étant idempotents, c'est du travail inutile mais
@@ -418,4 +421,26 @@ func scanMachineDrift(sessionKey string) int {
 	}
 
 	return EnforceDrift(ScopeMachine, "", report)
+}
+
+// journaliserModes dit, quand la politique vient d'être reçue, quels modules
+// sont en audit (TO-DO 183). Devant deux GPO de modes différents, c'est la
+// première question : le journal y répond sans relire l'état.
+func journaliserModes(label string, state *ScopeState) {
+	if state == nil || len(state.Modes) == 0 {
+		return
+	}
+	var enAudit []string
+	for cle, mode := range state.Modes {
+		if mode == string(DriftAudit) {
+			enAudit = append(enAudit, cle)
+		}
+	}
+	if len(enAudit) == 0 {
+		return
+	}
+	sort.Strings(enAudit)
+	logs.Write_log("INFO", fmt.Sprintf(
+		"GPO: %s — %d module(s) sur %d en audit (signalés, jamais corrigés) : %s ; les autres en enforce",
+		label, len(enAudit), len(state.Modules), strings.Join(enAudit, ", ")))
 }

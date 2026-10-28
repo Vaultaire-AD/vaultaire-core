@@ -219,7 +219,7 @@ func TestNormalizeDriftMode(t *testing.T) {
 // avant de la livrer. C'est ce passage qui pose le mode sur les modules.
 func fusionner(t *testing.T, p Policy) Policy {
 	t.Helper()
-	merged, err := BuildPolicyForDelivery(p.Scope, []Policy{p})
+	merged, _, err := BuildPolicyForDelivery(p.Scope, []Policy{p})
 	if err != nil {
 		t.Fatalf("fusion de la GPO %s : %v", p.Name, err)
 	}

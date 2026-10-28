@@ -1,7 +1,9 @@
 package configuration_file
 
 import (
+	"errors"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -179,5 +181,20 @@ func TestLeFichierLivreNePorteAucuneValeurQuiFonctionne(t *testing.T) {
 				"  installation que personne n'a retouchée, et elle est lisible par qui a\n"+
 				"  lu le dépôt. C'est exactement le TO-DO 99.", nue)
 		}
+	}
+}
+
+// Recette du 28/10 : l'ancienne orthographe est une VALEUR refusée, pas un
+// fichier introuvable — main ne doit pas conseiller de recopier le fichier de
+// référence, qui écraserait la configuration.
+func TestLAncienneOrthographeEstUneErreurDeValeur(t *testing.T) {
+	chemin := filepath.Join(t.TempDir(), "serveur_conf.yaml")
+	if err := os.WriteFile(chemin, []byte("administreur:\n  enable: true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := LoadConfig(chemin)
+	var valeur *ErreurDeValeur
+	if !errors.As(err, &valeur) {
+		t.Fatalf("erreur %T (%v) : ErreurDeValeur attendue", err, err)
 	}
 }

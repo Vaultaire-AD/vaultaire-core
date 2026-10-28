@@ -108,3 +108,20 @@ func TestUnPairQuiChangeDAdresseNEstPasGardeSousLesDeux(t *testing.T) {
 		t.Fatalf("adresses = %v, attendu %v — l'ancienne adresse du proxy ne doit plus y être", got, want)
 	}
 }
+
+// reconcile_system_config (TO-DO 117) : absent = la réconciliation tourne ;
+// false la retire.
+func TestReconcileSystemConfig(t *testing.T) {
+	if err := LoadConfig(fichier(t, `{"servers":[{"ip":"10.0.0.1","port":6666}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !GetReconcileSystemConfig() {
+		t.Error("absent : désactivée")
+	}
+	if err := LoadConfig(fichier(t, `{"servers":[{"ip":"10.0.0.1","port":6666}],"reconcile_system_config":false}`)); err != nil {
+		t.Fatal(err)
+	}
+	if GetReconcileSystemConfig() {
+		t.Error("false : active")
+	}
+}

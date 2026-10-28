@@ -211,6 +211,16 @@ var porteesAttendues = map[string]string{
 	// l'ouverture de session : aucun domaine ne le porte (TO-DO 95).
 	"mfa.get_ducky_policy": "PorteeGlobale",
 	"mfa.set_ducky_policy": "PorteeGlobale",
+	// La version attendue des agents (TO-DO 111) : une machine appartient à
+	// des groupes de plusieurs domaines, et la plus haute de leurs cibles
+	// l'emporte — une cible ne se délègue pas par domaine.
+	"agent.status":     "PorteeGlobale",
+	"agent.set_target": "PorteeGlobale",
+	"agent.pin":        "PorteeGlobale",
+	// L'ordre de mise à jour (TO-DO 115) : relancer une machine, nommer le
+	// dépôt — mêmes clés, même raison.
+	"agent.update":         "PorteeGlobale",
+	"agent.set_repository": "PorteeGlobale",
 }
 
 // clesAttendues : nom d'action → clé RBAC exigée.
@@ -306,6 +316,11 @@ var clesAttendues = map[string]string{
 	// le réglage engage tout le parc, il ne se délègue pas par domaine (TO-DO 95).
 	"mfa.get_ducky_policy":  "read:log",
 	"mfa.set_ducky_policy":  "write:server",
+	"agent.status":          "read:log",
+	"agent.set_target":      "write:server",
+	"agent.pin":             "write:server",
+	"agent.update":          "write:server",
+	"agent.set_repository":  "write:server",
 	"cluster.refresh_nodes": "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et
@@ -513,6 +528,7 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsMaintenanceCluster(r)
 	EnregistrerActionsSignatureGPO(r)
 	EnregistrerActionsMFADucky(r)
+	EnregistrerActionsVersionAgent(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
 	EnregistrerActionsDuree(r)

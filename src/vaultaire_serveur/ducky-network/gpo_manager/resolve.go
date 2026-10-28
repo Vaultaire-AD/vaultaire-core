@@ -25,33 +25,33 @@ import (
 // machine-only dans le catalogue, aucune politique user ne peut les surcharger.
 
 // resolveMachinePolicy fusionne les GPO machine liées aux groupes du client.
-func resolveMachinePolicy(db *sql.DB, clientSoftwareID string) (gpo.Policy, error) {
+func resolveMachinePolicy(db *sql.DB, clientSoftwareID string) (gpo.Policy, []gpo.Conflict, error) {
 	empty := gpo.Policy{Name: "effective_machine", Scope: gpo.ScopeMachine, Enabled: true}
 
 	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, clientSoftwareID)
 	if err != nil {
-		return gpo.Policy{}, fmt.Errorf("client %s introuvable : %v", clientSoftwareID, err)
+		return gpo.Policy{}, nil, fmt.Errorf("client %s introuvable : %v", clientSoftwareID, err)
 	}
 	groupIDs, err := dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 	if err != nil {
-		return gpo.Policy{}, fmt.Errorf("groupes du client %s illisibles : %v", clientSoftwareID, err)
+		return gpo.Policy{}, nil, fmt.Errorf("groupes du client %s illisibles : %v", clientSoftwareID, err)
 	}
 	logs.Write_LogCode("DEBUG", logs.CodeGPOResolve, fmt.Sprintf(
 		"gpo: client %s (id %d) appartient à %d groupe(s)", clientSoftwareID, clientID, len(groupIDs)))
 
 	if len(groupIDs) == 0 {
-		return empty, nil
+		return empty, nil, nil
 	}
 
 	policies, err := dbgpo.GetPoliciesForGroupIDs(db, groupIDs, gpo.ScopeMachine)
 	if err != nil {
-		return gpo.Policy{}, err
+		return gpo.Policy{}, nil, err
 	}
 	logs.Write_LogCode("DEBUG", logs.CodeGPOResolve, fmt.Sprintf(
 		"gpo: %d GPO machine activée(s) trouvée(s) pour le client %s", len(policies), clientSoftwareID))
 
 	if len(policies) == 0 {
-		return empty, nil
+		return empty, nil, nil
 	}
 	return gpo.BuildPolicyForDelivery(gpo.ScopeMachine, policies)
 }
@@ -64,24 +64,24 @@ func resolveMachinePolicy(db *sql.DB, clientSoftwareID string) (gpo.Policy, erro
 // sur une machine qui n'en fait pas partie. Autrement dit l'utilisateur
 // choisirait une partie de la configuration d'une machine à laquelle il ne fait
 // que se connecter.
-func resolveUserPolicy(db *sql.DB, username, clientSoftwareID string) (gpo.Policy, error) {
+func resolveUserPolicy(db *sql.DB, username, clientSoftwareID string) (gpo.Policy, []gpo.Conflict, error) {
 	empty := gpo.Policy{Name: "effective_user", Scope: gpo.ScopeUser, Enabled: true}
 
 	if username == "" {
-		return gpo.Policy{}, fmt.Errorf("utilisateur cible non fourni")
+		return gpo.Policy{}, nil, fmt.Errorf("utilisateur cible non fourni")
 	}
 
 	userGroupIDs, err := dbgroups.Command_GET_UserGroupIDs(db, username)
 	if err != nil {
-		return gpo.Policy{}, fmt.Errorf("groupes de l'utilisateur %s illisibles : %v", username, err)
+		return gpo.Policy{}, nil, fmt.Errorf("groupes de l'utilisateur %s illisibles : %v", username, err)
 	}
 	clientID, err := dbclients.Get_ClientID_By_ComputerID(db, clientSoftwareID)
 	if err != nil {
-		return gpo.Policy{}, fmt.Errorf("client %s introuvable : %v", clientSoftwareID, err)
+		return gpo.Policy{}, nil, fmt.Errorf("client %s introuvable : %v", clientSoftwareID, err)
 	}
 	clientGroupIDs, err := dbclients.Command_GET_GroupIDsFromClientID(db, clientID)
 	if err != nil {
-		return gpo.Policy{}, fmt.Errorf("groupes du client %s illisibles : %v", clientSoftwareID, err)
+		return gpo.Policy{}, nil, fmt.Errorf("groupes du client %s illisibles : %v", clientSoftwareID, err)
 	}
 
 	shared := intersectGroupIDs(userGroupIDs, clientGroupIDs)
@@ -92,18 +92,18 @@ func resolveUserPolicy(db *sql.DB, username, clientSoftwareID string) (gpo.Polic
 	if len(shared) == 0 {
 		logs.Write_LogCode("DEBUG", logs.CodeGPOResolve, fmt.Sprintf(
 			"gpo: aucun groupe commun entre %s et %s, aucune GPO user applicable", username, clientSoftwareID))
-		return empty, nil
+		return empty, nil, nil
 	}
 
 	policies, err := dbgpo.GetPoliciesForGroupIDs(db, shared, gpo.ScopeUser)
 	if err != nil {
-		return gpo.Policy{}, err
+		return gpo.Policy{}, nil, err
 	}
 	logs.Write_LogCode("DEBUG", logs.CodeGPOResolve, fmt.Sprintf(
 		"gpo: %d GPO user activée(s) trouvée(s) pour %s sur %s", len(policies), username, clientSoftwareID))
 
 	if len(policies) == 0 {
-		return empty, nil
+		return empty, nil, nil
 	}
 	return gpo.BuildPolicyForDelivery(gpo.ScopeUser, policies)
 }

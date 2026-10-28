@@ -72,7 +72,7 @@ l'accordait à personne**, et que rien ne l'émettait.
 | `04_03` | oui | personne | agent, proxy |
 | `04_05` | oui | personne | proxy |
 | `04_07` | oui | personne | proxy |
-| `04_15` | oui (TO-DO 72) | — (trame neuve) | proxy seulement |
+| `04_15` | oui (TO-DO 72) | — (trame neuve) | proxy ; agent pour `vaultaire_nexus` seulement (TO-DO 114) |
 
 ## Arbitrage 1 — la découverte vit en `04`, et nulle part ailleurs
 
@@ -412,6 +412,13 @@ boucle infinie : une cadence nulle ferait de l'agent un générateur de trafic, 
 cadence d'un mois le laisserait ignorer un nœud retiré. Une ligne illisible ne
 change **rien** : la valeur en vigueur a été décidée par un core, et la
 remplacer par le défaut à la première trame abîmée annulerait le réglage.
+
+**Le nœud à quitter** *(TO-DO 216)*. Une purge ajoute au motif une ligne
+`quitter <hôte:port>` par accès du nœud purgé. L'agent (`decouverte/quitter.go`)
+le place en DERNIER dans `FusionnerAdresses` pendant 15 minutes — joignable
+encore s'il est seul, la maintenance n'étant pas un refus (177) — et le quitte
+s'il y est connecté (`bascule.go`, `QuitterSiCourant`, après 0 à 20 s). Un agent
+antérieur lit ces lignes comme la suite du motif : rien ne change pour lui.
 
 **`04_17` pousse une actualisation.** La cadence borne le retard — au pire une
 demi-heure entre l'ajout d'un core et sa prise en compte. C'est acceptable en

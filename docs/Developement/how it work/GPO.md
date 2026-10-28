@@ -177,9 +177,17 @@ partie — il choisirait donc une partie de la configuration d'une machine à
 laquelle il ne fait que se connecter.
 
 `gpo.Resolve` fusionne les GPO retenues. **Deux GPO du même scope réglant la
-même clé naturelle sont un conflit signalé, pas résolu** : deviner laquelle
-gagne produirait un parc dont la configuration réelle est imprévisible. Le
-serveur répond alors `resolve_conflict` et ne livre rien.
+même clé naturelle **autrement** sont un conflit signalé, pas résolu** :
+deviner laquelle gagne produirait un parc dont la configuration réelle est
+imprévisible. Depuis le TO-DO 222, le conflit n'écarte que les modules qui
+s'opposent — **tous** les deux : garder le premier désignerait un gagnant par
+l'ordre des noms — et le reste est livré. Il est rangé par machine, scope et
+compte (table `gpo_conflict`, remplacée à chaque résolution, effacée quand il
+n'y en a plus), journalisé quand il apparaît, change ou disparaît, et montré
+par `vlt gpo status` (fiche et vue du parc) et la page Conformité. Deux GPO qui
+règlent la même clé **à l'identique** (même type, mêmes paramètres) ne
+s'opposent pas : le module est livré une fois, en enforce si l'une des deux
+l'est, et les versions des deux comptent dans l'empreinte.
 
 ### 4.4 Transport
 
@@ -982,7 +990,8 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 |----------|----------------|
 | `politique machine deja a jour` alors qu'une GPO a changé | Le changement n'affecte pas l'empreinte — vérifier qu'il porte bien sur un paramètre ou une définition |
 | `aucun groupe commun` en scope user | Le groupe de la GPO ne contient pas **à la fois** l'utilisateur et la machine |
-| `resolve_conflict` | Deux GPO du même scope règlent la même clé — les logs nomment les deux |
+| `gpo status` : « Conflits entre GPO » | Deux GPO du même scope règlent la même clé autrement : ces modules ne sont pas livrés, le reste l'est. Corriger ou délier l'une des deux |
+| `resolve_conflict` (agent) | Core antérieur au 222 : il refusait toute la politique sur un conflit |
 | `restrictions_unavailable` | Base injoignable, mode fail-closed |
 | Module `skipped` | Type inconnu de l'agent : serveur plus récent que le client |
 | `jeu de commandes non transmis` | Agent antérieur à la transmission des définitions |

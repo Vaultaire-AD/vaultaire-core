@@ -109,12 +109,12 @@ dc=infra,dc=it,dc=company,dc=com
 |                             |                                                                           |
 
 
-> ⚠️ **`One Level` ne remonte plus les sous-domaines** (point 127). Le serveur
-> promouvait silencieusement ces recherches en recherche d'arborescence quand le
-> conteneur s'appelait `users` ; ce n'est plus le cas, `One Level` rend un niveau.
-> Si vos comptes vivent dans des sous-domaines, mettez **`Subtree`** — ou
-> `onelevel_subtree: true` côté serveur, qui rétablit l'ancien comportement pour
-> toutes les recherches `One Level`.
+> ⚠️ **`One Level` suit l'arbre des DN** (points 127 et 245). Sous `ou=users`,
+> il rend **tous** les comptes, sous-domaines compris — leur DN y est (voir
+> « L'arbre de l'annuaire » plus bas). Sous un `dc=…`, il ne rend **aucun**
+> compte : seulement les OU et les sous-domaines. Avec un **Users DN** en
+> `dc=…`, comme ci-dessus, mettez donc **`Subtree`** ; ou visez
+> `ou=users,dc=…` en `One Level`.
 
 > ⚠️ **`posixaccount` a été retiré de cette liste** (point 123). Le serveur ne
 > l'annonce plus : il ne servait aucun attribut POSIX. Keycloak compose ces
@@ -145,6 +145,43 @@ dc=infra,dc=it,dc=company,dc=com
 | **Membership User LDAP Attribute**| `uid`                              |
 | **Mode**                          | `READ_ONLY`                        |
 | **Member-Of LDAP Attribute**      | `memberOf`                         |
+
+---
+
+# 🌳 L'arbre de l'annuaire *(2.3, TO-DO 245)*
+
+Les comptes et les groupes ont un DN **à la racine**, quel que soit leur
+domaine : `uid=alice,ou=users,dc=acme,dc=lan` pour un compte de
+`infra.acme.lan` aussi. Les sous-domaines existent comme entrées `domain`, mais
+ne portent ni comptes ni groupes dans l'arbre.
+
+```
+dc=acme,dc=lan
+├── ou=users          tous les comptes (uid=…)
+├── ou=groups         tous les groupes (cn=…)
+├── dc=infra          sous-domaine
+└── dc=svc            sous-domaine
+```
+
+| Recherche | Rend |
+|---|---|
+| `base` sur une entrée | l'entrée |
+| `one` sous la racine | `ou=users`, `ou=groups`, les sous-domaines directs |
+| `one` sous `ou=users` / `ou=groups` | tous les comptes / tous les groupes |
+| `one` sous un sous-domaine | ses propres sous-domaines (souvent rien) |
+| `one` sous un compte, un groupe | rien (succès, zéro entrée) |
+| `sub` sous `ou=users` | l'OU et tous les comptes |
+| `sub` sous un domaine | la base, ses sous-domaines, et les comptes et groupes **du domaine** — la règle de l'étape 2, pour limiter une application à un domaine |
+
+Seule la dernière ligne rend des entrées dont le DN n'est pas sous la base :
+c'est ce qui permet de restreindre une recherche à un sous-domaine. Les droits
+du compte de connexion s'appliquent toujours en plus.
+
+`hasSubordinates` (opérationnel : demandé par son nom ou par `+`) vaut `TRUE`
+pour la racine, une OU et un sous-domaine qui a des sous-domaines ; `FALSE`
+pour un compte, un groupe, un sous-domaine sans sous-domaine. C'est ce que
+lisent Apache Directory Studio et les navigateurs d'annuaire pour savoir
+quelles entrées s'ouvrent.
 
 ---
 

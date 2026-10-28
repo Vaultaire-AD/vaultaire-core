@@ -62,6 +62,13 @@ func resolveBaseScope(db *sql.DB, baseObject string, j *ldapjournal.Operation) (
 	if domain != "" && isDomainOnlyDN(baseObject) {
 		entry := candidate.DomainEntry{DNName: domain}
 		if strings.ToLower(entry.DN()) == baseLower {
+			// hasSubordinates dit la même chose qu'en `one` (TO-DO 245). Une
+			// liste des domaines illisible laisse la valeur par défaut — « a des
+			// enfants » — plutôt que de faire échouer une lecture d'entrée pour
+			// un attribut d'affichage.
+			if servis, err := dbdomains.GetAllDomainNames(db); err == nil {
+				entry = entreesDeDomaines(servis, []string{domain})[0].(candidate.DomainEntry)
+			}
 			return []ldapinterface.LDAPEntry{entry}, nil
 		}
 	}

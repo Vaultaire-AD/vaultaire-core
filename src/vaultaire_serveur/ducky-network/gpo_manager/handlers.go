@@ -40,7 +40,10 @@ func handleAskMachine(trames storage.Trames_struct_client) string {
 			errRestrictionsUnavailable, reason)
 	}
 
-	policy, err := resolveMachinePolicy(db, clientID)
+	policy, conflits, err := resolveMachinePolicy(db, clientID)
+	if err == nil {
+		noterConflits(db, clientID, gpo.ScopeMachine, "", conflits)
+	}
 	if err != nil {
 		code, message := classifyResolveError(err)
 		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
@@ -113,7 +116,10 @@ func handleAskUser(trames storage.Trames_struct_client) string {
 			errNoSharedGroup, "aucun groupe commun entre l'utilisateur et la machine")
 	}
 
-	policy, err := resolveUserPolicy(db, directoryUser, clientID)
+	policy, conflits, err := resolveUserPolicy(db, directoryUser, clientID)
+	if err == nil {
+		noterConflits(db, clientID, gpo.ScopeUser, requestedUser, conflits)
+	}
 	if err != nil {
 		code, message := classifyResolveError(err)
 		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(

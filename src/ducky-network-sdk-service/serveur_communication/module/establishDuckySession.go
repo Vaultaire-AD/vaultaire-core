@@ -76,6 +76,9 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 		userauth.AskAuthentification(user, pass, ds)
 		// Tout est OK
 		logs.Write_log("INFO", "Connexion Vaultaire établie sur "+serverAddr)
+		// Le chemin de cette session : celui que les relais d'un proxy doivent
+		// prendre vers les cores (TO-DO 225).
+		config.NoterServeurCourant(serverAddr)
 		return ds, nil
 	}
 

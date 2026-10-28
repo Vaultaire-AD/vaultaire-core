@@ -296,6 +296,7 @@ func EnregistrerTout() {
 	EnregistrerActionsMaintenanceCluster(Catalogue)
 	EnregistrerActionsSignatureGPO(Catalogue)
 	EnregistrerActionsMFADucky(Catalogue)
+	EnregistrerActionsVersionAgent(Catalogue)
 	EnregistrerActionsArborescence(Catalogue)
 	EnregistrerActionsReglages(Catalogue)
 	EnregistrerActionsCertificat(Catalogue)

@@ -167,6 +167,8 @@ func (u UserEntry) GetAttributes(requested []string, typesOnly bool) map[string]
 		"dn":             {u.DN()},
 		// "ou":             {"users"},
 		"objectclass": u.ObjectClasses(),
+		// Un compte n'a pas d'enfant (TO-DO 245) : opérationnel, voir arbre.go.
+		AttrHasSubordinates: {"FALSE"},
 	}
 
 	// `memberOf` : absent plutôt que vide, comme tout attribut sans valeur (RFC
@@ -275,6 +277,35 @@ func (u UserEntry) GetAttribute(attr string) []string {
 	return res[attr]
 }
 
+// AttrHasSubordinates — RFC 3045 : l'entrée a-t-elle des enfants dans l'arbre.
+// Opérationnel. Directory Studio s'en sert pour savoir s'il peut ouvrir une
+// entrée ; sans lui, il proposait d'ouvrir chaque compte (TO-DO 245).
+const AttrHasSubordinates = "hassubordinates"
+
+// selectionner applique la règle commune de sélection des attributs : « * »
+// pour les attributs utilisateur, « + » ou le nom pour un opérationnel
+// (RFC 4511 § 4.5.1.8).
+func selectionner(all map[string][]string, requested []string, typesOnly bool) map[string][]string {
+	result := make(map[string][]string)
+	includeAll := len(requested) == 0 || contains(requested, "*")
+	includeOperational := contains(requested, "+")
+	for k, v := range all {
+		if isOperational(k) {
+			if !includeOperational && !contains(requested, k) {
+				continue
+			}
+		} else if !includeAll && !contains(requested, k) {
+			continue
+		}
+		if typesOnly {
+			result[k] = []string{}
+		} else {
+			result[k] = v
+		}
+	}
+	return result
+}
+
 // helpers
 func contains(list []string, s string) bool {
 	for _, item := range list {
@@ -288,7 +319,7 @@ func contains(list []string, s string) bool {
 func isOperational(attr string) bool {
 	switch strings.ToLower(attr) {
 	case AttrEntryUUID, "nsuniqueid", "objectguid", "guid", "ipauniqueid", AttrServiceRights,
-		ldaptools.AttrCreeLe, ldaptools.AttrModifieLe:
+		ldaptools.AttrCreeLe, ldaptools.AttrModifieLe, AttrHasSubordinates:
 		return true
 	default:
 		return false

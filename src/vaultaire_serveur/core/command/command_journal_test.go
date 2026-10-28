@@ -3,6 +3,8 @@ package command
 import (
 	"strings"
 	"testing"
+
+	commandupdate "vaultaire/core/command/command_update"
 )
 
 // Le journal des commandes, et son caviardage.
@@ -135,5 +137,32 @@ func TestCaviardageInsensibleALaCasse(t *testing.T) {
 	got := CommandePourJournal("CREATE -U alice paris.fr S3cr3t 01/01/1990")
 	if strings.Contains(got, "S3cr3t") {
 		t.Errorf("journal = %q : le mot de passe échappe au caviardage en majuscules", got)
+	}
+}
+
+// Recette du 28/10 : un drapeau « --permanent » avant le secret le décalait
+// d'un rang, et le mot de passe partait EN CLAIR dans le journal.
+func TestLeDrapeauNeDecalePasLeCaviardage(t *testing.T) {
+	cas := map[string]string{
+		"update -u bob --permanent -p Essai-Fuite 11":          "update -u bob --permanent -p ***",
+		"update -u bob -p Essai-Fuite --permanent":             "update -u bob -p *** --permanent",
+		"create -u bob --permanent paris.fr S3cr3t 01/01/1990": "create -u bob --permanent paris.fr *** 01/01/1990",
+		"create -u bob paris.fr S3cr3t 01/01/1990 --permanent": "create -u bob paris.fr *** 01/01/1990 --permanent",
+		"create -p lecture non --desc consultation":            "create -p lecture non --desc consultation",
+	}
+	for entree, attendu := range cas {
+		if got := CommandePourJournal(entree); got != attendu {
+			t.Errorf("CommandePourJournal(%q) = %q, attendu %q", entree, got, attendu)
+		}
+	}
+}
+
+// Recette du 28/10 : la forme documentée, passée par le découpage réel de la
+// console, doit donner un mot de passe DÉFINITIF et intact.
+func TestUpdatePermanentParLeDecoupageDeLaConsole(t *testing.T) {
+	args := SplitArgsPreserveBlocks("update -u bob --permanent -p Cerf-Volant-Mousse-58")
+	p, ok := commandupdate.ParamsChangementMotDePasse(args[1:])
+	if !ok || p["password"] != "Cerf-Volant-Mousse-58" || p["temporary"] != "non" {
+		t.Fatalf("%q -> %v (ok %v)", args, p, ok)
 	}
 }

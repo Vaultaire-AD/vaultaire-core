@@ -11,7 +11,7 @@ import (
 )
 
 func GetSoftwareServeurInformation(trames_content storage.Trames_struct_client) {
-	information := strings.Split(trames_content.Content, "\n")
+	information := RedresserInventaire(strings.Split(trames_content.Content, "\n"))
 	if len(information) < 4 {
 		logs.Write_LogCode("WARNING", logs.CodeNetParse, fmt.Sprintf(
 			"02_12 : inventaire incomplet de %s (%d ligne(s), 4 au minimum) — ignoré",

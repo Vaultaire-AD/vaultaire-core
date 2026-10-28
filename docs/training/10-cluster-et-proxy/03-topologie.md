@@ -87,8 +87,10 @@ cluster purge <nœud> [--etalement <s>]
    chaque poste redemande sa liste et part de lui-même, le reste est fermé, étalé
    sur une minute.
    Le proxy en maintenance, lui, se purge : ce sont les **cores** qui ferment les sessions arrivées par lui — `web01`
-   reçoit l'ordre de redemander sa liste, n'y trouve plus le proxy et repasse par
-   un core. Le proxy, lui, reste connecté : il bat toujours.
+   reçoit l'ordre de redemander sa liste, qui **nomme** le proxy à quitter : il
+   le quitte dans les 20 s et repasse par un core — le proxy reste en dernier
+   de sa liste pendant un quart d'heure. Le proxy, lui, reste connecté : il bat
+   toujours. Sur `web01` : `grep 'quitter' /var/log/vaultaire/vaultaire.log`.
    Un core en maintenance **accepte** encore les connexions : un agent qui ne
    connaît que son fichier peut y revenir. C'est voulu — si les autres cores
    tombaient pendant la maintenance, il resterait le dernier recours.

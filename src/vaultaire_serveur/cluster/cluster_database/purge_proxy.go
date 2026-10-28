@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -67,8 +68,12 @@ type PurgeDeProxy struct {
 	Hostname     string
 	Proprietaire string
 	Adresses     []string // déclarée, puis vue — sans vide ni doublon
-	Demandee     time.Time
-	Etalement    time.Duration
+	// AccesAgents : les « hôte:port » par lesquels les AGENTS joignent le
+	// proxy — l'accès exposé, puis l'adresse et le port déclarés (TO-DO 216).
+	// La 04_17 de la purge les nomme, pour que l'agent les quitte.
+	AccesAgents []string
+	Demandee    time.Time
+	Etalement   time.Duration
 }
 
 // PurgesDeProxiesEnCours rend les purges de proxies demandées depuis moins de
@@ -82,7 +87,8 @@ func PurgesDeProxiesEnCours(db *sql.DB) ([]PurgeDeProxy, error) {
 		return nil, nil
 	}
 	rows, err := db.Query(`SELECT hostname, owner_client_id, ip_address, adresse_vue,
-	                              purge_demandee_le, purge_etalement_s
+	                              purge_demandee_le, purge_etalement_s,
+	                              adresse_publique, ducky_port, port_public
 	                         FROM cluster_nodes
 	                        WHERE role = 'proxy' AND maintenance = TRUE
 	                          AND purge_demandee_le IS NOT NULL
@@ -96,16 +102,49 @@ func PurgesDeProxiesEnCours(db *sql.DB) ([]PurgeDeProxy, error) {
 	var out []PurgeDeProxy
 	for rows.Next() {
 		var p PurgeDeProxy
-		var declaree, vue string
-		var etalement int
-		if err := rows.Scan(&p.Hostname, &p.Proprietaire, &declaree, &vue, &p.Demandee, &etalement); err != nil {
+		var declaree, vue, publique string
+		var etalement, port, portPublic int
+		if err := rows.Scan(&p.Hostname, &p.Proprietaire, &declaree, &vue, &p.Demandee, &etalement,
+			&publique, &port, &portPublic); err != nil {
 			return nil, fmt.Errorf("lecture des purges de proxies : %w", err)
 		}
 		p.Adresses = adressesDistinctes(declaree, vue)
+		p.AccesAgents = AccesPourAgents(declaree, publique, port, portPublic)
 		p.Etalement = time.Duration(etalement) * time.Second
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// AccesPourAgents rend les « hôte:port » sous lesquels un agent peut connaître
+// un nœud : l'accès effectif (celui des listes 04_04 — adresse et port publics
+// s'ils sont déclarés), puis l'adresse et le port que le nœud déclare lui-même
+// (celui d'une liste statique d'installation). Sans doublon ; vide sans port.
+func AccesPourAgents(ip, publique string, port, portPublic int) []string {
+	adresse := strings.TrimSpace(publique)
+	if adresse == "" {
+		adresse = strings.TrimSpace(ip)
+	}
+	effectif := port
+	if portPublic > 0 {
+		effectif = portPublic
+	}
+	vus := map[string]bool{}
+	var out []string
+	ajouter := func(h string, p int) {
+		h = strings.TrimSpace(h)
+		if h == "" || p <= 0 {
+			return
+		}
+		a := net.JoinHostPort(h, strconv.Itoa(p))
+		if !vus[a] {
+			vus[a] = true
+			out = append(out, a)
+		}
+	}
+	ajouter(adresse, effectif)
+	ajouter(ip, port)
+	return out
 }
 
 func adressesDistinctes(adresses ...string) []string {

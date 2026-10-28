@@ -40,3 +40,18 @@ func TestLaRevocationRepondNonPriseEnCharge(t *testing.T) {
 		}
 	}
 }
+
+func TestUnOrdreDeMiseAJourEstDitNonPrisEnCharge(t *testing.T) {
+	storage.Computeur_ID = "poste-w"
+	rep := HandleTrameMiseAJour(storage.Trames_struct_client{Message_Order: []string{"09", "06"},
+		SessionIntegritykey: "CLE", Content: "2.4.0\nreleases\nnon"}, nil)
+	if rep != "09_04\nserveur_central\nCLE\nvaultaire\nposte-w\n2.4.0\nnon_pris_en_charge\n"+
+		"agent Windows : mise à jour non écrite (TO-DO 118)" {
+		t.Errorf("%q", rep)
+	}
+	for _, s := range []string{"03", "05"} {
+		if rep := HandleTrameMiseAJour(storage.Trames_struct_client{Message_Order: []string{"09", s}}, nil); rep != "" {
+			t.Errorf("09_%s : %q", s, rep)
+		}
+	}
+}

@@ -389,3 +389,12 @@ func TestLInactiviteDuRelaisDuckySuitLaCadence(t *testing.T) {
 		t.Errorf("le minimum a ABAISSÉ l'inactivité à %s", got)
 	}
 }
+
+// TO-DO 226 : le refus d'une liste dont le relais Ducky n'est pas sur le port
+// annoncé dit comment en sortir.
+func TestLeRefusDuRelaisDuckyDonneLaCommande(t *testing.T) {
+	msg := ErrSansRelaisDucky{PortAnnonce: 6666, Motif: "port 8443"}.Error()
+	if !strings.Contains(msg, "set ducky --ecoute :6666") {
+		t.Fatalf("message sans la commande : %s", msg)
+	}
+}

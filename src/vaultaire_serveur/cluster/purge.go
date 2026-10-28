@@ -97,6 +97,17 @@ func (p purgeur) purger(etalement time.Duration, motif string) BilanPurge {
 	return b
 }
 
+// prevenirEnQuittant : la 04_17 de la purge, qui NOMME le nœud à quitter
+// (TO-DO 216) — voir hosthandler.PrefixeQuitter.
+func prevenirEnQuittant(acces []string) func(machine, motif string) (bool, error) {
+	return func(machine, motif string) (bool, error) {
+		return actualiser(machine, motif, acces...)
+	}
+}
+
+// actualiser : remplaçable par les tests.
+var actualiser = hosthandler.DemanderActualisationListe
+
 // purgeEnCours empêche deux purges simultanées sur ce core : le battement
 // revient toutes les trente secondes, une purge en dure plusieurs minutes.
 var purgeEnCours atomic.Bool
@@ -142,7 +153,7 @@ func lancerPurgeSiDemandee(db *sql.DB, node clusterstorage.Node) {
 
 		p := purgeur{
 			sessions: sessionmgr.Sessions,
-			prevenir: hosthandler.DemanderActualisationListe,
+			prevenir: prevenirEnQuittant(demande.AccesAgents),
 			dormir:   time.Sleep,
 			grace:    GracePurge,
 		}
@@ -220,7 +231,7 @@ func lancerPurgesDeProxies(db *sql.DB, node clusterstorage.Node) {
 			defer partsEnCours.Delete(p.Hostname)
 			faireLaPart(db, node, p, purgeur{
 				sessions: vueDuProxy(p),
-				prevenir: hosthandler.DemanderActualisationListe,
+				prevenir: prevenirEnQuittant(p.AccesAgents),
 				dormir:   time.Sleep,
 				grace:    GracePurge,
 			})

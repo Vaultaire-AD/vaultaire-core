@@ -38,14 +38,37 @@ import (
 // commence par un passage immédiat : rejouer la demande ne ferait qu'un
 // aller-retour de plus.
 
+// PrefixeQuitter ouvre, dans une 04_17, une ligne « quitter <hôte:port> » :
+// le nœud que la machine doit quitter (TO-DO 216).
+//
+// # Pourquoi la liste ne suffisait pas
+//
+// La 04_17 de la purge (147, 176) comptait sur la liste redemandée : le nœud en
+// maintenance n'y figure plus, et la bascule (bascule.go côté agent) fait
+// partir l'agent. Deux cas la défont :
+//
+//   - la liste revient VIDE (aucun autre nœud exposé) : l'agent garde
+//     l'ancienne — c'est voulu, une liste vide ne dit rien — et ne bascule pas ;
+//   - sa session fermée par la purge, l'agent se reconnecte dans l'ordre de la
+//     liste qu'il a EN MAIN, où le nœud purgé est encore premier, et y revient.
+//
+// Nommer le nœud règle les deux : l'agent le quitte, et le place en DERNIER
+// pendant un temps — il reste joignable s'il est le seul, comme le veut le
+// 177. Un agent antérieur lit ces lignes comme la suite du motif, et ne fait
+// rien de plus qu'avant.
+const PrefixeQuitter = "quitter "
+
 // DemanderActualisationListe pousse 04_17 à une machine connectée.
+//
+// quitter : les « hôte:port » d'un nœud que la machine doit quitter, à nommer
+// dans la trame — vide pour une simple actualisation.
 //
 // Rend (vrai, nil) si la trame est partie ; (faux, nil) si la machine n'a pas
 // de tunnel en cours — ce n'est pas une erreur, mais un « pas maintenant » ;
 // (faux, err) si un tunnel existe mais qu'aucun envoi n'a abouti. Les confondre
 // laisserait l'administrateur, devant une machine visiblement connectée, sans
 // moyen de savoir s'il doit attendre ou chercher un défaut.
-func DemanderActualisationListe(computeurID, motif string) (bool, error) {
+func DemanderActualisationListe(computeurID, motif string, quitter ...string) (bool, error) {
 	candidates := sessionmgr.Sessions.SessionsMachine(computeurID, sessionmgr.FraicheurTunnel())
 	if len(candidates) == 0 {
 		return false, nil
@@ -56,9 +79,11 @@ func DemanderActualisationListe(computeurID, motif string) (bool, error) {
 		motif = "demande administrateur"
 	}
 
+	contenu := ContenuActualisation(motif, quitter)
+
 	var derniere error
 	for _, sess := range candidates {
-		msg := trame.ReponseClient("04_17", "serveur_central", sess.SessionID, motif)
+		msg := trame.ReponseClient("04_17", "serveur_central", sess.SessionID, contenu...)
 		if err := sendmessage.SendMessage(msg, sess.ClientSoftwareID, sess.DuckySession); err != nil {
 			derniere = err
 			logs.Write_Log("DEBUG", fmt.Sprintf(
@@ -98,4 +123,16 @@ func MachinesEnLigne() []string {
 		ids = append(ids, id)
 	}
 	return ids
+}
+
+// ContenuActualisation compose le contenu d'une 04_17 : le motif, puis une
+// ligne « quitter » par accès à quitter.
+func ContenuActualisation(motif string, quitter []string) []string {
+	contenu := []string{motif}
+	for _, a := range quitter {
+		if a = strings.TrimSpace(a); a != "" && !strings.ContainsAny(a, "\n\r") {
+			contenu = append(contenu, PrefixeQuitter+a)
+		}
+	}
+	return contenu
 }

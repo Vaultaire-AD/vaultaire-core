@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	dbdomains "vaultaire/core/database/db_domains"
 	dbldap "vaultaire/core/database/db_ldap"
 	domainpkg "vaultaire/core/domain"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
@@ -22,7 +23,6 @@ import (
 // accepté — un test, un appel hors connexion.
 func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
-	var err error
 
 	// Les constantes viennent de ldaptools, comme la détection : le
 	// dispatcheur décide qu'un baseObject est spécial, ce résolveur décide ce
@@ -63,27 +63,66 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 		// `operationsError`, comme pour `one` et `sub`.
 		return resolveBaseScope(db, baseObject, j)
 
-	case 1:
-		groupDomain := []string{baseDN}
-		entries, err = loadGroupsAndUsers(db, groupDomain, loadScope, attributes, username, baseObject, j)
-		if err != nil {
-			return nil, err
-		}
-		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
-		return entries, nil
-
-	case 2:
-		groupDomains := []string{baseDN}
-		entries, err = loadGroupsAndUsers(db, groupDomains, loadScope, attributes, username, baseObject, j)
-		if err != nil {
-			return nil, err
-		}
-		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
-		return entries, nil
+	case 1, 2:
+		return resolveArbre(db, baseDN, scope, loadScope, attributes, username, baseObject, j)
 
 	default:
 		return nil, fmt.Errorf("invalid scope: %d", scope)
 	}
+}
+
+// resolveArbre rend les entrées d'une recherche `one` ou `sub`, selon la
+// nature de la base — TO-DO 245, voir arbre.go.
+func resolveArbre(db *sql.DB, baseDN string, scope, loadScope int, attributes []string,
+	username, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
+
+	switch natureDe(baseObject) {
+	case baseFeuille:
+		// Un compte ou un groupe n'a pas d'enfant.
+		if scope == 1 {
+			return nil, nil
+		}
+		return resolveBaseScope(db, baseObject, j)
+
+	case baseOU:
+		// Le domaine en entier, puis l'arbre : `one` sous `ou=users` rend tous
+		// les comptes dont le DN y est, sous-domaines compris.
+		entries, err := loadGroupsAndUsers(db, []string{baseDN}, 2, attributes, username, baseObject, j)
+		if err != nil {
+			return nil, err
+		}
+		return DansLaPortee(entries, baseObject, scope), nil
+	}
+
+	// Un domaine.
+	servis, err := dbdomains.GetAllDomainNames(db)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des domaines : %w", err)
+	}
+
+	if scope == 1 && loadScope == 1 {
+		// Ses enfants dans l'arbre : les deux OU s'il est la racine, et ses
+		// sous-domaines. Ni compte ni groupe : leur DN est sous une OU.
+		var enfants []ldapinterface.LDAPEntry
+		if estRacine(baseDN) {
+			enfants = append(enfants, ousDuDomaine(baseDN)...)
+		}
+		enfants = append(enfants, entreesDeDomaines(servis, sousDomaines(servis, baseDN, true))...)
+		return DansLaPortee(enfants, baseObject, 1), nil
+	}
+
+	// `sub` — ou `one` élargi par `ldap.onelevel_subtree` : la règle du domaine
+	// (comptes et groupes du domaine et de ses sous-domaines, documentée),
+	// plus ce qui manquait à l'arbre — la base et les sous-domaines.
+	entries, err := loadGroupsAndUsers(db, []string{baseDN}, loadScope, attributes, username, baseObject, j)
+	if err != nil {
+		return nil, err
+	}
+	if scope == 2 {
+		domaines := append([]string{baseDN}, sousDomaines(servis, baseDN, false)...)
+		entries = append(entreesDeDomaines(servis, domaines), entries...)
+	}
+	return entries, nil
 }
 
 // porteeDeChargement rend la portée à employer pour charger les candidats.

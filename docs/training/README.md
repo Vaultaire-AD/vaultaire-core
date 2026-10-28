@@ -4,9 +4,10 @@
 
 Apprendre Vaultaire **en le pratiquant**, chapitre par chapitre : installer un
 serveur, construire l'annuaire d'une entreprise fictive, intégrer une machine,
-lui appliquer des politiques, puis brancher DNS et LDAP.
+lui appliquer des politiques, brancher DNS et LDAP, puis tenir le parc à jour
+par Nexus.
 
-10 chapitres, 31 jalons. Chaque jalon tient en 15 à 30 minutes.
+11 chapitres, 35 jalons. Chaque jalon tient en 15 à 30 minutes.
 
 ---
 
@@ -27,7 +28,8 @@ lui appliquer des politiques, puis brancher DNS et LDAP.
 | Élément | Rôle | Chapitres |
 |---|---|---|
 | Hôte Docker (`<IP-serveur>`) | la pile Vaultaire : core, MariaDB, Keycloak | tous |
-| VM Rocky Linux 9 `web01` (`<IP-web01>`) | la machine intégrée au domaine | 5, 6, 7 |
+| VM Rocky Linux 9 `web01` (`<IP-web01>`) | la machine intégrée au domaine | 5, 6, 7, 11 |
+| Nexus, sur l'hôte Docker (`<IP-serveur>:8843`) | dépôt de paquets et des mises à jour d'agent | 11 |
 | Votre poste | navigateur, `vlt` à distance, `dig`, `ldapsearch` | 3, 7, 8 |
 
 ## Le fil rouge : Acme
@@ -74,6 +76,7 @@ acme.lan
 | 8 | [LDAP et liaison d'applications](./08-ldap-et-liaison/README.md) | 8.1 [Un compte de service LDAP](./08-ldap-et-liaison/01-compte-de-service.md)<br>8.2 [Interroger l'annuaire](./08-ldap-et-liaison/02-interroger-l-annuaire.md)<br>8.3 [LDAPS et Keycloak](./08-ldap-et-liaison/03-ldaps-et-keycloak.md) |
 | 9 | [Sécurité et exploitation](./09-securite-et-exploitation/README.md) | 9.1 [Second facteur et mots de passe](./09-securite-et-exploitation/01-mfa-et-mots-de-passe.md)<br>9.2 [Incident et journaux](./09-securite-et-exploitation/02-incident-et-journaux.md)<br>9.3 [Réglages et mises à jour](./09-securite-et-exploitation/03-reglages-et-mises-a-jour.md) |
 | 10 | [Cluster et proxy](./10-cluster-et-proxy/README.md) | 10.1 [Clés d'enrôlement](./10-cluster-et-proxy/01-cles-d-enrolement.md)<br>10.2 [Déployer un proxy](./10-cluster-et-proxy/02-deployer-un-proxy.md)<br>10.3 [Topologie : exposition, affinité, rotation](./10-cluster-et-proxy/03-topologie.md)<br>10.4 [Décider ce qu'un proxy expose](./10-cluster-et-proxy/04-piloter-les-relais.md) |
+| 11 | [Nexus : dépôts et mises à jour du parc](./11-nexus/README.md) | 11.1 [Déployer et raccorder un Nexus](./11-nexus/01-deployer-et-raccorder.md)<br>11.2 [Les dépôts : créer, publier, consommer](./11-nexus/02-depots.md)<br>11.3 [Changer la version d'un agent par Nexus](./11-nexus/03-mettre-a-jour-un-agent.md)<br>11.4 [Exposer Nexus par un proxy](./11-nexus/04-exposer-par-un-proxy.md) |
 
 ---
 

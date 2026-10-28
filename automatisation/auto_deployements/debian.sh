@@ -364,8 +364,11 @@ preparer_pile() {
     local fichier="$1" ligne_auth="$2" ligne_session="${3:-}"
     local nouveau="${fichier}.vaultaire-nouveau"
 
-    awk -v auth="$ligne_auth" -v session="$ligne_session" '
+    awk -v auth="$ligne_auth" -v session="$ligne_session" -v marque="$MARQUE_PAM" '
         /# vaultaire[[:space:]]*$/ { next }
+        /^# vaultaire-conf/ { next }
+        NR == 1 && /^#%PAM/ { print; print marque; m = 1; next }
+        !m { print marque; m = 1 }
         !a && /^[[:space:]]*@include[[:space:]]+common-auth([[:space:]]|$)/ {
             print auth "  # vaultaire"; a = 1
         }
@@ -398,6 +401,11 @@ abandonner_pam() {
     exit 1
 }
 
+# Le marqueur de version (TO-DO 117), posé en tête de chaque pile branchée :
+# l'agent la tient à jour avec SA version, et ne la retouche que si le marqueur
+# en annonce une autre. MÊME LOGIQUE que vaultaire_client/confsys — un test
+# compare les deux.
+MARQUE_PAM="# vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main"
 AUTH_LOGIN="auth    [success=done ignore=ignore default=die]    pam_login_custom_module.so"
 AUTH_SSHD="auth    [success=done ignore=ignore default=die]    pam_ssh_auth_module.so"
 AUTH_GDM="auth    [success=done ignore=ignore default=bad]    pam_login_custom_module.so"
@@ -431,6 +439,9 @@ for db in passwd group; do
         sed -i "/^${db}:/ s/$/ vaultaire/" "$R/etc/nsswitch.conf"
     fi
 done
+# Le marqueur de version, en tête (TO-DO 117) — celui que l'agent compare.
+sed -i '/^# vaultaire-conf/d' "$R/etc/nsswitch.conf"
+sed -i "1i # vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main" "$R/etc/nsswitch.conf"
 
 # ------------------------------------------------------------------------------
 # 7. Configuration SSHD, validée avant d'être gardée
@@ -445,13 +456,22 @@ fi
 [[ -f "${SSHD_CONF}.avant-vaultaire" ]] || cp -p "$SSHD_CONF" "${SSHD_CONF}.avant-vaultaire"
 cp -p "$SSHD_CONF" "${SSHD_CONF}.vaultaire-precedent"
 
-# Nettoyage des directives existantes pour éviter les conflits
+# Nettoyage des directives existantes pour éviter les conflits — et des
+# marqueurs d'un bloc posé avant (TO-DO 117) : le bloc est réécrit en entier.
+sed -i '/^# vaultaire-conf/d' "$SSHD_CONF"
 for directive in UsePAM KbdInteractiveAuthentication ChallengeResponseAuthentication AuthenticationMethods PubkeyAuthentication Include AuthorizedKeysCommand AuthorizedKeysCommandUser; do
     sed -i "/^${directive}/d" "$SSHD_CONF"
 done
 
-# Ré-injection propre
-cat >> "$SSHD_CONF" <<'EOF'
+# Ré-injection propre, entre deux marqueurs (TO-DO 117) : l'agent reconnaît
+# le bloc, sa version, et le réécrit quand la sienne en attend une autre.
+# MÊMES OCTETS que vaultaire_client/confsys — un test les compare.
+#
+# AVANT le premier « Match » (TO-DO 208), et en fin de fichier s'il n'y en a
+# pas. Ajouté après un Match, le bloc s'y retrouvait enfermé : « UsePAM » n'y
+# est pas permis, sshd -t refusait, et l'installation s'arrêtait là.
+BLOC_SSHD="$(cat <<'EOF'
+# vaultaire-conf v1 - debut du bloc Vaultaire : ne pas modifier a la main
 UsePAM yes
 PubkeyAuthentication yes
 KbdInteractiveAuthentication yes
@@ -460,7 +480,16 @@ AuthenticationMethods publickey,keyboard-interactive
 AuthorizedKeysCommand /usr/bin/vaultaire_client --fetch-key %u
 AuthorizedKeysCommandUser root
 Include /etc/ssh/sshd_config.d/*.conf
+# vaultaire-conf - fin du bloc Vaultaire
 EOF
+)"
+BLOC_SSHD="$BLOC_SSHD" awk '
+    !fait && tolower($0) ~ /^[[:space:]]*match[[:space:]]/ { print ENVIRON["BLOC_SSHD"]; fait = 1 }
+    { print }
+    END { if (!fait) print ENVIRON["BLOC_SSHD"] }
+' "$SSHD_CONF" > "${SSHD_CONF}.vaultaire-bloc"
+cat "${SSHD_CONF}.vaultaire-bloc" > "$SSHD_CONF"
+rm -f "${SSHD_CONF}.vaultaire-bloc"
 
 # Désactivation propre dans les fichiers d'inclusion (.conf)
 if [[ -d "$R/etc/ssh/sshd_config.d/" ]]; then
@@ -500,6 +529,7 @@ done
 if [[ $GDM -eq 1 ]]; then
     mkdir -p "$R/etc/dconf/db/gdm.d"
     cat > "$R/etc/dconf/db/gdm.d/10-vaultaire-userlist" <<'EOF'
+# vaultaire-conf v1 - tenu par l'agent Vaultaire : ne pas modifier a la main
 [org/gnome/login-screen]
 disable-user-list=true
 EOF

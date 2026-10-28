@@ -3,7 +3,7 @@
 > 14/10/2026. **Lecture du code, pas mesure.** Rien n'a tourné sur la VM de la
 > recette ; les durées données ici sont des **planchers** et des **bornes**
 > lus dans le code, jamais des chronométrages. Le § 5 dit comment mesurer, et
-> c'est par là qu'il faut continuer (`A_TESTER.md`, § 86).
+> c'est par là qu'il faut continuer (§ 5 ; mesures du 25/10 au § 5.1).
 
 ## 0. Le constat
 
@@ -182,7 +182,7 @@ déclenche.
 
 ## 5. Mesurer, sur la VM de la recette
 
-Le protocole complet est dans `A_TESTER.md`, § 86. En résumé :
+Le protocole (ancien `A_TESTER.md` § 86, retiré après la mesure du 25/10) :
 
 1. **Noter les cinq modules** de la GPO de compte, et l'éventuel
    `gpo_user_check_minutes`.
@@ -211,6 +211,42 @@ Le protocole complet est dans `A_TESTER.md`, § 86. En résumé :
 
 Le résultat attendu de cette mesure est une ligne par étape du § 1, en
 secondes. Il confirme ou écarte H1 à H5, et fixe l'ordre des corrections.
+
+### 5.1 Mesures du 25/10/2026
+
+Rocky 10, compte `alice@acme.lan`, une clé ED25519, GPO de compte avec un
+`user_git_config`. `strace -f -tt -e trace=execve,exit_group` sur `sshd` et
+l'agent ; client OpenSSH 9.5 (Windows), sans horodatage côté client. Deux
+connexions : la première avec l'agent du **11/10** (`gfadbd12`, avant 197, 198
+et 199), la seconde après mise à jour de l'agent et des modules.
+
+| Étape (§ 1) | Agent du 11/10 | Agent à jour |
+|---|---|---|
+| B — `--fetch-key`, 1er appel | **1,71 s** (lance aussi `who`, `free -h`, `nproc`, `os-release`) | **aucun appel** : la clé est dans `authorized_keys` |
+| B — `--fetch-key`, 2e appel | **2,96 s** | aucun |
+| C — saisie mot de passe et code | ≈ 15 s (non mesurable sans horloge client) | ≈ 6 s |
+| F — `restorecon` par l'agent | `-RF ~` : **2,18 s** | `-F ~` 0,15 s + `-RF ~/.ssh` 0,14 s |
+| G — `git config` du module | 0,27 s | 0,21 s |
+| H — second provisionnement (module PAM) | `gpasswd -d … wheel` 0,33 s (code 3 : pas membre) + `restorecon -RF ~` **3,24 s** | **rien** |
+| de la première commande de l'agent au shell | **10,1 s** | **4,4 s** |
+| dont après la dernière commande de Vaultaire : fin du cycle GPO, `unix_chkpwd`, phase session | 1,7 s (phase session) | 3,6 s (1,8 s avant `unix_chkpwd`, 1,7 s de phase session) |
+
+`time vaultaire_client --fetch-key alice@acme.lan` à la main : **1,32 s**.
+
+Ce que cela dit :
+
+- **188 et 197 : confirmés.** Avec l'agent à jour, sshd trouve la clé dans
+  `authorized_keys` et ne lance plus `--fetch-key` ; le module PAM ne
+  reprovisionne plus ; les deux `restorecon -RF` sur tout le dossier ont
+  disparu. Le gain mesuré est de **≈ 5,7 s** après la saisie, et **≈ 4,7 s**
+  avant elle (les deux `--fetch-key`).
+- **196** reste utile mais secondaire : il ne coûte plus que pour une clé
+  absente du fichier (première connexion, clé ajoutée ou retirée).
+- **Ce qui reste** (≈ 3,6 s) : la fin du cycle GPO de compte et la phase
+  session du système (`pam_systemd`, profil du shell : `hostnamectl`,
+  `flatpak`… ne sont pas de Vaultaire). Le journal des connexions du 199
+  (`vlt_client-Debug-connexions.log`) le découpera ; il n'a pas été relevé ce
+  jour-là.
 
 ## 6. Ce qui en sort
 

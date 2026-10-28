@@ -22,7 +22,7 @@
 | `04_12` | core | service_heartbeat | battement d'un service |
 | `04_13` | service | service_heartbeat_ack | accusé |
 | `04_14` | core | service_deregister | sortie propre, sans réponse |
-| `04_15` | core | list_services | **proxy seulement** : les services d'un type — contenu `<type>` (ex. `vaultaire_nexus`) |
+| `04_15` | core | list_services | **proxy et agent** : les services d'un type — contenu `<type>` (ex. `vaultaire_nexus`). Un **agent** n'obtient que `vaultaire_nexus` — ses dépôts de mise à jour (TO-DO 114) ; tout autre type lui rend une liste vide (`hosthandler.TypeDemandable`) |
 | `04_16` | proxy | list_services_response | `<type>`, `<nombre>`, puis `<hôte:port>` par service en ligne et exposé, **ordonnés** (priorité, puis nom). Adresse déduite de l'URL déclarée en `04_09` |
 | `04_17` | client | refresh_nodes | le core demande à une machine de redemander sa liste — contenu : le motif, aucune liste |
 | `04_18` | core | relay_state | **proxy seulement** : compte rendu de ses relais (JSON) — voir [4.4](./04-relais-pilotes.md) |
@@ -153,9 +153,13 @@ maintenance) n'y passe qu'avec une confirmation explicite.
 la faire — les sessions vivent dans la mémoire du core visé. Elle est donc
 **écrite** sur la ligne du nœud, et le core visé la lit à son battement :
 
-1. une `04_17` à chaque machine qui tient un tunnel ici. Le core n'étant plus dans
-   la liste, un agent à jour voit son nœud courant disparaître (`bascule.go`),
-   ferme son tunnel et se reconnecte ailleurs ;
+1. une `04_17` à chaque machine qui tient un tunnel ici, qui **nomme** le nœud à
+   quitter — une ligne `quitter <hôte:port>` par accès (TO-DO 216, voir
+   `02-decouverte-et-proxies.md`). L'agent le quitte (`QuitterSiCourant`, après
+   0 à 20 s) et le place en dernier pendant 15 minutes. Le core n'étant plus
+   dans la liste, un agent qui ne lit pas ces lignes voit encore son nœud
+   courant disparaître (`bascule.go`) — mais pas si la liste revient vide, ni
+   à sa reconnexion, qui suit la liste en main : c'est ce que le 216 corrige ;
 2. après une minute de grâce, ce qui reste — agents anciens, postes Windows,
    proxies, sessions de compte, poignées de main — est fermé une session à la
    fois, **étalé** (60 s par défaut, `--etalement`) ;
@@ -186,6 +190,11 @@ registre (`sessionmgr.VueParSource`) :
 
 Limite connue : derrière un NAT, les machines qui sortent par la même adresse que
 le proxy sont fermées aussi ; elles se reconnectent.
+
+La `04_17` de la purge d'un proxy nomme ses accès vus des agents
+(`AccesPourAgents` : l'accès exposé, puis `ip_address:ducky_port`) : l'agent
+relayé quitte le proxy et le met en dernier, même si sa liste revient vide
+(TO-DO 216 — recette du 25/10 : le poste restait connecté par le proxy).
 
 **La confiance des proxies suit la même adresse** *(TO-DO 184)*.
 `core/proxiesconnus` — plafond Ducky de 1000 par adresse, en-tête PROXY v2 du

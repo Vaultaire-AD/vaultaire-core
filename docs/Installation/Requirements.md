@@ -9,8 +9,30 @@ portable sur les autres systèmes.
 | | |
 | --- | --- |
 | **Serveur central** | Debian 11+, Ubuntu 20.04+, Rocky/CentOS/RHEL 8+ |
-| **Agent client** | idem. Politique SELinux fournie pour les distributions RHEL — voir [`../exploitation/selinux.md`](../exploitation/selinux.md) |
+| **Agent client** | voir [ci-dessous](#systèmes-pris-en-charge-pour-lagent) |
 | **Windows / macOS** | non supportés, ni prévus |
+
+### Systèmes pris en charge pour l'agent
+
+Un système est **pris en charge** quand l'installation (`vlt create -c … -join`),
+les GPO machine et de compte et la connexion SSH d'un compte de l'annuaire y ont
+passé une recette complète. Liste arrêtée le 22/10/2026 :
+
+| Système | Script | Modules |
+| --- | --- | --- |
+| **Debian 13** | `debian.sh` | `debian/` |
+| **Rocky Linux 9** | `rocky.sh` | `rocky/` |
+| **Rocky Linux 10** | `rocky.sh` | `rocky/` |
+
+Les scripts acceptent aussi **Debian 12** et **Ubuntu 22.04 / 24.04** (même
+famille de modules que Debian 13), mais ces systèmes ne sont **pas visés** :
+aucune recette n'y est prévue, et un défaut qui leur serait propre ne sera pas
+traité en priorité. Toute autre distribution est refusée par `-join`, qui
+nomme celles qu'il connaît.
+
+La politique SELinux de l'agent vise les distributions RHEL — voir
+[`../exploitation/selinux.md`](../exploitation/selinux.md) ; elle ne compile pas
+encore sur le poste de recette (TO-DO 212).
 
 Le développement depuis Windows se fait par **WSL** : `auto-compil.sh` compile
 sous Linux à partir du dépôt monté.

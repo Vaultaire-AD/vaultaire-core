@@ -404,7 +404,15 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 	// vérification orpheline signalerait éternellement un écart que plus aucun
 	// module ne sait corriger.
 	for id, c := range checks {
-		if _, still := byKey[c.StateKey]; !still {
+		var restants []string
+		for _, key := range c.proprietaires() {
+			if _, still := byKey[key]; still {
+				restants = append(restants, key)
+			}
+		}
+		if epure, reste := c.avecProprietaires(restants); reste {
+			checks[id] = epure
+		} else {
 			delete(checks, id)
 		}
 	}
@@ -439,7 +447,9 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 				}
 			}
 			for id, c := range checks {
-				if c.StateKey == outcome.StateKey {
+				if epure, reste := c.sansProprietaire(outcome.StateKey); reste {
+					checks[id] = epure
+				} else {
 					delete(checks, id)
 				}
 			}
@@ -456,6 +466,12 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 				files[path] = state
 			}
 			for id, c := range outcome.Checks {
+				// Même règle que pour un fichier partagé (TO-DO 183) : une
+				// attente déclarée par plusieurs modules les engage tous.
+				if deja, partage := checks[id]; partage {
+					c, _ = c.avecProprietaires(append(deja.proprietaires(), outcome.StateKey))
+					c.StateKey = outcome.StateKey
+				}
 				checks[id] = c
 			}
 		case ResultUnchanged:

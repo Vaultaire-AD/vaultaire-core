@@ -12,9 +12,13 @@ func TestParamsChangementMotDePasse(t *testing.T) {
 		{[]string{"-u", "bob", "-p", "une", "phrase", "de", "passe"}, "une phrase de passe", "", false},
 		{[]string{"-u", "svc_keycloak", "--permanent", "-p", "Ancre-Violon-Galet-91"}, "Ancre-Violon-Galet-91", "non", false},
 		{[]string{"-u", "svc", "--PERMANENT", "-p", "x y"}, "x y", "non", false},
-		// APRÈS -p, le drapeau fait partie du mot de passe : jamais pris pour
-		// une dérogation, que personne n'aurait demandée.
-		{[]string{"-u", "bob", "-p", "abc", "--permanent"}, "abc --permanent", "", false},
+		// APRÈS -p, en dernier mot : refusé — il aurait fini dans le mot de
+		// passe sans que personne le sache (recette du 28/10).
+		{[]string{"-u", "bob", "-p", "abc", "--permanent"}, "", "", true},
+		// Tel que le découpage de la console le livre : « --permanent » puis
+		// « -p <mot de passe> » en UN argument.
+		{[]string{"-u", "bob", "--permanent", "-p Cerf-Volant 58"}, "Cerf-Volant 58", "non", false},
+		{[]string{"-u", "bob", "-p", "abc --permanent def"}, "abc --permanent def", "", false},
 		{[]string{"-u", "bob", "--permanent"}, "", "", true},
 		{[]string{"-u", "bob", "-x", "abc"}, "", "", true},
 	}

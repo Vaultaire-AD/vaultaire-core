@@ -4,9 +4,15 @@
 > Ce fichier porte la **stratégie et ses arbitrages** ; les tâches qui en
 > découlent sont les points **111 à 118** de [`TO-DO.md`](./TO-DO.md).
 >
-> Rien de tout cela n'est écrit à ce jour. Ce document dit ce qu'on va faire, et
-> surtout **pourquoi pas autrement** — c'est la partie qu'une entrée de liste ne
-> peut pas porter.
+> **Écrits** : le 112 (l'unité de l'agent, relance bornée, `--check`), le
+> **111** (la version attendue et la vue `vlt agent`, § 8), le **113** (la
+> clé et le format signé, § 2.1 et 4), le **114** (le dépôt et sa
+> découverte, § 3.1 et 3.2) et le **115** (les trames `09`, § 5 — spécification :
+> [`ducky-network/09-mise-a-jour`](./how%20it%20work/ducky-network/09-mise-a-jour/README.md)).
+> Le **116** (le basculement) reste à écrire : les agents reçoivent l'ordre et
+> répondent « non pris en charge ». Le reste ne l'est
+> pas. Ce document dit ce qu'on va faire, et surtout **pourquoi pas
+> autrement** — c'est la partie qu'une entrée de liste ne peut pas porter.
 
 ---
 
@@ -115,6 +121,14 @@ l'autre, même si les deux clés venaient à être confondues par erreur.
 fonctionnelle dès l'installation. Un exploitant qui veut la garder hors ligne
 signe ailleurs et ne dépose que la partie publique : à documenter, pas à imposer.
 
+> **Écrit au 113, avec une précision sur QUI signe** (tranché le 16/10). La CI
+> ne détient la clé d'aucun cluster : chaque installation a la sienne. La
+> release porte donc le manifeste **non signé** ; le core le recalcule depuis
+> l'archive et le signe (`vaultaire_serveur --sign-package`) — sa signature dit
+> « ce cluster accepte ces octets ». Le schéma du § 3 (« RELEASE (CI) signe »)
+> se lit donc : la CI **décrit**, le core **signe**. Mode hors ligne, format et
+> commandes : [`Releases.md`](../exploitation/Releases.md).
+
 ### 2.2 Déclenchement — une version attendue portée par le groupe
 
 On pose une **version cible** ; les agents s'y conforment à leur rythme.
@@ -209,7 +223,9 @@ Trois conséquences, toutes bonnes :
 - **aucun secret à distribuer au parc.** Donner un jeton Nexus à chaque machine
   serait un problème de distribution de secrets pour ne rien gagner ;
 - **le site sans Internet est résolu sans rien écrire.** On télécharge les
-  archives ailleurs, on les verse dans le Nexus local par `/api/v1/repos/{repo}/upload`.
+  archives ailleurs, on les verse dans le Nexus local par `/api/v1/repos/{repo}/upload`
+  — ce que fait `vaultaire_serveur --publish-package` (TO-DO 206), avec un jeton
+  d'écriture fourni au moment du versement et jamais gardé par le core.
   La signature rend le transport indifférent ;
 - **`vlt-upm` n'a plus de raison d'être.** La troisième piste du TO-DO 40 —
   un service dédié aux parcs sans Internet — disparaît. C'est un service de moins
@@ -228,6 +244,19 @@ trouver les Nexus vers qui relayer en HTTPS (TO-DO 72).
 Rien à écrire côté découverte : `decouverte.AdressesService` existe. Il faut
 seulement accorder `04_15` au type de client `Client`, qui ne l'a pas aujourd'hui.
 
+> **Écrit au 114, avec deux précisions.**
+>
+> - Le core ne répond à un agent que pour **les Nexus** : la `04_15` lui est
+>   accordée, pas la carte entière des services (`hosthandler.TypeDemandable`).
+> - L'agent **demande** au moment voulu (`decouverte.DemanderServices`, une
+>   `04_15` et sa réponse), il ne **suit** pas la liste toutes les cinq minutes
+>   comme le proxy : il n'en a besoin que pour télécharger, rarement, et le
+>   suivi ferait parler tout le parc pour rien. Aujourd'hui, une seule demande
+>   par démarrage, journalisée : « mise à jour : dépôt(s) … ».
+> - Les manifestes et leurs signatures sont des pièces de la release, dans le
+>   même dépôt que l'archive (`files.ParseAssetName`) : `…/download/v<version>/
+>   <archive>.<famille>.manifest[.sig]`, lus sans compte comme elle.
+
 Repli : une URL dans `client_conf.json` si le cluster n'en annonce aucun. Un parc
 peut vouloir un miroir local qui n'est pas un service enrôlé.
 
@@ -236,6 +265,11 @@ peut vouloir un miroir local qui n'est pas un service enrôlé.
 ## 4. Le format signé
 
 ### 4.1 Un manifeste, pas cinq signatures
+
+> **Écrit au 113** : un manifeste **par famille** de modules
+> (`linux-amd64-rocky`, `linux-amd64-debian` — le binaire est commun, les
+> modules non), une ligne `nom sha256` par fichier, et une enveloppe `.sig`
+> qui porte l'empreinte de la clé signataire, pour la rotation.
 
 ```
 vaultaire-pkg-v1
@@ -322,6 +356,34 @@ Droits : `09_01` et `09_04` s'ajoutent au type de client `Client` dans
 ## 6. Le basculement survivable
 
 C'est le cœur du lot. Tout le reste est de la plomberie.
+
+> **Écrit en 2.3 (TO-DO 116)**, dans `vaultaire_client/miseajour`
+> (`preparation.go`, `bascule.go`, `appliquer.go`). Trois écarts avec ce qui
+> suit, assumés :
+>
+> 1. **L'updater est une copie de l'agent EN PLACE** (§6.1), posée par l'agent
+>    à `/usr/libexec/vaultaire/vaultaire_update` juste avant de la lancer
+>    (`systemd-run … vaultaire_update --basculer <répertoire>`). Ce n'est donc
+>    pas « l'updater précédent qui installe le suivant » : l'updater est toujours
+>    la version qui tourne, recopiée à chaque mise à jour. Même propriété —
+>    c'est l'ancienne qui installe la nouvelle —, un fichier de moins à
+>    distribuer, et pas d'updater périmé qui traînerait.
+> 2. **`ldd` au lieu de `dlopen()`** (§6.2, étape 3). L'agent est compilé sans
+>    cgo ; `ldd <fichier> | grep 'not found'` est le contrôle que `rocky.sh` et
+>    `debian.sh` jouent déjà à l'installation, et il couvre la bibliothèque
+>    absente comme la glibc trop récente. Ce qu'il ne voit pas — un symbole
+>    manquant résolu paresseusement — `dlopen()` ne le verrait pas non plus sans
+>    `RTLD_NOW`.
+> 3. **La préparation est faite par l'agent, la bascule par l'updater.**
+>    Étapes 1 à 3 plus `nouveau/vaultaire_client --check` dans l'agent ; il
+>    écrit `plan.json`, l'updater le relit, revérifie chaque empreinte, puis fait
+>    4 à 8. Le résultat est écrit dans `/var/lib/vaultaire/updates/etat.json` et
+>    rapporté en `09_04` par l'agent qui tient une session — après une bascule
+>    réussie, le NOUVEL agent.
+>
+> **TLS** : le téléchargement vérifie le certificat du dépôt (AC du système, plus
+> `update_tls_ca` dans `client_conf.json`) ; `http://` est refusé et il n'existe
+> pas de réglage pour ne pas vérifier — tranché le 17/10.
 
 ### 6.1 Un programme séparé fait la bascule
 
@@ -434,6 +496,41 @@ devrait être fait en premier, et séparément.
 
 ## 7. La configuration système
 
+> **Écrit en 2.3 (TO-DO 117)**, dans `vaultaire_client/confsys`. Ce qui a été
+> tranché en l'écrivant :
+>
+> 1. **Les scripts restent les auteurs à l'installation**, l'agent tient
+>    ensuite les fichiers à jour. Les gabarits de l'agent sont extraits des
+>    scripts octet pour octet, et un test joue `rocky.sh` et `debian.sh` à blanc
+>    pour vérifier que l'agent produirait exactement la même chose — y compris
+>    leurs règles de transformation (directives retirées de `sshd_config`,
+>    lignes insérées dans les piles Debian).
+> 2. **Une version par fichier**, `v1` pour tous au départ ; non marqué =
+>    `v0`. Le cas du §7.4 (machines d'avant la 2.2 sans
+>    `KbdInteractiveAuthentication`) est donc le passage `v0 → v1` de
+>    `sshd_config`, et non `v2 → v3`.
+> 3. **Le marqueur décide**, le contenu n'est pas relu : une retouche manuelle
+>    sous un marqueur à jour reste, jusqu'à la prochaine version de ce fichier.
+>    Un marqueur plus haut que l'agent (rétrogradation) : pas touché.
+> 4. **Par groupe, tout ou rien** : les trois piles PAM ensemble, les autres
+>    fichiers chacun pour soi — une pile `gdm-password` personnalisée ne doit pas
+>    retenir la correction de `sshd_config`.
+> 5. **La porte de secours est vérifiée à l'exécution aussi** (§7.3), sur le
+>    candidat : une pile Debian personnalisée produit un fichier que le
+>    test-sentinelle n'a jamais vu.
+> 6. **Le bloc `sshd_config` va avant le premier `Match`**, en fin de fichier
+>    s'il n'y en a pas (TO-DO 208) — ajouté après un `Match`, il y serait
+>    enfermé et `sshd -t` le refuserait.
+> 7. La sauvegarde de dconf ne va pas dans `gdm.d` (dconf compilerait la
+>    copie) mais dans `/var/lib/vaultaire/confsys/sauvegardes/`.
+> 8. **Une sortie** : `"reconcile_system_config": false` sur la machine ; l'état
+>    `desactivee` remonte, pour que ce choix se voie.
+> 9. Le compte rendu (§7.2, point 4) est la `09_07`, sous une capacité
+>    `confsys` distincte de `miseajour`.
+> 10. **Le marqueur ne suffit pas pour sshd** (TO-DO 209) : une ligne lue avant
+>     le bloc l'emporte sans toucher au marqueur. L'agent compare donc `sshd -T`
+>     au bloc après chaque passage, et remonte l'écart sans rien écrire.
+
 ### 7.1 Ce qui est concerné
 
 | Fichier | Écrit aujourd'hui par | Risque |
@@ -445,7 +542,9 @@ devrait être fait en premier, et séparément.
 | `/etc/nsswitch.conf` | ajout idempotent | faible |
 | `/etc/dconf/db/gdm.d/10-vaultaire-userlist` | création + `dconf update` | faible |
 
-Aucun n'est sauvegardé aujourd'hui, et aucun n'est écrit de façon atomique.
+Aucun n'était sauvegardé, ni écrit de façon atomique, avant le 117. Depuis, les
+scripts posent un marqueur dans chacun, et l'agent les réécrit avec sauvegarde
+et `rename()`.
 
 ### 7.2 La règle
 
@@ -529,6 +628,9 @@ vlt agent pin <machine> <version|--none>
 Et une colonne **VERSION** dans la liste des machines du portail, qui n'en a
 aucune aujourd'hui, avec l'écart mis en évidence.
 
+> **Écrit au 111**, sauf `vlt agent update <machine>` : c'est la poussée `09_06`,
+> qui vient avec les trames au point 115. Mode d'emploi : `MAN.md` § 25.
+
 Droits : `read:log` pour lire, `write:server` pour poser une cible globale ou de
 groupe — mêmes clés que la signature des GPO et le second facteur Ducky, pour la
 même raison : le réglage engage des machines qui ne sont pas celles d'un seul
@@ -560,11 +662,17 @@ tourné en production.
 - **SELinux.** La politique s'installe à la main
   (`deployments/selinux/install.sh`) et n'est pas versionnée avec l'agent. Un
   binaire déplacé ou un socket au nouveau chemin demanderait une politique à jour.
+  Et le domaine de l'agent, `vaultaire_t`, n'a pas encore les règles de la
+  préparation (exécuter le binaire préparé, créer l'updater dans
+  `/usr/libexec`, lancer une unité transitoire, HTTPS) : sans effet tant qu'il
+  est permissif — le défaut —, bloquant en enforcing. TO-DO 203.
 - **Le SDK.** `sdk_version` est remontée et affichée, mais l'agent et le SDK sont
   compilés ensemble : il n'y a pas de mise à jour indépendante à prévoir.
-- **La rotation de `pkg_signing`.** Poser une seconde clé de confiance avant de
-  retirer la première demande que l'agent en accepte deux. À prévoir dès le format,
-  pas après.
+- ~~**La rotation de `pkg_signing`.**~~ Faite en 2.3 (TO-DO 207) : un **jeu**
+  de clés signé et numéroté, servi par le core et appliqué par l'agent s'il est
+  signé par une clé qu'il tient ; trois gestes (ajouter, basculer, retirer) ;
+  une clé compromise se remplace hors bande. Procédure :
+  [`Releases.md`](../exploitation/Releases.md), « Faire tourner la clé ».
 
 ---
 

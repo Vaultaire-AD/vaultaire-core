@@ -104,6 +104,9 @@ type PAM struct {
 type ScopeGPO struct {
 	Nom, Empreinte, AppliqueeLe, Statut          string
 	Version, Modules, Audit, Fichiers, Controles int
+	// EnAudit : les modules en audit, nommés (TO-DO 183) — un nombre ne dit
+	// pas LESQUELS, et c'est la question devant deux GPO de modes différents.
+	EnAudit []string
 }
 
 type CycleGPO struct {
@@ -237,6 +240,10 @@ func Collecter(debut time.Time, intervalle time.Duration) Etat {
 			n.Source = "installation"
 			n.Role, n.Hostname = infoFichier[a].Role, infoFichier[a].Hostname
 		}
+		if decouverte.EstEvite(a) {
+			// Purgé par le cluster (TO-DO 216) : en dernier pour un temps.
+			n.Source += ", à quitter (maintenance)"
+		}
 		e.Noeuds = append(e.Noeuds, n)
 	}
 
@@ -313,11 +320,13 @@ func scopeGPO(nom string, s *gpo.ScopeState) ScopeGPO {
 	out := ScopeGPO{Nom: nom, Empreinte: gpo.ShortFingerprint(s.Fingerprint), Version: s.Version,
 		AppliqueeLe: s.AppliedAt, Statut: s.Status, Modules: len(s.Modules),
 		Fichiers: len(s.Files), Controles: len(s.Checks)}
-	for _, m := range s.Modes {
+	for cle, m := range s.Modes {
 		if m == string(gpo.DriftAudit) {
 			out.Audit++
+			out.EnAudit = append(out.EnAudit, cle)
 		}
 	}
+	sort.Strings(out.EnAudit)
 	return out
 }
 

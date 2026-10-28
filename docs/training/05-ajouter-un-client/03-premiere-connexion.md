@@ -13,7 +13,8 @@ droits d'administration.
 
 ## Ce qu'il faut savoir
 
-- Alice et `web01` sont tous deux dans `Infra` : Alice peut se connecter.
+- Alice et `web01` sont tous deux dans `Infra`, et `Infra` porte
+  `connexion-infra` (droit `auth`, jalon 4.3) : Alice peut se connecter.
 - `Infra` porte la permission client `serveurs-admin` (chapitre 4) : Alice est
   placée dans le groupe d'administration local (`wheel` sur Rocky, `sudo` sur
   Debian et Ubuntu). Le droit suit l'annuaire dans les **deux** sens : retirez
@@ -86,7 +87,7 @@ Pour couper **tous** ses accès d'un coup, voir `kill` au
 
 | Symptôme | Piste |
 |---|---|
-| `Invalid user` sans rien dans le journal Vaultaire | SELinux bloque le module NSS sous `sshd` : [`docs/exploitation/selinux.md`](../../exploitation/selinux.md), script `deployments/selinux/install.sh`. Politique installée : `ps -eZ \| grep vaultaire_client` doit montrer **`vaultaire_t`** — sinon `restorecon /usr/bin/vaultaire_client` et redémarrer l'agent |
+| `Invalid user` sans rien dans le journal Vaultaire | SELinux bloque le module NSS sous `sshd` : [`docs/exploitation/selinux.md`](../../exploitation/selinux.md), script `deployments/selinux/install.sh`. Politique installée : `ps -eZ \| grep vaultaire_clien` doit montrer **`vaultaire_t`** — sinon `restorecon /usr/bin/vaultaire_client` et redémarrer l'agent |
 | l'agent ne se connecte pas | adresses dans `client_conf.json`, port 6666 filtré, `journalctl -u vaultaire_client` ; pour un état complet, lancez l'agent avec `-debug` et lisez `/var/log/vaultaire/vlt_client-Debug.log` ([détail](../../exploitation/Agent_configuration_et_debug.md)) |
 | la connexion met de longues secondes à aboutir | activez le mode debug de l'agent et lisez `/var/log/vaultaire/vlt_client-Debug-connexions.log` : une ligne par étape, en millisecondes ([détail](../../exploitation/Agent_configuration_et_debug.md#le-journal-des-connexions-to-do-199)). ✅ Vous avez réussi si une connexion d'Alice y laisse ses lignes `fetch-key`, `ouverture` et `pam` |
 | « Permission denied » pour un compte du domaine | pas de groupe commun avec la machine : `get -u <compte>`, `get -g -c <groupe>` |

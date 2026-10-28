@@ -74,6 +74,6 @@ WORKDIR /var/lib/vaultaire_proxy
 
 # 389 et 8443 pour la répartition de charge à venir. Cette version n'écoute rien :
 # elle ne fait que se connecter au core.
-EXPOSE 389 8443
+EXPOSE 6666
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

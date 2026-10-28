@@ -150,6 +150,7 @@ const (
 	// ordinaire (RFC 4517 §4.2.6). Les déclarer avec la syntaxe de la valeur était
 	// faux, et invisible tant que personne ne lisait le schéma.
 	synSousChaine = "1.3.6.1.4.1.1466.115.121.1.58"
+	synBooleen    = "1.3.6.1.4.1.1466.115.121.1.7" // Boolean — RFC 4517 § 3.3.3
 )
 
 // HorodatageDuSchema est la date du dernier changement de ce fichier.
@@ -176,7 +177,7 @@ const (
 // enregistrée. Modifier une déclaration sans toucher à cette date fait échouer
 // le test, en disant quoi faire — c'est la seule façon de tenir une date à jour
 // à la main.
-const HorodatageDuSchema = "20261003000000Z"
+const HorodatageDuSchema = "20261028000000Z"
 
 // NewSchemaEntry construit l'entrée de sous-schéma.
 //
@@ -303,6 +304,9 @@ func NewSchemaEntry() SchemaEntry {
 			// Droits de service (Nexus…) accordés au compte.
 			"( " + oidServiceRights + " NAME 'vaultaireServiceRights' EQUALITY caseIgnoreMatch " +
 				"SYNTAX " + synChaine + " NO-USER-MODIFICATION USAGE directoryOperation )",
+			// hasSubordinates — RFC 3045 § 3, mot pour mot (TO-DO 245).
+			"( 2.5.18.9 NAME 'hasSubordinates' EQUALITY booleanMatch SYNTAX " + synBooleen +
+				" SINGLE-VALUE NO-USER-MODIFICATION USAGE directoryOperation )",
 		},
 
 		CreateTimestamp: []string{HorodatageDuSchema},
@@ -316,6 +320,7 @@ func NewSchemaEntry() SchemaEntry {
 			"( " + synHorodatage + " DESC 'Generalized Time' )",
 			"( " + synUUID + " DESC 'UUID' )",
 			"( " + synSousChaine + " DESC 'Substring Assertion' )",
+			"( " + synBooleen + " DESC 'Boolean' )",
 		},
 
 		// Les règles que les déclarations ci-dessus NOMMENT. Une règle citée mais
@@ -326,6 +331,7 @@ func NewSchemaEntry() SchemaEntry {
 			"( 2.5.13.3 NAME 'caseIgnoreOrderingMatch' SYNTAX " + synChaine + " )",
 			"( 2.5.13.4 NAME 'caseIgnoreSubstringsMatch' SYNTAX " + synSousChaine + " )",
 			"( 2.5.13.5 NAME 'caseExactMatch' SYNTAX " + synChaine + " )",
+			"( 2.5.13.13 NAME 'booleanMatch' SYNTAX " + synBooleen + " )",
 			"( 2.5.13.0 NAME 'objectIdentifierMatch' SYNTAX " + synOID + " )",
 			"( 2.5.13.1 NAME 'distinguishedNameMatch' SYNTAX " + synDN + " )",
 			"( 2.5.13.27 NAME 'generalizedTimeMatch' SYNTAX " + synHorodatage + " )",

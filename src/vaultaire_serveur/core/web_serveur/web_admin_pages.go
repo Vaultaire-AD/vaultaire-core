@@ -579,7 +579,21 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		ArchiveLien    string
 		ArchiveMachine string
 		ArchiveSysteme string
-	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
+
+		// Versions : la ligne « constaté vs attendu » de chaque agent, par
+		// computeur_id (TO-DO 111). Nil quand l'administrateur n'a pas
+		// read:log sur « * » : la colonne montre alors la version déclarée
+		// seule, que la liste porte déjà.
+		Versions map[string]*act.LigneAgent
+
+		// PeutRelancer : le bouton « Relancer » d'un agent en retard (TO-DO
+		// 205). agent.update est une action de portée GLOBALE : un write:server
+		// limité à un domaine ne la passerait pas, et un bouton qui ne mène
+		// qu'à un refus n'a rien à faire sur la page. Le registre contrôle de
+		// toute façon à l'exécution.
+		PeutRelancer bool
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients",
+		PeutRelancer: permission.DomainsWhereAllowed(groupIDs, permission.ActionWriteServer).Global}
 	if r.Method == http.MethodPost {
 		// Les actions client.create, client.export et client.delete portent leur
 		// clé RBAC.
@@ -647,6 +661,24 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Clients, _ = resClients.Donnees.([]storage.GetClientsByPermission)
+
+	// La version attendue passe par sa propre action, et son propre droit.
+	//
+	// Un refus n'est pas une erreur de la page : un délégué qui lit ses
+	// machines n'a pas à voir les cibles de version du parc, et la liste
+	// reste utile sans elles. Une panne de lecture, elle, se journalise —
+	// la colonne retombe sur la version déclarée seule.
+	if resV, errV := ExecuterLecture("agent.status", username, groupIDs, act.Params{}); errV == nil {
+		if vue, ok := resV.Donnees.(act.VueAgents); ok {
+			data.Versions = vue.ParComputeurID()
+		}
+	} else {
+		var refus *act.ErrRefusee
+		if !errors.As(errV, &refus) {
+			logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+				"webadmin: versions attendues illisibles : "+errV.Error())
+		}
+	}
 	if err := executeAdminPage(w, "admin_clients.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}

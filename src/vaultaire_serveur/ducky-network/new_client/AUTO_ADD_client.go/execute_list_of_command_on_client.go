@@ -100,7 +100,12 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 		return fmt.Errorf("❌ script d'installation %s introuvable sur ce core (%v) : "+
 			"le répertoire sh_folder_path est-il complet ?", localScriptPath, errStat)
 	}
-	remoteScriptPath := "/tmp/vaultaire_install.sh"
+	// Dans le répertoire personnel du compte de connexion, et non dans /tmp
+	// (recette du 28/10) : le script restait dans /tmp, lisible par tous, après
+	// l'installation — et un chemin fixe dans un répertoire où tout le monde
+	// écrit laisse un compte local du poste préparer le fichier que root va
+	// exécuter. Effacé après l'exécution, réussie ou non.
+	remoteScriptPath := ScriptDistant
 
 	logs.Write_Log("INFO", fmt.Sprintf("autoadd : %s détecté sur %s, transfert du script %s", distribution, host, script))
 
@@ -118,7 +123,7 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 	// invisible pour l'administrateur qui lançait la commande à distance, et
 	// absente du journal. Elle est maintenant gardée — sa fin seulement, le
 	// script d'installation est bavard — et jointe à l'erreur en cas d'échec.
-	runCmd := exec.Command("ssh", "-i", privateKeyPath, "-p", portStr, remote, fmt.Sprintf("bash %s", remoteScriptPath))
+	runCmd := exec.Command("ssh", "-i", privateKeyPath, "-p", portStr, remote, CommandeDistante(remoteScriptPath))
 	sortie := &FinDeSortie{Max: TailleFinDeSortie}
 	runCmd.Stdout = sortie
 	runCmd.Stderr = sortie
@@ -130,6 +135,16 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 
 	logs.Write_Log("INFO", "autoadd : script d'installation joué avec succès sur "+host)
 	return nil
+}
+
+// ScriptDistant : chemin RELATIF, donc dans le répertoire personnel du compte
+// de connexion (scp et ssh y partent), qui n'est pas inscriptible par les
+// autres comptes du poste.
+const ScriptDistant = ".vaultaire_install.sh"
+
+// CommandeDistante exécute le script, l'efface, et rend son code de sortie.
+func CommandeDistante(script string) string {
+	return fmt.Sprintf("bash %s; s=$?; rm -f %s; exit $s", script, script)
 }
 
 // TailleFinDeSortie borne ce qu'on garde de la sortie du script distant : assez

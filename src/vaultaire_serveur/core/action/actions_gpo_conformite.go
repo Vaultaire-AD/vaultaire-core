@@ -106,6 +106,11 @@ type ConformiteMachine struct {
 	ModulesIllisibles   string
 	EcartsIllisibles    string
 	HistoriqueIllisible string
+
+	// Conflits : les conflits entre GPO vus à la dernière résolution
+	// (TO-DO 222) — les modules en cause n'ont pas été livrés.
+	Conflits           []dbgpo.ConflitGPO
+	ConflitsIllisibles string
 }
 
 func listerConformite(_ Appelant, _ Params) (Resultat, error) {
@@ -159,6 +164,12 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 	// Borné : une fiche montre les dernières transitions, pas l'histoire
 	// complète d'une machine qu'on répare depuis six mois. Ce qui dépasse reste
 	// en base jusqu'à la rétention, et se lit par la même action.
+	if conflits, err := dbgpo.ConflitsDeLaMachine(db, id); err != nil {
+		out.ConflitsIllisibles = err.Error()
+	} else {
+		out.Conflits = conflits
+	}
+
 	if histo, err := dbgpo.HistoriqueApplication(db, id, MaxTransitionsFiche); err != nil {
 		out.HistoriqueIllisible = err.Error()
 	} else {

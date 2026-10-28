@@ -102,7 +102,7 @@ func HandleHostTrame(db *sql.DB, tramesContent storage.Trames_struct_client, duc
 	// Services d'un type, pour le relais HTTPS d'un proxy (TO-DO 72). Voir
 	// services_du_cluster.go.
 	case "15":
-		return handleListServices(db, tramesContent, content)
+		return handleListServices(db, tramesContent, content, duckysession)
 
 	// Compte rendu des relais d'un proxy, et la liste que le core lui demande
 	// en retour (TO-DO 141). Voir relais_pilotes.go.

@@ -53,9 +53,11 @@ Nexus déclare (`public_url` : `https://nexus.acme.lan:8843` → `nexus.acme.lan
 - Une liste **vide** remplace la précédente : le relais refuse alors franchement,
   plutôt que de tenter des adresses que le core dit hors ligne.
 
-La `04_15` est **réservée aux proxies** : la carte des services n'est pas
-diffusée à tout le parc, comme elle le serait dans la `04_04` que reçoit chaque
-agent.
+La `04_15` n'est pas diffusée à tout le parc, comme elle le serait dans la
+`04_04` que reçoit chaque agent : seul la reçoit qui la **demande**. Le proxy
+demande tout type relayable ; un agent, **les Nexus seulement** — ses dépôts de
+mise à jour (TO-DO 114) —, et le core lui rend une liste vide pour tout autre
+type.
 
 Une source `liste` reste possible (Nexus hors cluster, tests). La source
 `cores` est **refusée** pour un relais `https` : elle donne les adresses Ducky
