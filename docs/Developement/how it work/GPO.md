@@ -264,7 +264,7 @@ Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 | 40 | `sysctl` | machine | Un fichier par clé dans `/etc/sysctl.d/` |
 | 41 | `boot_params` | machine | Ligne de commande noyau (GRUB), effectif au redémarrage |
 | 42 | `kernel_module_policy` | machine | Interdit le chargement d'un module noyau |
-| 44 | `ssh_server_config` | machine | Fragment `sshd_config.d/99-vaultaire-gpo.conf` |
+| 44 | `ssh_server_config` | machine | Fragment `sshd_config.d/00-vaultaire-gpo.conf` (« 00- » : sshd retient la première valeur lue) ; effet constaté par `sshd -T` (TO-DO 182) |
 | 45 | `ssh_known_hosts` | machine | `/etc/ssh/ssh_known_hosts` + StrictHostKeyChecking |
 | 46 | `pam_policy` | machine | Complexité mot de passe, verrouillage après échecs |
 | 47 | `local_account_policy` | machine | Comptes locaux non-Vaultaire (root et uid<1000 exclus) |
@@ -1001,7 +1001,7 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 
 | Module | Emplacement |
 |--------|-------------|
-| `ssh_server_config` | `/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf`, `/etc/ssh/vaultaire-banner` |
+| `ssh_server_config` | `/etc/ssh/sshd_config.d/00-vaultaire-gpo.conf`, `/etc/ssh/vaultaire-banner` (l'ancien `99-vaultaire-gpo.conf` est retiré à la première application réussie) |
 | `sysctl` | `/etc/sysctl.d/90-vaultaire-<clé>.conf` |
 | `sudoers_rule` | `/etc/sudoers.d/90-vaultaire-<groupe>` |
 | `file_deploy` | Le chemin du module |
@@ -1176,6 +1176,73 @@ Troisième lot — les modules dont la dérive coûte la **capacité à savoir**
 |---|---|---|
 | `ntp_servers` | `system` | serveurs réellement chargés par timesyncd, ordre indifférent |
 | `audit_rule` | étiquette | règle réellement chargée dans le noyau, par son `-k` |
+
+Quatrième lot — la configuration **en vigueur** d'un service *(2.3, TO-DO 182)* :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `sshd_effectif` | `sshd` | les directives que la politique fixe, telles que `sshd -T` les rend — toutes inclusions résolues |
+
+sshd retient la **première** valeur qu'il lit. Le fragment de Vaultaire, intact
+au hachage près, ne dit rien si une ligne lue avant lui l'emporte : dans
+`sshd_config` au-dessus de sa ligne `Include`, ou dans un fragment trié avant
+`00-vaultaire-gpo.conf`. La recette du 12/10 (§ 7d) en a montré le prix :
+`MaxAuthTries 10` en tête de `sshd_config`, la politique en demandait 3, et la
+machine était déclarée conforme.
+
+- **à l'application**, `sshd -T` est relu après le rechargement : un fragment
+  sans effet fait **échouer** le module — « fragment écrit mais sans effet :
+  sshd maxauthtries : 3 attendu, 10 constaté — une directive lue avant … »
+  — plutôt que de le dire appliqué ;
+- **au scan**, l'écart est signalé en audit, et en enforce le module est rejoué
+  — ce qui échoue de la même façon tant que la ligne qui le masque est là.
+  C'est sur le poste qu'il faut la retirer ;
+- `prohibit-password` et `without-password` sont tenus pour égaux (`sshd -T`
+  rend encore l'ancien nom) ; `sshd -T` en échec est une **incertitude**, pas
+  un écart ;
+- **un agent d'avant le 182** n'a pas inscrit cette attente. Le premier cycle
+  qui suit la mise à jour redemande la politique et l'inscrit **sans rejouer**
+  le module — en audit, rejouer corrigerait la dérive. Le fragment garde alors
+  son ancien nom jusqu'à la prochaine application réelle.
+
+Le client SSH suit la même règle *(2.3, TO-DO 246)* : le fragment
+`/etc/ssh/ssh_config.d/00-vaultaire-gpo.conf` (anciennement `99-`) est
+vérifié par l'attente `ssh_client_effectif`, lue par
+`ssh -F /etc/ssh/ssh_config -G vaultaire-verification.invalid` — la
+configuration résolue pour un hôte qui ne correspond à aucun bloc `Host`
+particulier. Un fragment masqué fait échouer `ssh_known_hosts`.
+
+Cinquième lot *(2.3, recette du 29/10, DO 248)* :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `firewalld_regle` | `port:<port>/<proto>` ou `rich:<règle>` | `firewall-cmd --query-…`, en vigueur **puis** permanent ; firewalld arrêté = écart |
+
+La branche nftables déclarait déjà `nft_rule` ; la branche firewalld ne
+déclarait rien, et un `firewall-cmd --remove-port` passait inaperçu sur Rocky.
+
+### Échouer plutôt que se dire appliqué *(2.3, DO 248)*
+
+Règle tirée de la recette du 29/10 : un module dont l'effet n'existe pas sur
+le poste ne rend **jamais** un succès.
+
+| Module | Situation | Résultat |
+|---|---|---|
+| `selinux_mode` | pas de SELinux (Debian, Ubuntu) | **ignoré** (`ErrNonApplicable` → `skipped`) |
+| `auditd_rule` | ni `augenrules` ni `auditctl` | échec « auditd absent » ; « Rule exists » au rechargement n'est pas un échec |
+| `ntp_config` | timesyncd ne tourne pas (chrony, ntpd) | échec qui nomme le démon actif — chrony : TO-DO 249 |
+| `update_policy` | outil absent | `unattended-upgrades` / `dnf-automatic` installé ; sur dnf 4, configuration complète `/etc/dnf/automatic-vaultaire.conf` et override du service (dnf 4 ne lit pas `automatic.conf.d`) |
+| `package` | nom Debian sur une distribution RPM | traduit (`nomsRPM`) ; compléments installés au mieux (`audit-rules` avec `auditd` sur Rocky 10) |
+| `user_cron` | bus de session absent (le cycle de compte précède `user@<uid>`) | le lien d'activation est posé par l'agent (`lierSousHome`) ; le timer démarre avec le gestionnaire du compte |
+
+`applyModule` traduit `ErrNonApplicable` en `skipped` : un module qui n'a pas
+d'objet sur ce poste n'est pas un échec, et une GPO commune au parc ne met pas
+chaque Debian en échec.
+
+Les fichiers d'un module de compte écrits **hors** du `HOME` (la slice
+`/etc/systemd/system/user-<uid>.slice.d` de `user_resource_limits`) suivent la
+boucle de scan de la portée machine (`repartirParHome`) : la descente depuis le
+`HOME` n'y a pas de sens.
 
 Ces deux-là ne rendent rien de plus permissif. Mais une horloge qui suit d'autres
 serveurs que ceux de la politique rend tous les horodatages du parc
@@ -1722,6 +1789,32 @@ Le scope machine garde ses chemins, pour la raison écrite dans
 
 Silence, donc, et non fausse conformité : un compte qui ne reçoit que de tels
 modules reste « non vérifié », et le résumé du parc le dit.
+
+### Marqueurs de compte : une valeur par personne *(2.3, TO-DO 211)*
+
+Les champs marqués `Marqueurs` dans le registre (`user_git_config.value`,
+`user_env.value`) acceptent, développés **sur le poste**, pour chaque compte :
+
+| Marqueur | Valeur | Exemple |
+|---|---|---|
+| `%u` | nom court du compte | `alice` |
+| `%U` | nom complet du compte | `alice@acme.lan` |
+| `%d` | domaine | `acme.lan` |
+| `%n` | prénom et nom, depuis l'annuaire | `Alice Martin` |
+| `%m` | adresse de messagerie, depuis l'annuaire | `alice@acme.lan` |
+| `%%` | un `%` | |
+
+- **Core** (`core/gpo/marqueurs.go`) : `ValidateModule` refuse un marqueur
+  inconnu ou un `%` final. La politique de compte porte l'**identité**
+  (`DeliveryPolicy.Identite`, lue par `GetUserByUsername`), repliée dans son
+  empreinte : changer le nom ou l'adresse du compte redistribue la politique.
+- **Agent** (`gpo/marqueurs.go`) : `developperMarqueurs` remplace les valeurs
+  avant d'appliquer, en scope utilisateur seulement, et ajoute à l'empreinte du
+  module celle des valeurs développées — la dérive compare donc à la valeur
+  remplacée. `%n` ou `%m` sans identité : le module **échoue**, il n'écrit pas
+  un marqueur brut. Un marqueur inconnu (politique d'un core plus récent) est
+  laissé tel quel.
+- L'identité voyage à côté des modules, hors de leur signature : TO-DO 253.
 
 ### Trois vérificateurs du scope utilisateur *(2.3, TO-DO 163)*
 

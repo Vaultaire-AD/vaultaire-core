@@ -279,18 +279,29 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 	}
 
 	_ = runUserSystemctl(ctx, "daemon-reload")
+	detailActivation := ""
 	if err := runUserSystemctl(ctx, "enable", "--now", timerName); err != nil {
-		// L'unité est en place : elle démarrera à la prochaine ouverture de
-		// session même si le bus utilisateur n'est pas joignable maintenant
-		// (cas courant hors session graphique).
-		return "", fmt.Errorf("unites ecrites mais activation impossible : %v", err)
+		// Le cycle de compte tourne À L'OUVERTURE de session, AVANT que
+		// user@<uid> ne démarre : pas de bus, et ce module échouait à chaque
+		// connexion sur les trois clients de la recette du 29/10. On pose
+		// alors le lien d'activation nous-mêmes — c'est tout ce que
+		// « enable » écrit — et le gestionnaire du compte, qui démarre dans
+		// la seconde, lance le timer avec timers.target.
+		uid, gid, errIDs := resolveUserIDs(ctx.Username)
+		if errIDs != nil {
+			return "", fmt.Errorf("unites ecrites mais activation impossible : %v", err)
+		}
+		if errLien := lierSousHome(ctx.HomeDir, activation, timerPath, uid, gid); errLien != nil {
+			return "", fmt.Errorf("unites ecrites mais activation impossible : %v ; lien : %v", err, errLien)
+		}
+		detailActivation = ", activee hors session (demarre avec le gestionnaire du compte)"
 	}
 	// Les deux unités sont à l'inventaire par writeUserFile ; ceci y ajoute ce
 	// qui manquait : que le timer soit ACTIVÉ. Sans cette attente, un
 	// « systemctl --user disable » laissait les deux fichiers intacts — donc
 	// une portée conforme — et une tâche qui ne partait plus.
 	ctx.recordCheck(CheckUserTimer, activation, "etat=actif")
-	return fmt.Sprintf("tache %s planifiee (%s)", commandID, onCalendar), nil
+	return fmt.Sprintf("tache %s planifiee (%s)%s", commandID, onCalendar, detailActivation), nil
 }
 
 // cronCommandFor traduit un identifiant de tâche en commande concrète.
@@ -371,9 +382,37 @@ func runUserSystemctl(ctx Context, args ...string) error {
 	}
 	// Délai court : cette commande est sur le chemin d'ouverture de session et
 	// attend le bus utilisateur, qui peut ne jamais démarrer hors session.
-	full := append([]string{"-u", ctx.Username, "--", "systemctl", "--user"}, args...)
+	full := append([]string{"-u", ctx.Username, "--"}, environnementBusUtilisateur(ctx.Username)...)
+	full = append(full, "systemctl", "--user")
+	full = append(full, args...)
 	_, err := commandeDeCompte(UserCommandTimeout, "runuser", full...)
 	return err
+}
+
+// environnementBusUtilisateur rend le préfixe « env XDG_RUNTIME_DIR=…
+// DBUS_SESSION_BUS_ADDRESS=… » qui permet à « systemctl --user » de trouver le
+// gestionnaire du compte.
+//
+// runuser ne transmet ni l'un ni l'autre : sans eux, systemctl --user échoue
+// sur « Failed to connect to bus » même quand user@<uid> tourne. Recette du
+// 29/10 : user_cron en échec sur les trois clients, à chaque ouverture de
+// session. Hors session (pas de /run/user/<uid>), rien n'est ajouté et l'échec
+// reste celui d'avant — l'unité démarrera à la prochaine ouverture.
+func environnementBusUtilisateur(username string) []string {
+	uid, _, err := resolveUserIDs(username)
+	if err != nil {
+		return nil
+	}
+	return prefixeBus(fmt.Sprintf("/run/user/%d", uid))
+}
+
+// prefixeBus : la partie pure, testable sans compte.
+func prefixeBus(runtime string) []string {
+	if fi, err := os.Stat(runtime); err != nil || !fi.IsDir() {
+		return nil
+	}
+	return []string{"env", "XDG_RUNTIME_DIR=" + runtime,
+		"DBUS_SESSION_BUS_ADDRESS=unix:path=" + runtime + "/bus"}
 }
 
 // applyFileDeploy dépose ou retire un fichier. Valable dans les deux scopes.

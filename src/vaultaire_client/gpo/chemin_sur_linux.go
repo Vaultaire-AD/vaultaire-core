@@ -680,6 +680,67 @@ func retirerSousHome(home, chemin string, uid int) (bool, error) {
 	return false, fmt.Errorf("suppression de %s impossible : %v", chemin, err)
 }
 
+// lierSousHome pose, sous le `HOME`, un lien symbolique `chemin` -> `cible`,
+// par la même descente sûre que ecrireFichierUtilisateur : les répertoires
+// manquants sont créés au compte, aucun lien n'est suivi en chemin. Un LIEN
+// déjà présent à cet endroit est remplacé ; toute autre chose est refusée.
+//
+// Sert à activer un timer utilisateur hors du bus de session (recette du
+// 29/10) : c'est exactement ce que « systemctl --user enable » écrit.
+func lierSousHome(home, chemin, cible string, uid, gid int) error {
+	racine, err := ouvrirRacine(home, uid)
+	if err != nil {
+		return err
+	}
+	defer racine.fermer()
+
+	composants, err := composantsSous(home, chemin)
+	if err != nil {
+		return err
+	}
+	if len(composants) == 0 {
+		return fmt.Errorf("%w : %s designe le repertoire personnel lui-meme",
+			ErrCheminSuspect, chemin)
+	}
+	base := composants[len(composants)-1]
+	fdRep, err := racine.descendre(composants[:len(composants)-1], uid, gid)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = syscall.Close(fdRep) }()
+
+	st, present, err := designerSansSuivre(fdRep, base)
+	if err != nil {
+		return err
+	}
+	if present {
+		if st.Mode&syscall.S_IFMT != syscall.S_IFLNK {
+			return fmt.Errorf("%w : %s existe et n'est pas un lien", ErrCheminSuspect, chemin)
+		}
+		if err := unlinkat(fdRep, base, 0); err != nil && !errors.Is(err, syscall.ENOENT) {
+			return fmt.Errorf("remplacement de %s impossible : %v", chemin, err)
+		}
+	}
+
+	pc, err := syscall.BytePtrFromString(cible)
+	if err != nil {
+		return err
+	}
+	pb, err := syscall.BytePtrFromString(base)
+	if err != nil {
+		return err
+	}
+	if _, _, errno := syscall.Syscall(syscall.SYS_SYMLINKAT,
+		uintptr(unsafe.Pointer(pc)), uintptr(fdRep), uintptr(unsafe.Pointer(pb))); errno != 0 {
+		return fmt.Errorf("creation du lien %s impossible : %v", chemin, errno)
+	}
+	// Le lien appartient au compte, comme celui qu'écrirait son systemctl.
+	const atSymlinkNoFollow = 0x100
+	_, _, _ = syscall.Syscall6(syscall.SYS_FCHOWNAT, uintptr(fdRep),
+		uintptr(unsafe.Pointer(pb)), uintptr(uid), uintptr(gid), atSymlinkNoFollow, 0)
+	return nil
+}
+
 // unlinkat appelle unlinkat(2) avec ses drapeaux.
 //
 // `syscall.Unlinkat` de la bibliothèque standard ne prend pas de drapeaux sur

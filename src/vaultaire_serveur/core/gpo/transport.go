@@ -134,6 +134,9 @@ type DeliveryPolicy struct {
 	Version     int              `json:"version"`
 	Fingerprint string           `json:"fingerprint"`
 	Modules     []DeliveryModule `json:"modules"`
+	// Identite : nom complet et adresse du compte, pour les marqueurs %n et %m
+	// (TO-DO 211). Politique de compte seulement ; absente en scope machine.
+	Identite *Identite `json:"identite,omitempty"`
 	// Signature est réservée : la politique n'est pas encore signée. Le tunnel
 	// Ducky couvre l'écoute et l'altération en transit, pas un serveur central
 	// compromis. Le champ existe pour ne pas avoir à changer les trames plus tard.
@@ -257,9 +260,26 @@ func ModuleFingerprint(m Module) (string, error) {
 // des champs ajoutés pour la livraison, donc ajouter un champ de transport ne
 // provoque pas une réapplication sur tout le parc.
 func BuildDeliveryPolicy(p Policy, username string) (DeliveryPolicy, error) {
+	return BuildDeliveryPolicyPour(p, username, nil)
+}
+
+// BuildDeliveryPolicyPour : la même, avec l'identité du compte (TO-DO 211).
+//
+// L'identité entre dans l'EMPREINTE livrée : un compte renommé dans l'annuaire
+// doit voir son `user.name = %n` suivre, et c'est l'empreinte que l'agent
+// annonce pour savoir s'il y a du nouveau. Sans identité, l'empreinte est celle
+// d'avant — rien ne change pour la portée machine.
+func BuildDeliveryPolicyPour(p Policy, username string, identite *Identite) (DeliveryPolicy, error) {
 	fingerprint, err := PolicyHash(p)
 	if err != nil {
 		return DeliveryPolicy{}, err
+	}
+	if identite != nil && *identite != (Identite{}) {
+		sum := sha256.Sum256([]byte(fingerprint + "\x00" + identite.NomComplet + "\x00" +
+			identite.Mail + "\x00" + identite.Domaine))
+		fingerprint = hex.EncodeToString(sum[:])
+	} else {
+		identite = nil
 	}
 
 	modules := append([]Module(nil), p.Modules...)
@@ -271,6 +291,7 @@ func BuildDeliveryPolicy(p Policy, username string) (DeliveryPolicy, error) {
 		Username:    username,
 		Version:     p.Version,
 		Fingerprint: fingerprint,
+		Identite:    identite,
 	}
 	for _, m := range modules {
 		moduleFP, err := ModuleFingerprint(m)
@@ -331,7 +352,12 @@ type Transfer struct {
 
 // PrepareTransfer sérialise et découpe une politique effective.
 func PrepareTransfer(p Policy, username string) (*Transfer, error) {
-	delivery, err := BuildDeliveryPolicy(p, username)
+	return PrepareTransferPour(p, username, nil)
+}
+
+// PrepareTransferPour : la même, avec l'identité du compte (TO-DO 211).
+func PrepareTransferPour(p Policy, username string, identite *Identite) (*Transfer, error) {
+	delivery, err := BuildDeliveryPolicyPour(p, username, identite)
 	if err != nil {
 		return nil, err
 	}

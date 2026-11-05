@@ -425,20 +425,33 @@ func TestLActivationDUnTimerEstVerifiee(t *testing.T) {
 	}
 }
 
-// Sans bus, l'activation échoue : le module le dit, et ne déclare PAS une
-// attente qu'il n'a pas obtenue.
-func TestUneActivationManqueeNeDeclareRien(t *testing.T) {
+// Hors session — le cas de CHAQUE ouverture de session, le cycle de compte
+// tournant avant user@<uid> (recette du 29/10) — le bus ne répond pas. Le lien
+// d'activation est alors posé par l'agent, l'attente déclarée, et le scan le
+// trouve conforme. Ce test remplace TestUneActivationManqueeNeDeclareRien, qui
+// figeait l'échec.
+func TestUneActivationHorsSessionPoseLeLien(t *testing.T) {
 	nom, home := compteDEssai(t)
+	id := idDeTache(t)
 	fauxSystemctl(t, home, false)
 	etat, rapport := appliquer(t, politiqueU(nom, moduleU(ModuleUserCron, "tache", map[string]string{
-		"command_id": idDeTache(t), "schedule": "0 3 * * *"})), nil)
-	if rapport.Modules[0].Result != ResultFailed {
-		t.Fatalf("resultat = %s, attendu un echec", rapport.Modules[0].Result)
+		"command_id": id, "schedule": "0 3 * * *"})), nil)
+	exigerApplique(t, rapport)
+
+	lien := filepath.Join(home, ".config", "systemd", "user", "timers.target.wants", "vaultaire-"+id+".timer")
+	cible, err := os.Readlink(lien)
+	if err != nil || !strings.HasSuffix(cible, "vaultaire-"+id+".timer") {
+		t.Fatalf("lien d'activation %q -> %q (%v)", lien, cible, err)
 	}
+	declaree := false
 	for _, c := range etat.Checks {
-		if c.Kind == CheckUserTimer {
-			t.Fatalf("une attente d'activation est declaree alors que l'activation a echoue : %+v", c)
-		}
+		declaree = declaree || c.Kind == CheckUserTimer
+	}
+	if !declaree {
+		t.Fatal("aucune attente d'activation declaree")
+	}
+	if constat := scanFromState(etat, ScopeUser, nom); !constat.Conforming() {
+		t.Fatalf("scan apres activation hors session : %+v", constat.Items)
 	}
 }
 

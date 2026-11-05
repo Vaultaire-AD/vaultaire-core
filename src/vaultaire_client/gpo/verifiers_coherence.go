@@ -336,8 +336,12 @@ func verifierACL(c SystemCheck) (bool, string, error) {
 			" alors que la politique la retire", nil
 	}
 
-	attendu := strings.TrimSpace(c.Expect)
-	if droits != attendu {
+	// La politique écrit les droits comme setfacl les reçoit — « r », « rx » —,
+	// getfacl les rend sur trois positions — « r-- », « r-x ». Recette du 29/10
+	// sur Debian : « r attendu, r-- constate », un écart PERMANENT sur une
+	// entrée parfaitement posée. Les deux sont ramenés à la forme de getfacl.
+	attendu := droitsACLComplets(strings.TrimSpace(c.Expect))
+	if droitsACLComplets(droits) != attendu {
 		return false, ecartConstate("ACL "+spec+" sur "+chemin, attendu, droits), nil
 	}
 	// L'entrée est juste, le masque la rabote. La politique n'est pas en vigueur.
@@ -346,6 +350,29 @@ func verifierACL(c SystemCheck) (bool, string, error) {
 			" accorde mais " + effectifs + " effectif — le masque de l'ACL la limite", nil
 	}
 	return true, "", nil
+}
+
+// droitsACLComplets écrit des droits sur trois positions, dans l'ordre rwx :
+// « r » → « r-- », « rx » → « r-x », « --- » et « rwx » inchangés. Une chaîne
+// qui n'est pas faite de r, w, x et - est rendue telle quelle : la comparaison
+// échouera, et l'écart sera lisible.
+func droitsACLComplets(d string) string {
+	if d == "" {
+		return "---"
+	}
+	if strings.Trim(d, "rwx-") != "" {
+		return d
+	}
+	if len(d) == 3 && strings.Contains(d, "-") {
+		return d
+	}
+	out := []byte("---")
+	for i, c := range "rwx" {
+		if strings.ContainsRune(d, c) {
+			out[i] = byte(c)
+		}
+	}
+	return string(out)
 }
 
 // decouperCibleACL sépare le chemin de la spécification d'entrée.

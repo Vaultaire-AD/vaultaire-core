@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Conformité — {{ .Machine }}</title>
+  <title>Conformité — {{ with .Nom }}{{ . }} — {{ end }}{{ .Machine }}</title>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/vlt_picker.css">
 </head>
@@ -26,7 +26,8 @@
       </header>
       <div class="app-content">
         <div class="app-container animate-in">
-    <h1>Machine {{ .Machine }}</h1>
+    <h1>{{ with .Nom }}Machine {{ . }} <span class="muted small">{{ $.Machine }}</span>{{ else }}Machine {{ .Machine }}{{ end }}</h1>
+    {{ with .Nom }}{{ if not $.NomIdentifiant }}<p class="muted small">Ce poste n'a pas de nom propre : <code>hostnamectl set-hostname &lt;nom&gt;</code> sur la machine, et il apparaîtra au rapport suivant.</p>{{ end }}{{ end }}
 
     {{ if .Message }}<div class="alert alert-success">{{ .Message }} Rechargez la page dans quelques secondes pour voir le résultat du cycle.</div>{{ end }}
     {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}

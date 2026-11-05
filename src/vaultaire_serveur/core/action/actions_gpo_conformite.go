@@ -87,9 +87,12 @@ const MaxTransitionsFiche = 20
 // l'appelant à trois contrôles de droits pour une seule question.
 type ConformiteMachine struct {
 	ComputeurID string
-	Etats       []dbgpo.ComplianceRow
-	Echecs      []dbgpo.ModuleReportRow
-	Ecarts      []dbgpo.DriftRow
+	// Hostname : le nom d'hôte de l'inventaire, brut (TO-DO 215) — vide si la
+	// machine ne l'a pas déclaré ou n'a aucun rapport.
+	Hostname string
+	Etats    []dbgpo.ComplianceRow
+	Echecs   []dbgpo.ModuleReportRow
+	Ecarts   []dbgpo.DriftRow
 
 	// Historique est la suite des CHANGEMENTS d'état d'application, la plus
 	// récente en tête. Les trois champs ci-dessus disent où en est la machine ;
@@ -144,6 +147,12 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 	}
 
 	out := ConformiteMachine{ComputeurID: id, Etats: etats}
+	for _, e := range etats {
+		if e.Hostname != "" {
+			out.Hostname = e.Hostname
+			break
+		}
+	}
 
 	if modules, err := dbgpo.GetModuleReports(db, id); err != nil {
 		out.ModulesIllisibles = err.Error()

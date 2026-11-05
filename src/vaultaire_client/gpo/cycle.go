@@ -350,6 +350,10 @@ func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) b
 	// le cycle qui fait le travail, à un moment prévisible.
 	corriges := scanMachineDrift(sessionKey)
 
+	// Un état écrit avant le TO-DO 182 : la politique est redemandée une fois,
+	// pour que ses modules inscrivent leur attente — sans être rejoués.
+	rattrapees := rattraperAttentesMachine()
+
 	rapport := RunMachineCycle(sessionKey)
 
 	// Ce que le core sait de la conformité date d'AVANT le cycle : le rapport
@@ -361,7 +365,7 @@ func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) b
 	// corrigé affichait « 1 écart(s) » jusqu'au tour suivant, une heure plus
 	// tard : exactement ce qu'affiche une machine en AUDIT, qui ne corrige
 	// rien. Les deux modes ne se distinguaient pas dans « gpo status ».
-	if corriges > 0 || rapport.Counts()[ResultApplied] > 0 {
+	if corriges > 0 || rattrapees > 0 || rapport.Counts()[ResultApplied] > 0 {
 		constaterApresApplication(sessionKey, ScopeMachine, "")
 	}
 

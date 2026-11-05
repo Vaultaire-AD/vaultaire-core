@@ -676,7 +676,8 @@ var baseCatalog = []ModuleSchema{
 				},
 				Default: "user.email",
 				Help:    "Liste fermée. Les clés permettant d'exécuter une commande (core.pager, alias, filtres) sont volontairement absentes."},
-			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 256},
+			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 256,
+				Marqueurs: true, Help: AideMarqueurs},
 			{Name: "state", Label: "État attendu", Type: FieldEnum, Required: true,
 				Options: []string{"present", "absent"}, Default: "present"},
 		},
@@ -707,7 +708,8 @@ var baseCatalog = []ModuleSchema{
 		ApplyOrder:  phaseUser + 3, // user_env
 		Fields: []FieldSchema{
 			{Name: "name", Label: "Nom", Type: FieldEnvName, Required: true, MaxLen: 64},
-			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 1024},
+			{Name: "value", Label: "Valeur", Type: FieldString, Required: true, MaxLen: 1024,
+				Marqueurs: true, Help: AideMarqueurs},
 		},
 	},
 	{

@@ -189,7 +189,7 @@ func TestAucuneAttenteSurCeQuiDependDUneSession(t *testing.T) {
 func TestAucuneAttenteQuandTimesyncdNAPasRedemarre(t *testing.T) {
 	source := lireSource(t, "appliers_system.go")
 
-	iEchec := strings.Index(source, "systemd-timesyncd non redemarre")
+	iEchec := strings.Index(source, "sans effet : %s (non pris en charge)")
 	iAttente := strings.Index(source, "recordCheck(CheckNTPServers")
 	if iEchec < 0 || iAttente < 0 {
 		t.Fatal("applyNTPConfig ne ressemble plus à ce que ce test garde")

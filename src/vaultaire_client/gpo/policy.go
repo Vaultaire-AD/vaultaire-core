@@ -162,7 +162,10 @@ type Policy struct {
 	Version     int      `json:"version"`
 	Fingerprint string   `json:"fingerprint"`
 	Modules     []Module `json:"modules"`
-	Signature   string   `json:"signature,omitempty"`
+	// Identite : nom complet et adresse du compte, livrés par le core avec une
+	// politique de compte, pour les marqueurs %n et %m (TO-DO 211).
+	Identite  *Identite `json:"identite,omitempty"`
+	Signature string    `json:"signature,omitempty"`
 }
 
 // DecodePolicy lit une politique reçue et vérifie sa cohérence interne.

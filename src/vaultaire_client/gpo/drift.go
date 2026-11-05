@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 
 	"duckynetworkclient/V1/duckynetwork/logs"
 )
@@ -299,9 +300,16 @@ func scanFromState(scopeState *ScopeState, scope, username string) DriftReport {
 	// du `HOME` du compte. Les deux boucles ne se mélangent pas — la portée
 	// machine garde ses chemins, où des liens sont légitimes.
 	if scope == ScopeUser {
-		report.Checked += len(chemins)
-		report.Items = append(report.Items, scanSousHome(scopeState, chemins, username)...)
-		return report
+		sousHome, horsHome := repartirParHome(chemins, username)
+		report.Checked += len(sousHome)
+		report.Items = append(report.Items, scanSousHome(scopeState, sousHome, username)...)
+		// Un module de compte peut déposer un fichier SYSTÈME : la slice
+		// /etc/systemd/system/user-<uid>.slice.d de user_resource_limits,
+		// écrite par root. La descente depuis le HOME n'y a aucun sens — elle
+		// signalait « un répertoire du chemin n'appartient plus au compte » à
+		// chaque scan, sur les trois clients de la recette du 29/10. Ces
+		// chemins suivent la boucle de la portée machine.
+		chemins = horsHome
 	}
 
 	for _, path := range chemins {
@@ -481,6 +489,30 @@ func EnforceDrift(scope, username string, report DriftReport) int {
 		"GPO: %d module(s) marque(s) pour reapplication au prochain cycle : %v",
 		len(corriges), corriges))
 	return len(corriges)
+}
+
+// repartirParHome sépare les chemins d'une portée utilisateur : sous le HOME du
+// compte, et ailleurs. Compte ou HOME introuvable : tout reste « sous home »,
+// où scanSousHome les déclare invérifiables — on ne sait pas où regarder.
+func repartirParHome(chemins []string, username string) (sousHome, horsHome []string) {
+	home, err := resolveHomeDir(username)
+	if username == "" || err != nil || home == "" {
+		return chemins, nil
+	}
+	return separerSousHome(chemins, home)
+}
+
+// separerSousHome : la partie pure de repartirParHome.
+func separerSousHome(chemins []string, home string) (sousHome, horsHome []string) {
+	prefixe := strings.TrimSuffix(home, "/") + "/"
+	for _, c := range chemins {
+		if strings.HasPrefix(c, prefixe) {
+			sousHome = append(sousHome, c)
+		} else {
+			horsHome = append(horsHome, c)
+		}
+	}
+	return sousHome, horsHome
 }
 
 // scanSousHome constate les fichiers d'une portée UTILISATEUR — TO-DO 163.

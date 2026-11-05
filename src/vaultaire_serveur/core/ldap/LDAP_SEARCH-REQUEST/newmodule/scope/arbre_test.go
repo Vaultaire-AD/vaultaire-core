@@ -13,12 +13,12 @@ import (
 
 func TestNatureDeLaBase(t *testing.T) {
 	cas := map[string]natureDeBase{
-		"dc=acme,dc=lan":                          baseDomaine,
-		"DC=Infra, DC=acme,DC=lan":                baseDomaine,
-		"ou=users,dc=acme,dc=lan":                 baseOU,
-		"OU=Groups,dc=acme,dc=lan":                baseOU,
-		"uid=alice,ou=users,dc=acme,dc=lan":       baseFeuille,
-		"cn=Infra,ou=groups,dc=acme,dc=lan":       baseFeuille,
+		"dc=acme,dc=lan":                    baseDomaine,
+		"DC=Infra, DC=acme,DC=lan":          baseDomaine,
+		"ou=users,dc=acme,dc=lan":           baseOU,
+		"OU=Groups,dc=acme,dc=lan":          baseOU,
+		"uid=alice,ou=users,dc=acme,dc=lan": baseFeuille,
+		"cn=Infra,ou=groups,dc=acme,dc=lan": baseFeuille,
 	}
 	for base, attendu := range cas {
 		if obtenu := natureDe(base); obtenu != attendu {
@@ -141,9 +141,9 @@ func TestHasSubordinatesSuitLArbre(t *testing.T) {
 	servis := []string{"acme.lan", "infra.acme.lan", "web.dev.acme.lan"}
 	for _, e := range entreesDeDomaines(servis, []string{"acme.lan", "infra.acme.lan", "dev.acme.lan", "web.dev.acme.lan"}) {
 		attendu := map[string]string{
-			"dc=acme,dc=lan":             "TRUE",  // la racine porte les OU
-			"dc=infra,dc=acme,dc=lan":    "FALSE", // ni OU ni sous-domaine
-			"dc=dev,dc=acme,dc=lan":      "TRUE",  // web.dev
+			"dc=acme,dc=lan":               "TRUE",  // la racine porte les OU
+			"dc=infra,dc=acme,dc=lan":      "FALSE", // ni OU ni sous-domaine
+			"dc=dev,dc=acme,dc=lan":        "TRUE",  // web.dev
 			"dc=web,dc=dev,dc=acme,dc=lan": "FALSE",
 		}[e.DN()]
 		if v := e.GetAttribute("hasSubordinates"); len(v) != 1 || v[0] != attendu {

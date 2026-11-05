@@ -159,14 +159,22 @@ func applyNTPConfig(ctx Context, m Module) (string, error) {
 		return "", err
 	}
 	if _, err := runCommand("systemctl", "restart", "systemd-timesyncd"); err != nil {
-		// Un timesyncd absent n'est pas une erreur : la machine utilise peut-être
-		// chrony ou ntpd. Le fichier reste en place et servira si timesyncd est
-		// installé plus tard.
+		// timesyncd ne tourne pas : la machine suit chrony (Rocky, RHEL, Ubuntu
+		// 26.04) ou ntpd. Le fichier reste en place et servira si timesyncd est
+		// installé plus tard — mais AUJOURD'HUI la politique n'a aucun effet.
 		//
-		// AUCUNE attente déclarée dans ce cas : rien n'a été chargé, et le
-		// vérificateur lirait les serveurs d'un autre démon — donc une dérive
-		// permanente sur une machine dont la configuration est pourtant écrite.
-		return "serveurs NTP ecrits (" + servers + "), systemd-timesyncd non redemarre", nil
+		// Ce chemin rendait un succès (« serveurs NTP ecrits »), sans attente :
+		// recette du 29/10, Rocky et Ubuntu suivaient leurs serveurs d'origine,
+		// et la machine était déclarée conforme. L'échec dit la vérité ; la
+		// prise en charge de chrony est le TO-DO 249.
+		demon := "aucun service de temps reconnu"
+		for _, d := range []string{"chronyd", "chrony", "ntpd", "ntp"} {
+			if out, _ := runCommand("systemctl", "is-active", d); strings.TrimSpace(out) == "active" {
+				demon = d + " actif"
+				break
+			}
+		}
+		return "", fmt.Errorf("serveurs ecrits pour systemd-timesyncd, sans effet : %s (non pris en charge)", demon)
 	}
 
 	// Le FICHIER dit ce que timesyncd devrait lire ; l'attente dit ce qu'il a
@@ -272,6 +280,13 @@ func applyUnattendedUpgrades(m Module, enabled string) (string, error) {
 		return "mises a jour automatiques desactivees", nil
 	}
 
+	// Activer sans l'outil, c'était écrire une consigne que personne ne lit :
+	// Debian 13 n'installe pas unattended-upgrades par défaut, et le module
+	// se disait appliqué (recette du 29/10).
+	if err := assurerOutilDeMiseAJour("apt-get", "unattended-upgrades", "unattended-upgrade"); err != nil {
+		return "", err
+	}
+
 	var b strings.Builder
 	b.WriteString("// Genere par Vaultaire (GPO). Ne pas editer a la main.\n")
 	b.WriteString("APT::Periodic::Update-Package-Lists \"1\";\n")
@@ -301,12 +316,41 @@ func applyUnattendedUpgrades(m Module, enabled string) (string, error) {
 	return detail, nil
 }
 
+// assurerOutilDeMiseAJour installe l'outil de mise à jour automatique s'il
+// manque. commande vide : la présence est lue par le gestionnaire de paquets.
+func assurerOutilDeMiseAJour(manager, paquet, commande string) error {
+	if commande != "" && commandExists(commande) {
+		return nil
+	}
+	if commande == "" {
+		if _, err := runCommand("rpm", "-q", paquet); err == nil {
+			return nil
+		}
+		if m, err := detectPackageManager(); err == nil {
+			manager = m
+		}
+	}
+	if manager == "apt-get" {
+		os.Setenv("DEBIAN_FRONTEND", "noninteractive")
+	}
+	if _, err := runCommand(manager, "-y", "install", paquet); err != nil {
+		return fmt.Errorf("%s absent et son installation a echoue : %v", paquet, err)
+	}
+	return nil
+}
+
 // applyDnfAutomatic règle dnf-automatic (RHEL/Rocky/Fedora).
 func applyDnfAutomatic(m Module, enabled string) (string, error) {
 	unit := "dnf-automatic.timer"
 	if enabled == "disabled" {
 		_, _ = runCommand("systemctl", "disable", "--now", unit)
 		return "mises a jour automatiques desactivees", nil
+	}
+
+	// Rocky 10 n'installe pas dnf-automatic : le timer n'existait pas et
+	// l'activation échouait sur un message systemd peu parlant (recette du 29/10).
+	if err := assurerOutilDeMiseAJour("dnf", "dnf-automatic", ""); err != nil {
+		return "", err
 	}
 
 	const path = "/etc/dnf/automatic.conf.d/99-vaultaire-gpo.conf"
@@ -321,6 +365,17 @@ func applyDnfAutomatic(m Module, enabled string) (string, error) {
 	if err := writeSystemFile(path, content, 0o644); err != nil {
 		return "", err
 	}
+	// dnf 4 (Rocky/RHEL 8 à 10) ne lit PAS automatic.conf.d : seul le fichier
+	// passé en argument au service compte, et celui du paquet dit
+	// apply_updates = no. La recette du 29/10 l'a constaté sur Rocky 10 :
+	// « activées (sécurité uniquement) » pour une machine qui ne faisait que
+	// lister ses mises à jour. L'agent dépose donc SA configuration complète et
+	// fait pointer le service dessus, sans toucher au fichier du paquet.
+	if dnfMajeur() == "4" {
+		if err := configurerDnfAutomatic4(upgradeType); err != nil {
+			return "", err
+		}
+	}
 	if _, err := runCommand("systemctl", "enable", "--now", unit); err != nil {
 		return "", fmt.Errorf("activation de %s impossible : %v", unit, err)
 	}
@@ -331,6 +386,57 @@ func applyDnfAutomatic(m Module, enabled string) (string, error) {
 		detail += " (redemarrage automatique non gere par dnf-automatic, champ ignore)"
 	}
 	return detail, nil
+}
+
+const (
+	dnfAutomaticConfVaultaire = "/etc/dnf/automatic-vaultaire.conf"
+	dnfAutomaticDropIn        = "/etc/systemd/system/dnf-automatic.service.d/00-vaultaire-gpo.conf"
+)
+
+// dnfMajeur rend la version majeure de dnf (« 4 », « 5 »), vide si inconnue.
+func dnfMajeur() string {
+	out, err := runCommand("dnf", "--version")
+	if err != nil {
+		return ""
+	}
+	return majeurDeVersionDnf(out)
+}
+
+// majeurDeVersionDnf lit le chiffre de tête de la première ligne de
+// « dnf --version » : « 4.20.0 » pour dnf 4, « dnf5 version 5.2… » pour dnf 5.
+func majeurDeVersionDnf(sortie string) string {
+	ligne := strings.TrimSpace(strings.SplitN(sortie, "\n", 2)[0])
+	ligne = strings.TrimPrefix(ligne, "dnf5 version ")
+	if i := strings.IndexByte(ligne, '.'); i > 0 {
+		return ligne[:i]
+	}
+	return ""
+}
+
+// contenuDnfAutomatic4 est la configuration complète que lit le service.
+func contenuDnfAutomatic4(upgradeType string) string {
+	return "# Genere par Vaultaire (GPO). Ne pas editer a la main.\n" +
+		"[commands]\nupgrade_type = " + upgradeType + "\n" +
+		"random_sleep = 0\nnetwork_online_timeout = 60\n" +
+		"download_updates = yes\napply_updates = yes\n" +
+		"[emitters]\nemit_via = stdio\n" +
+		"[base]\ndebuglevel = 1\n"
+}
+
+// configurerDnfAutomatic4 dépose la configuration et l'override du service.
+func configurerDnfAutomatic4(upgradeType string) error {
+	if err := writeSystemFile(dnfAutomaticConfVaultaire, contenuDnfAutomatic4(upgradeType), 0o644); err != nil {
+		return err
+	}
+	override := "# Genere par Vaultaire (GPO). Ne pas editer a la main.\n" +
+		"[Service]\nExecStart=\nExecStart=/usr/bin/dnf-automatic " + dnfAutomaticConfVaultaire + " --timer\n"
+	if err := writeSystemFile(dnfAutomaticDropIn, override, 0o644); err != nil {
+		return err
+	}
+	if _, err := runCommand("systemctl", "daemon-reload"); err != nil {
+		return fmt.Errorf("systemctl daemon-reload : %v", err)
+	}
+	return nil
 }
 
 // validHHMM vérifie une heure au format HH:MM.

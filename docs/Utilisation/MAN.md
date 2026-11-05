@@ -1386,9 +1386,9 @@ naissance ») et `enroll show <id>`, comme sur la page web.
 ## 20. gpo — Application et conformité
 
 ```bash
-gpo status                 # état d'application et de conformité du parc
-gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
-gpo drift                  # uniquement les machines en écart
+gpo status [--par-nom]     # état d'application et de conformité du parc
+gpo status <computeur_id|nom>   # détail d'une machine : modules en échec, écarts
+gpo drift [--par-nom]      # uniquement les machines en écart
 gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
 gpo refresh <computeur_id>           # cycle immédiat sur une machine
 gpo refresh --gpo <nom_gpo>          # cycle immédiat sur les machines liées à cette GPO
@@ -1618,6 +1618,21 @@ résumé du parc, une ligne par machine triée dans le même ordre, les comptes 
 signaler en retrait sous la leur, détail d'une machine au clic, et un filtre
 « écarts seulement » équivalent à `gpo drift`.
 
+**Le nom d'hôte d'abord** *(2.3, TO-DO 215)*. Chaque machine est désignée par le
+nom qu'elle a déclaré à son inventaire, l'identifiant en second — colonne
+`NOM` en ligne de commande. Un nom générique (`localhost.localdomain`) ne
+désigne aucun poste : il s'affiche « nom par défaut (localhost.localdomain) »,
+trié après les vrais noms ; `hostnamectl set-hostname` sur le poste, et il
+change au rapport suivant. Une machine qui n'a pas encore envoyé d'inventaire
+est « nom inconnu ».
+
+- `gpo status <nom>` accepte un nom d'hôte exact, cherché dans le périmètre de
+  l'appelant. Porté par plusieurs postes, ou générique : la commande liste les
+  identifiants au lieu de choisir.
+- `--par-nom` (portail : **Trier par nom**) range le parc par nom ; sans lui, ce
+  qui va mal vient en tête.
+- Le portail a une recherche (`?q=`) sur le nom et l'identifiant.
+
 Le tri, les états de fraîcheur et les libellés viennent du **même code** que la
 ligne de commande — c'est délibéré. Deux vues qui les recalculeraient séparément
 finiraient par ne plus dire la même chose, et personne ne remarquerait l'écart
@@ -1664,6 +1679,21 @@ Ce qui est vérifié dans un dossier personnel :
 
 Le reste d'un `.bashrc`, d'un `~/.ssh/config` ou d'un `~/.gitconfig` appartient à
 la personne : y ajouter un alias, un hôte ou une clé **n'est pas un écart**.
+
+**Une valeur par personne** *(2.3, TO-DO 211)*. Dans la valeur d'un module
+`user_git_config` ou `user_env`, ces marqueurs sont remplacés sur le poste,
+pour chaque compte : `%u` (compte court, `alice`), `%U` (`alice@acme.lan`),
+`%d` (domaine), `%n` (prénom et nom de l'annuaire), `%m` (adresse de
+messagerie), `%%` (un `%`). Exemple : `user.name` = `%n`, `user.email` = `%m`.
+Un autre marqueur, ou un `%` final, est refusé à l'enregistrement. Un compte
+sans nom ou sans adresse dans l'annuaire fait échouer le module qui demande
+`%n` ou `%m` — rien n'est écrit. Changer le nom ou l'adresse d'un compte lui
+redistribue la politique.
+
+**Un module sans objet sur le poste** *(2.3)* : `selinux_mode` sur Debian ou
+Ubuntu est rapporté **ignoré**, pas en échec. Un module dont l'effet n'existe
+pas (règle d'audit sans auditd, serveurs NTP sur une machine à chrony) est en
+**échec**, avec la raison — jamais « appliqué ».
 
 *(TO-DO 163.)* `user_git_config`, `user_password_policy` et l'activation de
 `user_cron` n'étaient pas vérifiés. Deux limites voulues : le **changement forcé**
