@@ -230,7 +230,11 @@ func EnregistrerActionsServeur(r *Registre) {
 //
 // Nil tant que personne ne l'a branchée : l'action refuse alors plutôt que de
 // rendre un succès silencieux. Un serveur mal câblé doit le dire.
-var RegenererCertificat func(a Appelant, p Params) (string, error)
+//
+// Elle rend aussi les certificats RÉELLEMENT remplacés : un refus (certificat
+// importé, nom inconnu) rend un message sans rien remplacer, et ne doit pas
+// laisser au journal une ligne SECURITY « a régénéré ».
+var RegenererCertificat func(a Appelant, p Params) (string, []string, error)
 
 func regenererCertificat(a Appelant, p Params) (Resultat, error) {
 	if RegenererCertificat == nil {
@@ -238,12 +242,14 @@ func regenererCertificat(a Appelant, p Params) (Resultat, error) {
 			"régénération non branchée : action.RegenererCertificat est nil, " +
 				"le serveur a démarré sans raccorder commandcertificate")
 	}
-	msg, err := RegenererCertificat(a, p)
+	msg, faits, err := RegenererCertificat(a, p)
 	if err != nil {
 		return Resultat{}, err
 	}
-	logs.Write_Log("SECURITY", fmt.Sprintf(
-		"%s a régénéré un certificat TLS du serveur", a.Username))
+	if len(faits) > 0 {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"%s a régénéré le(s) certificat(s) TLS du serveur : %s", a.Username, strings.Join(faits, ", ")))
+	}
 	return Resultat{Message: msg}, nil
 }
 

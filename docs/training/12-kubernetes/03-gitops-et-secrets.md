@@ -2,7 +2,7 @@
 
 # Jalon 12.3 — GitOps et secrets
 
-[← Jalon 12.2](./02-installer-avec-helm.md) · [Sommaire du chapitre](./README.md)
+[← Jalon 12.2](./02-installer-avec-helm.md) · [Sommaire du chapitre](./README.md) · [Jalon 12.4 →](./04-certificats-cert-manager.md)
 
 ---
 
@@ -91,4 +91,4 @@ des images signées.
 
 ---
 
-[← Jalon 12.2](./02-installer-avec-helm.md) · [Sommaire du chapitre](./README.md)
+[← Jalon 12.2](./02-installer-avec-helm.md) · [Sommaire du chapitre](./README.md) · [Jalon 12.4 →](./04-certificats-cert-manager.md)

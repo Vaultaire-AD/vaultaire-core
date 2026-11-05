@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 	"vaultaire/core/global/security"
+	"vaultaire/core/global/security/certimporte"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 	duckykey "vaultaire/ducky-network/key_management"
@@ -53,26 +54,31 @@ func StartWebServer() {
 		log.Fatalf("Gabarit de connexion illisible (%s) : %v", CheminGabarit("sso_login.html"), err)
 	}
 
-	certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.WebServerCertName)
-	if err != nil {
-		certPEM, keyPEM, err = security.GenerateSelfSignedCertPEM()
+	// Certificat importé (TO-DO 262) : servi depuis son fichier, relu à chaud.
+	tlsConfig := &tls.Config{}
+	if importe := certimporte.Pour(certimporte.ServiceWeb); importe != nil {
+		tlsConfig.GetCertificate = importe.GetCertificate
+	} else {
+		certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.WebServerCertName)
 		if err != nil {
-			log.Fatalf("Erreur génération certificat : %v", err)
-		}
-		if errSave := duckykey.SaveCertificateToDB(duckykey.WebServerCertName, "tls_cert", "Certificat TLS serveur web", certPEM, keyPEM); errSave != nil {
-			// Certificat déjà en BDD (créé entre-temps) : on utilise celui de la BDD
-			certPEM, keyPEM, err = duckykey.GetCertificatePEMFromDB(duckykey.WebServerCertName)
+			certPEM, keyPEM, err = security.GenerateSelfSignedCertPEM()
 			if err != nil {
-				log.Fatalf("Erreur récupération certificat web depuis BDD : %v", err)
+				log.Fatalf("Erreur génération certificat : %v", err)
+			}
+			if errSave := duckykey.SaveCertificateToDB(duckykey.WebServerCertName, "tls_cert", "Certificat TLS serveur web", certPEM, keyPEM); errSave != nil {
+				// Certificat déjà en BDD (créé entre-temps) : on utilise celui de la BDD
+				certPEM, keyPEM, err = duckykey.GetCertificatePEMFromDB(duckykey.WebServerCertName)
+				if err != nil {
+					log.Fatalf("Erreur récupération certificat web depuis BDD : %v", err)
+				}
 			}
 		}
+		cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
+		if err != nil {
+			log.Fatalf("Erreur chargement certificat TLS : %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
-
-	cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
-	if err != nil {
-		log.Fatalf("Erreur chargement certificat TLS : %v", err)
-	}
-	tlsConfig := &tls.Config{Certificates: []tls.Certificate{cert}}
 
 	VerifierRessourcesWeb()
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(RepertoireStatiques()))))

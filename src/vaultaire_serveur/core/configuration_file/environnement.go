@@ -128,6 +128,14 @@ func VariablesEnvironnement() []variableEnv {
 		{Nom: "VAULTAIRE_LDAPS_TLS_IP_ADDRESSES", Aide: "ldap.ldaps_tls_ip_addresses", Poser: liste(&storage.Ldaps_TLS_IPs), Exemple: "10.0.0.10"},
 		{Nom: "VAULTAIRE_WEB_TLS_DNS_NAMES", Aide: "website.web_tls_dns_names", Poser: liste(&storage.Web_TLS_DNSNames), Exemple: "sso.acme.lan"},
 		{Nom: "VAULTAIRE_WEB_TLS_IP_ADDRESSES", Aide: "website.web_tls_ip_addresses", Poser: liste(&storage.Web_TLS_IPs), Exemple: "10.0.0.10"},
+		// Certificats importés (TO-DO 262) : chemins, pas secrets — la clé
+		// elle-même reste dans son fichier, relu à chaud.
+		{Nom: "VAULTAIRE_LDAPS_TLS_CERT_FILE", Aide: "ldap.ldaps_tls_cert_file", Poser: texte(&storage.Ldaps_TLS_CertFile), Exemple: "/run/secrets/vaultaire-tls/ldaps/tls.crt"},
+		{Nom: "VAULTAIRE_LDAPS_TLS_KEY_FILE", Aide: "ldap.ldaps_tls_key_file", Poser: texte(&storage.Ldaps_TLS_KeyFile), Exemple: "/run/secrets/vaultaire-tls/ldaps/tls.key"},
+		{Nom: "VAULTAIRE_WEB_TLS_CERT_FILE", Aide: "website.web_tls_cert_file", Poser: texte(&storage.Web_TLS_CertFile), Exemple: "/run/secrets/vaultaire-tls/web/tls.crt"},
+		{Nom: "VAULTAIRE_WEB_TLS_KEY_FILE", Aide: "website.web_tls_key_file", Poser: texte(&storage.Web_TLS_KeyFile), Exemple: "/run/secrets/vaultaire-tls/web/tls.key"},
+		{Nom: "VAULTAIRE_API_TLS_CERT_FILE", Aide: "api.api_tls_cert_file", Poser: texte(&storage.API_TLS_CertFile), Exemple: "/run/secrets/vaultaire-tls/api/tls.crt"},
+		{Nom: "VAULTAIRE_API_TLS_KEY_FILE", Aide: "api.api_tls_key_file", Poser: texte(&storage.API_TLS_KeyFile), Exemple: "/run/secrets/vaultaire-tls/api/tls.key"},
 		{Nom: "VAULTAIRE_WEB_TRUSTED_PROXIES", Aide: "website.web_trusted_proxies", Exemple: "10.42.0.0/16",
 			Poser: func(v string) error {
 				storage.Web_Trusted_Proxies = decouperListe(v)

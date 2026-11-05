@@ -118,6 +118,7 @@ Relevé dans les commandes d'installation écrites en clair. Un `go.mod` est lu 
 | `deployments/dev-comp/Dockerfile.nexus` | `ca-certificates`, `curl`, `gnupg`, `tzdata` |
 | `deployments/dev/Dockerfile.rocky-ssh` | `epel-release`, `gcc`, `make`, `openssh-clients`, `openssh-server`, `pam-devel`, `pamtester`, `passwd` |
 | `deployments/dev/dockerfile` | `ca-certificates`, `git`, `gzip`, `openssh-clients`, `openssh-server`, `sudo`, `tar` |
+| `deployments/docker/Dockerfile` | `binutils`, `gcc`, `libxcrypt-devel`, `pam-devel`, `libc6-dev`, `libcrypt-dev`, `libpam0g-dev` |
 | `deployments/pre-prod/Dockerfile` | `openssh-clients`, `openssh-server`, `sudo` |
 | `deployments/pre-prod/vlt-proxy/Dockerfile` | `ca-certificates`, `tzdata`, `util-linux` |
 

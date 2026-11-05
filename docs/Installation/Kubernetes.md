@@ -59,7 +59,7 @@ docker build -f deployments/docker/Dockerfile \
 ```
 
 Prévoir ~6 Go de disque pour les étages de compilation (Go, Rocky 9, Ubuntu
-22.04), jetés à la fin : l'image finale pèse environ 100 Mo.
+22.04), jetés à la fin : l'image finale pèse environ 55 Mo.
 
 ---
 
@@ -166,6 +166,61 @@ joignent l'annuaire : les clients Java (Keycloak) exigent un SAN qui correspond.
 Le nom du Service (`<release>-vaultaire`, `….svc`, `….svc.cluster.local`) est
 ajouté d'office.
 
+### Certificats TLS : cert-manager ou une PKI *(TO-DO 262)*
+
+Par défaut, LDAPS, le portail et l'API servent des certificats **auto-signés**,
+générés par le core et gardés en base : chaque application cliente doit importer
+ce certificat-là, et le réimporter s'il change. Avec une autorité, elles font
+confiance à l'**autorité**, une fois pour toutes.
+
+**cert-manager émet les certificats** (la chart crée les `Certificate`) :
+
+```yaml
+tls:
+  certManager:
+    enabled: true
+    issuerRef: { name: acme-ca, kind: ClusterIssuer }
+    services: [ldaps, web]        # api aussi si des outils l'appellent
+config:
+  ldap:
+    tlsDnsNames: [ldap.acme.lan]  # le nom par lequel les applications joignent l'annuaire
+  web:
+    tlsDnsNames: [sso.acme.lan]
+```
+
+Chaque certificat couvre les noms du Service (`<release>-vaultaire`,
+`….svc`, `….svc.cluster.local`), plus `config.<ldap|web>.tlsDnsNames`,
+`tlsIpAddresses` et `tls.certManager.extraDnsNames`. Durée 90 jours,
+renouvelé 30 jours avant (`duration`, `renewBefore`), clé RSA 2048 changée à
+chaque renouvellement (`privateKey`).
+
+**Ou un Secret existant**, de type `kubernetes.io/tls` (clés `tls.crt`,
+`tls.key`), venu d'une PKI ou d'un `Certificate` géré ailleurs :
+
+```yaml
+tls:
+  ldaps: { existingSecret: annuaire-tls }
+  web:   { existingSecret: portail-tls }
+```
+
+Ce qui se passe dans le pod :
+
+- le Secret est monté **sans `subPath`** dans `/run/secrets/vaultaire-tls/<service>/`,
+  et `VAULTAIRE_<SERVICE>_TLS_CERT_FILE` / `_KEY_FILE` y pointent ;
+- au démarrage, le core vérifie la paire (clé ↔ certificat, dates). Un défaut
+  **l'arrête** avec un message qui nomme le fichier : il ne retombe jamais en
+  silence sur l'auto-signé ;
+- quand cert-manager renouvelle, le kubelet met le fichier à jour (en moins
+  d'une minute), le core le relit dans les 30 s **sans redémarrer** et l'écrit
+  au journal (`certificat rechargé … — émis par …`). Une paire illisible n'est
+  jamais servie : l'ancienne reste, une ligne `ERROR` le dit ;
+- `vlt certificate show ldaps` indique la source, l'émetteur et la dernière
+  relecture ; `vlt certificate regenerate` refuse un service importé.
+
+Côté application : importez l'**autorité** (le `ca.crt` du Secret, ou celui de
+votre PKI) dans son magasin de confiance, et joignez l'annuaire par un nom que
+le certificat couvre.
+
 ### Plusieurs cores
 
 `replicaCount: 2` (ou plus) forme un cluster de cores sur la même base. Deux
@@ -196,6 +251,9 @@ base avant (`mariadb-dump`), comme pour toute mise à jour.
 - **Image `linux/amd64` seulement** : le paquet d'agent est compilé pour amd64.
 - **Windows** : le client Windows reste une démonstration ; l'image ne l'embarque
   pas.
+- **Certificats importés** : la page « Certificats » du portail ne montre que
+  ceux de la base ; `vlt certificate list` signale les services qui servent un
+  certificat importé.
 - **Keycloak** n'est pas déployé par la chart : c'est une application cliente
   du LDAPS, à installer avec sa propre chart.
 - Les **clés et secrets en base** ne sont pas chiffrés au repos (TO-DO 98) :

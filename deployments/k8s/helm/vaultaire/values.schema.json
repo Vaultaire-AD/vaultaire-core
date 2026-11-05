@@ -421,6 +421,38 @@
     "containerSecurityContext": {
       "type": "object"
     },
+    "tls": {
+      "type": "object",
+      "properties": {
+        "ldaps": { "$ref": "#/$defs/tlsService" },
+        "web": { "$ref": "#/$defs/tlsService" },
+        "api": { "$ref": "#/$defs/tlsService" },
+        "certManager": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "services": {
+              "type": "array",
+              "items": { "enum": ["ldaps", "web", "api"] },
+              "uniqueItems": true
+            },
+            "issuerRef": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "kind": { "type": "string" },
+                "group": { "type": "string" }
+              }
+            },
+            "duration": { "type": "string" },
+            "renewBefore": { "type": "string" },
+            "privateKey": { "type": "object" },
+            "extraDnsNames": { "type": "array", "items": { "type": "string" } },
+            "annotations": { "type": "object" }
+          }
+        }
+      }
+    },
     "networkPolicy": {
       "type": "object",
       "properties": {
@@ -430,6 +462,14 @@
         "restrictEgress": {
           "type": "boolean"
         }
+      }
+    }
+  },
+  "$defs": {
+    "tlsService": {
+      "type": "object",
+      "properties": {
+        "existingSecret": { "type": "string" }
       }
     }
   }

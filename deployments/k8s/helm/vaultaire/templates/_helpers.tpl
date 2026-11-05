@@ -103,6 +103,25 @@ ldaps: 3636
 dns: 5353
 {{- end -}}
 
+{{/*
+Secret TLS d'un service (TO-DO 262), ou vide : le core garde alors son
+certificat auto-signé. Argument : (dict "root" $ "service" "ldaps").
+*/}}
+{{- define "vaultaire.tlsSecret" -}}
+{{- $v := index .root.Values.tls .service -}}
+{{- if $v.existingSecret -}}
+{{- $v.existingSecret -}}
+{{- else if and .root.Values.tls.certManager.enabled (has .service .root.Values.tls.certManager.services) -}}
+{{- printf "%s-%s-tls" (include "vaultaire.fullname" .root) .service -}}
+{{- end -}}
+{{- end -}}
+
+{{/* Noms DNS du Service, que tout certificat émis doit couvrir. */}}
+{{- define "vaultaire.serviceDnsNames" -}}
+{{- $f := include "vaultaire.fullname" . -}}
+{{- toJson (list $f (printf "%s.%s.svc" $f .Release.Namespace) (printf "%s.%s.svc.cluster.local" $f .Release.Namespace)) -}}
+{{- end -}}
+
 {{/* Contrôles faits avant tout rendu : jamais de mot de passe par défaut. */}}
 {{- define "vaultaire.validate" -}}
 {{- if not .Values.auth.existingSecret -}}
@@ -114,6 +133,18 @@ dns: 5353
 {{- end -}}
 {{- if and .Values.mariadb.enabled (not .Values.auth.dbRootPassword) -}}
 {{- fail "auth.existingSecret (recommandé) ou auth.dbRootPassword est requis avec mariadb.enabled" -}}
+{{- end -}}
+{{- end -}}
+{{- with .Values.tls.certManager -}}
+{{- if .enabled -}}
+{{- if not .issuerRef.name -}}
+{{- fail "tls.certManager.enabled : tls.certManager.issuerRef.name est requis" -}}
+{{- end -}}
+{{- range .services -}}
+{{- if not (has . (list "ldaps" "web" "api")) -}}
+{{- fail (printf "tls.certManager.services : %q inconnu (ldaps, web, api)" .) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- if and (gt (int .Values.replicaCount) 1) .Values.mariadb.enabled -}}

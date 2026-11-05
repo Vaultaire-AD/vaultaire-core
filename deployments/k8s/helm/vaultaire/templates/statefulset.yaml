@@ -102,6 +102,14 @@ spec:
             - name: VAULTAIRE_ADMIN_PUBLIC_KEY
               valueFrom: { secretKeyRef: { name: {{ $secret }}, key: {{ $k.adminPublicKey }}, optional: true } }
             {{- end }}
+            {{- range $svc := list "ldaps" "web" "api" }}
+            {{- if include "vaultaire.tlsSecret" (dict "root" $ "service" $svc) }}
+            - name: VAULTAIRE_{{ upper $svc }}_TLS_CERT_FILE
+              value: /run/secrets/vaultaire-tls/{{ $svc }}/tls.crt
+            - name: VAULTAIRE_{{ upper $svc }}_TLS_KEY_FILE
+              value: /run/secrets/vaultaire-tls/{{ $svc }}/tls.key
+            {{- end }}
+            {{- end }}
             {{- with .Values.extraEnv }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -164,6 +172,13 @@ spec:
             {{- if .Values.auth.mountAsFiles }}
             - { name: secrets, mountPath: /run/secrets/vaultaire, readOnly: true }
             {{- end }}
+            {{- range $svc := list "ldaps" "web" "api" }}
+            {{- if include "vaultaire.tlsSecret" (dict "root" $ "service" $svc) }}
+            # Sans subPath : c'est ce qui laisse le kubelet mettre le fichier à
+            # jour quand le Secret change (le core le relit à chaud).
+            - { name: tls-{{ $svc }}, mountPath: /run/secrets/vaultaire-tls/{{ $svc }}, readOnly: true }
+            {{- end }}
+            {{- end }}
       volumes:
         - name: config
           configMap:
@@ -182,6 +197,17 @@ spec:
               {{- if .Values.config.admin.enabled }}
               - { key: {{ $k.adminPassword }}, path: admin-password }
               {{- end }}
+        {{- end }}
+        {{- range $svc := list "ldaps" "web" "api" }}
+        {{- with include "vaultaire.tlsSecret" (dict "root" $ "service" $svc) }}
+        - name: tls-{{ $svc }}
+          secret:
+            secretName: {{ . }}
+            defaultMode: 0400
+            items:
+              - { key: tls.crt, path: tls.crt }
+              - { key: tls.key, path: tls.key }
+        {{- end }}
         {{- end }}
         {{- if not .Values.persistence.enabled }}
         - name: data

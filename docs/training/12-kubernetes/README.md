@@ -40,6 +40,7 @@ binaires montés, compte root, clé de démonstration). Ici, rien de tout cela.
 | 12.1 | [L'image rootless : vérifier, lancer, interroger](./01-image-rootless.md) | ☐ |
 | 12.2 | [Installer dans Kubernetes avec Helm](./02-installer-avec-helm.md) | ☐ |
 | 12.3 | [GitOps et secrets](./03-gitops-et-secrets.md) | ☐ |
+| 12.4 | [Des certificats émis par cert-manager](./04-certificats-cert-manager.md) | ☐ |
 
 ## Référence
 

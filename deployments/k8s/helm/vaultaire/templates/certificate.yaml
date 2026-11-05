@@ -1,0 +1,60 @@
+{{- /*
+Certificats émis par cert-manager (TO-DO 262). Un par service listé dans
+tls.certManager.services, sauf s'il a déjà un tls.<service>.existingSecret.
+Le Secret produit porte le nom que la StatefulSet monte
+(vaultaire.tlsSecret) ; cert-manager le renouvelle, le core le relit à chaud.
+*/ -}}
+{{- with .Values.tls.certManager }}
+{{- if .enabled }}
+{{- $cm := . }}
+{{- range $svc := .services }}
+{{- if not (index $.Values.tls $svc).existingSecret }}
+{{- $noms := fromJsonArray (include "vaultaire.serviceDnsNames" $) }}
+{{- $ips := list }}
+{{- if eq $svc "ldaps" }}
+{{- $noms = concat $noms $.Values.config.ldap.tlsDnsNames }}
+{{- $ips = $.Values.config.ldap.tlsIpAddresses }}
+{{- else }}
+{{- $noms = concat $noms $.Values.config.web.tlsDnsNames }}
+{{- $ips = $.Values.config.web.tlsIpAddresses }}
+{{- end }}
+{{- $noms = concat $noms $cm.extraDnsNames | uniq }}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "vaultaire.fullname" $ }}-{{ $svc }}
+  labels:
+    {{- include "vaultaire.labels" $ | nindent 4 }}
+  {{- with $cm.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "vaultaire.tlsSecret" (dict "root" $ "service" $svc) }}
+  secretTemplate:
+    labels:
+      {{- include "vaultaire.labels" $ | nindent 6 }}
+  # Le premier nom sert aussi de CommonName : certains clients LDAP anciens
+  # le lisent encore.
+  commonName: {{ first $noms | quote }}
+  dnsNames:
+    {{- toYaml $noms | nindent 4 }}
+  {{- with $ips }}
+  ipAddresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  duration: {{ $cm.duration }}
+  renewBefore: {{ $cm.renewBefore }}
+  privateKey:
+    {{- toYaml $cm.privateKey | nindent 4 }}
+  usages:
+    - server auth
+    - digital signature
+    - key encipherment
+  issuerRef:
+    {{- toYaml $cm.issuerRef | nindent 4 }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- end }}

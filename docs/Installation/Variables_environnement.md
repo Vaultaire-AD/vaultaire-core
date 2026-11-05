@@ -53,6 +53,13 @@ garder les secrets dans le gestionnaire de secrets de la plateforme.
 | `VAULTAIRE_WEB_TLS_DNS_NAMES` | `website.web_tls_dns_names` | `sso.acme.lan` |
 | `VAULTAIRE_WEB_TLS_IP_ADDRESSES` | `website.web_tls_ip_addresses` | `10.0.0.10` |
 | `VAULTAIRE_WEB_TRUSTED_PROXIES` | `website.web_trusted_proxies` | `10.42.0.0/16` |
+| **Certificats importés** *(2.3, TO-DO 262 — voir plus bas)* | | |
+| `VAULTAIRE_LDAPS_TLS_CERT_FILE` | `ldap.ldaps_tls_cert_file` | `/run/secrets/vaultaire-tls/ldaps/tls.crt` |
+| `VAULTAIRE_LDAPS_TLS_KEY_FILE` | `ldap.ldaps_tls_key_file` | `/run/secrets/vaultaire-tls/ldaps/tls.key` |
+| `VAULTAIRE_WEB_TLS_CERT_FILE` | `website.web_tls_cert_file` | `/run/secrets/vaultaire-tls/web/tls.crt` |
+| `VAULTAIRE_WEB_TLS_KEY_FILE` | `website.web_tls_key_file` | `/run/secrets/vaultaire-tls/web/tls.key` |
+| `VAULTAIRE_API_TLS_CERT_FILE` | `api.api_tls_cert_file` | `/run/secrets/vaultaire-tls/api/tls.crt` |
+| `VAULTAIRE_API_TLS_KEY_FILE` | `api.api_tls_key_file` | `/run/secrets/vaultaire-tls/api/tls.key` |
 | **Répertoires** | | |
 | `VAULTAIRE_DATA_DIR` | `file-path.clientconfpath` | `/var/lib/vaultaire/` |
 | `VAULTAIRE_LOG_DIR` | `file-path.logpath` | `/var/log/vaultaire/` |
@@ -89,3 +96,31 @@ docker run -d --name vaultaire \
   -p 389:3389 -p 636:3636 -p 6666:6666 -p 443:4443 -p 6643:6643 \
   ghcr.io/vaultaire-ad/vaultaire-server:2.3.0
 ```
+
+## Certificats TLS importés *(TO-DO 262)*
+
+Sans ces variables, LDAPS, le portail et l'API servent chacun un certificat
+**auto-signé**, généré au premier démarrage et gardé en base. Avec elles, le
+service sert le certificat **fourni** — par cert-manager, une PKI d'entreprise :
+
+- **les deux ou aucune** : un certificat sans clé (ou l'inverse) arrête le
+  démarrage, comme une paire incohérente, expirée ou pas encore valide ;
+- fichier de certificat en PEM, **serveur en tête**, chaîne intermédiaire à la
+  suite (le `tls.crt` de cert-manager) ; clé PEM (PKCS#1, PKCS#8 ou EC) ;
+- **relus à chaud** toutes les 30 s au plus : un renouvellement est servi sans
+  redémarrage et sans couper les connexions ouvertes. Une paire illisible ou
+  incohérente n'est jamais servie : l'ancienne reste, une ligne `ERROR` le dit ;
+- le contrôle de démarrage du LDAPS ne réclame au certificat importé que les
+  noms **déclarés** (`ldaps_tls_dns_names`, `ldaps_tls_ip_addresses`) ;
+- `vlt certificate show <service>` dit d'où vient le certificat servi ;
+  `vlt certificate regenerate` refuse un service importé — il se renouvelle à
+  sa source.
+
+Hors Kubernetes, les mêmes clés se posent dans `serveur_conf.yaml` :
+
+```yaml
+ldap:
+  ldaps_tls_cert_file: /etc/vaultaire/tls/ldaps.crt
+  ldaps_tls_key_file: /etc/vaultaire/tls/ldaps.key
+```
+

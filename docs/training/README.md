@@ -7,7 +7,7 @@ serveur, construire l'annuaire d'une entreprise fictive, intégrer une machine,
 lui appliquer des politiques, brancher DNS et LDAP, tenir le parc à jour par
 Nexus, puis passer en production dans Kubernetes.
 
-12 chapitres, 38 jalons. Chaque jalon tient en 15 à 30 minutes.
+12 chapitres, 39 jalons. Chaque jalon tient en 15 à 30 minutes.
 
 ---
 
@@ -78,7 +78,7 @@ acme.lan
 | 9 | [Sécurité et exploitation](./09-securite-et-exploitation/README.md) | 9.1 [Second facteur et mots de passe](./09-securite-et-exploitation/01-mfa-et-mots-de-passe.md)<br>9.2 [Incident et journaux](./09-securite-et-exploitation/02-incident-et-journaux.md)<br>9.3 [Réglages et mises à jour](./09-securite-et-exploitation/03-reglages-et-mises-a-jour.md) |
 | 10 | [Cluster et proxy](./10-cluster-et-proxy/README.md) | 10.1 [Clés d'enrôlement](./10-cluster-et-proxy/01-cles-d-enrolement.md)<br>10.2 [Déployer un proxy](./10-cluster-et-proxy/02-deployer-un-proxy.md)<br>10.3 [Topologie : exposition, affinité, rotation](./10-cluster-et-proxy/03-topologie.md)<br>10.4 [Décider ce qu'un proxy expose](./10-cluster-et-proxy/04-piloter-les-relais.md) |
 | 11 | [Nexus : dépôts et mises à jour du parc](./11-nexus/README.md) | 11.1 [Déployer et raccorder un Nexus](./11-nexus/01-deployer-et-raccorder.md)<br>11.2 [Les dépôts : créer, publier, consommer](./11-nexus/02-depots.md)<br>11.3 [Changer la version d'un agent par Nexus](./11-nexus/03-mettre-a-jour-un-agent.md)<br>11.4 [Exposer Nexus par un proxy](./11-nexus/04-exposer-par-un-proxy.md) |
-| 12 | [Production : image rootless et Kubernetes](./12-kubernetes/README.md) | 12.1 [L'image rootless](./12-kubernetes/01-image-rootless.md)<br>12.2 [Installer avec Helm](./12-kubernetes/02-installer-avec-helm.md)<br>12.3 [GitOps et secrets](./12-kubernetes/03-gitops-et-secrets.md) |
+| 12 | [Production : image rootless et Kubernetes](./12-kubernetes/README.md) | 12.1 [L'image rootless](./12-kubernetes/01-image-rootless.md)<br>12.2 [Installer avec Helm](./12-kubernetes/02-installer-avec-helm.md)<br>12.3 [GitOps et secrets](./12-kubernetes/03-gitops-et-secrets.md)<br>12.4 [Certificats cert-manager](./12-kubernetes/04-certificats-cert-manager.md) |
 
 ---
 

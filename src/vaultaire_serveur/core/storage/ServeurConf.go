@@ -11,6 +11,9 @@ type Config struct {
 		// Débit par source sur /api/command (TO-DO 102).
 		API_Limite_Rafale      *int     `yaml:"limite_rafale"`
 		API_Limite_Par_Seconde *float64 `yaml:"limite_par_seconde"`
+		// Certificat importé (TO-DO 262) : voir Ldaps_TLS_CertFile.
+		API_TLS_CertFile *string `yaml:"api_tls_cert_file"`
+		API_TLS_KeyFile  *string `yaml:"api_tls_key_file"`
 	} `yaml:"api"`
 	Path struct {
 		SocketPath       *string `yaml:"socketpath"`
@@ -39,6 +42,9 @@ type Config struct {
 		// répartiteur : ces deux listes servent à les déclarer.
 		Ldaps_TLS_DNSNames []string `yaml:"ldaps_tls_dns_names"`
 		Ldaps_TLS_IPs      []string `yaml:"ldaps_tls_ip_addresses"`
+		// Certificat importé (TO-DO 262) : voir storage.Ldaps_TLS_CertFile.
+		Ldaps_TLS_CertFile *string `yaml:"ldaps_tls_cert_file"`
+		Ldaps_TLS_KeyFile  *string `yaml:"ldaps_tls_key_file"`
 		// Laisse les comptes soumis au second facteur se lier avec leur seul
 		// mot de passe. Faux par défaut : voir ldapstorage.MFABypass.
 		Ldap_MFA_Bypass *bool `yaml:"mfa_bypass"`
@@ -82,6 +88,9 @@ type Config struct {
 		// les utilisateurs ont en signet.
 		Web_TLS_DNSNames []string `yaml:"web_tls_dns_names"`
 		Web_TLS_IPs      []string `yaml:"web_tls_ip_addresses"`
+		// Certificat importé (TO-DO 262) : voir storage.Ldaps_TLS_CertFile.
+		Web_TLS_CertFile *string `yaml:"web_tls_cert_file"`
+		Web_TLS_KeyFile  *string `yaml:"web_tls_key_file"`
 		// Relais autorisés à déclarer l'adresse réelle du client, en adresses
 		// simples ou en préfixes CIDR.
 		//
@@ -159,6 +168,17 @@ var Ldaps_Port int = 636
 // serveur par son vrai nom de machine.
 var Ldaps_TLS_DNSNames []string
 var Ldaps_TLS_IPs []string
+
+// Certificats importés — TO-DO 262.
+//
+// Chemins d'un certificat (PEM, chaîne complète, serveur en tête) et de sa clé,
+// fournis par une autorité extérieure : cert-manager dans Kubernetes, une PKI
+// d'entreprise ailleurs. Vides par défaut : le service sert alors son
+// certificat auto-signé, gardé en base. Les deux ou aucun. Relus à chaud, voir
+// le paquet certimporte.
+var Ldaps_TLS_CertFile, Ldaps_TLS_KeyFile string
+var Web_TLS_CertFile, Web_TLS_KeyFile string
+var API_TLS_CertFile, API_TLS_KeyFile string
 
 var Website_Enable bool = true
 var Website_Port int = 443

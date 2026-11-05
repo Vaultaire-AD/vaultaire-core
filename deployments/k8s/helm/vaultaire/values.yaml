@@ -150,6 +150,45 @@ config:
   # fournis par l'environnement.
   override: ""
 
+# --------------------------------------------------------------------
+# Certificats TLS fournis de l'extérieur (TO-DO 262)
+# --------------------------------------------------------------------
+# Par défaut, le core génère des certificats auto-signés pour LDAPS, le portail
+# et l'API, et les garde en base. Ici, on lui en fournit : un Secret
+# « kubernetes.io/tls » (clés tls.crt et tls.key) par service. Le core relit
+# les fichiers à chaud : un renouvellement par cert-manager est servi dans la
+# minute, sans redémarrage et sans couper les connexions ouvertes.
+tls:
+  ldaps:
+    # Secret existant (émis par cert-manager, une PKI…). L'emporte sur
+    # tls.certManager pour ce service.
+    existingSecret: ""
+  web:
+    existingSecret: ""
+  api:
+    existingSecret: ""
+
+  # La chart crée elle-même les ressources Certificate de cert-manager.
+  # Prérequis : cert-manager installé et un Issuer / ClusterIssuer.
+  certManager:
+    enabled: false
+    # Services couverts : ldaps, web, api.
+    services: [ldaps, web]
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+      group: cert-manager.io
+    duration: 2160h    # 90 jours
+    renewBefore: 720h  # 30 jours
+    privateKey:
+      # RSA : le plus largement accepté par les clients LDAP anciens.
+      algorithm: RSA
+      size: 2048
+      rotationPolicy: Always
+    # Noms en plus de ceux du Service et de config.<ldap|web>.tlsDnsNames.
+    extraDnsNames: []
+    annotations: {}
+
 # Journal : JSON sur la sortie standard (collecté par la plateforme).
 logFormat: json
 timezone: UTC
