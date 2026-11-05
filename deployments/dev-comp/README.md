@@ -55,7 +55,7 @@ calcul voie les dernières releases.)
 
 Dans un conteneur `rockylinux:9` (`Dockerfile.build`) avec la recette de la CI de
 release : gcc, `pam-devel`, `libxcrypt-devel`, Go épinglé
-(`GO_VERSION`, 1.26.5). Le serveur (cgo) et les modules PAM sont ainsi liés à la
+(`GO_VERSION`, 1.26.10). Le serveur (cgo) et les modules PAM sont ainsi liés à la
 glibc de Rocky 9, celle de l'image d'exécution et du parc.
 
 Les modules natifs sortent **par famille**, comme ceux d'une release (TO-DO

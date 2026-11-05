@@ -2,7 +2,7 @@ module vaultaire_client_windows
 
 go 1.26.1
 
-toolchain go1.26.5
+toolchain go1.26.10
 
 require (
 	duckynetworkclient/V1 v0.0.0

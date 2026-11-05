@@ -41,7 +41,7 @@ sous Linux à partir du dépôt monté.
 
 | | |
 | --- | --- |
-| **Go** | **1.26** pour les sept modules, `toolchain go1.26.5`. Un Go local plus ancien suffit : `GOTOOLCHAIN=auto`, le défaut, télécharge le toolchain réclamé. La CI compile avec 1.26.5 |
+| **Go** | **1.26** pour les sept modules, `toolchain go1.26.10`. Un Go local plus ancien suffit : `GOTOOLCHAIN=auto`, le défaut, télécharge le toolchain réclamé. La CI compile avec 1.26.10 |
 | **GCC + `libpam0g-dev`** | modules PAM et NSS de `src/vaultaire_client/pam_module/` |
 | **Git** | ≥ 2.30 |
 

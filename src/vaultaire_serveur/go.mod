@@ -2,7 +2,7 @@ module vaultaire
 
 go 1.26.1
 
-toolchain go1.26.5
+toolchain go1.26.10
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
@@ -19,7 +19,7 @@ require (
 	// Dépendance DIRECTE depuis le passage à argon2id : core/global/security
 	// importe golang.org/x/crypto/argon2. Elle était marquée « indirect »,
 	// tirée par go-ldap (retirée, TO-DO 93 : importée nulle part) et sftp.
-	golang.org/x/crypto v0.54.0
+	golang.org/x/crypto v0.55.0
 	golang.org/x/sys v0.47.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1
 )
