@@ -34,7 +34,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION: "1.26.5"
+  GO_VERSION: "1.26.10"
   KEEP_RELEASES: "5"
 
 jobs:
@@ -293,8 +293,6 @@ jobs:
             VAULTAIRE_VERSION=${{ env.VERSION }}
             VCS_COMMIT=${{ env.SHA }}
             VCS_DATE=${{ steps.noms.outputs.date }}
-          cache-from: type=gha,scope=vaultaire-server
-          cache-to: type=gha,scope=vaultaire-server,mode=max
 
       - name: Trivy — l'image ne part pas avec une faille critique corrigeable
         uses: aquasecurity/trivy-action@0.35.0
@@ -326,7 +324,6 @@ jobs:
             VAULTAIRE_VERSION=${{ env.VERSION }}
             VCS_COMMIT=${{ env.SHA }}
             VCS_DATE=${{ steps.noms.outputs.date }}
-          cache-from: type=gha,scope=vaultaire-server
 
       - uses: sigstore/cosign-installer@v3
 

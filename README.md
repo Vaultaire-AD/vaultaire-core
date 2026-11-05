@@ -149,7 +149,7 @@ besoin.
 
 | | |
 | --- | --- |
-| **Go** | **1.26** pour les sept modules (`toolchain go1.26.5`). Un Go plus ancien suffit : `GOTOOLCHAIN=auto`, le défaut, télécharge le toolchain réclamé. |
+| **Go** | **1.26** pour les sept modules (`toolchain go1.26.10`). Un Go plus ancien suffit : `GOTOOLCHAIN=auto`, le défaut, télécharge le toolchain réclamé. |
 | **GCC, `pam-devel`, `libxcrypt-devel`** | Modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) — `libpam0g-dev`, `libcrypt-dev` sur Debian/Ubuntu. Ils ne se chargent que sur un poste dont la glibc est au moins celle de la machine qui les compile : les releases en portent un jeu par famille, compilé sur Rocky 9 et sur Ubuntu 22.04 |
 | **Docker / Docker Compose** | ≥ 24.x |
 | **Git** | ≥ 2.30 |

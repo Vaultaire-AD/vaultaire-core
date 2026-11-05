@@ -15,7 +15,7 @@
 
 FROM rockylinux:9
 
-ARG GO_VERSION=1.26.5
+ARG GO_VERSION=1.26.10
 
 RUN dnf install -y --setopt=install_weak_deps=False \
         git gcc tar gzip findutils which \

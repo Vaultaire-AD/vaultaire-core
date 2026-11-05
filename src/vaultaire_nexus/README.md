@@ -527,7 +527,7 @@ Parc sans accès à Docker Hub : les images de base sont des arguments.
 
 ```bash
 docker build -f src/vaultaire_nexus/deploy/Dockerfile \
-  --build-arg BUILD_IMAGE=nexus.acme.lan:8843/docker/golang:1.26.5-bookworm \
+  --build-arg BUILD_IMAGE=nexus.acme.lan:8843/docker/golang:1.26.10-bookworm \
   --build-arg RUNTIME_IMAGE=nexus.acme.lan:8843/docker/debian:12-slim \
   --build-arg VERSION=2.1.0 -t vaultaire/nexus:2.1.0 src/
 ```
