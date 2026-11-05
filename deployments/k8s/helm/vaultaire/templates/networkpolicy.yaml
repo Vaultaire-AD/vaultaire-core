@@ -1,0 +1,78 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- $np := .Values.networkPolicy -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vaultaire.fullname" . }}
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "vaultaire.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress{{ if $np.restrictEgress }}, Egress{{ end }}]
+  ingress:
+    # Seuls les ports du core ; rien d'autre n'écoute, mais une politique
+    # explicite le garantit même si une image future en ouvrait un.
+    - ports:
+        - { port: ducky, protocol: TCP }
+        - { port: ldap, protocol: TCP }
+        - { port: ldaps, protocol: TCP }
+        - { port: web, protocol: TCP }
+        - { port: api, protocol: TCP }
+        {{- if .Values.config.dns.enabled }}
+        - { port: dns, protocol: UDP }
+        {{- end }}
+      {{- with $np.ingressFrom }}
+      from:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if $np.restrictEgress }}
+  egress:
+    # DNS du cluster
+    - ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    # Base de données
+    - ports:
+        - { port: {{ .Values.database.port }}, protocol: TCP }
+      {{- if .Values.mariadb.enabled }}
+      to:
+        - podSelector:
+            matchLabels:
+              {{- include "vaultaire.mariadb.selectorLabels" . | nindent 14 }}
+      {{- end }}
+    # Les autres cores du cluster (Ducky)
+    - ports:
+        - { port: ducky, protocol: TCP }
+      to:
+        - podSelector:
+            matchLabels:
+              {{- include "vaultaire.selectorLabels" . | nindent 14 }}
+    {{- with $np.egressExtra }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- end }}
+---
+{{- if .Values.mariadb.enabled }}
+# La base n'est joignable que par le core.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "vaultaire.mariadb.fullname" . }}
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "vaultaire.mariadb.selectorLabels" . | nindent 6 }}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "vaultaire.selectorLabels" . | nindent 14 }}
+      ports:
+        - { port: 3306, protocol: TCP }
+{{- end }}
+{{- end }}

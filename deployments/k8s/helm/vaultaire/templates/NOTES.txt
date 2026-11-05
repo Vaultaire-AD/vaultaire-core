@@ -1,0 +1,42 @@
+Vaultaire {{ .Chart.AppVersion }} est déployé dans {{ .Release.Namespace }}.
+
+1. Suivre le démarrage :
+     kubectl -n {{ .Release.Namespace }} logs -f statefulset/{{ include "vaultaire.fullname" . }}
+
+2. Administrer (le CLI parle au core par son socket, dans le pod) :
+     kubectl -n {{ .Release.Namespace }} exec -it {{ include "vaultaire.fullname" . }}-0 -- /opt/vaultaire/bin/vaultaire_cli
+
+3. Ports publiés par le Service {{ include "vaultaire.fullname" . }} ({{ .Values.service.type }}) :
+{{- range $nom := list "ducky" "ldap" "ldaps" "web" "api" }}
+{{- $p := index $.Values.service.ports $nom }}
+{{- if $p.enabled }}
+     {{ $nom | printf "%-6s" }} {{ $p.port }}
+{{- end }}
+{{- end }}
+{{- if eq .Values.service.type "ClusterIP" }}
+
+   Le Service est interne au cluster. Les agents et les proxies (Ducky) et les
+   applications LDAP hors du cluster ont besoin d'un LoadBalancer ou d'un
+   NodePort : --set service.type=LoadBalancer
+{{- end }}
+
+4. Rendre le core joignable des agents (une fois l'adresse publique connue) :
+     vaultaire_cli cluster expose {{ include "vaultaire.fullname" . }}-0 <adresse publique> {{ .Values.service.ports.ducky.port }}
+
+5. Portail : https://<adresse>:{{ .Values.service.ports.web.port }} — compte « {{ .Values.config.admin.username }} »,
+   mot de passe du Secret {{ include "vaultaire.secretName" . }} (clé {{ .Values.auth.secretKeys.adminPassword }}), à changer
+   à la première connexion.
+{{- if .Values.config.ldap.requireTlsForBind }}
+
+   LDAP : les binds avec mot de passe sont refusés sur 389 (config.ldap.requireTlsForBind).
+   Configurez vos applications en LDAPS sur {{ .Values.service.ports.ldaps.port }}.
+{{- end }}
+{{- if and .Values.mariadb.enabled (gt (int .Values.replicaCount) 1) }}
+
+ATTENTION : {{ .Values.replicaCount }} cores sur la base embarquée, qui n'est pas répliquée.
+{{- end }}
+{{- if .Values.mariadb.enabled }}
+
+La base MariaDB embarquée est une instance unique. En production : base gérée,
+mariadb.enabled=false et database.host.
+{{- end }}

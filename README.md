@@ -107,6 +107,8 @@ Toute commande répond à `-h`. Le manuel complet est
 | Une version précise | `./deployments/pre-prod/docker-update.sh --version 2.1.0` | [`deployments/pre-prod/README.md`](./deployments/pre-prod/README.md) |
 | Tester la version en cours de dev (compilée localement, sans release) | `./deployments/dev-comp/dev-comp.sh` | [`deployments/dev-comp/README.md`](./deployments/dev-comp/README.md) |
 | Développer sur le code | `./deployments/dev/up.sh` — sources montées, `go run` | [`deployments/dev/README.md`](./deployments/dev/README.md) |
+| **Production en Kubernetes** (image rootless signée, Helm, GitOps) | `helm install vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire -n vaultaire --set auth.existingSecret=…` | [`docs/Installation/Kubernetes.md`](./docs/Installation/Kubernetes.md) |
+| Production en conteneur seul | `docker run … ghcr.io/vaultaire-ad/vaultaire-server:2.3.0` | [`deployments/docker/README.md`](./deployments/docker/README.md) |
 | Installation sans Docker (systemd) | — | [`docs/Installation/Setup.md`](./docs/Installation/Setup.md) |
 
 ---

@@ -7,11 +7,12 @@ import (
 	dnsparser "vaultaire/core/dns/DNS_Parser"
 	dnsstorage "vaultaire/core/dns/DNS_Storage"
 	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
 
 func DNS_StartServeur() {
 	addr := net.UDPAddr{
-		Port: 53,
+		Port: storage.Dns_Port,
 		IP:   net.ParseIP("0.0.0.0"),
 	}
 
@@ -19,7 +20,7 @@ func DNS_StartServeur() {
 	if err != nil {
 		// Le DNS tourne dans sa propre goroutine : un port 53 indisponible ne
 		// doit pas emporter tout le core (avant : log.Fatalf, invisible au journal).
-		logs.Write_LogCode("ERROR", logs.CodeNetConnection, "dns : écoute UDP 53 impossible, serveur DNS désactivé : "+err.Error())
+		logs.Write_LogCode("ERROR", logs.CodeNetConnection, fmt.Sprintf("dns : écoute UDP %d impossible, serveur DNS désactivé : %v", storage.Dns_Port, err))
 		return
 	}
 	defer func() {
@@ -29,7 +30,7 @@ func DNS_StartServeur() {
 		}
 	}()
 
-	logs.Write_Log("INFO", "dns: waiting for DNS requests on port 53")
+	logs.Write_Log("INFO", fmt.Sprintf("dns: waiting for DNS requests on port %d", storage.Dns_Port))
 	if !dnsdatabase.InitDatabase() {
 		// La cause précise est déjà journalisée par InitDatabase.
 		logs.Write_LogCode("ERROR", logs.CodeDBConnection, "dns : base DNS non initialisée, serveur DNS désactivé")

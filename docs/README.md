@@ -20,6 +20,8 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | [`Installation/Requirements.md`](./Installation/Requirements.md) | Prérequis système, versions, dépendances |
 | [`Installation/Setup.md`](./Installation/Setup.md) | Installation complète : base de données, service systemd, configuration YAML, poste client |
 | [`Installation/Docker_Kubernetes.md`](./Installation/Docker_Kubernetes.md) | Déploiement conteneurisé |
+| [`Installation/Kubernetes.md`](./Installation/Kubernetes.md) | **Production** : image rootless signée (GHCR), chart Helm, GitOps, secrets |
+| [`Installation/Variables_environnement.md`](./Installation/Variables_environnement.md) | Toutes les variables `VAULTAIRE_*` et leurs variantes `_FILE` |
 | [`Installation/Client_Windows.md`](./Installation/Client_Windows.md) | **Poste Windows (V1)** : identité de la machine, service, tuile de l'écran de connexion, compte local |
 
 ---

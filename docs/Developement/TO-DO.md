@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **254**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **262**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -40,6 +40,8 @@ Trois gestes, dans le même passage que le code :
 | 251 | GPO          | `file_deploy` réécrit le fichier et efface son ACL          | À faire — petit                         |
 | 252 | GPO          | `{{fqdn}}` vaut le nom court sur Debian                     | À faire — petit                         |
 | 253 | SÉCURITÉ     | L'identité des marqueurs voyage hors de la signature des modules | À cadrer                           |
+| 256 | CLI          | La clé publique de déploiement (`-join`) ne se lit que sur le portail | À faire — petit, utile en Kubernetes |
+| 260 | DÉPLOIEMENT  | Plusieurs cores en Kubernetes : un Service par pod pour l'exposition | À faire — après 2.3.0 |
 | 217 | AUTH         | Aucun service Vaultaire joignable : comment se connecter ?  | Idée — à cadrer                         |
 | 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
@@ -193,6 +195,20 @@ et Debian d'origine), pour que les fragments — GPO comprises — passent avant
 le reste ; ou garder les directives de l'agent prioritaires, et refuser à
 l'enregistrement d'une GPO celles qu'il fixe déjà. Lié au **241**
 (`AuthenticationMethods` global posé par `-join`).
+
+### 256. [CLI] La clé publique de déploiement ne se lit que sur le portail
+
+En Kubernetes, sans shell dans l'image, la clé à poser dans
+`/root/.ssh/authorized_keys` d'un poste avant `-join` ne se lit que sur le
+tableau de bord du portail (section « Client -join »). Ajouter
+`vlt certificate show login-client` (ou équivalent) qui rend la clé publique.
+
+### 260. [DÉPLOIEMENT] Plusieurs cores en Kubernetes
+
+`replicaCount > 1` fonctionne (StatefulSet, base commune), mais chaque core doit
+être exposé séparément aux agents. Ajouter à la chart un Service par pod
+(`statefulset.kubernetes.io/pod-name`) et, si possible, l'appel automatique à
+`vlt cluster expose`.
 
 ### 249. [GPO] `ntp_config` : prendre en charge chrony
 

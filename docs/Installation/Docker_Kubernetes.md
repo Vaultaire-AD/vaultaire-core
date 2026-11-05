@@ -1,7 +1,9 @@
 # Déploiement conteneurisé
 
-Deux piles Compose sont fournies. **Il n'y a pas de manifeste Kubernetes** dans
-le dépôt aujourd'hui.
+**Production** : l'image rootless publiée sur GHCR et la chart Helm — voir
+[`Kubernetes.md`](./Kubernetes.md) (2.3). Les piles Compose ci-dessous sont des
+environnements de **développement et de test** : conteneur root, binaires
+montés, clé de démonstration. Ne les exposez pas.
 
 ---
 
@@ -92,10 +94,9 @@ Ou localement :
 
 ## Kubernetes
 
-Non fourni. Les éléments nécessaires existent — image sans état, configuration
-par fichier YAML et variables d'environnement, sondes possibles sur les ports
-HTTP — mais aucun manifeste, chart ou opérateur n'est maintenu ici.
-
+Depuis la 2.3 : chart Helm [`deployments/k8s/helm/vaultaire`](../../deployments/k8s/helm/vaultaire/),
+publiée en OCI (`oci://ghcr.io/vaultaire-ad/charts/vaultaire`), exemples GitOps
+(Argo CD, Flux, External Secrets, SOPS). Tout est dans [`Kubernetes.md`](./Kubernetes.md).
 
 ## Pile compilée localement — `deployments/dev-comp/`
 

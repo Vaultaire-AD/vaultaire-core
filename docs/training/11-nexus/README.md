@@ -2,7 +2,7 @@
 
 # Chapitre 11 — Nexus : dépôts et mises à jour du parc
 
-[← Chapitre 10 — Cluster et proxy](../10-cluster-et-proxy/README.md) · [Sommaire de la formation ⌂](../README.md)
+[← Chapitre 10 — Cluster et proxy](../10-cluster-et-proxy/README.md) · [Sommaire de la formation ⌂](../README.md) · [Chapitre 12 — Kubernetes →](../12-kubernetes/README.md)
 
 ---
 

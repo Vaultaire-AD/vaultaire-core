@@ -1,0 +1,12 @@
+# Essai rapide : base embarquée, Service LoadBalancer, Secret fourni à part.
+#
+#   kubectl -n vaultaire create secret generic vaultaire-secrets \
+#     --from-literal=db-password="$(openssl rand -base64 24)" \
+#     --from-literal=db-root-password="$(openssl rand -base64 24)" \
+#     --from-literal=admin-password='Choisissez-en-un-vrai-2026'
+#   helm install vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire \
+#     -n vaultaire -f values-quickstart.yaml
+auth:
+  existingSecret: vaultaire-secrets
+service:
+  type: LoadBalancer

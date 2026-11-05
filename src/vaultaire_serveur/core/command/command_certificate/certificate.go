@@ -214,9 +214,12 @@ func showCertificate(args []string, appelant action.Appelant) string {
 // qui n'avait rien à y faire, et un vrai défaut se serait perdu dans ce bruit.
 func nomsAttendus(nom string) ldaptools.SANSet {
 	if nom == duckykey.LDAPSServerCertName {
-		return ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+		return ldaptools.AttendusPourAudit(
+			ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs()),
+			ldaptools.ConfiguredIPs())
 	}
-	return ldaptools.BuildSANSet(storage.Web_TLS_DNSNames, storage.Web_TLS_IPs)
+	return ldaptools.AttendusPourAudit(
+		ldaptools.BuildSANSet(storage.Web_TLS_DNSNames, storage.Web_TLS_IPs), storage.Web_TLS_IPs)
 }
 
 // certificatsRegenerables décrit ce que la commande sait reconstruire.

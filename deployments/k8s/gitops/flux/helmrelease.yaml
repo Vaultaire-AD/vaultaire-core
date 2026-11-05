@@ -1,0 +1,46 @@
+# Flux : la chart OCI de GHCR, vérifiée par cosign avant installation.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: OCIRepository
+metadata:
+  name: vaultaire
+  namespace: flux-system
+spec:
+  interval: 1h
+  url: oci://ghcr.io/vaultaire-ad/charts/vaultaire
+  ref:
+    semver: "2.3.x"
+  layerSelector:
+    mediaType: "application/vnd.cncf.helm.chart.content.v1.tar+gzip"
+    operation: copy
+  # Signature sans clé (GitHub Actions → Sigstore), voir docs/Installation/Kubernetes.md
+  verify:
+    provider: cosign
+    matchOIDCIdentity:
+      - issuer: "^https://token.actions.githubusercontent.com$"
+        subject: "^https://github.com/Vaultaire-AD/vaultaire-core/.github/workflows/release.yaml@refs/.+$"
+---
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: vaultaire
+  namespace: vaultaire
+spec:
+  interval: 30m
+  chartRef:
+    kind: OCIRepository
+    name: vaultaire
+    namespace: flux-system
+  install:
+    createNamespace: true
+    remediation: { retries: 3 }
+  upgrade:
+    remediation: { retries: 3, remediateLastFailure: true }
+  # Le Secret doit exister avant l'installation (ExternalSecret, SOPS…).
+  dependsOn: []
+  valuesFrom:
+    - kind: ConfigMap
+      name: vaultaire-values
+      valuesKey: values.yaml
+  values:
+    auth:
+      existingSecret: vaultaire-secrets

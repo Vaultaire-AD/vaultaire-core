@@ -1,0 +1,223 @@
+{{- include "vaultaire.validate" . -}}
+{{- $p := fromYaml (include "vaultaire.containerPorts" .) -}}
+{{- $secret := include "vaultaire.secretName" . -}}
+{{- $k := .Values.auth.secretKeys -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "vaultaire.fullname" . }}
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  # Le nom du pod est le nom du nœud dans le cluster de cores : il doit être
+  # stable d'un redémarrage à l'autre, d'où le StatefulSet.
+  serviceName: {{ include "vaultaire.fullname" . }}-headless
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      {{- include "vaultaire.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vaultaire.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- if not .Values.auth.existingSecret }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "vaultaire.serviceAccountName" . }}
+      # Le core n'appelle jamais l'API Kubernetes.
+      automountServiceAccountToken: false
+      # INDISPENSABLE : sans cela, Kubernetes injecte VAULTAIRE_PORT,
+      # VAULTAIRE_SERVICE_HOST… pour un Service nommé « vaultaire » — le même
+      # espace de noms que la configuration du core, qui refuserait de démarrer.
+      enableServiceLinks: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- if .Values.mariadb.enabled }}
+      initContainers:
+        # Attendre la base sans shell ni outil : le core lui-même saurait le
+        # faire, mais en échouant au démarrage il redémarrerait en boucle et
+        # retarderait d'autant la mise en service.
+        - name: attente-base
+          image: {{ include "vaultaire.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/opt/vaultaire/bin/vaultaire_serveur", "--attendre-base", "120"]
+          env:
+            - name: VAULTAIRE_DB_HOST
+              value: {{ include "vaultaire.dbHost" . | quote }}
+            - name: VAULTAIRE_DB_PORT
+              value: {{ .Values.database.port | quote }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          resources:
+            requests: { cpu: 10m, memory: 16Mi }
+            limits: { memory: 64Mi }
+      {{- end }}
+      containers:
+        - name: core
+          image: {{ include "vaultaire.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          env:
+            - name: VAULTAIRE_CONFIG
+              value: /etc/vaultaire/serveur_conf.yaml
+            - name: VAULTAIRE_LOG_FORMAT
+              value: {{ .Values.logFormat | quote }}
+            - name: TZ
+              value: {{ .Values.timezone | quote }}
+            {{- if .Values.auth.mountAsFiles }}
+            - name: VAULTAIRE_DB_PASSWORD_FILE
+              value: /run/secrets/vaultaire/db-password
+            {{- if .Values.config.admin.enabled }}
+            - name: VAULTAIRE_ADMIN_PASSWORD_FILE
+              value: /run/secrets/vaultaire/admin-password
+            {{- end }}
+            {{- else }}
+            - name: VAULTAIRE_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $secret }}, key: {{ $k.dbPassword }} } }
+            {{- if .Values.config.admin.enabled }}
+            - name: VAULTAIRE_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: {{ $secret }}, key: {{ $k.adminPassword }} } }
+            {{- end }}
+            {{- end }}
+            {{- if or .Values.auth.adminPublicKey .Values.auth.existingSecret }}
+            - name: VAULTAIRE_ADMIN_PUBLIC_KEY
+              valueFrom: { secretKeyRef: { name: {{ $secret }}, key: {{ $k.adminPublicKey }}, optional: true } }
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          ports:
+            - { name: ducky, containerPort: {{ $p.ducky }}, protocol: TCP }
+            - { name: web, containerPort: {{ $p.web }}, protocol: TCP }
+            - { name: api, containerPort: {{ $p.api }}, protocol: TCP }
+            - { name: ldap, containerPort: {{ $p.ldap }}, protocol: TCP }
+            - { name: ldaps, containerPort: {{ $p.ldaps }}, protocol: TCP }
+            {{- if .Values.config.dns.enabled }}
+            - { name: dns, containerPort: {{ $p.dns }}, protocol: UDP }
+            {{- end }}
+          {{- with .Values.probes.startup }}
+          {{- if .enabled }}
+          startupProbe:
+            tcpSocket: { port: ducky }
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.probes.readiness }}
+          {{- if .enabled }}
+          # /healthz : le portail répond ET la base aussi. Un core sans base
+          # sort du Service au lieu de refuser les binds qu'on lui envoie.
+          # Jamais de sonde TCP sur le LDAPS : chaque poignée de main avortée y
+          # est journalisée (une ligne WARNING toutes les dix secondes).
+          readinessProbe:
+            {{- if $.Values.config.web.enabled }}
+            httpGet: { path: /healthz, port: web, scheme: HTTPS }
+            {{- else }}
+            tcpSocket: { port: ducky }
+            {{- end }}
+            periodSeconds: {{ .periodSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          {{- with .Values.probes.liveness }}
+          {{- if .enabled }}
+          # Le CLI interroge le core par son socket d'administration : un core
+          # bloqué qui garde ses ports ouverts est détecté aussi.
+          livenessProbe:
+            exec:
+              command: ["/opt/vaultaire/bin/vaultaire_cli", "version"]
+            periodSeconds: {{ .periodSeconds }}
+            timeoutSeconds: {{ .timeoutSeconds }}
+            failureThreshold: {{ .failureThreshold }}
+          {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - { name: config, mountPath: /etc/vaultaire, readOnly: true }
+            - { name: data, mountPath: /var/lib/vaultaire }
+            - { name: logs, mountPath: /var/log/vaultaire }
+            - { name: run, mountPath: /run/vaultaire }
+            {{- if .Values.auth.mountAsFiles }}
+            - { name: secrets, mountPath: /run/secrets/vaultaire, readOnly: true }
+            {{- end }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "vaultaire.fullname" . }}-config
+        - name: logs
+          emptyDir: { sizeLimit: {{ .Values.logsVolume.sizeLimit }} }
+        - name: run
+          emptyDir: { medium: Memory, sizeLimit: 1Mi }
+        {{- if .Values.auth.mountAsFiles }}
+        - name: secrets
+          secret:
+            secretName: {{ $secret }}
+            defaultMode: 0400
+            items:
+              - { key: {{ $k.dbPassword }}, path: db-password }
+              {{- if .Values.config.admin.enabled }}
+              - { key: {{ $k.adminPassword }}, path: admin-password }
+              {{- end }}
+        {{- end }}
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  {{- if .Values.persistence.enabled }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "vaultaire.selectorLabels" . | nindent 10 }}
+      spec:
+        accessModes: {{ toJson .Values.persistence.accessModes }}
+        {{- with .Values.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size }}
+  {{- end }}

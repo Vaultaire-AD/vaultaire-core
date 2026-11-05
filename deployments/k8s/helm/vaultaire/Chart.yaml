@@ -1,0 +1,26 @@
+apiVersion: v2
+name: vaultaire
+description: >-
+  Vaultaire core — annuaire LDAP/LDAPS et authentification centralisée des
+  postes Linux (agents, proxies, GPO). Image rootless, distroless, lecture
+  seule ; secrets par Secret Kubernetes.
+type: application
+# Version de la chart (SemVer). Elle suit la release du produit.
+version: 2.3.0
+appVersion: "2.3.0"
+kubeVersion: ">=1.25.0-0"
+home: https://github.com/Vaultaire-AD/vaultaire-core
+sources:
+  - https://github.com/Vaultaire-AD/vaultaire-core
+keywords:
+  - ldap
+  - ldaps
+  - active-directory
+  - authentication
+  - pam
+  - gpo
+annotations:
+  artifacthub.io/license: "see repository"
+  artifacthub.io/images: |
+    - name: vaultaire-server
+      image: ghcr.io/vaultaire-ad/vaultaire-server:2.3.0

@@ -62,6 +62,11 @@ func main() {
 		}
 	}
 
+	// Conteneur d'initialisation Kubernetes : attendre la base, rien d'autre.
+	if len(os.Args) > 1 && os.Args[1] == "--attendre-base" {
+		os.Exit(attendreBase(os.Args[2:], os.Stdout))
+	}
+
 	// Paquets d'agent (TO-DO 113) : produire ou signer un manifeste, lire la
 	// clé. Avant tout service, et sans démarrer le core — voir paquetagent/outil.
 	if outil.EstCommande(os.Args[1:]) {

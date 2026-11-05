@@ -1,93 +1,26 @@
 package autoaddclientgo
 
 import (
-	"bytes"
 	"fmt"
 	"os"
-	"os/exec"
 	"strings"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
+
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
 
-//
-//func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) error {
-//	remote := fmt.Sprintf("%s@%s", user, host)
-//
-//	// Étape 1 : récupérer le nom de l'OS
-//	cmdDetect := exec.Command("ssh", "-i", privateKeyPath, "-p", fmt.Sprintf("%d", port), remote, "cat /etc/os-release")
-//	var out bytes.Buffer
-//	var stderr bytes.Buffer
-//	cmdDetect.Stdout = &out
-//	cmdDetect.Stderr = &stderr
-//
-//	if err := cmdDetect.Run(); err != nil {
-//		return fmt.Errorf("❌ Impossible de détecter l'OS distant : %s\n%s", err, stderr.String())
-//	}
-//
-//	osRelease := out.String()
-//	var osType string
-//	switch {
-//	case strings.Contains(osRelease, "ID=debian"):
-//		osType = "debian"
-//		err := LoadCommandsFromShellScript(storage.Sh_folder_path + osType + ".sh")
-//		if err != nil {
-//			return fmt.Errorf("%s", "failed to load command file"+err.Error())
-//		}
-//	case strings.Contains(osRelease, "ID=ubuntu"):
-//		osType = "ubuntu"
-//		err := LoadCommandsFromShellScript(storage.Sh_folder_path + osType + ".sh")
-//		if err != nil {
-//			return fmt.Errorf("%s", "failed to load command file"+err.Error())
-//		}
-//	case strings.Contains(osRelease, "ID=\"rocky\"") || strings.Contains(osRelease, "ID=rocky"):
-//		osType = "rocky"
-//		err := LoadCommandsFromShellScript(storage.Sh_folder_path + osType + ".sh")
-//		if err != nil {
-//			return fmt.Errorf("%s", "failed to load command file"+err.Error())
-//		}
-//	default:
-//		return fmt.Errorf("⚠️ OS non reconnu :\n%s", osRelease)
-//	}
-//
-//	fmt.Printf("✅ OS détecté : %s\n", osType)
-//	// Exécution des commandes en SSH
-//	for _, commande := range storage.AutoAddClientCommandesList {
-//
-//		fullCommand := fmt.Sprintf("bash -c '%s'", escapeSingleQuotes(commande))
-//
-//		cmd := exec.Command("ssh", "-i", privateKeyPath, "-p", fmt.Sprintf("%d", port), remote, fullCommand)
-//
-//		var stderr bytes.Buffer
-//		cmd.Stderr = &stderr
-//
-//		fmt.Printf("▶️  %s\n", commande)
-//		if err := cmd.Run(); err != nil {
-//			return fmt.Errorf("❌ Erreur commande : %s\n%s", commande, stderr.String())
-//		}
-//	}
-//
-//	fmt.Println("✅ Toutes les commandes ont été exécutées avec succès.")
-//	return nil
-//}
-//
-
-func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) error {
-	remote := fmt.Sprintf("%s@%s", user, host)
-	portStr := fmt.Sprintf("%d", port)
-
-	// 1. Détecter l'OS distant (identique à votre code)
-	cmdDetect := exec.Command("ssh", "-i", privateKeyPath, "-p", portStr, remote, "cat /etc/os-release")
-	var out bytes.Buffer
-	var stderr bytes.Buffer
-	cmdDetect.Stdout = &out
-	cmdDetect.Stderr = &stderr
-
-	if err := cmdDetect.Run(); err != nil {
-		return fmt.Errorf("❌ Impossible de détecter l'OS distant : %s\n%s", err, stderr.String())
+// ExecuterCommandesSSHAvecCle choisit le script d'installation du poste, le
+// dépose par SFTP et l'exécute, sur la connexion déjà ouverte.
+func ExecuterCommandesSSHAvecCle(client *ssh.Client, host string) error {
+	// 1. Détecter l'OS distant
+	osRelease, err := lireSortie(client, "cat /etc/os-release")
+	if err != nil {
+		return fmt.Errorf("❌ Impossible de détecter l'OS distant : %v", err)
 	}
 
-	osRelease := out.String()
 	script, distribution, err := ScriptDInstallation(osRelease)
 	if err != nil {
 		return fmt.Errorf("⚠️ %v", err)
@@ -101,35 +34,32 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 			"le répertoire sh_folder_path est-il complet ?", localScriptPath, errStat)
 	}
 	// Dans le répertoire personnel du compte de connexion, et non dans /tmp
-	// (recette du 28/10) : le script restait dans /tmp, lisible par tous, après
-	// l'installation — et un chemin fixe dans un répertoire où tout le monde
+	// (recette du 28/10) : un chemin fixe dans un répertoire où tout le monde
 	// écrit laisse un compte local du poste préparer le fichier que root va
 	// exécuter. Effacé après l'exécution, réussie ou non.
 	remoteScriptPath := ScriptDistant
 
 	logs.Write_Log("INFO", fmt.Sprintf("autoadd : %s détecté sur %s, transfert du script %s", distribution, host, script))
 
-	// 2. Transférer le script sur le serveur distant via SCP
-	scpCmd := exec.Command("scp", "-i", privateKeyPath, "-P", portStr, localScriptPath, fmt.Sprintf("%s:%s", remote, remoteScriptPath))
-	var scpErr bytes.Buffer
-	scpCmd.Stderr = &scpErr
-	if err := scpCmd.Run(); err != nil {
-		return fmt.Errorf("❌ Erreur lors du transfert du script via SCP : %v\n%s", err, scpErr.String())
+	// 2. Transférer le script (SFTP : un chemin relatif part du répertoire
+	// personnel, comme le faisait scp). 0600 : il n'est lu que par bash.
+	sc, err := sftp.NewClient(client)
+	if err != nil {
+		return fmt.Errorf("❌ sous-système sftp indisponible sur le poste : %v", err)
+	}
+	err = copierFichier(sc, localScriptPath, remoteScriptPath, 0o600)
+	sc.Close()
+	if err != nil {
+		return fmt.Errorf("❌ Erreur lors du transfert du script : %v", err)
 	}
 
-	// 3. Exécuter le script distant en tant que root/bash.
+	// 3. Exécuter le script distant.
 	//
-	// La sortie du script allait sur la sortie standard du core (TO-DO 153) :
-	// invisible pour l'administrateur qui lançait la commande à distance, et
-	// absente du journal. Elle est maintenant gardée — sa fin seulement, le
-	// script d'installation est bavard — et jointe à l'erreur en cas d'échec.
-	runCmd := exec.Command("ssh", "-i", privateKeyPath, "-p", portStr, remote, CommandeDistante(remoteScriptPath))
+	// La sortie est gardée — sa fin seulement, le script d'installation est
+	// bavard — et jointe à l'erreur en cas d'échec (TO-DO 153).
 	sortie := &FinDeSortie{Max: TailleFinDeSortie}
-	runCmd.Stdout = sortie
-	runCmd.Stderr = sortie
-
 	logs.Write_Log("DEBUG", "autoadd : exécution du script d'installation sur "+host)
-	if err := runCmd.Run(); err != nil {
+	if err := executer(client, CommandeDistante(remoteScriptPath), sortie); err != nil {
 		return fmt.Errorf("❌ Erreur lors de l'exécution du script distant : %v\n--- fin de la sortie du script ---\n%s", err, sortie.String())
 	}
 
@@ -138,7 +68,7 @@ func ExecuterCommandesSSHAvecCle(user, privateKeyPath, host string, port int) er
 }
 
 // ScriptDistant : chemin RELATIF, donc dans le répertoire personnel du compte
-// de connexion (scp et ssh y partent), qui n'est pas inscriptible par les
+// de connexion (SFTP et SSH y partent), qui n'est pas inscriptible par les
 // autres comptes du poste.
 const ScriptDistant = ".vaultaire_install.sh"
 
@@ -153,7 +83,7 @@ func CommandeDistante(script string) string {
 const TailleFinDeSortie = 4096
 
 // FinDeSortie est un io.Writer qui ne garde que les Max derniers octets écrits.
-// Stdout et Stderr d'une même commande peuvent le partager : exec ne les
+// Stdout et Stderr d'une même session SSH le partagent : ssh.Session ne les
 // écrit pas en parallèle quand c'est le même Writer.
 type FinDeSortie struct {
 	Max     int

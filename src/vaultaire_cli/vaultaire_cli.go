@@ -12,6 +12,35 @@ import (
 	"strings"
 )
 
+// cleAvantJoin dépose, AVANT un « -join », la clé du core sur le poste par
+// ssh-copy-id — l'ANCIENNE méthode d'échange, active seulement si
+// VAULTAIRE_pubKeyLogin désigne une clé.
+//
+// Sans elle, rien n'est tenté ni affiché : la clé est posée à la main sur le
+// poste (portail, section « Client -join »), c'est la méthode documentée. Le
+// message « ❌ Variable d'environnement VAULTAIRE_pubKeyLogin non définie »
+// s'affichait à chaque installation réussie, et faisait chercher une panne qui
+// n'existait pas (TO-DO 259).
+func cleAvantJoin(command string) {
+	if os.Getenv("VAULTAIRE_pubKeyLogin") == "" || !strings.Contains(command, "-join") {
+		return
+	}
+	parts := strings.Fields(command)
+	for i := 0; i < len(parts)-2; i++ {
+		if parts[i] != "-join" {
+			continue
+		}
+		ip, username := parts[i+1], parts[i+2]
+		fmt.Println("🔑 Détection de -join avec IP:", ip, "et utilisateur:", username)
+		if err := AddSSHKeyToClient(username, ip); err != nil {
+			fmt.Println(err)
+		} else {
+			fmt.Println("🔑 Clé SSH ajoutée avec succès.")
+		}
+		return
+	}
+}
+
 func AddSSHKeyToClient(user, host string) error {
 	pubKeyPath := os.Getenv("VAULTAIRE_pubKeyLogin")
 	if pubKeyPath == "" {
@@ -113,23 +142,7 @@ func main() {
 	if len(os.Args) > 1 {
 		// Joindre les arguments en une seule chaîne de caractères
 		command := strings.Join(os.Args[1:], " ")
-		if strings.Contains(command, "-join") {
-			parts := strings.Fields(command)
-			for i := 0; i < len(parts)-2; i++ {
-				if parts[i] == "-join" {
-					ip := parts[i+1]
-					username := parts[i+2]
-
-					fmt.Println("🔑 Détection de -join avec IP:", ip, "et utilisateur:", username)
-					if err := AddSSHKeyToClient(username, ip); err != nil {
-						fmt.Println(err)
-					} else {
-						fmt.Println("🔑 Clé SSH ajoutée avec succès.")
-					}
-					break
-				}
-			}
-		}
+		cleAvantJoin(command)
 		fmt.Println(envoyerCommande(command))
 	} else {
 		// Si aucun argument n'est fourni, démarrer le mode interactif
@@ -144,27 +157,7 @@ func main() {
 				fmt.Println("Fermeture de Vaultaire CLI...")
 				break
 			}
-			if strings.Contains(command, "-join") {
-				parts := strings.Fields(command)
-				for i := 0; i < len(parts)-2; i++ {
-					if parts[i] == "-join" {
-						ip := parts[i+1]
-						username := parts[i+2]
-
-						fmt.Println("🔑 Détection de -join avec IP:", ip, "et utilisateur:", username)
-						// Le `else` manquait ici, et seulement ici : l'invite
-						// annonçait « Clé SSH ajoutée avec succès » juste après
-						// avoir affiché l'erreur qui disait le contraire. Le
-						// mode argument, lui, l'avait.
-						if err := AddSSHKeyToClient(username, ip); err != nil {
-							fmt.Println(err)
-						} else {
-							fmt.Println("🔑 Clé SSH ajoutée avec succès.")
-						}
-						break
-					}
-				}
-			}
+			cleAvantJoin(command)
 
 			// Le mode interactif lit la réponse EXACTEMENT comme le mode
 			// argument, et c'est le point de ce bloc.
