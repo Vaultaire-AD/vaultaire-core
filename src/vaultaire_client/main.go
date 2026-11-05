@@ -13,15 +13,21 @@ import (
 	"log"
 	"os"
 	"time"
+	"vaultaire_client/chrono"
 	"vaultaire_client/config"
+	"vaultaire_client/confsys"
+	"vaultaire_client/controle"
 	"vaultaire_client/debugreport"
 	"vaultaire_client/gpo"
+	"vaultaire_client/miseajour"
 	pamcommunication "vaultaire_client/pam_communication"
 	"vaultaire_client/revocation"
 	serveurcommunication "vaultaire_client/serveur_communication"
+	"vaultaire_client/serveur_communication/module"
 	"vaultaire_client/sshauth"
 	"vaultaire_client/tools"
 	localusermanagement "vaultaire_client/tools/local_user_management"
+	"vaultaire_client/unite"
 	"vaultaire_client/version"
 	yaml_vaultaire "vaultaire_client/yaml"
 )
@@ -101,6 +107,8 @@ func brancherSocleDucky() {
 	tramesmanager.RegisterHandler("04", decouverte.HandleTrame)
 	tramesmanager.RegisterHandler("05", gpo.HandleTrameGPO)
 	tramesmanager.RegisterHandler("06", revocation.HandleTrameRevocation)
+	// 09 : l'ordre de mise à jour (TO-DO 115).
+	tramesmanager.RegisterHandler("09", miseajour.HandleTrame)
 }
 
 // bootstrapDecouverte arme la demande périodique de la liste de nœuds.
@@ -144,13 +152,61 @@ func bootstrapDecouverte() {
 	// persistance ci-dessus.
 	serveurcommunication.ArmerBascule()
 
-	decouverte.Demarrer(func() string {
+	cleDeSession := func() string {
 		session, err := stosession.SessionsUser.WaitForVaultaireSession()
 		if err != nil || session == nil || session.DuckySession == nil {
 			return ""
 		}
 		return string(session.DuckySession.SessionKey)
+	}
+	decouverte.Demarrer(cleDeSession)
+
+	// Où l'agent prendrait ses mises à jour (TO-DO 114) : une 04_15 par
+	// démarrage, et une ligne de journal — la découverte se vérifie sans
+	// attendre un ordre. L'ordre (116) redemande les dépôts au moment de
+	// télécharger.
+	go func() {
+		defer logs.Recover("mise à jour : découverte des dépôts")
+		miseajour.Journaliser(cleDeSession)
+	}()
+
+	// L'ordre de mise à jour (TO-DO 115) : demandé à chaque tunnel neuf, vers
+	// un core qui annonce la capacité. Même émetteur que la découverte.
+	miseajour.Configure(func(trame string) {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "mise à jour : aucune session vaultaire valide, trame non envoyée")
+			return
+		}
+		sendmessage.SendMessage(trame, session.DuckySession)
 	})
+	miseajour.ConfigurerSession(cleDeSession)
+	go func() {
+		defer logs.Recover("mise à jour : demande des ordres")
+		miseajour.SurveillerLesOrdres(gpo.CurrentSessionKey)
+	}()
+	// Le jeu de clés de confiance des paquets (TO-DO 207) : même émetteur,
+	// une demande par session neuve et par heure.
+	go func() {
+		defer logs.Recover("clés des paquets : demande du jeu")
+		miseajour.SurveillerLesCles(gpo.CurrentSessionKey)
+	}()
+
+	// La configuration système tenue à la version de l'agent (TO-DO 117) :
+	// un passage par démarrage, APRÈS la fin d'une éventuelle mise à jour, et
+	// le compte rendu 09_07 vers un core qui annonce la capacité.
+	confsys.Configure(func(trame string) {
+		session, err := stosession.SessionsUser.WaitForVaultaireSession()
+		if err != nil || session == nil || session.DuckySession == nil {
+			logs.Write_log("WARNING", "configuration système : aucune session vaultaire valide, compte rendu non envoyé")
+			return
+		}
+		sendmessage.SendMessage(trame, session.DuckySession)
+	})
+	go func() {
+		defer logs.Recover("configuration système")
+		confsys.Demarrer(gpo.CurrentSessionKey)
+	}()
 }
 
 // purgerGroupesOrphelins affiche, et n'efface que sur confirmation explicite.
@@ -197,8 +253,69 @@ func purgerGroupesOrphelins(confirmer bool) {
 func main() {
 	brancherSocleDucky()
 
+	// Les options d'abord, AVANT toute lecture — TO-DO 112.
+	//
+	// Elles étaient déclarées après le chargement de la configuration : un
+	// `--check` n'aurait jamais pu dire qu'elle est illisible, puisque le
+	// programme serait mort sur elle avant de savoir qu'on le lui demandait.
+	verifier := flag.Bool("check", false,
+		"Contrôle que l'agent peut démarrer (configuration, identité, clés) et sort — sans rien ouvrir ni modifier")
+	installerUnite := flag.Bool("install-unit", false,
+		"Écrit l'unité systemd de l'agent (relance bornée, contrôle avant démarrage) si elle diffère")
+	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
+	purgeGroupes := flag.Bool("purge-groups", false,
+		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
+	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
+	// Rapport de debug périodique (vlt_client-Debug.log). La ligne de commande
+	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
+	debugRapport := flag.Bool("debug", false,
+		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
+	// La bascule d'une mise à jour (TO-DO 116) : jouée par la COPIE de l'agent
+	// que l'agent pose dans /usr/libexec/vaultaire/ et lance par systemd-run.
+	// Pas une commande pour un humain.
+	basculer := flag.String("basculer", "",
+		"Réservé à la mise à jour : joue la bascule préparée dans ce répertoire")
+	// La configuration système (TO-DO 117), en lecture seule : ce que l'agent
+	// réécrirait au prochain démarrage, fichier par fichier.
+	etatConfig := flag.Bool("config-status", false,
+		"Dit, sans rien écrire, où en est la configuration système (piles PAM, sshd_config, nsswitch) face à cette version")
+	debugIntervalle := flag.Int("debug-interval", 0,
+		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
+	flag.Parse()
+
+	// Le contrôle de démarrage : il lit, dit, et sort.
+	//
+	// Avant tout le reste, et sans le journal de l'agent : c'est la commande
+	// que systemd joue avant chaque lancement (ExecStartPre), et celle qu'on
+	// tape sur une machine dont l'agent ne tient pas. Sa sortie est sa réponse.
+	if *verifier {
+		constats := controle.Verifier(controle.CheminsReels())
+		if controle.Rapport(os.Stdout, "vaultaire_client "+version.Info().Complete()+" — contrôle de démarrage", constats) > 0 {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if *basculer != "" {
+		os.Exit(miseajour.ExecuterUpdater(*basculer))
+	}
+	if *etatConfig {
+		texte, resteAFaire := confsys.Etat()
+		fmt.Print(texte)
+		if resteAFaire {
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+	if *installerUnite {
+		if err := unite.Installer(unite.Reel(), os.Stdout); err != nil {
+			fmt.Fprintln(os.Stderr, "Erreur :", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
+
 	// ... chargement config ...
-	err := config.LoadConfig("/etc/vaultaire_client/client_conf.json")
+	err := config.LoadConfig(controle.CheminConfiguration)
 	if err != nil {
 		log.Fatalf("Erreur lors de la lecture du fichier de configuration : %v", err)
 
@@ -211,18 +328,6 @@ func main() {
 		logs.Write_log("CRITICAL", "identité de la machine illisible ("+
 			storage.SoftwarePathResolu()+") : aucune session ne pourra s'ouvrir")
 	}
-
-	fetchKey := flag.String("fetch-key", "", "Récupère les clés publiques pour SSH")
-	purgeGroupes := flag.Bool("purge-groups", false,
-		"Liste les groupes du domaine vidés et effaçables (n'efface rien sans --confirm)")
-	confirmer := flag.Bool("confirm", false, "Exécute réellement l'opération demandée")
-	// Rapport de debug périodique (vlt_client-Debug.log). La ligne de commande
-	// prime sur client_conf.json ("debug": {"enabled", "interval_seconds"}).
-	debugRapport := flag.Bool("debug", false,
-		"Écrit un rapport d'état complet dans vlt_client-Debug.log, à intervalle régulier")
-	debugIntervalle := flag.Int("debug-interval", 0,
-		"Période du rapport de debug, en secondes (défaut : client_conf.json, sinon 60)")
-	flag.Parse()
 
 	if *purgeGroupes {
 		purgerGroupesOrphelins(*confirmer)
@@ -237,6 +342,14 @@ func main() {
 			return
 		}
 		storage.SilentConsole = true
+		// sshd attend la réponse : des bornes courtes PAR PAIR, pour qu'un
+		// premier pair muet laisse le temps d'en essayer d'autres dans
+		// l'attente de WaitForSSHFetch (TO-DO 186).
+		module.DelaiConnexionPair = serveurcommunication.DelaiConnexionFetch
+		module.DelaiPoigneePair = serveurcommunication.DelaiPoigneeFetch
+		// Le chronométrage suit le réglage de debug du fichier : sshd lance ce
+		// mode sans « -debug » (TO-DO 199).
+		chrono.Activer(config.GetDebug().Enabled)
 		// Mode One-Shot pour SSH
 		logs.Go("communication serveur", func() {
 			serveurcommunication.EnableServerCommunication("vaultaire", "vaultaire")
@@ -291,6 +404,9 @@ func main() {
 		// Rapport de debug : dans la branche du démon SEULEMENT. En mode
 		// --fetch-key, la sortie standard est la réponse lue par sshd.
 		reglage := config.GetDebug()
+		// Le journal de debug des connexions suit le même interrupteur que le
+		// rapport de debug (TO-DO 199).
+		chrono.Activer(*debugRapport || reglage.Enabled)
 		if *debugRapport || reglage.Enabled {
 			secondes := reglage.IntervalSeconds
 			if *debugIntervalle > 0 {

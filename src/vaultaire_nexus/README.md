@@ -402,7 +402,12 @@ VAULTAIRE_DL_URL=https://nexus.acme.lan:8843/repo/vaultaire/releases/download \
 | `…/download/v2.1.0/<archive>` | une archive |
 | `…/download/v2.1.0/SHA256SUMS` | sommes **calculées** sur les archives de la release |
 
-Publication : le nom standard `composant-vX.Y.Z-os-arch.tar.gz` suffit.
+Publication : le nom standard `composant-vX.Y.Z-os-arch.tar.gz` suffit. Les
+manifestes du paquet d'agent et leur signature (TO-DO 113, 114) —
+`<archive>.<famille>.manifest` et `.manifest.sig` — sont reconnus aussi, et
+rangés dans la release de leur archive : un agent les lit **sans compte**, à
+côté d'elle, dans un dépôt `public: true`. Voir
+[`Releases.md`](../../docs/exploitation/Releases.md).
 
 ```bash
 curl -fsS -u ci:$NEXUS_TOKEN -T vaultaire_client-v2.1.1-linux-amd64.tar.gz \
@@ -414,9 +419,24 @@ dépôt, ou `POST /api/v1/repos/releases/import-github` avec
 `{"repository":"owner/nom","tag":"latest"}`. Chaque archive est **vérifiée contre le
 `SHA256SUMS` de la release** avant publication ; une release sans `SHA256SUMS` est refusée.
 
-> `docker-update.sh` vérifie avec `sha256sum -c` : **tous** les fichiers listés doivent
-> être téléchargés. Une release Nexus doit donc contenir exactement les composants que le
-> script récupère (`COMPOSANTS`), comme sur GitHub.
+| Champ | Valeur attendue | Exemple |
+|---|---|---|
+| dépôt | `propriétaire/nom`, exactement celui de GitHub | `Vaultaire-AD/vaultaire-core` |
+| tag | le **nom du tag GitHub, avec son `v`** — ou vide / `latest` pour la dernière release publiée | `v2.2.0` |
+
+> **Une 404 de GitHub** veut dire que la release demandée n'existe pas sous ce
+> nom : `2.2.0` au lieu de `v2.2.0` (recette du 25/10), une version pas encore
+> publiée (la 2.3 tant qu'elle vit sur une branche), un nom de dépôt mal saisi,
+> ou `latest` quand les seules releases sont des pré-releases ou des brouillons.
+> Le dépôt de Vaultaire est public : aucun jeton n'est nécessaire.
+> `NEXUS_GITHUB_TOKEN` ne sert qu'aux dépôts **privés** (GitHub y répond aussi
+> 404, et non 403, sans jeton) et à la limite de débit. Vérifier depuis l'hôte
+> de Nexus : `curl -sI https://api.github.com/repos/Vaultaire-AD/vaultaire-core/releases/tags/v2.2.0`
+> doit rendre `200`.
+
+> `docker-update.sh` ne vérifie que les lignes de `SHA256SUMS` des archives qu'il installe
+> (`COMPOSANTS`), mais exige que chacune y figure : une release peut porter d'autres
+> composants, et les manifestes, sans casser sa mise à jour.
 
 ### Fichiers génériques
 

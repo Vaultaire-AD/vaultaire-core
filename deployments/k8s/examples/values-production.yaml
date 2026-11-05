@@ -1,0 +1,57 @@
+# Production : base gérée, image épinglée par empreinte, secrets externes,
+# LDAPS seulement, sorties réseau restreintes.
+image:
+  tag: "2.3.0"
+  # digest: sha256:…   (empreinte signée : cosign verify, voir la doc)
+
+auth:
+  existingSecret: vaultaire-secrets     # créé par External Secrets, voir gitops/secrets/
+
+mariadb:
+  enabled: false
+database:
+  host: mariadb-primary.databases.svc
+  port: 3306
+  name: vaultaire
+  username: vaultaire
+
+config:
+  ldap:
+    requireTlsForBind: true
+    tlsDnsNames: [ldap.acme.lan]
+  web:
+    tlsDnsNames: [sso.acme.lan]
+    # CIDR des pods du contrôleur Ingress
+    trustedProxies: [10.42.0.0/16]
+
+service:
+  type: LoadBalancer
+  annotations: {}
+  loadBalancerSourceRanges: [10.0.0.0/8]
+  ports:
+    ldap: { enabled: false, port: 389 }   # LDAPS seulement
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: "HTTPS"
+    cert-manager.io/cluster-issuer: letsencrypt
+  hosts:
+    - host: sso.acme.lan
+      paths: [{ path: /, pathType: Prefix }]
+  tls:
+    - hosts: [sso.acme.lan]
+      secretName: vaultaire-sso-tls
+
+resources:
+  requests: { cpu: 250m, memory: 256Mi }
+  limits: { memory: 1Gi }
+
+networkPolicy:
+  enabled: true
+  restrictEgress: true
+  egressExtra:
+    # SSH vers les postes, pour « vlt create -c … -join »
+    - to: [{ ipBlock: { cidr: 10.20.0.0/16 } }]
+      ports: [{ port: 22, protocol: TCP }]

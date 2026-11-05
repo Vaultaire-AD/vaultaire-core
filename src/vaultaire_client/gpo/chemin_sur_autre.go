@@ -50,6 +50,10 @@ func ecrireFichierUtilisateur(_, chemin, _ string, _ os.FileMode, _, _ int) erro
 	return fmt.Errorf("%s (%s)", indisponible, chemin)
 }
 
+func lierSousHome(_, chemin, _ string, _, _ int) error {
+	return fmt.Errorf("%s (%s)", indisponible, chemin)
+}
+
 func preparerRepertoireUtilisateur(_, chemin string, _ os.FileMode, _, _ int) error {
 	return fmt.Errorf("%s (%s)", indisponible, chemin)
 }
@@ -64,4 +68,25 @@ func retirerSousHome(_, chemin string, _ int) (bool, error) {
 
 func designerSousHome(_, chemin string, _ int) (*os.File, error) {
 	return nil, fmt.Errorf("%s (%s)", indisponible, chemin)
+}
+
+var errObjetAbsent = errors.New("absent")
+
+// etatSousHome : voir chemin_sur_linux.go.
+type etatSousHome struct {
+	Existe    bool
+	Lien      bool
+	Ordinaire bool
+	Uid       int
+	Mode      uint32
+	SHA256    string
+	TropGros  bool
+}
+
+func constaterSousHome(_, chemin string, _ int) (etatSousHome, error) {
+	return etatSousHome{}, fmt.Errorf("%s (%s)", indisponible, chemin)
+}
+
+func lireLienSousHome(_, chemin string, _ int) (string, bool, bool, error) {
+	return "", false, false, fmt.Errorf("%s (%s)", indisponible, chemin)
 }

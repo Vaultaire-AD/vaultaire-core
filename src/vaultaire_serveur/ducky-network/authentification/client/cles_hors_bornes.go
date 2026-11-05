@@ -62,7 +62,7 @@ func ComposerAcceptation(cleIntegrite, utilisateur string, administrateur bool,
 // tient pas dans une trame. Deux lignes de contenu, le compte puis le motif :
 // c'est ce que le poste écrit dans son journal.
 func RefusPourPoids(cleIntegrite, utilisateur string) string {
-	return "02_07\nserveur_central\n" + cleIntegrite + "\n" + utilisateur + "\n" + RefusClesTropLourdes
+	return Refus(cleIntegrite, utilisateur, RefusClesTropLourdes)
 }
 
 // MessageClesTropLourdes est la ligne du journal du core quand l'acceptation

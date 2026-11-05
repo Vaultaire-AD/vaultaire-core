@@ -16,6 +16,7 @@ import (
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/global/security"
+	"vaultaire/core/global/security/certimporte"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
 	"vaultaire/core/storage"
@@ -327,31 +328,32 @@ func StartAPI() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/command", commandHandler)
 
-	certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.APIServerCertName)
-	if err != nil {
-		certPEM, keyPEM, err = security.GenerateSelfSignedCertPEM()
+	// Certificat importé (TO-DO 262) : servi depuis son fichier, relu à chaud.
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if importe := certimporte.Pour(certimporte.ServiceAPI); importe != nil {
+		tlsConfig.GetCertificate = importe.GetCertificate
+	} else {
+		certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.APIServerCertName)
 		if err != nil {
-			logs.Write_LogCode("ERROR", logs.CodeAPITLS, "api: certificate generation failed: "+err.Error())
-			return
-		}
-		if errSave := duckykey.SaveCertificateToDB(duckykey.APIServerCertName, "tls_cert", "Certificat TLS API REST", certPEM, keyPEM); errSave != nil {
-			certPEM, keyPEM, err = duckykey.GetCertificatePEMFromDB(duckykey.APIServerCertName)
+			certPEM, keyPEM, err = security.GenerateSelfSignedCertPEM()
 			if err != nil {
-				logs.Write_LogCode("ERROR", logs.CodeCertLoad, "api: certificate load from database failed: "+err.Error())
+				logs.Write_LogCode("ERROR", logs.CodeAPITLS, "api: certificate generation failed: "+err.Error())
 				return
 			}
+			if errSave := duckykey.SaveCertificateToDB(duckykey.APIServerCertName, "tls_cert", "Certificat TLS API REST", certPEM, keyPEM); errSave != nil {
+				certPEM, keyPEM, err = duckykey.GetCertificatePEMFromDB(duckykey.APIServerCertName)
+				if err != nil {
+					logs.Write_LogCode("ERROR", logs.CodeCertLoad, "api: certificate load from database failed: "+err.Error())
+					return
+				}
+			}
 		}
-	}
-
-	cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeAPITLS, "api: TLS certificate load failed: "+err.Error())
-		return
-	}
-
-	tlsConfig := &tls.Config{
-		MinVersion:   tls.VersionTLS12,
-		Certificates: []tls.Certificate{cert},
+		cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
+		if err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeAPITLS, "api: TLS certificate load failed: "+err.Error())
+			return
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
 	server := &http.Server{

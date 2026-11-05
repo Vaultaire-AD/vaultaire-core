@@ -32,6 +32,16 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 
 	case "04":
 		lines := strings.Split(trames_content.Content, "\n")
+		// Même défaut que le refus (TO-DO 159) : `lines[1]` était lu sans rien
+		// vérifier. Une acceptation qui ne porte pas le compte PUIS le droit
+		// d'administration n'en est pas une — on ne marque pas authentifiée
+		// une session sur une trame qu'on ne sait pas lire.
+		if len(lines) < 2 {
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"Acceptation 02_04 incomplete (%d ligne(s), 2 au minimum) sur la session id=%s : ignoree",
+				len(lines), duckysession.SessionID))
+			return ""
+		}
 		username := lines[0]
 
 		logs.Write_log("INFO", fmt.Sprintf("%s authentifié succès admin=%s (session id=%s)", username, lines[1], duckysession.SessionID))
@@ -57,9 +67,9 @@ func User_Auth_Manager(trames_content storage.Trames_struct_client, duckysession
 	// déclaratif remplace entièrement.
 
 	case "07":
-		lines := strings.Split(trames_content.Content, "\n")
-		logs.Write_log("WARNING",
-			fmt.Sprintf("Authentification failed for user %s : %s", lines[0], lines[1]))
+		// Le refus : lu quelle que soit sa forme, et fermant la session qu'il
+		// refuse. Voir refus.go (TO-DO 159).
+		traiterRefus(trames_content.Content, duckysession)
 
 	case "11":
 		// La cadence du battement, annoncée par le core en queue de cette

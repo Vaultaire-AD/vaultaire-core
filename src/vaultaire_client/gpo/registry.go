@@ -187,6 +187,16 @@ func runCommandTimeout(timeout time.Duration, name string, args ...string) (stri
 	return trimmed, nil
 }
 
+// commandeDeCompte lance une commande qui agit sur un COMPTE — `chage`, ou
+// `systemctl --user` par `runuser`.
+//
+// Variable, pour la même raison que runCommand : ces deux appliqueurs ne se
+// laissent pas éprouver autrement. `chage` exige un vrai compte et le modifie ;
+// `systemctl --user` exige le bus d'une personne connectée. Un test qui les
+// demanderait ne serait jamais lancé — et c'est pourtant de leurs arguments que
+// dépend ce que le vérificateur attend (TO-DO 163).
+var commandeDeCompte = runCommandTimeout
+
 // commandExists indique si un binaire est disponible dans le PATH.
 //
 // Variable pour la même raison que runCommand.

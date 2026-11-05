@@ -92,7 +92,23 @@ const PrefixeCapacites = "capacites:"
 // CapaciteRelais : ce core lit la 04_18 et émet la 04_19.
 const CapaciteRelais = "relais"
 
+// CapaciteMiseAJour : ce core répond aux demandes de mise à jour d'un agent —
+// la catégorie 09, et la 04_15 pour trouver les Nexus (TO-DO 114, 115). Un
+// core qui ne l'annonce pas fermerait la connexion de l'agent qui les émet.
+const CapaciteMiseAJour = "miseajour"
+
+// CapaciteConfSys : ce core range le compte rendu de configuration système
+// d'un agent (09_07, TO-DO 117). Distincte de « miseajour » : un core qui
+// connaît l'ordre de mise à jour sans connaître la 09_07 existe (le 115 et le
+// 116), et fermerait la connexion de l'agent qui l'émet.
+const CapaciteConfSys = "confsys"
+
+// CapaciteClesPaquets : ce core sert les jeux de clés de confiance des
+// paquets (09_09 → 09_10, TO-DO 207).
+const CapaciteClesPaquets = "clespaquets"
+
 // LigneCapacites rend la ligne à placer en queue de la 02_11.
 func LigneCapacites() string {
-	return PrefixeCapacites + CapaciteRelais
+	return PrefixeCapacites + CapaciteRelais + "," + CapaciteMiseAJour + "," + CapaciteConfSys +
+		"," + CapaciteClesPaquets
 }

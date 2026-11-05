@@ -6,6 +6,7 @@ import (
 	"strings"
 	"vaultaire/core/action"
 	commandadd "vaultaire/core/command/command_add"
+	commandagent "vaultaire/core/command/command_agent"
 	commandcertificate "vaultaire/core/command/command_certificate"
 	commandcluster "vaultaire/core/command/command_cluster"
 	commandcreate "vaultaire/core/command/command_create"
@@ -27,6 +28,14 @@ import (
 	"vaultaire/core/permission"
 )
 
+// commandesNuesPermises : les commandes dont la forme nue a un sens.
+//
+// Une commande tapée seule reçoit « -h » — la plupart n'ont rien à faire sans
+// arguments, et l'aide est la meilleure réponse. « agent » est l'exception :
+// sa forme nue est LA vue du parc (TO-DO 111), et la remplacer par l'aide
+// obligerait à taper un mot de plus pour la question qu'on pose le plus.
+var commandesNuesPermises = map[string]bool{"agent": true}
+
 // Exécute une commande et retourne le résultat
 func ExecuteCommand(input, sender string) string {
 	input = strings.TrimSpace(input)
@@ -38,7 +47,7 @@ func ExecuteCommand(input, sender string) string {
 	if len(args) == 0 {
 		return "Erreur : commande vide."
 	}
-	if len(args) == 1 {
+	if len(args) == 1 && !commandesNuesPermises[args[0]] {
 		args = append(args, "-h")
 	}
 
@@ -63,6 +72,7 @@ func ExecuteCommand(input, sender string) string {
 		"certificate": commandcertificate.Certificate_Command,
 		"settings":    commandsettings.Settings_Command,
 		"logs":        commandlogs.Logs_Command,
+		"agent":       commandagent.Agent_Command,
 	}
 
 	// `version` est traitée AVANT la table des commandes, comme `clear` et
@@ -98,6 +108,7 @@ func ExecuteCommand(input, sender string) string {
   certificate      : certificats TLS du serveur (LDAPS). Voir certificate -h.
   settings         : durées d'exploitation du serveur. Voir settings -h.
   logs   [OPTIONS] : journal commun des cores, filtré et paginé. Voir logs -h.
+  agent  [OPTIONS] : version déclarée et version attendue des agents. Voir agent -h.
   status [OPTIONS] : Vérifie l'état du serveur.
   eyes / cluster   : arborescence de l'annuaire, état du cluster.
   clear            : Nettoie les sessions.
@@ -181,6 +192,16 @@ func CommandePourJournal(input string) string {
 		return ""
 	}
 
+	// Les drapeaux « --… » ne comptent pas dans les rangs de la grammaire
+	// (recette du 28/10) : « update -u bob --permanent -p <secret> » et
+	// « create -u bob --permanent paris.fr <secret> … » sont écrits ainsi par
+	// l'aide et le MAN, et le secret, décalé d'un rang, partait EN CLAIR dans
+	// le journal. On caviarde sur les mots sans drapeaux, puis on les remet.
+	if sansDrapeaux, ou := retirerDrapeaux(mots); len(ou) > 0 {
+		caviardes := strings.Fields(CommandePourJournal(strings.Join(sansDrapeaux, " ")))
+		return remettreDrapeaux(caviardes, mots, ou)
+	}
+
 	for _, regle := range argumentsSensibles {
 		if !correspond(mots, regle.prefixe) || len(mots) <= regle.rang {
 			continue
@@ -196,6 +217,55 @@ func CommandePourJournal(input string) string {
 		break
 	}
 	return strings.Join(mots, " ")
+}
+
+// retirerDrapeaux rend les mots sans ceux qui commencent par « -- », et les
+// rangs où ils étaient.
+func retirerDrapeaux(mots []string) ([]string, []int) {
+	var garde []string
+	var ou []int
+	for i, m := range mots {
+		if strings.HasPrefix(m, "--") {
+			ou = append(ou, i)
+			continue
+		}
+		garde = append(garde, m)
+	}
+	return garde, ou
+}
+
+// remettreDrapeaux replace les drapeaux à leur rang d'origine. Quand la queue
+// a été réduite à un seul « *** », ce qui la suivait — drapeaux compris — en
+// fait partie et reste masqué.
+func remettreDrapeaux(caviardes, mots []string, ou []int) string {
+	estDrapeau := map[int]bool{}
+	for _, i := range ou {
+		estDrapeau[i] = true
+	}
+	var rangs []int // rang, dans mots, de chaque mot qui n'est pas un drapeau
+	for i := range mots {
+		if !estDrapeau[i] {
+			rangs = append(rangs, i)
+		}
+	}
+	fin := len(mots)
+	if len(caviardes) < len(rangs) && len(caviardes) > 0 {
+		fin = rangs[len(caviardes)-1] // la queue masquée commence ici
+	}
+	var out []string
+	j := 0
+	for i := 0; i < fin; i++ {
+		if estDrapeau[i] {
+			out = append(out, mots[i])
+			continue
+		}
+		out = append(out, caviardes[j])
+		j++
+	}
+	if fin < len(mots) {
+		out = append(out, "***")
+	}
+	return strings.Join(out, " ")
 }
 
 // correspond compare les mots au motif, rang par rang.

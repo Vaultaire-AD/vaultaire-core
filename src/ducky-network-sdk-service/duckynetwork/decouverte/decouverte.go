@@ -323,7 +323,8 @@ func FusionnerAdresses(statiques []string) []string {
 		vues[a] = true
 		out = append(out, a)
 	}
-	return out
+	// Un nœud que le cluster a demandé de quitter passe en dernier (TO-DO 216).
+	return enQueue(out)
 }
 
 // Resume rend une ligne lisible pour le journal.

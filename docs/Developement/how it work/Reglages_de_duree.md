@@ -260,6 +260,30 @@ de dix minutes si la ligne manque. *Un agent antérieur à la 2.2 ne la lit pas 
 il ferme toujours après dix minutes.* La `Consequence` du réglage le dit, et
 conseille de ne pas dépasser 8 tant que le parc n'est pas à jour.
 
+**Au-delà de 8, l'action le vérifie** *(TO-DO 161)*. `settings.set` lit
+`id_logiciels.agent_version` de toutes les machines (paquet `parcversion`,
+lecture `dbclients.VersionsDuParc`), et range comme ne suivant pas celles qui
+sont antérieures à la 2.2 **ou** dont la version est vide ou illisible. S'il y
+en a, l'action rend `ErrConfirmationRequise` sans rien écrire ; le paramètre
+`confirm=yes` (`--confirm`, bouton de la page) la fait passer, avec une ligne
+`WARNING`. Les choix :
+
+- **8 et non 10.** À 9 minutes la `02_11` arrive avant le délai de dix — sur le
+  papier : le tour qui l'envoie prend du temps sur un grand parc, et une trame
+  perdue double le silence. Le seuil est la constante
+  `CadenceSurePourAgentsAnterieurs`, dont la `Consequence` tire son texte :
+  conseil et contrôle ne peuvent pas diverger, et un test le vérifie.
+- **`agent_version`, pas `sdk_version`.** La constante du SDK est restée
+  `2.1.0` après la 2.2. Seule la version du programme dit ce qu'il fait.
+- **Une confirmation, pas un refus.** C'est l'arbitrage du point 39 : le core
+  ne ferme aucune porte sur la foi d'une comparaison de versions. Il compte,
+  nomme, et laisse décider.
+- **Un parc illisible demande confirmation.** Sinon une base momentanément
+  injoignable laisserait passer sans un mot le réglage qu'on voulait contrôler.
+- **La liste aussi.** `settings.list` recalcule sur la valeur **courante** : un
+  agent ancien remis en service après coup se voit sans attendre la prochaine
+  saisie.
+
 **La poignée de main reste fixe** (60 s, `handshakeIdleTimeout`) : ce délai borne
 une connexion **non authentifiée**. Le faire suivre un réglage d'exploitation
 aurait rendu la surface d'un déni de service réglable depuis la page des durées.

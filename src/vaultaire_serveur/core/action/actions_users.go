@@ -83,7 +83,7 @@ var nomsReserves = map[string]bool{
 }
 
 // creerUtilisateur applique les validations des DEUX anciennes versions.
-func creerUtilisateur(_ Appelant, p Params) (Resultat, error) {
+func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 	username := p.Get("username")
 	domain := p.Get("domain")
 	password := p.Brut("password") // brut : rogner un mot de passe empêcherait
@@ -178,6 +178,16 @@ func creerUtilisateur(_ Appelant, p Params) (Resultat, error) {
 	if provisoire {
 		message += " Son mot de passe est PROVISOIRE : il devra être changé sur le portail" +
 			" sous " + passwordpolicy.DureeProvisoireDefaut.String() + "."
+	} else {
+		// LA DÉROGATION EST TRACÉE (TO-DO 144). Un mot de passe définitif choisi
+		// par quelqu'un d'autre que le titulaire est exactement ce que le
+		// provisoire empêche ; c'est légitime pour un compte de service, et
+		// c'est précisément pour cela qu'il faut savoir qui l'a décidé.
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"user.create: %s@%s créé par %s avec un mot de passe DÉFINITIF (dérogation au "+
+				"provisoire — compte de service)", username, domain, a.Username))
+		message += " Son mot de passe est DÉFINITIF (compte de service) : il ne sera jamais " +
+			"demandé de le changer, et il expire selon la politique ordinaire."
 	}
 
 	return Resultat{
@@ -319,7 +329,7 @@ func modifierUtilisateur(_ Appelant, p Params) (Resultat, error) {
 // façon : « qui a changé le mot de passe de qui » est une question d'audit
 // courante, et elle devient illisible si l'opération se confond avec un
 // changement de prénom dans les journaux.
-func changerMotDePasse(_ Appelant, p Params) (Resultat, error) {
+func changerMotDePasse(a Appelant, p Params) (Resultat, error) {
 	cible := p.Get("username")
 	motDePasse := p.Brut("password")
 
@@ -359,6 +369,27 @@ func changerMotDePasse(_ Appelant, p Params) (Resultat, error) {
 	// Un administrateur qui réinitialise SON PROPRE mot de passe par cette
 	// action se marque lui-même — c'est voulu : l'action n'est pas le chemin de
 	// changement personnel, qui est le portail et qui lève le drapeau.
+	//
+	// # La dérogation : renouveler le secret d'un compte de service (TO-DO 144)
+	//
+	// Marquer provisoire le mot de passe neuf d'un compte de service le
+	// recassait le lendemain — personne ne viendra le changer sur le portail.
+	// `temporary=non` le pose DÉFINITIF : le drapeau est alors LEVÉ, et pas
+	// seulement non posé — un provisoire précédent, encore en place, ferait
+	// sinon expirer le nouveau mot de passe à son échéance.
+	if estNon(p.Get("temporary")) {
+		if err := passwordpolicy.LeverProvisoire(db, cible); err != nil {
+			return Resultat{}, fmt.Errorf("mot de passe changé, mais il n'a pas pu être rendu "+
+				"définitif (%v) : il reste provisoire", err)
+		}
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"user.change_password: mot de passe de %s posé DÉFINITIF par %s (dérogation au "+
+				"provisoire — compte de service)", cible, a.Username))
+		return Resultat{Message: fmt.Sprintf(
+			"Mot de passe de %s changé, DÉFINITIF (compte de service) : il ne sera pas demandé "+
+				"de le remplacer.", cible)}, nil
+	}
+
 	if err := passwordpolicy.MarquerProvisoire(db, cible,
 		passwordpolicy.DureeProvisoireDefaut); err != nil {
 		logs.Write_Log("SECURITY", fmt.Sprintf(

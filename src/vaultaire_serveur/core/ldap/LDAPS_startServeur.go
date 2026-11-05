@@ -4,6 +4,7 @@ import (
 	"crypto/tls"
 	"net"
 	"strconv"
+	"vaultaire/core/global/security/certimporte"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -11,8 +12,17 @@ import (
 )
 
 func HandleLDAPSserveur() {
-	certPEM, keyPEM, err := duckykey.GetCertificatePEMFromDB(duckykey.LDAPSServerCertName)
-	if err != nil {
+	// Certificat importé (TO-DO 262) : servi depuis son fichier, relu à chaud.
+	// Sinon, l'auto-signé gardé en base, comme avant.
+	importe := certimporte.Pour(certimporte.ServiceLDAPS)
+	var certPEM, keyPEM string
+	var err error
+	if importe != nil {
+		certPEM = importe.CertPEM()
+	} else {
+		certPEM, keyPEM, err = duckykey.GetCertificatePEMFromDB(duckykey.LDAPSServerCertName)
+	}
+	if importe == nil && err != nil {
 		logs.Write_Log("INFO", "ldaps: TLS certificate not in database, generating self-signed")
 		certPEM, keyPEM, err = ldaptools.GenerateSelfSignedCertPEM()
 		if err != nil {
@@ -38,7 +48,16 @@ func HandleLDAPSserveur() {
 	// On ne remplace RIEN automatiquement : changer un certificat sans qu'on le
 	// demande casserait tous les clients qui l'ont importé dans leur magasin de
 	// confiance. On dit ce qui ne va pas, et comment le corriger.
-	attendus := ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+	//
+	// Un certificat importé n'est comparé qu'aux noms DÉCLARÉS : celui qui l'a
+	// fait émettre a choisi ses noms, et lui réclamer le nom du pod ou de la
+	// machine ne serait que du bruit.
+	attendus := ldaptools.AttendusPourAudit(
+		ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs()),
+		ldaptools.ConfiguredIPs())
+	if importe != nil {
+		attendus = ldaptools.AttendusDeclares(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+	}
 	logs.Write_Log("INFO", "ldaps: "+ldaptools.CertSummary(certPEM))
 	for _, issue := range ldaptools.AuditServedCertificate(certPEM, attendus) {
 		niveau := "WARNING"
@@ -48,15 +67,16 @@ func HandleLDAPSserveur() {
 		logs.Write_LogCode(niveau, logs.CodeLDAPTLS, "ldaps: "+issue.Message)
 	}
 
-	cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
-	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeLDAPTLS, "ldaps: TLS key pair load failed: "+err.Error())
-		return
-	}
-
-	tlsConfig := &tls.Config{
-		Certificates: []tls.Certificate{cert},
-		MinVersion:   tls.VersionTLS12,
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if importe != nil {
+		tlsConfig.GetCertificate = importe.GetCertificate
+	} else {
+		cert, err := tls.X509KeyPair([]byte(certPEM), []byte(keyPEM))
+		if err != nil {
+			logs.Write_LogCode("ERROR", logs.CodeLDAPTLS, "ldaps: TLS key pair load failed: "+err.Error())
+			return
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
 
 	// Écoute TCP NUE, et TLS posé connexion par connexion.

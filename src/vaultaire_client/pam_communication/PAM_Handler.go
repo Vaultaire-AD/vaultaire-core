@@ -12,6 +12,7 @@ import (
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/sendmessage"
 	"duckynetworkclient/V1/duckynetwork/storage"
+	"vaultaire_client/chrono"
 	"vaultaire_client/gpo"
 	"vaultaire_client/tools/sshreq"
 )
@@ -38,6 +39,18 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 
 	logs.Write_log("INFO", fmt.Sprintf("[%s] Requete recue pour l'utilisateur: %s", reqType, req.User))
 
+	// Chronométrage de l'ouverture, en mode debug seulement (TO-DO 199).
+	debut := time.Now()
+	var dureeCore, dureeProvisionnement, dureeGPO time.Duration
+	gpoATemps, gpoJouee := true, false
+	// statusRepFinal est lu par le chronométrage différé, posé juste avant
+	// chaque réponse.
+	statusRepFinal := "sans reponse"
+	defer func() {
+		chrono.Ecrire("%s", ligneChrono(reqType, req.User, statusRepFinal,
+			dureeCore, dureeProvisionnement, dureeGPO, gpoJouee, gpoATemps, time.Since(debut)))
+	}()
+
 	// 2. Enregistrement du canal de reponse pour async/concurrence
 	finalChan := make(chan pamstate.AuthResult, 1)
 	sshreq.Register(req.User, finalChan)
@@ -50,6 +63,8 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	// passe est provisoire » après un mot de passe faux lui apprendrait que le
 	// compte existe.
 	notice := ""
+	// refus : le texte d'un refus affichable, vide sinon (TO-DO 171).
+	refus := ""
 	// Non nil dès le départ : voir parseSSHKeys, une tranche nil se sérialise en
 	// `null` et le module PAM y lit « réponse illisible », donc « ne touche pas
 	// à authorized_keys ».
@@ -62,7 +77,8 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		// paniquait la goroutine et laissait PAM attendre jusqu'à son délai.
 		logs.Write_log("ERROR", fmt.Sprintf(
 			"[%s] Aucune session machine disponible, authentification impossible pour %s", reqType, req.User))
-		sendResponse(conn, Response{Status: "timeout", SSHKeys: []string{}})
+		statusRepFinal = "timeout (aucune session machine)"
+		sendResponse(conn, Response{Status: "timeout", Chrono: chrono.Actif(), SSHKeys: []string{}})
 		return
 	}
 
@@ -105,17 +121,23 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 		string(sess.DuckySession.SessionKey), "vaultaire", storage.Computeur_ID,
 		contenu...)
 	sendmessage.SendMessage(authMsg, sess.DuckySession)
+	envoi := time.Now()
 
 	//----------------------------------------------------------------
 	// --- Attente du resultat final ---
 	//----------------------------------------------------------------
 	select {
 	case result, recu := <-finalChan:
+		dureeCore = time.Since(envoi)
+		dureeProvisionnement = result.DureeProvisionnement
 		motif := VerdictRefuse(result, recu)
 		if motif != "" {
 			logs.Write_log("WARNING", fmt.Sprintf(
 				"[%s] Authentification REFUSEE pour %s : %s", reqType, req.User, motif))
 			statusRep = "failed"
+			// Seuls les deux motifs que la personne peut corriger seule
+			// traversent (TO-DO 171) ; tout autre refus reste muet.
+			refus = MessageDeRefus(result.MotifRefus)
 			break
 		}
 
@@ -144,37 +166,100 @@ func processPamRequest(conn net.Conn, reqType string, payload string) {
 	// serveur bloquerait la lecture de cette même réponse. Cette goroutine-ci est
 	// indépendante du lecteur, elle peut donc attendre sans rien bloquer.
 	if statusRep == "success" {
-		applyUserGPO(req.User, string(sess.DuckySession.SessionKey))
+		debutGPO := time.Now()
+		gpoATemps = applyUserGPO(req.User, string(sess.DuckySession.SessionKey))
+		dureeGPO, gpoJouee = time.Since(debutGPO), true
 	}
+	statusRepFinal = statusRep
 
 	sendResponse(conn, Response{
 		Status:  statusRep,
+		Chrono:  chrono.Actif(),
 		IsAdmin: isAdminResult,
 		SSHKeys: sshKeys,
 		Notice:  notice,
+		Refus:   refus,
 	})
 }
 
-// applyUserGPO applique les GPO de scope user avant de rendre la main à PAM.
+// PlafondGPOConnexion borne le temps que la phase GPO de compte peut ajouter à
+// une ouverture de session — TO-DO 198.
 //
-// Un échec ou un dépassement du délai n'empêche PAS la connexion : aucun module
-// de scope user ne touche aux privilèges, alors qu'un annuaire qui bloque les
-// connexions sur incident GPO serait un incident d'exploitation majeur.
-// L'incident part dans les journaux et dans le rapport 05_12.
-func applyUserGPO(username, sessionKey string) {
+// Au-delà, l'accès est rendu à PAM et le cycle CONTINUE en arrière-plan : la
+// règle « un incident GPO n'empêche pas de se connecter » existait pour les
+// erreurs, elle vaut désormais pour le temps. Sans ce plafond, la phase pouvait
+// ajouter 6 s d'attente de la politique, puis jusqu'à 10 s par commande de
+// module, sans limite commune.
+//
+// 5 s : au-dessus du cycle normal (0,2 à 1,1 s mesurés au banc du 135), en
+// dessous de ce qu'un utilisateur prend pour une machine figée. Le module PAM
+// borne lui-même l'attente de l'agent à 20 s (VAULTAIRE_DELAI_REPONSE_MS).
+var PlafondGPOConnexion = 5 * time.Second
+
+// lancerCycleUtilisateur est une variable pour que les tests remplacent le
+// cycle réel, qui parle au core.
+var lancerCycleUtilisateur = gpo.RunUserCycle
+
+// applyUserGPO applique les GPO de scope user avant de rendre la main à PAM,
+// dans la limite de PlafondGPOConnexion.
+//
+// Un échec ou un dépassement n'empêche PAS la connexion : aucun module de scope
+// user ne touche aux privilèges, alors qu'un annuaire qui bloque les connexions
+// sur incident GPO serait un incident d'exploitation majeur. L'incident part
+// dans les journaux et dans le rapport 05_12.
+//
+// Rend vrai si le cycle a fini dans le plafond.
+func applyUserGPO(username, sessionKey string) bool {
 	if sessionKey == "" {
 		logs.Write_log("WARNING", "GPO: pas de cle de session, GPO user non appliquees pour "+username)
-		return
+		return true
 	}
 
 	logs.Write_log("DEBUG", "GPO: application des GPO user pour "+username+" avant octroi de la connexion")
-	report := gpo.RunUserCycle(sessionKey, username)
 
-	if report.Status != gpo.StatusApplied {
+	// Canal à une place : le cycle qui finit APRÈS le plafond y dépose son
+	// rapport sans attendre personne, et sa goroutine se termine.
+	fini := make(chan gpo.Report, 1)
+	logs.Go("cycle GPO de compte", func() {
+		fini <- lancerCycleUtilisateur(sessionKey, username)
+	})
+
+	select {
+	case report := <-fini:
+		if report.Status != gpo.StatusApplied {
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"GPO: politique user incomplete pour %s, connexion tout de meme accordee — %s",
+				username, report.Summary()))
+		}
+		return true
+	case <-time.After(PlafondGPOConnexion):
+		// Le cycle tient le verrou du compte jusqu'à sa fin : une seconde
+		// connexion rapprochée attendra ce cycle-ci au lieu d'en lancer un
+		// concurrent. Son issue part au journal et dans le rapport 05_12, comme
+		// s'il avait fini à temps.
 		logs.Write_log("WARNING", fmt.Sprintf(
-			"GPO: politique user incomplete pour %s, connexion tout de meme accordee — %s",
-			username, report.Summary()))
+			"GPO: cycle de compte de %s encore en cours apres %s : acces rendu, le cycle se poursuit en arriere-plan",
+			username, PlafondGPOConnexion))
+		return false
 	}
+}
+
+// ligneChrono compose la ligne du journal de debug des connexions.
+//
+// « core » va de l'envoi de 03_01 à la réception du verdict : l'aller-retour,
+// la vérification au core, ET le provisionnement du compte, fait par l'agent
+// à la réception de 03_02 avant de répondre — d'où le « dont ».
+func ligneChrono(reqType, compte, statut string, core, prov, gpoD time.Duration,
+	gpoJouee, gpoATemps bool, total time.Duration) string {
+	gpoTexte := "non jouees"
+	if gpoJouee {
+		gpoTexte = fmt.Sprintf("%d ms", chrono.Ms(gpoD))
+		if !gpoATemps {
+			gpoTexte += " (plafond atteint, cycle poursuivi)"
+		}
+	}
+	return fmt.Sprintf("ouverture %s [%s] %s : core %d ms (dont provisionnement %d ms), GPO %s, total agent %d ms",
+		compte, reqType, statut, chrono.Ms(core), chrono.Ms(prov), gpoTexte, chrono.Ms(total))
 }
 
 // Helper interne d'envoi JSON vers le socket PAM

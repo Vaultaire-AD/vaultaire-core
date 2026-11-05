@@ -34,7 +34,7 @@ func TestLeRefusDeMotDePasseDesigneLaPolitiqueDuPoste(t *testing.T) {
 	}
 
 	// Quoi faire.
-	if !strings.Contains(msg, "net accounts") || !strings.Contains(msg, "install.ps1") {
+	if !strings.Contains(msg, "net accounts") || !strings.Contains(msg, "secpol.msc") {
 		t.Errorf("le message n'indique pas quoi faire : %s", msg)
 	}
 }

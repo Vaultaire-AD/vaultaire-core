@@ -1,0 +1,313 @@
+# ====================================================================
+# Vaultaire — valeurs de la chart
+# ====================================================================
+#
+# Démarrage rapide (base MariaDB embarquée, Secret créé à la main) :
+#
+#   kubectl create namespace vaultaire
+#   kubectl -n vaultaire create secret generic vaultaire-secrets \
+#     --from-literal=db-password="$(openssl rand -base64 24)" \
+#     --from-literal=db-root-password="$(openssl rand -base64 24)" \
+#     --from-literal=admin-password='Un mot de passe de 12 caractères ou plus'
+#   helm install vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire \
+#     -n vaultaire --set auth.existingSecret=vaultaire-secrets
+#
+# AUCUN secret ne vit dans ce fichier : il est fait pour être versionné dans un
+# dépôt GitOps. Les secrets viennent d'un Secret existant (External Secrets,
+# Sealed Secrets, SOPS, Vault…), voir auth.existingSecret.
+#
+# Documentation complète : docs/Installation/Kubernetes.md
+
+image:
+  repository: ghcr.io/vaultaire-ad/vaultaire-server
+  # Vide : l'appVersion de la chart.
+  tag: ""
+  # Recommandé en production : épingler l'empreinte signée (cosign), le tag
+  # devient alors indicatif.
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Un seul core par défaut. Plusieurs répliques forment un cluster de cores sur
+# la même base (chaque pod est un nœud nommé d'après son hostname, stable dans
+# un StatefulSet). Chaque core doit alors être joignable des agents sur sa
+# propre adresse : voir docs/Installation/Kubernetes.md § Plusieurs cores.
+replicaCount: 1
+
+# --------------------------------------------------------------------
+# Secrets
+# --------------------------------------------------------------------
+auth:
+  # Nom d'un Secret EXISTANT (recommandé). Clés attendues — renommables
+  # ci-dessous :
+  #   db-password        mot de passe du compte base du core
+  #   admin-password     mot de passe du compte d'amorçage (provisoire :
+  #                      changé à la première connexion au portail)
+  #   db-root-password   seulement si mariadb.enabled
+  #   admin-public-key   facultative : clé SSH du compte d'amorçage
+  existingSecret: ""
+  secretKeys:
+    dbPassword: db-password
+    adminPassword: admin-password
+    dbRootPassword: db-root-password
+    adminPublicKey: admin-public-key
+
+  # Sans existingSecret, la chart crée le Secret avec ces valeurs. Pratique
+  # pour un essai ; à ne pas versionner. Laissées vides, l'installation est
+  # refusée — jamais de mot de passe par défaut.
+  dbPassword: ""
+  adminPassword: ""
+  dbRootPassword: ""
+  adminPublicKey: ""
+
+  # Les secrets sont lus par le core depuis des FICHIERS montés
+  # (VAULTAIRE_*_FILE), et non depuis des variables : ils n'apparaissent ni
+  # dans « kubectl describe pod », ni dans /proc/<pid>/environ.
+  mountAsFiles: true
+
+# --------------------------------------------------------------------
+# Base de données
+# --------------------------------------------------------------------
+database:
+  # Vide avec mariadb.enabled : le service de la base embarquée.
+  host: ""
+  port: 3306
+  name: vaultaire
+  username: vaultaire
+
+# Base MariaDB embarquée : UNE instance, sans réplication. Suffisante pour un
+# essai ou un petit parc ; en production, préférer une base gérée ou un
+# opérateur (mariadb-operator) et poser mariadb.enabled=false + database.host.
+mariadb:
+  enabled: true
+  image:
+    repository: docker.io/library/mariadb
+    tag: "11.4"
+    digest: ""
+    pullPolicy: IfNotPresent
+  persistence:
+    size: 8Gi
+    storageClass: ""
+    accessModes: [ReadWriteOnce]
+  resources:
+    requests: { cpu: 100m, memory: 256Mi }
+    limits: { memory: 1Gi }
+  # MariaDB tourne sous l'UID 999 de l'image officielle.
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 999
+    runAsGroup: 999
+    fsGroup: 999
+    seccompProfile: { type: RuntimeDefault }
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities: { drop: [ALL] }
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+# --------------------------------------------------------------------
+# Configuration du core (rendue en /etc/vaultaire/serveur_conf.yaml)
+# --------------------------------------------------------------------
+config:
+  ldap:
+    enabled: true
+    ldapsEnabled: true
+    # Refuse un bind avec mot de passe sur le port en clair (389).
+    requireTlsForBind: true
+    mfaBypass: false
+    oneLevelSubtree: false
+    # Noms que le certificat LDAPS couvre EN PLUS du nom du pod. Mettre ici le
+    # nom DNS par lequel les applications joignent l'annuaire.
+    tlsDnsNames: []
+    tlsIpAddresses: []
+    # Bornes de recherche (ldap.limites) — vides : celles du code.
+    limits: {}
+  web:
+    enabled: true
+    tlsDnsNames: []
+    tlsIpAddresses: []
+    # Relais autorisés à poser X-Forwarded-For (contrôleur Ingress, CIDR des
+    # pods du cluster…). Vide : seule l'adresse du pair TCP compte.
+    trustedProxies: []
+  api:
+    enabled: true
+    rateBurst: 100
+    ratePerSecond: 20
+  dns:
+    enabled: false
+  debug:
+    enabled: false
+    detail: {}
+  admin:
+    enabled: true
+    username: admin
+  # Remplace TOUT le fichier rendu par ce texte (YAML). Les secrets restent
+  # fournis par l'environnement.
+  override: ""
+
+# --------------------------------------------------------------------
+# Certificats TLS fournis de l'extérieur (TO-DO 262)
+# --------------------------------------------------------------------
+# Par défaut, le core génère des certificats auto-signés pour LDAPS, le portail
+# et l'API, et les garde en base. Ici, on lui en fournit : un Secret
+# « kubernetes.io/tls » (clés tls.crt et tls.key) par service. Le core relit
+# les fichiers à chaud : un renouvellement par cert-manager est servi dans la
+# minute, sans redémarrage et sans couper les connexions ouvertes.
+tls:
+  ldaps:
+    # Secret existant (émis par cert-manager, une PKI…). L'emporte sur
+    # tls.certManager pour ce service.
+    existingSecret: ""
+  web:
+    existingSecret: ""
+  api:
+    existingSecret: ""
+
+  # La chart crée elle-même les ressources Certificate de cert-manager.
+  # Prérequis : cert-manager installé et un Issuer / ClusterIssuer.
+  certManager:
+    enabled: false
+    # Services couverts : ldaps, web, api.
+    services: [ldaps, web]
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer
+      group: cert-manager.io
+    duration: 2160h    # 90 jours
+    renewBefore: 720h  # 30 jours
+    privateKey:
+      # RSA : le plus largement accepté par les clients LDAP anciens.
+      algorithm: RSA
+      size: 2048
+      rotationPolicy: Always
+    # Noms en plus de ceux du Service et de config.<ldap|web>.tlsDnsNames.
+    extraDnsNames: []
+    annotations: {}
+
+# Journal : JSON sur la sortie standard (collecté par la plateforme).
+logFormat: json
+timezone: UTC
+
+# Variables supplémentaires (VAULTAIRE_*), voir
+# docs/Installation/Variables_environnement.md
+extraEnv: []
+extraEnvFrom: []
+
+# --------------------------------------------------------------------
+# Exposition
+# --------------------------------------------------------------------
+# Un Service porte les ports du core. Les agents et les proxies, hors du
+# cluster, joignent le port Ducky ; les applications, LDAP/LDAPS.
+service:
+  type: ClusterIP
+  annotations: {}
+  labels: {}
+  loadBalancerIP: ""
+  loadBalancerSourceRanges: []
+  # Local : garde l'adresse réelle du client — la limitation des tentatives
+  # d'authentification et le journal en dépendent.
+  externalTrafficPolicy: Local
+  ports:
+    ducky: { enabled: true, port: 6666, nodePort: null }
+    ldap: { enabled: true, port: 389, nodePort: null }
+    ldaps: { enabled: true, port: 636, nodePort: null }
+    web: { enabled: true, port: 443, nodePort: null }
+    api: { enabled: true, port: 6643, nodePort: null }
+    dns: { enabled: false, port: 53, nodePort: null }
+
+# Portail web derrière un Ingress. Le core sert du HTTPS (certificat
+# auto-signé) : le contrôleur doit parler HTTPS au backend, par ex. pour
+# ingress-nginx : nginx.ingress.kubernetes.io/backend-protocol: "HTTPS".
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: sso.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# --------------------------------------------------------------------
+# Stockage du core
+# --------------------------------------------------------------------
+# /var/lib/vaultaire : configurations des postes en cours d'installation, clés
+# exportées de la base. Tout est reconstructible depuis la base, mais un poste
+# créé (« vlt create -c ») et pas encore joint perd sa configuration si le pod
+# repart sur un volume vide.
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  accessModes: [ReadWriteOnce]
+
+# Journaux fichiers par famille (en plus de la sortie standard).
+logsVolume:
+  sizeLimit: 512Mi
+
+# --------------------------------------------------------------------
+# Pod
+# --------------------------------------------------------------------
+resources:
+  requests: { cpu: 100m, memory: 128Mi }
+  limits: { memory: 512Mi }
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  fsGroupChangePolicy: OnRootMismatch
+  seccompProfile: { type: RuntimeDefault }
+
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  privileged: false
+  capabilities: { drop: [ALL] }
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+probes:
+  startup: { enabled: true, periodSeconds: 5, failureThreshold: 60 }
+  readiness: { enabled: true, periodSeconds: 10, failureThreshold: 3 }
+  liveness: { enabled: true, periodSeconds: 30, failureThreshold: 3, timeoutSeconds: 5 }
+
+podAnnotations: {}
+podLabels: {}
+priorityClassName: ""
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+terminationGracePeriodSeconds: 30
+
+podDisruptionBudget:
+  # Créé seulement quand replicaCount > 1.
+  enabled: true
+  maxUnavailable: 1
+
+# --------------------------------------------------------------------
+# Réseau
+# --------------------------------------------------------------------
+networkPolicy:
+  enabled: true
+  # Qui peut joindre les ports exposés du core. Vide : tout le monde (agents
+  # et applications sont le plus souvent HORS du cluster).
+  ingressFrom: []
+  # Sorties : restreintes à la base, au DNS du cluster, et à « egressExtra ».
+  # Le core sort aussi vers les postes en SSH (port 22) pour « -join », et
+  # vers les autres cores du cluster.
+  restrictEgress: false
+  egressExtra:
+    - ports:
+        - { port: 22, protocol: TCP }

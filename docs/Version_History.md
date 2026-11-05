@@ -8,11 +8,17 @@ version majeure et un fichier par version mineure.
 
 ---
 
-## [Cycle 2.2 — en cours](./Version/2.0/2.2.md)
+## [Cycle 2.3 — en cours](./Version/2.0/2.3.md)
 
-Vaultaire Nexus et authentification par un service (catégorie 08), formation pas à pas, recette du 21/09 : domaines de connexion, verbe RBAC « Détacher », second facteur au bind LDAP, tunnel machine supervisé.
+Cycle ouvert le 07/10/2026, après la publication de `v2.2.0`.
 
 Contient : 🚧 non publié.
+
+## [Alpha 2.2.0 — 07/10/2026](./Version/2.0/2.2.md)
+
+Vaultaire Nexus et authentification par un service (catégorie 08), formation pas à pas, proxy qui relaie Ducky, HTTPS et LDAPS, relais pilotés depuis le core, client Windows V1, politiques GPO signées par le cluster, GPO utilisateur vérifiées et reposées, audits de sécurité du 25/09 et LDAP du 28/09, `kill -u` qui verrouille le compte local et ferme ses sessions, tests lancés par l'intégration continue.
+
+Contient : Alpha 2.2.0.
 
 ## [Alpha 2.1.0 — 16/09/2026](./Version/2.0/2.1.md)
 
@@ -43,7 +49,7 @@ Contient : Alpha 1.0.2, Alpha 1.0.1, Alpha 1.0.
 ## Convention
 
 - Un dossier par version **majeure** : `docs/Version/1.0/`, `docs/Version/2.0/`.
-- Un fichier par version **mineure** : `1.0.md`, `1.1.md`, `2.0.md`, `2.1.md`, `2.2.md`.
+- Un fichier par version **mineure** : `1.0.md`, `1.1.md`, `2.0.md`, `2.1.md`, `2.2.md`, `2.3.md`.
 - Changer de série : voir [`exploitation/Changement_de_version.md`](./exploitation/Changement_de_version.md).
 - Les correctifs d'une même mineure sont regroupés dans son fichier, du plus
   récent au plus ancien.

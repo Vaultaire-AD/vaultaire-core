@@ -32,6 +32,7 @@ import (
 	"vaultaire/core/command/display"
 	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/global/security"
+	"vaultaire/core/global/security/certimporte"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -66,7 +67,7 @@ func Certificate_Command(commandList []string, senderGroupIDs []int, senderUsern
 			return commandaction.MessageDErreur(err)
 		}
 		certs, _ := res.Donnees.([]storage.Certificate)
-		return display.DisplayCertificates(certs)
+		return display.DisplayCertificates(certs) + noteImportes()
 
 	case "show", "fingerprint":
 		// L'empreinte du core et la fiche d'un certificat sont deux lectures
@@ -118,9 +119,10 @@ func verifierLectureCertificat(a action.Appelant) string {
 // Appelée au démarrage. L'inversion évite un cycle : l'action ne peut pas
 // importer ce paquet, qui l'importe déjà.
 func BrancherRegeneration() {
-	action.RegenererCertificat = func(a action.Appelant, p action.Params) (string, error) {
+	action.RegenererCertificat = func(a action.Appelant, p action.Params) (string, []string, error) {
 		args := strings.Fields(p.Get("args"))
-		return regenerate(args, a.Username), nil
+		msg, faits := regenerate(args, a.Username)
+		return msg, faits, nil
 	}
 }
 
@@ -172,15 +174,33 @@ func showCertificate(args []string, appelant action.Appelant) string {
 		nom = nomCanonique(args[0])
 	}
 
-	certPEM, _, err := duckykey.GetCertificatePEMFromDB(nom)
-	if err != nil {
-		return fmt.Sprintf("Certificat %q introuvable : %v", nom, err)
+	var b strings.Builder
+	var certPEM string
+	attendus := nomsAttendus(nom)
+	if importe := certimporte.Pour(serviceDe(nom)); importe != nil {
+		// Relu tout de suite : « show » doit dire ce qui est servi MAINTENANT,
+		// pas ce qui l'était au dernier passage de l'intervalle.
+		importe.Rafraichir(true)
+		certPEM = importe.CertPEM()
+		e := importe.Etat()
+		fmt.Fprintf(&b, "Certificat %s — IMPORTÉ, relu à chaud depuis son fichier\n", nom)
+		fmt.Fprintf(&b, "  certificat : %s\n  clé        : %s\n", e.CertFile, e.KeyFile)
+		fmt.Fprintf(&b, "  émetteur   : %s\n  chargé le  : %s\n", e.Emetteur, e.ChargeLe.Format("2006-01-02 15:04:05"))
+		if e.DerniereErreur != "" {
+			fmt.Fprintf(&b, "  [PROBLÈME] dernière relecture refusée, l'ancien reste servi : %s\n", e.DerniereErreur)
+		}
+		fmt.Fprintf(&b, "  %s\n\n", ldaptools.CertSummary(certPEM))
+		attendus = nomsDeclares(nom)
+	} else {
+		var err error
+		certPEM, _, err = duckykey.GetCertificatePEMFromDB(nom)
+		if err != nil {
+			return fmt.Sprintf("Certificat %q introuvable : %v", nom, err)
+		}
+		fmt.Fprintf(&b, "Certificat %s\n  %s\n\n", nom, ldaptools.CertSummary(certPEM))
 	}
 
-	var b strings.Builder
-	fmt.Fprintf(&b, "Certificat %s\n  %s\n\n", nom, ldaptools.CertSummary(certPEM))
-
-	issues := ldaptools.AuditServedCertificate(certPEM, nomsAttendus(nom))
+	issues := ldaptools.AuditServedCertificate(certPEM, attendus)
 	if len(issues) == 0 {
 		b.WriteString("Aucun défaut constaté.\n\n")
 	} else {
@@ -214,9 +234,12 @@ func showCertificate(args []string, appelant action.Appelant) string {
 // qui n'avait rien à y faire, et un vrai défaut se serait perdu dans ce bruit.
 func nomsAttendus(nom string) ldaptools.SANSet {
 	if nom == duckykey.LDAPSServerCertName {
-		return ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+		return ldaptools.AttendusPourAudit(
+			ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs()),
+			ldaptools.ConfiguredIPs())
 	}
-	return ldaptools.BuildSANSet(storage.Web_TLS_DNSNames, storage.Web_TLS_IPs)
+	return ldaptools.AttendusPourAudit(
+		ldaptools.BuildSANSet(storage.Web_TLS_DNSNames, storage.Web_TLS_IPs), storage.Web_TLS_IPs)
 }
 
 // certificatsRegenerables décrit ce que la commande sait reconstruire.
@@ -242,7 +265,10 @@ var certificatsRegenerables = map[string]struct {
 	duckykey.APIServerCertName:   {duckykey.APIServerCertName, "Certificat TLS API REST", "l'API REST"},
 }
 
-func regenerate(args []string, senderUsername string) string {
+// regenerate rend le message, et les certificats RÉELLEMENT remplacés : un
+// refus (nom inconnu, certificat importé, échec) n'en est pas un, et ne doit
+// pas être journalisé comme tel.
+func regenerate(args []string, senderUsername string) (string, []string) {
 	nom := duckykey.LDAPSServerCertName
 	var dnsSupp, ipsSupp []string
 	tous := false
@@ -251,7 +277,7 @@ func regenerate(args []string, senderUsername string) string {
 		switch strings.ToLower(args[i]) {
 		case "--dns", "--ip":
 			if i+1 >= len(args) {
-				return "Option " + args[i] + " : valeur manquante."
+				return "Option " + args[i] + " : valeur manquante.", nil
 			}
 			valeurs := strings.Split(args[i+1], ",")
 			if strings.EqualFold(args[i], "--dns") {
@@ -273,24 +299,42 @@ func regenerate(args []string, senderUsername string) string {
 
 	if tous {
 		var b strings.Builder
+		var faits []string
 		// Ordre fixe : une sortie qui change d'ordre d'une exécution à l'autre
 		// est pénible à comparer, et les maps Go n'en garantissent aucun.
 		for _, n := range []string{duckykey.LDAPSServerCertName, duckykey.WebServerCertName, duckykey.APIServerCertName} {
-			b.WriteString(regenererUn(n, dnsSupp, ipsSupp, senderUsername))
+			msg, fait := regenererUn(n, dnsSupp, ipsSupp, senderUsername)
+			b.WriteString(msg)
 			b.WriteString("\n")
+			if fait {
+				faits = append(faits, n)
+			}
 		}
-		return b.String()
+		return b.String(), faits
 	}
 
 	if _, connu := certificatsRegenerables[nom]; !connu {
-		return fmt.Sprintf("Certificat %q inconnu. Valeurs acceptées : ldaps, web, api, all.", nom)
+		return fmt.Sprintf("Certificat %q inconnu. Valeurs acceptées : ldaps, web, api, all.", nom), nil
 	}
-	return regenererUn(nom, dnsSupp, ipsSupp, senderUsername)
+	msg, fait := regenererUn(nom, dnsSupp, ipsSupp, senderUsername)
+	if !fait {
+		return msg, nil
+	}
+	return msg, []string{nom}
 }
 
 // regenererUn reconstruit un certificat et le remplace en base.
-func regenererUn(nom string, dnsSupp, ipsSupp []string, senderUsername string) string {
+func regenererUn(nom string, dnsSupp, ipsSupp []string, senderUsername string) (string, bool) {
 	info := certificatsRegenerables[nom]
+
+	// Un certificat importé se renouvelle À SA SOURCE (cert-manager, PKI) :
+	// en régénérer un en base ne changerait rien à ce qui est servi, et
+	// laisserait croire le contraire.
+	if importe := certimporte.Pour(serviceDe(nom)); importe != nil {
+		return fmt.Sprintf("Certificat %s : importé depuis %s — rien à régénérer ici. "+
+			"Renouvelez-le à sa source (cert-manager, PKI) : le core relit le fichier de lui-même.\n",
+			nom, importe.CertFile), false
+	}
 
 	var certPEM, keyPEM string
 	var err error
@@ -310,18 +354,18 @@ func regenererUn(nom string, dnsSupp, ipsSupp []string, senderUsername string) s
 		certPEM, keyPEM, err = security.GenerateSelfSignedCertPEMAvec(dnsSupp, ipsSupp)
 	}
 	if err != nil {
-		return fmt.Sprintf("Certificat %s : génération impossible — %v\n", nom, err)
+		return fmt.Sprintf("Certificat %s : génération impossible — %v\n", nom, err), false
 	}
 
 	// Suppression puis création : SaveCertificateToDB refuse d'écraser, et
 	// c'est un bon défaut ailleurs. Ici le remplacement est ce qu'on demande.
 	if existant, errGet := dbcertificates.GetCertificateByName(nom); errGet == nil {
 		if errDel := dbcertificates.DeleteCertificate(existant.ID); errDel != nil {
-			return fmt.Sprintf("Certificat %s : ancien non supprimé — %v\n", nom, errDel)
+			return fmt.Sprintf("Certificat %s : ancien non supprimé — %v\n", nom, errDel), false
 		}
 	}
 	if err := duckykey.SaveCertificateToDB(nom, "tls_cert", info.description, certPEM, keyPEM); err != nil {
-		return fmt.Sprintf("Certificat %s : enregistrement impossible — %v\n", nom, err)
+		return fmt.Sprintf("Certificat %s : enregistrement impossible — %v\n", nom, err), false
 	}
 
 	logs.Write_Log("INFO", fmt.Sprintf(
@@ -336,6 +380,43 @@ func regenererUn(nom string, dnsSupp, ipsSupp []string, senderUsername string) s
 	b.WriteString("⚠ L'empreinte a changé — chaque client qui l'avait importé doit réimporter.\n\n")
 	b.WriteString("À importer dans le magasin de confiance des clients :\n\n")
 	b.WriteString(certPEM)
+	return b.String(), true
+}
+
+// serviceDe traduit un nom de certificat en base en service de certimporte.
+func serviceDe(nom string) string {
+	switch nom {
+	case duckykey.LDAPSServerCertName:
+		return certimporte.ServiceLDAPS
+	case duckykey.WebServerCertName:
+		return certimporte.ServiceWeb
+	case duckykey.APIServerCertName:
+		return certimporte.ServiceAPI
+	}
+	return ""
+}
+
+// nomsDeclares : ce qu'un certificat importé doit couvrir — seulement les noms
+// de la configuration (voir ldaptools.AttendusDeclares).
+func nomsDeclares(nom string) ldaptools.SANSet {
+	if nom == duckykey.LDAPSServerCertName {
+		return ldaptools.AttendusDeclares(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+	}
+	return ldaptools.AttendusDeclares(storage.Web_TLS_DNSNames, storage.Web_TLS_IPs)
+}
+
+// noteImportes complète « list » : la table ne montre que la base, et un
+// service qui sert un certificat importé n'utilise plus la ligne qu'elle porte.
+func noteImportes() string {
+	var b strings.Builder
+	for _, n := range []string{duckykey.LDAPSServerCertName, duckykey.WebServerCertName, duckykey.APIServerCertName} {
+		if importe := certimporte.Pour(serviceDe(n)); importe != nil {
+			if b.Len() == 0 {
+				b.WriteString("\nServis depuis un fichier (importés, la ligne en base n'est pas utilisée) :\n")
+			}
+			fmt.Fprintf(&b, "  %-14s %s\n", n, importe.CertFile)
+		}
+	}
 	return b.String()
 }
 
@@ -378,5 +459,10 @@ depuis JDK 9 et exigent un nom alternatif (SAN) correspondant. Un certificat
 sans SAN échoue avec « SSLHandshakeFailed », sans autre indice.
 
 Le certificat étant auto-signé, il doit aussi être importé dans le magasin de
-confiance de chaque client : « show » en affiche la partie publique.`
+confiance de chaque client : « show » en affiche la partie publique.
+
+Un certificat peut aussi être FOURNI par une autorité (cert-manager, PKI) :
+ldap.ldaps_tls_cert_file / ldaps_tls_key_file, et leurs équivalents web et api
+(ou VAULTAIRE_<SERVICE>_TLS_CERT_FILE / _KEY_FILE). Il est relu à chaud ;
+« regenerate » ne s'y applique pas.`
 }

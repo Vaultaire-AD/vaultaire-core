@@ -175,6 +175,16 @@ func estPorteeGlobale(p PorteeFunc) bool {
 	return reflect.ValueOf(p).Pointer() == reflect.ValueOf(PorteeGlobale).Pointer()
 }
 
+// PorteeEstGlobale dit si l'action exige « * » — un réglage du cluster, une
+// lecture qui n'a pas de domaine.
+//
+// Exportée pour la suite `--test` (TO-DO 150), qui éprouve chaque action selon
+// SA sorte de portée : « toute lecture déclare UnDomaineSuffit » n'a pas de
+// sens pour une portée globale, où ce champ est sans effet, et la suite ne
+// pouvait pas le savoir — elle comptait donc en défaut des actions qui n'en
+// ont aucun.
+func (d Definition) PorteeEstGlobale() bool { return estPorteeGlobale(d.Portee) }
+
 // Definition décrit une action métier.
 type Definition struct {
 	// Nom identifie l'action, sous la forme « objet.verbe » : « user.create »,

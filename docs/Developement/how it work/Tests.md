@@ -109,7 +109,10 @@ délibérément bruyante :
 | Test | Promesse tenue | À faire s'il échoue |
 |---|---|---|
 | `TestCatalogueCompletNaPasDeDoublon` | le catalogue d'actions contient exactement N actions | si l'ajout est voulu : mettre le nombre à jour **dans le même passage** |
-| `RBAC.LectureVoitSonPerimetre` / `AucuneEcritureNeSeContenteDUnDomaine` | une lecture déclare `UnDomaineSuffit`, une écriture jamais | corriger la déclaration de l'action, pas le test |
+| `RBAC.LectureVoitSonPerimetre` / `AucuneEcritureNeSeContenteDUnDomaine` | la lecture d'une **entité** déclare `UnDomaineSuffit`, une écriture jamais (ni `PorteeOuverte`) | corriger la déclaration de l'action, pas le test |
+| `GPO.ExemptionsVivantesEtJustifiees` | une action `gpo.*` sans clé `:gpo` est inscrite, avec sa raison | inscrire l'action et dire pourquoi, ou lui donner une clé `:gpo` |
+| `TestLaSuiteCritiquePasse` | la suite `--test` passe **en entier** | lire le contrôle nommé : il n'y a pas d'échec « habituel » |
+| `TestDebian…` (`vaultaire_client/controle`) | `debian.sh`, joué à blanc, branche PAM sans rien réécrire et s'arrête avant PAM si un module ne se charge pas | corriger le script ; ne pas assouplir le test |
 | `TestLaColonneEstDefinieALIdentiqueDesDeuxCotes` | base neuve et base migrée portent la même colonne | aligner la migration sur le schéma |
 | `TestLeRefusEstNonPunitifDansLeHandler` | un quota dépassé ne ferme pas la connexion d'un nœud | ne pas remonter d'erreur depuis ce chemin |
 | `TestLEmpreinteSeRelitParVerifier` | ce qui est haché est relu par les quatre portes | ne jamais changer le hachage d'un seul côté |
@@ -137,6 +140,14 @@ dérive et conformité, conformité LDAP, attestation de la clé du core, TOTP
 Elle ne remplace pas `go test` : elle répond à « ce binaire-ci, sur cette
 machine-ci, tient-il ses invariants ». Ajoutez-y un test quand la réponse doit
 pouvoir être donnée en exploitation.
+
+**`go test` la joue aussi** *(TO-DO 150)* — `core/testrunner/suite_test.go` —,
+donc l'intégration continue, à chaque merge dans `dev`. Elle ne se lançait qu'à
+la main : dix de ses contrôles échouaient depuis des mois, et l'un d'eux
+signalait un vrai défaut de droits que personne ne lisait plus au milieu des
+neuf autres. Un contrôle qui renonce à vérifier (« NON VÉRIFIÉ », hors des
+sources) fait échouer `go test` lui aussi. Seule la partie qui demande une
+**base** reste propre au binaire.
 
 ## Ce que l'intégration continue fait
 

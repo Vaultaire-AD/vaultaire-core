@@ -5,6 +5,7 @@ import (
 	"duckynetworkclient/V1/duckynetwork/keymanagement"
 	"duckynetworkclient/V1/duckynetwork/logs"
 	"duckynetworkclient/V1/duckynetwork/storage"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -43,12 +44,24 @@ func ParseTrames(trames string) storage.Trames_struct_client {
 	}
 }
 
+// ErrSessionRefusee : le core a refusé l'authentification de cette session
+// (trame 02_07). Il n'y a plus rien à y lire.
+var ErrSessionRefusee = errors.New("authentification refusée par le core")
+
 // MessageReader lit le corps d'une trame et la traite.
 //
-// Une erreur rendue veut dire « fermer la connexion » : le corps n'a pas été
-// lu en entier, la position dans le flux est perdue. Un échec de
-// déchiffrement n'en est pas une — le corps a été lu jusqu'au bout — et il est
-// journalisé ici.
+// Une erreur rendue veut dire « fermer la connexion ». Deux cas :
+//
+//   - le corps n'a pas été lu en entier, la position dans le flux est perdue ;
+//   - la trame était un refus d'authentification (ErrSessionRefusee, TO-DO
+//     159). La fermeture d'une session refusée était un effet de bord : le
+//     gestionnaire paniquait en lisant le refus, et c'est la récupération de la
+//     panique qui fermait. Elle est maintenant décidée ici, pour les deux
+//     boucles de réception (celle du SDK et celle de l'agent), qui s'arrêtent
+//     déjà sur toute erreur rendue par cette fonction.
+//
+// Un échec de déchiffrement n'en est pas une — le corps a été lu jusqu'au
+// bout — et il est journalisé ici.
 func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize int) error {
 	messageBuf, err := LireCorps(duckysession.Conn, reconstructedMessageSize)
 	if err != nil {
@@ -78,5 +91,8 @@ func MessageReader(duckysession *storage.DuckySession, reconstructedMessageSize 
 	// Traitement des trames
 	trames_content := ParseTrames(messageDecrypt)
 	Split_Action(trames_content, duckysession)
+	if duckysession.Refus != "" {
+		return ErrSessionRefusee
+	}
 	return nil
 }

@@ -14,10 +14,15 @@ Rendre la machine cible installable à distance par le core.
 
 L'intégration est **poussée par le core** : il se connecte en SSH à la machine
 en `root`, avec **sa propre clé de déploiement**, y copie l'agent et les modules
-PAM, puis exécute le script d'installation
-`automatisation/auto_deployements/rocky.sh`.
+PAM, puis exécute le script d'installation de la distribution, pris dans
+`automatisation/auto_deployements/` : `rocky.sh` ou `debian.sh`.
 
-Aujourd'hui, seul **Rocky Linux** dispose d'un script d'installation.
+**Rocky Linux**, et depuis la 2.3 **Debian et Ubuntu**, disposent d'un script.
+Systèmes **validés** : Debian 13, Rocky Linux 9 et 10 (liste dans
+[`Requirements.md`](../../Installation/Requirements.md#systèmes-pris-en-charge-pour-lagent)).
+Ce chapitre se fait sur Rocky ; sur Debian les commandes `vlt` sont les mêmes,
+et `openssh-server` doit être installé sur la machine. Ubuntu n'est pas un
+système visé : le script l'accepte, mais rien n'y a été éprouvé.
 
 ## Étapes
 

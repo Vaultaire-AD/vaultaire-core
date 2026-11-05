@@ -94,15 +94,21 @@ de consommer un jeton.
 Reprendre le volume au démarrage rend le conteneur remplaçable : l'identité du
 proxy survit aux reconstructions d'image.
 
-**Relais HTTPS et LDAPS.** Même contrainte pour eux : UID 10001, donc pas de
-port sous 1024 dans le conteneur. Déclarez-les dans la section `relais:` sur un
-port haut (`:8843`, `:1636`) et publiez 443 ou 636 sur l'hôte dans le
-`docker-compose.yml` — voir [`docs/proxy/https-et-ldaps.md`](../../../docs/proxy/https-et-ldaps.md).
+**Relais HTTPS et LDAPS.** L'UID 10001 n'interdit **pas** les ports bas dans ce
+conteneur : sur le réseau bridge de ce `docker-compose.yml` et avec Docker 20.10
+ou plus récent, Docker autorise tout port à un utilisateur ordinaire
+(`net.ipv4.ip_unprivileged_port_start=0`, TO-DO 160). Ce n'est plus vrai en
+`network_mode: host` ni sur un Docker plus ancien. Pour le savoir :
+`docker exec vlt-proxy cat /proc/sys/net/ipv4/ip_unprivileged_port_start`
+(0 : tout port ; 1024 : ports hauts seulement). Un port haut (`:8843`, `:1636`)
+publié en 443 ou 636 sur l'hôte marche partout — voir
+[`docs/proxy/https-et-ldaps.md`](../../../docs/proxy/https-et-ldaps.md).
 
 **Relais posés depuis le core.** Depuis la 2.2, un relais s'ajoute aussi par
 `vlt cluster relais <proxy> set …`, sans toucher à ce fichier
 ([`docs/proxy/pilotage.md`](../../../docs/proxy/pilotage.md)). Deux choses
-restent vraies ici : le port doit être **haut** — sinon le relais revient
+restent vraies ici : le port doit être **permis** dans le conteneur — un port
+bas l'est sur un Docker récent en bridge (ci-dessus), sinon le relais revient
 « refusé », `permission denied` —, et il doit être **publié** dans le
 `docker-compose.yml`, sans quoi il écoute dans le conteneur et personne ne
 l'atteint. La dernière liste reçue du core est gardée dans le volume des clés
@@ -157,7 +163,8 @@ docker compose exec vlt-proxy ls -l /var/lib/vaultaire_proxy/keys
 | `VAULTAIRE_IP_CORE : port invalide dans …` | port hors 1-65535, ou non numérique |
 | `aucune clé d'enrôlement dans la configuration` | `VAULTAIRE_ENROLL_KEY` vide |
 | `enrôlement refusé (invalid_key)` | clé inconnue, expirée, épuisée ou révoquée — le motif exact est dans le journal du **core**, jamais renvoyé au client |
-| `aucune session authentifiée après 30s` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy |
+| `aucun core joint depuis 30s : N relais reste(nt) ouvert(s)…` | core injoignable, ou clé publique enregistrée côté core ≠ celle du proxy. Depuis la 2.3 le proxy **reste en marche**, relais ouverts, et réessaie sans fin ; la ligne revient toutes les 5 min. Le conteneur ne s'arrête plus : c'est ce journal qu'il faut surveiller |
+| `aucune session authentifiée après 30s`, puis arrêt | même cause, proxy antérieur à la 2.3 |
 | `relais Ducky … alors que le port annoncé aux agents est …` | la section `relais:` du `config.yaml` écoute ailleurs que `VAULTAIRE_LISTEN_PORT` |
 | `aucune cible joignable pour … — connexion refusée` | aucun core joignable depuis le proxy : voir [`docs/proxy/depannage.md`](../../../docs/proxy/depannage.md) |
 | `répertoire des clés … non inscriptible` | un `user:` a été ajouté au compose : l'entrypoint ne peut plus reprendre le volume |

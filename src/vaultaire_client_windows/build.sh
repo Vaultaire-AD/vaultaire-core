@@ -9,6 +9,7 @@
 #   ./build.sh                    compile tout, fabrique l'archive
 #   ./build.sh --version 2.2.1    impose la version injectée dans les binaires
 #   ./build.sh --sans-dll         archive SANS Credential Provider (sinon mingw-w64 est EXIGÉ)
+#   ./build.sh --sans-essai-wine  ne pas éprouver la DLL sous wine, même s'il est là
 #   ./build.sh --sortie <dir>     répertoire de sortie (défaut : ./dist)
 #
 # # Pourquoi une archive .tar et pas un installeur MSI
@@ -30,12 +31,14 @@ RACINE="$(cd "$ICI/../.." && pwd -P)"
 SORTIE="$ICI/dist"
 VERSION_IMPOSEE=""
 AVEC_DLL=1
+ESSAI_WINE=1
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --version)   VERSION_IMPOSEE="${2:-}"; shift ;;
         --sortie)    SORTIE="${2:-}"; shift ;;
         --sans-dll)  AVEC_DLL=0 ;;
+        --sans-essai-wine) ESSAI_WINE=0 ;;
         -h|--help)   sed -n '2,20p' "$0"; exit 0 ;;
         *) echo "option inconnue : $1"; exit 1 ;;
     esac
@@ -109,8 +112,45 @@ info "compilation de vaultaire_login"
 # --sans-dll, au lieu de se subir.
 if [ "$AVEC_DLL" = 1 ]; then
     info "compilation du Credential Provider"
-    "$ICI/credential_provider/build-cp.sh" "$ETAPE" >/dev/null
+    # « bash » devant : les scripts sont en 100644 dans le dépôt (clone de
+    # travail sur NTFS, core.filemode=false). Sous WSL tout fichier de /mnt/c
+    # paraît exécutable ; sur un clone Linux, l'appel direct échouait.
+    bash "$ICI/credential_provider/build-cp.sh" "$ETAPE" >/dev/null
     info "  $(basename "$ETAPE")/VaultaireCredentialProvider.dll"
+
+    # --- l'essai sous wine (TO-DO 149) -------------------------------------
+    #
+    # Les contrôles de build-cp.sh disent que la DLL est bien FAITE (imports,
+    # formats). Celui-ci dit qu'elle MARCHE : elle s'inscrit sous le bon GUID,
+    # s'active par COM, répond juste à la suite d'appels de LogonUI — agent
+    # absent, muet ou en marche — et se retire sans reste.
+    #
+    # wine n'est PAS exigé, contrairement à mingw-w64 : sans lui, la DLL est
+    # fabriquée comme avant, mais on le DIT, ici et dans VERSION.txt. Un échec,
+    # lui, arrête tout : une DLL qui ne s'active pas sous wine ne s'activera pas
+    # davantage sous LogonUI, et il n'y a aucune raison de l'emporter.
+    if [ "$ESSAI_WINE" = 0 ]; then
+        ESSAI_DLL="NON eprouvee (--sans-essai-wine)"
+        info "essai sous wine : sauté (--sans-essai-wine)"
+    elif ! command -v "${WINE:-wine}" >/dev/null; then
+        ESSAI_DLL="NON eprouvee (wine absent de la machine de fabrication)"
+        info "essai sous wine : \033[1;33msauté, wine absent\033[0m — la DLL n'est PAS éprouvée"
+        info "  Debian/Ubuntu : apt install wine64"
+    else
+        info "essai de la DLL sous wine (une demi-minute)"
+        JOURNAL_ESSAI="$SORTIE/essai-wine.log"
+        if bash "$ICI/credential_provider/essai-wine.sh" "$ETAPE/VaultaireCredentialProvider.dll" \
+            >"$JOURNAL_ESSAI" 2>&1; then
+            ESSAI_DLL="eprouvee sous wine (inscription, activation COM, faux LogonUI, retrait)"
+            info "  éprouvée : inscription, activation, suite de LogonUI, trace, retrait"
+            info "  détail : $JOURNAL_ESSAI"
+        else
+            cat "$JOURNAL_ESSAI" >&2
+            rm -rf "$ETAPE"
+            erreur "la DLL a échoué à l'essai sous wine (détail ci-dessus, et dans $JOURNAL_ESSAI) :
+  aucune archive n'est produite."
+        fi
+    fi
 else
     # La marque part DANS l'archive : c'est le seul endroit où celui qui
     # l'installe, des jours plus tard et sur une autre machine, peut encore
@@ -171,6 +211,7 @@ cat > "$ETAPE/VERSION.txt" <<TXT
 vaultaire_client_windows $VERSION
 commit  : $COMMIT
 compilé : $DATE
+DLL     : ${ESSAI_DLL:-absente (--sans-dll)}
 contenu :
   vaultaire_client_windows.exe   l'agent (service Windows)
   vaultaire_login.exe            éprouver l'authentification sans écran de connexion

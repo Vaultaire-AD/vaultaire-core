@@ -96,14 +96,53 @@ jobs:
           done
 
   # --------------------------------------------------------------------
-  # 2. Compilation — sur Rocky Linux 9, la cible
+  # 2a. Modules natifs de la famille Debian — sur Ubuntu 22.04 (TO-DO 173)
+  # --------------------------------------------------------------------
+  # Les modules PAM et NSS ne se chargent que sur une glibc au moins aussi
+  # récente que celle qui les a compilés, et avec la libcrypt qu'ils ont vue.
+  # Ceux de Rocky 9 exigent libcrypt.so.2, que Debian et Ubuntu n'ont pas : la
+  # famille Debian a donc les siens, compilés sur sa plus ancienne version prise
+  # en charge — Ubuntu 22.04, glibc 2.35 (Debian 12 : 2.36, Ubuntu 24.04 : 2.39).
+  # auto_compil.sh échoue si un fichier exige davantage.
+  modules-debian:
+    name: "🧩 Modules natifs (Ubuntu 22.04)"
+    needs: version
+    runs-on: ubuntu-latest
+    container: ubuntu:22.04
+    steps:
+      - name: Dépendances de compilation
+        run: |
+          apt-get update -q
+          DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends \
+            gcc libc6-dev libpam0g-dev libcrypt-dev binutils
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      - name: Compilation
+        env:
+          VAULTAIRE_GLIBC_MAX: "2.35"
+        run: bash src/vaultaire_client/pam_module/auto_compil.sh dist/debian
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: modules-debian-${{ needs.version.outputs.tag }}
+          path: dist/debian/*
+          retention-days: 1
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------
+  # 2b. Compilation — sur Rocky Linux 9, la cible
   # --------------------------------------------------------------------
   # Compiler sur ubuntu-latest lierait les binaires et les modules PAM à une
   # glibc plus récente que celle de Rocky 9 : ils refuseraient de se charger
-  # sur les machines du parc.
+  # sur les machines du parc. Les modules natifs de CETTE image vont dans
+  # vaultaire_client/rocky/ ; ceux de la famille Debian arrivent du job
+  # précédent, dans vaultaire_client/debian/.
   build:
     name: "🛠️ Compilation (Rocky 9)"
-    needs: version
+    needs: [version, modules-debian]
     runs-on: ubuntu-latest
     container: rockylinux:9
     env:
@@ -113,8 +152,8 @@ jobs:
       - name: Dépendances de compilation
         run: |
           dnf install -y --setopt=install_weak_deps=False \
-            git gcc tar gzip findutils which \
-            pam-devel libcurl-devel libxcrypt-devel
+            git gcc binutils tar gzip findutils which \
+            pam-devel libxcrypt-devel
           dnf clean all
 
       - uses: actions/checkout@v4
@@ -135,8 +174,31 @@ jobs:
       - name: Compilation
         env:
           VAULTAIRE_BUILD_DIR: ${{ github.workspace }}/dist/build
+          VAULTAIRE_FAMILLE_MODULES: rocky
           GOTOOLCHAIN: local
         run: ./auto-compil.sh
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: modules-debian-${{ needs.version.outputs.tag }}
+          path: dist/build/vaultaire_client/debian
+
+      # Un paquet client sans l'une des deux familles laisserait ses postes
+      # sans modules : l'installation y serait refusée, au mieux.
+      - name: Modules natifs des deux familles
+        run: |
+          set -euo pipefail
+          for famille in rocky debian; do
+            for f in pam_login_custom_module.so pam_logout_custom_module.so \
+                     pam_ssh_auth_module.so libnss_vaultaire.so.2; do
+              test -s "dist/build/vaultaire_client/$famille/$f" \
+                || { echo "::error::$famille/$f absent du paquet client"; exit 1; }
+            done
+            chmod 755 dist/build/vaultaire_client/$famille/*
+          done
+          if compgen -G "dist/build/vaultaire_client/*.so*" > /dev/null; then
+            echo "::error::modules non classés à la racine du paquet client"; exit 1
+          fi
 
       # Une archive par composant : on ne déploie pas un proxy avec le serveur.
       - name: Paquets
@@ -169,11 +231,145 @@ jobs:
           if-no-files-found: error
 
   # --------------------------------------------------------------------
+  # 2c. Image du core et chart Helm — GHCR (2.3)
+  # --------------------------------------------------------------------
+  # ghcr.io/<propriétaire>/vaultaire-server:<version>, <majeure.mineure>,
+  # latest — et la chart en OCI : oci://ghcr.io/<propriétaire>/charts/vaultaire.
+  #
+  # Ordre voulu : construire, SCANNER, et seulement ensuite publier. Une image
+  # avec une vulnérabilité critique corrigeable n'atteint jamais le registre.
+  # Publiée avec sa provenance SLSA et son SBOM (attestations BuildKit), puis
+  # SIGNÉE sans clé par cosign : l'identité est ce workflow, certifiée par
+  # Sigstore à partir du jeton OIDC de GitHub — aucun secret à garder.
+  image:
+    name: "🐳 Image et chart (GHCR)"
+    needs: version
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write     # pousser sur ghcr.io
+      id-token: write     # signature cosign sans clé
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      SHA: ${{ needs.version.outputs.sha }}
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      image: ${{ steps.noms.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.version.outputs.sha }}
+
+      # GHCR exige un nom en minuscules ; le propriétaire du dépôt n'en est pas un.
+      - name: Noms
+        id: noms
+        run: |
+          set -euo pipefail
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "owner=$OWNER"                                   >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/$OWNER/vaultaire-server"          >> "$GITHUB_OUTPUT"
+          echo "charts=oci://ghcr.io/$OWNER/charts"             >> "$GITHUB_OUTPUT"
+          echo "serie=${VERSION%.*}"                            >> "$GITHUB_OUTPUT"
+          echo "date=$(git show -s --format=%cI "$SHA")"        >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Construction (locale, avant scan)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployments/docker/Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: vaultaire-server:scan
+          build-args: |
+            VAULTAIRE_VERSION=${{ env.VERSION }}
+            VCS_COMMIT=${{ env.SHA }}
+            VCS_DATE=${{ steps.noms.outputs.date }}
+          cache-from: type=gha,scope=vaultaire-server
+          cache-to: type=gha,scope=vaultaire-server,mode=max
+
+      - name: Trivy — l'image ne part pas avec une faille critique corrigeable
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: vaultaire-server:scan
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+          format: table
+
+      - name: Publication (provenance SLSA + SBOM)
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deployments/docker/Dockerfile
+          platforms: linux/amd64
+          push: true
+          provenance: mode=max
+          sbom: true
+          tags: |
+            ${{ steps.noms.outputs.image }}:${{ env.VERSION }}
+            ${{ steps.noms.outputs.image }}:${{ steps.noms.outputs.serie }}
+            ${{ steps.noms.outputs.image }}:latest
+          labels: |
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ env.SHA }}
+          build-args: |
+            VAULTAIRE_VERSION=${{ env.VERSION }}
+            VCS_COMMIT=${{ env.SHA }}
+            VCS_DATE=${{ steps.noms.outputs.date }}
+          cache-from: type=gha,scope=vaultaire-server
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Signature de l'image (cosign, sans clé)
+        env:
+          IMAGE: ${{ steps.noms.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: cosign sign --yes "${IMAGE}@${DIGEST}"
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: Chart — lint, paquet, publication, signature
+        env:
+          CHARTS: ${{ steps.noms.outputs.charts }}
+          IMAGE: ${{ steps.noms.outputs.image }}
+          DIGEST: ${{ steps.push.outputs.digest }}
+        run: |
+          set -euo pipefail
+          C=deployments/k8s/helm/vaultaire
+          helm lint --strict "$C" --set auth.existingSecret=ci
+          # La chart publiée désigne l'image par son EMPREINTE : un tag
+          # republié ne change pas ce qu'un cluster installe.
+          sed -i "s|^  digest: \"\"|  digest: \"${DIGEST}\"|" "$C/values.yaml"
+          helm package "$C" --version "$VERSION" --app-version "$VERSION" -d dist
+          echo "${{ secrets.GITHUB_TOKEN }}" | helm registry login ghcr.io -u "${{ github.actor }}" --password-stdin
+          OUT="$(helm push "dist/vaultaire-${VERSION}.tgz" "$CHARTS" 2>&1)"; echo "$OUT"
+          CHART_DIGEST="$(echo "$OUT" | sed -n 's/^Digest: //p')"
+          cosign sign --yes "${CHARTS#oci://}/vaultaire@${CHART_DIGEST}"
+          {
+            echo "### 🐳 Image"
+            echo "\`${IMAGE}:${VERSION}\` — \`${DIGEST}\`"
+            echo "### ☸️ Chart"
+            echo "\`${CHARTS}/vaultaire --version ${VERSION}\` — \`${CHART_DIGEST}\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # --------------------------------------------------------------------
   # 3. Publication et ménage
   # --------------------------------------------------------------------
   publish:
     name: "📦 Publication"
-    needs: [version, build]
+    needs: [version, build, image]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -186,6 +382,8 @@ jobs:
       # de PR contenant « $(...) » serait sinon exécuté.
       PR_NUMBER: ${{ github.event.pull_request.number }}
       PR_TITLE: ${{ github.event.pull_request.title }}
+      IMAGE: ${{ needs.image.outputs.image }}
+      DIGEST: ${{ needs.image.outputs.digest }}
     steps:
       - uses: actions/download-artifact@v4
         with:
@@ -204,6 +402,20 @@ jobs:
           else
             NOTES="Publication manuelle"
           fi
+          V="${TAG#v}"
+          NOTES="$NOTES
+
+          ### Image du core (rootless, signée)
+          \`\`\`
+          ${IMAGE}:${V}@${DIGEST}
+          cosign verify ${IMAGE}@${DIGEST} \\
+            --certificate-identity-regexp '^https://github.com/${GH_REPO}/.github/workflows/release.yaml@' \\
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com
+          \`\`\`
+          ### Chart Helm
+          \`\`\`
+          helm install vaultaire oci://ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/charts/vaultaire --version ${V}
+          \`\`\`"
           gh release create "$TAG" release/* \
             --target "$SHA" \
             --title "Vaultaire $TAG" \

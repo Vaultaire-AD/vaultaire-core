@@ -3,7 +3,6 @@ package dbsessions
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	database "vaultaire/core/database"
 	dbclients "vaultaire/core/database/db_clients"
 	dbusers "vaultaire/core/database/db_users"
@@ -62,9 +61,8 @@ func DeleteDidLogin(db *sql.DB, Username string, computeurID string) error {
 	}
 
 	if raffected == 0 {
-		log.Println("Aucune ligne supprimée, vérifiez les valeurs de id_user et id_logiciel")
-	} else {
-		log.Printf("%d ligne(s) supprimée(s)\n", raffected)
+		logs.Write_Log("DEBUG", fmt.Sprintf(
+			"did_login : aucune ligne pour l'utilisateur %v et le logiciel %v — déjà retirée", idUser, idLogiciel))
 	}
 
 	return nil

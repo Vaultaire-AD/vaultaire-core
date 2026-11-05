@@ -23,20 +23,37 @@ utilisateur.
 2. Côté serveur :
 
    ```bash
-   vlt gpo drift
+   vlt gpo status
+   vlt logs --level WARNING --since 10m
    ```
 
-   La machine apparaît en écart. En mode **enforce** (le défaut), le module est
-   **réappliqué au cycle suivant** — relancez l'agent une seconde fois et la
-   bannière revient.
+   En mode **enforce** (le défaut), tout s'est joué dans le même cycle : l'agent
+   a vu l'écart, **reposé** la bannière, puis constaté que tout était en place.
+   `gpo status` dit `ok`, et `gpo drift` ne montre rien. L'écart n'est pas
+   perdu pour autant — il est au journal : `gpo: dérive machine sur web01 —
+   1 écart(s)…`.
 
-3. Passez la GPO en **audit**, et recommencez :
+3. Passez la GPO en **audit**, faites-le savoir à la machine, puis recommencez
+   l'étape 1 :
 
    ```bash
    vlt gpo mode ssh-baseline audit
+   vlt gpo refresh --gpo ssh-baseline   # le mode voyage avec la politique : il lui faut un cycle
+   # … étape 1 sur web01 …
+   vlt gpo drift
+   vlt gpo status <computeur_id>
    ```
 
-   L'écart est signalé, **rien n'est corrigé**. Revenez ensuite en `enforce`.
+   Cette fois l'écart est signalé et **rien n'est corrigé** : la machine reste
+   dans `gpo drift`, et le détail de l'écart commence par
+   `[audit : signale, non corrige]`. C'est à cela qu'on reconnaît les deux
+   modes : un écart qui **reste** affiché est en audit — ou n'a pas pu être
+   corrigé.
+
+   Revenez ensuite en `enforce`. Lisez la réponse de la commande : elle dit
+   **quand** les machines appliqueront le changement — à leur prochain cycle —
+   et comment ne pas attendre : le bouton « Demander un cycle » de la fiche de
+   la GPO, ou `vlt gpo refresh --gpo ssh-baseline`.
 
 ## Partie B — une GPO utilisateur
 
@@ -56,10 +73,23 @@ utilisateur.
    echo "$ACME_ENV"
    ```
 
+4. Une valeur **par personne** : ajoutez deux modules **Configuration git** —
+   `user.name` = `%n`, `user.email` = `%m` — puis reconnectez-vous :
+
+   ```bash
+   git config --global --list     # user.name=Alice Martin, user.email=alice.martin@acme.lan
+   ```
+
+   Chaque membre d'`Infra` reçoit **son** nom et **son** adresse, tirés de
+   l'annuaire, avec la même GPO. Marqueurs : `%u` (compte court), `%U`
+   (compte complet), `%d` (domaine), `%n` (nom), `%m` (adresse), `%%` (un `%`).
+   Un autre marqueur est refusé à l'enregistrement.
+
 ## ✅ Vous avez réussi si
 
-- `gpo drift` a montré l'écart, puis plus rien après correction ;
+- en `enforce` la bannière est revenue seule et le journal garde l'écart ; en `audit` la machine reste dans `gpo drift` ;
 - `ACME_ENV` vaut `lab` dans la session d'Alice.
+- `git config --global user.name` rend le nom d'Alice, pas `%n`.
 
 ## 🧪 Exercice
 
@@ -80,9 +110,40 @@ privilèges. La règle est vérifiée par le serveur **et** par l'agent.
 > Essayez : dans la session d'Alice, `rm ~/.vaultaire_env`, déconnectez-vous,
 > attendez cinq minutes — ou `vlt settings set gpo_user_check_minutes 1` — et
 > reconnectez-vous. `ACME_ENV` vaut de nouveau `lab`, et `vlt gpo status`
-> affiche `ok` sur la ligne d'Alice. Ajouter un alias à son `.bashrc`, en
+> compte Alice parmi les comptes `ok` de `web01` (un compte n'a sa propre ligne,
+> sous sa machine, que s'il a un écart). Ajouter un alias à son `.bashrc`, en
 > revanche, n'est pas un écart : seul le bloc que Vaultaire y tient est
 > surveillé.
+
+## 🧪 Exercice — le fragment intact, l'effet perdu
+
+Sur `web01`, sans toucher au fragment de Vaultaire, faites appliquer à sshd
+`MaxAuthTries 10` au lieu des 3 de `ssh-baseline`. Que dit `vlt gpo status`,
+en audit puis en enforce ? Et pourquoi le fragment s'appelle-t-il `00-…` ?
+
+<details><summary>Solution</summary>
+
+sshd retient la **première** valeur qu'il lit : une ligne en tête de
+`sshd_config`, avant sa ligne `Include`, l'emporte sur tous les fragments.
+
+```bash
+sudo sed -i '1i MaxAuthTries 10' /etc/ssh/sshd_config && sudo systemctl reload sshd
+sudo sshd -T | grep maxauthtries          # 10
+vlt gpo refresh <computeur_id>
+vlt gpo status <computeur_id>
+```
+
+- **audit** : un écart `system_state sshd` — « sshd maxauthtries : 3 attendu,
+  10 constaté — une directive lue avant … l'emporte ». Rien n'est corrigé.
+- **enforce** : le module est rejoué et **échoue** — « fragment écrit mais sans
+  effet ». Réécrire le fragment ne sert à rien tant que la ligne qui le masque
+  est là : c'est sur le poste qu'il faut la retirer (`sed -i '1d'`), et le cycle
+  suivant le dit appliqué.
+
+`00-` le fait passer avant les fragments des distributions (`40-redhat-…`,
+`50-cloud-init.conf`) : nommé `99-`, il était lu le dernier, donc masqué par
+n'importe lequel. Ce contrôle par `sshd -T` vient de la 2.3 (TO-DO 182).
+</details>
 
 ## 📚 Référence
 

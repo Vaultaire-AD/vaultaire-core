@@ -94,6 +94,7 @@ INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value,
 -- ---------------------------------------------------------------------------
 
 INSERT IGNORE INTO gpo_restriction (kind, module_type, field_name, scope, value, updated_by) VALUES
+  ('allow_value', 'package', 'package', 'any', 'acl', 'system'),
   ('allow_value', 'package', 'package', 'any', 'aide', 'system'),
   ('allow_value', 'package', 'package', 'any', 'auditd', 'system'),
   ('allow_value', 'package', 'package', 'any', 'chrony', 'system'),

@@ -138,6 +138,7 @@ var porteesAttendues = map[string]string{
 	// une machine ne se délèguent pas de la même façon.
 	"session.list_users":            "PorteeGlobale",
 	"session.get_user":              "PorteeUtilisateur",
+	"revocation.get_status":         "PorteeUtilisateur",
 	"session.list_users_by_group":   "PorteeGroupe",
 	"session.list_clients":          "PorteeGlobale",
 	"session.list_clients_by_group": "PorteeGroupe",
@@ -160,13 +161,17 @@ var porteesAttendues = map[string]string{
 	"cluster.set_node_groups":       "PorteeGlobale",
 	"cluster.client_targets":        "PorteeGlobale",
 	// Relais des proxies (TO-DO 141) : un proxy n'appartient à aucun domaine.
-	"cluster.relay_list":     "PorteeGlobale",
-	"cluster.relay_set":      "PorteeGlobale",
-	"cluster.relay_remove":   "PorteeGlobale",
-	"cluster.relay_release":  "PorteeGlobale",
-	"certificate.list":       "PorteeGlobale",
-	"certificate.get":        "PorteeGlobale",
-	"certificate.regenerate": "PorteeGlobale",
+	"cluster.relay_list":    "PorteeGlobale",
+	"cluster.relay_set":     "PorteeGlobale",
+	"cluster.relay_remove":  "PorteeGlobale",
+	"cluster.relay_release": "PorteeGlobale",
+	// Oubli, maintenance, purge (TO-DO 146, 147) : la topologie du parc.
+	"cluster.forget":          "PorteeGlobale",
+	"cluster.set_maintenance": "PorteeGlobale",
+	"cluster.purge":           "PorteeGlobale",
+	"certificate.list":        "PorteeGlobale",
+	"certificate.get":         "PorteeGlobale",
+	"certificate.regenerate":  "PorteeGlobale",
 
 	// Conformité GPO : la ligne décrit une MACHINE, pas une GPO.
 	"gpo.list_compliance":      "PorteeGlobale",
@@ -206,6 +211,16 @@ var porteesAttendues = map[string]string{
 	// l'ouverture de session : aucun domaine ne le porte (TO-DO 95).
 	"mfa.get_ducky_policy": "PorteeGlobale",
 	"mfa.set_ducky_policy": "PorteeGlobale",
+	// La version attendue des agents (TO-DO 111) : une machine appartient à
+	// des groupes de plusieurs domaines, et la plus haute de leurs cibles
+	// l'emporte — une cible ne se délègue pas par domaine.
+	"agent.status":     "PorteeGlobale",
+	"agent.set_target": "PorteeGlobale",
+	"agent.pin":        "PorteeGlobale",
+	// L'ordre de mise à jour (TO-DO 115) : relancer une machine, nommer le
+	// dépôt — mêmes clés, même raison.
+	"agent.update":         "PorteeGlobale",
+	"agent.set_repository": "PorteeGlobale",
 }
 
 // clesAttendues : nom d'action → clé RBAC exigée.
@@ -301,12 +316,18 @@ var clesAttendues = map[string]string{
 	// le réglage engage tout le parc, il ne se délègue pas par domaine (TO-DO 95).
 	"mfa.get_ducky_policy":  "read:log",
 	"mfa.set_ducky_policy":  "write:server",
+	"agent.status":          "read:log",
+	"agent.set_target":      "write:server",
+	"agent.pin":             "write:server",
+	"agent.update":          "write:server",
+	"agent.set_repository":  "write:server",
 	"cluster.refresh_nodes": "write:update:client",
 
 	// Sessions : clé distincte de read:get:* — savoir qu'un compte existe et
 	// savoir qu'il est ouvert sur une machine ne se délèguent pas pareil.
 	"session.list_users":            "read:status:user",
 	"session.get_user":              "read:status:user",
+	"revocation.get_status":         "read:status:user",
 	"session.list_users_by_group":   "read:status:user",
 	"session.list_clients":          "read:status:client",
 	"session.list_clients_by_group": "read:status:client",
@@ -336,19 +357,22 @@ var clesAttendues = map[string]string{
 	"cluster.client_targets":        "read:cluster",
 	// Relais des proxies (TO-DO 141). Lire fait partie de l'état du cluster ;
 	// écrire déplace un point d'entrée du réseau, et a sa clé.
-	"cluster.relay_list":     "read:cluster",
-	"cluster.relay_set":      "write:relay",
-	"cluster.relay_remove":   "write:relay",
-	"cluster.relay_release":  "write:relay",
-	"certificate.list":       "read:certificate",
-	"certificate.get":        "read:certificate",
-	"certificate.regenerate": "write:certificate",
-	"dns.list_zones":         "read:dns",
-	"dns.list_records":       "read:dns",
-	"enroll.list_keys":       "read:enrollment",
-	"server.set_debug":       "write:server",
-	"server.get_debug":       "read:log",
-	"server.clear_sessions":  "write:server",
+	"cluster.relay_list":      "read:cluster",
+	"cluster.relay_set":       "write:relay",
+	"cluster.relay_remove":    "write:relay",
+	"cluster.relay_release":   "write:relay",
+	"cluster.forget":          "write:cluster",
+	"cluster.set_maintenance": "write:cluster",
+	"cluster.purge":           "write:cluster",
+	"certificate.list":        "read:certificate",
+	"certificate.get":         "read:certificate",
+	"certificate.regenerate":  "write:certificate",
+	"dns.list_zones":          "read:dns",
+	"dns.list_records":        "read:dns",
+	"enroll.list_keys":        "read:enrollment",
+	"server.set_debug":        "write:server",
+	"server.get_debug":        "read:log",
+	"server.clear_sessions":   "write:server",
 
 	// Enrôlement, écriture : reste sur write:create:client, et délibérément.
 	// Émettre une clé, c'est accorder le droit d'ajouter un programme au
@@ -495,13 +519,16 @@ func enregistrerToutDans(r *Registre) {
 	EnregistrerActionsLectureSuite(r)
 	EnregistrerActionsGPO(r)
 	EnregistrerActionsLectureEtat(r)
+	EnregistrerActionsRevocation(r)
 	EnregistrerActionsServeur(r)
 	EnregistrerActionsRelais(r)
 	EnregistrerActionsConformiteGPO(r)
 	EnregistrerActionsRafraichissementGPO(r)
 	EnregistrerActionsRafraichissementCluster(r)
+	EnregistrerActionsMaintenanceCluster(r)
 	EnregistrerActionsSignatureGPO(r)
 	EnregistrerActionsMFADucky(r)
+	EnregistrerActionsVersionAgent(r)
 	EnregistrerActionsArborescence(r)
 	EnregistrerActionsReglages(r)
 	EnregistrerActionsDuree(r)

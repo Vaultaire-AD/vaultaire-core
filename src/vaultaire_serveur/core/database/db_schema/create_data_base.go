@@ -340,6 +340,34 @@ func Create_DataBase(db *sql.DB) {
     		-- proxy qui écoute bien sur 6666.
     		port_public INT NOT NULL DEFAULT 0,
 
+    		-- MAINTENANCE (TO-DO 147). Une colonne à part, et non une valeur de
+    		-- status : status est réécrit par chaque battement et chaque
+    		-- réenregistrement, la maintenance est une décision d'exploitation
+    		-- qui doit leur survivre — comme priorite et expose_aux_agents.
+    		-- Un nœud en maintenance sort de TOUTES les listes (04_04, 04_16)
+    		-- sans que son réglage de rotation soit touché : lever la
+    		-- maintenance le rend tel qu'il était.
+    		maintenance BOOLEAN NOT NULL DEFAULT FALSE,
+    		maintenance_par VARCHAR(255) NOT NULL DEFAULT '',
+    		maintenance_le DATETIME NULL DEFAULT NULL,
+
+    		-- PURGE d'un core en maintenance (TO-DO 147). Le core qui la reçoit
+    		-- ne peut pas la faire : les sessions vivent dans la mémoire du
+    		-- core visé. La demande est donc écrite ICI, et le core visé la lit
+    		-- à son battement, l'exécute, et écrit la fin et le compte.
+    		purge_demandee_le DATETIME NULL DEFAULT NULL,
+    		purge_par VARCHAR(255) NOT NULL DEFAULT '',
+    		purge_etalement_s INT NOT NULL DEFAULT 0,
+    		purge_terminee_le DATETIME NULL DEFAULT NULL,
+    		purge_fermees INT NOT NULL DEFAULT 0,
+
+    		-- ADRESSE VUE (TO-DO 176) : la source TCP de la connexion par
+    		-- laquelle le nœud bat, telle que le core la voit. Pour un proxy,
+    		-- c'est aussi la source des sessions qu'il relaie : c'est par elle
+    		-- que chaque core retrouve ces sessions quand on purge le proxy.
+    		-- Réécrite à chaque battement ; ip_address, elle, est déclarée.
+    		adresse_vue VARCHAR(45) NOT NULL DEFAULT '',
+
     		UNIQUE KEY uk_owner (owner_client_id)
 		);`,
 
@@ -529,6 +557,28 @@ func Create_DataBase(db *sql.DB) {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"database: identifiants de l'annuaire non posés : "+err.Error())
 		log.Fatalf("Erreur lors de la pose des identifiants de l'annuaire : %v", err)
+	}
+
+	// Les versions attendues des agents (TO-DO 111) et le compte rendu de leur
+	// mise à jour (TO-DO 115).
+	//
+	// FATALE depuis le 115 : la demande d'ordre 09_01, que chaque agent émet à
+	// chaque connexion, et le rejeu des ordres nomment ces colonnes. Non
+	// posées, le défaut ne serait plus une vue en erreur mais un « Unknown
+	// column » sur un chemin de connexion de tout le parc. Un ALTER TABLE ADD
+	// COLUMN sur id_logiciels et groups est l'opération la moins risquée de ce
+	// fichier.
+	if err := EnsureVersionsCibles(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: versions attendues des agents non posées : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des versions attendues des agents : %v", err)
+	}
+	// Les jeux de clés de confiance des paquets (TO-DO 207) : même raison
+	// d'être fatale — chaque agent demande le sien à chaque connexion.
+	if err := EnsureJeuxDeCles(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: jeux de clés des paquets non posés : "+err.Error())
+		log.Fatalf("Erreur lors de la pose des jeux de clés des paquets : %v", err)
 	}
 
 	// L'unicité (compte, machine) de `did_login` (TO-DO 107).

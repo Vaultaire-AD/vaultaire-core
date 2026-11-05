@@ -68,7 +68,11 @@ enrollment:
 #   # celui du Nexus : il doit couvrir le nom par lequel le site joint le proxy.
 #   - nom: nexus
 #     type: https
-#     ecoute: ":8843"            # port haut : le conteneur tourne en UID 10001
+#     ecoute: ":8843"            # port haut : accepté partout. Un port bas (443)
+#                                # l'est aussi dans le conteneur vlt-proxy sur
+#                                # Docker >= 20.10 en bridge, pas en réseau host
+#                                # ni hors conteneur sans CAP_NET_BIND_SERVICE
+#                                # (docs/proxy/https-et-ldaps.md)
 #     cibles:
 #       source: "service:vaultaire_nexus"
 #

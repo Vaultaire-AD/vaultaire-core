@@ -22,13 +22,14 @@ de passe. Rien d'autre, volontairement.
 | ✅ | enrôlement, tunnel Ducky, battement, versions déclarées |
 | ✅ | **inventaire système** : nom et build de Windows, mémoire, processeurs, sessions ouvertes — par les API, jamais par `wmic` ou `systeminfo`, dont la sortie est traduite |
 | ✅ | **authentification par mot de passe** d'un compte du domaine |
-| ✅ | **provisionnement** du compte Windows local correspondant (création, mot de passe aligné, groupes Utilisateurs / Administrateurs) |
+| ✅ | **provisionnement** du compte Windows local correspondant (création, secret de l'agent comme mot de passe, groupes Utilisateurs / Administrateurs) — voir « Le compte local » |
+| ✅ | **second facteur** : le code TOTP de la tuile (`0000` pour un compte qui n'en a pas), vérifié par le core |
 | ✅ | **liste des cores et proxies** : découverte `04_04`, ordre servi (affinité, priorité), persistance dans `client_conf.json`, repli sur la configuration |
 | ✅ | tuile Vaultaire à l'écran de connexion (Credential Provider) |
 | ⏸ | **GPO** : trames reçues et journalisées, **jamais appliquées** |
-| ⏸ | **révocations** : même chose — un compte révoqué ne pourra plus s'authentifier, mais sa session en cours n'est pas fermée |
+| ⏸ | **révocations** : reçues et **non appliquées** — un compte révoqué ne pourra plus s'authentifier, mais sa session en cours n'est pas fermée. L'agent répond « non pris en charge » (`06_03 unsupported`), que `kill -u <compte> --status` affiche tel quel, et le core cesse de lui remettre l'ordre *(TO-DO 167)* |
 | ❌ | SSH, clés publiques, groupes du domaine : pas de `sshd` ici |
-| ❌ | second facteur, changement de mot de passe depuis l'écran de connexion |
+| ❌ | changement de mot de passe depuis l'écran de connexion (il se change dans le portail) |
 
 ## Pourquoi deux composants, et pourquoi un tube nommé
 
@@ -63,7 +64,7 @@ Windows n'ouvre de session qu'avec une identité qu'il connaît. Vaultaire n'est
 pas un domaine Active Directory, et le devenir demanderait de parler Kerberos et
 LDAP comme un contrôleur de domaine. La V1 prend donc le chemin des
 fournisseurs d'identité tiers : **le core valide le mot de passe, l'agent crée
-un compte local qui le porte**, et Windows ouvre une session ordinaire.
+un compte local**, et Windows ouvre une session ordinaire.
 
 Le nom du compte local est déterministe et distinct :
 
@@ -77,13 +78,41 @@ de Windows, sépare deux domaines homonymes, et surtout **ne reprend jamais un
 compte local existant** — écrire le mot de passe du domaine dans le compte
 `alice` d'un poste serait une prise de contrôle, pas un provisionnement.
 
-Conséquences assumées en V1 :
+### Son mot de passe : un secret de l'agent *(TO-DO 195)*
 
-- le mot de passe local est **réaligné à chaque connexion réussie** : changer son
-  mot de passe dans le portail suffit, la connexion suivante suit ;
-- un compte dont l'utilisateur ne se connecte plus **garde son dernier mot de
-  passe**. Une révocation côté core empêche la prochaine authentification, pas
-  l'usage d'un mot de passe déjà connu.
+Jusqu'au 195, le compte local portait le **mot de passe du domaine**. Après une
+première connexion, Windows proposait la tuile de ce compte avec son propre
+fournisseur — à l'ouverture comme au **déverrouillage** — et la vérifiait seul :
+ni le core, ni le code TOTP. Le second facteur était contourné par la tuile d'à
+côté.
+
+Désormais :
+
+- le compte porte un **secret de 32 caractères** tiré par l'agent, que personne ne
+  tape et que l'utilisateur ne connaît pas. L'agent le garde, chiffré par DPAPI
+  pour la machine, dans `C:\ProgramData\Vaultaire\comptes\<compte>.secret` ;
+- après l'accord du core, l'agent le rend à la tuile Vaultaire par le tube, et
+  c'est **lui** que la tuile met dans le bloc d'ouverture de session. Le mot de
+  passe tapé n'a servi qu'au core ;
+- la tuile Windows du compte demande donc un mot de passe que personne n'a : on
+  entre **par la tuile Vaultaire**, mot de passe et code compris, déverrouillage
+  compris ;
+- l'utilisateur **ne peut pas changer** le mot de passe local (drapeau du compte),
+  et le compte est **masqué** de la liste de l'écran d'accueil
+  (`SpecialAccounts\UserList`). La tuile d'une session verrouillée reste
+  affichée par Windows : elle ne l'ouvre pas ;
+- les comptes locaux d'administration ne sont pas touchés : pas de filtre sur le
+  fournisseur de Microsoft, qui fermerait le poste à son issue de secours.
+
+Le secret **ne change pas** à chaque connexion : Windows protège les secrets d'un
+compte (mots de passe enregistrés des navigateurs, gestionnaire d'identifiants)
+par son mot de passe, et une remise à zéro les rend illisibles. Il n'est reposé
+que s'il n'ouvre plus le compte — compte d'avant le 195 (une fois, à la première
+connexion après la mise à jour), mot de passe changé par un administrateur,
+secret perdu. Le journal de l'agent le dit chaque fois.
+
+Une révocation côté core empêche réellement la connexion suivante : personne
+d'autre que l'agent ne connaît le mot de passe du compte.
 
 ## Compiler
 
@@ -91,6 +120,7 @@ Conséquences assumées en V1 :
 ./build.sh                    # dist/vaultaire-client-windows-<version>.tar
 ./build.sh --version 2.2.1
 ./build.sh --sans-dll         # sans le Credential Provider
+./build.sh --sans-essai-wine  # ne pas éprouver la DLL sous wine
 ```
 
 Depuis Linux, sans Windows : `GOOS=windows go build` suffit (aucun CGO), et la
@@ -107,6 +137,35 @@ chacune ferme un défaut qui ne se voyait qu'à l'écran de connexion d'un poste
 
 Le troisième vaut aussi sous MSVC, où `%s` large « marche » : le code doit se
 compiler à l'identique avec les deux chaînes.
+
+### La DLL éprouvée sous wine (TO-DO 149)
+
+Ces contrôles disent que la DLL est bien **faite**. Quand `wine` est présent
+(`apt install wine64`), `build.sh` vérifie ensuite qu'elle **marche**, avec
+`credential_provider/essai-wine.sh` — une demi-minute, dans un préfixe wine
+neuf :
+
+| Étape | Ce qui est vérifié |
+|---|---|
+| poste existant | un autre fournisseur et les clés `{` d'une DLL d'avant le TO-DO 140 sont posés d'abord |
+| inscription | `regsvr32` rend 0 ; le GUID de `vaultaire_guid.h` (lu dans `DEFINE_GUID`) sous `CLSID` **et** `Credential Providers`, la DLL pour `InprocServer32`, `Apartment` ; plus aucune clé `{` |
+| activation | `essai/faux_logonui.exe` : `CoCreateInstance` du CLSID, puis la suite d'appels de LogonUI — scénarios, champs, tuile — face à un agent **absent**, **muet** et **en marche** ; `SetSelected` borné, refus nommés, aucun bloc d'ouverture sur un refus, `DllCanUnloadNow` à la fin |
+| trace | la même suite, témoin posé : chaque `> Méthode` a son `< Méthode`, et ni le mot de passe ni le code tapés ne sont dans le journal |
+| variantes | les trois variantes d'essai du TO-DO 157 posées dans le registre : la suite voit ce qu'elles changent, et le journal les nomme |
+| retrait | `regsvr32 /u` : plus rien de Vaultaire, l'autre fournisseur intact |
+
+Un échec arrête la fabrication, sans archive. Sans wine, la DLL est fabriquée
+comme avant, mais `build.sh` le dit et `VERSION.txt` porte « DLL : NON
+eprouvee ». Le même essai tourne en CI (`tests.yaml`, à chaque merge dans
+`dev`).
+
+`faux_logonui.exe` n'appelle que des API Windows : il est écrit pour tourner
+aussi sur un vrai poste (DLL inscrite, **service Vaultaire arrêté** — le
+programme tient lui-même le rôle de l'agent). Cela n'a pas encore été essayé.
+
+**Ce n'est pas LogonUI.** Une tuile qui n'apparaît pas alors que chaque méthode
+répond juste (TO-DO 157) passe à travers : la tuile reste une recette manuelle
+sur un poste (`A_TESTER.md`).
 
 ### Compiler la DLL avec MSVC
 
@@ -194,29 +253,15 @@ manière de faire respecter la norme.
 
 ## Le mot de passe local, et la politique du poste
 
-Le compte local porte **le mot de passe du domaine**, et il n'y a pas le choix :
-c'est celui que la personne tape à l'écran de connexion, et c'est Windows qui le
-vérifie contre le compte local. En poser un autre rendrait la connexion
-impossible.
+Avant le TO-DO 195, le compte local portait le mot de passe du domaine, et une
+politique locale plus stricte que celle du domaine faisait refuser le compte
+(`NetUserAdd`, code **2245**) ; `install.ps1` proposait de l'assouplir.
 
-Conséquence : si la politique de mot de passe **du poste** est plus stricte que
-celle du domaine, `NetUserAdd` refuse la création avec le code **2245**
-(`NERR_PasswordTooShort`) — dont le nom ment, puisque Windows le rend aussi pour
-un refus de complexité ou un mot de passe encore dans l'historique. Le paramètre
-fautif vaut alors `0xFFFFFFFF`, c'est-à-dire « je ne sais pas lequel ».
-
-C'est le symptôme observé en recette : `-etat` répond, `-u … -check` répond
-`success` — il ne crée aucun compte — et `-u …` échoue.
-
-`install.ps1` affiche la politique locale et **propose** de l'aligner : longueur
-minimale à 0, historique à 0, complexité désactivée (`net accounts`, puis
-`secedit` pour la complexité, qui n'est pas exposée autrement). Rien n'est
-assoupli sans accord : c'est une politique de sécurité du poste, et la robustesse
-devient alors celle de la politique de **domaine** — qui est ce qui protège
-réellement le compte.
-
-> Sur une machine jointe à un Active Directory, une stratégie de domaine écrase
-> la politique locale à chaque actualisation : il faut la régler côté AD.
+Le secret de l'agent fait 32 caractères, les quatre familles présentes : toute
+politique ordinaire l'accepte, et `install.ps1` n'assouplit plus rien. Un code
+2245 vient donc d'une politique inhabituelle (longueur exigée au-delà de 32,
+filtre de mots de passe tiers) ; le message de l'agent le dit. Un poste assoupli
+par une version précédente le reste : `secpol.msc` pour le revoir.
 
 ## Où vivent les choses
 
@@ -225,6 +270,7 @@ réellement le compte.
 | `C:\ProgramData\Vaultaire\client_conf.json` | cores déclarés (`servers`) et appris (`learned`) |
 | `C:\ProgramData\Vaultaire\client_software.yaml` | identité de la machine, créée par le core |
 | `C:\ProgramData\Vaultaire\keys\` | clé privée, clé du core, empreintes de confiance |
+| `C:\ProgramData\Vaultaire\comptes\` | le secret de chaque compte local, chiffré par DPAPI (TO-DO 195) — le perdre fait reposer le mot de passe du compte à la connexion suivante |
 | `C:\ProgramData\Vaultaire\logs\vaultaire_client_windows.log` | journal de l'agent |
 | `C:\ProgramData\Vaultaire\logs\credential_provider.log` | journal de la DLL (écran de connexion) |
 | `C:\ProgramData\Vaultaire\logs\credential_provider.trace` | témoin, **absent** en temps normal : sa présence allume la trace de la DLL (voir Diagnostic) |
@@ -235,11 +281,13 @@ réellement le compte.
 | Symptôme | Cause probable |
 |---|---|
 | La tuile n'apparaît pas | Lire `credential_provider.log`. **Aucune ligne « fournisseur inscrit »** : `regsvr32` a échoué — code 3, la DLL ne se charge pas (dépendance manquante : archive d'avant le TO-DO 139). **« inscrit » mais jamais « charge »** : la clé n'est pas celle que LogonUI lit — `reg query "HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Authentication\Credential Providers"` doit montrer `{6F2A1B74-3C58-4E0A-9D21-7B4F8C0E5A93}` ; une clé nommée `{` est la trace d'une DLL d'avant le TO-DO 140, refaire l'archive |
-| L'écran de connexion n'affiche **aucune** tuile, pas même celles de Windows | Un fournisseur retient LogonUI. Poser le témoin de trace (ci-dessous) et refaire l'essai : une ligne `> Méthode` sans sa ligne `<` nomme l'endroit. Pour reprendre la main : valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur, ou `uninstall.ps1 -CredentialProviderSeulement`. L'Observateur d'événements (Application, 1000 et 1002, `LogonUI.exe`) nomme le module en cas de plantage |
+| L'écran de connexion n'affiche **aucune** tuile, pas même celles de Windows | Constaté à la recette du 05/10 (TO-DO 157), corrigé à l'aveugle depuis — voir « Les variantes d'essai » ci-dessous. Poser le témoin de trace (ci-dessous) et refaire l'essai : une ligne `> Méthode` sans sa ligne `<` nomme l'endroit. Pour reprendre la main : valeur `Disabled` = 1 (DWORD) sous la clé du fournisseur, ou `uninstall.ps1 -CredentialProviderSeulement`. L'Observateur d'événements (Application, 1000 et 1002, `LogonUI.exe`) nomme le module en cas de plantage |
 | « Le service Vaultaire de ce poste ne répond pas » | le tube existe mais l'agent n'a pas répondu en 1,5 s : agent figé ou surchargé. Son journal, puis `sc stop` / `sc start VaultaireAgent` |
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` ; le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu, ou `servers` faux dans `client_conf.json` |
 | Refus alors que le mot de passe est bon | le compte a-t-il le droit sur cette machine ? le motif exact est dans le journal du **core** |
+| La tuile Windows du compte refuse le mot de passe du domaine | attendu depuis le TO-DO 195 : le compte porte un secret de l'agent. Passer par la tuile Vaultaire (« Autre utilisateur » ou « Options de connexion ») |
+| « Le service Vaultaire de ce poste est trop ancien pour cette tuile » | DLL mise à jour, agent pas encore : il ne rend pas le secret du compte local. Mettre à jour l'agent (`install.ps1`) |
 | Mot de passe accepté, session refusée par Windows | compte local non inscrit dans Utilisateurs, ou stratégie « Interdire l'ouverture de session locale » |
 | Le compte local existe mais le profil est vide | deux comptes ont été créés : vérifiez que l'identifiant est tapé de la même façon (le nom local est déterministe, voir plus haut) |
 
@@ -278,3 +326,41 @@ quand le journal dépasse 8 Mo.
 
 Sans trace, un appel qui retient LogonUI plus d'une seconde laisse quand même
 une ligne `lent : <méthode> a retenu LogonUI N ms`.
+
+### Un fournisseur V1, et la variante d'essai `ModeV2` (TO-DO 157, 179)
+
+À la recette du 05/10, l'écran de connexion n'affichait plus **aucune** tuile.
+Le 157 a rendu la DLL « V2 », comme l'exemple `SampleV2CredentialProvider` de
+Microsoft, avec trois variantes pour chercher la cause sur un poste. La recette
+du 12/10 l'a trouvée : **c'est le V2**. Avec `ICredentialProviderCredential2` et
+`ICredentialProviderSetUserArray`, les tuiles restent vides ou l'interface
+Vaultaire est masquée ; sans elles, l'écran revient et la connexion passe.
+
+Depuis le 179, la DLL est donc un fournisseur **V1** par défaut, sans rien à
+poser :
+
+| | Comportement |
+|---|---|
+| interfaces | `ICredentialProvider` et `ICredentialProviderCredential` seulement |
+| tuile par défaut | non (`CREDENTIAL_PROVIDER_NO_DEFAULT`) — elle se range sous « Autre utilisateur » |
+| image de la tuile | le « V » bleu, rôle `CPFG_CREDENTIAL_PROVIDER_LOGO` ; libellé masqué, rôle `CPFG_CREDENTIAL_PROVIDER_LABEL` |
+
+`ModeV1`, `TuileParDefaut` et `SansImage` ne sont plus lues ; `install.ps1` les
+retire d'un poste de recette. Une seule variante reste, pour un **essai**
+seulement — chercher un jour pourquoi le V2 casse l'écran, si l'énumération des
+comptes devient utile :
+
+```powershell
+New-Item HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Force | Out-Null
+New-ItemProperty HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Name ModeV2 -PropertyType DWord -Value 1 -Force
+# ... essai à l'écran de connexion — qui sera vide, c'est attendu — puis :
+Remove-Item HKLM:\SOFTWARE\Vaultaire\CredentialProvider -Recurse
+```
+
+Relue à chaque affichage de l'écran de connexion ; tant qu'elle est posée, le
+journal de la DLL porte `variante d'essai active : ModeV2=1`. `uninstall.ps1`
+retire la clé. Depuis un autre poste, quand l'écran est vide :
+`reg delete \\<poste>\HKLM\SOFTWARE\Vaultaire\CredentialProvider /f`
+(service Registre à distance), ou depuis le mode sans échec.
+
+Vérifié sur un poste à la recette du 22/10/2026 (point 179, voir `docs/Developement/DO/2.3/2.3.md`).

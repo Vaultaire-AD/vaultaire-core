@@ -21,12 +21,23 @@ import (
 //   - Deux GPO du même scope qui règlent la même clé naturelle sont un conflit
 //     signalé, pas résolu silencieusement : deviner laquelle « gagne » produirait
 //     un parc dont la configuration réelle est imprévisible.
+//   - Un conflit n'écarte que les modules qui s'opposent (TO-DO 222) : le reste
+//     de la politique est livré, et le conflit est rangé pour `vlt gpo status`.
+//     Avant, il faisait refuser la politique ENTIÈRE de la machine — plus rien
+//     n'y était appliqué ni corrigé, y compris par les GPO sans rapport.
+//   - Deux GPO qui règlent la même clé de la MÊME façon (même type, mêmes
+//     paramètres) ne s'opposent pas : le module est livré une fois. Si l'une
+//     est en enforce, il est en enforce — l'audit de l'autre ne retire pas une
+//     correction que la première demande.
 
 // EffectiveModule est un module retenu après résolution, avec sa provenance.
 type EffectiveModule struct {
 	Module     Module
 	PolicyName string
 	PolicyID   int
+	// AussiPar : les autres GPO qui portent ce même réglage à l'identique
+	// (TO-DO 222). Leur version entre dans celle de la politique livrée.
+	AussiPar []int
 }
 
 // Conflict décrit deux modules concurrents sur la même clé naturelle.
@@ -48,8 +59,8 @@ type ResolveResult struct {
 	Machine []EffectiveModule
 	// User contient les modules de scope user, dans l'ordre d'application.
 	User []EffectiveModule
-	// Conflicts liste les collisions détectées. Non vide n'empêche pas la
-	// lecture du résultat : les modules en conflit sont conservés pour que
+	// Conflicts liste les collisions détectées. Les modules en conflit ne sont
+	// PAS dans Machine ni User : écartés, ils sont décrits ici, pour que
 	// l'administrateur voie exactement ce qui s'oppose.
 	Conflicts []Conflict
 	// Skipped liste les GPO écartées et pourquoi (désactivées, vides).
@@ -72,8 +83,11 @@ func Resolve(policies []Policy) ResolveResult {
 	ordered := append([]Policy(nil), policies...)
 	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Name < ordered[j].Name })
 
-	seenMachine := map[string]EffectiveModule{}
-	seenUser := map[string]EffectiveModule{}
+	// Par identité : l'index du module retenu dans sa liste, et les identités
+	// en conflit, écartées une fois toutes les GPO lues.
+	seenMachine := map[string]int{}
+	seenUser := map[string]int{}
+	enConflit := map[Scope]map[string]bool{ScopeMachine: {}, ScopeUser: {}}
 
 	for _, p := range ordered {
 		if !p.Enabled {
@@ -119,21 +133,65 @@ func Resolve(policies []Policy) ResolveResult {
 				seen = seenUser
 			}
 			if identity != "" {
-				if previous, exists := seen[identity]; exists {
+				if i, exists := seen[identity]; exists {
+					previous := &(*target)[i]
+					if memeReglage(previous.Module, m) {
+						// Le même réglage : livré une fois, enforce l'emporte.
+						if m.DriftMode == "" || previous.Module.DriftMode == "" {
+							previous.Module.DriftMode = ""
+						}
+						if p.ID != previous.PolicyID {
+							previous.AussiPar = append(previous.AussiPar, p.ID)
+						}
+						continue
+					}
 					res.Conflicts = append(res.Conflicts, Conflict{
-						Identity: identity, First: previous, Second: eff,
+						Identity: identity, First: *previous, Second: eff,
 					})
+					enConflit[p.Scope][identity] = true
 					continue
 				}
-				seen[identity] = eff
+				seen[identity] = len(*target)
 			}
 			*target = append(*target, eff)
 		}
 	}
 
+	res.Machine = sansConflit(res.Machine, enConflit[ScopeMachine])
+	res.User = sansConflit(res.User, enConflit[ScopeUser])
 	sortEffective(res.Machine)
 	sortEffective(res.User)
 	return res
+}
+
+// memeReglage : même type et mêmes paramètres. Le mode de dérive n'en fait pas
+// partie — c'est ce que Resolve arbitre.
+func memeReglage(a, b Module) bool {
+	if a.Type != b.Type || len(a.Params) != len(b.Params) {
+		return false
+	}
+	for k, v := range a.Params {
+		if w, ok := b.Params[k]; !ok || w != v {
+			return false
+		}
+	}
+	return true
+}
+
+// sansConflit retire les modules dont l'identité est en conflit — le PREMIER
+// retenu compris : garder l'un des deux reviendrait à désigner un gagnant par
+// l'ordre alphabétique des noms de GPO.
+func sansConflit(liste []EffectiveModule, enConflit map[string]bool) []EffectiveModule {
+	if len(enConflit) == 0 {
+		return liste
+	}
+	out := liste[:0]
+	for _, e := range liste {
+		if !enConflit[moduleIdentity(e.Module)] {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // sortEffective applique l'ordre d'application aux modules effectifs.
@@ -154,29 +212,37 @@ func sortEffective(list []EffectiveModule) {
 // donné. Elle n'est pas persistée : c'est une vue calculée, dont Version est le
 // cumul des versions sources afin qu'un changement dans n'importe quelle GPO
 // contributrice modifie le hash et déclenche une réapplication côté agent.
-func BuildPolicyForDelivery(scope Scope, policies []Policy) (Policy, error) {
+//
+// Les conflits du scope sont rendus à côté de la politique, qui ne porte pas
+// les modules en conflit (TO-DO 222) : à l'appelant de les ranger et de les
+// journaliser.
+func BuildPolicyForDelivery(scope Scope, policies []Policy) (Policy, []Conflict, error) {
 	if !IsValidPolicyScope(scope) {
-		return Policy{}, fmt.Errorf("scope invalide : %s", scope)
+		return Policy{}, nil, fmt.Errorf("scope invalide : %s", scope)
 	}
 	res := Resolve(policies)
-	if res.HasConflicts() {
-		var msgs []string
-		for _, c := range res.Conflicts {
-			msgs = append(msgs, c.Error())
-		}
-		return Policy{}, fmt.Errorf("résolution impossible : %s", strings.Join(msgs, " ; "))
-	}
 
 	source := res.Machine
 	if scope == ScopeUser {
 		source = res.User
 	}
+	// Les appelants passent les GPO d'un seul scope : les conflits sont les siens.
+	conflits := res.Conflicts
 
 	merged := Policy{Name: "effective_" + string(scope), Scope: scope, Enabled: true}
 	contributors := map[int]int{}
 	for _, eff := range source {
 		merged.Modules = append(merged.Modules, eff.Module)
 		contributors[eff.PolicyID] = 0
+		for _, id := range eff.AussiPar {
+			contributors[id] = 0
+		}
+	}
+	// Une GPO dont les modules sont tous écartés compte quand même : la
+	// modifier pour lever le conflit doit changer l'empreinte.
+	for _, c := range conflits {
+		contributors[c.First.PolicyID] = 0
+		contributors[c.Second.PolicyID] = 0
 	}
 	for _, p := range policies {
 		if _, used := contributors[p.ID]; used {
@@ -184,5 +250,14 @@ func BuildPolicyForDelivery(scope Scope, policies []Policy) (Policy, error) {
 		}
 	}
 	SortModules(merged.Modules)
-	return merged, nil
+	return merged, conflits, nil
+}
+
+// DecrireConflits : une ligne lisible, pour le journal et `gpo status`.
+func DecrireConflits(conflits []Conflict) string {
+	var msgs []string
+	for _, c := range conflits {
+		msgs = append(msgs, c.Error())
+	}
+	return strings.Join(msgs, " ; ")
 }

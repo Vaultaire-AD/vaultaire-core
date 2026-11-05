@@ -1,0 +1,22 @@
+# Contexte de construction de deployments/docker/Dockerfile : seulement ce
+# qu'il copie. Tout le reste (.git, binaires compilés, secrets de dev, VM…)
+# n'entre jamais dans le contexte, donc jamais dans un cache de build.
+*
+!src/vaultaire_serveur/
+!src/vaultaire_cli/
+!src/vaultaire_client/
+!src/ducky-network-sdk-service/
+!web_packet/
+!automatisation/auto_deployements/
+!deployments/docker/serveur_conf.yaml
+**/*.exe
+**/*.so
+**/*.so.*
+**/vaultaire_client/vaultaire_client
+**/*_test.go
+**/testdata/
+# Dépendances et tests du portail (Playwright) : jamais servis par le core.
+# Sans ces lignes, un node_modules local (ignoré par git) entrait dans l'image
+# construite depuis une copie de travail : 83 Mo au lieu de 52.
+**/node_modules/
+web_packet/sso_WEB_page/tests/

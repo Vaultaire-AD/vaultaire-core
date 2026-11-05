@@ -87,9 +87,12 @@ const MaxTransitionsFiche = 20
 // l'appelant à trois contrôles de droits pour une seule question.
 type ConformiteMachine struct {
 	ComputeurID string
-	Etats       []dbgpo.ComplianceRow
-	Echecs      []dbgpo.ModuleReportRow
-	Ecarts      []dbgpo.DriftRow
+	// Hostname : le nom d'hôte de l'inventaire, brut (TO-DO 215) — vide si la
+	// machine ne l'a pas déclaré ou n'a aucun rapport.
+	Hostname string
+	Etats    []dbgpo.ComplianceRow
+	Echecs   []dbgpo.ModuleReportRow
+	Ecarts   []dbgpo.DriftRow
 
 	// Historique est la suite des CHANGEMENTS d'état d'application, la plus
 	// récente en tête. Les trois champs ci-dessus disent où en est la machine ;
@@ -106,6 +109,11 @@ type ConformiteMachine struct {
 	ModulesIllisibles   string
 	EcartsIllisibles    string
 	HistoriqueIllisible string
+
+	// Conflits : les conflits entre GPO vus à la dernière résolution
+	// (TO-DO 222) — les modules en cause n'ont pas été livrés.
+	Conflits           []dbgpo.ConflitGPO
+	ConflitsIllisibles string
 }
 
 func listerConformite(_ Appelant, _ Params) (Resultat, error) {
@@ -113,8 +121,15 @@ func listerConformite(_ Appelant, _ Params) (Resultat, error) {
 	if err != nil {
 		return Resultat{}, fmt.Errorf("lecture de la conformité : %w", err)
 	}
+	// Le message compte des PORTÉES : c'est l'unité des lignes rendues, et celle
+	// que le filtre de périmètre annonce quand il en masque. Les façades, elles,
+	// affichent une ligne par machine (TO-DO 143) et le disent sous le tableau.
+	machines := map[string]bool{}
+	for _, r := range rows {
+		machines[r.ComputeurID] = true
+	}
 	return Resultat{
-		Message: fmt.Sprintf("%d scope(s) suivi(s).", len(rows)),
+		Message: fmt.Sprintf("%d portée(s) suivie(s) sur %d machine(s).", len(rows), len(machines)),
 		Donnees: rows,
 	}, nil
 }
@@ -132,6 +147,12 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 	}
 
 	out := ConformiteMachine{ComputeurID: id, Etats: etats}
+	for _, e := range etats {
+		if e.Hostname != "" {
+			out.Hostname = e.Hostname
+			break
+		}
+	}
 
 	if modules, err := dbgpo.GetModuleReports(db, id); err != nil {
 		out.ModulesIllisibles = err.Error()
@@ -152,6 +173,12 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 	// Borné : une fiche montre les dernières transitions, pas l'histoire
 	// complète d'une machine qu'on répare depuis six mois. Ce qui dépasse reste
 	// en base jusqu'à la rétention, et se lit par la même action.
+	if conflits, err := dbgpo.ConflitsDeLaMachine(db, id); err != nil {
+		out.ConflitsIllisibles = err.Error()
+	} else {
+		out.Conflits = conflits
+	}
+
 	if histo, err := dbgpo.HistoriqueApplication(db, id, MaxTransitionsFiche); err != nil {
 		out.HistoriqueIllisible = err.Error()
 	} else {
@@ -159,7 +186,7 @@ func lireConformiteMachine(_ Appelant, p Params) (Resultat, error) {
 	}
 
 	return Resultat{
-		Message: fmt.Sprintf("Machine %s : %d scope(s) suivi(s).", id, len(etats)),
+		Message: fmt.Sprintf("Machine %s : %d portée(s) suivie(s).", id, len(etats)),
 		Donnees: out,
 	}, nil
 }

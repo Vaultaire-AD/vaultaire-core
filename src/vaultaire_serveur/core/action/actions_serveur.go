@@ -12,6 +12,7 @@ import (
 	dbcertificates "vaultaire/core/database/db_certificates"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/reglages"
 	hosthandler "vaultaire/ducky-network/host_handler"
 )
 
@@ -229,7 +230,11 @@ func EnregistrerActionsServeur(r *Registre) {
 //
 // Nil tant que personne ne l'a branchée : l'action refuse alors plutôt que de
 // rendre un succès silencieux. Un serveur mal câblé doit le dire.
-var RegenererCertificat func(a Appelant, p Params) (string, error)
+//
+// Elle rend aussi les certificats RÉELLEMENT remplacés : un refus (certificat
+// importé, nom inconnu) rend un message sans rien remplacer, et ne doit pas
+// laisser au journal une ligne SECURITY « a régénéré ».
+var RegenererCertificat func(a Appelant, p Params) (string, []string, error)
 
 func regenererCertificat(a Appelant, p Params) (Resultat, error) {
 	if RegenererCertificat == nil {
@@ -237,12 +242,14 @@ func regenererCertificat(a Appelant, p Params) (Resultat, error) {
 			"régénération non branchée : action.RegenererCertificat est nil, " +
 				"le serveur a démarré sans raccorder commandcertificate")
 	}
-	msg, err := RegenererCertificat(a, p)
+	msg, faits, err := RegenererCertificat(a, p)
 	if err != nil {
 		return Resultat{}, err
 	}
-	logs.Write_Log("SECURITY", fmt.Sprintf(
-		"%s a régénéré un certificat TLS du serveur", a.Username))
+	if len(faits) > 0 {
+		logs.Write_Log("SECURITY", fmt.Sprintf(
+			"%s a régénéré le(s) certificat(s) TLS du serveur : %s", a.Username, strings.Join(faits, ", ")))
+	}
 	return Resultat{Message: msg}, nil
 }
 
@@ -290,6 +297,14 @@ func listerNoeuds(_ Appelant, p Params) (Resultat, error) {
 	// Les compteurs de relais (TO-DO 108), pour la même raison et avec la même
 	// tolérance : une colonne vide vaut mieux qu'un refus d'afficher le cluster.
 	clusterdatabase.GarnirMetriquesRelais(db, noeuds)
+
+	// Les sessions que chaque core publie avec son battement (TO-DO 148). La
+	// fraîcheur suit la cadence du battement : un core réglé lentement ne doit
+	// pas voir sa colonne se vider un tour sur deux.
+	clusterdatabase.GarnirMetriquesSessions(db, noeuds,
+		clusterdatabase.FraicheurPour(reglages.Duree(reglages.CleBattementCluster)))
+	// La maintenance et la purge (TO-DO 147).
+	clusterdatabase.GarnirMaintenance(db, noeuds)
 
 	message := fmt.Sprintf("%d nœud(s).", len(noeuds))
 	if role != "" {

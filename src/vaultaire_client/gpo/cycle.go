@@ -2,6 +2,8 @@ package gpo
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -121,7 +123,7 @@ func RunUserCycle(sessionKey, username string) Report {
 	// constaterApresApplication, le scope utilisateur n'a pas de tour suivant
 	// qui le ferait à sa place.
 	if corriges > 0 || rapport.Counts()[ResultApplied] > 0 {
-		constaterApresApplication(sessionKey, username)
+		constaterApresApplication(sessionKey, ScopeUser, username)
 	}
 	return rapport
 }
@@ -171,6 +173,7 @@ func runCycle(sessionKey, scope, username string, timeout time.Duration) (rappor
 	report := ApplyPolicy(policy, previous)
 
 	state := BuildScopeState(policy, previous, report)
+	journaliserModes(label, state)
 	if err := SaveScopeState(scope, username, state); err != nil {
 		// L'état non enregistré signifie que tout sera réappliqué au prochain
 		// cycle. Les modules étant idempotents, c'est du travail inutile mais
@@ -345,9 +348,28 @@ func runMachineCycleWith(sessionKeyProvider func() string, wait time.Duration) b
 	//
 	// Le scan ne touche qu'à l'état local et ne relance aucun service : c'est
 	// le cycle qui fait le travail, à un moment prévisible.
-	scanMachineDrift(sessionKey)
+	corriges := scanMachineDrift(sessionKey)
 
-	return RunMachineCycle(sessionKey).Status != StatusFailed
+	// Un état écrit avant le TO-DO 182 : la politique est redemandée une fois,
+	// pour que ses modules inscrivent leur attente — sans être rejoués.
+	rattrapees := rattraperAttentesMachine()
+
+	rapport := RunMachineCycle(sessionKey)
+
+	// Ce que le core sait de la conformité date d'AVANT le cycle : le rapport
+	// d'écart part avant la correction (voir scanMachineDrift), et une
+	// politique qui vient d'être posée n'a pas encore été vérifiée. On lui dit
+	// ce qu'il en est maintenant — TO-DO 86.
+	//
+	// Sans ce constat, une machine en ENFORCE dont l'écart venait d'être
+	// corrigé affichait « 1 écart(s) » jusqu'au tour suivant, une heure plus
+	// tard : exactement ce qu'affiche une machine en AUDIT, qui ne corrige
+	// rien. Les deux modes ne se distinguaient pas dans « gpo status ».
+	if corriges > 0 || rattrapees > 0 || rapport.Counts()[ResultApplied] > 0 {
+		constaterApresApplication(sessionKey, ScopeMachine, "")
+	}
+
+	return rapport.Status != StatusFailed
 }
 
 // waitForSessionKey attend qu'une session mère utilisable soit disponible.
@@ -380,13 +402,15 @@ func waitForSessionKey(provider func() string, timeout time.Duration) string {
 // Le rapport part vers le core AVANT la correction : si la machine s'arrête
 // entre les deux, l'écart reste visible côté serveur. L'inverse effacerait la
 // trace d'un problème qu'on n'a pas encore résolu.
-func scanMachineDrift(sessionKey string) {
+//
+// Rend le nombre de modules marqués pour réapplication.
+func scanMachineDrift(sessionKey string) int {
 	report := ScanScope(ScopeMachine, "")
 	if report.Checked == 0 {
 		// Aucun inventaire : rien n'a encore été appliqué, ou l'état vient d'une
 		// version antérieure. Se taire plutôt que d'envoyer un rapport vide qui
 		// ferait croire à une vérification réelle.
-		return
+		return 0
 	}
 
 	if report.Conforming() {
@@ -400,5 +424,27 @@ func scanMachineDrift(sessionKey string) {
 		logs.Write_log("WARNING", "GPO: rapport de conformite non transmis : "+err.Error())
 	}
 
-	EnforceDrift(ScopeMachine, "", report)
+	return EnforceDrift(ScopeMachine, "", report)
+}
+
+// journaliserModes dit, quand la politique vient d'être reçue, quels modules
+// sont en audit (TO-DO 183). Devant deux GPO de modes différents, c'est la
+// première question : le journal y répond sans relire l'état.
+func journaliserModes(label string, state *ScopeState) {
+	if state == nil || len(state.Modes) == 0 {
+		return
+	}
+	var enAudit []string
+	for cle, mode := range state.Modes {
+		if mode == string(DriftAudit) {
+			enAudit = append(enAudit, cle)
+		}
+	}
+	if len(enAudit) == 0 {
+		return
+	}
+	sort.Strings(enAudit)
+	logs.Write_log("INFO", fmt.Sprintf(
+		"GPO: %s — %d module(s) sur %d en audit (signalés, jamais corrigés) : %s ; les autres en enforce",
+		label, len(enAudit), len(state.Modules), strings.Join(enAudit, ", ")))
 }

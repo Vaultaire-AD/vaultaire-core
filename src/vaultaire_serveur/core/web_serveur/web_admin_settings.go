@@ -1,6 +1,7 @@
 package webserveur
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -26,6 +27,14 @@ import (
 // La décision reste portée par les ACTIONS : cette page ne lit ni n'écrit la
 // base directement. C'est ce qui a manqué à la page des certificats, où le
 // contrôle ne tenait qu'à un `if` de la page — voir AdminCertificatesHandler.
+
+// confirmationVue : une demande que le serveur n'a PAS appliquée, et qu'il
+// appliquera si on la confirme (TO-DO 161). La page la rejoue telle quelle.
+type confirmationVue struct {
+	Motif   string
+	Setting string
+	Value   string
+}
 
 type reglageVue struct {
 	reglages.Etat
@@ -54,13 +63,15 @@ func AdminSettingsHandler(w http.ResponseWriter, r *http.Request) {
 		Error      string
 		Reglages   []reglageVue
 		PeutEcrire bool
+		// Confirmation : non nul quand la dernière demande attend un « oui ».
+		Confirmation *confirmationVue
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable,
 		Section: "settings", PeutEcrire: peutEcrire,
 	}
 
 	if r.Method == http.MethodPost {
-		data.Message, data.Error = traiterReglage(r, appelant, username)
+		data.Message, data.Error, data.Confirmation = traiterReglage(r, appelant, username)
 	}
 
 	// L'état est relu APRÈS l'écriture, pour que la page montre la base et non
@@ -87,28 +98,41 @@ func AdminSettingsHandler(w http.ResponseWriter, r *http.Request) {
 // ailleurs : la page ne choisit pas quelle action appeler à partir des champs
 // reçus, sans quoi un champ ajouté au gabarit ouvrirait un chemin que personne
 // n'a déclaré.
-func traiterReglage(r *http.Request, appelant act.Appelant, username string) (message, erreur string) {
+func traiterReglage(r *http.Request, appelant act.Appelant, username string) (message, erreur string, conf *confirmationVue) {
 	if err := r.ParseForm(); err != nil {
-		return "", "Formulaire illisible."
+		return "", "Formulaire illisible.", nil
 	}
 
 	cle := r.PostFormValue("setting")
 	if cle == "" {
-		return "", "Aucun réglage désigné."
+		return "", "Aucun réglage désigné.", nil
 	}
 
 	nom := "settings.set"
 	p := act.Params{"setting": cle, "value": r.PostFormValue("value")}
+	// « confirm » ne vient que du bouton de confirmation. C'est l'action qui
+	// décide s'il sert : la page ne fait que le transmettre.
+	if r.PostFormValue("confirm") == "yes" {
+		p["confirm"] = "yes"
+	}
 	if r.PostFormValue("action") == "reset_setting" {
 		nom = "settings.reset"
 		p = act.Params{"setting": cle}
 	}
 
 	res, err := act.Executer(nom, appelant, p)
-	if err != nil {
-		return "", MessageDActionPourAffichage(res, err)
+	var attente *act.ErrConfirmationRequise
+	if errors.As(err, &attente) {
+		return "", "", &confirmationVue{
+			Motif:   attente.Motif,
+			Setting: attente.Rejouer.Get("setting"),
+			Value:   attente.Rejouer.Get("value"),
+		}
 	}
-	return res.Message, ""
+	if err != nil {
+		return "", MessageDActionPourAffichage(res, err), nil
+	}
+	return res.Message, "", nil
 }
 
 // bornesLisibles rend « entre 1 et 60 min », pour l'attribut de saisie.

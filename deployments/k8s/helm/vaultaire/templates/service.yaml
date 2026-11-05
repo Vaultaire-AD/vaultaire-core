@@ -1,0 +1,60 @@
+{{- $p := fromYaml (include "vaultaire.containerPorts" .) -}}
+{{- $s := .Values.service -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vaultaire.fullname" . }}
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+    {{- with $s.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  {{- with $s.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $s.type }}
+  {{- if and (eq $s.type "LoadBalancer") $s.loadBalancerIP }}
+  loadBalancerIP: {{ $s.loadBalancerIP }}
+  {{- end }}
+  {{- if and (eq $s.type "LoadBalancer") $s.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml $s.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
+  {{- if or (eq $s.type "LoadBalancer") (eq $s.type "NodePort") }}
+  externalTrafficPolicy: {{ $s.externalTrafficPolicy }}
+  {{- end }}
+  # Une session Ducky (agent, proxy) reste sur le core qui l'a ouverte.
+  sessionAffinity: ClientIP
+  selector:
+    {{- include "vaultaire.selectorLabels" . | nindent 4 }}
+  ports:
+    {{- range $nom := list "ducky" "ldap" "ldaps" "web" "api" "dns" }}
+    {{- $port := index $s.ports $nom }}
+    {{- if and $port.enabled (or (ne $nom "dns") $.Values.config.dns.enabled) }}
+    - name: {{ $nom }}
+      port: {{ $port.port }}
+      targetPort: {{ $nom }}
+      protocol: {{ if eq $nom "dns" }}UDP{{ else }}TCP{{ end }}
+      {{- if and $port.nodePort (or (eq $s.type "NodePort") (eq $s.type "LoadBalancer")) }}
+      nodePort: {{ $port.nodePort }}
+      {{- end }}
+    {{- end }}
+    {{- end }}
+---
+# Service sans tête : un nom DNS stable par pod (<pod>.<service>), pour
+# exposer chaque core d'un cluster séparément.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vaultaire.fullname" . }}-headless
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "vaultaire.selectorLabels" . | nindent 4 }}
+  ports:
+    - { name: ducky, port: {{ $p.ducky }}, targetPort: ducky, protocol: TCP }

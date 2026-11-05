@@ -13,6 +13,7 @@ import (
 	dbgpo "vaultaire/core/database/db_gpo"
 	"vaultaire/core/gpo"
 	"vaultaire/core/logs"
+	"vaultaire/core/permission"
 	"vaultaire/core/storage"
 )
 
@@ -327,6 +328,10 @@ func adminGPOList(w http.ResponseWriter, r *http.Request, db *sql.DB, username s
 	}
 }
 
+// actionCycleDesMachines est la valeur du champ « action » du bouton « Demander
+// un cycle » de la fiche d'une GPO.
+const actionCycleDesMachines = "refresh_gpo_machines"
+
 // adminGPODetail gère la vue détail : métadonnées, modules, liaisons de groupe.
 func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username string, groupIDs []int, gpoName string) {
 	policy, err := dbgpo.GetPolicyByName(db, gpoName)
@@ -356,6 +361,11 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 		ModuleCount  int
 		GroupCount   int
 		CatalogCount int
+		// Demander un cycle aux machines liées (TO-DO 169) : proposé pour une
+		// GPO de portée machine, à qui peut agir sur une machine quelque part.
+		// Une GPO de compte ne se rejoue pas par un cycle : la page le dit.
+		PorteeMachine       bool
+		PeutDemanderUnCycle bool
 		// ActiveTab est l'onglet à ouvrir au chargement. Après une action, on
 		// revient sur l'onglet d'où elle a été lancée : sans cela, ajouter un
 		// module renverrait l'administrateur sur le premier onglet à chaque fois.
@@ -389,8 +399,28 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 		// action.PorteeGPOEtGroupe.
 		//
 		// Le nom de la GPO vient de l'URL : les formulaires ne le répètent pas.
-		res, traite, errAction := ExecuterActionFormulaireAvec(r, username, groupIDs,
-			act.Params{"gpo": gpoName})
+		var (
+			res       act.Resultat
+			traite    bool
+			errAction error
+		)
+		if r.FormValue("action") == actionCycleDesMachines {
+			// « Demander un cycle » aux machines liées (TO-DO 169). Pas une
+			// action du registre : une BOUCLE sur `gpo.refresh`, une machine à
+			// la fois, chacune contrôlée pour elle-même — celle que fait
+			// `vlt gpo refresh --gpo`, par la même fonction.
+			traite = true
+			bilan, err := act.RafraichirMachinesDeLaGPO(
+				act.Appelant{Username: username, GroupIDs: groupIDs}, gpoName)
+			if err != nil {
+				errAction = err
+			} else {
+				res.Message = bilan.Lisible("liée(s) à cette GPO")
+			}
+		} else {
+			res, traite, errAction = ExecuterActionFormulaireAvec(r, username, groupIDs,
+				act.Params{"gpo": gpoName})
+		}
 
 		if traite {
 			if errAction != nil {
@@ -419,6 +449,10 @@ func adminGPODetail(w http.ResponseWriter, r *http.Request, db *sql.DB, username
 	}
 
 	data.Policy = policy
+	data.PorteeMachine = policy.Scope == gpo.ScopeMachine
+	// Le droit QUELQUE PART suffit à montrer le bouton ; chaque machine est
+	// ensuite contrôlée pour elle-même par l'action.
+	data.PeutDemanderUnCycle = permission.HasActionAnywhere(groupIDs, "write:update:client")
 	data.Modules = buildModuleViews(policy.Modules, policy.Scope)
 	data.Catalog = buildCatalogForScope(policy.Scope)
 	data.CatalogFlat = flattenCatalog(data.Catalog)

@@ -28,7 +28,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 
 | Clé | Ce qu'elle gouverne |
 |---|---|
-| `read:log` | consultation des journaux |
+| `read:log` | consultation des journaux, et des versions attendues des agents |
 | `write:dns` / `read:dns` | modification / consultation du DNS |
 | `write:mfa` | second facteur d'un tiers |
 | `write:killswitch` | révocation d'urgence d'un compte |
@@ -36,7 +36,7 @@ Ce qui n'en est pas un porte une **clé spéciale**, à deux segments :
 | `write:relay` | ce qu'un proxy **expose** : ses relais, leurs ports, leurs cibles (TO-DO 141) |
 | `read:certificate` / `write:certificate` | certificats TLS du serveur |
 | `read:enrollment` | consultation des clés d'enrôlement |
-| `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées** |
+| `write:server` | réglages d'exploitation : mode debug, purge des sessions, **durées**, **version attendue des agents** |
 | `read:nexus` / `write:nexus` / `write:nexus_admin` | dépôt de paquets Nexus : lire les dépôts privés / publier / administrer — voir « Droits de service » |
 
 **Pourquoi des clés spéciales et non des objets RBAC.** Un journal, un nœud de
@@ -208,6 +208,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `session.list_users` ² | `read:status:user` | Globale | — | **Registre** — `status -u` | — |
 | `session.get_user` | `read:status:user` | Utilisateur | — | **Registre** — `status -u <compte>` | — |
 | `session.list_users_by_group` ² | `read:status:user` | Groupe | — | **Registre** — `status -u -g` | — |
+| `revocation.get_status` ² | `read:status:user` | Utilisateur | — | **Registre** — `kill -u <compte> --status` | **Registre** — fiche du compte |
 | `session.list_clients` ² | `read:status:client` | Globale | — | **Registre** — `status -c` | — |
 | `session.list_clients_by_group` ² | `read:status:client` | Groupe | — | **Registre** — `status -c -g` | — |
 | `session.list_clients_by_type` ² | `read:status:client` | Globale | — | **Registre** — `status -c <type>` | — |
@@ -225,13 +226,16 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `cluster.relay_set` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> set <nom> …` | **Registre** (page Cluster) |
 | `cluster.relay_remove` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> remove <nom>` | **Registre** (page Cluster) |
 | `cluster.relay_release` ⁴ | `write:relay` | Globale | — | **Registre** — `cluster relais <proxy> release` | **Registre** (page Cluster) |
+| `cluster.set_maintenance` | `write:cluster` | Globale | — | **Registre** — `cluster maintenance <nœud> <on\|off>` | **Registre** (page Cluster, fiche) |
+| `cluster.purge` | `write:cluster` | Globale | — | **Registre** — `cluster purge <nœud>` | **Registre** (page Cluster, fiche d'un core) |
+| `cluster.forget` | `write:cluster` | Globale | — | **Registre** — `cluster forget <nœud>` | **Registre** (page Cluster, fiche d'un nœud hors ligne) |
 | `certificate.list` | `read:certificate` | Globale | — | **Registre** — `certificate list` | — |
 | `certificate.get` | `read:certificate` | Globale | — | **Registre** — `certificate show` | — |
 | `certificate.regenerate` | `write:certificate` | Globale | — | **Registre** — `certificate regenerate` | — |
 | **Conformité GPO et arborescence** |
 | `gpo.list_compliance` ² | `read:get:gpo` | Globale | — | **Registre** — `gpo status`, `gpo drift` | — |
 | `gpo.get_compliance` | `read:get:gpo` | Machine | — | **Registre** — `gpo status <machine>` | — |
-| `gpo.refresh` | `write:update:client` | Machine | — | **Registre** — `gpo refresh <machine>`, `--all` | — |
+| `gpo.refresh` | `write:update:client` | Machine | — | **Registre** — `gpo refresh <machine>`, `--gpo <nom>`, `--all` | **Registre** — bouton « Demander un cycle » (fiche d'une machine, fiche d'une GPO machine) |
 | `gpo.get_signature_policy` | `read:log` | Globale | — | **Registre** — `gpo signature` | — |
 | `gpo.set_signature_policy` | `write:server` | Globale | — | **Registre** — `gpo signature <on\|off>` | — |
 | `domain.list_tree` ² | `read:get:group` | Globale | — | **Registre** — `eyes -g` | **Registre** — page Arborescence |
@@ -249,12 +253,18 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | `log.list` | `read:log` | Globale | — | **Registre** — `logs` | **Registre** — `/admin/logs` |
 | `mfa.get_ducky_policy` | `read:log` | Globale | — | **Registre** — `mfa ducky` | — |
 | `mfa.set_ducky_policy` | `write:server` | Globale | — | **Registre** — `mfa ducky <on\|off>` | — |
+| `agent.status` | `read:log` | Globale | — | **Registre** — `agent`, `agent -g <groupe>` | **Registre** — colonne Version de `/admin/clients` (absente sans le droit) |
+| `agent.set_target` | `write:server` | Globale | — | **Registre** — `agent target [-g <groupe>] <version\|none>` | — |
+| `agent.pin` | `write:server` | Globale | — | **Registre** — `agent pin <computeur_id> <version\|none>` | — |
+| `agent.update` | `write:server` | Globale | — | **Registre** — `agent update <computeur_id> [--downgrade]` | — |
+| `agent.set_repository` | `write:server` | Globale | — | **Registre** — `agent depot <nom\|none>` | — |
 | **Certificats et politique** |
 | `certificate.delete` | *(aucune clé)* | Globale | **oui** | — | **Registre** |
 | `authpolicy.set_password_policy` | *(aucune clé)* | Globale | **oui** | Registre — `mfa policy` | **Registre** |
 
-**102 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
-ligne de commande.** *(Le compte valait 94 ici alors que le registre en portait
+**111 actions au catalogue. Plus aucun contrôle d'accès hors du registre côté
+ligne de commande.** *(111 depuis les deux actions du TO-DO 115, 109 depuis les trois `agent.*` du TO-DO 111 ; le
+tableau annonçait 103 quand le test en comptait déjà 106. Le compte valait 94 ici alors que le registre en portait
 97 : `client.export`, `mfa.get_ducky_policy` et `mfa.set_ducky_policy` manquaient
 au tableau. Il est tenu par un test — `TestCatalogueCompletNaPasDeDoublon` — qui,
 lui, n'avait pas dérivé.)*
@@ -463,8 +473,8 @@ Une GPO ne porte pas une donnée d'annuaire : elle porte des règles sudo, des
 fichiers déposés en root, des restrictions de shell, appliqués à tout le parc
 visé. C'est l'objet dont le contrôle a le plus de conséquences.
 
-`--test` vérifie six propriétés qui leur sont propres, sur les **10 actions
-GPO** du catalogue :
+`--test` vérifie des propriétés qui leur sont propres, sur les actions `gpo.*`
+du catalogue :
 
 | Vérification | Ce qu'elle empêche |
 |---|---|
@@ -474,6 +484,13 @@ GPO** du catalogue :
 | **Portée non extensible** | Un délégué de paris ne peut pas modifier une GPO couvrant paris **et** lyon — sinon il pousse des règles sudo sur un parc étranger |
 | Lecture reste déléguée | Durcir la lecture priverait un délégué de la vue de son propre parc |
 | Actions présentes | Un catalogue sans action GPO ne les contrôlerait plus du tout |
+| Exemptions vivantes et justifiées | Trois actions `gpo.*` n'agissent pas sur une politique — `gpo.refresh` (la machine), `gpo.get_signature_policy` et `gpo.set_signature_policy` (un réglage du cluster) — et portent une autre clé, à dessein. Elles sont inscrites avec leur raison ; une exemption dont l'action a disparu fait échouer |
+
+> **`gpo.refresh` et `cluster.refresh_nodes` exigent le droit sur TOUS les
+> domaines de la machine** *(2.3, TO-DO 150)*. Elles se contentaient d'un seul —
+> les deux seules écritures du catalogue dans ce cas, signalées par cette suite
+> depuis leur création. Un délégué ne fait plus rafraîchir un poste qu'il
+> partage avec un autre domaine.
 
 Trois mutations éprouvées : clé détournée vers `write:update:group`,
 `gpo.add_module` rendu souple, `gpo.delete` réservé au groupe protégé. Les

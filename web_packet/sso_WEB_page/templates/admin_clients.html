@@ -80,9 +80,21 @@
 
     <hr>
     <h2 class="h2">Liste</h2>
+    {{ if .Versions }}
+    <p class="muted small">
+      <strong>Version</strong> : celle que l'agent déclare, et l'écart à la version
+      qu'on attend de lui (dérogation, sinon la plus haute cible de ses groupes,
+      sinon le défaut du parc). En dessous, le dernier compte rendu de mise à jour
+      et l'état de la <strong>configuration système</strong> (piles PAM,
+      <code>sshd_config</code>, <code>nsswitch.conf</code>) — survoler pour le motif.
+      <strong>Relancer</strong> efface le dernier compte rendu d'un agent en retard
+      et lui pousse l'ordre, s'il est connecté à ce core. Détail et réglage :
+      <code>vlt agent</code>.
+    </p>
+    {{ end }}
     <div class="table-wrap">
       <table>
-        <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th></th></tr></thead>
+        <thead><tr><th>ID</th><th>Type</th><th>Computeur ID</th><th>Hostname</th><th>OS</th><th>Version</th><th></th></tr></thead>
         <tbody>
         {{ range .Clients }}
           <tr class="row-context" data-href="/admin/clients?client={{ .ComputeurID }}" data-label="Client {{ .ComputeurID }}">
@@ -92,6 +104,29 @@
             <td>{{ .Hostname }}</td>
             <td>{{ .OS }}</td>
             <td>
+              {{ $v := index $.Versions .ComputeurID }}
+              {{ if $v }}
+                {{ $v.VersionLisible }}
+                {{ if $v.Attendue.Definie }}
+                <br><span class="badge{{ if $v.Etat.AUnEcart }} badge-danger{{ end }}" title="Attendue : {{ $v.Attendue.Lisible }}">{{ $v.Etat }} · {{ $v.Attendue.Version }}</span>
+                {{ end }}
+                {{ if $v.CompteRendu.Resultat }}
+                <br><span class="muted small" title="{{ $v.CompteRendu.Motif }}">dernier compte rendu : {{ $v.CompteRendu.Version }} {{ $v.CompteRendu.Resultat }}</span>
+                {{ end }}
+                {{ if $v.ConfigurationLisible }}
+                <br><span class="badge{{ if $v.ConfigurationEnEcart }} badge-danger{{ end }}" title="{{ $v.Configuration.Motif }}">configuration : {{ $v.ConfigurationLisible }}</span>
+                {{ end }}
+              {{ else if .AgentVersion }}{{ .AgentVersion }}
+              {{ else }}<span class="muted">—</span>{{ end }}
+            </td>
+            <td>
+              {{ if $.PeutRelancer }}{{ if $v }}{{ if $v.Relancable }}
+              <form method="post" style="display:inline" data-confirm="Relancer la mise à jour de {{ .ComputeurID }} vers {{ $v.Attendue.Version }} ?&#10;&#10;Son dernier compte rendu est effacé, et l'ordre lui est poussé s'il est connecté à ce core — sinon à sa prochaine connexion.">
+                <input type="hidden" name="action" value="relaunch_agent_update">
+                <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">
+                <button type="submit" class="btn">Relancer</button>
+              </form>
+              {{ end }}{{ end }}{{ end }}
               <form method="post" style="display:inline" data-confirm="Produire l'identité de {{ .ComputeurID }} ?&#10;&#10;L'archive contient sa CLÉ PRIVÉE : qui la détient peut se faire passer pour cette machine.">
                 <input type="hidden" name="action" value="export_client">
                 <input type="hidden" name="computeur_id" value="{{ .ComputeurID }}">

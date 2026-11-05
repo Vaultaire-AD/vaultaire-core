@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	dbdomains "vaultaire/core/database/db_domains"
 	dbldap "vaultaire/core/database/db_ldap"
 	domainpkg "vaultaire/core/domain"
 	ldaptools "vaultaire/core/ldap/LDAP-TOOLS"
@@ -22,7 +23,6 @@ import (
 // accepté — un test, un appel hors connexion.
 func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username string, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
 	entries := []ldapinterface.LDAPEntry{}
-	var err error
 
 	// Les constantes viennent de ldaptools, comme la détection : le
 	// dispatcheur décide qu'un baseObject est spécial, ce résolveur décide ce
@@ -59,32 +59,70 @@ func Resolve(db *sql.DB, baseDN string, scope int, attributes []string, username
 
 	switch scope {
 	case 0:
-		if exact := resolveBaseScope(db, baseObject, j); exact != nil {
-			return exact, nil
-		}
-		return nil, nil
+		// Une lecture en échec REMONTE (TO-DO 175) : le gestionnaire répond
+		// `operationsError`, comme pour `one` et `sub`.
+		return resolveBaseScope(db, baseObject, j)
 
-	case 1:
-		groupDomain := []string{baseDN}
-		entries, err = loadGroupsAndUsers(db, groupDomain, loadScope, attributes, username, baseObject, j)
-		if err != nil {
-			return nil, err
-		}
-		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
-		return entries, nil
-
-	case 2:
-		groupDomains := []string{baseDN}
-		entries, err = loadGroupsAndUsers(db, groupDomains, loadScope, attributes, username, baseObject, j)
-		if err != nil {
-			return nil, err
-		}
-		// loadGroupsAndUsers est déjà scopé au domaine demandé ; ne pas re-filtrer par suffixe DN.
-		return entries, nil
+	case 1, 2:
+		return resolveArbre(db, baseDN, scope, loadScope, attributes, username, baseObject, j)
 
 	default:
 		return nil, fmt.Errorf("invalid scope: %d", scope)
 	}
+}
+
+// resolveArbre rend les entrées d'une recherche `one` ou `sub`, selon la
+// nature de la base — TO-DO 245, voir arbre.go.
+func resolveArbre(db *sql.DB, baseDN string, scope, loadScope int, attributes []string,
+	username, baseObject string, j *ldapjournal.Operation) ([]ldapinterface.LDAPEntry, error) {
+
+	switch natureDe(baseObject) {
+	case baseFeuille:
+		// Un compte ou un groupe n'a pas d'enfant.
+		if scope == 1 {
+			return nil, nil
+		}
+		return resolveBaseScope(db, baseObject, j)
+
+	case baseOU:
+		// Le domaine en entier, puis l'arbre : `one` sous `ou=users` rend tous
+		// les comptes dont le DN y est, sous-domaines compris.
+		entries, err := loadGroupsAndUsers(db, []string{baseDN}, 2, attributes, username, baseObject, j)
+		if err != nil {
+			return nil, err
+		}
+		return DansLaPortee(entries, baseObject, scope), nil
+	}
+
+	// Un domaine.
+	servis, err := dbdomains.GetAllDomainNames(db)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des domaines : %w", err)
+	}
+
+	if scope == 1 && loadScope == 1 {
+		// Ses enfants dans l'arbre : les deux OU s'il est la racine, et ses
+		// sous-domaines. Ni compte ni groupe : leur DN est sous une OU.
+		var enfants []ldapinterface.LDAPEntry
+		if estRacine(baseDN) {
+			enfants = append(enfants, ousDuDomaine(baseDN)...)
+		}
+		enfants = append(enfants, entreesDeDomaines(servis, sousDomaines(servis, baseDN, true))...)
+		return DansLaPortee(enfants, baseObject, 1), nil
+	}
+
+	// `sub` — ou `one` élargi par `ldap.onelevel_subtree` : la règle du domaine
+	// (comptes et groupes du domaine et de ses sous-domaines, documentée),
+	// plus ce qui manquait à l'arbre — la base et les sous-domaines.
+	entries, err := loadGroupsAndUsers(db, []string{baseDN}, loadScope, attributes, username, baseObject, j)
+	if err != nil {
+		return nil, err
+	}
+	if scope == 2 {
+		domaines := append([]string{baseDN}, sousDomaines(servis, baseDN, false)...)
+		entries = append(entreesDeDomaines(servis, domaines), entries...)
+	}
+	return entries, nil
 }
 
 // porteeDeChargement rend la portée à employer pour charger les candidats.
@@ -128,14 +166,18 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 	seenGroups := make(map[string]struct{})
 	seenOUs := make(map[string]struct{})
 
-	// memberOf, pour tous les groupes chargés — le domaine demandé ET ses
-	// sous-domaines.
+	// `memberOf` n'est PLUS composé depuis les groupes chargés ici (TO-DO 155).
 	//
-	// Chaque groupe y entre avec SON domaine (TO-DO 132) : c'est ce qui permet
-	// au contrôle d'accès de retirer ensuite, compte par compte, ceux que
-	// l'appelant n'a pas le droit de lire. Le résolveur, lui, ne trie rien : il
-	// ne connaît pas les droits, et ne doit pas les connaître.
-	userMembershipMap := make(map[string][]candidate.Appartenance)
+	// Il l'était : chaque compte recevait les groupes du domaine demandé et de
+	// ses sous-domaines, et pas ceux qu'il avait au-dessus ou à côté. Le même
+	// compte n'avait donc pas le même `memberOf` selon la base de la recherche —
+	// `Equipe`, groupe de `acme.lan`, manquait à qui cherchait sous
+	// `dev.acme.lan`. Une application synchronisée sur un sous-domaine en
+	// concluait que le compte avait quitté le groupe.
+	//
+	// Il est lu plus bas, en une fois, pour tous les comptes rendus — voir
+	// dbldap.GetMemberOfByUsernames.
+
 	// Les DOMAINES où vit chaque compte, c'est-à-dire ceux des groupes par
 	// lesquels il a été trouvé. C'est ce qui sert au contrôle d'accès.
 	//
@@ -161,10 +203,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 			return nil, fmt.Errorf("lecture des membres des groupes de %s : %w", domain, err)
 		}
 		for _, g := range groupsData {
-			groupDN := fmt.Sprintf("cn=%s,ou=groups,%s", g.GroupName, ldaptools.ToRootDN(g.DomainName))
 			for _, uname := range g.Users {
-				userMembershipMap[uname] = append(userMembershipMap[uname],
-					candidate.Appartenance{DN: groupDN, Domaine: g.DomainName})
 				if rattachements[uname] == nil {
 					rattachements[uname] = make(map[string]struct{}, 2)
 				}
@@ -210,6 +249,21 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 	utilisateurs, err := dbldap.GetUsersByUsernames(db, àLire)
 	if err != nil {
 		return nil, fmt.Errorf("lecture des utilisateurs : %w", err)
+	}
+
+	// Les groupes de ces comptes — TOUS, quel que soit leur domaine (TO-DO 155).
+	//
+	// Chaque groupe y entre avec SON domaine (TO-DO 132) : c'est ce qui permet
+	// au contrôle d'accès de retirer ensuite, compte par compte, ceux que
+	// l'appelant n'a pas le droit de lire. Le résolveur, lui, ne trie rien : il
+	// ne connaît pas les droits, et ne doit pas les connaître.
+	//
+	// Une erreur REMONTE. Rendre des comptes sans groupe parce que la base a
+	// flanché serait la panne que ce point corrige, en pire : un client y lirait
+	// la perte de toutes les appartenances.
+	appartenances, err := dbldap.GetMemberOfByUsernames(db, àLire)
+	if err != nil {
+		return nil, fmt.Errorf("lecture des appartenances : %w", err)
 	}
 
 	for _, domain := range domains {
@@ -261,7 +315,7 @@ func loadGroupsAndUsers(db *sql.DB, domains []string, scope int, attributes []st
 					// sous-domaine est identique à celui d'un compte du domaine parent.
 					BaseDN:        domain,
 					Rattachements: domainesDe(rattachements[uname]),
-					Groups:        userMembershipMap[uname],
+					Groups:        appartenancesLDAP(appartenances.De(uname)),
 					DisplayName:   userObj.Firstname + " " + userObj.Lastname,
 					GivenName:     userObj.Firstname,
 					Sn:            userObj.Lastname,

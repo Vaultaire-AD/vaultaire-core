@@ -133,6 +133,12 @@ func ValidateModule(policyScope Scope, m Module) (map[string]string, error) {
 func validateFieldValue(moduleType string, f FieldSchema, val string, scope Scope) error {
 	prefix := fmt.Sprintf("module %s, champ %s", moduleType, f.Name)
 
+	if f.Marqueurs {
+		if err := VerifierMarqueurs(val); err != nil {
+			return fmt.Errorf("%s : %v", prefix, err)
+		}
+	}
+
 	if f.Dynamic {
 		maxLen := f.MaxLen
 		if maxLen == 0 {

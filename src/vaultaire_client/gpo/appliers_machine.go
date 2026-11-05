@@ -14,10 +14,16 @@ import (
 // ses fragments, sans avoir à réparer sshd_config ou sysctl.conf à la main.
 
 const (
-	sshFragmentPath = "/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf"
-	sshBannerPath   = "/etc/ssh/vaultaire-banner"
-	sysctlDir       = "/etc/sysctl.d"
-	sudoersDir      = "/etc/sudoers.d"
+	// « 00- » : sshd retient la PREMIÈRE valeur lue (TO-DO 182). Nommé « 99- »,
+	// le fragment passait après tous les autres, et n'importe lequel le
+	// masquait. Ce qui précède la ligne Include de sshd_config l'emporte
+	// toujours : c'est ce que la vérification par `sshd -T` signale.
+	sshFragmentPath = "/etc/ssh/sshd_config.d/00-vaultaire-gpo.conf"
+	// L'ancien nom, retiré à la première application qui suit.
+	sshFragmentAncien = "/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf"
+	sshBannerPath     = "/etc/ssh/vaultaire-banner"
+	sysctlDir         = "/etc/sysctl.d"
+	sudoersDir        = "/etc/sudoers.d"
 )
 
 // applySSHServerConfig écrit le fragment sshd et recharge le service.
@@ -27,39 +33,13 @@ const (
 // invalide poussée sur le parc empêcherait sshd de redémarrer et couperait
 // l'accès à toutes les machines — sans moyen d'y revenir.
 func applySSHServerConfig(ctx Context, m Module) (string, error) {
-	var directives []string
-
-	simple := []struct{ param, keyword string }{
-		{"permit_root_login", "PermitRootLogin"},
-		{"password_authentication", "PasswordAuthentication"},
-		{"pubkey_authentication", "PubkeyAuthentication"},
-		{"allow_tcp_forwarding", "AllowTcpForwarding"},
-		{"x11_forwarding", "X11Forwarding"},
-	}
-	for _, s := range simple {
-		value := m.Param(s.param)
-		if value == "" || value == "unchanged" {
-			continue
-		}
-		directives = append(directives, s.keyword+" "+value)
-	}
-	for _, s := range []struct{ param, keyword string }{
-		{"max_auth_tries", "MaxAuthTries"},
-		{"client_alive_interval", "ClientAliveInterval"},
-	} {
-		if value := m.Param(s.param); value != "" {
-			directives = append(directives, s.keyword+" "+value)
-		}
-	}
-
 	banner := m.RawParam("banner_text")
 	if strings.TrimSpace(banner) != "" {
 		if err := writeSystemFile(sshBannerPath, banner, 0o644); err != nil {
 			return "", fmt.Errorf("banniere SSH : %v", err)
 		}
-		directives = append(directives, "Banner "+sshBannerPath)
 	}
-
+	directives := directivesSSH(m)
 	if len(directives) == 0 {
 		return "", fmt.Errorf("aucune directive a ecrire")
 	}
@@ -89,7 +69,81 @@ func applySSHServerConfig(ctx Context, m Module) (string, error) {
 		}
 	}
 
+	// L'ATTENTE, puis le CONSTAT — TO-DO 182.
+	//
+	// L'attente est inscrite d'abord : le scan de conformité la revérifiera à
+	// chaque cycle, que l'application réussisse ou non. Le constat vient
+	// ensuite : un fragment écrit et rechargé, mais masqué par une directive
+	// lue avant lui, n'a AUCUN effet — le dire « appliqué » serait mentir.
+	recordCheck(CheckSSHEffectif, "sshd", attenteSSHD(directives))
+	if commandExists("sshd") {
+		enVigueur, err := configurationSSHDEnVigueur()
+		if err != nil {
+			return "", err
+		}
+		if ecarts := ecartsSSHD(champsAttendus(attenteSSHD(directives)), enVigueur); len(ecarts) > 0 {
+			return "", fmt.Errorf("fragment ecrit mais sans effet : %s — %s",
+				strings.Join(ecarts, " ; "), motifMasque)
+		}
+	}
+
+	// L'ancien « 99- » ne part qu'une fois le nouveau fragment validé,
+	// rechargé et CONSTATÉ efficace. Sur un échec, il reste : l'état le connaît
+	// encore, et le retirer ferait signaler sa disparition comme une dérive.
+	retirerAncienFragmentSSH()
+
 	return fmt.Sprintf("%d directive(s) ecrite(s) dans %s", len(directives), sshFragmentPath), nil
+}
+
+// retirerAncienFragmentSSH supprime le fragment de son ancien nom, s'il est
+// bien de Vaultaire. Un fichier du même nom écrit par quelqu'un d'autre reste.
+func retirerAncienFragmentSSH() { retirerAncienFragment(sshFragmentAncien) }
+
+// retirerAncienFragment supprime un fragment de son ancien nom s'il porte
+// l'en-tête de Vaultaire — les deux formes qu'il a eues.
+func retirerAncienFragment(chemin string) {
+	contenu, ok := readFileIfExists(chemin)
+	if !ok || !(strings.HasPrefix(contenu, "# Fichier genere par Vaultaire GPO") ||
+		strings.HasPrefix(contenu, "# Genere par Vaultaire (GPO)")) {
+		return
+	}
+	_, _ = removeSystemFile(chemin)
+}
+
+// directivesSSH rend les directives que le module fixe, sans rien écrire.
+//
+// Séparée de l'appliqueur pour le TO-DO 182 : l'attente `sshd -T` se déclare
+// aussi SANS appliquer, pour un module posé par un agent d'avant le correctif.
+func directivesSSH(m Module) []string {
+	var directives []string
+
+	simple := []struct{ param, keyword string }{
+		{"permit_root_login", "PermitRootLogin"},
+		{"password_authentication", "PasswordAuthentication"},
+		{"pubkey_authentication", "PubkeyAuthentication"},
+		{"allow_tcp_forwarding", "AllowTcpForwarding"},
+		{"x11_forwarding", "X11Forwarding"},
+	}
+	for _, s := range simple {
+		value := m.Param(s.param)
+		if value == "" || value == "unchanged" {
+			continue
+		}
+		directives = append(directives, s.keyword+" "+value)
+	}
+	for _, s := range []struct{ param, keyword string }{
+		{"max_auth_tries", "MaxAuthTries"},
+		{"client_alive_interval", "ClientAliveInterval"},
+	} {
+		if value := m.Param(s.param); value != "" {
+			directives = append(directives, s.keyword+" "+value)
+		}
+	}
+
+	if strings.TrimSpace(m.RawParam("banner_text")) != "" {
+		directives = append(directives, "Banner "+sshBannerPath)
+	}
+	return directives
 }
 
 // applySysctl écrit une clé sysctl dans un fichier dédié et l'applique à chaud.
@@ -224,6 +278,10 @@ func applyPackage(ctx Context, m Module) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// Le nom du catalogue est celui de Debian ; une distribution RPM l'appelle
+	// parfois autrement (recette du 29/10 : « auditd » introuvable sur Rocky).
+	catalogue := pkg
+	pkg = nomDePaquetPour(manager, pkg)
 
 	target := pkg
 	if version != "" && state == "present" {
@@ -274,6 +332,10 @@ func applyPackage(ctx Context, m Module) (string, error) {
 	if _, err := runCommand(manager, args...); err != nil {
 		return "", err
 	}
+	complement := ""
+	if state != "absent" {
+		complement = installerComplementsRPM(manager, catalogue)
+	}
 
 	// La PRÉSENCE, pas la version. Un paquet désinstallé à la main n'était vu
 	// par rien : aucun fichier de la GPO ne disparaît avec lui, et le scan des
@@ -289,6 +351,9 @@ func applyPackage(ctx Context, m Module) (string, error) {
 	recordCheck(CheckPackage, pkg, etatAttendu)
 
 	detail := fmt.Sprintf("%s %s via %s", state, target, manager)
+	if complement != "" {
+		detail += complement
+	}
 	if env != "" {
 		detail += " (non interactif)"
 	}
@@ -296,6 +361,49 @@ func applyPackage(ctx Context, m Module) (string, error) {
 }
 
 // detectPackageManager identifie le gestionnaire de paquets disponible.
+// nomsRPM : les paquets de la liste autorisée qui portent un autre nom sur les
+// distributions RPM (Rocky, RHEL, Fedora). La liste autorisée parle le nom
+// Debian ; c'est l'agent, qui connaît son gestionnaire, qui traduit.
+var nomsRPM = map[string]string{
+	"auditd":     "audit",
+	"vim":        "vim-enhanced",
+	"rsh-client": "rsh",
+}
+
+// complementsRPM : paquets qu'une distribution RPM a SÉPARÉS du paquet
+// principal. Rocky/RHEL 10 a sorti auditctl et augenrules de « audit » vers
+// « audit-rules » : installer « audit » seul démarre auditd, sans aucun outil
+// pour lui charger une règle (recette du 29/10). Sur une version qui ne connaît
+// pas ce paquet (Rocky 9), l'échec de l'installation est sans conséquence.
+var complementsRPM = map[string][]string{
+	"auditd": {"audit-rules"},
+}
+
+// installerComplementsRPM installe, au mieux, les compléments d'un paquet et
+// rend ce qui l'a été, pour le détail du module.
+func installerComplementsRPM(manager, catalogue string) string {
+	if manager != "dnf" && manager != "yum" {
+		return ""
+	}
+	installes := ""
+	for _, c := range complementsRPM[catalogue] {
+		if _, err := runCommand(manager, "-y", "install", c); err == nil {
+			installes += " + " + c
+		}
+	}
+	return installes
+}
+
+// nomDePaquetPour rend le nom du paquet pour ce gestionnaire.
+func nomDePaquetPour(manager, pkg string) string {
+	if manager == "dnf" || manager == "yum" {
+		if n, ok := nomsRPM[pkg]; ok {
+			return n
+		}
+	}
+	return pkg
+}
+
 func detectPackageManager() (string, error) {
 	for _, candidate := range []string{"apt-get", "dnf", "yum", "zypper"} {
 		if commandExists(candidate) {
@@ -556,7 +664,14 @@ func readFileIfExists(path string) (string, bool) {
 // restoreOrRemove remet un fichier dans son état antérieur.
 func restoreOrRemove(path, previous string, hadPrevious bool) {
 	if hadPrevious {
-		_ = writeSystemFile(path, previous, 0o644)
+		// Garder le mode que le module vient de poser — celui que l'inventaire
+		// connaît. Un 0644 fixe transformait chaque restauration d'un fichier
+		// 0640 (règles auditd) en dérive de permissions (recette du 29/10).
+		mode := os.FileMode(0o644)
+		if fi, err := os.Stat(path); err == nil {
+			mode = fi.Mode().Perm()
+		}
+		_ = writeSystemFile(path, previous, mode)
 		return
 	}
 	_ = os.Remove(path)

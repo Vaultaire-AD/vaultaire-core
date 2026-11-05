@@ -62,10 +62,28 @@ var empreintesDeConfiance = serveurauth.EmpreintesAttendues
 
 // NoeudsDeConfiance filtre les nœuds dont l'empreinte est connue de la machine.
 //
-// Un PROXY est gardé dès qu'au moins un core de la liste est de confiance : il
-// ne présente pas sa clé, il relaie celle d'un core, que l'agent vérifie au
-// bout du tunnel. Son empreinte à lui n'est jamais apprise (voir
-// ApprendreEmpreintes), elle ne peut donc pas servir de critère.
+// # Les proxies
+//
+// Un PROXY ne présente pas sa clé : il relaie celle d'un core, que l'agent
+// vérifie au bout du tunnel. Son empreinte à lui n'est jamais apprise (voir
+// ApprendreEmpreintes) et ne peut donc pas servir de critère.
+//
+// Il est gardé dès que la machine a une liste de confiance NON VIDE. Ce qui le
+// rend fiable, c'est le CANAL : la 04_04 arrive sur une session dont la clé du
+// core a déjà été vérifiée contre cette liste — le même argument qui permet
+// d'apprendre les empreintes des cores pairs. Et le rejoindre ne coûte rien en
+// confiance : au bout du tunnel, la clé du core est vérifiée comme sur une
+// connexion directe ; un proxy qui relaierait autre chose serait refusé.
+//
+// Il était gardé seulement si un core de confiance figurait AUSSI dans la
+// liste. Un core mis hors rotation (« vlt cluster rotation <core> out ») n'y
+// figure plus, par construction : la liste ne contenait alors que des proxies,
+// rien n'était persisté, et l'agent restait sur le core qu'on lui demandait de
+// quitter — recette du 05/11, TO-DO 255.
+//
+// Sans liste de confiance (confiance au premier usage), RIEN n'est gardé :
+// une adresse écrite sur disque serait essayée à chaque redémarrage, et la
+// première clé qui y répondrait serait acceptée.
 func NoeudsDeConfiance(noeuds []Noeud) []Noeud {
 	liste, err := empreintesDeConfiance()
 	if err != nil || len(liste) == 0 {
@@ -75,22 +93,9 @@ func NoeudsDeConfiance(noeuds []Noeud) []Noeud {
 	for _, e := range liste {
 		connues[e] = true
 	}
-	coreDeConfiance := false
-	for _, n := range noeuds {
-		if n.Role != "proxy" && connues[n.Empreinte] {
-			coreDeConfiance = true
-			break
-		}
-	}
 	var out []Noeud
 	for _, n := range noeuds {
-		if n.Role == "proxy" {
-			if coreDeConfiance {
-				out = append(out, n)
-			}
-			continue
-		}
-		if connues[n.Empreinte] {
+		if n.Role == "proxy" || connues[n.Empreinte] {
 			out = append(out, n)
 		}
 	}

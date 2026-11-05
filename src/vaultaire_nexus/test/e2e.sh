@@ -193,6 +193,20 @@ for n in $COMPOSANTS; do c -f -o "$V/$n-v2.0.0-linux-amd64.tar.gz" "$DL/v2.0.0/$
 if (cd "$V" && sha256sum --quiet -c SHA256SUMS); then ok "sha256sum -c SHA256SUMS"; else ko "sha256sum -c SHA256SUMS"; fi
 egal "tag inconnu : 404" 404 "$(code "$API/releases/tags/v9.9.9")"
 
+# Les manifestes du paquet d'agent et leur signature (TO-DO 113, 114) : rangés
+# dans la release de leur archive, lus SANS COMPTE — c'est ainsi qu'un agent
+# les obtiendra. Sur la 2.1.0 seulement : le contrôle sha256sum -c ci-dessus
+# télécharge tout ce que liste le SHA256SUMS de la 2.0.0.
+M="vaultaire_client-v2.1.0-linux-amd64.tar.gz.rocky.manifest"
+printf 'vaultaire-pkg-v1\n2.1.0\nlinux-amd64-rocky\n' > "$TMP/rel/$M"
+printf 'vaultaire-pkg-sig-v1\nSHA256:e2e\nAAAA\n' > "$TMP/rel/$M.sig"
+egal "manifeste publié" 201 "$(code "${A[@]}" -T "$TMP/rel/$M" "$BASE/api/v1/repos/releases/upload/")"
+egal "signature publiée" 201 "$(code "${A[@]}" -T "$TMP/rel/$M.sig" "$BASE/api/v1/repos/releases/upload/")"
+egal "manifeste lu sans compte" "$(cat "$TMP/rel/$M")" "$(c -f "$DL/v2.1.0/$M")"
+egal "signature lue sans compte" "$(cat "$TMP/rel/$M.sig")" "$(c -f "$DL/v2.1.0/$M.sig")"
+egal "manifeste dans la release" 1 "$(c "$API/releases/tags/v2.1.0" | grep -c "\"$M.sig\"" )"
+egal "manifeste dans SHA256SUMS" 1 "$(c "$DL/v2.1.0/SHA256SUMS" | grep -c "  $M\$")"
+
 # --------------------------------------------------------------------------
 titre "Fichiers génériques"
 echo un > "$TMP/outil.sh"

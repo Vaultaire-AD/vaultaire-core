@@ -107,8 +107,12 @@ type ErrSansRelaisDucky struct {
 
 func (e ErrSansRelaisDucky) Error() string {
 	if e.Motif != "" {
+		// La sortie, dans le message (TO-DO 226) : sans elle, l'administrateur
+		// d'un proxy relancé sur un autre port ne sait pas quoi faire de ce
+		// refus, et les relais pilotés restent ceux du fichier.
 		return fmt.Sprintf("liste refusée en entier : son relais Ducky est inutilisable (%s), "+
-			"et ce proxy est annoncé aux agents sur le port %d", e.Motif, e.PortAnnonce)
+			"et ce proxy est annoncé aux agents sur le port %d — pour remettre le core d'accord : "+
+			"« vlt cluster relais <ce proxy> set ducky --ecoute :%d »", e.Motif, e.PortAnnonce, e.PortAnnonce)
 	}
 	return fmt.Sprintf("liste refusée en entier : elle ne porte aucun relais Ducky, "+
 		"alors que ce proxy est annoncé aux agents sur le port %d", e.PortAnnonce)

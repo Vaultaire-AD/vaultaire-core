@@ -26,8 +26,16 @@ func CreateDefaultAdminUser(db *sql.DB) {
 		log.Fatal("bootstrap: administrator password is empty")
 	}
 
-	userID, err := dbusers.Get_User_ID_By_Username(db, storage.Administrateur_Username)
-	if err == nil {
+	// LookupUserID et non Get_User_ID_By_Username : au PREMIER démarrage, le
+	// compte n'existe pas encore, et c'est normal. L'autre forme journalisait
+	// « utilisateur non trouvé admin » en WARNING à chaque installation neuve
+	// (TO-DO 259) — un avertissement que personne ne pouvait corriger.
+	userID, trouve, err := database.LookupUserID(db, storage.Administrateur_Username)
+	if err != nil {
+		logs.Write_LogCode("CRITICAL", logs.CodeDBQuery, "bootstrap: lookup of administrator failed: "+err.Error())
+		log.Fatalf("bootstrap: lookup of administrator failed: %v", err)
+	}
+	if trouve {
 		logs.Write_Log("INFO", fmt.Sprintf("bootstrap: administrator '%s' already exists (id=%d)", storage.Administrateur_Username, userID))
 		_, _ = db.Exec(`
 			INSERT IGNORE INTO users_group (d_id_user, d_id_group)

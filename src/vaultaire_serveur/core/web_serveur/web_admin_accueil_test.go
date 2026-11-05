@@ -68,3 +68,33 @@ func TestLAccueilAdminSeRend(t *testing.T) {
 		t.Error("un sous-système sans réglage propre ne dit pas qu'il suit le mode debug")
 	}
 }
+
+// TO-DO 192 : « Exécuter une commande » ouvre la page, son résultat juste
+// dessous, et le debug vient après — c'est l'usage courant qui passe en tête.
+func TestLaCommandeOuvreLeTableauDeBord(t *testing.T) {
+	tmpl, err := template.ParseFiles(
+		filepath.Join(cheminGabarits, "admin_sidebar.html"),
+		filepath.Join(cheminGabarits, "admin.html"))
+	if err != nil {
+		t.Fatalf("analyse du gabarit : %v", err)
+	}
+	var page bytes.Buffer
+	if err := tmpl.ExecuteTemplate(&page, "admin.html",
+		donneesAccueilAdmin{Username: "alice", Section: "dashboard"}); err != nil {
+		t.Fatalf("exécution du gabarit : %v", err)
+	}
+	html := page.String()
+	commande := strings.Index(html, "<h2>Exécuter une commande</h2>")
+	resultat := strings.Index(html, "<h2>Résultat</h2>")
+	debug := strings.Index(html, "<h2>Mode debug</h2>")
+	if commande < 0 || resultat < 0 || debug < 0 {
+		t.Fatalf("section absente : commande %d, résultat %d, debug %d", commande, resultat, debug)
+	}
+	if !(commande < resultat && resultat < debug) {
+		t.Errorf("ordre des sections : commande %d, résultat %d, debug %d — attendu commande, "+
+			"résultat, puis debug", commande, resultat, debug)
+	}
+	if h2 := strings.Index(html, "<h2>"); h2 != commande {
+		t.Errorf("la première section n'est pas « Exécuter une commande »")
+	}
+}

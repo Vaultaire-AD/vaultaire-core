@@ -131,6 +131,18 @@ func VerifierValeursLivrees() error {
 				"À n'activer que le temps d'un diagnostic.")
 	}
 
+	// La clé de DÉMONSTRATION posée sur le compte d'amorçage : avertissement.
+	// Sa partie privée est dans le dépôt (deployments/configs/demo_admin_key) ;
+	// les piles de développement et la formation s'en servent, une installation
+	// réelle jamais. L'amorçage ne l'ajoute qu'à la création du compte : une
+	// base déjà en service qui l'a reçue la garde — à retirer avec
+	// « vlt get -u admin » puis « vlt remove -u admin -k <id_clé> ».
+	if storage.Administrateur_Enable && EstLaCleDeDemo(storage.Administrateur_PublicKey) {
+		logs.Write_Log("SECURITY",
+			"configuration: administrateur.public_key est la clé de DÉMONSTRATION du dépôt, "+
+				"dont la partie privée est publiée. Ne l'utilisez que sur un banc de test.")
+	}
+
 	// Le mot de passe du compte d'AMORÇAGE : refus.
 	if !storage.Administrateur_Enable {
 		return nil
@@ -182,4 +194,14 @@ func contient(liste []string, valeur string) bool {
 // laissé en place doit se voir avant le démarrage, pas seulement à son refus.
 func Marqueur(valeur string) bool {
 	return strings.HasPrefix(valeur, "CHANGEZ_MOI")
+}
+
+// empreinteCleDeDemo : le corps de la clé publique de
+// deployments/configs/demo_admin_key.pub (les premiers caractères suffisent à
+// la reconnaître, quel que soit son commentaire).
+const empreinteCleDeDemo = "AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJ"
+
+// EstLaCleDeDemo dit si une clé publique est celle de démonstration.
+func EstLaCleDeDemo(cle string) bool {
+	return strings.Contains(cle, empreinteCleDeDemo)
 }

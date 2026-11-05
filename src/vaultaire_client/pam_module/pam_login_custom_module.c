@@ -23,6 +23,11 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         return PAM_IGNORE;
     }
 
+    /* Chronometrage, ecrit seulement en mode debug (TO-DO 199). */
+    struct vaultaire_chrono chrono;
+    memset(&chrono, 0, sizeof(chrono));
+    vaultaire_chrono_marquer(&chrono.debut);
+
     pam_get_authtok(pamh, PAM_AUTHTOK, &password, NULL);
     vaultaire_log_info("Password retrieved (len=%zu)", password ? strlen(password) : 0);
 
@@ -66,6 +71,8 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
     }
 
 
+    vaultaire_chrono_marquer(&chrono.saisie);
+
     // 1. Demande des clés au Daemon Vaultaire
     char req[VAULTAIRE_MAX_BUF];
     char resp[VAULTAIRE_MAX_BUF];
@@ -97,14 +104,25 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
      *
      * On journalise ce qui sert au diagnostic : la longueur, et le statut une
      * fois extrait. */
+    vaultaire_chrono_marquer(&chrono.reponse);
     vaultaire_log_info("Reponse du daemon pour %s (%zu octets)", username, strlen(resp));
     char status[32] = {0};
-    bool is_admin = false;
     vaultaire_json_get_string(resp, "status", status, sizeof(status));
-    vaultaire_json_get_bool(resp, "is_admin", &is_admin);
 
     if (strcmp(status, "success") != 0) {
         vaultaire_log_err("Auth rejected for %s (status: %s)", username, status);
+        /* LE MOTIF D'UN REFUS — TO-DO 171. Present seulement pour les deux
+         * refus que la personne peut corriger seule (mot de passe expire,
+         * second facteur manquant), rendus par le core APRES un mot de passe
+         * prouve. Le texte est compose par l'agent, sur une liste fermee : tout
+         * autre refus arrive sans ce champ, et reste muet comme avant.
+         * pam_error et non pam_info : c'est un echec, et sshd le transmet au
+         * client avant de fermer l'echange keyboard-interactive. */
+        char refus[VAULTAIRE_NOTICE_MAX] = {0};
+        if (vaultaire_json_get_string(resp, "refus", refus, sizeof(refus)) == 0 && refus[0]) {
+            (void)pam_error(pamh, "%s", refus);
+        }
+        vaultaire_chrono_rapport(&chrono, "login", username, resp, status[0] ? status : "refus");
         return PAM_PERM_DENIED;
     }
 
@@ -128,30 +146,16 @@ PAM_EXTERN int pam_sm_authenticate(pam_handle_t *pamh, int flags, int argc, cons
         (void)pam_info(pamh, "%s", notice);
     }
 
-    // 3. User local & Mot de passe local (shadow)
-    if (!ensure_local_user_with_password(username, password))
+    /* Le COMPTE est l'affaire de l'agent (TO-DO 197) : il l'a cree, a pose
+     * authorized_keys, le groupe d'administration et le contexte SELinux
+     * avant de repondre. Il ne reste ici que le mot de passe local, qui demande
+     * crypt() pour etre compare sans reecrire /etc/shadow a chaque connexion.
+     * Voir vaultaire_sync_local_password. */
+    if (!vaultaire_sync_local_password(username, password)) {
+        vaultaire_chrono_rapport(&chrono, "login", username, resp, "mot de passe local en echec");
         return PAM_AUTH_ERR;
-
-    // 4. Provisioning Droits
-    if (is_admin) vaultaire_add_user_to_sudo_group(username);
-    else vaultaire_remove_user_from_sudo_group(username);
-
-    // 5. Injecter aussi les Clés SSH au passage
-    //
-    // Meme regle que dans le module SSH : le fichier est REECRIT a partir de la
-    // reponse du serveur, y compris quand elle ne porte plus aucune cle. Sauter
-    // l'ecriture dans ce cas — ce que faisait le « && keys » — laissait les
-    // anciennes cles en place apres une revocation complete.
-    char **keys = NULL;
-    size_t key_count = 0;
-    if (vaultaire_json_get_ssh_keys(resp, &keys, &key_count) == 0) {
-        setup_user_ssh_keys(username, keys, key_count);
-        for (size_t i = 0; i < key_count; i++) free(keys[i]);
-        free(keys);
-    } else {
-        vaultaire_log_err("cles SSH illisibles dans la reponse pour %s : "
-                          "authorized_keys laisse en l'etat", username);
     }
+    vaultaire_chrono_rapport(&chrono, "login", username, resp, "success");
 
     vaultaire_log_info("Login successful for Vaultaire user: %s", username);
     return PAM_SUCCESS;

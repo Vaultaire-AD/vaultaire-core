@@ -290,8 +290,11 @@ func applyKernelModulePolicy(ctx Context, m Module) (string, error) {
 // ---------------------------------------------------------------------------
 
 const (
-	knownHostsPath   = "/etc/ssh/ssh_known_hosts"
-	sshClientDropIn  = "/etc/ssh/ssh_config.d/99-vaultaire-gpo.conf"
+	knownHostsPath = "/etc/ssh/ssh_known_hosts"
+	// « 00- » : ssh retient la PREMIÈRE valeur lue, comme sshd (TO-DO 246).
+	// Nommé « 99- », le fragment était lu après tous les autres.
+	sshClientDropIn  = "/etc/ssh/ssh_config.d/00-vaultaire-gpo.conf"
+	sshClientAncien  = "/etc/ssh/ssh_config.d/99-vaultaire-gpo.conf"
 	knownHostsMarker = "# vaultaire-gpo:"
 )
 
@@ -359,6 +362,21 @@ func applySSHKnownHosts(ctx Context, m Module) (string, error) {
 		if err := writeSystemFile(sshClientDropIn, content, 0o644); err != nil {
 			return "", err
 		}
+		// L'effet, constaté par `ssh -G` (TO-DO 246) : un fragment trié avant,
+		// ou une ligne de ssh_config au-dessus de son Include, l'emporte.
+		attente := "stricthostkeychecking=" + normaliserValeurSSH(strict)
+		recordCheck(CheckSSHClientEffectif, "ssh", attente)
+		if commandExists("ssh") {
+			enVigueur, err := configurationSSHClientEnVigueur()
+			if err != nil {
+				return "", err
+			}
+			if ecarts := ecartsSSHD(champsAttendus(attente), enVigueur); len(ecarts) > 0 {
+				return "", fmt.Errorf("fragment ecrit mais sans effet : %s — %s",
+					strings.Join(ecarts, " ; "), motifMasqueClient)
+			}
+		}
+		retirerAncienFragment(sshClientAncien)
 		detail += ", StrictHostKeyChecking=" + strict
 	}
 	return detail, nil
@@ -412,20 +430,33 @@ func applyAuditdRule(ctx Context, m Module) (string, error) {
 	return "audit de " + path + " (" + m.Param("permissions") + ", cle " + key + ")", nil
 }
 
+// toleranceRegleExistante : sans « -D » en tête des règles (aucun fichier de
+// base dans rules.d, cas de Rocky 10 à la recette du 29/10), recharger un
+// jeu déjà chargé échoue sur « Rule exists » — la règle EST en place, et la
+// réappliquer la déclarait en échec. L'attente CheckAuditRule, lue par
+// auditctl -l, reste juge de ce qui est réellement chargé.
+func toleranceRegleExistante(err error) error {
+	if err != nil && strings.Contains(err.Error(), "Rule exists") {
+		return nil
+	}
+	return err
+}
+
 // reloadAuditRules recharge les règles d'audit.
 func reloadAuditRules() error {
 	if commandExists("augenrules") {
-		if _, err := runCommand("augenrules", "--load"); err != nil {
-			return err
-		}
-		return nil
+		_, err := runCommand("augenrules", "--load")
+		return toleranceRegleExistante(err)
 	}
 	if commandExists("auditctl") {
 		_, err := runCommand("auditctl", "-R", "/etc/audit/audit.rules")
-		return err
+		return toleranceRegleExistante(err)
 	}
-	// auditd absent : la règle est écrite et prendra effet à son installation.
-	return nil
+	// auditd absent : la règle est écrite et prendra effet à son installation,
+	// mais RIEN n'est surveillé aujourd'hui. Le dire appliquée — ce que faisait
+	// cette fonction jusqu'à la recette du 29/10 sur Rocky — déclarait un audit
+	// qui n'existait pas.
+	return fmt.Errorf("auditd absent : regle ecrite, rien n'est surveille — installez-le (module package, paquet auditd)")
 }
 
 // ---------------------------------------------------------------------------
@@ -435,7 +466,10 @@ func reloadAuditRules() error {
 // applySELinuxMode fixe le mode SELinux et, éventuellement, un booléen.
 func applySELinuxMode(ctx Context, m Module) (string, error) {
 	if !commandExists("getenforce") {
-		return "", fmt.Errorf("SELinux absent de cette machine")
+		// Debian, Ubuntu : AppArmor, pas SELinux. Le module n'a pas d'objet ici —
+		// « ignoré », pas « en échec » : une GPO commune à tout le parc ne doit
+		// pas mettre en échec chaque poste Debian (recette du 29/10).
+		return "", fmt.Errorf("%w : SELinux absent de cette machine", ErrNonApplicable)
 	}
 
 	var applied []string

@@ -97,3 +97,43 @@ func TestLeSuiviDesServicesSEtend(t *testing.T) {
 		t.Fatalf("types suivis : %v, attendu [vaultaire_nexus]", got)
 	}
 }
+
+// La demande ponctuelle de l'agent (TO-DO 114) : une 04_15, puis la 04_16
+// qui y répond.
+func TestDemanderServicesAttendLaReponse(t *testing.T) {
+	Configure(func(trame string) {
+		lignes := strings.Split(trame, "\n")
+		if lignes[0] == "04_15" && lignes[len(lignes)-1] == "vaultaire_nexus" {
+			go traiterServices("vaultaire_nexus\n1\nnexus.acme.lan:8843")
+		}
+	}, "poste-1")
+	t.Cleanup(func() { Configure(nil, "") })
+
+	adresses, err := DemanderServices("vaultaire_nexus", func() string { return "CLE" }, 2*time.Second)
+	if err != nil || len(adresses) != 1 || adresses[0] != "nexus.acme.lan:8843" {
+		t.Fatalf("%v, %v", adresses, err)
+	}
+}
+
+// Sans réponse : la dernière liste connue, et une erreur qui dit qu'elle
+// n'est pas fraîche.
+func TestDemanderServicesSansReponse(t *testing.T) {
+	traiterServices("type_muet\n1\nancien:8843")
+	Configure(func(string) {}, "poste-1")
+	t.Cleanup(func() { Configure(nil, "") })
+
+	adresses, err := DemanderServices("type_muet", func() string { return "CLE" }, 50*time.Millisecond)
+	if err == nil || len(adresses) != 1 || adresses[0] != "ancien:8843" {
+		t.Fatalf("%v, %v", adresses, err)
+	}
+	servicesMu.RLock()
+	restes := len(attentes["type_muet"])
+	servicesMu.RUnlock()
+	if restes != 0 {
+		t.Errorf("%d attente(s) laissée(s) derrière", restes)
+	}
+
+	if _, err := DemanderServices("type_muet", func() string { return "" }, time.Second); err == nil {
+		t.Error("sans session : pas d'erreur")
+	}
+}

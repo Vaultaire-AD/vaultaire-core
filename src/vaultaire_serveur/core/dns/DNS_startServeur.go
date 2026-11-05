@@ -2,23 +2,26 @@ package dns
 
 import (
 	"fmt"
-	"log"
 	"net"
 	dnsdatabase "vaultaire/core/dns/DNS_Database"
 	dnsparser "vaultaire/core/dns/DNS_Parser"
 	dnsstorage "vaultaire/core/dns/DNS_Storage"
 	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 )
 
 func DNS_StartServeur() {
 	addr := net.UDPAddr{
-		Port: 53,
+		Port: storage.Dns_Port,
 		IP:   net.ParseIP("0.0.0.0"),
 	}
 
 	conn, err := net.ListenUDP("udp", &addr)
 	if err != nil {
-		log.Fatalf("Erreur d'écoute UDP : %v", err)
+		// Le DNS tourne dans sa propre goroutine : un port 53 indisponible ne
+		// doit pas emporter tout le core (avant : log.Fatalf, invisible au journal).
+		logs.Write_LogCode("ERROR", logs.CodeNetConnection, fmt.Sprintf("dns : écoute UDP %d impossible, serveur DNS désactivé : %v", storage.Dns_Port, err))
+		return
 	}
 	defer func() {
 		if err := conn.Close(); err != nil {
@@ -27,8 +30,12 @@ func DNS_StartServeur() {
 		}
 	}()
 
-	logs.Write_Log("INFO", "dns: waiting for DNS requests on port 53")
-	dnsdatabase.InitDatabase()
+	logs.Write_Log("INFO", fmt.Sprintf("dns: waiting for DNS requests on port %d", storage.Dns_Port))
+	if !dnsdatabase.InitDatabase() {
+		// La cause précise est déjà journalisée par InitDatabase.
+		logs.Write_LogCode("ERROR", logs.CodeDBConnection, "dns : base DNS non initialisée, serveur DNS désactivé")
+		return
+	}
 	buf := make([]byte, 512)
 
 	for {
@@ -60,12 +67,12 @@ func DNS_StartServeur() {
 
 			failResp, buildErr := dnsparser.BuildErrorDNSResponse(msg, 3 /* NXDOMAIN */)
 			if buildErr != nil {
-				log.Printf("❌ Échec de construction réponse d’erreur : %v", buildErr)
+				logs.Write_LogCode("ERROR", logs.CodeNetBuild, "dns : réponse NXDOMAIN non construite : "+buildErr.Error())
 				continue
 			}
 			_, err := conn.WriteToUDP(failResp, remoteAddr)
 			if err != nil {
-				log.Printf("❌ Erreur envoi réponse d’échec : %v", err)
+				logs.Write_LogCode("WARNING", logs.CodeNetSend, "dns : réponse d'échec non envoyée à "+remoteAddr.String()+" : "+err.Error())
 			}
 			continue
 		}
@@ -103,12 +110,12 @@ func DNS_StartServeur() {
 		default:
 			failResp, buildErr := dnsparser.BuildErrorDNSResponse(msg, 4 /* NOTIMP */)
 			if buildErr != nil {
-				log.Printf("❌ Erreur construction réponse d’erreur : %v", buildErr)
+				logs.Write_LogCode("ERROR", logs.CodeNetBuild, "dns : réponse NOTIMP non construite : "+buildErr.Error())
 				continue
 			}
 			_, err := conn.WriteToUDP(failResp, remoteAddr)
 			if err != nil {
-				log.Printf("❌ Erreur envoi réponse d’échec : %v", err)
+				logs.Write_LogCode("WARNING", logs.CodeNetSend, "dns : réponse d'échec non envoyée à "+remoteAddr.String()+" : "+err.Error())
 			}
 			continue
 		}

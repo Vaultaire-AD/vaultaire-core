@@ -57,6 +57,25 @@ type Config struct {
 	Servers []ServerConfig `json:"servers"`
 	Learned []ServerConfig `json:"learned,omitempty"`
 	Debug   *DebugConfig   `json:"debug,omitempty"`
+
+	// UpdateRepository : le dépôt de mise à jour de REPLI (TO-DO 114), une URL
+	// de base Nexus — « https://miroir.site.lan:8843 ». Il ne sert que si le
+	// cluster n'annonce aucun Nexus : un parc peut vouloir un miroir local qui
+	// n'est pas un service enrôlé. Posé à la main ; jamais écrit par le core.
+	UpdateRepository string `json:"update_repository,omitempty"`
+
+	// UpdateTLSCA : un fichier PEM d'autorités de confiance EN PLUS de celles
+	// du système, pour le téléchargement des paquets (TO-DO 116) — l'AC du
+	// site, ou le certificat d'un Nexus auto-signé. Il n'existe pas de réglage
+	// pour ne pas vérifier : tranché le 17/10.
+	UpdateTLSCA string `json:"update_tls_ca,omitempty"`
+
+	// ReconcileSystemConfig : false retire la machine de la réconciliation de
+	// sa configuration système (TO-DO 117) — piles PAM, sshd_config,
+	// nsswitch.conf. Absent = true. Pour une machine dont les piles sont
+	// tenues autrement ; l'état « desactivee » remonte au core, pour que ce
+	// choix se voie.
+	ReconcileSystemConfig *bool `json:"reconcile_system_config,omitempty"`
 }
 
 var (
@@ -95,15 +114,29 @@ func sansBOM(data []byte) []byte {
 	return bytes.TrimPrefix(data, marqueurBOM)
 }
 
-// LoadConfig charge le fichier JSON et remplace la configuration en mémoire.
-func LoadConfig(filePath string) error {
+// Lire décode le fichier JSON SANS toucher à la configuration en mémoire.
+//
+// Pour le contrôle de démarrage (`--check`, TO-DO 112) : il doit pouvoir dire
+// ce que vaut le fichier sans rien changer à l'état du programme, et lire
+// exactement comme LoadConfig — BOM compris. Une seconde lecture écrite à côté
+// aurait fini par accepter ce que l'agent refuse, ou l'inverse.
+func Lire(filePath string) (Config, error) {
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return err
+		return Config{}, err
 	}
 	var c Config
 	if err := json.Unmarshal(sansBOM(data), &c); err != nil {
-		return fmt.Errorf("%s illisible : %w", filePath, err)
+		return Config{}, fmt.Errorf("%s illisible : %w", filePath, err)
+	}
+	return c, nil
+}
+
+// LoadConfig charge le fichier JSON et remplace la configuration en mémoire.
+func LoadConfig(filePath string) error {
+	c, err := Lire(filePath)
+	if err != nil {
+		return err
 	}
 	configMutex.Lock()
 	configPath = filePath
@@ -131,6 +164,27 @@ func GetLearned() []ServerConfig {
 	configMutex.RLock()
 	defer configMutex.RUnlock()
 	return append([]ServerConfig(nil), Configuration.Learned...)
+}
+
+// GetReconcileSystemConfig rend le réglage, vrai par défaut.
+func GetReconcileSystemConfig() bool {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return Configuration.ReconcileSystemConfig == nil || *Configuration.ReconcileSystemConfig
+}
+
+// GetUpdateRepository rend le dépôt de mise à jour de repli, tel qu'écrit.
+func GetUpdateRepository() string {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return Configuration.UpdateRepository
+}
+
+// GetUpdateTLSCA rend le chemin de l'AC supplémentaire du téléchargement.
+func GetUpdateTLSCA() string {
+	configMutex.RLock()
+	defer configMutex.RUnlock()
+	return Configuration.UpdateTLSCA
 }
 
 // GetDebug rend le réglage de debug, intervalle ramené au défaut s'il est absent.

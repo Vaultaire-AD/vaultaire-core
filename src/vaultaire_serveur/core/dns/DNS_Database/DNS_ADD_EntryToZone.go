@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	dnsstorage "vaultaire/core/dns/DNS_Storage"
+	"vaultaire/core/logs"
 )
 
 // Ajoute un enregistrement DNS dans la zone la plus spécifique trouvée + PTR si nécessaire
@@ -90,7 +91,7 @@ func AddDNSRecordSmart(db *sql.DB, fqdn, recordType string, ttl int, data string
 	if recordType == "A" {
 		err = AddPTRRecord(db, data, fqdn)
 		if err != nil {
-			fmt.Printf("⚠️ Impossible d'ajouter le PTR : %v\n", err)
+			logs.Write_LogCode("WARNING", logs.CodeDBQuery, "dns : "+fqdn+" ajouté, mais pas son PTR : "+err.Error())
 		}
 	}
 

@@ -98,6 +98,32 @@ func (m *Manager) SessionsMachine(clientSoftwareID string, fraicheur time.Durati
 	return out
 }
 
+// MachinesConnectees rend les machines qui tiennent un tunnel authentifié sur ce
+// core, sans doublon.
+//
+// Par valeur et sous le verrou, comme SessionsMachine : rien de ce qui sort
+// n'est relu pendant que les goroutines de connexion écrivent.
+func (m *Manager) MachinesConnectees() []string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	vues := map[string]bool{}
+	var out []string
+	for _, s := range m.sessions {
+		if s.Status != SessionAuthenticated || s.Username != CompteMachine || s.DuckySession == nil {
+			continue
+		}
+		id := strings.TrimSpace(s.ClientSoftwareID)
+		cle := strings.ToLower(id)
+		if id == "" || vues[cle] {
+			continue
+		}
+		vues[cle] = true
+		out = append(out, id)
+	}
+	sort.Strings(out)
+	return out
+}
+
 // FraicheurTunnel est l'ancienneté au-delà de laquelle un tunnel machine est
 // SUSPECT : passé derrière les autres, pas écarté.
 //

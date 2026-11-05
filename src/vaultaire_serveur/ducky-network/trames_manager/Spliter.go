@@ -12,6 +12,7 @@ import (
 	autssh "vaultaire/ducky-network/authentification/ssh"
 	gpomanager "vaultaire/ducky-network/gpo_manager"
 	hosthandler "vaultaire/ducky-network/host_handler"
+	miseajourmanager "vaultaire/ducky-network/miseajour_manager"
 	revocationmanager "vaultaire/ducky-network/revocation_manager"
 	"vaultaire/ducky-network/sendmessage"
 	"vaultaire/ducky-network/serviceauth"
@@ -174,6 +175,10 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			message = gpomanager.GPO_Trame_Manager(trames_content, duckysession)
 		case "06":
 			message = revocationmanager.Revocation_Trame_Manager(trames_content, duckysession)
+		case "09":
+			// L'ordre de mise à jour d'un agent (TO-DO 115). Le catalogue de
+			// types n'accorde 09_01 et 09_04 qu'à l'agent.
+			message = miseajourmanager.Trame_Manager(trames_content, duckysession)
 		case "08":
 			// Vérification d'un compte pour le compte d'un service (Nexus…).
 			// Le catalogue de types a déjà filtré qui peut l'émettre.
@@ -188,6 +193,29 @@ func Split_Action(trames_content storage.Trames_struct_client, duckysession *sto
 			if err != nil {
 				logs.Write_Log("ERROR", "Error sending message: "+err.Error())
 			}
+			fermerApresRefus(message, duckysession)
 		}
+	}
+}
+
+// fermerApresRefus ferme la connexion d'une authentification refusée, une fois
+// le refus parti — TO-DO 159. La décision, et sa raison, sont dans
+// autc.DoitFermerApresRefus.
+//
+// Le socket seul est fermé : la boucle de lecture de cette connexion le voit à
+// sa lecture suivante et retire la session du registre, comme pour toute autre
+// fin de connexion.
+func fermerApresRefus(message string, duckysession *storage.DuckySession) {
+	if duckysession == nil || duckysession.Conn == nil {
+		return
+	}
+	if !autc.DoitFermerApresRefus(message, sessionmgr.Sessions.EstAuthentifiee(duckysession.SessionID)) {
+		return
+	}
+	logs.Write_LogCodeMeta("INFO", logs.CodeNone,
+		"authentification refusée : connexion fermée après l'envoi du refus",
+		logs.WithMeta(duckysession.SessionID, ""))
+	if err := duckysession.Conn.Close(); err != nil {
+		logs.Write_Log("DEBUG", "fermeture après refus : "+err.Error())
 	}
 }

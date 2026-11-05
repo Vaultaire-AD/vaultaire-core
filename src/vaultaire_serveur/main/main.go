@@ -26,6 +26,7 @@ import (
 	"vaultaire/core/dns"
 	ldap "vaultaire/core/ldap"
 	"vaultaire/core/logs"
+	"vaultaire/core/paquetagent/outil"
 	"vaultaire/core/permission"
 	"vaultaire/core/reglages"
 	"vaultaire/core/storage"
@@ -34,8 +35,11 @@ import (
 	webserveur "vaultaire/core/web_serveur"
 	duckynetwork "vaultaire/ducky-network"
 	authclient "vaultaire/ducky-network/authentification/client"
+	gpomanager "vaultaire/ducky-network/gpo_manager"
 	hosthandler "vaultaire/ducky-network/host_handler"
 	keymanagement "vaultaire/ducky-network/key_management"
+	miseajourmanager "vaultaire/ducky-network/miseajour_manager"
+	revocationmanager "vaultaire/ducky-network/revocation_manager"
 )
 
 type ClientInfo struct {
@@ -56,6 +60,20 @@ func main() {
 		if arg == "--test" {
 			os.Exit(testrunner.RunFromMain())
 		}
+	}
+
+	// Conteneur d'initialisation Kubernetes : attendre la base, rien d'autre.
+	if len(os.Args) > 1 && os.Args[1] == "--attendre-base" {
+		os.Exit(attendreBase(os.Args[2:], os.Stdout))
+	}
+
+	// Paquets d'agent (TO-DO 113) : produire ou signer un manifeste, lire la
+	// clé. Avant tout service, et sans démarrer le core — voir paquetagent/outil.
+	if outil.EstCommande(os.Args[1:]) {
+		// Le journal que la commande déclenche (lecture de la configuration)
+		// ne se mêle pas à sa sortie : TO-DO 235.
+		logs.VersErreurStandard()
+		os.Exit(outil.Executer(os.Args[1:], os.Stdout, os.Stderr, ouvrirClesPaquets))
 	}
 
 	// Garnissage du catalogue d'actions, AVANT tout service.
@@ -312,6 +330,24 @@ func main() {
 
 	cluster.StartManager(db.GetDatabase())
 	go duckynetwork.StartDuckyServer()
+
+	// Les demandes de cycle relayées par un autre core (TO-DO 172) : celles des
+	// machines dont CE core tient le tunnel lui reviennent.
+	gpomanager.DemarrerRelaisDesCycles(db.GetDatabase())
+
+	// Rejeu des ordres de révocation non acquittés (TO-DO 49).
+	//
+	// Le core ne poussait un ordre qu'une fois, puis attendait qu'on vienne le
+	// lui redemander. Cette boucle le remet, toutes les quelques secondes, aux
+	// machines connectées à CE core qui ne l'ont pas acquitté — un envoi
+	// échoué, un ordre appliqué en échec, une machine tenue par un autre nœud
+	// que celui où la commande a été tapée.
+	go revocationmanager.RejouerLesOrdres()
+
+	// La poussée des ordres de mise à jour (TO-DO 115) : même modèle, pour les
+	// agents connectés à CE core qui ont un ordre. Le rattrapage, lui, est la
+	// demande 09_01 de l'agent à chaque connexion.
+	go miseajourmanager.PousserLesOrdres()
 
 	if storage.Administrateur_Enable {
 		dbschema.CreateDefaultAdminUser(db.GetDatabase())

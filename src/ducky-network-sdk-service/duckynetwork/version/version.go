@@ -18,9 +18,10 @@
 //
 // # Ce que la version N'EST PAS
 //
-// Une décision. Le core l'AFFICHE et ne l'interprète jamais : aucun refus,
-// aucun seuil, aucune comparaison. Un agent périmé se voit dans l'inventaire,
-// il n'est pas coupé.
+// Une décision. Le core l'AFFICHE et ne s'en sert jamais pour refuser : un
+// agent périmé se voit dans l'inventaire, il n'est pas coupé. Sa seule
+// comparaison (TO-DO 161) compte les agents trop anciens pour suivre une
+// cadence, et demande une confirmation à qui la règle — rien de plus.
 //
 // C'est délibéré. Une règle de comparaison de versions se trompe sur les cas
 // limites — et ici, se tromper veut dire fermer la porte à un parc dont le seul

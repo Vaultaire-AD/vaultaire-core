@@ -2,7 +2,7 @@
 
 # Chapitre 8 — Authentification par un service (08)
 
-[← Chapitre 7 — Interface web (07)](../07-interface-web/README.md) · [Index →](../README.md)
+[← Chapitre 7 — Interface web (07)](../07-interface-web/README.md) · [Chapitre 9 — Ordre de mise à jour (09) →](../09-mise-a-jour/README.md)
 
 ---
 
@@ -21,4 +21,4 @@ La catégorie GÉNÉRIQUE qui permet à un service du cluster — Nexus aujourd'
 
 ---
 
-[← Chapitre 7 — Interface web (07)](../07-interface-web/README.md) · [Index →](../README.md)
+[← Chapitre 7 — Interface web (07)](../07-interface-web/README.md) · [Chapitre 9 — Ordre de mise à jour (09) →](../09-mise-a-jour/README.md)

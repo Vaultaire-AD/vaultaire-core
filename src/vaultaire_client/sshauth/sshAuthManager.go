@@ -6,9 +6,17 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"time"
 	"vaultaire_client/pamstate"
 	localusermanagement "vaultaire_client/tools/local_user_management"
 	"vaultaire_client/tools/sshreq"
+)
+
+// provisionner et appliquerGroupes sont des variables pour qu'un test suive la
+// réponse 03_02 jusqu'au canal PAM sans toucher à /etc/passwd.
+var (
+	provisionner     = localusermanagement.ProvisionVaultaireUser
+	appliquerGroupes = localusermanagement.AppliquerGroupesUtilisateur
 )
 
 func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn) string {
@@ -37,7 +45,8 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		pubKeys := strings.Join(reste, "\n")
 
 		// 🔥 ACTION SYSTÈME : On crée le user et on pose les clés
-		err := localusermanagement.ProvisionVaultaireUser(sshUser, isAdmin, pubKeys)
+		debutProvisionnement := time.Now()
+		err := provisionner(sshUser, isAdmin, pubKeys)
 
 		// Les APPARTENANCES DE GROUPE, alignées sur ce que le serveur vient de
 		// dire. Rafraîchies à chaque connexion, donc sans cache ni cadence.
@@ -50,7 +59,7 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		// appartenance n'a pas pu être posée serait disproportionné, et laisserait
 		// l'utilisateur dehors pour un problème qui ne le concerne pas.
 		if err == nil {
-			if poses, errG := localusermanagement.AppliquerGroupesUtilisateur(sshUser, groupes); errG != nil {
+			if poses, errG := appliquerGroupes(sshUser, groupes); errG != nil {
 				logs.Write_log("WARNING", fmt.Sprintf(
 					"Groupes de %s non appliqués : %v", sshUser, errG))
 			} else if len(poses) < len(groupes) {
@@ -90,11 +99,21 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			//
 			// Le VERDICT est posé explicitement. Sans lui, l'acceptation se
 			// déduisait de l'absence d'information — voir pamstate.AuthResult.
+			//
+			// Les CLÉS voyagent aussi (TO-DO 188). Elles manquaient : le
+			// gestionnaire PAM rendait au module une liste vide, que le module
+			// écrivait dans authorized_keys juste après que l'agent y avait mis
+			// les bonnes. Le module à jour n'écrit plus ce fichier (TO-DO 197) ;
+			// un module PAM resté à l'ancienne version, si — il écrira désormais
+			// la même liste que l'agent, au lieu de la vider.
 			result := pamstate.AuthResult{
 				Type:          "AUTH",
 				Accepte:       true,
 				IsAdmin:       isAdmin,
 				Avertissement: avertissement,
+				SSHKeys:       pubKeys,
+
+				DureeProvisionnement: time.Since(debutProvisionnement),
 			}
 			select {
 			case respChan <- result:
@@ -113,7 +132,19 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 			sshUser = lines[0]
 		}
 
-		logs.Write_log("ERROR", "Le serveur central a refusé l'accès SSH pour : "+sshUser)
+		// Le MOTIF est journalisé (TO-DO 159). Le core le donne déjà — « password
+		// expired », « mfa required », « permission denied » — et il n'était lu
+		// nulle part : devant un refus, le journal du poste ne distinguait pas
+		// un mot de passe faux d'un mot de passe expiré. Le core ne dit rien de
+		// plus précis que « permission denied » tant que le mot de passe n'est
+		// pas prouvé ; ce journal n'est lisible que de root.
+		motif := "motif non precise"
+		motifBrut := ""
+		if len(lines) > 1 {
+			motifBrut = strings.TrimSpace(strings.Join(lines[1:], " "))
+			motif = motifBrut
+		}
+		logs.Write_log("ERROR", "Le serveur central a refusé l'accès SSH pour : "+sshUser+" ("+motif+")")
 
 		// Un REFUS EXPLICITE, et non plus une simple fermeture du canal.
 		//
@@ -127,7 +158,10 @@ func SSH_Auth_Manager(trames_content storage.Trames_struct_client, conn net.Conn
 		// suit, pour qu'un lecteur qui arriverait après l'envoi ne reste pas
 		// bloqué — il lira le refus, puis le canal fermé.
 		if respChan, ok := sshreq.Pop(sshUser); ok {
-			respChan <- pamstate.AuthResult{Type: "AUTH", Accepte: false}
+			// Le motif suit, pour que le gestionnaire PAM puisse dire à la
+			// personne les deux refus qui lui sont utiles (TO-DO 171) — et ceux-là
+			// seulement : le filtre est de l'autre côté, dans MessageDeRefus.
+			respChan <- pamstate.AuthResult{Type: "AUTH", Accepte: false, MotifRefus: motifBrut}
 			close(respChan)
 		}
 	case "05":

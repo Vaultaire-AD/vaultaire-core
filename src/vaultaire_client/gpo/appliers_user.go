@@ -235,8 +235,17 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 	servicePath := filepath.Join(unitDir, serviceName)
 	timerPath := filepath.Join(unitDir, timerName)
 
+	// Le lien qui ACTIVE le timer : c'est lui que le scan relit (TO-DO 163).
+	activation := lienDActivation(unitDir, timerName)
+
 	if state == "absent" {
 		_ = runUserSystemctl(ctx, "disable", "--now", timerName)
+		// Le lien d'activation est retiré ici aussi, par la descente sûre.
+		// `disable` s'en charge quand le bus de la personne répond ; hors
+		// session il ne répond pas, et le lien restait — pendant vers une unité
+		// que la suite supprime. Retiré par nous, son absence est inscrite, et
+		// un lien recréé sera vu.
+		_, _ = removeUserFile(ctx, activation)
 		removed := 0
 		for _, path := range []string{servicePath, timerPath} {
 			if existait, err := removeUserFile(ctx, path); err == nil && existait {
@@ -270,13 +279,29 @@ func applyUserCron(ctx Context, m Module) (string, error) {
 	}
 
 	_ = runUserSystemctl(ctx, "daemon-reload")
+	detailActivation := ""
 	if err := runUserSystemctl(ctx, "enable", "--now", timerName); err != nil {
-		// L'unité est en place : elle démarrera à la prochaine ouverture de
-		// session même si le bus utilisateur n'est pas joignable maintenant
-		// (cas courant hors session graphique).
-		return "", fmt.Errorf("unites ecrites mais activation impossible : %v", err)
+		// Le cycle de compte tourne À L'OUVERTURE de session, AVANT que
+		// user@<uid> ne démarre : pas de bus, et ce module échouait à chaque
+		// connexion sur les trois clients de la recette du 29/10. On pose
+		// alors le lien d'activation nous-mêmes — c'est tout ce que
+		// « enable » écrit — et le gestionnaire du compte, qui démarre dans
+		// la seconde, lance le timer avec timers.target.
+		uid, gid, errIDs := resolveUserIDs(ctx.Username)
+		if errIDs != nil {
+			return "", fmt.Errorf("unites ecrites mais activation impossible : %v", err)
+		}
+		if errLien := lierSousHome(ctx.HomeDir, activation, timerPath, uid, gid); errLien != nil {
+			return "", fmt.Errorf("unites ecrites mais activation impossible : %v ; lien : %v", err, errLien)
+		}
+		detailActivation = ", activee hors session (demarre avec le gestionnaire du compte)"
 	}
-	return fmt.Sprintf("tache %s planifiee (%s)", commandID, onCalendar), nil
+	// Les deux unités sont à l'inventaire par writeUserFile ; ceci y ajoute ce
+	// qui manquait : que le timer soit ACTIVÉ. Sans cette attente, un
+	// « systemctl --user disable » laissait les deux fichiers intacts — donc
+	// une portée conforme — et une tâche qui ne partait plus.
+	ctx.recordCheck(CheckUserTimer, activation, "etat=actif")
+	return fmt.Sprintf("tache %s planifiee (%s)%s", commandID, onCalendar, detailActivation), nil
 }
 
 // cronCommandFor traduit un identifiant de tâche en commande concrète.
@@ -357,9 +382,37 @@ func runUserSystemctl(ctx Context, args ...string) error {
 	}
 	// Délai court : cette commande est sur le chemin d'ouverture de session et
 	// attend le bus utilisateur, qui peut ne jamais démarrer hors session.
-	full := append([]string{"-u", ctx.Username, "--", "systemctl", "--user"}, args...)
-	_, err := runCommandTimeout(UserCommandTimeout, "runuser", full...)
+	full := append([]string{"-u", ctx.Username, "--"}, environnementBusUtilisateur(ctx.Username)...)
+	full = append(full, "systemctl", "--user")
+	full = append(full, args...)
+	_, err := commandeDeCompte(UserCommandTimeout, "runuser", full...)
 	return err
+}
+
+// environnementBusUtilisateur rend le préfixe « env XDG_RUNTIME_DIR=…
+// DBUS_SESSION_BUS_ADDRESS=… » qui permet à « systemctl --user » de trouver le
+// gestionnaire du compte.
+//
+// runuser ne transmet ni l'un ni l'autre : sans eux, systemctl --user échoue
+// sur « Failed to connect to bus » même quand user@<uid> tourne. Recette du
+// 29/10 : user_cron en échec sur les trois clients, à chaque ouverture de
+// session. Hors session (pas de /run/user/<uid>), rien n'est ajouté et l'échec
+// reste celui d'avant — l'unité démarrera à la prochaine ouverture.
+func environnementBusUtilisateur(username string) []string {
+	uid, _, err := resolveUserIDs(username)
+	if err != nil {
+		return nil
+	}
+	return prefixeBus(fmt.Sprintf("/run/user/%d", uid))
+}
+
+// prefixeBus : la partie pure, testable sans compte.
+func prefixeBus(runtime string) []string {
+	if fi, err := os.Stat(runtime); err != nil || !fi.IsDir() {
+		return nil
+	}
+	return []string{"env", "XDG_RUNTIME_DIR=" + runtime,
+		"DBUS_SESSION_BUS_ADDRESS=unix:path=" + runtime + "/bus"}
 }
 
 // applyFileDeploy dépose ou retire un fichier. Valable dans les deux scopes.

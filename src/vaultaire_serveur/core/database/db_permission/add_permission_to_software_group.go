@@ -61,6 +61,6 @@ func Command_ADD_PermissionToSoftwareGroup(db *sql.DB, permissionName string, gr
 		return fmt.Errorf("❌ Erreur lors de l'ajout de la permission au logiciel dans le groupe: %v", err)
 	}
 
-	fmt.Printf("✅ La permission '%s' a été ajoutée au groupe '%s' avec succès !\n", permissionName, groupName)
+	logs.Write_Log("INFO", fmt.Sprintf("permission %q ajoutée au groupe %q", permissionName, groupName))
 	return nil
 }

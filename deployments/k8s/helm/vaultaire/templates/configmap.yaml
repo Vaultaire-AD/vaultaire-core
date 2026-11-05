@@ -1,0 +1,67 @@
+{{- $p := fromYaml (include "vaultaire.containerPorts" .) -}}
+{{- $c := .Values.config -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vaultaire.fullname" . }}-config
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+data:
+  serveur_conf.yaml: |
+{{- if $c.override }}
+{{ $c.override | indent 4 }}
+{{- else }}
+    # Rendu par la chart Helm vaultaire {{ .Chart.Version }}. Aucun secret ici :
+    # mots de passe et clé du compte d'amorçage viennent du Secret
+    # {{ include "vaultaire.secretName" . }} (VAULTAIRE_*_FILE).
+    serveurlistenport: "{{ $p.ducky }}"
+    file-path:
+      socketpath: "/run/vaultaire/vaultaire.sock"
+      clientconfpath: "/var/lib/vaultaire/"
+      logpath: "/var/log/vaultaire/"
+    ldap:
+      ldap_enable: {{ $c.ldap.enabled }}
+      ldaps_enable: {{ $c.ldap.ldapsEnabled }}
+      ldap_port: {{ $p.ldap }}
+      ldaps_port: {{ $p.ldaps }}
+      mfa_bypass: {{ $c.ldap.mfaBypass }}
+      onelevel_subtree: {{ $c.ldap.oneLevelSubtree }}
+      require_tls_for_bind: {{ $c.ldap.requireTlsForBind }}
+      ldaps_tls_dns_names: {{ concat (list (include "vaultaire.fullname" .) (printf "%s.%s.svc" (include "vaultaire.fullname" .) .Release.Namespace) (printf "%s.%s.svc.cluster.local" (include "vaultaire.fullname" .) .Release.Namespace)) $c.ldap.tlsDnsNames | uniq | toJson }}
+      ldaps_tls_ip_addresses: {{ $c.ldap.tlsIpAddresses | toJson }}
+      {{- with $c.ldap.limits }}
+      limites:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    dns:
+      dns_enable: {{ $c.dns.enabled }}
+      dns_port: {{ $p.dns }}
+    database:
+      username: {{ .Values.database.username | quote }}
+      password: CHANGEZ_MOI
+      ip_database: {{ include "vaultaire.dbHost" . | quote }}
+      port_database: {{ .Values.database.port | quote }}
+      databaseName: {{ .Values.database.name | quote }}
+    website:
+      website_enable: {{ $c.web.enabled }}
+      website_port: {{ $p.web }}
+      web_tls_dns_names: {{ concat (list (include "vaultaire.fullname" .)) $c.web.tlsDnsNames | uniq | toJson }}
+      web_tls_ip_addresses: {{ $c.web.tlsIpAddresses | toJson }}
+      web_trusted_proxies: {{ $c.web.trustedProxies | toJson }}
+    automatisation:
+      sh_folder_path: "/opt/vaultaire/automatisation/"
+      agent_package_path: "/opt/vaultaire/vaultaire_client/"
+    api:
+      api_enable: {{ $c.api.enabled }}
+      api_port: {{ $p.api }}
+      limite_rafale: {{ $c.api.rateBurst }}
+      limite_par_seconde: {{ $c.api.ratePerSecond }}
+    debug:
+      debug: {{ $c.debug.enabled }}
+      detail: {{ $c.debug.detail | toJson }}
+    administrateur:
+      enable: {{ $c.admin.enabled }}
+      username: {{ $c.admin.username | quote }}
+      password: CHANGEZ_MOI
+      public_key: ""
+{{- end }}

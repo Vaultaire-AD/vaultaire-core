@@ -304,3 +304,13 @@ func TestAucuneAttenteSurCeQuiDependDUnRedemarrage(t *testing.T) {
 		}
 	}
 }
+
+// Recette du 29/10 (Debian) : « r » posé, « r-- » relu — même droit.
+func TestLesDroitsACLCourtsEtLongsSontLesMemes(t *testing.T) {
+	for court, long := range map[string]string{"r": "r--", "rw": "rw-", "rx": "r-x", "rwx": "rwx",
+		"---": "---", "": "---", "r--": "r--", "-w-": "-w-"} {
+		if obtenu := droitsACLComplets(court); obtenu != long {
+			t.Errorf("droitsACLComplets(%q) = %q, attendu %q", court, obtenu, long)
+		}
+	}
+}

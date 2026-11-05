@@ -269,7 +269,7 @@ proxy_metrics (
     id_metric      INT AUTO_INCREMENT PRIMARY KEY,
     proxy_hostname VARCHAR(255) NOT NULL,   -- celui de la ligne du DEMANDEUR
     proxy_ip       VARCHAR(45)  NOT NULL,
-    metric_type    VARCHAR(64)  NOT NULL,   -- « relais » pour un vlt-proxy
+    metric_type    VARCHAR(64)  NOT NULL,   -- « relais » (vlt-proxy), « sessions » (core)
     metric_value   DOUBLE       NOT NULL,   -- connexions actives
     extra          JSON,                    -- tous les autres compteurs
     created_at     DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -293,6 +293,102 @@ proxy_metrics (
   purge par lots de 10 000. Débit borné à 60 écritures par nœud et par minute.
 - **Rien ne s'en sert pour décider.** Le tri de la liste servie aux agents ne lit
   pas cette table, et c'est volontaire : une `04_05` est déclarative.
+- **Les cores y écrivent aussi** *(TO-DO 148)* : une ligne `sessions` à chacun de
+  leurs battements, écrite par le core lui-même (pas de `04_05`), `extra` portant
+  `machines`, `tunnels`, `comptes`, `poignees`. Lue par
+  `GarnirMetriquesSessions`, avec une fraîcheur de trois battements (trois
+  minutes au moins). Même rétention.
+
+## Maintenance et purge — colonnes de `cluster_nodes` *(TO-DO 147)*
+
+```sql
+maintenance        BOOLEAN NOT NULL DEFAULT FALSE,
+maintenance_par    VARCHAR(255) NOT NULL DEFAULT '',
+maintenance_le     DATETIME NULL DEFAULT NULL,
+purge_demandee_le  DATETIME NULL DEFAULT NULL,
+purge_par          VARCHAR(255) NOT NULL DEFAULT '',
+purge_etalement_s  INT NOT NULL DEFAULT 0,
+purge_terminee_le  DATETIME NULL DEFAULT NULL,
+purge_fermees      INT NOT NULL DEFAULT 0
+```
+
+- **Une colonne et non une valeur de `status`** : `status` est réécrit par chaque
+  battement et chaque réenregistrement. La maintenance est une décision, comme
+  `priorite` et `expose_aux_agents`, et `RegisterNode` ne la touche pas.
+- **Filtrée par les deux requêtes des listes** — `NoeudsPourAgents` (04_04) et
+  `servicesEnLigne` (04_16) —, sans toucher à `expose_aux_agents` : lever la
+  maintenance rend le nœud tel qu'il était. Un test-sentinelle vérifie les deux.
+- **La purge est une demande écrite ici**, exécutée par le core visé à son
+  battement (`PurgeAFaire`, `TerminerPurge`) : lui seul tient ses sessions.
+  `TerminerPurge` ne marque faite que la demande qu'il a exécutée — une seconde
+  demande pendant la première reste « en cours ».
+- **Posées par `EnsureClusterNodesSchema`** sur une base existante, depuis la même
+  liste (`colonnesAjoutees`) que le test confronte au `CREATE TABLE`.
+
+## Versions attendues des agents *(TO-DO 111)*
+
+```sql
+-- id_logiciels : dérogation d'une machine
+agent_target_version VARCHAR(64) NOT NULL DEFAULT ''
+agent_target_downgrade TINYINT(1) NOT NULL DEFAULT 0   -- la dérogation autorise une rétrogradation (TO-DO 204) ;
+                                                       -- remis à 0 au compte rendu « installe » de cette version
+-- groups : cible d'un groupe — les anneaux de déploiement
+agent_target_version VARCHAR(64) NOT NULL DEFAULT ''
+-- server_settings : défaut du parc, clé « agent_target_version »
+--                   dépôt nommé dans les ordres, clé « agent_update_repository » (TO-DO 115)
+
+-- id_logiciels : le dernier compte rendu 09_04 (TO-DO 115)
+agent_update_version VARCHAR(64)  NOT NULL DEFAULT ''
+agent_update_result  VARCHAR(32)  NOT NULL DEFAULT ''   -- installe, echec, refuse, non_pris_en_charge
+agent_update_reason  VARCHAR(255) NOT NULL DEFAULT ''
+agent_update_at      DATETIME NULL DEFAULT NULL
+
+-- id_logiciels : le dernier compte rendu 09_07, la configuration système (TO-DO 117)
+agent_conf_state     VARCHAR(32)  NOT NULL DEFAULT ''   -- conforme, reconciliee, ecart, desactivee, non_pris_en_charge
+agent_conf_reason    VARCHAR(255) NOT NULL DEFAULT ''
+agent_conf_at        DATETIME NULL DEFAULT NULL
+
+-- id_logiciels : le numéro du jeu de clés des paquets que la machine tient (09_09, TO-DO 207)
+agent_pkg_trust      INT NOT NULL DEFAULT 0
+
+-- les jeux de clés de confiance publiés, GARDÉS (la chaîne) — dbschema.EnsureJeuxDeCles
+CREATE TABLE pkg_trust_sets (
+  numero    INT NOT NULL PRIMARY KEY,
+  corps     TEXT NOT NULL,      -- vaultaire-pkg-trust-v1, signé
+  enveloppe TEXT NOT NULL,
+  cree_le   DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+)
+-- certificates : pkg_signing (active), pkg_signing_next (suivante, pendant une
+--                rotation), pkg_signing_previous (entre la bascule et le retrait)
+```
+
+- **Fatale depuis le 115** : la demande `09_01`, émise par chaque agent à chaque
+  connexion, nomme ces colonnes.
+
+- **Posées par `dbschema.EnsureVersionsCibles`** (`EnsureColumn`), sur une base
+  neuve comme ancienne — pas dans les `CREATE TABLE`.
+- **Vide = aucune cible** à ce niveau ; aucune cible nulle part = aucune mise à
+  jour. Une base migrée ne voit donc rien changer.
+- La cible d'un groupe s'écrit avec **`updated_at = updated_at`** : elle n'est
+  pas visible d'un client LDAP, et bumper `modifyTimestamp` ferait réimporter le
+  groupe par Keycloak.
+- Les valeurs sont validées à l'écriture (`parcversion.NormaliserCible` : trois
+  nombres) et relues avec la même règle : une valeur illisible posée à la main
+  n'est jamais prise pour une cible — voir `MAN.md` § 25.
+
+## Clés du core dans `certificates`
+
+| `name` | Rôle | Déposée sur les machines |
+|---|---|---|
+| `server_main` | transport Ducky (empreinte du core) | `core_key_fingerprint` |
+| `server_login_client` | SSH de déploiement (`--join`) | — |
+| `gpo_signing` | signature des politiques (TO-DO 52) | `gpo_signing_key.pem` |
+| `pkg_signing` | signature des paquets d'agent (TO-DO 113) | `pkg_signing_key.pem` |
+
+Amorcées au démarrage **si la ligne manque**, jamais régénérées : une clé
+nouvelle serait refusée par tout le parc. `certificate delete` les refuse.
+`pkg_signing` peut n'avoir **que** sa clé publique (`private_key_data` NULL) :
+c'est le mode hors ligne, pas un manque — voir `Releases.md`.
 
 ## Relais pilotés — `cluster_relays` et `cluster_relay_state` *(TO-DO 141)*
 
@@ -352,7 +448,9 @@ cluster_relay_state (                       -- une ligne par proxy
   est recopié dans `cluster_relays` hors de la première prise en main, qui part
   de lui pour ne pas fermer ce qui tourne.
 - **Pas de clé étrangère** vers `cluster_nodes` ni de purge automatique : les
-  lignes d'un proxy retiré restent, sans effet, jusqu'à un `release`.
+  lignes d'un proxy retiré restent, sans effet, jusqu'à un `release` — ou un
+  **oubli manuel** (`cluster forget`, TO-DO 146), qui les retire avec le nœud :
+  l'oubli automatique les garde, l'oubli décidé non.
 
 Voir [`04-relais-pilotes.md`](./ducky-network/04-cluster/04-relais-pilotes.md).
 

@@ -91,6 +91,18 @@ func SSH_SEND_Pubkey_AUTH(trames_content storage.Trames_struct_client) string {
 				trames_content.ClientSoftwareID,
 			),
 		)
+		// Le refus d'une ouverture de session est un 03_03, pas un 02_07
+		// (TO-DO 159). Le 02_07 dit « l'authentification de CETTE session est
+		// refusée » : or cette trame-ci voyage dans le tunnel de la machine,
+		// qui est authentifié. Et il ne libérait personne : le module PAM qui
+		// attend le verdict de ce compte patientait jusqu'à son délai. Le
+		// 03_03 le lui rend tout de suite.
+		//
+		// Sans nom de compte lisible il n'y a personne à qui répondre : on
+		// garde alors l'ancienne trame, que le poste journalise.
+		if compte := strings.TrimSpace(content[0]); compte != "" {
+			return "03_03\nserveur_central\n" + trames_content.SessionIntegritykey + "\n" + compte + "\ninvalid request"
+		}
 		return "02_07\nserveur_central\n" +
 			trames_content.SessionIntegritykey + "\n" + trames_content.Username + "\ninvalid request"
 	}
@@ -415,7 +427,7 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	// distribuées, sans quoi l'agent les réinstallerait dans authorized_keys.
 	if permission.IsRevoked(sshUser) {
 		logs.Write_Log("SECURITY", sshUser+" : demande de clés publiques sur un compte révoqué (fetch-key)")
-		return ""
+		return reponseSansCle(trames_content, content[0])
 	}
 	// Droit de se connecter au DOMAINE — le même contrôle que 03_01. Il
 	// manquait ici : le domaine était lu puis seulement journalisé, si bien que
@@ -423,25 +435,25 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 	// ce nom.
 	if ok, _ := permission.CanUserConnectToDomain(sshUser + "@" + domaine); !ok {
 		logs.Write_Log("WARNING", sshUser+" : domaine "+domaine+" refusé sur "+trames_content.ClientSoftwareID+" (fetch-key)")
-		return ""
+		return reponseSansCle(trames_content, content[0])
 	}
 	can, err := dbusers.DidUserCanLogin(db, sshUser, trames_content.ClientSoftwareID)
 	if err != nil || !can || sshUser == "vaultaire" {
 		logs.Write_Log("WARNING", sshUser+" permission denied for machine "+trames_content.ClientSoftwareID+" (fetch-key)")
-		return "" // Pas de reponse : on ne revele pas si le user existe ou non
+		return reponseSansCle(trames_content, content[0])
 	}
 
 	// 2. Recuperation des clés publiques
 	userid, err := dbusers.Get_User_ID_By_Username(db, sshUser)
 	if err != nil {
 		logs.Write_Log("ERROR", "User not found: "+sshUser+" (fetch-key)")
-		return ""
+		return reponseSansCle(trames_content, content[0])
 	}
 
 	sshkeys, err := dbusers.Get_PublicKeys_ByUserID(db, userid)
 	if err != nil {
 		logs.Write_Log("ERROR", "Error retrieving SSH key for user "+sshUser+" (fetch-key)")
-		return ""
+		return reponseSansCle(trames_content, content[0])
 	}
 	if len(sshkeys) == 0 {
 		// Rien à distribuer, et ce n'est pas un incident : ce compte n'a pas de
@@ -452,6 +464,26 @@ func SSH_SEND_Fetch_Pubkey(trames_content storage.Trames_struct_client) string {
 
 	logs.Write_Log("INFO", "Cles publiques transmises pour "+sshUser+"@"+domaine+" (fetch-key)")
 
-	sshkeyString := strings.Join(sshkeys, "\n")
-	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" + sshUser + "@" + domaine + "\n" + sshkeyString
+	return reponseCles(trames_content, sshUser, domaine, sshkeys)
+}
+
+// reponseCles compose la 03_07 : la liste des clés publiques du compte.
+func reponseCles(trames_content storage.Trames_struct_client, sshUser, domaine string, cles []string) string {
+	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" +
+		sshUser + "@" + domaine + "\n" + strings.Join(cles, "\n")
+}
+
+// reponseSansCle répond à un refus par une liste VIDE (TO-DO 224).
+//
+// Avant, le refus n'était pas répondu : l'agent attendait 10 s (« le serveur
+// central n'a pas répondu à la demande 03_06 »), et sshd avec lui, à chaque
+// tentative — et son journal parlait de panne. Une liste vide est la réponse
+// d'un compte sans clé : elle ne dit pas plus qu'avant si le compte existe ou
+// pourquoi il est refusé (c'est le journal du core qui le dit), et l'agent rend
+// la main tout de suite.
+//
+// Le compte est renvoyé tel que l'agent l'a demandé : c'est la clé sous
+// laquelle il attend la réponse.
+func reponseSansCle(trames_content storage.Trames_struct_client, login string) string {
+	return "03_07\nserveur_central\n" + trames_content.SessionIntegritykey + "\nvaultaire\n" + "\n" + login + "\n"
 }
