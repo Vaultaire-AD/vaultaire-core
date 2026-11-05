@@ -40,7 +40,7 @@ mécanisme ici, les commandes dans `Utilisation/MAN.md`.
 ## 2. Le dépôt en une page
 
 **Neuf** modules Go **indépendants** sous `src/`. **Pas de `go.mod` à la racine** :
-chacun a le sien, en `go 1.26.1` / `toolchain go1.26.5`.
+chacun a le sien, en `go 1.26.1` / `toolchain go1.26.10`.
 
 | Module | Chemin | Ce que c'est |
 | --- | --- | --- |

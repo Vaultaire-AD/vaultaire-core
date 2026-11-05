@@ -54,7 +54,7 @@ Chaque dossier de `src/` est un **module indépendant** (pas de `go.work`, pas d
 module vaultaire_<nom>
 
 go 1.26.1
-toolchain go1.26.5
+toolchain go1.26.10
 
 require duckynetworkclient/V1 v0.0.0
 

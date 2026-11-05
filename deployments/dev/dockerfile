@@ -22,9 +22,9 @@ LABEL env="dev"
 #
 #         go: go.mod requires go >= 1.26.1 (running go 1.25.7; GOTOOLCHAIN=local)
 #
-# La version est alignée sur `toolchain go1.26.5` des go.mod et sur GO_VERSION
+# La version est alignée sur `toolchain go1.26.10` des go.mod et sur GO_VERSION
 # de .github/workflows/dev.yaml. Les trois doivent bouger ensemble.
-ARG GO_VERSION=1.26.5
+ARG GO_VERSION=1.26.10
 
 RUN dnf install -y \
     sudo \

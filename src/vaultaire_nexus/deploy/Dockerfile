@@ -15,7 +15,7 @@
 
 # Images de base substituables : un parc sans accès à Docker Hub peut les
 # tirer de son propre Nexus (--build-arg BUILD_IMAGE=nexus:8843/docker/golang:…).
-ARG GO_VERSION=1.26.5
+ARG GO_VERSION=1.26.10
 ARG BUILD_IMAGE=golang:${GO_VERSION}-bookworm
 ARG RUNTIME_IMAGE=debian:12-slim
 

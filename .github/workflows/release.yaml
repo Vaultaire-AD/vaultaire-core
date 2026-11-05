@@ -34,7 +34,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  GO_VERSION: "1.26.5"
+  GO_VERSION: "1.26.10"
   KEEP_RELEASES: "5"
 
 jobs:
