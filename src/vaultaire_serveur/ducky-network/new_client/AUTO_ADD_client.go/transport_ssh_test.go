@@ -28,8 +28,14 @@ func cleHote(t *testing.T) ssh.Signer {
 }
 
 func TestLaCleDHoteEstAppriseUneFoisPuisVerifiee(t *testing.T) {
-	fichier := filepath.Join(t.TempDir(), "known_hosts")
-	cb := retenirCleHote(fichier)
+	rep := t.TempDir()
+	racine, err := os.OpenRoot(rep)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = racine.Close() }()
+	fichier := filepath.Join(rep, NomClesConnues)
+	cb := retenirCleHote(racine, NomClesConnues)
 	a, b := cleHote(t).PublicKey(), cleHote(t).PublicKey()
 	adr := &net.TCPAddr{IP: net.ParseIP("192.0.2.1"), Port: 2222}
 
@@ -50,7 +56,7 @@ func TestLaCleDHoteEstAppriseUneFoisPuisVerifiee(t *testing.T) {
 	if err := cb("192.0.2.1:2222", adr, b); err != nil {
 		t.Fatal(err)
 	}
-	connues, err := clesConnues(fichier, "[192.0.2.1]:2222", b.Type())
+	connues, err := clesConnues(racine, NomClesConnues, "[192.0.2.1]:2222", b.Type())
 	if err != nil || len(connues) != 2 {
 		t.Fatalf("clés connues : %d (%v)", len(connues), err)
 	}

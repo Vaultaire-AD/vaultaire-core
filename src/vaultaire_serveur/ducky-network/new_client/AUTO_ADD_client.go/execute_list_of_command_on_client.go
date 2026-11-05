@@ -43,13 +43,7 @@ func ExecuterCommandesSSHAvecCle(client *ssh.Client, host string) error {
 
 	// 2. Transférer le script (SFTP : un chemin relatif part du répertoire
 	// personnel, comme le faisait scp). 0600 : il n'est lu que par bash.
-	sc, err := sftp.NewClient(client)
-	if err != nil {
-		return fmt.Errorf("❌ sous-système sftp indisponible sur le poste : %v", err)
-	}
-	err = copierFichier(sc, localScriptPath, remoteScriptPath, 0o600)
-	sc.Close()
-	if err != nil {
+	if err := deposerScript(client, script, remoteScriptPath); err != nil {
 		return fmt.Errorf("❌ Erreur lors du transfert du script : %v", err)
 	}
 
@@ -65,6 +59,26 @@ func ExecuterCommandesSSHAvecCle(client *ssh.Client, host string) error {
 
 	logs.Write_Log("INFO", "autoadd : script d'installation joué avec succès sur "+host)
 	return nil
+}
+
+// deposerScript copie le script d'installation, lu sous le répertoire des
+// scripts (os.Root : son nom ne peut pas en faire sortir), dans le répertoire
+// personnel du compte de connexion.
+func deposerScript(client *ssh.Client, script, distant string) error {
+	racine, err := os.OpenRoot(storage.Sh_folder_path)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = racine.Close() }()
+	sc, err := sftp.NewClient(client)
+	if err != nil {
+		return fmt.Errorf("sous-système sftp indisponible sur le poste : %v", err)
+	}
+	if err := copierFichier(sc, racine, script, distant, 0o600); err != nil {
+		_ = sc.Close() // l'erreur de copie est celle qui compte
+		return err
+	}
+	return sc.Close()
 }
 
 // ScriptDistant : chemin RELATIF, donc dans le répertoire personnel du compte

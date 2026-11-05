@@ -2,7 +2,9 @@ package configuration_file
 
 import (
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -184,7 +186,7 @@ func lireVariable(v variableEnv, lire func(string) (string, bool)) (string, bool
 		if strings.TrimSpace(chemin) == "" {
 			return "", false, fmt.Errorf("%s_FILE est posée mais vide", v.Nom)
 		}
-		contenu, err := os.ReadFile(chemin)
+		contenu, err := lireFichierSecret(chemin)
 		if err != nil {
 			return "", false, fmt.Errorf("%s_FILE : lecture de %s impossible : %v", v.Nom, chemin, err)
 		}
@@ -214,4 +216,33 @@ func decouperListe(v string) []string {
 		}
 	}
 	return sortie
+}
+
+// TailleMaxSecret borne la lecture d'un fichier de secret : un mot de passe,
+// une clé publique. Un chemin qui désignerait autre chose (un journal, un
+// périphérique) n'est pas lu en entier en mémoire.
+const TailleMaxSecret = 64 << 10
+
+// lireFichierSecret lit un fichier de secret par un os.Root ouvert sur son
+// répertoire : le nom ne peut pas en sortir (gosec G304 — le chemin vient de
+// l'environnement, que seul l'exploitant pose, mais la garantie ne coûte rien).
+func lireFichierSecret(chemin string) ([]byte, error) {
+	racine, err := os.OpenRoot(filepath.Dir(chemin))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = racine.Close() }()
+	f, err := racine.Open(filepath.Base(chemin))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	contenu, err := io.ReadAll(io.LimitReader(f, TailleMaxSecret+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(contenu) > TailleMaxSecret {
+		return nil, fmt.Errorf("plus de %d octets : ce n'est pas un fichier de secret", TailleMaxSecret)
+	}
+	return contenu, nil
 }

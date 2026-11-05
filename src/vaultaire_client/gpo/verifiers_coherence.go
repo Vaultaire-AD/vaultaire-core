@@ -366,10 +366,13 @@ func droitsACLComplets(d string) string {
 	if len(d) == 3 && strings.Contains(d, "-") {
 		return d
 	}
+	// Par octets et non par runes : « rwx » est ASCII, et convertir une rune en
+	// octet est ce que gosec signale (G115) — à raison dans le cas général.
+	const lettres = "rwx"
 	out := []byte("---")
-	for i, c := range "rwx" {
-		if strings.ContainsRune(d, c) {
-			out[i] = byte(c)
+	for i := 0; i < len(lettres); i++ {
+		if strings.IndexByte(d, lettres[i]) >= 0 {
+			out[i] = lettres[i]
 		}
 	}
 	return string(out)

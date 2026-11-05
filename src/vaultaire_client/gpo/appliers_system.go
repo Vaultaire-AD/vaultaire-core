@@ -331,7 +331,10 @@ func assurerOutilDeMiseAJour(manager, paquet, commande string) error {
 		}
 	}
 	if manager == "apt-get" {
-		os.Setenv("DEBIAN_FRONTEND", "noninteractive")
+		// Sans lui, apt peut poser une question et bloquer le cycle.
+		if err := os.Setenv("DEBIAN_FRONTEND", "noninteractive"); err != nil {
+			return fmt.Errorf("installation de %s : mode non interactif impossible : %v", paquet, err)
+		}
 	}
 	if _, err := runCommand(manager, "-y", "install", paquet); err != nil {
 		return fmt.Errorf("%s absent et son installation a echoue : %v", paquet, err)

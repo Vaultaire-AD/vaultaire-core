@@ -12,6 +12,8 @@ import (
 	"strings"
 	"syscall"
 	"unsafe"
+
+	"golang.org/x/sys/unix"
 )
 
 // Traversée sûre d'un chemin sous le répertoire personnel — TO-DO 97.
@@ -722,22 +724,15 @@ func lierSousHome(home, chemin, cible string, uid, gid int) error {
 		}
 	}
 
-	pc, err := syscall.BytePtrFromString(cible)
-	if err != nil {
-		return err
-	}
-	pb, err := syscall.BytePtrFromString(base)
-	if err != nil {
-		return err
-	}
-	if _, _, errno := syscall.Syscall(syscall.SYS_SYMLINKAT,
-		uintptr(unsafe.Pointer(pc)), uintptr(fdRep), uintptr(unsafe.Pointer(pb))); errno != 0 {
-		return fmt.Errorf("creation du lien %s impossible : %v", chemin, errno)
+	// golang.org/x/sys/unix et non syscall.Syscall + unsafe : les mêmes appels,
+	// sans pointeur brut à auditer (gosec G103).
+	if err := unix.Symlinkat(cible, fdRep, base); err != nil {
+		return fmt.Errorf("creation du lien %s impossible : %v", chemin, err)
 	}
 	// Le lien appartient au compte, comme celui qu'écrirait son systemctl.
-	const atSymlinkNoFollow = 0x100
-	_, _, _ = syscall.Syscall6(syscall.SYS_FCHOWNAT, uintptr(fdRep),
-		uintptr(unsafe.Pointer(pb)), uintptr(uid), uintptr(gid), atSymlinkNoFollow, 0)
+	if err := unix.Fchownat(fdRep, base, uid, gid, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return fmt.Errorf("lien %s cree mais non attribue au compte : %v", chemin, err)
+	}
 	return nil
 }
 

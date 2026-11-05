@@ -56,8 +56,18 @@ import (
 const DelaiConnexionSSH = 15 * time.Second
 
 // connexionSSH ouvre une connexion authentifiée par la clé privée du fichier.
+//
+// La clé et le fichier des clés connues sont lus par un os.Root ouvert sur leur
+// répertoire : aucun chemin ne peut en sortir, pas même par un lien posé là
+// entre deux lectures (gosec G304 — le chemin vient de la configuration, mais
+// la garantie ne coûte rien).
 func connexionSSH(utilisateur, cheminCle, hote string, port int) (*ssh.Client, error) {
-	pem, err := os.ReadFile(cheminCle)
+	racine, err := os.OpenRoot(filepath.Dir(cheminCle))
+	if err != nil {
+		return nil, fmt.Errorf("répertoire de la clé de connexion %s : %v", filepath.Dir(cheminCle), err)
+	}
+	defer func() { _ = racine.Close() }()
+	pem, err := racine.ReadFile(filepath.Base(cheminCle))
 	if err != nil {
 		return nil, fmt.Errorf("lecture de la clé de connexion %s : %v", cheminCle, err)
 	}
@@ -65,11 +75,10 @@ func connexionSSH(utilisateur, cheminCle, hote string, port int) (*ssh.Client, e
 	if err != nil {
 		return nil, fmt.Errorf("clé de connexion %s illisible : %v", cheminCle, err)
 	}
-	connues := filepath.Join(filepath.Dir(cheminCle), "known_hosts")
 	cfg := &ssh.ClientConfig{
 		User:            utilisateur,
 		Auth:            []ssh.AuthMethod{ssh.PublicKeys(signataire)},
-		HostKeyCallback: retenirCleHote(connues),
+		HostKeyCallback: retenirCleHote(racine, NomClesConnues),
 		Timeout:         DelaiConnexionSSH,
 	}
 	adresse := net.JoinHostPort(hote, strconv.Itoa(port))
@@ -99,12 +108,15 @@ func expliquerEchecConnexion(hote string, port int, err error) error {
 	return fmt.Errorf("connexion SSH à %s port %d : %v", hote, port, err)
 }
 
+// NomClesConnues : le fichier des clés d'hôte, à côté de la clé de connexion.
+const NomClesConnues = "known_hosts"
+
 // verrouConnues sérialise les écritures du fichier des clés connues : deux
 // installations simultanées ne doivent pas entrelacer leurs lignes.
 var verrouConnues sync.Mutex
 
 // retenirCleHote rend le contrôle de clé d'hôte décrit en tête de fichier.
-func retenirCleHote(fichier string) ssh.HostKeyCallback {
+func retenirCleHote(racine *os.Root, fichier string) ssh.HostKeyCallback {
 	return func(nomHote string, distant net.Addr, cle ssh.PublicKey) error {
 		verrouConnues.Lock()
 		defer verrouConnues.Unlock()
@@ -113,7 +125,7 @@ func retenirCleHote(fichier string) ssh.HostKeyCallback {
 		ligne := hote + " " + strings.TrimSpace(string(ssh.MarshalAuthorizedKey(cle)))
 		empreinte := ssh.FingerprintSHA256(cle)
 
-		anciennes, err := clesConnues(fichier, hote, cle.Type())
+		anciennes, err := clesConnues(racine, fichier, hote, cle.Type())
 		if err != nil {
 			return err
 		}
@@ -132,7 +144,7 @@ func retenirCleHote(fichier string) ssh.HostKeyCallback {
 		} else {
 			logs.Write_Log("INFO", fmt.Sprintf("autoadd: clé d'hôte de %s apprise : %s %s", hote, cle.Type(), empreinte))
 		}
-		return ajouterLigne(fichier, ligne)
+		return ajouterLigne(racine, fichier, ligne)
 	}
 }
 
@@ -149,15 +161,15 @@ func cleDHote(nomHote string) string {
 }
 
 // clesConnues rend les clés de ce type déjà inscrites pour cet hôte.
-func clesConnues(fichier, hote, typ string) ([]ssh.PublicKey, error) {
-	f, err := os.Open(fichier)
+func clesConnues(racine *os.Root, fichier, hote, typ string) ([]ssh.PublicKey, error) {
+	f, err := racine.Open(fichier)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("lecture de %s : %v", fichier, err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	var cles []ssh.PublicKey
 	lecteur := bufio.NewScanner(f)
 	lecteur.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -181,17 +193,18 @@ func clesConnues(fichier, hote, typ string) ([]ssh.PublicKey, error) {
 	return cles, lecteur.Err()
 }
 
-func ajouterLigne(fichier, ligne string) error {
-	if err := os.MkdirAll(filepath.Dir(fichier), 0o700); err != nil {
-		return err
-	}
-	f, err := os.OpenFile(fichier, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+func ajouterLigne(racine *os.Root, fichier, ligne string) error {
+	f, err := racine.OpenFile(fichier, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("écriture de %s : %v", fichier, err)
 	}
-	defer f.Close()
-	_, err = f.WriteString(ligne + "\n")
-	return err
+	if _, err := f.WriteString(ligne + "\n"); err != nil {
+		_ = f.Close()
+		return fmt.Errorf("écriture de %s : %v", fichier, err)
+	}
+	// La fermeture d'un fichier ÉCRIT peut échouer (disque plein) : c'est une
+	// erreur de l'écriture, pas un détail.
+	return f.Close()
 }
 
 // executer lance une commande distante ; sortie standard et erreur standard
@@ -229,8 +242,13 @@ func lireSortie(client *ssh.Client, commande string) (string, error) {
 // poste, en gardant les droits de chaque fichier (le bit d'exécution des
 // binaires et des modules en dépend) — ce que faisait `scp -r`.
 func copierArborescence(sc *sftp.Client, source, destination string) (int, error) {
+	racine, err := os.OpenRoot(source)
+	if err != nil {
+		return 0, fmt.Errorf("ouverture de %s : %v", source, err)
+	}
+	defer func() { _ = racine.Close() }()
 	n := 0
-	err := filepath.Walk(source, func(chemin string, info os.FileInfo, err error) error {
+	err = filepath.Walk(source, func(chemin string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -251,7 +269,7 @@ func copierArborescence(sc *sftp.Client, source, destination string) (int, error
 			logs.Write_Log("WARNING", "autoadd: "+chemin+" ignoré : ni fichier ni répertoire")
 			return nil
 		}
-		if err := copierFichier(sc, chemin, cible, info.Mode().Perm()); err != nil {
+		if err := copierFichier(sc, racine, rel, cible, info.Mode().Perm()); err != nil {
 			return err
 		}
 		n++
@@ -261,18 +279,22 @@ func copierArborescence(sc *sftp.Client, source, destination string) (int, error
 }
 
 // copierFichier écrit un fichier sur le poste, puis pose ses droits.
-func copierFichier(sc *sftp.Client, source, cible string, mode os.FileMode) error {
-	src, err := os.Open(source)
+//
+// La source est lue sous racine, par son chemin RELATIF : un nom fabriqué
+// (« ../.. ») ou un lien posé dans le paquet ne fait pas lire au core un
+// fichier hors du répertoire copié (gosec G304).
+func copierFichier(sc *sftp.Client, racine *os.Root, source, cible string, mode os.FileMode) error {
+	src, err := racine.Open(source)
 	if err != nil {
 		return err
 	}
-	defer src.Close()
+	defer func() { _ = src.Close() }()
 	dst, err := sc.OpenFile(cible, os.O_WRONLY|os.O_CREATE|os.O_TRUNC)
 	if err != nil {
 		return fmt.Errorf("ouverture de %s sur le poste : %v", cible, err)
 	}
 	if _, err := io.Copy(dst, src); err != nil {
-		dst.Close()
+		_ = dst.Close() // l'erreur de copie est celle qui compte
 		return fmt.Errorf("copie de %s vers %s : %v", source, cible, err)
 	}
 	if err := dst.Close(); err != nil {

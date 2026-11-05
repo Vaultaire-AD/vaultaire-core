@@ -26,7 +26,7 @@ func envoyerFichiersClient(client *ssh.Client, clientSoftwareID string) error {
 	if err != nil {
 		return fmt.Errorf("sous-système sftp indisponible sur le poste (« Subsystem sftp » de sshd_config) : %v", err)
 	}
-	defer sc.Close()
+	defer func() { _ = sc.Close() }()
 
 	if err := sc.MkdirAll(RepertoireDistant); err != nil {
 		return fmt.Errorf("création de %s sur le poste : %v", RepertoireDistant, err)
@@ -53,6 +53,11 @@ func envoyerFichiersClient(client *ssh.Client, clientSoftwareID string) error {
 	if err != nil {
 		return fmt.Errorf("configuration de %s introuvable sur ce core (%s) : %v", clientSoftwareID, local, err)
 	}
+	racineLocale, err := os.OpenRoot(local)
+	if err != nil {
+		return fmt.Errorf("configuration de %s illisible (%s) : %v", clientSoftwareID, local, err)
+	}
+	defer func() { _ = racineLocale.Close() }()
 	m := 0
 	for _, e := range entrees {
 		if strings.HasPrefix(e.Name(), ".") {
@@ -71,7 +76,7 @@ func envoyerFichiersClient(client *ssh.Client, clientSoftwareID string) error {
 		if err != nil || !info.Mode().IsRegular() {
 			continue
 		}
-		if err := copierFichier(sc, source, RepertoireDistant+"/"+e.Name(), info.Mode().Perm()); err != nil {
+		if err := copierFichier(sc, racineLocale, e.Name(), RepertoireDistant+"/"+e.Name(), info.Mode().Perm()); err != nil {
 			return err
 		}
 		m++
