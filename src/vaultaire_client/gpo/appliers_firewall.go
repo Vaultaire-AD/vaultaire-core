@@ -81,6 +81,7 @@ func applyFirewalld(port, proto, source, action string, remove bool) (string, er
 	spec := port + "/" + proto
 
 	args := []string{"--permanent", verb + "=" + spec}
+	rich := ""
 	if source != "" {
 		// Une source précise demande une rich rule : la règle simple ne sait pas
 		// restreindre l'origine.
@@ -99,7 +100,7 @@ func applyFirewalld(port, proto, source, action string, remove bool) (string, er
 		if action == "deny" {
 			verdict = "reject"
 		}
-		rich := fmt.Sprintf(`rule family="ipv4" source address="%s" port port="%s" protocol="%s" %s`,
+		rich = fmt.Sprintf(`rule family="ipv4" source address="%s" port port="%s" protocol="%s" %s`,
 			source, port, proto, verdict)
 		richVerb := "--add-rich-rule"
 		if remove {
@@ -116,6 +117,15 @@ func applyFirewalld(port, proto, source, action string, remove bool) (string, er
 	if _, err := runCommand("firewall-cmd", "--reload"); err != nil {
 		return "", fmt.Errorf("rechargement de firewalld impossible : %v", err)
 	}
+	// L'attente suit ce qui est réellement posé : sans source, « deny »
+	// retire l'autorisation du port (voir plus haut) ; avec source, la rich
+	// rule existe pour « deny » comme pour « allow », et seul le retrait
+	// la fait disparaître.
+	attendu := "present"
+	if (rich == "" && drop) || (rich != "" && remove) {
+		attendu = "absent"
+	}
+	recordCheck(CheckFirewalldRegle, cibleFirewalld(spec, rich), attendu)
 
 	return describeFirewallResult("firewalld", spec, source, action, remove), nil
 }

@@ -1,9 +1,11 @@
 package sshclient
 
 import (
+	"strings"
 	"testing"
 
 	"vaultaire/core/reglages"
+	"vaultaire/core/storage"
 )
 
 // TestLePrefixeDesGroupesEstFige.
@@ -75,5 +77,66 @@ func TestLePrefixeNePeutPasEtreConfonduAvecUneCle(t *testing.T) {
 			t.Errorf("le préfixe %q ouvre aussi les clés de type %q : l'agent lirait "+
 				"ces clés comme des groupes", PrefixeGroupes, t2)
 		}
+	}
+}
+
+// Une demande d'ouverture de session malformée est refusée par un 03_03, dans
+// le tunnel — TO-DO 159.
+//
+// Elle l'était par un 02_07, qui dit « l'authentification de CETTE session est
+// refusée » : or la session est le tunnel de la machine. Et il ne libérait pas
+// le module PAM qui attend le verdict du compte.
+func TestUneDemandeMalformeeEstRefuseeParUn0303(t *testing.T) {
+	reponse := SSH_SEND_Pubkey_AUTH(storage.Trames_struct_client{
+		Message_Order:       []string{"03", "01"},
+		SessionIntegritykey: "CLE",
+		Username:            "vaultaire",
+		ClientSoftwareID:    "PC-01",
+		Content:             "alice.martin@acme.lan",
+	})
+	lignes := strings.Split(reponse, "\n")
+	if len(lignes) != 5 || lignes[0] != "03_03" || lignes[1] != "serveur_central" || lignes[2] != "CLE" {
+		t.Fatalf("réponse %q — attendu un 03_03 complet", lignes)
+	}
+	if lignes[3] != "alice.martin@acme.lan" {
+		t.Errorf("le refus nomme %q : le poste ne retrouvera pas la demande en attente", lignes[3])
+	}
+	if strings.HasPrefix(reponse, "02_07") {
+		t.Error("un 02_07 dans le tunnel d'une machine : un agent à jour le lirait comme le refus du tunnel")
+	}
+}
+
+// Sans nom de compte il n'y a personne à qui répondre : l'ancienne trame est
+// gardée, bien formée, et le poste la journalise sans fermer son tunnel.
+func TestUneDemandeSansCompteGardeUneTrameLisible(t *testing.T) {
+	reponse := SSH_SEND_Pubkey_AUTH(storage.Trames_struct_client{
+		Message_Order: []string{"03", "01"}, SessionIntegritykey: "CLE", Username: "vaultaire", Content: "",
+	})
+	lignes := strings.Split(reponse, "\n")
+	if len(lignes) != 5 || lignes[0] != "02_07" || lignes[3] != "vaultaire" || lignes[4] == "" {
+		t.Fatalf("réponse %q — attendu une 02_07 à deux lignes de contenu", lignes)
+	}
+}
+
+// TO-DO 224 : un refus de --fetch-key est répondu par une liste vide, au compte
+// tel que l'agent l'a demandé — l'agent la lit comme celle d'un compte sans clé
+// (sshauth.SSH_Handle_Fetch_Pubkey) au lieu d'attendre 10 s.
+func TestUnRefusDeFetchKeyRendUneListeVide(t *testing.T) {
+	tr := storage.Trames_struct_client{SessionIntegritykey: "cle"}
+	r := reponseSansCle(tr, "bob@acme.lan")
+	lignes := strings.Split(r, "\n")
+	if lignes[0] != "03_07" || lignes[2] != "cle" {
+		t.Fatalf("en-tête : %q", r)
+	}
+	// Ce que l'agent lit : le contenu après les trois lignes d'en-tête.
+	contenu := strings.Split(strings.TrimSpace(strings.Join(lignes[3:], "\n")), "\n")
+	if len(contenu) != 3 || contenu[0] != "vaultaire" || contenu[2] != "bob@acme.lan" {
+		t.Fatalf("contenu lu par l'agent : %q", contenu)
+	}
+	if cles := strings.Join(contenu[3:], "\n"); cles != "" {
+		t.Fatalf("des clés dans un refus : %q", cles)
+	}
+	if ok := reponseCles(tr, "bob", "acme.lan", []string{"ssh-ed25519 A"}); !strings.HasSuffix(ok, "\nbob@acme.lan\nssh-ed25519 A") {
+		t.Fatalf("réponse avec clés changée : %q", ok)
 	}
 }

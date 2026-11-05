@@ -67,6 +67,9 @@ func handleUnixSocketConnection(conn net.Conn) {
 	} else if closeMsg, exists := message["close"]; exists {
 		handleCloseRequest(conn, string(closeMsg))
 
+	} else if _, exists := message["ping"]; exists {
+		repondreAuPing(conn)
+
 	} else {
 		log.Printf("Commande inconnue reçue: %v", message)
 	}

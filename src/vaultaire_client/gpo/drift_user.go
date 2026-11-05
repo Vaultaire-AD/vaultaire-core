@@ -206,37 +206,41 @@ func scanUserDrift(sessionKey, username string) int {
 	return EnforceDrift(ScopeUser, username, report)
 }
 
-// constaterApresApplication scanne un compte dont des modules viennent d'être
+// constaterApresApplication scanne une portée dont des modules viennent d'être
 // posés, et dit au core ce qu'il en est MAINTENANT.
 //
-// # Pourquoi le scope utilisateur en a besoin et pas la machine
+// # Pourquoi
 //
-// Côté machine, le tour suivant de la boucle scanne : un écart corrigé reste
-// affiché une cadence au plus, et une politique neuve est vérifiée dans
-// l'heure. Un compte, lui, n'a pas de tour suivant — son prochain scan est à sa
-// prochaine connexion, demain ou jamais. Sans ce constat :
+// Le rapport d'écart part AVANT la correction — c'est voulu, voir
+// scanMachineDrift : si la machine s'arrête entre les deux, l'écart reste
+// visible. Mais rien ne venait ensuite le remplacer :
 //
 //   - un `HOME` réparé à 9 h restait affiché « 1 écart » jusqu'au retour de la
-//     personne : le rapport d'écart part avant la correction, c'est voulu
-//     (scanMachineDrift), et rien ne venait le remplacer ;
-//   - un compte qui venait de recevoir sa politique restait « non vérifié »,
+//     personne, demain ou jamais — un compte n'a pas de tour suivant ;
+//   - une MACHINE réparée restait affichée « 1 écart » jusqu'au cycle d'après,
+//     une cadence plus tard. Ce cas avait été jugé supportable (TO-DO 135) ; il
+//     ne l'était pas : pendant cette heure, une machine en enforce s'affichait
+//     exactement comme une machine en audit, et c'est ce que la recette du
+//     24/09 a rapporté sous « le mode audit ne se distingue pas » (TO-DO 86) ;
+//   - une portée qui venait de recevoir sa politique restait « non vérifiée »,
 //     puisque le scan précède le cycle et n'avait encore rien à comparer.
 //
-// Dans les deux cas la vue de conformité montrait autre chose que l'état du
+// Dans les trois cas la vue de conformité montrait autre chose que l'état du
 // poste, et une vue qui a tort par construction est une vue qu'on cesse de lire.
 //
 // Ce constat ne corrige rien et ne compte pas comme une vérification due : il
 // ne touche pas à la mémoire des scans, et n'efface aucune empreinte. Un écart
 // qui subsiste — module en échec, politique en audit — reste affiché, à juste
-// titre, et sera repris à la prochaine vérification.
-func constaterApresApplication(sessionKey, username string) {
-	report := ScanScope(ScopeUser, username)
+// titre, et sera repris à la prochaine vérification. L'écart corrigé, lui,
+// reste au journal du core, qui l'a reçu.
+func constaterApresApplication(sessionKey, scope, username string) {
+	report := ScanScope(scope, username)
 	if report.Checked == 0 {
 		return
 	}
 	if !report.Conforming() {
 		logs.Write_log("WARNING", fmt.Sprintf(
-			"GPO: %d ecart(s) subsiste(nt) pour %s apres application", len(report.Items), username))
+			"GPO: %d ecart(s) subsiste(nt) pour %s apres application", len(report.Items), scope+userLabel(username)))
 	}
 	if err := SendDriftReport(sessionKey, report); err != nil {
 		logs.Write_log("WARNING", "GPO: constat apres application non transmis : "+err.Error())
@@ -279,6 +283,6 @@ func rattraperInventaireUtilisateur(username string) {
 		return
 	}
 	logs.Write_log("INFO", fmt.Sprintf(
-		"GPO: l'etat de %s date d'avant l'inventaire du scope utilisateur, "+
-			"%d module(s) rejoue(s) une fois pour l'y faire entrer", username, rejoues))
+		"GPO: l'etat de %s a ete ecrit sous une regle d'inventaire anterieure, "+
+			"%d module(s) rejoue(s) une fois pour le mettre a jour", username, rejoues))
 }

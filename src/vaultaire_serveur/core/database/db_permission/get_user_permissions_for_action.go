@@ -2,8 +2,8 @@ package dbpermission
 
 import (
 	"database/sql"
-	"log"
 	"vaultaire/core/database"
+	"vaultaire/core/logs"
 )
 
 // GetUserPermissionsForAction récupère toutes les valeurs d'action d'un utilisateur
@@ -24,7 +24,7 @@ func GetUserPermissionsForAction(db *sql.DB, username, action string) ([]string,
 
 	rows, err := db.Query(query, username)
 	if err != nil {
-		log.Printf("Erreur SQL : %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "permissions de "+username+" illisibles : "+err.Error())
 		return nil, err
 	}
 	defer rows.Close()
@@ -33,7 +33,7 @@ func GetUserPermissionsForAction(db *sql.DB, username, action string) ([]string,
 	for rows.Next() {
 		var rawValue string
 		if err := rows.Scan(&rawValue); err != nil {
-			log.Printf("Erreur Scan : %v", err)
+			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "permissions de "+username+" : ligne illisible : "+err.Error())
 			continue
 		}
 		results = append(results, rawValue)

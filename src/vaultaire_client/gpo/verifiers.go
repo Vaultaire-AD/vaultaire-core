@@ -361,7 +361,8 @@ func motDePasseVerrouille(compte string) (bool, error) {
 	return false, fmt.Errorf("compte %s absent de shadow", compte)
 }
 
-// lireChage extrait l'âge maximal et l'inactivité de la sortie de `chage -l`.
+// lireChage extrait l'âge maximal, l'inactivité et le délai d'avertissement de
+// la sortie de `chage -l`.
 //
 // La sortie est localisée : « Maximum number of days » en anglais, « Nombre
 // maximal de jours » en français. Les libellés ne sont donc PAS un repère
@@ -388,6 +389,11 @@ func lireChage(sortie string) map[string]string {
 		case strings.Contains(bas, "inactive") || strings.Contains(bas, "inactivit"):
 			if _, err := strconv.Atoi(valeur); err == nil {
 				out["inactive"] = valeur
+			}
+		case strings.Contains(bas, "warning") || strings.Contains(bas, "avertissement"):
+			// Le délai d'avertissement, pour user_password_policy (TO-DO 163).
+			if _, err := strconv.Atoi(valeur); err == nil {
+				out["warn"] = valeur
 			}
 		}
 	}

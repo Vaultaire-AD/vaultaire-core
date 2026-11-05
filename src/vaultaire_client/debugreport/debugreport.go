@@ -236,7 +236,8 @@ func ecrireScope(b *strings.Builder, titre string, s ScopeGPO) {
 	fmt.Fprintf(b, "  %s : empreinte %s, version %d, appliquée %s, statut %s, %d module(s)\n",
 		titre, s.Empreinte, s.Version, vide(s.AppliqueeLe), vide(s.Statut), s.Modules)
 	if s.Audit > 0 {
-		fmt.Fprintf(b, "      dont %d en mode audit (écart signalé, jamais corrigé)\n", s.Audit)
+		fmt.Fprintf(b, "      dont %d en mode audit (écart signalé, jamais corrigé) : %s\n",
+			s.Audit, strings.Join(s.EnAudit, ", "))
 	}
 	fmt.Fprintf(b, "      %d fichier(s) suivi(s), %d contrôle(s) d'état\n", s.Fichiers, s.Controles)
 }

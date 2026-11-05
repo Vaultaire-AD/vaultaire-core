@@ -50,6 +50,13 @@ services:
       dockerfile: deployments/pre-prod/Dockerfile
     image: vaultaire-preprod:latest
     container_name: vaultaire-ad
+    # Nom d'hôte FIXE (TO-DO 227) : c'est le nom du nœud dans le cluster.
+    # Sans lui, chaque recréation du conteneur en tirait un nouveau : le core
+    # perdait son exposition (« cluster expose ») et l'ancien nœud restait à
+    # oublier à la main. Au premier « up » avec cette ligne, le nœud change de
+    # nom une dernière fois : « vlt cluster expose vaultaire-ad <hôte> 6666 »,
+    # puis « vlt cluster forget <ancien nom> ».
+    hostname: vaultaire-ad
     restart: unless-stopped
     depends_on:
       - vaultaire-db
@@ -104,6 +111,14 @@ services:
       - KC_HTTP_RELATIVE_PATH=/auth
       - TZ=Europe/Paris
     volumes:
+      # Le certificat LDAPS du core, à créer AVANT le premier « up » (TO-DO 227) :
+      #   docker exec vaultaire-ad /opt/vaultaire/bin/vaultaire_cli certificate show ldaps > vaultaire-ldaps.pem
+      # Absent, Docker crée un RÉPERTOIRE à sa place et Keycloak ne fait
+      # confiance à rien (« PKIX path building failed »). Si c'est arrivé :
+      # rmdir vaultaire-ldaps.pem, créer le fichier, puis
+      #   docker compose up -d --force-recreate vaultaire-keycloak
+      # Après un « vlt certificate regenerate ldaps » : refaire le fichier,
+      # redémarrer le core ET Keycloak.
       - ./vaultaire-ldaps.pem:/opt/keycloak/conf/truststores/vaultaire.pem:ro
     ports:
       - "8080:8080"

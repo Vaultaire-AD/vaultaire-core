@@ -145,13 +145,19 @@ func testEmpreinteCalcul() []Result {
 
 // testEmpreinteNomDeFichierPartage est LE test de ce fichier.
 //
-// Le nom du fichier d'empreinte apparaît en quatre endroits qui ne se
+// Le nom du fichier d'empreinte apparaît en plusieurs endroits qui ne se
 // compilent jamais ensemble :
 //
-//	core   : key_management/core_fingerprint.go
-//	agent  : vaultaire_client/duckynetworkClient/serveurauth/coretrust.go
-//	SDK    : ducky-network-sdk-service/duckynetwork/serveurauth/coretrust.go
-//	script : automatisation/auto_deployements/rocky.sh
+//	core    : key_management/core_fingerprint.go
+//	SDK     : ducky-network-sdk-service/duckynetwork/serveurauth/coretrust.go
+//	scripts : automatisation/auto_deployements/rocky.sh et debian.sh
+//
+// L'AGENT n'en fait plus partie (TO-DO 150). Il portait sa propre copie du
+// paquet, sous vaultaire_client/duckynetworkClient ; il emprunte maintenant
+// celui du SDK. Le test lisait toujours l'ancien fichier et échouait sur
+// « fichier illisible » — un échec que l'on prenait pour un chemin relatif, et
+// qui n'éprouvait plus rien. Ce qu'il faut garder pour l'agent est l'INVERSE :
+// qu'il ne recommence pas à écrire ce nom lui-même.
 //
 // Si l'un d'eux change, rien ne casse : le core dépose un fichier que personne
 // ne lit, l'agent cherche un fichier qui n'existe pas, conclut qu'aucune
@@ -184,11 +190,10 @@ func testEmpreinteNomDeFichierPartage() []Result {
 		chemin string
 		motif  string
 	}{
-		{"agent", "src/vaultaire_client/duckynetworkClient/serveurauth/coretrust.go",
-			`FingerprintFileName = "` + attendu + `"`},
 		{"SDK", "src/ducky-network-sdk-service/duckynetwork/serveurauth/coretrust.go",
 			`FingerprintFileName = "` + attendu + `"`},
-		{"script de déploiement", "automatisation/auto_deployements/rocky.sh", attendu},
+		{"script Rocky", "automatisation/auto_deployements/rocky.sh", attendu},
+		{"script Debian", "automatisation/auto_deployements/debian.sh", attendu},
 	}
 
 	var out []Result
@@ -208,7 +213,49 @@ func testEmpreinteNomDeFichierPartage() []Result {
 		}
 		out = append(out, Result{"Empreinte/nom partagé (" + e.nom + ")", true, ""})
 	}
+
+	// L'agent tient ce nom du SDK, et de lui seul.
+	if fautifs, err := sourcesQuiEcrivent(filepath.Join(racine, "src", "vaultaire_client"), attendu); err != nil {
+		out = append(out, Result{"Empreinte/nom partagé (agent)", false,
+			"sources de l'agent illisibles : " + err.Error()})
+	} else if len(fautifs) > 0 {
+		out = append(out, Result{"Empreinte/nom partagé (agent)", false,
+			fmt.Sprintf("l'agent écrit %q lui-même dans %s — il doit le tenir du SDK "+
+				"(serveurauth.FingerprintFileName), sinon les deux finiront par diverger",
+				attendu, strings.Join(fautifs, ", "))})
+	} else {
+		out = append(out, Result{"Empreinte/nom partagé (agent)", true, ""})
+	}
 	return out
+}
+
+// sourcesQuiEcrivent rend les fichiers Go — hors tests — d'un répertoire qui
+// portent le texte donné entre guillemets.
+//
+// Entre guillemets : un commentaire qui cite le nom du fichier n'est pas une
+// seconde définition.
+func sourcesQuiEcrivent(racine, texte string) ([]string, error) {
+	var fautifs []string
+	err := filepath.WalkDir(racine, func(chemin string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(chemin, ".go") || strings.HasSuffix(chemin, "_test.go") {
+			return nil
+		}
+		contenu, err := os.ReadFile(chemin)
+		if err != nil {
+			return err
+		}
+		if strings.Contains(string(contenu), `"`+texte+`"`) {
+			if rel, errRel := filepath.Rel(racine, chemin); errRel == nil {
+				chemin = rel
+			}
+			fautifs = append(fautifs, chemin)
+		}
+		return nil
+	})
+	return fautifs, err
 }
 
 // racineDuDepot remonte depuis le répertoire courant jusqu'à trouver la racine.

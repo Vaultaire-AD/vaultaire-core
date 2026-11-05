@@ -39,6 +39,10 @@ services:
       - VAULTAIRE_ROOT=/src
       - VAULTAIRE_BUILD_DIR=/src/deployments/dev-comp/build
       - VAULTAIRE_VERSION=${VAULTAIRE_VERSION:-}
+      # Les modules natifs de CETTE image vont dans vaultaire_client/rocky/,
+      # bornés à la glibc de Rocky 9 — comme la release (TO-DO 193). Ceux de la
+      # famille Debian viennent de builder-debian, juste après.
+      - VAULTAIRE_FAMILLE_MODULES=rocky
       - HOST_UID=${HOST_UID:-0}
       - HOST_GID=${HOST_GID:-0}
     volumes:
@@ -49,6 +53,33 @@ services:
     command: >
       bash -c './auto-compil.sh &&
                chown -R "$${HOST_UID}:$${HOST_GID}" /src/deployments/dev-comp/build'
+
+  # --- Compilation des modules natifs de la famille Debian (TO-DO 193) ---
+  #
+  # Rocky 9 compile les binaires et les modules de SA famille : liés à
+  # libcrypt.so.2, ils ne se chargent sur aucune Debian ni Ubuntu. Le core de
+  # développement servait donc à ces postes des modules qu'ils refusaient
+  # (recette du 12/10 : « libcrypt.so.2 => not found » sur Debian 13).
+  #
+  # Ce service fait ce que fait le job modules-debian de la release : Ubuntu
+  # 22.04, la plus ancienne de la famille, et la même recette —
+  # src/vaultaire_client/pam_module/auto_compil.sh, glibc bornée à 2.35.
+  builder-debian:
+    profiles: ["build"]
+    build:
+      context: .
+      dockerfile: Dockerfile.build-debian
+    image: vaultaire-devcomp-builder-debian:latest
+    working_dir: /src
+    environment:
+      - VAULTAIRE_GLIBC_MAX=2.35
+      - HOST_UID=${HOST_UID:-0}
+      - HOST_GID=${HOST_GID:-0}
+    volumes:
+      - ../..:/src
+    command: >
+      bash -c 'bash src/vaultaire_client/pam_module/auto_compil.sh /src/deployments/dev-comp/build/vaultaire_client/debian &&
+               chown -R "$${HOST_UID}:$${HOST_GID}" /src/deployments/dev-comp/build/vaultaire_client/debian'
 
   # --- Base ---
   vaultaire-db:

@@ -1,7 +1,7 @@
 package storage
 
 var Host_Type string = "core"
-var Host_Version string = "2.2.0"
+var Host_Version string = "2.3.0"
 
 type Config struct {
 	ServerListenPort *string `yaml:"serveurlistenport"`
@@ -11,6 +11,9 @@ type Config struct {
 		// Débit par source sur /api/command (TO-DO 102).
 		API_Limite_Rafale      *int     `yaml:"limite_rafale"`
 		API_Limite_Par_Seconde *float64 `yaml:"limite_par_seconde"`
+		// Certificat importé (TO-DO 262) : voir Ldaps_TLS_CertFile.
+		API_TLS_CertFile *string `yaml:"api_tls_cert_file"`
+		API_TLS_KeyFile  *string `yaml:"api_tls_key_file"`
 	} `yaml:"api"`
 	Path struct {
 		SocketPath       *string `yaml:"socketpath"`
@@ -39,6 +42,9 @@ type Config struct {
 		// répartiteur : ces deux listes servent à les déclarer.
 		Ldaps_TLS_DNSNames []string `yaml:"ldaps_tls_dns_names"`
 		Ldaps_TLS_IPs      []string `yaml:"ldaps_tls_ip_addresses"`
+		// Certificat importé (TO-DO 262) : voir storage.Ldaps_TLS_CertFile.
+		Ldaps_TLS_CertFile *string `yaml:"ldaps_tls_cert_file"`
+		Ldaps_TLS_KeyFile  *string `yaml:"ldaps_tls_key_file"`
 		// Laisse les comptes soumis au second facteur se lier avec leur seul
 		// mot de passe. Faux par défaut : voir ldapstorage.MFABypass.
 		Ldap_MFA_Bypass *bool `yaml:"mfa_bypass"`
@@ -59,6 +65,9 @@ type Config struct {
 	} `yaml:"ldap"`
 	Dns struct {
 		Dns_Enable *bool `yaml:"dns_enable"`
+		// Port UDP du DNS. 53 par défaut ; un conteneur sans privilège écoute
+		// au-dessus de 1024 et le Service Kubernetes republie le 53.
+		Dns_Port *int `yaml:"dns_port"`
 	} `yaml:"dns"`
 	Database struct {
 		Database_username     *string `yaml:"username"`
@@ -79,6 +88,9 @@ type Config struct {
 		// les utilisateurs ont en signet.
 		Web_TLS_DNSNames []string `yaml:"web_tls_dns_names"`
 		Web_TLS_IPs      []string `yaml:"web_tls_ip_addresses"`
+		// Certificat importé (TO-DO 262) : voir storage.Ldaps_TLS_CertFile.
+		Web_TLS_CertFile *string `yaml:"web_tls_cert_file"`
+		Web_TLS_KeyFile  *string `yaml:"web_tls_key_file"`
 		// Relais autorisés à déclarer l'adresse réelle du client, en adresses
 		// simples ou en préfixes CIDR.
 		//
@@ -95,6 +107,8 @@ type Config struct {
 	} `yaml:"website"`
 	Automatisation struct {
 		Sh_folder_path *string `yaml:"sh_folder_path"`
+		// Répertoire du paquet d'agent copié sur un poste par « -join ».
+		Agent_Package_path *string `yaml:"agent_package_path"`
 	} `yaml:"automatisation"`
 	Debug struct {
 		Debug *bool `yaml:"debug"`
@@ -155,6 +169,17 @@ var Ldaps_Port int = 636
 var Ldaps_TLS_DNSNames []string
 var Ldaps_TLS_IPs []string
 
+// Certificats importés — TO-DO 262.
+//
+// Chemins d'un certificat (PEM, chaîne complète, serveur en tête) et de sa clé,
+// fournis par une autorité extérieure : cert-manager dans Kubernetes, une PKI
+// d'entreprise ailleurs. Vides par défaut : le service sert alors son
+// certificat auto-signé, gardé en base. Les deux ou aucun. Relus à chaud, voir
+// le paquet certimporte.
+var Ldaps_TLS_CertFile, Ldaps_TLS_KeyFile string
+var Web_TLS_CertFile, Web_TLS_KeyFile string
+var API_TLS_CertFile, API_TLS_KeyFile string
+
 var Website_Enable bool = true
 var Website_Port int = 443
 
@@ -171,7 +196,14 @@ var Web_TLS_IPs []string
 var Web_Trusted_Proxies []string
 
 var Dns_Enable bool = true
+var Dns_Port int = 53
 var Sh_folder_path string = "/opt/vaultaire/automatisation/"
+
+// Agent_Package_path : le paquet d'agent (binaire et modules PAM/NSS) que
+// « vlt create -c … -join » copie sur le poste. Lu seulement : dans l'image
+// rootless, il est dans la couche en lecture seule, séparé des répertoires
+// où le core écrit (Client_Conf_path).
+var Agent_Package_path string = "/opt/vaultaire/vaultaire_client/"
 
 var API_Enable bool = true
 var API_Port int = 6643
@@ -203,4 +235,10 @@ var Administrateur_Username string = "admin"
 // Vide, l'amorçage s'arrête en le disant. C'est bruyant, et c'est exactement ce
 // qu'on veut : un mot de passe de superadmin ne doit jamais venir d'un défaut.
 var Administrateur_Password string = ""
-var Administrateur_PublicKey string = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQCm85Bflch3N5E+zOKapQAn6dipdKgj4oeAorbQV9j4bLUJnFvZ8sfvIGVc0gB5oQEv2Vh1A6lqGNK/CrcgZj5ybNoEwxdbkQyRYkJ6NmtxDs1zLyRUr5GCGtjX44JNNnTDdL+E00Aiw8nFBJRlHkV78ehG62p2DeeVLUydnlnT5ey3KJtmY+Tc0dq5AqWdnAsLbZ/JHw/EuZTeifYJ6wmpxp69oHnsvRxBomH2wSp7CjeYTaBpVFF4KChBSXm/gO4quWQT0JBsDyNmPhZ/QwRJKqujh1B5OX6bbKAl5MOC3OoPXfYkyhilaMku9lK5E6i3wLdP08FQ6Op/Psy7ukTTvMduhqsauxZMMx+x12RAT72LFySZ6RSkLKQXhwkO8pG4laNKFQbDoTULC973AKy0le2Jyb7SnNBL+I+KviMojItYCc6QmQ39TVowy6VQimHiPPs6UPTDt8KROm1SEtPSXj7QvtwJU5hbAG9uFVH/udX7y6BhNPkOgCmrH9s5fh0= root@NTFS"
+
+// VIDE depuis la 2.3. Le défaut était la clé de démonstration du dépôt, dont
+// la partie PRIVÉE est publiée (deployments/configs/demo_admin_key) : toute
+// installation qui ne disait rien donnait au superadmin une clé que chacun peut
+// télécharger. Les piles de développement la posent explicitement dans leur
+// fichier ; voir aussi VerifierValeursLivrees.
+var Administrateur_PublicKey string = ""

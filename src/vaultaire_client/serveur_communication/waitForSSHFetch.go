@@ -6,14 +6,55 @@ import (
 	"duckynetworkclient/V1/duckynetwork/storage"
 	"duckynetworkclient/V1/duckynetwork/storage/stosession"
 	sto_session "duckynetworkclient/V1/duckynetwork/storage/stosession"
+	"duckynetworkclient/V1/sessionmgr"
 	"fmt"
+	"os"
 	"time"
+	"vaultaire_client/chrono"
 	"vaultaire_client/pamstate"
 	"vaultaire_client/tools/sshreq"
 )
 
+// Les bornes du mode `--fetch-key` — TO-DO 186.
+//
+// Une connexion par pair en DelaiConnexionFetch, une poignée de main en
+// DelaiPoigneeFetch ; AttenteSessionFetch pour l'ensemble. Avec ces valeurs, un
+// premier pair muet coûte au plus 3,5 s et laisse le temps d'en joindre un
+// second. Avant, le premier pair avait 10 s pour la connexion et aucune borne
+// pour la poignée de main, et l'appel abandonnait à 6 s : un seul pair muet en
+// tête de liste faisait échouer CHAQUE appel de sshd.
+var (
+	DelaiConnexionFetch = 1500 * time.Millisecond
+	DelaiPoigneeFetch   = 2 * time.Second
+	AttenteSessionFetch = 9 * time.Second
+)
+
+// attendreSessionFetch attend une session « vaultaire » utilisable, au plus
+// AttenteSessionFetch. Variable pour les tests.
+var attendreSessionFetch = func() (*sessionmgr.Session, error) {
+	echeance := time.Now().Add(AttenteSessionFetch)
+	for time.Now().Before(echeance) {
+		if s := sto_session.SessionsUser.GetValidVaultaireSession(); s != nil {
+			return s, nil
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	return nil, fmt.Errorf("aucune session Vaultaire en %s", AttenteSessionFetch)
+}
+
 func WaitForSSHFetch(user string, sshUser string) {
 	logs.Write_log("INFO", fmt.Sprintf("Attente de clé fetch pour requete SSH (%s)", sshUser))
+
+	// Chronométrage, en mode debug seulement (TO-DO 199). C'est la mesure
+	// du coût relevé par le 190 : une session Ducky complète et une seconde
+	// d'attente fixe à CHAQUE appel de sshd (TO-DO 196).
+	debut := time.Now()
+	var dureeSession, dureeCles time.Duration
+	issue := "sans session"
+	defer func() {
+		chrono.Ecrire("fetch-key %s (pid %d) %s : session %d ms (dont 1000 ms d'attente fixe), cles %d ms, total %d ms",
+			sshUser, os.Getpid(), issue, chrono.Ms(dureeSession), chrono.Ms(dureeCles), chrono.Ms(time.Since(debut)))
+	}()
 	// 1. On prépare le canal de réception
 	respChan := make(chan pamstate.AuthResult, 1)
 	sshreq.Register(sshUser, respChan)
@@ -22,12 +63,14 @@ func WaitForSSHFetch(user string, sshUser string) {
 	// pour une session "vaultaire" authentifiée et utilisable (il peut y en
 	// avoir plusieurs ; on en prend une, la première valide).
 	time.Sleep(1 * time.Second)
-	sess, err := sto_session.SessionsUser.WaitForVaultaireSession()
+	sess, err := attendreSessionFetch()
 	if err != nil {
-		logs.Write_log("ERROR", "Timeout attente session Vaultaire")
+		logs.Write_log("ERROR", "Timeout attente session Vaultaire : "+err.Error())
 		return
 	}
 	ds := sess.DuckySession
+	dureeSession = time.Since(debut)
+	demande := time.Now()
 	// 3. Le tunnel est OK, on envoie la demande 03_06
 	logs.Write_log("INFO", fmt.Sprintf("Tunnel OK, envoi demande 03_06 pour %s", sshUser))
 	msg := fmt.Sprintf("03_06\nserveur_central\n%s\n%s\n%s\n%s", string(ds.SessionKey), user, storage.Computeur_ID, sshUser)
@@ -37,9 +80,11 @@ func WaitForSSHFetch(user string, sshUser string) {
 	// C'est ce select qui va capturer ce que le SSH_Auth_Manager envoie
 	select {
 	case res, ok := <-respChan:
+		dureeCles = time.Since(demande)
 		switch {
 		case !ok:
 			logs.Write_log("ERROR", "Le channel SSH a été fermé sans données")
+			issue = "canal ferme"
 
 		case !res.Accepte:
 			// Le serveur a REFUSÉ (03_03). Depuis que le refus est explicite, il
@@ -52,14 +97,18 @@ func WaitForSSHFetch(user string, sshUser string) {
 			// refusé doit produire.
 			logs.Write_log("ERROR",
 				"Le serveur central a refusé la demande de clés pour "+sshUser)
+			issue = "refus"
 
 		default:
 			// C'est ici que le binaire écrit les clés sur Stdout pour SSH
 			fmt.Println(res.SSHKeys)
 			logs.Write_log("INFO", "Clés affichées avec succès")
+			issue = "cles rendues"
 		}
 	case <-time.After(10 * time.Second):
 		logs.Write_log("ERROR", "Timeout : Le serveur central n'a pas répondu à la demande 03_06")
+		dureeCles = time.Since(demande)
+		issue = "sans reponse du core"
 	}
 	msg = fmt.Sprintf("02_05\nserveur_central\n%s\n%s\n%s",
 		string(ds.SessionKey), user, storage.Computeur_ID)

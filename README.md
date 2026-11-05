@@ -90,7 +90,7 @@ alias vlt='docker exec -it vaultaire-ad /opt/vaultaire/bin/vaultaire_cli'
 
 vlt version                                           # version du core
 vlt create -g Infra infra.acme.lan                    # un groupe et son domaine
-vlt create -u alice.martin infra.acme.lan 'Ch4ngeMe!' 14/03/1990
+vlt create -u alice.martin infra.acme.lan 'Lune-Orange-Velo-42' 14/03/1990
 vlt add -u alice.martin -g Infra
 vlt get -g Infra
 vlt eyes -g                                           # l'arborescence des domaines
@@ -107,6 +107,8 @@ Toute commande répond à `-h`. Le manuel complet est
 | Une version précise | `./deployments/pre-prod/docker-update.sh --version 2.1.0` | [`deployments/pre-prod/README.md`](./deployments/pre-prod/README.md) |
 | Tester la version en cours de dev (compilée localement, sans release) | `./deployments/dev-comp/dev-comp.sh` | [`deployments/dev-comp/README.md`](./deployments/dev-comp/README.md) |
 | Développer sur le code | `./deployments/dev/up.sh` — sources montées, `go run` | [`deployments/dev/README.md`](./deployments/dev/README.md) |
+| **Production en Kubernetes** (image rootless signée, Helm, GitOps) | `helm install vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire -n vaultaire --set auth.existingSecret=…` | [`docs/Installation/Kubernetes.md`](./docs/Installation/Kubernetes.md) |
+| Production en conteneur seul | `docker run … ghcr.io/vaultaire-ad/vaultaire-server:2.3.0` | [`deployments/docker/README.md`](./deployments/docker/README.md) |
 | Installation sans Docker (systemd) | — | [`docs/Installation/Setup.md`](./docs/Installation/Setup.md) |
 
 ---
@@ -148,12 +150,16 @@ besoin.
 | | |
 | --- | --- |
 | **Go** | **1.26** pour les sept modules (`toolchain go1.26.5`). Un Go plus ancien suffit : `GOTOOLCHAIN=auto`, le défaut, télécharge le toolchain réclamé. |
-| **GCC, `pam-devel`, `libcurl-devel`, `libxcrypt-devel`** | Modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) — `libpam0g-dev`, `libcurl4-openssl-dev` sur Debian/Ubuntu |
+| **GCC, `pam-devel`, `libxcrypt-devel`** | Modules PAM/NSS en C (`src/vaultaire_client/pam_module/`) — `libpam0g-dev`, `libcrypt-dev` sur Debian/Ubuntu. Ils ne se chargent que sur un poste dont la glibc est au moins celle de la machine qui les compile : les releases en portent un jeu par famille, compilé sur Rocky 9 et sur Ubuntu 22.04 |
 | **Docker / Docker Compose** | ≥ 24.x |
 | **Git** | ≥ 2.30 |
 
 Cible de déploiement : **Rocky Linux 9** (les releases y sont compilées). Depuis
 Windows, développer dans **WSL**.
+
+Systèmes validés pour l'agent : **Debian 13, Rocky Linux 9 et 10** — liste et
+conditions dans
+[`docs/Installation/Requirements.md`](./docs/Installation/Requirements.md#systèmes-pris-en-charge-pour-lagent).
 
 ```bash
 ./auto-compil.sh          # compile les sept modules et les modules PAM dans cmd/ (non versionné)

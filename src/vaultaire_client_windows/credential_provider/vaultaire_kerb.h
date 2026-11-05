@@ -7,9 +7,10 @@
 // d'authentification. Pour une session interactive locale, ce bloc est une
 // structure KERB_INTERACTIVE_UNLOCK_LOGON : domaine, utilisateur, mot de passe.
 //
-// C'est pour cela que l'agent provisionne un compte local portant le mot de
-// passe validé par le core : le fournisseur rend ici un bloc ordinaire, et
-// Windows ouvre une session ordinaire. Aucun paquet d'authentification maison,
+// C'est pour cela que l'agent provisionne un compte local : le fournisseur rend
+// ici un bloc ordinaire, et Windows ouvre une session ordinaire. Depuis le
+// TO-DO 195, ce compte porte un secret de l'agent et non le mot de passe du
+// domaine — sinon la tuile Windows du compte l'ouvrait sans Vaultaire. Aucun paquet d'authentification maison,
 // aucune extension de LSA — c'est-à-dire aucun composant capable, en cassant,
 // d'empêcher toute la machine de se connecter.
 //
@@ -35,7 +36,8 @@ namespace vaultaire {
 //
 //	domaine       nom NetBIOS de la machine (compte LOCAL)
 //	utilisateur   le compte local provisionné par l'agent
-//	mot_de_passe  celui que l'utilisateur vient de taper
+//	mot_de_passe  le secret du compte local, rendu par l'agent (TO-DO 195) —
+//	              jamais le mot de passe tapé, qui ne sert qu'au core
 //
 // Rend S_OK et remplit `sortie` (à libérer par CoTaskMemFree via le champ
 // rgbSerialization), ou un HRESULT d'échec.

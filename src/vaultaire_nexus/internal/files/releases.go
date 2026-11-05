@@ -111,10 +111,18 @@ func (r Release) GitHubJSON(downloadBase string) map[string]any {
 	}
 }
 
-// assetName : <composant>-v<version>-<os>-<arch>.<ext>
-var assetName = regexp.MustCompile(`^([A-Za-z0-9_]+)-v?([0-9][A-Za-z0-9.+~]*)-([a-z0-9]+-[a-z0-9_]+)\.(tar\.gz|tgz|zip|tar\.xz)$`)
+// assetName : <composant>-v<version>-<os>-<arch>.<ext>[.<famille>.manifest[.sig]]
+//
+// Le suffixe facultatif (TO-DO 114) : les manifestes du paquet d'agent, un par
+// famille de modules, et leur signature par le core (TO-DO 113). Ils sont
+// rangés sous le composant, la version et l'architecture de l'ARCHIVE qu'ils
+// décrivent : c'est ce qui les met dans la même release, et donc dans les
+// mêmes URL — « …/download/v2.3.0/<archive>.rocky.manifest.sig ». Un dépôt
+// en lecture anonyme sert ainsi, côte à côte, les octets et ce qui les juge.
+var assetName = regexp.MustCompile(`^([A-Za-z0-9_]+)-v?([0-9][A-Za-z0-9.+~]*)-([a-z0-9]+-[a-z0-9_]+)\.(tar\.gz|tgz|zip|tar\.xz)(\.[a-z0-9]{1,32}\.manifest(\.sig)?)?$`)
 
-// ParseAssetName reconnaît le nom d'une archive de release Vaultaire.
+// ParseAssetName reconnaît le nom d'une archive de release Vaultaire, ou d'un
+// manifeste (signé ou non) qui la décrit.
 func ParseAssetName(fn string) (name, version, arch string, ok bool) {
 	m := assetName.FindStringSubmatch(fn)
 	if m == nil {

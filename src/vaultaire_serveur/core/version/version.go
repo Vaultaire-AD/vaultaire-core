@@ -17,7 +17,9 @@
 //
 // # Le core n'interprète aucune version
 //
-// Aucun refus, aucun seuil, aucune comparaison — arbitrage retenu au point 39.
+// Aucun refus, aucune coupure — arbitrage retenu au point 39. La seule
+// comparaison (paquet parcversion, TO-DO 161) prévient et demande
+// confirmation ; elle ne ferme rien.
 // La version est une donnée d'INVENTAIRE : elle répond à « qui est en retard »,
 // question du point 40, sans jamais décider de fermer une porte.
 //
@@ -34,7 +36,7 @@ import "strings"
 // .github/workflows/release.yaml et le fichier VERSION à la racine) : une
 // constante ne pourrait pas l'être. La valeur écrite ici ne sert qu'aux
 // builds locaux ; majeure et mineure doivent suivre le fichier VERSION.
-var Version = "2.2.0"
+var Version = "2.3.0"
 
 // Commit et Date sont posés à la compilation par auto-compil.sh.
 //

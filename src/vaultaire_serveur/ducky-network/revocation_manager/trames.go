@@ -18,7 +18,7 @@ import (
 //	  06_02  revoke_ack          client → serveur
 //	  06_03  revoke_error        client → serveur
 //	06_04  ask_revocations       client → serveur
-//	  06_05  revocations_list    serveur → client
+//	  06_05  revocations_list    serveur → client   (réponse, et rejeu du core)
 //	  06_06  revocations_error   serveur → client
 
 // maxOrdersPerFrame borne le nombre d'ordres transmis en une fois.
@@ -128,6 +128,25 @@ func handleError(trames storage.Trames_struct_client) string {
 	if db == nil {
 		return ""
 	}
+
+	// TO-DO 167 : le client ne SAIT PAS révoquer (agent Windows V1). Ce n'est
+	// pas un échec à rejouer — il répondrait la même chose à chaque fois —,
+	// et ce n'est pas un acquittement : le compte n'est pas coupé là-bas. Toutes
+	// les cibles de la machine passent dans un état à part, que --status
+	// affiche tel quel, et ne lui sont plus remises.
+	if code == revocation.ErrUnsupported {
+		n, err := dbrevocation.MarquerMachineNonPriseEnCharge(db, trames.ClientSoftwareID, message)
+		if err != nil {
+			logs.Write_Log("ERROR", "revocation: enregistrement du « non pris en charge » impossible : "+err.Error())
+			return ""
+		}
+		logs.Write_Log("WARNING", fmt.Sprintf(
+			"revocation: %s ne sait pas appliquer une révocation (%s) — %d ordre(s) rangé(s) « non pris en "+
+				"charge », plus remis. Le compte y est refusé à l'authentification suivante, une session ouverte "+
+				"n'y est pas fermée", trames.ClientSoftwareID, message, n))
+		return ""
+	}
+
 	if err := dbrevocation.MarkTarget(db, orderID, trames.ClientSoftwareID,
 		revocation.StatusFailed, code+" : "+message); err != nil {
 		logs.Write_Log("ERROR", "revocation: enregistrement de l'échec impossible : "+err.Error())
@@ -136,7 +155,7 @@ func handleError(trames storage.Trames_struct_client) string {
 	// Niveau ERROR : une machine qui n'a pas pu couper un compte reste un accès
 	// ouvert pour la personne révoquée. C'est un incident, pas une information.
 	logs.Write_Log("ERROR", fmt.Sprintf(
-		"revocation: ordre %d EN ÉCHEC sur %s — %s : %s (sera rejoué)",
+		"revocation: ordre %d EN ÉCHEC sur %s — %s : %s (rejoué par le core, voir rejeu.go)",
 		orderID, trames.ClientSoftwareID, code, message))
 
 	return ""
@@ -169,7 +188,26 @@ func handleAskRevocations(trames storage.Trames_struct_client) string {
 			"revocation: %d ordre(s) en attente remis à %s", len(orders), trames.ClientSoftwareID))
 	}
 
-	parts := []string{"06_05", "serveur_central", trames.SessionIntegritykey, strconv.Itoa(len(orders))}
+	// Ce qui part ici est un essai comme un autre : inscrit, il évite que le
+	// rejeu du core (TO-DO 49) remette la même liste dans la seconde qui suit.
+	if len(orders) > 0 {
+		ids := make([]int, len(orders))
+		for i, o := range orders {
+			ids[i] = o.ID
+		}
+		noterLEssai(trames.ClientSoftwareID, ids)
+	}
+
+	return buildListFrame(trames.SessionIntegritykey, orders)
+}
+
+// buildListFrame construit la trame 06_05 : les ordres qu'une machine n'a pas
+// acquittés, du plus ancien au plus récent.
+//
+// Deux émetteurs : la réponse à une 06_04, et le rejeu du core, qui la pousse
+// sans qu'on la lui demande.
+func buildListFrame(sessionKey string, orders []revocation.Order) string {
+	parts := []string{"06_05", "serveur_central", sessionKey, strconv.Itoa(len(orders))}
 	for _, o := range orders {
 		parts = append(parts, strings.Join([]string{
 			strconv.Itoa(o.ID), string(o.Mode), o.Username, string(o.Reason),

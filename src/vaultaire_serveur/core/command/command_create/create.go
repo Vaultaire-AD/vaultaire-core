@@ -3,6 +3,7 @@ package commandcreate
 import (
 	"os"
 	"strconv"
+	"strings"
 
 	"vaultaire/core/action"
 	commandaction "vaultaire/core/command/commandaction"
@@ -66,8 +67,16 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		// Les noms correspondent à ceux qu'attend l'action, qui sont aussi ceux
 		// des champs du formulaire web. C'est ce qui fait que les deux façades
 		// aboutissent au même appel.
-		p := commandaction.ParamsDepuisPositionnels(command_list[1:],
+		//
+		// --permanent, où qu'il soit (TO-DO 144) : mot de passe DÉFINITIF, pour
+		// un compte de service. Retiré AVANT la lecture des positions, sans quoi
+		// il serait pris pour le prénom ou le nom.
+		args, permanent := ExtrairePermanent(command_list[1:])
+		p := commandaction.ParamsDepuisPositionnels(args,
 			"username", "domain", "password", "birthdate", "firstname", "lastname")
+		if permanent {
+			p["temporary"] = "non"
+		}
 		return commandaction.ExecuterAction("user.create", p, sender_groupsIDs, sender_Username)
 
 	case "-g":
@@ -339,7 +348,7 @@ func aide() string {
 	// raison de soupçonner l'aide elle-même.
 	return `create — crée des utilisateurs, groupes, machines, permissions et GPO.
 
-  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
+  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom] [--permanent]
   create -g <nom> <domaine>
   create -c <oui|non> [-join <hôte[:port]> <user>] [--os <linux|windows>] [--export <fichier>]
   create -export <computeur_id> <fichier> [--os <linux|windows>]
@@ -349,7 +358,11 @@ func aide() string {
 
 Notes :
   -u   la date de naissance est vérifiée ; prénom et nom sont déduits d'un
-       identifiant de la forme « prénom.nom » s'ils ne sont pas fournis.
+       identifiant de la forme « prénom.nom » s'ils ne sont pas fournis. Le
+       mot de passe est PROVISOIRE (24 h, à changer par son titulaire sur le
+       portail) ; --permanent le pose DÉFINITIF, pour un compte de service
+       qu'aucune personne n'ouvrira — Keycloak, GitLab… La dérogation est
+       journalisée.
   -c   crée un agent. Un client service ne se crée pas ici, il s'enrôle seul :
        voir « enroll -h ». Avec -join, l'agent est installé à distance par SSH.
   -p   permission UTILISATEUR. Le second argument accorde ou non l'accès à
@@ -370,3 +383,21 @@ Les valeurs booléennes acceptées sont oui|non, yes|no, true|false, on|off, 1|0
 // l'action gpo.create.
 //
 // Plus aucune création ne décide des droits hors du registre.
+
+// ExtrairePermanent retire « --permanent » des arguments et dit s'il y était.
+//
+// Un mot de passe littéralement « --permanent » est perdu au passage : il
+// ferait onze caractères, et la politique en exige douze — il serait refusé de
+// toute façon.
+func ExtrairePermanent(args []string) ([]string, bool) {
+	reste := make([]string, 0, len(args))
+	trouve := false
+	for _, a := range args {
+		if strings.EqualFold(a, "--permanent") {
+			trouve = true
+			continue
+		}
+		reste = append(reste, a)
+	}
+	return reste, trouve
+}

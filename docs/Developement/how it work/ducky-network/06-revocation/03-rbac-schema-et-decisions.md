@@ -28,6 +28,15 @@ pour couper avant même d'évaluer un mot de passe :
 verbe. Vérifiée sur **tous** les domaines de l'utilisateur visé, via
 `CheckPermissionsAllDomains`. Le mode `hard` exige en plus `write:delete:user`.
 
+**Lecture du suivi** *(2.3, TO-DO 164)* : `read:status:user` sur un domaine du
+compte visé, et **non** `write:killswitch`. Deux raisons. Le registre trace
+comme une écriture toute clé « write: » : chaque ouverture d'une fiche aurait
+inscrit « X a fait … sur Y » dans le journal où l'on cherche qui a coupé qui.
+Et voir où en est un ordre ne donne pas le pouvoir d'en émettre un — c'est la
+clé de `status -u`, qui répond déjà à « où ce compte a-t-il une session ». Un
+compte supprimé par un ordre `hard` n'a plus de domaine : la lecture exige
+alors le droit global.
+
 **Le compte `vaultaire` n'est pas révocable.** Nouvelle garde
 `GuardProtectedUserRevocation` dans `core/database/protected.go`, au même
 endroit que les autres : la couche base couvre ainsi le CLI, le web et l'API
@@ -51,13 +60,21 @@ CREATE TABLE IF NOT EXISTS user_revocation (
 CREATE TABLE IF NOT EXISTS user_revocation_target (
     d_id_revocation INT NOT NULL,
     computeur_id    VARCHAR(255) NOT NULL,
-    status          VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending | acked | failed
+    status          VARCHAR(16) NOT NULL DEFAULT 'pending',  -- pending | acked | failed | lifted
     last_attempt    DATETIME NULL,
+    attempts        INT NOT NULL DEFAULT 0,                  -- remises à la machine (TO-DO 49)
     detail          TEXT NULL,
     PRIMARY KEY (d_id_revocation, computeur_id),
     FOREIGN KEY (d_id_revocation) REFERENCES user_revocation(id_revocation) ON DELETE CASCADE
 );
 ```
+
+**Les statuts d'une cible.** `pending` et `failed` sont **à rejouer** — le core
+le fait de lui-même, voir [6.1](./01-principe-et-sequence.md#quand-le-core-rejoue-de-lui-même).
+`acked` et `lifted` sont les deux fins : l'ordre a été appliqué, ou le
+verrouillage a été levé avant de l'être et n'a plus d'objet. « À rejouer »
+s'écrit à un seul endroit du code (`sqlARejouer`), pour qu'un statut ajouté ne
+soit pas rejoué par une requête et oublié par une autre.
 
 **`username` est stocké en texte, sans clé étrangère vers `users`, et c'est
 délibéré.** En mode `hard` le compte est supprimé de l'annuaire : une clé

@@ -54,6 +54,9 @@ import (
 // drapeau retire une adresse d'une liste, il n'empêche personne de se
 // connecter. Le pare-feu reste ce qui protège un core.
 //
+// Un nœud en MAINTENANCE est omis de même (TO-DO 147), sans que son réglage de
+// rotation soit touché : la maintenance levée, il revient tel qu'il était.
+//
 // # groupesDuDemandeur
 //
 // Les identifiants de groupes de l'agent qui demande. Ils ne FILTRENT rien : ils
@@ -95,6 +98,7 @@ func NoeudsPourAgents(db *sql.DB, groupesDuDemandeur []int) ([]clusterstorage.No
 		  FROM cluster_nodes
 		 WHERE status = 'online'
 		   AND expose_aux_agents = TRUE
+		   AND maintenance = FALSE
 		   AND (ducky_port > 0 OR port_public > 0)
 		   AND key_fingerprint <> ''
 		   AND role IN ('core', 'proxy')`)

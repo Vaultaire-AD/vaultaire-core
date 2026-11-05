@@ -14,6 +14,8 @@
 
 package pamstate
 
+import "time"
+
 // SocketDir et SocketPath : le canal entre les modules PAM et l'agent.
 //
 // # Pourquoi pas /tmp
@@ -83,6 +85,11 @@ type AuthResult struct {
 	// l'épaule.
 	Avertissement string `json:"avertissement,omitempty"`
 
+	// DureeProvisionnement est le temps passé à tenir le compte local à jour
+	// à la réception de 03_02 (création, clés, groupes) — mesuré pour le
+	// journal de debug des connexions (TO-DO 199). Jamais sérialisé.
+	DureeProvisionnement time.Duration `json:"-"`
+
 	// Accepte porte le VERDICT du serveur, explicitement.
 	//
 	// # Le défaut que ce champ ferme
@@ -108,4 +115,10 @@ type AuthResult struct {
 	// `false` par défaut : un émetteur qui oublie de le poser refuse, il
 	// n'accepte pas. C'est le sens dans lequel un oubli doit se tromper.
 	Accepte bool `json:"accepte"`
+
+	// MotifRefus est le motif d'un refus tel que le core l'écrit dans 03_03
+	// (« password expired », « permission denied »…). Il ne voyage PAS tel
+	// quel jusqu'à l'écran : le gestionnaire PAM le passe par une liste fermée
+	// (MessageDeRefus, TO-DO 171). Vide sur une acceptation.
+	MotifRefus string `json:"-"`
 }

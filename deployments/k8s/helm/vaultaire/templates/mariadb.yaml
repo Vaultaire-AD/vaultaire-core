@@ -1,0 +1,130 @@
+{{- if .Values.mariadb.enabled }}
+{{- $m := .Values.mariadb -}}
+{{- $secret := include "vaultaire.secretName" . -}}
+{{- $k := .Values.auth.secretKeys -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "vaultaire.mariadb.fullname" . }}-init
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+data:
+  # Joué une fois, à l'initialisation d'un volume vide. Le compte du core reçoit
+  # sa base (MARIADB_DATABASE) par l'image ; il lui faut aussi celle du DNS,
+  # que le core crée lui-même quand dns.enabled.
+  10-vaultaire-dns.sql: |
+    CREATE DATABASE IF NOT EXISTS `{{ .Values.database.name }}_dns`;
+    GRANT ALL PRIVILEGES ON `{{ .Values.database.name }}_dns`.* TO '{{ .Values.database.username }}'@'%';
+    FLUSH PRIVILEGES;
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vaultaire.mariadb.fullname" . }}
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "vaultaire.mariadb.selectorLabels" . | nindent 4 }}
+  ports:
+    - { name: mysql, port: 3306, targetPort: mysql, protocol: TCP }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "vaultaire.mariadb.fullname" . }}
+  labels:
+    {{- include "vaultaire.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  serviceName: {{ include "vaultaire.mariadb.fullname" . }}
+  selector:
+    matchLabels:
+      {{- include "vaultaire.mariadb.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "vaultaire.mariadb.selectorLabels" . | nindent 8 }}
+      annotations:
+        checksum/init: {{ .Values.database | toJson | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        {{- toYaml $m.podSecurityContext | nindent 8 }}
+      containers:
+        - name: mariadb
+          image: {{ include "vaultaire.mariadb.image" . }}
+          imagePullPolicy: {{ $m.image.pullPolicy }}
+          securityContext:
+            {{- toYaml $m.containerSecurityContext | nindent 12 }}
+          env:
+            - { name: MARIADB_DATABASE, value: {{ .Values.database.name | quote }} }
+            - { name: MARIADB_USER, value: {{ .Values.database.username | quote }} }
+            - { name: MARIADB_PASSWORD_FILE, value: /run/secrets/mariadb/db-password }
+            - { name: MARIADB_ROOT_PASSWORD_FILE, value: /run/secrets/mariadb/root-password }
+            # root ne se connecte que localement.
+            - { name: MARIADB_ROOT_HOST, value: "localhost" }
+            - { name: MARIADB_AUTO_UPGRADE, value: "1" }
+          ports:
+            - { name: mysql, containerPort: 3306, protocol: TCP }
+          startupProbe:
+            exec: { command: ["healthcheck.sh", "--connect", "--innodb_initialized"] }
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            exec: { command: ["healthcheck.sh", "--connect", "--innodb_initialized"] }
+            periodSeconds: 10
+          livenessProbe:
+            exec: { command: ["healthcheck.sh", "--connect"] }
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            {{- toYaml $m.resources | nindent 12 }}
+          volumeMounts:
+            - { name: data, mountPath: /var/lib/mysql }
+            - { name: run, mountPath: /run/mysqld }
+            - { name: tmp, mountPath: /tmp }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+            - { name: secrets, mountPath: /run/secrets/mariadb, readOnly: true }
+      volumes:
+        - { name: run, emptyDir: { medium: Memory, sizeLimit: 8Mi } }
+        - { name: tmp, emptyDir: { sizeLimit: 1Gi } }
+        - name: init
+          configMap:
+            name: {{ include "vaultaire.mariadb.fullname" . }}-init
+        - name: secrets
+          secret:
+            secretName: {{ $secret }}
+            defaultMode: 0400
+            items:
+              - { key: {{ $k.dbPassword }}, path: db-password }
+              - { key: {{ $k.dbRootPassword }}, path: root-password }
+      {{- with $m.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $m.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $m.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  persistentVolumeClaimRetentionPolicy:
+    whenDeleted: Retain
+    whenScaled: Retain
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: {{ toJson $m.persistence.accessModes }}
+        {{- with $m.persistence.storageClass }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ $m.persistence.size }}
+{{- end }}

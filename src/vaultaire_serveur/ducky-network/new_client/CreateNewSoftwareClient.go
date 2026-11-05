@@ -76,7 +76,11 @@ func GenerateClientSoftware(isServeur bool) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("key pair generation: %v", err)
 	}
-	err = dbclients.Create_ClientSoftware(database.GetDatabase(), computeurID, logicielType, keymanagement.Convert_Public_Key_To_String(publicKey), isServeur)
+	publicPEM := keymanagement.Convert_Public_Key_To_String(publicKey)
+	if publicPEM == "" {
+		return "", fmt.Errorf("public key conversion failed")
+	}
+	err = dbclients.Create_ClientSoftware(database.GetDatabase(), computeurID, logicielType, publicPEM, isServeur)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "newclient: create client software in database failed: "+err.Error())
 		return "", fmt.Errorf("create client software: %v", err)

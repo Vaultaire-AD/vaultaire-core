@@ -13,6 +13,31 @@ import (
 	"vaultaire_client/config"
 )
 
+// Les bornes d'un essai, PAR PAIR — TO-DO 186.
+//
+// La connexion avait 10 s par pair, et la poignée de main AUCUNE borne : un pair
+// qui accepte la connexion sans jamais répondre — un proxy dont le core est
+// tombé, une redirection vers une adresse morte — retenait l'essai pour
+// toujours. Le démon restait sur ce pair au lieu de passer au suivant, et le
+// `--fetch-key` de sshd, qui abandonne au bout de quelques secondes, échouait
+// à chaque appel alors que le pair suivant répondait.
+//
+// DelaiPoigneePair couvre TOUT ce qui se lit avant que la session soit établie :
+// la clé du core (askkey) et son authentification (01_01 -> 01_02). La borne est
+// retirée une fois la session établie : la lecture ordinaire du tunnel attend,
+// elle, aussi longtemps qu'il le faut.
+//
+// Des variables : le mode `--fetch-key` les resserre (main.go), parce que sshd
+// attend sa réponse ; le démon garde les valeurs larges.
+var (
+	DelaiConnexionPair = 10 * time.Second
+	DelaiPoigneePair   = 10 * time.Second
+)
+
+// adressesAEssayer est une variable pour les tests : la liste réelle mêle la
+// configuration et la découverte, deux états globaux.
+var adressesAEssayer = func() []string { return decouverte.FusionnerAdresses(config.AdressesConnues()) }
+
 func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 	// Les adresses à essayer : celles APPRISES du core d'abord, dans l'ordre
 	// qu'il a servi, puis celles du fichier de configuration.
@@ -29,7 +54,7 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 	// apprise PERSISTÉE (`learned`, TO-DO 61) puis celle de l'installation.
 	// Après un redémarrage, la mémoire est vide et c'est `learned` qui tient
 	// lieu de liste apprise.
-	adresses := decouverte.FusionnerAdresses(config.AdressesConnues())
+	adresses := adressesAEssayer()
 	if len(adresses) == 0 {
 		return nil, fmt.Errorf("aucun serveur configuré ni découvert")
 	}
@@ -37,11 +62,15 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 	var lastErr error
 	for _, serverAddr := range adresses {
 		logs.Write_log("INFO", "Tentative connexion serveur "+serverAddr)
-		conn, err := net.DialTimeout("tcp", serverAddr, 10*time.Second)
+		conn, err := net.DialTimeout("tcp", serverAddr, DelaiConnexionPair)
 		if err != nil {
 			logs.Write_log("WARNING", "Connexion impossible "+serverAddr+" : "+err.Error())
 			lastErr = err
 			continue
+		}
+		// La borne de la poignée de main, posée AVANT le premier octet lu.
+		if err := conn.SetDeadline(time.Now().Add(DelaiPoigneePair)); err != nil {
+			logs.Write_log("WARNING", "Connexion "+serverAddr+" : échéance non posée : "+err.Error())
 		}
 		ds := &storage.DuckySession{
 			Conn:      conn,
@@ -91,10 +120,16 @@ func EstablishDuckySession(user, pass string) (*storage.DuckySession, error) {
 		// Authentification serveur
 		ds.SessionKey = serveur.AskServerAuthentification(ds)
 		if ds.SessionKey == nil {
-			logs.Write_log("WARNING", "Authentification serveur échouée sur "+serverAddr)
+			logs.Write_log("WARNING", fmt.Sprintf(
+				"Authentification serveur échouée sur %s (pas de réponse en %s, ou réponse refusée) : pair suivant",
+				serverAddr, DelaiPoigneePair))
 			conn.Close()
 			lastErr = fmt.Errorf("auth serveur échouée %s", serverAddr)
 			continue
+		}
+		// La session est établie : la lecture du tunnel n'a plus d'échéance.
+		if err := conn.SetDeadline(time.Time{}); err != nil {
+			logs.Write_log("WARNING", "Connexion "+serverAddr+" : échéance non retirée : "+err.Error())
 		}
 		// Authentification utilisateur
 		userauth.AskAuthentification(user, pass, ds)

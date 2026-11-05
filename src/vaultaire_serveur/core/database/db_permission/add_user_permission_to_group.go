@@ -56,6 +56,6 @@ func Command_ADD_UserPermissionToGroup(db *sql.DB, permissionName string, groupN
 		return fmt.Errorf("❌ Erreur lors de l'ajout de la permission au groupe: %v", err)
 	}
 
-	fmt.Printf("✅ La permission '%s' a été ajoutée au groupe '%s' avec succès !\n", permissionName, groupName)
+	logs.Write_Log("INFO", fmt.Sprintf("permission %q ajoutée au groupe %q", permissionName, groupName))
 	return nil
 }

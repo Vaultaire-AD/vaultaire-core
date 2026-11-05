@@ -161,6 +161,16 @@ type Node struct {
 	// dans la 04_04 : ce que le parc doit savoir d'un nœud est son adresse, pas
 	// sa charge.
 	Relais *MetriquesRelais
+
+	// Sessions est la dernière mesure de sessions publiée par un CORE avec son
+	// battement (TO-DO 148). Nil pour un proxy, et pour un core qui n'a rien
+	// publié depuis la fraîcheur admise — un core arrêté, ou d'une version
+	// antérieure. Pour les vues seulement, comme Relais.
+	Sessions *MetriquesSessions
+
+	// Maintenance est l'état de maintenance et de purge (TO-DO 147). Nil quand
+	// il n'a pas été lu — la vue le garnit, comme les mesures.
+	Maintenance *EtatMaintenance
 }
 
 // AdresseEffective rend l'adresse à annoncer aux agents.

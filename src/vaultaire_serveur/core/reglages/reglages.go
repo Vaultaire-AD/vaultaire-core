@@ -141,7 +141,10 @@ var catalogue = []Definition{
 			"des sessions en base, et le délai après lequel un agent ferme son " +
 			"tunnel. ATTENTION : un agent antérieur à la 2.2 ferme son tunnel " +
 			"après 10 minutes sans trafic quelle que soit la cadence — ne pas " +
-			"dépasser 8 minutes tant que tout le parc n'est pas à jour.",
+			fmt.Sprintf("dépasser %d minutes tant que tout le parc n'est pas à jour. ",
+				CadenceSurePourAgentsAnterieurs) +
+			"Au-delà, le réglage compte les machines antérieures à la 2.2 ou de " +
+			"version inconnue, les nomme, et demande une confirmation.",
 	},
 	{
 		Cle: CleSessionsDucky, Unite: Minutes, Defaut: 5, Min: 1, Max: 120,
@@ -465,6 +468,11 @@ type Etat struct {
 	Valeur    int
 	AuDefaut  bool
 	Affichage string
+
+	// Avertissement : ce que la valeur COURANTE coûte au parc tel qu'il est,
+	// vide quand rien n'est à signaler. Rempli par l'action settings.list, qui
+	// lit le parc ; ce paquet ne lit que des réglages (TO-DO 161).
+	Avertissement string
 }
 
 // EtatCourant rend l'état de tous les réglages.

@@ -44,11 +44,18 @@ func Settings_Command(commandList []string, groupIDs []int, sender string) strin
 		return afficher(etats)
 
 	case "set":
-		// settings set <clé> <valeur>
-		if len(commandList) < 3 {
-			return "Requête invalide : settings set <clé> <valeur>\nClés : " + reglages.Cles()
+		// settings set <clé> <valeur> [--confirm]
+		//
+		// --confirm où qu'il soit après « set » : le retirer avant de lire la
+		// clé et la valeur évite qu'il ne soit pris pour l'une d'elles.
+		args, confirmer := extraireConfirmation(commandList[1:])
+		if len(args) < 2 {
+			return "Requête invalide : settings set <clé> <valeur> [--confirm]\nClés : " + reglages.Cles()
 		}
-		p := action.Params{"setting": commandList[1], "value": commandList[2]}
+		p := action.Params{"setting": args[0], "value": args[1]}
+		if confirmer {
+			p["confirm"] = "yes"
+		}
 		return commandaction.ExecuterAction("settings.set", p, groupIDs, sender)
 
 	case "reset":
@@ -61,6 +68,20 @@ func Settings_Command(commandList []string, groupIDs []int, sender string) strin
 	default:
 		return "Requête invalide. Essayez « settings -h »."
 	}
+}
+
+// extraireConfirmation retire « --confirm » des arguments et dit s'il y était.
+func extraireConfirmation(args []string) ([]string, bool) {
+	reste := make([]string, 0, len(args))
+	trouve := false
+	for _, a := range args {
+		if strings.EqualFold(a, "--confirm") {
+			trouve = true
+			continue
+		}
+		reste = append(reste, a)
+	}
+	return reste, trouve
 }
 
 // afficher met en forme le tableau des réglages.
@@ -89,7 +110,13 @@ func afficher(etats []reglages.Etat) string {
 		}
 		b.WriteString(fmt.Sprintf("%s%-*s  %6s   (défaut %d %s, entre %d et %d)\n",
 			marque, largeur, e.Cle, e.Affichage, e.Defaut, e.Unite, e.Min, e.Max))
-		b.WriteString(fmt.Sprintf("  %-*s  %s\n\n", largeur, "", e.Libelle))
+		b.WriteString(fmt.Sprintf("  %-*s  %s\n", largeur, "", e.Libelle))
+		if e.Avertissement != "" {
+			// À côté de la valeur, et non en pied de tableau : c'est cette
+			// valeur-là qu'il faut regarder (TO-DO 161).
+			b.WriteString(fmt.Sprintf("  %-*s  ⚠ %s\n", largeur, "", e.Avertissement))
+		}
+		b.WriteString("\n")
 	}
 
 	if modifies > 0 {
@@ -107,6 +134,7 @@ func aide() string {
 
   settings list                  les durées, leur valeur et leur défaut
   settings set <clé> <valeur>    règle une durée
+    [--confirm]                  la pose malgré un avertissement (voir plus bas)
   settings reset <clé>           la ramène à son défaut codé
 
 Clés : ` + reglages.Cles() + `
@@ -119,6 +147,11 @@ Ce qui n'est PAS ici : les délais de protocole et de sécurité — échéances
 lecture réseau, fenêtre anti-rejeu, barème de limitation de débit. Ce ne sont
 pas des préférences d'exploitation mais des propriétés du protocole, et les
 exposer inviterait à les régler sans savoir ce qu'on règle.
+
+check_online_minutes au-delà de 8 : un agent antérieur à la 2.2 ferme son
+tunnel après 10 minutes sans trafic et se reconnecte en boucle. Le réglage
+compte ces machines (et celles de version inconnue), les nomme, et ne change
+RIEN sans --confirm.
 
 Les durées de l'AGENT ne sont pas ici non plus : elles vivent sur la machine du
 parc et relèvent des GPO.`

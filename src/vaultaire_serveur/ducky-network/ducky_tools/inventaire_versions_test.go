@@ -115,3 +115,41 @@ func TestUnInventaireVideNePaniquePas(t *testing.T) {
 		}
 	}
 }
+
+// TO-DO 214 : la trame d'un agent dont le SDK laissait le retour à la ligne de
+// nproc. Huit lignes, la cinquième vide.
+func TestLInventaireDecaleEstRedresse(t *testing.T) {
+	decale := []string{"web01", "Rocky Linux 10.0", "7.5Gi/1.2Gi", "4", "",
+		"alice@acme.lan", "2.3.0+g3547d73 (2026-10-23)", "2.1.0+g3547d73 (2026-10-23)"}
+
+	lignes := RedresserInventaire(decale)
+	programme, sdk := VersionsDeLInventaire(lignes)
+
+	if programme != "2.3.0+g3547d73 (2026-10-23)" || sdk != "2.1.0+g3547d73 (2026-10-23)" {
+		t.Fatalf("versions = %q / %q", programme, sdk)
+	}
+	if lignes[3] != "4" || lignes[4] != "alice@acme.lan" {
+		t.Errorf("processeurs ou sessions mal placés : %q", lignes)
+	}
+
+	// Sans session ouverte : la cinquième ET la sixième lignes sont vides.
+	sansSession := []string{"web01", "Rocky", "1Gi/1Gi", "2", "", "", "2.3.0", "2.1.0"}
+	if p, _ := VersionsDeLInventaire(RedresserInventaire(sansSession)); p != "2.3.0" {
+		t.Errorf("sans session : version = %q", p)
+	}
+}
+
+// Une trame juste n'est jamais touchée.
+func TestUnInventaireJusteNEstPasRedresse(t *testing.T) {
+	for _, juste := range [][]string{
+		{"poste-01", "Ubuntu 22.04", "16 Go", "8", "alice,bob"},
+		{"poste-01", "Ubuntu 22.04", "16 Go", "8", "", "2.3.0", "2.1.0"},
+		{"poste-01", "Ubuntu 22.04", "16 Go", "8", "alice", "2.3.0", "2.1.0"},
+		{"a", "b", "c", "d", "e", "f", "g", "h"},
+	} {
+		obtenu := RedresserInventaire(juste)
+		if strings.Join(obtenu, "|") != strings.Join(juste, "|") {
+			t.Errorf("%q redressée en %q", juste, obtenu)
+		}
+	}
+}

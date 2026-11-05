@@ -29,9 +29,33 @@ les droits nécessaires.
 
    ```bash
    vlt create -g Services svc.acme.lan
-   vlt create -u svc_keycloak svc.acme.lan 'Svc-Keycloak-2026!' 01/01/2000
+   vlt create -u svc_keycloak svc.acme.lan 'Ancre-Violon-Galet-91' 01/01/2000 --permanent
    vlt add -u svc_keycloak -g Services
    ```
+
+   > 🔑 **`--permanent`** : sans lui, le mot de passe serait **provisoire**,
+   > comme celui des personnes du jalon 2.2 — il cesserait de fonctionner au
+   > bout de 24 h, et Keycloak ne pourrait plus se lier. Un compte de service
+   > n'a personne pour le changer sur le portail : son mot de passe est
+   > **définitif** dès la création. C'est une dérogation, et le journal la
+   > garde, avec votre nom :
+   >
+   > ```bash
+   > vlt logs --level WARNING --since 1h
+   > ```
+   >
+   > Le jour où il faudra renouveler ce secret, `--permanent` se place
+   > **avant** `-p` — sans lui, le nouveau serait provisoire :
+   >
+   > ```bash
+   > vlt update -u svc_keycloak --permanent -p 'Marbre-Pelican-Opale-38'
+   > ```
+   >
+   > Sur le portail, c'est la liste **Nature du mot de passe** des formulaires
+   > de création et de la fiche du compte.
+   >
+   > C'est `Ancre-Violon-Galet-91` que vous donnerez à `ldapsearch`
+   > (jalon 8.2) et à Keycloak (jalon 8.3).
 
 2. Donnez-lui le bind et la lecture de tout `acme.lan` :
 
@@ -50,7 +74,9 @@ les droits nécessaires.
 
 ## ✅ Vous avez réussi si
 
-`get -g Services` montre le compte et la permission `ldap-lecture`.
+`get -g Services` montre le compte et la permission `ldap-lecture`, et
+`vlt logs --level WARNING --since 1h` porte la ligne `SECURITY` « user.create :
+svc_keycloak@svc.acme.lan créé par … avec un mot de passe DÉFINITIF ».
 
 ## 🧪 Exercice
 

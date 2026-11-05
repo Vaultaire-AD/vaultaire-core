@@ -61,17 +61,16 @@ func ErreurNetapi(appel string, code, parametre uint32) error {
 
 	switch code {
 	case ErrMotDePasseRefuse:
-		// Le mot de passe local ne peut PAS être choisi par l'agent : c'est
-		// celui que la personne tape à l'écran de connexion, et c'est Windows
-		// qui le vérifie contre le compte local. En poser un autre rendrait la
-		// connexion impossible — d'où un message qui oriente vers la politique
-		// du poste plutôt que vers un contournement qui n'existe pas.
-		return fmt.Errorf("la politique de mot de passe de CE POSTE refuse le mot de passe "+
-			"du domaine (longueur minimale, complexité exigée, ou mot de passe encore dans "+
-			"l'historique) — code %d. Le compte local doit porter le mot de passe que la "+
-			"personne tape : l'agent ne peut pas en choisir un autre. Vérifiez « net accounts » "+
-			"et la stratégie de sécurité locale, ou relancez install.ps1 qui propose de les "+
-			"aligner", code)
+		// Depuis le TO-DO 195, le mot de passe local est un secret de 32
+		// caractères tiré par l'agent, les quatre familles présentes : une
+		// politique ordinaire l'accepte toujours. Un refus vient donc d'une
+		// politique inhabituelle — longueur exigée au-delà de 32, filtre de
+		// mots de passe tiers. install.ps1 n'assouplit plus rien.
+		return fmt.Errorf("la politique de mot de passe de CE POSTE refuse le secret de "+
+			"l'agent, pourtant long de 32 caractères et complexe (longueur minimale, complexité "+
+			"exigée, ou mot de passe encore dans l'historique) — code %d. Ce n'est pas Vaultaire "+
+			"qui refuse : vérifiez « net accounts » et la stratégie de sécurité locale "+
+			"(secpol.msc), ou un filtre de mots de passe installé sur le poste", code)
 
 	case ErrMotDePasseTropRecent:
 		return fmt.Errorf("la politique du poste interdit de changer ce mot de passe si tôt "+

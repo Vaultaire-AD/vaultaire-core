@@ -151,8 +151,8 @@ en le disant : le domaine décide de ce que le core cherche.
 
 ## Le compte local, ce qu'il faut savoir
 
-Windows n'ouvre de session qu'avec une identité qu'il connaît. L'agent crée donc
-un compte **local** portant le mot de passe que le core vient de valider :
+Windows n'ouvre de session qu'avec une identité qu'il connaît. Une fois le mot
+de passe et le code validés par le core, l'agent crée donc un compte **local** :
 
 ```
 alice@test.fr   →   alice-1f4b2c
@@ -163,12 +163,23 @@ Le suffixe vient de l'empreinte de l'identifiant complet. Conséquences :
 - le compte est **déterministe** : la même personne retrouve son profil ;
 - deux domaines homonymes donnent deux comptes distincts ;
 - un compte local préexistant (`alice`) n'est **jamais** repris ;
-- le mot de passe local est réaligné à **chaque connexion réussie** ;
-- un compte dont la personne ne se connecte plus garde son dernier mot de passe
-  connu. La révocation empêche la prochaine authentification, pas l'usage d'un
-  mot de passe déjà su.
+- son mot de passe est un **secret de l'agent** *(point 195)*, gardé chiffré
+  dans `C:\ProgramData\Vaultaire\comptes\`, et **pas** le mot de passe du
+  domaine. On entre par la **tuile Vaultaire**, à l'ouverture comme au
+  déverrouillage : la tuile Windows du compte demande un mot de passe que
+  personne ne connaît, et ne laisse donc pas passer sans le core ni le code ;
+- le compte est masqué de la liste de l'écran d'accueil, et son utilisateur ne
+  peut pas changer son mot de passe local ;
+- une révocation empêche réellement la connexion suivante.
+
+> À la première connexion après la mise à jour vers le point 195, le mot de passe
+> d'un compte existant est remplacé par le secret : les mots de passe que Windows
+> gardait pour ce compte (navigateurs, gestionnaire d'identifiants) sont perdus,
+> **une fois**. Ensuite le secret ne change plus.
 
 La désinstallation **ne supprime pas** ces comptes : ils portent les profils.
+Elle les remet sur l'écran d'accueil ; pour qu'ils resservent sans Vaultaire, un
+administrateur leur pose un mot de passe (`net user <compte> *`).
 
 ## Où regarder quand ça ne va pas
 
@@ -185,7 +196,9 @@ La désinstallation **ne supprime pas** ces comptes : ils portent les profils.
 | « Service Vaultaire arrêté sur ce poste » | `sc query VaultaireAgent` — le tube n'existe que si l'agent tourne |
 | « Aucun serveur Vaultaire joignable » | pare-feu sortant, ou `servers` faux dans `client_conf.json` |
 | Mot de passe accepté, Windows refuse la session | compte local non inscrit dans Utilisateurs, ou stratégie « Interdire l'ouverture de session locale » |
-| « la politique de mot de passe de CE POSTE refuse… » (code 2245) | la politique locale est plus stricte que celle du domaine ; `install.ps1` propose de l'aligner, ou `secpol.msc` |
+| « la politique de mot de passe de CE POSTE refuse… » (code 2245) | politique locale inhabituelle — le secret de l'agent fait 32 caractères, complexe : `secpol.msc`, ou un filtre de mots de passe tiers |
+| La tuile Windows du compte refuse le mot de passe du domaine | attendu (point 195) : passer par la tuile Vaultaire |
+| « Le service Vaultaire de ce poste est trop ancien pour cette tuile » | DLL à jour, agent ancien : réinstaller l'agent avec `install.ps1` |
 | Deux profils pour la même personne | l'identifiant a été tapé différemment : le nom local dépend du **nom complet** |
 
 Détail technique, protocole du tube et compilation :

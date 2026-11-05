@@ -24,6 +24,7 @@ import (
 	dbrevocation "vaultaire/core/database/db_revocation"
 	"vaultaire/core/logs"
 	"vaultaire/core/permission"
+	"vaultaire/core/reglages"
 	"vaultaire/core/revocation"
 	"vaultaire/core/storage"
 	newclient "vaultaire/ducky-network/new_client"
@@ -85,6 +86,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 			Revocations []dbrevocation.Record
 			KillReasons []revocation.Reason
 			CanKill     bool
+			// Suivi : où en est chaque ordre récent, machine par machine
+			// (TO-DO 164). SuiviIndisponible dit pourquoi il n'est pas montré,
+			// le cas échéant ; la fiche ne dépend pas de cette lecture.
+			Suivi             []ordreSuiviVue
+			SuiviPlusAnciens  int
+			SuiviIndisponible string
 			// Second facteur : état du compte affiché, et droit de le
 			// réinitialiser. HasActionAnywhere et non un contrôle sur « * » — le
 			// droit se délègue par domaine, comme le kill switch, et le contrôle
@@ -218,6 +225,12 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		detailData.IsRevoked = dbrevocation.IsRevoked(db, detailUser)
 		detailData.Revocations, _ = dbrevocation.HistoryFor(db, detailUser)
 		detailData.CanKill = permission.HasActionAnywhere(groupIDs, permission.ActionKillSwitch)
+		// Le suivi par machine, seulement pour qui voit la section où il
+		// s'affiche, et seulement s'il y a un ordre à suivre.
+		if detailData.CanKill && len(detailData.Revocations) > 0 {
+			detailData.Suivi, detailData.SuiviPlusAnciens, detailData.SuiviIndisponible =
+				suiviPourLaFiche(username, groupIDs, detailUser)
+		}
 
 		// Second facteur, relu après les actions pour la même raison : une
 		// réinitialisation qui vient d'avoir lieu doit se voir sans recharger.
@@ -307,14 +320,17 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		// Command_GET_GroupInfo mais n'étaient exposées nulle part dans
 		// l'interface : elles n'étaient gérables qu'en ligne de commande.
 		detailData := struct {
-			Group          string
-			Users          []string
-			Clients        []string
-			Perms          []string
-			ClientPerms    []string
-			GPOs           []string
-			AllUsers       []storage.GetUsers
-			AllClients     []storage.GetClientsByPermission
+			Group       string
+			Users       []string
+			Clients     []string
+			Perms       []string
+			ClientPerms []string
+			GPOs        []string
+			AllUsers    []storage.GetUsers
+			AllClients  []storage.GetClientsByPermission
+			// NomsClients : identifiant de machine -> nom d'hôte, pour les
+			// listes qui ne portent que l'identifiant (TO-DO 191).
+			NomsClients    map[string]string
 			AllPerms       []storage.UserPermission
 			AllClientPerms []storage.ClientPermission
 			AllGPOs        []string
@@ -392,6 +408,7 @@ func AdminGroupsHandler(w http.ResponseWriter, r *http.Request) {
 		allPerms, _ := dbpermission.Command_GET_AllUserPermissions(db)
 		allClientPerms, _ := dbpermission.Command_GET_AllClientPermissions(db)
 		detailData.AllUsers, detailData.AllClients = allUsers, allClients
+		detailData.NomsClients = NomsDesClients(allClients)
 		detailData.AllPerms, detailData.AllClientPerms = allPerms, allClientPerms
 
 		// Seules les GPO non encore liées sont proposées à l'ajout : offrir une
@@ -562,7 +579,21 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		ArchiveLien    string
 		ArchiveMachine string
 		ArchiveSysteme string
-	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients"}
+
+		// Versions : la ligne « constaté vs attendu » de chaque agent, par
+		// computeur_id (TO-DO 111). Nil quand l'administrateur n'a pas
+		// read:log sur « * » : la colonne montre alors la version déclarée
+		// seule, que la liste porte déjà.
+		Versions map[string]*act.LigneAgent
+
+		// PeutRelancer : le bouton « Relancer » d'un agent en retard (TO-DO
+		// 205). agent.update est une action de portée GLOBALE : un write:server
+		// limité à un domaine ne la passerait pas, et un bouton qui ne mène
+		// qu'à un refus n'a rien à faire sur la page. Le registre contrôle de
+		// toute façon à l'exécution.
+		PeutRelancer bool
+	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "clients",
+		PeutRelancer: permission.DomainsWhereAllowed(groupIDs, permission.ActionWriteServer).Global}
 	if r.Method == http.MethodPost {
 		// Les actions client.create, client.export et client.delete portent leur
 		// clé RBAC.
@@ -630,6 +661,24 @@ func AdminClientsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Clients, _ = resClients.Donnees.([]storage.GetClientsByPermission)
+
+	// La version attendue passe par sa propre action, et son propre droit.
+	//
+	// Un refus n'est pas une erreur de la page : un délégué qui lit ses
+	// machines n'a pas à voir les cibles de version du parc, et la liste
+	// reste utile sans elles. Une panne de lecture, elle, se journalise —
+	// la colonne retombe sur la version déclarée seule.
+	if resV, errV := ExecuterLecture("agent.status", username, groupIDs, act.Params{}); errV == nil {
+		if vue, ok := resV.Donnees.(act.VueAgents); ok {
+			data.Versions = vue.ParComputeurID()
+		}
+	} else {
+		var refus *act.ErrRefusee
+		if !errors.As(errV, &refus) {
+			logs.Write_LogCode("WARNING", logs.CodeWebAdmin,
+				"webadmin: versions attendues illisibles : "+errV.Error())
+		}
+	}
 	if err := executeAdminPage(w, "admin_clients.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
@@ -1161,6 +1210,18 @@ type donneesCluster struct {
 	// sont montrés qu'à lui — et c'est l'ACTION qui contrôle, pas ce
 	// drapeau : un formulaire forgé sans le droit est refusé pareil.
 	PeutPiloter bool
+
+	// Confirmation : une demande que l'action n'a PAS appliquée et
+	// appliquera si on la confirme — le dernier core mis en maintenance
+	// (TO-DO 147). La page la rejoue telle quelle.
+	Confirmation *confirmationCluster
+}
+
+// confirmationCluster rejoue un formulaire de la page Cluster, « confirm » en plus.
+type confirmationCluster struct {
+	Motif  string
+	Action string
+	Champs act.Params
 }
 
 // AdminClusterHandler affiche l'état des nœuds du cluster et règle leur accès.
@@ -1187,6 +1248,8 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 
 	db := database.GetDatabase()
 	message, errMsg := "", ""
+	var confirmation *confirmationCluster
+	oublie := false
 
 	// Le POST est traité AVANT la lecture, pour que la page rendue montre l'état
 	// d'après. L'ordre inverse afficherait l'ancienne adresse à côté du message
@@ -1195,11 +1258,18 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		joindreValeursMultiples(r, "groups")
 
 		res, traite, err := ExecuterActionFormulaireAvec(r, username, groupIDs, act.Params{})
+		var attente *act.ErrConfirmationRequise
 		switch {
+		case errors.As(err, &attente):
+			confirmation = &confirmationCluster{Motif: attente.Motif,
+				Action: r.PostFormValue("action"), Champs: attente.Rejouer}
 		case err != nil:
 			errMsg = MessageDActionPourAffichage(res, err)
 		case traite:
 			message = res.Message
+			// Un nœud oublié n'a plus de fiche : ne pas la rouvrir, ce qui
+			// afficherait « introuvable » juste sous « oublié ».
+			oublie = r.PostFormValue("action") == "forget_node"
 		}
 	}
 
@@ -1225,6 +1295,10 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	// Les compteurs de relais remontés par les nœuds (04_05, TO-DO 108). Même
 	// tolérance : une colonne vide plutôt qu'une page d'état indisponible.
 	clusterdatabase.GarnirMetriquesRelais(db, nodes)
+	// Les sessions des cores (TO-DO 148), même tolérance.
+	clusterdatabase.GarnirMetriquesSessions(db, nodes,
+		clusterdatabase.FraicheurPour(reglages.Duree(reglages.CleBattementCluster)))
+	clusterdatabase.GarnirMaintenance(db, nodes)
 
 	// La liste complète des groupes garnit le sélecteur du formulaire. Sans
 	// elle, l'administrateur devrait taper les noms de mémoire — et une faute de
@@ -1247,6 +1321,9 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 	choisi := strings.TrimSpace(r.URL.Query().Get("noeud"))
 	if choisi == "" && r.Method == http.MethodPost {
 		choisi = strings.TrimSpace(r.PostFormValue("node"))
+	}
+	if oublie {
+		choisi = ""
 	}
 	selection := noeudChoisi(nodes, choisi)
 	if choisi != "" && selection == nil && errMsg == "" {
@@ -1282,6 +1359,8 @@ func AdminClusterHandler(w http.ResponseWriter, r *http.Request) {
 		Section:     "cluster",
 		RelaisProxy: relaisDuProxy,
 		PeutPiloter: permission.HasActionAnywhere(groupIDs, permission.ActionWriteRelay),
+
+		Confirmation: confirmation,
 	}
 
 	if err := executeAdminPage(w, "admin_cluster.html", data); err != nil {

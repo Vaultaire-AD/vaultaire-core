@@ -151,6 +151,10 @@ func (c Context) removeSystemFile(path string) (bool, error) {
 	return retirerFichierSysteme(c.inventaire(), path)
 }
 
+// ErrNonApplicable : le module n'a pas d'objet sur cette machine (SELinux sur
+// Debian). Le module est rapporté « ignoré », pas « en échec ».
+var ErrNonApplicable = errors.New("non applicable sur cette machine")
+
 // Applier applique un module et décrit ce qu'il a fait.
 //
 // Le détail retourné est repris tel quel dans le rapport envoyé au serveur :
@@ -200,8 +204,19 @@ func ApplyPolicy(policy *Policy, previous *ScopeState) Report {
 
 	applied, failed := 0, 0
 
+	// Les marqueurs par compte (TO-DO 211), remplacés une fois, dans la
+	// politique elle-même : user_env relit ses voisins par ctx.Politique, et
+	// BuildScopeState y prend les empreintes à enregistrer.
+	erreursMarqueurs := developperMarqueurs(policy)
+
 	for _, m := range policy.Modules {
-		outcome := applyModule(ctx, m, previous)
+		var outcome ModuleOutcome
+		if motif, enErreur := erreursMarqueurs[m.StateKey]; enErreur {
+			outcome = ModuleOutcome{ModuleType: m.Type, StateKey: m.StateKey,
+				Result: ResultFailed, Detail: sanitizeDetail(motif)}
+		} else {
+			outcome = applyModule(ctx, m, previous)
+		}
 		report.Modules = append(report.Modules, outcome)
 
 		switch outcome.Result {
@@ -256,6 +271,16 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	if previousFP, known := previous.ModuleFingerprint(m.StateKey); known && previousFP == m.Fingerprint {
 		outcome.Result = ResultUnchanged
 		outcome.Detail = "empreinte identique"
+		// Un module posé par un agent d'avant le TO-DO 182 n'a pas inscrit
+		// l'attente que cet agent exige : elle l'est maintenant, SANS rejouer
+		// le module — en audit, le rejouer corrigerait une dérive.
+		if attenteManquante(m, previous) {
+			inv := ctx.inventaire()
+			marque := inv.marque()
+			declarerAttentes(m)
+			outcome.Checks = inv.attentesDepuis(marque, m.StateKey)
+			outcome.Detail = "empreinte identique, attente inscrite sans reappliquer"
+		}
 		return outcome
 	}
 
@@ -281,6 +306,11 @@ func applyModule(ctx Context, m Module, previous *ScopeState) ModuleOutcome {
 	marque := inv.marque()
 
 	detail, err := applier(ctx, m)
+	if errors.Is(err, ErrNonApplicable) {
+		outcome.Result = ResultSkipped
+		outcome.Detail = sanitizeDetail(err.Error())
+		return outcome
+	}
 	if err != nil {
 		outcome.Result = ResultFailed
 		outcome.Detail = sanitizeDetail(err.Error())
@@ -404,7 +434,15 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 	// vérification orpheline signalerait éternellement un écart que plus aucun
 	// module ne sait corriger.
 	for id, c := range checks {
-		if _, still := byKey[c.StateKey]; !still {
+		var restants []string
+		for _, key := range c.proprietaires() {
+			if _, still := byKey[key]; still {
+				restants = append(restants, key)
+			}
+		}
+		if epure, reste := c.avecProprietaires(restants); reste {
+			checks[id] = epure
+		} else {
 			delete(checks, id)
 		}
 	}
@@ -439,7 +477,9 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 				}
 			}
 			for id, c := range checks {
-				if c.StateKey == outcome.StateKey {
+				if epure, reste := c.sansProprietaire(outcome.StateKey); reste {
+					checks[id] = epure
+				} else {
 					delete(checks, id)
 				}
 			}
@@ -456,6 +496,12 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 				files[path] = state
 			}
 			for id, c := range outcome.Checks {
+				// Même règle que pour un fichier partagé (TO-DO 183) : une
+				// attente déclarée par plusieurs modules les engage tous.
+				if deja, partage := checks[id]; partage {
+					c, _ = c.avecProprietaires(append(deja.proprietaires(), outcome.StateKey))
+					c.StateKey = outcome.StateKey
+				}
 				checks[id] = c
 			}
 		case ResultUnchanged:
@@ -463,6 +509,15 @@ func BuildScopeState(policy *Policy, previous *ScopeState, report Report) *Scope
 			// module avait déclaré reste ce qu'il déclare.
 			if m, ok := byKey[outcome.StateKey]; ok {
 				modules[outcome.StateKey] = m.Fingerprint
+			}
+			// Sauf les attentes inscrites sans rejouer (TO-DO 182), qui
+			// s'ajoutent.
+			for id, c := range outcome.Checks {
+				if deja, partage := checks[id]; partage {
+					c, _ = c.avecProprietaires(append(deja.proprietaires(), outcome.StateKey))
+					c.StateKey = outcome.StateKey
+				}
+				checks[id] = c
 			}
 		default:
 			delete(modules, outcome.StateKey)

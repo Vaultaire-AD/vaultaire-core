@@ -54,6 +54,23 @@ type SystemCheck struct {
 	Expect string `json:"expect"`
 	// StateKey du module qui l'a déclarée, pour savoir quoi réappliquer.
 	StateKey string `json:"state_key,omitempty"`
+	// Owners : TOUS les modules qui déclarent la même attente, quand il y en a
+	// plusieurs — TO-DO 183, comme FileState.Owners pour un fichier. Deux GPO
+	// peuvent attendre le même état (un service actif, une règle d'audit) : la
+	// carte des attentes est indexée par CheckID, et la seconde écrasait la
+	// première. Un écart sur l'attente n'était alors attribué qu'à l'une, et
+	// si c'était celle d'une GPO en audit, l'autre — en enforce — ne
+	// corrigeait plus rien.
+	Owners []string `json:"owners,omitempty"`
+
+	// Compte : le compte dont on scanne la portée, vide en portée machine.
+	//
+	// JAMAIS enregistré (`json:"-"`) : c'est le scan qui le pose, à partir de la
+	// portée qu'il parcourt (TO-DO 163). Un vérificateur qui regarde sous un
+	// dossier personnel en a besoin pour s'y rendre sans suivre un lien — et
+	// l'inscrire dans l'état aurait laissé sans lui toutes les attentes déjà
+	// écrites, qui seraient restées vérifiées par leur chemin.
+	Compte string `json:"-"`
 }
 
 // CheckID identifie une attente de façon stable.
@@ -139,7 +156,7 @@ func checkSnapshot() map[string]SystemCheck { return inventaireMachine.releveAtt
 // Séparé de scanFromState pour la même raison que celui-ci est séparé de
 // LoadState : les vérificateurs lancent des commandes, et un test doit pouvoir
 // éprouver la logique de parcours sans en lancer aucune.
-func scanChecks(scopeState *ScopeState) []DriftItem {
+func scanChecks(scopeState *ScopeState, compte string) []DriftItem {
 	if scopeState == nil || len(scopeState.Checks) == 0 {
 		return nil
 	}
@@ -165,17 +182,18 @@ func scanChecks(scopeState *ScopeState) []DriftItem {
 			continue
 		}
 
+		attendu.Compte = compte
 		conforme, detail, err := checker(attendu)
 		switch {
 		case err != nil:
 			items = append(items, DriftItem{
-				Path: attendu.Target, StateKey: attendu.StateKey,
+				Path: attendu.Target, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners,
 				Kind:   DriftUnverifiable,
 				Detail: sanitizeDetail(err.Error()),
 			})
 		case !conforme:
 			items = append(items, DriftItem{
-				Path: attendu.Target, StateKey: attendu.StateKey,
+				Path: attendu.Target, StateKey: attendu.StateKey, Coproprietaires: attendu.Owners,
 				Kind:   DriftSystemState,
 				Detail: sanitizeDetail(detail),
 			})
@@ -209,4 +227,58 @@ func champsAttendus(expect string) map[string]string {
 		out[strings.TrimSpace(cle)] = strings.TrimSpace(valeur)
 	}
 	return out
+}
+
+// proprietaires rend les modules qui répondent d'une attente — le pendant de
+// FileState.proprietaires.
+func (c SystemCheck) proprietaires() []string {
+	if len(c.Owners) > 0 {
+		return c.Owners
+	}
+	if c.StateKey == "" {
+		return nil
+	}
+	return []string{c.StateKey}
+}
+
+// avecProprietaires pose la liste dans sa forme canonique : `Owners` n'est
+// écrit que s'il y a PLUSIEURS modules, `StateKey` reste celui du dernier
+// déclarant s'il est encore là. Rend faux quand il n'en reste aucun.
+func (c SystemCheck) avecProprietaires(keys []string) (SystemCheck, bool) {
+	vus := map[string]struct{}{}
+	var liste []string
+	for _, key := range keys {
+		if key == "" {
+			continue
+		}
+		if _, deja := vus[key]; deja {
+			continue
+		}
+		vus[key] = struct{}{}
+		liste = append(liste, key)
+	}
+	if len(liste) == 0 {
+		return c, false
+	}
+	sort.Strings(liste)
+	if _, encore := vus[c.StateKey]; !encore {
+		c.StateKey = liste[0]
+	}
+	if len(liste) == 1 {
+		c.Owners = nil
+	} else {
+		c.Owners = liste
+	}
+	return c, true
+}
+
+// sansProprietaire retire un module des déclarants d'une attente.
+func (c SystemCheck) sansProprietaire(stateKey string) (SystemCheck, bool) {
+	restants := make([]string, 0, len(c.Owners))
+	for _, key := range c.proprietaires() {
+		if key != stateKey {
+			restants = append(restants, key)
+		}
+	}
+	return c.avecProprietaires(restants)
 }

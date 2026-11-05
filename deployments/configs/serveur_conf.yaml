@@ -118,6 +118,10 @@ ldap:
   #  - vaultaire-ad
   #  - vaultaire-ad.interne.lan
   ldaps_tls_ip_addresses: []
+  # Certificat fourni (cert-manager, PKI) au lieu de l'auto-signé — les deux
+  # ou aucun ; relu à chaud. Voir docs/Installation/Variables_environnement.md.
+  # ldaps_tls_cert_file: /etc/vaultaire/tls/ldaps.crt
+  # ldaps_tls_key_file: /etc/vaultaire/tls/ldaps.key
   #  - 10.0.0.10
 
 dns:
@@ -152,6 +156,9 @@ website:
   #  - sso.interne.lan
   #  - vaultaire.exemple.fr
   web_tls_ip_addresses: []
+  # Certificat fourni pour le portail (idem LDAPS ; api.api_tls_cert_file pour l'API).
+  # web_tls_cert_file: /etc/vaultaire/tls/web.crt
+  # web_tls_key_file: /etc/vaultaire/tls/web.key
   #  - 10.0.0.10
 
   # Relais autorisés à déclarer l'adresse réelle du client, en adresses simples

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	dnsstorage "vaultaire/core/dns/DNS_Storage"
+	"vaultaire/core/logs"
 )
 
 func DeleteDNSRecord(db *sql.DB, fqdn string, recordType string) error {
@@ -58,7 +59,9 @@ func DeleteDNSRecord(db *sql.DB, fqdn string, recordType string) error {
 	if recordType == "A" {
 		err := DeletePTRRecordByIP(db, fqdn)
 		if err != nil {
-			fmt.Printf("⚠️ Erreur suppression PTR liée : %v\n", err)
+			// L'enregistrement A est retiré ; le PTR reste. Un WARNING et non une
+			// erreur rendue : défaire la suppression du A pour un PTR serait pire.
+			logs.Write_LogCode("WARNING", logs.CodeDBQuery, "dns : "+fqdn+" retiré, mais pas son PTR : "+err.Error())
 		}
 	}
 

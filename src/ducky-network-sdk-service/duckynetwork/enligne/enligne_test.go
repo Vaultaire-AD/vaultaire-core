@@ -119,3 +119,29 @@ func TestLesCapacitesSuiventLeCoreCourant(t *testing.T) {
 		t.Fatal("capacité gardée d'un core précédent : le proxy émettrait une trame que celui-ci ferme")
 	}
 }
+
+// La capacité de mise à jour (TO-DO 114, 115) : la même chaîne que le core
+// (trame.CapaciteMiseAJour), lue dans la ligne qu'il écrit.
+func TestLaCapaciteMiseAJourSeLit(t *testing.T) {
+	if CapaciteMiseAJour != "miseajour" || !LireCapacites("capacites:relais,miseajour")[CapaciteMiseAJour] {
+		t.Error("capacité de mise à jour illisible")
+	}
+}
+
+// La capacité de configuration (TO-DO 117) : la même chaîne que le core
+// (trame.CapaciteConfSys), lue dans la ligne qu'il écrit.
+func TestLaCapaciteConfSysSeLit(t *testing.T) {
+	c := LireCapacites("capacites:relais,miseajour,confsys")
+	if CapaciteConfSys != "confsys" || !c[CapaciteConfSys] || !c[CapaciteMiseAJour] {
+		t.Error("capacité de configuration illisible")
+	}
+	if LireCapacites("capacites:relais,miseajour")[CapaciteConfSys] {
+		t.Error("un core du 116 lu comme connaissant la 09_07")
+	}
+}
+
+func TestLaCapaciteClesPaquetsSeLit(t *testing.T) {
+	if CapaciteClesPaquets != "clespaquets" || !LireCapacites("capacites:relais,miseajour,confsys,clespaquets")[CapaciteClesPaquets] {
+		t.Error("capacité des clés illisible")
+	}
+}

@@ -9,7 +9,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 | Fichier | Contenu |
 | --- | --- |
-| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 10 chapitres, 31 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster |
+| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 11 chapitres, 35 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster, Nexus et mises à jour |
 
 ---
 
@@ -20,6 +20,8 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | [`Installation/Requirements.md`](./Installation/Requirements.md) | Prérequis système, versions, dépendances |
 | [`Installation/Setup.md`](./Installation/Setup.md) | Installation complète : base de données, service systemd, configuration YAML, poste client |
 | [`Installation/Docker_Kubernetes.md`](./Installation/Docker_Kubernetes.md) | Déploiement conteneurisé |
+| [`Installation/Kubernetes.md`](./Installation/Kubernetes.md) | **Production** : image rootless signée (GHCR), chart Helm, GitOps, secrets |
+| [`Installation/Variables_environnement.md`](./Installation/Variables_environnement.md) | Toutes les variables `VAULTAIRE_*` et leurs variantes `_FILE` |
 | [`Installation/Client_Windows.md`](./Installation/Client_Windows.md) | **Poste Windows (V1)** : identité de la machine, service, tuile de l'écran de connexion, compte local |
 
 ---
@@ -98,7 +100,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | [`Developement/TO-DO.md`](./Developement/TO-DO.md) | Tâches ouvertes |
 | [`Developement/Mise_a_jour_du_parc.md`](./Developement/Mise_a_jour_du_parc.md) | **Mettre à jour le parc d'agents** : la stratégie arrêtée le 28/09, ses arbitrages et ce qui a été écarté (points 111 à 118) |
 | [`Developement/Audit_LDAP_2026-09-28.md`](./Developement/Audit_LDAP_2026-09-28.md) | **Audit LDAP du 28/09** : sécurité, fonctionnalités et compatibilité client par client (points 119 à 131) |
-| [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`) |
+| [`Developement/DO/`](./Developement/DO/) | Tâches terminées, classées par version (`2.0/`, `2.1/`, `2.2/`, `2.3/`) |
 
 > Une tâche validée est déplacée **à la main** de `TO-DO.md` vers
 > `DO/<version>/`, puis reportée dans [`Version_History.md`](./Version_History.md).
@@ -111,7 +113,7 @@ Documentation **interne**, destinée à qui modifie le code. Chaque fichier rép
 | --- | --- |
 | [`../src/vaultaire_nexus/README.md`](../src/vaultaire_nexus/README.md) | Nexus, le dépôt de paquets du parc : installation, dépôts RPM/Debian/Docker, releases, droits |
 | [`exploitation/Releases.md`](./exploitation/Releases.md) | Releases automatiques, numérotation, rétention, mise à jour de la préprod, purge de l'historique |
-| [`exploitation/Agent_configuration_et_debug.md`](./exploitation/Agent_configuration_et_debug.md) | Agent : liste des cores (installation, apprise, persistée) et rapport de debug `vlt_client-Debug.log` |
+| [`exploitation/Agent_configuration_et_debug.md`](./exploitation/Agent_configuration_et_debug.md) | Agent : liste des cores (installation, apprise, persistée), rapport de debug `vlt_client-Debug.log`, et le service — `--check`, `--install-unit`, relance bornée |
 | [`exploitation/Changement_de_version.md`](./exploitation/Changement_de_version.md) | Passer à la série suivante (2.1 → 2.2) : fichiers à modifier, documentation à clore et à ouvrir |
 | [`exploitation/selinux.md`](./exploitation/selinux.md) | Politique SELinux pour les clients — diagnostic des refus sous `sshd_t` |
 | [`exploitation/ldaps_keycloak.md`](./exploitation/ldaps_keycloak.md) | LDAPS et intégration Keycloak : SAN, magasin de confiance, messages d'erreur |
@@ -135,7 +137,8 @@ version mineure, **du plus récent au plus ancien**.
 
 | Fichier | Contenu |
 | --- | --- |
-| [`Version/2.0/2.2.md`](./Version/2.0/2.2.md) | Cycle 2.2 — en cours, travaux non publiés |
+| [`Version/2.0/2.3.md`](./Version/2.0/2.3.md) | Cycle 2.3 — en cours, travaux non publiés |
+| [`Version/2.0/2.2.md`](./Version/2.0/2.2.md) | Alpha 2.2.0 — Nexus, relais du proxy, client Windows V1, GPO signées, audits de sécurité et LDAP |
 | [`Version/2.0/2.1.md`](./Version/2.0/2.1.md) | Alpha 2.1.0 — refactorisation, releases automatiques |
 | [`Version/2.0/2.0.md`](./Version/2.0/2.0.md) | Alpha 2.0.0 « PIG » — les deux audits de sécurité |
 | [`Version/1.0/1.1.md`](./Version/1.0/1.1.md) | Cycle 1.1 — GPO, LDAP puis LDAPS, portail web, API |

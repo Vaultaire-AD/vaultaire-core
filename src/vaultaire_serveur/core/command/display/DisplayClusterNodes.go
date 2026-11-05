@@ -21,7 +21,7 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 	}
 
 	tb := NouvelleTable("ÉTAT", "HÔTE", "ACCÈS AGENTS", "VU PAR LE NŒUD", "ROT.",
-		"SERT EN PRIORITÉ", "RÔLE", "RELAIS", "TRAFIC", "VERSION", "SDK",
+		"SERT EN PRIORITÉ", "RÔLE", "SESSIONS", "RELAIS", "TRAFIC", "VERSION", "SDK",
 		"DERNIER BATTEMENT")
 	for _, n := range noeuds {
 		// Deux colonnes d'adresse, et c'est le point de la vue.
@@ -45,7 +45,7 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 		}
 
 		tb.Ajouter(
-			Valeur(n.Status),
+			Valeur(etatLisible(n)),
 			Valeur(n.Hostname),
 			Valeur(acces),
 			Valeur(interne),
@@ -59,6 +59,9 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 			// mono-site remplirait la colonne de bruit.
 			Valeur(strings.Join(n.GroupesAffins, ", ")),
 			Valeur(n.Role),
+			// SESSIONS : ce qu'un CORE publie de lui-même avec son battement
+			// (TO-DO 148). Vide sur un proxy, et sur un core silencieux.
+			Valeur(sessionsLisibles(n.Sessions)),
 			// RELAIS et TRAFIC : ce que le nœud a remonté de lui-même
 			// (04_05, TO-DO 108).
 			//
@@ -91,6 +94,9 @@ func DisplayClusterNodes(role string, noeuds []clusterstorage.Node) string {
 		"  ROT. « out » : le nœud n'est annoncé à aucun agent (vlt cluster rotation <nœud> in).\n" +
 		"  « SERT EN PRIORITÉ » vide = tout le parc, sans préférence. C'est une préférence\n" +
 		"  et non une exclusivité : les agents des autres groupes gardent ce nœud, en queue.\n" +
+		"  ÉTAT « maint. » : en maintenance, servi à personne (vlt cluster maintenance <nœud> off).\n" +
+		"  SESSIONS (cores) : « m » machines au tunnel ouvert, « c » sessions de compte de\n" +
+		"  l'annuaire, « p » poignées de main en cours. Détail : vlt cluster show <nœud>.\n" +
 		"  RELAIS « a/t » : connexions actives / relayées depuis le démarrage du proxy ;\n" +
 		"  « ✗n » compte celles qui ne sont pas passées (aucune cible joignable, ou plafond).\n" +
 		"  RELAIS et TRAFIC vides : ce nœud ne relaie rien, ou n'a rien remonté depuis\n" +
@@ -116,6 +122,30 @@ func relaisLisible(m *clusterstorage.MetriquesRelais) string {
 		ligne += fmt.Sprintf(" ✗%d", ecartees)
 	}
 	return ligne
+}
+
+// etatLisible ajoute la maintenance à l'état (TO-DO 147).
+//
+// « online · maint. » et non « maintenance » seul : un nœud en maintenance
+// bat toujours, et savoir qu'il est EN LIGNE est ce qui dit qu'on peut le
+// purger — ou qu'il faut aller voir pourquoi il ne bat plus.
+func etatLisible(n clusterstorage.Node) string {
+	if n.Maintenance == nil || !n.Maintenance.Active {
+		return n.Status
+	}
+	s := n.Status + " · maint."
+	if n.Maintenance.PurgeEnCours() {
+		s += " (purge)"
+	}
+	return s
+}
+
+// sessionsLisibles rend la mesure d'un core en une colonne, ou rien.
+func sessionsLisibles(m *clusterstorage.MetriquesSessions) string {
+	if m == nil {
+		return ""
+	}
+	return m.Lisible()
 }
 
 // traficLisible rend le trafic cumulé des deux sens.

@@ -226,14 +226,34 @@ func HandleSearchRequest(db *sql.DB, op ldapstorage.SearchRequest, messageID int
 	// suffirait de comparer 32 et « succès sans entrée » pour savoir si un compte
 	// existe dans un domaine qu'on n'a pas le droit de lire.
 	//
-	// Une recherche `one` ou `sub` sur un domaine existant rend toujours ses deux
-	// unités d'organisation : ce cas ne concerne donc en pratique que les
-	// recherches `base`, ce qui est exactement là où un client pose la question
-	// « ce DN existe-t-il ».
+	// C'est le cas des recherches `base`, là où un client pose la question « ce
+	// DN existe-t-il ».
+	//
+	// SAUF une base qui existe, que le compte peut lire, et qui n'a simplement
+	// pas d'enfant dans la portée — un `one` sous un compte, sous un
+	// sous-domaine sans sous-domaine (TO-DO 245). Celle-là est un succès sans
+	// entrée : `noSuchObject` dirait au client que ce qu'il vient de lire
+	// n'existe pas. Pas d'oracle ici : la base est relue AVEC les droits, et une
+	// base illisible reste `noSuchObject`.
 	if len(candidates) == 0 {
-		j.Noter("matchedDN", fmt.Sprintf("%q", ancetre))
-		response.SendLDAPNoSuchObject(conn, messageID, ancetre)
-		return
+		lisible := false
+		if op.Scope != 0 && !isRootDSE {
+			base, err := scope.EntreeDeBase(db, op.BaseObject, j)
+			if err != nil {
+				ldapjournal.Ecrire(conn, "ERROR", logs.CodeDBQuery, "relecture de la base : "+err.Error())
+				response.SendLDAPSearchFailure(conn, messageID, err.Error())
+				return
+			}
+			if len(base) > 0 {
+				retenues, _ := portée.Filtrer(base)
+				lisible = len(retenues) > 0
+			}
+		}
+		if !lisible {
+			j.Noter("matchedDN", fmt.Sprintf("%q", ancetre))
+			response.SendLDAPNoSuchObject(conn, messageID, ancetre)
+			return
+		}
 	}
 
 	// 2. Évaluer le filtre

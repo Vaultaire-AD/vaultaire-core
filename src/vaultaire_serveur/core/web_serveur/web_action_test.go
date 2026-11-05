@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 
 	"vaultaire/core/action"
@@ -241,7 +242,7 @@ func TestExemptionsToutesJustifiees(t *testing.T) {
 // l'exécution, découvert par l'utilisateur au moment où il clique. Le test le
 // découvre avant.
 func TestToutesLesActionsDeFormulaireExistentAuRegistre(t *testing.T) {
-	action.EnregistrerTout()
+	catalogueCharge()
 
 	for _, nomFormulaire := range ActionsDeFormulaireConnues() {
 		nomAction, _ := ActionDuRegistrePour(nomFormulaire)
@@ -295,6 +296,11 @@ func TestToutesLesActionsDesGabaritsSontRoutees(t *testing.T) {
 
 		// Réglage du serveur, pas une entité de l'annuaire.
 		"set_debug": "réglage serveur",
+
+		// Demander un cycle aux machines d'une GPO (TO-DO 169) : une boucle sur
+		// `gpo.refresh`, une machine à la fois — action.RafraichirMachinesDeLaGPO,
+		// appelée par adminGPODetail. Le bouton d'UNE machine, lui, est routé.
+		"refresh_gpo_machines": "boucle sur gpo.refresh",
 	}
 
 	gabarits, err := actionsDesGabarits()
@@ -430,3 +436,10 @@ func TestAliasCompleteUneValeurAbsente(t *testing.T) {
 			"« target_group » ne fonctionneraient pas", p["group"])
 	}
 }
+
+// catalogueCharge enregistre les actions une fois pour tout le paquet : le
+// registre refuse (panique) une action enregistrée deux fois, et plusieurs
+// tests en ont besoin.
+var catalogueUneFois sync.Once
+
+func catalogueCharge() { catalogueUneFois.Do(action.EnregistrerTout) }

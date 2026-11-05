@@ -14,9 +14,10 @@ import (
 
 // Les services d'un type — 04_15 → 04_16 (TO-DO 72).
 //
-// Réservé au PROXY : c'est la liste des Nexus vers qui son relais HTTPS
-// transporte les connexions d'un site. Le core refuse la 04_15 à tout autre
-// type de client.
+// Le PROXY la suit en continu : c'est la liste des Nexus vers qui son relais
+// HTTPS transporte les connexions d'un site. L'AGENT la demande ponctuellement
+// (DemanderServices), pour trouver ses dépôts de mise à jour — et le core ne
+// lui répond que pour les Nexus (TO-DO 114).
 //
 // # Pourquoi une cadence plus courte que la découverte des cores
 //
@@ -210,9 +211,72 @@ func traiterServices(contenu string) {
 	}
 	servicesMu.Lock()
 	services[typ] = adresses
+	attendus := attentes[typ]
+	delete(attentes, typ)
 	servicesMu.Unlock()
+	for _, c := range attendus {
+		close(c)
+	}
 	logs.Write_log("INFO", fmt.Sprintf("services du cluster : %d %s joignable(s) %v",
 		len(adresses), typ, adresses))
+}
+
+// attentes : pour chaque type, ceux qui attendent la prochaine 04_16.
+var attentes = map[string][]chan struct{}{}
+
+// DemanderServices émet UNE 04_15 et attend la 04_16 qui y répond, au plus
+// delai (TO-DO 114).
+//
+// # Pourquoi une demande ponctuelle, et pas SuivreServices
+//
+// Le proxy suit ses services en continu : il relaie à chaque instant. Un AGENT
+// n'a besoin de savoir où sont les dépôts qu'au moment de télécharger un
+// paquet — rarement. Le faire suivre toutes les cinq minutes ferait émettre
+// une trame à chaque machine du parc pour une réponse qui ne sert presque
+// jamais.
+//
+// Rend les adresses de la réponse. Sans réponse dans le délai : la dernière
+// liste connue de ce type (vide si aucune) ET une erreur, pour que
+// l'appelant sache qu'elle n'est pas fraîche.
+func DemanderServices(typ string, sessionKey func() string, delai time.Duration) ([]string, error) {
+	typ = strings.TrimSpace(typ)
+	if typ == "" {
+		return nil, fmt.Errorf("type de service vide")
+	}
+	if envoyer == nil || sessionKey == nil {
+		return AdressesService(typ), fmt.Errorf("aucun émetteur branché")
+	}
+	cle := sessionKey()
+	if strings.TrimSpace(cle) == "" {
+		return AdressesService(typ), fmt.Errorf("aucune session établie")
+	}
+
+	recu := make(chan struct{})
+	servicesMu.Lock()
+	attentes[typ] = append(attentes[typ], recu)
+	servicesMu.Unlock()
+
+	envoyer(ConstruireDemandeServices(cle, clientID, typ))
+
+	select {
+	case <-recu:
+		return AdressesService(typ), nil
+	case <-time.After(delai):
+		servicesMu.Lock()
+		reste := attentes[typ][:0]
+		for _, c := range attentes[typ] {
+			if c != recu {
+				reste = append(reste, c)
+			}
+		}
+		if len(reste) == 0 {
+			delete(attentes, typ)
+		} else {
+			attentes[typ] = reste
+		}
+		servicesMu.Unlock()
+		return AdressesService(typ), fmt.Errorf("aucune réponse du core en %s", delai)
+	}
 }
 
 // AdressesService rend les adresses connues d'un type, dans l'ordre du core.

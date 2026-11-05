@@ -17,6 +17,9 @@ cluster expose <nœud> <adresse> [port] | --clear
 cluster affinity <nœud> <groupe…> | --none
 cluster priority <nœud> <valeur>
 cluster rotation <nœud> <in|out>
+cluster show <nœud>
+cluster maintenance <nœud> <on|off> [--confirm]
+cluster purge <nœud> [--etalement <s>]
 ```
 
 ## Étapes
@@ -28,6 +31,12 @@ cluster rotation <nœud> <in|out>
    vlt cluster expose <nœud-proxy> <IP-hôte> 16666
    vlt cluster list        # ACCÈS AGENTS vs VU PAR LE NŒUD
    ```
+
+   L'exposition ne sert **qu'aux clients**. La confiance que le core accorde au
+   proxy — son plafond de connexions, l'en-tête PROXY de ses relais LDAPS — suit
+   l'adresse sous laquelle le core le **voit**, sans réglage *(point 184)* :
+   en conteneurs, celle de la passerelle docker. N'exposez jamais le proxy à
+   cette adresse-là pour « le faire reconnaître ».
 
 2. Faites-le servir le groupe `Infra` en priorité :
 
@@ -46,9 +55,58 @@ cluster rotation <nœud> <in|out>
    vlt cluster rotation <nœud-proxy> in
    ```
 
+4. Regardez ce que porte chaque core :
+
+   ```bash
+   vlt cluster list               # colonne SESSIONS : « m » machines, « c » comptes, « p » poignées
+   vlt cluster show <nœud-core>   # le détail, et l'âge de la mesure
+   ```
+
+   Chaque core publie ses sessions avec son battement : lui seul les voit.
+   `web01` y compte pour **une** machine, même s'il tient plusieurs tunnels.
+   Sortir un nœud de la rotation ne ferme **aucune** session : son compteur ne
+   descend qu'au fil des reconnexions des agents.
+
+5. Mettez le proxy en **maintenance**, puis essayez avec le core :
+
+   ```bash
+   vlt cluster maintenance <nœud-proxy> on
+   vlt get -c <computeur_id-web01> --targets   # le proxy a disparu de la liste
+   vlt cluster list                            # ÉTAT « online · maint. »
+   vlt cluster maintenance <nœud-core> on      # refusé : c'est le dernier core
+   vlt cluster purge <nœud-proxy>              # les cores ferment ce qu'il relaie
+   vlt cluster show <nœud-proxy>               # purge terminée, sessions fermées
+   vlt cluster maintenance <nœud-proxy> off
+   ```
+
+   La maintenance, c'est la rotation `out` **partout** — liste des agents, des
+   proxies, des services — sans toucher au réglage de rotation. Sur le core, la
+   commande s'arrête : en maintenance, votre unique core ne serait plus servi à
+   personne. **Ne confirmez pas.** Sur un cluster à deux cores, `vlt cluster
+   purge <nœud-core>` viderait ensuite le core en maintenance de ses sessions :
+   chaque poste redemande sa liste et part de lui-même, le reste est fermé, étalé
+   sur une minute.
+   Le proxy en maintenance, lui, se purge : ce sont les **cores** qui ferment les sessions arrivées par lui — `web01`
+   reçoit l'ordre de redemander sa liste, qui **nomme** le proxy à quitter : il
+   le quitte dans les 20 s et repasse par un core — le proxy reste en dernier
+   de sa liste pendant un quart d'heure. Le proxy, lui, reste connecté : il bat
+   toujours. Sur `web01` : `grep 'quitter' /var/log/vaultaire/vaultaire.log`.
+   Un core en maintenance **accepte** encore les connexions : un agent qui ne
+   connaît que son fichier peut y revenir. C'est voulu — si les autres cores
+   tombaient pendant la maintenance, il resterait le dernier recours.
+
 ## ✅ Vous avez réussi si
 
-`--targets` reflète chaque changement, avec la raison de chaque rang.
+- `--targets` reflète chaque changement, avec la raison de chaque rang ;
+- l'exposition posée, un relais `ldaps` du proxy est accepté par le core sans
+  autre réglage — pas de `en-tête PROXY reçu d'un pair qui n'est pas un proxy
+  enregistré` dans son journal ;
+- `cluster show <nœud-core>` compte `web01` parmi ses machines, avec une mesure
+  de moins d'une minute ;
+- en maintenance, le proxy disparaît de `--targets` et y revient au `off` ; la
+  maintenance du core est **refusée** sans `--confirm`.
+- après `cluster purge <nœud-proxy>`, `cluster show <nœud-proxy>` dit la purge
+  terminée, et `web01` est compté par un core et plus par le proxy.
 
 ## 🧪 Exercice
 

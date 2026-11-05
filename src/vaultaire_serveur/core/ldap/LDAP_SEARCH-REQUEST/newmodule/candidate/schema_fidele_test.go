@@ -208,7 +208,7 @@ func TestLesOIDSontValidesEtUniques(t *testing.T) {
 // Modifier une déclaration sans toucher à la date fait échouer ce test.
 func TestLaDateDuSchemaSuitLeSchema(t *testing.T) {
 	// À METTRE À JOUR EN MÊME TEMPS QUE HorodatageDuSchema, et seulement avec lui.
-	const empreinteAttendue = "3502e8a6fcec5fa7e7b6ee715fa095fed8533b18fef6c0d120677ebb1aae6d9c"
+	const empreinteAttendue = "acca9be0d3e889070ebf2b849b3c3b7c1a2d49f92ef2c89826f0a8760d38d73c"
 
 	sch := NewSchemaEntry()
 	h := sha256.New()

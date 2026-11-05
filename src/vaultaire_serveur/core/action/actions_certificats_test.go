@@ -325,3 +325,23 @@ func TestCertificatEnregistreAvecSuperadmin(t *testing.T) {
 		t.Error("certificate.delete sans portée")
 	}
 }
+
+// Les clés du core ne se suppriment pas (TO-DO 113) : chacune serait
+// régénérée au redémarrage, et refusée par tout le parc.
+func TestLesClesDuCoreNeSeSuppriment(t *testing.T) {
+	for _, nom := range []string{"server_main", "server_login_client", "gpo_signing", "pkg_signing"} {
+		t.Run(nom, func(t *testing.T) {
+			baseCertificatSimulee(t, nom, true)
+			supprime := false
+			supprimerEnBaseCert = func(int) error { supprime = true; return nil }
+			_, err := supprimerCertificat(Appelant{Username: "root"}, Params{"certificate_id": "7"})
+			if err == nil || supprime {
+				t.Fatalf("%s supprimé (err=%v)", nom, err)
+			}
+		})
+	}
+	baseCertificatSimulee(t, "ldaps", true)
+	if _, err := supprimerCertificat(Appelant{Username: "root"}, Params{"certificate_id": "7"}); err != nil {
+		t.Errorf("un certificat TLS doit rester supprimable : %v", err)
+	}
+}

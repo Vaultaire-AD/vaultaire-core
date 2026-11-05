@@ -84,3 +84,44 @@ func TestEchecDEcritureLaisseLaMemoire(t *testing.T) {
 		t.Fatal("la mémoire a changé malgré l'échec")
 	}
 }
+
+// TO-DO 187 : un pair qui a changé d'adresse n'est pas gardé sous les deux.
+// La liste apprise est REMPLACÉE ; l'ancienne adresse ne reste que si elle
+// figure dans la liste d'installation, dernier recours jamais réécrit.
+func TestUnPairQuiChangeDAdresseNEstPasGardeSousLesDeux(t *testing.T) {
+	p := fichier(t, `{"servers":[{"ip":"10.0.0.1","port":6666}]}`)
+	if err := LoadConfig(p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MettreAJourAppris([]ServerConfig{{IP: "192.168.1.50", Port: 6667, Hostname: "proxy1", Role: "proxy"},
+		{IP: "10.0.0.1", Port: 6666, Hostname: "core1", Role: "core"}}); err != nil {
+		t.Fatal(err)
+	}
+	// Le proxy est republié ailleurs.
+	if _, err := MettreAJourAppris([]ServerConfig{{IP: "192.168.2.50", Port: 6667, Hostname: "proxy1", Role: "proxy"},
+		{IP: "10.0.0.1", Port: 6666, Hostname: "core1", Role: "core"}}); err != nil {
+		t.Fatal(err)
+	}
+	got := AdressesConnues()
+	want := []string{"192.168.2.50:6667", "10.0.0.1:6666"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("adresses = %v, attendu %v — l'ancienne adresse du proxy ne doit plus y être", got, want)
+	}
+}
+
+// reconcile_system_config (TO-DO 117) : absent = la réconciliation tourne ;
+// false la retire.
+func TestReconcileSystemConfig(t *testing.T) {
+	if err := LoadConfig(fichier(t, `{"servers":[{"ip":"10.0.0.1","port":6666}]}`)); err != nil {
+		t.Fatal(err)
+	}
+	if !GetReconcileSystemConfig() {
+		t.Error("absent : désactivée")
+	}
+	if err := LoadConfig(fichier(t, `{"servers":[{"ip":"10.0.0.1","port":6666}],"reconcile_system_config":false}`)); err != nil {
+		t.Fatal(err)
+	}
+	if GetReconcileSystemConfig() {
+		t.Error("false : active")
+	}
+}

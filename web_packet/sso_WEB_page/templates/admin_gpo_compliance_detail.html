@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Conformité — {{ .Machine }}</title>
+  <title>Conformité — {{ with .Nom }}{{ . }} — {{ end }}{{ .Machine }}</title>
   <link rel="stylesheet" href="/static/app.css">
   <link rel="stylesheet" href="/static/vlt_picker.css">
 </head>
@@ -26,7 +26,22 @@
       </header>
       <div class="app-content">
         <div class="app-container animate-in">
-    <h1>Machine {{ .Machine }}</h1>
+    <h1>{{ with .Nom }}Machine {{ . }} <span class="muted small">{{ $.Machine }}</span>{{ else }}Machine {{ .Machine }}{{ end }}</h1>
+    {{ with .Nom }}{{ if not $.NomIdentifiant }}<p class="muted small">Ce poste n'a pas de nom propre : <code>hostnamectl set-hostname &lt;nom&gt;</code> sur la machine, et il apparaîtra au rapport suivant.</p>{{ end }}{{ end }}
+
+    {{ if .Message }}<div class="alert alert-success">{{ .Message }} Rechargez la page dans quelques secondes pour voir le résultat du cycle.</div>{{ end }}
+    {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+
+    {{ if .PeutDemanderUnCycle }}
+    <form method="post" style="display:flex;gap:0.6rem;align-items:center;flex-wrap:wrap;margin:0.6rem 0 1rem 0">
+      <input type="hidden" name="action" value="refresh_gpo">
+      <button type="submit" class="btn btn-secondary">Demander un cycle</button>
+      <span class="muted small">
+        La machine relit sa politique maintenant, au lieu d'attendre son tour. Hors ligne, elle le fera à son retour.
+        Les GPO de compte ne sont pas concernées : elles s'appliquent à l'ouverture de session de chaque compte.
+      </span>
+    </form>
+    {{ end }}
 
     {{ if not .Etats }}
       <div class="alert alert-info">
@@ -59,15 +74,41 @@
               {{ .ModulesTotal }} module(s), {{ .ModulesFailed }} échec(s),
               {{ .ModulesSkipped }} ignoré(s)
             </td>
-            <td><code class="small">{{ .Fingerprint }}</code></td>
+            <td><code class="small" title="{{ .Fingerprint }}">{{ .EmpreinteCourte }}</code></td>
             <td>
-              {{ if .JamaisScanne }}
-                <span class="badge badge-danger">jamais vérifiée</span>
+              {{ if .NonVerifiee }}
+                <span class="badge badge-danger">{{ .Conformite }}</span>
               {{ else }}
-                {{ .Conformite }} <span class="muted small">— {{ .ScanIlYA }}</span>
+                {{ .Conformite }}{{ if .ScanIlYA }} <span class="muted small">— {{ .ScanIlYA }}</span>{{ end }}
               {{ end }}
             </td>
             <td class="muted small">{{ .VuIlYA }}</td>
+          </tr>
+        {{ end }}
+        </tbody>
+      </table>
+    </div>
+    {{ end }}
+
+    {{ if .ConflitsIllisibles }}
+      <div class="alert alert-danger">Conflits entre GPO illisibles : {{ .ConflitsIllisibles }}</div>
+    {{ else if .Conflits }}
+    <h2 class="h2">Conflits entre GPO</h2>
+    <div class="alert alert-danger">
+      Ces modules ne sont <strong>pas</strong> livrés à la machine : deux GPO les
+      règlent autrement. Le reste de la politique est appliqué. Corrigez l'une
+      des GPO, ou déliez-en une du groupe : le conflit est levé au cycle suivant.
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Portée</th><th>Utilisateur</th><th>Conflit</th><th>Vu</th></tr></thead>
+        <tbody>
+        {{ range .Conflits }}
+          <tr>
+            <td>{{ .Scope }}</td>
+            <td>{{ if .TargetUser }}{{ .TargetUser }}{{ else }}—{{ end }}</td>
+            <td>{{ .Detail }}</td>
+            <td class="small">{{ .SeenAt.Format "02/01/2006 15:04" }}</td>
           </tr>
         {{ end }}
         </tbody>

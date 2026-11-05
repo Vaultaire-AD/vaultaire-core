@@ -1,56 +1,87 @@
 package autoaddclientgo
 
 import (
-	"bytes"
 	"fmt"
-	"os/exec"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/pkg/sftp"
+	"golang.org/x/crypto/ssh"
+
+	"vaultaire/core/logs"
 	"vaultaire/core/storage"
 )
 
-func envoyerFichierSCPAvecCleSSH(user, privateKeyPath, client_softwareID, host string, port int) error {
-	remoteDir := "/opt/vaultaire/"
+// RepertoireDistant : où l'agent est installé sur le poste. Fixe, et
+// distinct du répertoire de données du core : un core en conteneur écrit dans
+// /var/lib/vaultaire, le poste attend toujours /opt/vaultaire.
+const RepertoireDistant = "/opt/vaultaire"
 
-	// 1. Créer le dossier distant s’il n'existe pas
-	cmdMkdir := exec.Command(
-		"ssh", "-i", privateKeyPath, "-p", fmt.Sprintf("%d", port),
-		fmt.Sprintf("%s@%s", user, host),
-		fmt.Sprintf("mkdir -p %s", remoteDir),
-	)
+// envoyerFichiersClient copie sur le poste le paquet d'agent, puis la
+// configuration propre à cette machine — par SFTP, sur la connexion déjà
+// ouverte (voir transport_ssh.go).
+func envoyerFichiersClient(client *ssh.Client, clientSoftwareID string) error {
+	sc, err := sftp.NewClient(client)
+	if err != nil {
+		return fmt.Errorf("sous-système sftp indisponible sur le poste (« Subsystem sftp » de sshd_config) : %v", err)
+	}
+	defer func() { _ = sc.Close() }()
 
-	var mkdirErr bytes.Buffer
-	cmdMkdir.Stderr = &mkdirErr
-	if err := cmdMkdir.Run(); err != nil {
-		return fmt.Errorf("❌ Erreur création dossier distant : %v\n%s", err, mkdirErr.String())
+	if err := sc.MkdirAll(RepertoireDistant); err != nil {
+		return fmt.Errorf("création de %s sur le poste : %v", RepertoireDistant, err)
 	}
 
-	// 2. Envoyer les fichiers avec SCP
-	cmdSCP := exec.Command(
-		"scp", "-i", privateKeyPath, "-P", fmt.Sprintf("%d", port),
-		"-r", "/opt/vaultaire/vaultaire_client/",
-		fmt.Sprintf("%s@%s:%s", user, host, remoteDir),
-	)
-
-	var scpErr bytes.Buffer
-	cmdSCP.Stderr = &scpErr
-
-	fmt.Println("📦 Envoi du fichier avec SCP...")
-	if err := cmdSCP.Run(); err != nil {
-		return fmt.Errorf("❌ Erreur SCP : %v\n%s", err, scpErr.String())
+	// 1. Le paquet d'agent : /opt/vaultaire/vaultaire_client/ sur le poste,
+	// comme le faisait « scp -r <paquet>/ hôte:/opt/vaultaire/ ».
+	paquet := strings.TrimSuffix(storage.Agent_Package_path, "/")
+	if info, err := os.Stat(paquet); err != nil || !info.IsDir() {
+		return fmt.Errorf("paquet d'agent absent de ce core (%s) : automatisation.agent_package_path "+
+			"ou VAULTAIRE_AGENT_PACKAGE_DIR", paquet)
 	}
-	cmdSCP = exec.Command(
-		"sh", "-c",
-		fmt.Sprintf(
-			"scp -i %s -P %d -r /opt/vaultaire/clientsoftware/%s/* %s@%s:%s/",
-			privateKeyPath, port, client_softwareID, user, host, storage.Client_Conf_path,
-		),
-	)
-	cmdSCP.Stderr = &scpErr
-
-	fmt.Println("📦 Envoi du fichier avec SCP...")
-	if err := cmdSCP.Run(); err != nil {
-		return fmt.Errorf("❌ Erreur SCP : %v\n%s", err, scpErr.String())
+	logs.Write_Log("DEBUG", "autoadd : envoi du client Vaultaire (sftp)")
+	n, err := copierArborescence(sc, paquet, RepertoireDistant+"/vaultaire_client")
+	if err != nil {
+		return err
 	}
 
-	fmt.Println("✅ Fichier envoyé avec succès")
+	// 2. La configuration de CETTE machine, posée à la racine de
+	// /opt/vaultaire. Les fichiers cachés du premier niveau ne partent pas :
+	// l'ancien « scp …/<id>/* » ne les prenait pas non plus.
+	local := filepath.Join(storage.Client_Conf_path, "clientsoftware", clientSoftwareID)
+	entrees, err := os.ReadDir(local)
+	if err != nil {
+		return fmt.Errorf("configuration de %s introuvable sur ce core (%s) : %v", clientSoftwareID, local, err)
+	}
+	racineLocale, err := os.OpenRoot(local)
+	if err != nil {
+		return fmt.Errorf("configuration de %s illisible (%s) : %v", clientSoftwareID, local, err)
+	}
+	defer func() { _ = racineLocale.Close() }()
+	m := 0
+	for _, e := range entrees {
+		if strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		source := filepath.Join(local, e.Name())
+		if e.IsDir() {
+			k, err := copierArborescence(sc, source, RepertoireDistant+"/"+e.Name())
+			if err != nil {
+				return err
+			}
+			m += k
+			continue
+		}
+		info, err := e.Info()
+		if err != nil || !info.Mode().IsRegular() {
+			continue
+		}
+		if err := copierFichier(sc, racineLocale, e.Name(), RepertoireDistant+"/"+e.Name(), info.Mode().Perm()); err != nil {
+			return err
+		}
+		m++
+	}
+
+	logs.Write_Log("INFO", fmt.Sprintf("autoadd : client (%d fichier(s)) et configuration %s (%d fichier(s)) copiés", n, clientSoftwareID, m))
 	return nil
 }

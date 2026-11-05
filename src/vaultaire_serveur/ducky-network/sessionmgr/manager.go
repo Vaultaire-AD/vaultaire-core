@@ -99,6 +99,17 @@ func (m *Manager) GetBySessionID(sessionID string) (*Session, bool) {
 	return s, ok
 }
 
+// EstAuthentifiee dit si la session a terminé son authentification.
+//
+// Sous verrou : le statut est écrit par la goroutine de la connexion et lu ici
+// par d'autres. Une session inconnue n'est pas authentifiée.
+func (m *Manager) EstAuthentifiee(sessionID string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	s, ok := m.sessions[sessionID]
+	return ok && s.Status == SessionAuthenticated
+}
+
 // GetByClientSoftwareID retourne la première session correspondant à cet
 // identifiant machine. Utile pour rattacher un log qui n'a accès qu'au
 // ClientSoftwareID (pas au *storage.DuckySession) à sa session, par exemple

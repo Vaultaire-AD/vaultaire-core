@@ -23,6 +23,11 @@ type ComplianceRow struct {
 	DriftChecked   int
 	DriftAt        sql.NullTime
 
+	// Hostname : le nom d'hôte que la machine a déclaré dans son inventaire
+	// (trame 02_12), lu dans id_logiciels — vide tant qu'elle ne l'a pas fait.
+	// Voir NomDeMachine pour l'afficher (TO-DO 215).
+	Hostname string
+
 	// JamaisRapporte : la machine est à l'inventaire, elle n'a jamais rapporté.
 	//
 	// Ce n'est pas une valeur lue en base — c'est une ligne qui n'existe PAS
@@ -32,10 +37,12 @@ type ComplianceRow struct {
 }
 
 const complianceSelect = `
-	SELECT computeur_id, scope, target_user, fingerprint, status,
-	       modules_total, modules_failed, modules_skipped, reported_at,
-	       drift_count, drift_checked, drift_at
-	  FROM gpo_compliance`
+	SELECT c.computeur_id, c.scope, c.target_user, c.fingerprint, c.status,
+	       c.modules_total, c.modules_failed, c.modules_skipped, c.reported_at,
+	       c.drift_count, c.drift_checked, c.drift_at,
+	       COALESCE(l.hostname, '')
+	  FROM gpo_compliance c
+	  LEFT JOIN id_logiciels l ON l.computeur_id = c.computeur_id`
 
 // listeParcSelect part de l'INVENTAIRE des machines, pas des rapports.
 //
@@ -68,7 +75,8 @@ const listeParcSelect = `
 	       COALESCE(c.modules_skipped, 0),
 	       c.reported_at,
 	       COALESCE(c.drift_count, 0), COALESCE(c.drift_checked, 0),
-	       c.drift_at
+	       c.drift_at,
+	       COALESCE(l.hostname, '')
 	  FROM id_logiciels l
 	  LEFT JOIN gpo_compliance c ON c.computeur_id = l.computeur_id
 	 WHERE l.logiciel_type = ?`
@@ -102,8 +110,8 @@ func GetComplianceForClient(db *sql.DB, computeurID string) ([]ComplianceRow, er
 		return nil, fmt.Errorf("gpo: connexion base indisponible")
 	}
 	rows, err := db.Query(complianceSelect+`
-		WHERE computeur_id = ?
-		ORDER BY scope, target_user`, computeurID)
+		WHERE c.computeur_id = ?
+		ORDER BY c.scope, c.target_user`, computeurID)
 	if err != nil {
 		return nil, fmt.Errorf("gpo: lecture de la conformité : %w", err)
 	}
@@ -125,7 +133,7 @@ func scanCompliance(rows *sql.Rows) ([]ComplianceRow, error) {
 		var rapporteA sql.NullTime
 		if err := rows.Scan(&r.ComputeurID, &r.Scope, &r.TargetUser, &r.Fingerprint, &r.Status,
 			&r.ModulesTotal, &r.ModulesFailed, &r.ModulesSkipped, &rapporteA,
-			&r.DriftCount, &r.DriftChecked, &r.DriftAt); err != nil {
+			&r.DriftCount, &r.DriftChecked, &r.DriftAt, &r.Hostname); err != nil {
 			return nil, fmt.Errorf("gpo: lecture d'une ligne de conformité : %w", err)
 		}
 		out = append(out, NormaliserLigne(r, rapporteA))

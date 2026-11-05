@@ -106,6 +106,37 @@ func MachinesEnLigne() []string {
 	return ids
 }
 
+// MachinesDuCluster rend les machines connectées à N'IMPORTE QUEL core : celles
+// de ce core, et celles que la base dit connectées — le tunnel machine écrit sa
+// ligne dans did_login, que partagent tous les cores (TO-DO 172).
+//
+// C'est la cible de `vlt gpo refresh --all` : MachinesEnLigne seule ne voyait
+// que les tunnels de ce core, et « tout le parc » en oubliait une partie sur un
+// cluster. Une machine que la base croit connectée sans l'être ne coûte qu'une
+// demande relayée que personne ne prend.
+func MachinesDuCluster(enBase func() ([]string, error)) []string {
+	vus := map[string]bool{}
+	var ids []string
+	ajouter := func(id string) {
+		id = strings.TrimSpace(id)
+		if id != "" && !vus[id] {
+			vus[id] = true
+			ids = append(ids, id)
+		}
+	}
+	for _, id := range MachinesEnLigne() {
+		ajouter(id)
+	}
+	if enBase != nil {
+		if autres, err := enBase(); err == nil {
+			for _, id := range autres {
+				ajouter(id)
+			}
+		}
+	}
+	return ids
+}
+
 // DemanderRafraichissementParc pousse 05_18 à toutes les machines d'une liste.
 //
 // Rend le nombre de machines jointes. Les autres sont simplement hors ligne :

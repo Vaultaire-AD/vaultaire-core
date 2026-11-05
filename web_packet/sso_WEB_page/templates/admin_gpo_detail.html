@@ -50,6 +50,7 @@
     .gpo-def { margin: 0.2rem 0 0.5rem 0.4rem; padding-left: 0.6rem; border-left: 2px solid var(--primary, #3b6fd4); }
     .gpo-def-lines { margin: 0.2rem 0 0 0; padding-left: 1.1rem; }
     .gpo-def-lines li { font-size: 0.85rem; }
+    .gpo-cycle { display: flex; gap: 0.6rem; align-items: center; flex-wrap: wrap; margin: 0.6rem 0 1rem 0; }
   </style>
 </head>
 <body>
@@ -84,6 +85,27 @@
 
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
     {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+
+    <!-- Demander un cycle (TO-DO 169). Hors des onglets : c'est le geste qui
+         suit une modification, quel que soit l'onglet où elle a été faite. -->
+    {{ if .PorteeMachine }}
+      {{ if .PeutDemanderUnCycle }}
+      <form method="post" class="gpo-cycle"
+            data-confirm="Demander un cycle maintenant aux machines liées à {{ .Policy.Name }} ? Chacune relit sa politique et réapplique ce qui a changé.">
+        <input type="hidden" name="action" value="refresh_gpo_machines">
+        <input type="hidden" name="active_tab" value="{{ .ActiveTab }}">
+        <button type="submit" class="btn btn-secondary">Demander un cycle</button>
+        <span class="muted small">
+          aux machines des groupes liés, sans attendre leur tour. Les machines hors ligne le feront à leur retour.
+        </span>
+      </form>
+      {{ end }}
+    {{ else }}
+      <p class="muted small gpo-cycle">
+        Une GPO de compte s'applique à la prochaine ouverture de session de chaque compte : il n'y a pas de
+        cycle à demander, et une session déjà ouverte ne change pas.
+      </p>
+    {{ end }}
 
     <!-- Onglets. Masqués sans JavaScript : tous les panneaux restent alors
          visibles à la suite, comme avant. -->

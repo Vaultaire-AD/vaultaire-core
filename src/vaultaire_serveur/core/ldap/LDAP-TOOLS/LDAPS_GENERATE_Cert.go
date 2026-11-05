@@ -7,12 +7,12 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"log"
 	"math/big"
 	"net"
 	"os"
 	"path/filepath"
 	"time"
+	"vaultaire/core/logs"
 )
 
 func FileEmpty(filename string) bool {
@@ -73,7 +73,7 @@ func GenerateSelfSignedCert(certPath, keyPath string) error {
 	defer keyOut.Close()
 	pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(priv)})
 
-	log.Println("🔐 Certificat et clé générés.")
+	logs.Write_Log("INFO", "LDAPS : certificat "+certPath+" et clé "+keyPath+" générés")
 	return nil
 }
 

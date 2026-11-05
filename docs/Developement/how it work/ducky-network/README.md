@@ -35,15 +35,16 @@ catégorie.
 | 6 | [Révocation — kill switch](./06-revocation/README.md) | `06_01`–`06_06` | `ducky-network/revocation_manager`, `core/revocation` |
 | 7 | [Interface web](./07-interface-web/README.md) | `07_01`, `07_04` — **réservées** | *aucun* |
 | 8 | [Authentification par un service](./08-authentification-service/README.md) | `08_01`–`08_06` (réservée → `08_19`) | `ducky-network/serviceauth` |
+| 9 | [Ordre de mise à jour d'un agent](./09-mise-a-jour/README.md) | `09_01`–`09_10` | `ducky-network/miseajour_manager`, `core/miseajour` |
 
 ## Qui émet quoi
 
-| Type de client | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 |
-|---|---|---|---|---|---|---|---|---|
-| `vaultaire_client` (agent) | `01_01` | ✔ | ✔ | `04_03` | ✔ | ✔ | — | — |
-| `vaultaire_proxy` | + enrôlement | ✔ | — | nœud (`04_01 03 05 07 15 18`) | — | — | — | — |
-| `vaultaire_web` | + enrôlement | ✔ | — | service (`04_09 12 14`) | — | — | `07_01 07_04` | — |
-| `vaultaire_nexus` | + enrôlement | ✔ | — | service (`04_09 12 14`) | — | — | — | `08_01 08_04` |
+| Type de client | 01 | 02 | 03 | 04 | 05 | 06 | 07 | 08 | 09 |
+|---|---|---|---|---|---|---|---|---|---|
+| `vaultaire_client` (agent) | `01_01` | ✔ | ✔ | `04_03 04_15` | ✔ | ✔ | — | — | `09_01 09_04` |
+| `vaultaire_proxy` | + enrôlement | ✔ | — | nœud (`04_01 03 05 07 15 18`) | — | — | — | — | — |
+| `vaultaire_web` | + enrôlement | ✔ | — | service (`04_09 12 14`) | — | — | `07_01 07_04` | — | — |
+| `vaultaire_nexus` | + enrôlement | ✔ | — | service (`04_09 12 14`) | — | — | — | `08_01 08_04` | — |
 
 Détail exact : [1.3 — Types de client, ordre et contrôles](./01-socle/03-types-ordre-et-controles.md).
 

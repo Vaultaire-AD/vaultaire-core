@@ -261,13 +261,15 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        dockerfile: [deployments/pre-prod/Dockerfile, deployments/dev/dockerfile]
+        dockerfile: [deployments/docker/Dockerfile, deployments/pre-prod/Dockerfile, deployments/dev/dockerfile]
     steps:
       - uses: actions/checkout@v4
 
       - name: Définir le tag d'image
         id: vars
-        run: echo "tag=$(basename ${{ matrix.dockerfile }} | tr '_' '-')" >> "$GITHUB_OUTPUT"
+        # Le répertoire, et non le nom du fichier : deux « Dockerfile » donnaient
+        # le même tag, et le second rapport écrasait le premier.
+        run: echo "tag=$(basename "$(dirname ${{ matrix.dockerfile }})")-$(basename ${{ matrix.dockerfile }} | tr '_' '-' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
 
       - name: Build de l'image
         run: docker build -f ${{ matrix.dockerfile }} -t vaultaire-audit:${{ steps.vars.outputs.tag }} .
@@ -314,6 +316,69 @@ jobs:
             trivy-image-${{ steps.vars.outputs.tag }}.sarif
           retention-days: 30
           if-no-files-found: ignore
+
+  # --------------------------------------------------------------------
+  # 5b. Chart Helm (deployments/k8s) — rendu et validation des manifestes
+  # --------------------------------------------------------------------
+  # Un rendu qui casse se voit ici, et non dans le cluster de quelqu'un qui
+  # déploie en GitOps. kubeconform valide chaque objet contre le schéma de
+  # l'API Kubernetes ; values.schema.json valide les valeurs.
+  k8s-chart:
+    name: "☸️ Chart Helm"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-helm@v4
+        with:
+          version: v3.19.0
+
+      - name: helm lint
+        run: |
+          set -euo pipefail
+          C=deployments/k8s/helm/vaultaire
+          helm lint --strict "$C" --set auth.existingSecret=essai
+          for f in deployments/k8s/examples/values-*.yaml; do
+            helm lint --strict "$C" -f "$f"
+          done
+
+      - name: Rendu + kubeconform
+        run: |
+          set -euo pipefail
+          C=deployments/k8s/helm/vaultaire
+          mkdir -p rendu
+          helm template t "$C" --set auth.existingSecret=essai > rendu/defaut.yaml
+          for f in deployments/k8s/examples/values-*.yaml; do
+            helm template t "$C" -f "$f" > "rendu/$(basename "$f")"
+          done
+          docker run --rm -v "$PWD/rendu:/rendu:ro" ghcr.io/yannh/kubeconform:v0.6.7 \
+            -strict -summary -kubernetes-version 1.30.0 /rendu
+
+      - name: Aucun mot de passe par défaut
+        run: |
+          # Sans Secret ni mot de passe, le rendu doit ÉCHOUER.
+          if helm template t deployments/k8s/helm/vaultaire >/dev/null 2>&1; then
+            echo "::error::la chart s'installe sans aucun secret fourni"; exit 1
+          fi
+
+      # Sur les manifestes RENDUS : le cadre « helm » de Checkov rend la chart
+      # avec ses valeurs par défaut, que la chart refuse (aucun secret).
+      - name: Checkov - manifestes rendus
+        continue-on-error: true
+        uses: bridgecrewio/checkov-action@master
+        with:
+          directory: rendu
+          framework: kubernetes
+          output_format: sarif
+          output_file_path: checkov-helm.sarif
+          soft_fail: true
+
+      - name: Upload SARIF Checkov (Helm)
+        uses: github/codeql-action/upload-sarif@v4
+        if: always() && hashFiles('checkov-helm.sarif') != ''
+        with:
+          sarif_file: checkov-helm.sarif
+          category: checkov-helm
 
   # --------------------------------------------------------------------
   # 6. Audit IaC

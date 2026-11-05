@@ -59,6 +59,24 @@ Nous utilisons un modèle inspiré de **Gitflow** adapté :
 - **Faire des commits atomiques et bien nommés** (ex : `fix: corrige l’erreur de connexion LDAP`)  
 - Poussez la branche sur le dépôt distant régulièrement.
 
+### Une branche par point de la TO-DO — développeurs **et IA**
+
+Chaque point de `docs/Developement/TO-DO.md` se traite sur **sa** branche :
+
+1. la créer depuis `dev` : `git switch -c fix/<description>-<numéro> dev`
+   (ou `feature/…`) ;
+2. y traiter le point en entier — code, tests, et les fichiers que la
+   convention demande (`TO-DO.md`, `DO/`, `Version/`, `A_TESTER.md`, formation).
+   Une section d'`A_TESTER.md` commence par sa **mise en place** : les commandes
+   qui montent ce qu'elle teste (un proxy, un second core, un Nexus, un poste,
+   une GPO…), en renvoyant aux recettes communes en tête du fichier ;
+3. la fusionner dans `dev` (`git switch dev && git merge --no-ff <branche>`) ;
+4. la supprimer (`git branch -d <branche>`).
+
+La pousser n'est pas obligatoire : elle ne vit que le temps du point. Un point
+= une branche = un commit de fusion dans `dev`, qui se lit et s'annule d'un
+seul geste.
+
 ## 2.1 Commits atomiques et messages clairs
 
 Un **commit atomique** signifie que chaque commit :  
@@ -124,6 +142,7 @@ Cette rigueur dans les commits rendra la collaboration et la maintenance du proj
   - Les tests passent (unitaires, lint)  
   - Le code respecte les conventions (formatage, commentaires)  
   - La documentation est mise à jour si besoin  
+  - Toute fonctionnalité nouvelle visible d'un administrateur est ajoutée au **parcours de formation** (`docs/training/`) — voir le [pense-bête](./docs/Developement/how%20it%20work/Pense-bete_developpement.md)  
 - Demandez une revue de code à au moins un autre membre de l’équipe.  
 - Corrigez les retours avant fusion.
 

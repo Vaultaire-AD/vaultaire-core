@@ -177,9 +177,17 @@ partie — il choisirait donc une partie de la configuration d'une machine à
 laquelle il ne fait que se connecter.
 
 `gpo.Resolve` fusionne les GPO retenues. **Deux GPO du même scope réglant la
-même clé naturelle sont un conflit signalé, pas résolu** : deviner laquelle
-gagne produirait un parc dont la configuration réelle est imprévisible. Le
-serveur répond alors `resolve_conflict` et ne livre rien.
+même clé naturelle **autrement** sont un conflit signalé, pas résolu** :
+deviner laquelle gagne produirait un parc dont la configuration réelle est
+imprévisible. Depuis le TO-DO 222, le conflit n'écarte que les modules qui
+s'opposent — **tous** les deux : garder le premier désignerait un gagnant par
+l'ordre des noms — et le reste est livré. Il est rangé par machine, scope et
+compte (table `gpo_conflict`, remplacée à chaque résolution, effacée quand il
+n'y en a plus), journalisé quand il apparaît, change ou disparaît, et montré
+par `vlt gpo status` (fiche et vue du parc) et la page Conformité. Deux GPO qui
+règlent la même clé **à l'identique** (même type, mêmes paramètres) ne
+s'opposent pas : le module est livré une fois, en enforce si l'une des deux
+l'est, et les versions des deux comptent dans l'empreinte.
 
 ### 4.4 Transport
 
@@ -220,6 +228,23 @@ L'agent remonte le résultat module par module (trame `05_12`). Sans ce rapport,
 l'interface présenterait la configuration *voulue* comme si c'était la
 configuration *réelle*.
 
+**« Rien à faire » est aussi un rapport** *(2.3, TO-DO 166)*. Une machine dont la
+politique n'a pas bougé n'applique rien et n'envoie donc aucun `05_12` : elle
+demande, le core répond `05_03` ou `05_07`. Or `reported_at` — la date sur
+laquelle se juge « à jour » ou « en retard » — n'était écrite que par le rapport
+d'application. Trois cadences après sa dernière application, une machine saine
+passait « en retard » et y restait : un parc stable s'affichait en retard tout
+entier.
+
+La demande porte l'empreinte que la machine **applique**, et le core ne répond
+« rien à faire » que si elle égale celle de la politique effective : à cet
+instant il sait où en est la machine, exactement comme après un rapport.
+`dbgpo.ConfirmerEtat` avance donc `reported_at` — **seulement** si la ligne en
+base porte cette même empreinte. Si elle en porte une autre (un rapport perdu),
+rien n'est touché : dater d'aujourd'hui des colonnes qui décrivent une
+application antérieure serait mentir, et la machine reste signalée. Ni le
+statut, ni les compteurs, ni l'historique des changements ne bougent.
+
 ---
 
 ## 5. Le catalogue de modules
@@ -239,7 +264,7 @@ Défini dans `core/gpo/registry.go`, variable `baseCatalog`.
 | 40 | `sysctl` | machine | Un fichier par clé dans `/etc/sysctl.d/` |
 | 41 | `boot_params` | machine | Ligne de commande noyau (GRUB), effectif au redémarrage |
 | 42 | `kernel_module_policy` | machine | Interdit le chargement d'un module noyau |
-| 44 | `ssh_server_config` | machine | Fragment `sshd_config.d/99-vaultaire-gpo.conf` |
+| 44 | `ssh_server_config` | machine | Fragment `sshd_config.d/00-vaultaire-gpo.conf` (« 00- » : sshd retient la première valeur lue) ; effet constaté par `sshd -T` (TO-DO 182) |
 | 45 | `ssh_known_hosts` | machine | `/etc/ssh/ssh_known_hosts` + StrictHostKeyChecking |
 | 46 | `pam_policy` | machine | Complexité mot de passe, verrouillage après échecs |
 | 47 | `local_account_policy` | machine | Comptes locaux non-Vaultaire (root et uid<1000 exclus) |
@@ -965,7 +990,8 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 |----------|----------------|
 | `politique machine deja a jour` alors qu'une GPO a changé | Le changement n'affecte pas l'empreinte — vérifier qu'il porte bien sur un paramètre ou une définition |
 | `aucun groupe commun` en scope user | Le groupe de la GPO ne contient pas **à la fois** l'utilisateur et la machine |
-| `resolve_conflict` | Deux GPO du même scope règlent la même clé — les logs nomment les deux |
+| `gpo status` : « Conflits entre GPO » | Deux GPO du même scope règlent la même clé autrement : ces modules ne sont pas livrés, le reste l'est. Corriger ou délier l'une des deux |
+| `resolve_conflict` (agent) | Core antérieur au 222 : il refusait toute la politique sur un conflit |
 | `restrictions_unavailable` | Base injoignable, mode fail-closed |
 | Module `skipped` | Type inconnu de l'agent : serveur plus récent que le client |
 | `jeu de commandes non transmis` | Agent antérieur à la transmission des définitions |
@@ -975,7 +1001,7 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 
 | Module | Emplacement |
 |--------|-------------|
-| `ssh_server_config` | `/etc/ssh/sshd_config.d/99-vaultaire-gpo.conf`, `/etc/ssh/vaultaire-banner` |
+| `ssh_server_config` | `/etc/ssh/sshd_config.d/00-vaultaire-gpo.conf`, `/etc/ssh/vaultaire-banner` (l'ancien `99-vaultaire-gpo.conf` est retiré à la première application réussie) |
 | `sysctl` | `/etc/sysctl.d/90-vaultaire-<clé>.conf` |
 | `sudoers_rule` | `/etc/sudoers.d/90-vaultaire-<groupe>` |
 | `file_deploy` | Le chemin du module |
@@ -987,12 +1013,38 @@ GPO: cycle machine termine en 8.231s — statut=applied applique=4 inchange=1 ec
 
 ```bash
 vlt gpo refresh <computeur_id>
+vlt gpo refresh --gpo <nom>
 vlt gpo refresh --all
 ```
 
 Le core pousse une trame `05_18` à la machine, qui repart sur son cycle
 **ordinaire** — mêmes calculs, même empreinte, mêmes rapports. Une trame de
 réveil n'est pas un second chemin d'application.
+
+**Trois façons de le demander, une seule boucle** *(2.3, TO-DO 169)*. Une
+machine, les machines d'une GPO, tout le parc connecté : la ligne de commande
+faisait la boucle elle-même, et le portail ne proposait rien — alors que c'est
+là qu'on modifie un module, et là qu'on attend de le voir appliqué.
+`action.RafraichirMachines` est cette boucle ; la ligne de commande et les deux
+boutons « Demander un cycle » du portail (fiche d'une machine, fiche d'une GPO
+de portée machine) l'empruntent.
+
+- **Chaque machine passe par `gpo.refresh`**, donc par son contrôle de droits
+  (`write:update:client` sur ses domaines). Il n'y a toujours pas d'action
+  « tout le parc » : elle ne pourrait porter qu'un droit global. Les machines
+  refusées sont **comptées, jamais nommées**.
+- **Les machines d'une GPO** sont celles des groupes auxquels elle est liée
+  (`dbgpo.MachinesLieesA`). Le droit de **lire** la GPO est exigé avant de les
+  énumérer.
+- **Une GPO de compte n'a pas de cycle à demander** (`ErrGPODeCompte`) : la page
+  le dit à la place du bouton, la commande le refuse, aucune machine n'est
+  sollicitée.
+- **La cible d'une fiche vient de l'adresse**, pas du formulaire : un champ
+  forgé ne fait pas rafraîchir une autre machine que celle qu'on regarde.
+
+Sur un cluster, la trame part du core qui reçoit la demande : seules les
+machines connectées à **ce** core sont jointes, les autres sont rangées « hors
+ligne ». Non vérifié à deux cores — TO-DO 172.
 
 **À quelle session la pousser** (TO-DO 89). Une machine a souvent plusieurs
 sessions sous son identifiant : son tunnel (compte `vaultaire`), les connexions
@@ -1124,6 +1176,73 @@ Troisième lot — les modules dont la dérive coûte la **capacité à savoir**
 |---|---|---|
 | `ntp_servers` | `system` | serveurs réellement chargés par timesyncd, ordre indifférent |
 | `audit_rule` | étiquette | règle réellement chargée dans le noyau, par son `-k` |
+
+Quatrième lot — la configuration **en vigueur** d'un service *(2.3, TO-DO 182)* :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `sshd_effectif` | `sshd` | les directives que la politique fixe, telles que `sshd -T` les rend — toutes inclusions résolues |
+
+sshd retient la **première** valeur qu'il lit. Le fragment de Vaultaire, intact
+au hachage près, ne dit rien si une ligne lue avant lui l'emporte : dans
+`sshd_config` au-dessus de sa ligne `Include`, ou dans un fragment trié avant
+`00-vaultaire-gpo.conf`. La recette du 12/10 (§ 7d) en a montré le prix :
+`MaxAuthTries 10` en tête de `sshd_config`, la politique en demandait 3, et la
+machine était déclarée conforme.
+
+- **à l'application**, `sshd -T` est relu après le rechargement : un fragment
+  sans effet fait **échouer** le module — « fragment écrit mais sans effet :
+  sshd maxauthtries : 3 attendu, 10 constaté — une directive lue avant … »
+  — plutôt que de le dire appliqué ;
+- **au scan**, l'écart est signalé en audit, et en enforce le module est rejoué
+  — ce qui échoue de la même façon tant que la ligne qui le masque est là.
+  C'est sur le poste qu'il faut la retirer ;
+- `prohibit-password` et `without-password` sont tenus pour égaux (`sshd -T`
+  rend encore l'ancien nom) ; `sshd -T` en échec est une **incertitude**, pas
+  un écart ;
+- **un agent d'avant le 182** n'a pas inscrit cette attente. Le premier cycle
+  qui suit la mise à jour redemande la politique et l'inscrit **sans rejouer**
+  le module — en audit, rejouer corrigerait la dérive. Le fragment garde alors
+  son ancien nom jusqu'à la prochaine application réelle.
+
+Le client SSH suit la même règle *(2.3, TO-DO 246)* : le fragment
+`/etc/ssh/ssh_config.d/00-vaultaire-gpo.conf` (anciennement `99-`) est
+vérifié par l'attente `ssh_client_effectif`, lue par
+`ssh -F /etc/ssh/ssh_config -G vaultaire-verification.invalid` — la
+configuration résolue pour un hôte qui ne correspond à aucun bloc `Host`
+particulier. Un fragment masqué fait échouer `ssh_known_hosts`.
+
+Cinquième lot *(2.3, recette du 29/10, DO 248)* :
+
+| Type | Cible | Ce qui est constaté |
+|---|---|---|
+| `firewalld_regle` | `port:<port>/<proto>` ou `rich:<règle>` | `firewall-cmd --query-…`, en vigueur **puis** permanent ; firewalld arrêté = écart |
+
+La branche nftables déclarait déjà `nft_rule` ; la branche firewalld ne
+déclarait rien, et un `firewall-cmd --remove-port` passait inaperçu sur Rocky.
+
+### Échouer plutôt que se dire appliqué *(2.3, DO 248)*
+
+Règle tirée de la recette du 29/10 : un module dont l'effet n'existe pas sur
+le poste ne rend **jamais** un succès.
+
+| Module | Situation | Résultat |
+|---|---|---|
+| `selinux_mode` | pas de SELinux (Debian, Ubuntu) | **ignoré** (`ErrNonApplicable` → `skipped`) |
+| `auditd_rule` | ni `augenrules` ni `auditctl` | échec « auditd absent » ; « Rule exists » au rechargement n'est pas un échec |
+| `ntp_config` | timesyncd ne tourne pas (chrony, ntpd) | échec qui nomme le démon actif — chrony : TO-DO 249 |
+| `update_policy` | outil absent | `unattended-upgrades` / `dnf-automatic` installé ; sur dnf 4, configuration complète `/etc/dnf/automatic-vaultaire.conf` et override du service (dnf 4 ne lit pas `automatic.conf.d`) |
+| `package` | nom Debian sur une distribution RPM | traduit (`nomsRPM`) ; compléments installés au mieux (`audit-rules` avec `auditd` sur Rocky 10) |
+| `user_cron` | bus de session absent (le cycle de compte précède `user@<uid>`) | le lien d'activation est posé par l'agent (`lierSousHome`) ; le timer démarre avec le gestionnaire du compte |
+
+`applyModule` traduit `ErrNonApplicable` en `skipped` : un module qui n'a pas
+d'objet sur ce poste n'est pas un échec, et une GPO commune au parc ne met pas
+chaque Debian en échec.
+
+Les fichiers d'un module de compte écrits **hors** du `HOME` (la slice
+`/etc/systemd/system/user-<uid>.slice.d` de `user_resource_limits`) suivent la
+boucle de scan de la portée machine (`repartirParHome`) : la descente depuis le
+`HOME` n'y a pas de sens.
 
 Ces deux-là ne rendent rien de plus permissif. Mais une horloge qui suit d'autres
 serveurs que ceux de la politique rend tous les horodatages du parc
@@ -1296,6 +1415,62 @@ réapplique. La correction n'est jamais immédiate — réappliquer peut relance
 service, et le faire à l'instant de la détection reviendrait à redémarrer sshd
 pendant qu'un administrateur débogue.
 
+### Enforce et audit ne se lisaient pas différemment *(2.3, TO-DO 86)*
+
+Recette du 24/09 : « la dérive est signalée en audit comme en enforce, sans
+différence visible ». C'était exact. Le rapport d'écart part **avant** la
+correction ; côté machine, rien ne disait ensuite que c'était réparé, et la ligne
+restait à « 1 écart(s) » jusqu'au scan du cycle d'après — une cadence entière.
+Exactement ce qu'affiche l'audit, qui ne corrige rien.
+
+Deux changements, tous deux dans l'agent :
+
+- **le constat après application vaut pour la machine** (`runMachineCycleWith`) :
+  quand le cycle vient de corriger un écart ou d'appliquer un module, l'agent
+  rescanne et envoie l'état obtenu, comme il le faisait déjà pour un compte
+  (plus bas). En enforce la ligne revient à `ok (N)` dans le cycle ; l'écart
+  trouvé reste au journal du core, qui l'a reçu ;
+- **l'audit se nomme** (`marquerLesNonCorriges`) : un écart dont **tous** les
+  modules propriétaires sont en audit porte `NonCorrige`, et son détail part
+  préfixé de `[audit : signale, non corrige]` (`MentionAudit`). C'est l'agent
+  qui marque, parce que lui seul sait ce qu'il va rejouer : un fichier que se
+  partagent un module en audit et un module en enforce **sera** reposé, et n'est
+  pas marqué. Une incertitude (`unverifiable`, `unreadable`) ne l'est jamais.
+
+Le préfixe voyage dans le champ de détail existant : ni trame ni colonne
+nouvelle, et un core antérieur l'affiche tel quel.
+
+### Une GPO modifiée : quand, et pas comment *(2.3, TO-DO 86)*
+
+Le second symptôme de la même recette — « une GPO mise à jour ne semble rien
+changer chez un client qui l'avait déjà appliquée » — **n'a pas été reproduit** :
+un module modifié change d'empreinte et est réappliqué, en enforce comme en
+audit, dans les deux portées. Ce qui y ressemble à s'y méprendre : rien ne part
+quand on modifie une GPO. Une machine l'apprend à son prochain cycle, un compte
+à sa prochaine ouverture de session, et le message rendu disait « mis à jour »,
+point.
+
+*(Depuis le TO-DO 169, la phrase nomme le bouton « Demander un cycle » de la
+fiche de la GPO et `vlt gpo refresh --gpo <nom>` — plus `--all`, qui faisait
+travailler tout le parc pour une seule GPO.)*
+
+`action/gpo_prise_en_compte.go` ne change pas **quand** la politique
+s'applique — pousser un cycle à tout un parc à chaque case cochée appartient à
+qui exploite, et `vlt gpo refresh` existe pour cela. Il fait dire aux cinq
+écritures (`modifierGPO`, `reglerModeDeriveGPO`, `ajouterModuleGPO`,
+`modifierModuleGPO`, `supprimerModuleGPO`) ce qu'il va se passer, avec la
+cadence réellement en vigueur. La phrase vient de l'**action** : les deux façades
+l'affichent sans rien avoir à savoir.
+
+Deux à-côtés, vus sur le banc :
+
+- **retirer un module ne défait rien** — ce qu'il avait posé reste, et cesse
+  d'être vérifié. Le message le dit, et dit comment le retirer (état `absent`
+  d'abord) ;
+- **une portée vidée gardait ses écarts pour toujours** : un rapport à zéro
+  module remet désormais la dérive à zéro (`SaveApplyReport`), et l'état se lit
+  « rien à vérifier ».
+
 ---
 
 ## Le scan du scope utilisateur
@@ -1387,6 +1562,11 @@ vérifié ».
 Ce constat ne corrige rien, ne compte pas comme une vérification due, et
 n'efface aucune empreinte. Un écart qui subsiste — module en échec, politique en
 audit — reste affiché, à juste titre.
+
+*(2.3, TO-DO 86.)* La phrase « côté machine, le tour suivant rescanne » était
+vraie et coûtait une cadence d'affichage faux : la machine envoie désormais le
+même constat, par la même fonction — `constaterApresApplication(sessionKey,
+scope, username)`.
 
 ### Deux connexions du même compte
 
@@ -1543,7 +1723,8 @@ effet que pour les politiques modifiées après la mise à jour de l'agent.
 `ScopeState.Inventaire` dit sous quelle règle d'inventaire un état a été écrit.
 Un état en dessous de `versionInventaire` est rejoué **une fois**, à la première
 connexion du compte (`rattraperInventaireUtilisateur`) — le journal de l'agent le
-dit. Les modules en **audit** ne sont pas rejoués : rejouer, c'est réécrire, et
+dit. La version vaut **2** depuis la 2.3 : les trois vérificateurs du TO-DO 163
+(plus bas) n'entrent dans l'inventaire que si leurs modules sont rejoués. Les modules en **audit** ne sont pas rejoués : rejouer, c'est réécrire, et
 l'audit est le mode où l'on a décidé de ne pas réécrire. Ils entreront dans
 l'inventaire à leur prochaine modification, et restent « non vérifiés » d'ici là.
 
@@ -1602,13 +1783,77 @@ Le scope machine garde ses chemins, pour la raison écrite dans
 
 | Module | Pourquoi | Suivi |
 |---|---|---|
-| `user_git_config` | la clé n'a pas de vérificateur | TO-DO 163 |
-| `user_password_policy` | `chage` ne laisse rien que le scan relise | TO-DO 163 |
-| `user_cron` | les deux unités sont inventoriées ; l'**activation** du timer ne l'est pas | TO-DO 163 |
 | `directory_manage` | un répertoire n'entre pas à l'inventaire, côté machine non plus | — |
+| `user_password_policy`, changement forcé | il s'éteint de lui-même quand la personne obéit : ce ne serait pas un écart | voulu |
+| `user_cron`, cible du lien d'activation | seule sa présence est sûre ; voir ci-dessous | voulu |
 
 Silence, donc, et non fausse conformité : un compte qui ne reçoit que de tels
 modules reste « non vérifié », et le résumé du parc le dit.
+
+### Marqueurs de compte : une valeur par personne *(2.3, TO-DO 211)*
+
+Les champs marqués `Marqueurs` dans le registre (`user_git_config.value`,
+`user_env.value`) acceptent, développés **sur le poste**, pour chaque compte :
+
+| Marqueur | Valeur | Exemple |
+|---|---|---|
+| `%u` | nom court du compte | `alice` |
+| `%U` | nom complet du compte | `alice@acme.lan` |
+| `%d` | domaine | `acme.lan` |
+| `%n` | prénom et nom, depuis l'annuaire | `Alice Martin` |
+| `%m` | adresse de messagerie, depuis l'annuaire | `alice@acme.lan` |
+| `%%` | un `%` | |
+
+- **Core** (`core/gpo/marqueurs.go`) : `ValidateModule` refuse un marqueur
+  inconnu ou un `%` final. La politique de compte porte l'**identité**
+  (`DeliveryPolicy.Identite`, lue par `GetUserByUsername`), repliée dans son
+  empreinte : changer le nom ou l'adresse du compte redistribue la politique.
+- **Agent** (`gpo/marqueurs.go`) : `developperMarqueurs` remplace les valeurs
+  avant d'appliquer, en scope utilisateur seulement, et ajoute à l'empreinte du
+  module celle des valeurs développées — la dérive compare donc à la valeur
+  remplacée. `%n` ou `%m` sans identité : le module **échoue**, il n'écrit pas
+  un marqueur brut. Un marqueur inconnu (politique d'un core plus récent) est
+  laissé tel quel.
+- L'identité voyage à côté des modules, hors de leur signature : TO-DO 253.
+
+### Trois vérificateurs du scope utilisateur *(2.3, TO-DO 163)*
+
+`user_git_config`, `user_password_policy` et l'activation de `user_cron` ne
+déclaraient aucune attente : ce qu'ils posaient pouvait être défait sans que la
+conformité le voie. `verifiers_utilisateur.go` :
+
+| Attente | Cible | Ce qui est relu | Écart |
+|---|---|---|---|
+| `git_config` | `<chemin>#cle:<clé>` | la valeur de **cette clé**, par `git config --file <copie> --list -z` | clé retirée, valeur changée |
+| `password_aging` | le compte | `max=` et `warn=`, par `chage -l` | valeurs changées |
+| `user_timer` | le lien dans `timers.target.wants` | sa présence, et qu'il ne pointe pas vers `/dev/null` | lien disparu, timer masqué |
+
+**La clé, pas le fichier** — même raisonnement que le bloc d'un `.bashrc` :
+`~/.gitconfig` est à la personne, et en hacher la totalité aurait fait de chaque
+alias une dérive. La valeur attendue est stockée hachée (`sha256=…`), ou
+`etat=absent`. `git` lit une **copie** prise par descripteur, dans un répertoire
+que seul root ouvre : il ne travaille jamais sous le dossier de la personne
+(TO-DO 162), et `--file` n'inclut aucun autre fichier.
+
+**Le timer : seulement ce dont on est sûr.** Lien disparu, ou remplacé par un
+lien vers `/dev/null` (c'est ce que fait `systemctl --user mask`) : écart. Autre
+chose qu'un lien à cet endroit : `unverifiable`, pas un écart. La cible du lien
+n'est pas comparée à un nom — systemd en écrit plusieurs formes selon la
+version, et un vérificateur qui se trompe fait rejouer un module à chaque
+connexion.
+
+**Tout passe par un descripteur.** `SystemCheck.Compte` — posé par le scan au
+moment de vérifier, jamais lu dans l'état enregistré (`json:"-"`) — fait passer
+ces lectures par `etatSousHome`, `constaterSousHome` et `lireLienSousHome`
+(`O_PATH|O_NOFOLLOW`, `readlinkat`). `verifierACL` suit la même voie quand il
+vérifie pour un compte.
+
+**Un compte introuvable est `unverifiable`**, pas `unreadable` : le second fait
+rejouer le module, ce qui n'a aucun sens pour un compte qui n'existe plus sur
+le poste.
+
+Au passage : `user_cron` à l'état absent retirait les deux unités et laissait
+le lien d'activation, pendant.
 
 ---
 
@@ -1884,9 +2129,13 @@ cela vit dans `db_gpo` :
 
 | Fonction | Ce qu'elle décide |
 |---|---|
-| `TrierConformite` | l'ordre — silence, puis échecs, puis écarts |
+| `RegrouperParMachine` | **une ligne par machine** : quelle portée la date, quels comptes remontent, et l'ordre |
+| `LigneMachine.Fraicheur`, `Silencieuse`, `VuLe` | l'état de suivi de la machine, jugé sur sa portée **machine** |
+| `LigneMachine.ARemonter`, `EtatDesComptes` | les comptes à montrer sous la machine ; « 3 ok », « 1 en écart sur 3 » |
+| `LigneMachine.ARetenirDansLaVueDesEcarts` | ce que `drift` montre |
+| `TrierMachines` | l'ordre — silence, puis échecs, puis écarts, ceux d'un compte compris |
 | `ComplianceRow.Fraicheur` | « à jour », « en retard », « jamais » |
-| `ComplianceRow.EtatConformite` | « non vérifié », « ok (N) », « N écart(s) » |
+| `ComplianceRow.EtatConformite` | « non vérifié », « rien à vérifier », « ok (N) », « N écart(s) » |
 | `ComplianceRow.ModulesAppliques` | « N/M », ou « - » si rien n'a été dit |
 | `ComplianceRow.ARetenirDansLaVueDesEcarts` | ce que `drift` montre |
 | `ResumerParc` / `ResumeParc.Lisible` | le résumé, compté en **machines** |
@@ -1909,3 +2158,26 @@ agent qui rapporte : ce test-là n'existerait pas.
 
 Aucune de ces fonctions n'appelle `time.Now()` : l'instant est un paramètre. Un
 rendu qui prend l'heure lui-même ne se teste qu'en attendant trois heures.
+
+### Une ligne par machine *(2.3, TO-DO 143)*
+
+Les deux façades rendaient une ligne par **portée** : une machine et trois
+comptes, quatre lignes — et « en retard » se jugeait compte par compte. Or un
+compte ne dit rien entre deux sessions, et c'est normal : une personne partie
+en congé faisait une ligne « en retard » sur un poste qui allait très bien.
+
+`RegrouperParMachine` rend une `LigneMachine` par poste :
+
+- **la fraîcheur est celle de la portée machine** — c'est elle qui parle à chaque
+  cycle. Un poste sans portée machine (aucune GPO de machine) est daté par son
+  compte le plus récent ;
+- **un compte ne remonte que s'il a quelque chose à montrer** : un écart, un
+  module en échec, ou jamais vérifié. Les autres sont comptés dans
+  `EtatDesComptes` et lisibles dans la fiche ;
+- **la machine hérite de ce qui va mal chez ses comptes** pour le tri et pour
+  `drift`.
+
+L'action `gpo.list_compliance` rend toujours des **portées** : c'est l'unité que
+le filtre de périmètre compte quand il en masque, et son message dit « N
+portée(s) suivie(s) sur M machine(s) ». Le regroupement est fait après, par les
+façades, toutes deux par la même fonction.

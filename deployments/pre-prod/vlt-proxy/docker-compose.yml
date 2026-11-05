@@ -40,10 +40,16 @@ services:
       dockerfile: Dockerfile
     image: vlt-proxy:latest
     container_name: vlt-proxy
+    # Nom d'hôte FIXE (TO-DO 227) : c'est le nom du nœud proxy dans le
+    # cluster. Sans lui, une recréation du conteneur faisait apparaître un
+    # nouveau nœud (l'identité, elle, est dans le volume et ne change pas).
+    hostname: vlt-proxy
     restart: unless-stopped
-    command:
-      - "-listen-port"
-      - "8443"
+    # Pas de « command: -listen-port … » : l'entrypoint passe déjà
+    # --listen-port $VAULTAIRE_LISTEN_PORT, et un drapeau donné ici, ajouté
+    # APRÈS, l'emportait. Recette du 27/10 : relais Ducky ouvert sur 8443
+    # dans le conteneur, alors que 6667 de l'hôte est publié vers 6666 —
+    # aucun agent ne pouvait passer par le proxy.
     environment:
       - TZ=Europe/Paris
 
@@ -95,7 +101,9 @@ services:
     #
     #   vlt cluster expose <nom-du-proxy> <adresse-de-l-hôte> 6667
     #
-    # HTTPS et LDAP/S sont prévus (docs/proxy/), pas encore activables.
+    # Relais LDAPS / HTTPS : piloté depuis le core (docs/proxy/https-et-ldaps.md),
+    # mais son port doit être publié ICI, à la création du conteneur, par ex. :
+    #   - "1636:1636"   puis : vlt cluster relais <proxy> set ldaps --type ldaps --ecoute :1636
     ports:
       - "${VLT_PROXY_PORT:-6667}:6666"
 

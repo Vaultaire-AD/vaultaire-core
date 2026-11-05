@@ -18,16 +18,26 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
    vlt add -gpo ssh-baseline -g Infra
    ```
 
-2. Sans attendre le cycle horaire, relancez l'agent sur `web01` :
+2. Sans attendre le cycle horaire, demandez-le :
 
    ```bash
-   systemctl restart vaultaire_client
+   vlt gpo refresh --gpo ssh-baseline
    ```
+
+   C'est aussi le bouton **Demander un cycle** de la fiche de la GPO, dans le
+   portail. (Relancer l'agent sur `web01` — `systemctl restart
+   vaultaire_client` — fait la même chose pour cette machine.)
+
+   Sur un cluster de plusieurs cores, la demande atteint aussi les machines
+   connectées à un **autre** core : le bilan les compte à part (« dont N par un
+   autre core du cluster »). Une machine dite « hors ligne » l'est alors sur
+   tout le cluster.
 
 3. Vérifiez côté machine :
 
    ```bash
-   cat /etc/ssh/sshd_config.d/99-vaultaire-gpo.conf
+   cat /etc/ssh/sshd_config.d/00-vaultaire-gpo.conf
+   sudo sshd -T | grep -E '^(maxauthtries|banner) '   # ce que sshd applique vraiment
    cat /etc/ssh/vaultaire-banner
    ```
 
@@ -44,14 +54,23 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
 
 | Colonne | Question |
 |---|---|
+| **Nom** | le nom d'hôte de la machine ; « nom par défaut » : donnez-lui un nom (`hostnamectl set-hostname`) |
 | **Suivi** | la machine parle-t-elle encore ? `à jour`, `en retard`, `jamais` |
 | **Application** | la politique a-t-elle **pu être posée** ? |
 | **Conformité** | est-elle **encore en place** ? |
+| **Comptes** | les comptes passés sur le poste : `2 ok`, `1 en écart sur 3` |
+
+Une ligne par **machine**. Un compte n'apparaît sous la sienne (`↳`) que s'il y
+a quelque chose à y lire ; tous sont dans `vlt gpo status <computeur_id>`, ou
+`vlt gpo status web01` : le nom d'hôte suffit. `--par-nom` range le parc par
+nom, et le portail cherche une machine par son nom.
 
 ## ✅ Vous avez réussi si
 
 - une nouvelle connexion SSH à `web01` affiche la bannière ;
-- `gpo status` montre `web01` à jour et appliquée.
+- `gpo status` montre `web01` à jour et appliquée ;
+- le bilan de `vlt gpo refresh --gpo ssh-baseline` compte `web01` parmi les
+  machines jointes.
 
 ## 🧪 Exercice
 

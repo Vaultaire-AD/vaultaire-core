@@ -69,7 +69,28 @@ struct Reponse {
   // Le compte Windows LOCAL à qui la session doit être ouverte. Il diffère de
   // l'identifiant du domaine : Windows refuse « @ » dans un nom local.
   std::wstring compte_local;
+  // Le secret du compte local (TO-DO 195) : c'est LUI que la tuile met dans le
+  // bloc d'ouverture de session, pas le mot de passe tapé. Le compte local ne
+  // porte plus le mot de passe du domaine — sans quoi la tuile Windows du
+  // compte l'ouvrait seule, sans core ni second facteur.
+  //
+  // Vide quand l'agent ne l'envoie pas (agent d'avant le 195) : la tuile refuse
+  // alors de sérialiser. Effacé de la mémoire à la destruction.
+  std::wstring mot_de_passe_local;
   std::wstring message;
+
+  Reponse() = default;
+  Reponse(const Reponse&) = default;
+  Reponse(Reponse&&) = default;
+  Reponse& operator=(const Reponse&) = default;
+  Reponse& operator=(Reponse&&) = default;
+  ~Reponse() { EffacerSecret(); }
+  void EffacerSecret() {
+    if (!mot_de_passe_local.empty()) {
+      SecureZeroMemory(&mot_de_passe_local[0], mot_de_passe_local.size() * sizeof(wchar_t));
+    }
+    mot_de_passe_local.clear();
+  }
 };
 
 // Authentifier soumet un identifiant, un mot de passe et un code de second

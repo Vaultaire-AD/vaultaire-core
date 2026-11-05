@@ -30,6 +30,19 @@
 
     {{ if .Message }}<div class="alert alert-success">{{ .Message }}</div>{{ end }}
     {{ if .Error }}<div class="alert alert-error">{{ .Error }}</div>{{ end }}
+    {{ with .Confirmation }}
+      <div class="alert alert-warning">
+        <p style="white-space:pre-line">{{ .Motif }}</p>
+        <form method="post" style="display:inline">
+          <input type="hidden" name="action" value="set_setting">
+          <input type="hidden" name="setting" value="{{ .Setting }}">
+          <input type="hidden" name="value" value="{{ .Value }}">
+          <input type="hidden" name="confirm" value="yes">
+          <button type="submit" class="btn btn-primary">Confirmer {{ .Value }} malgré tout</button>
+        </form>
+        <a href="" class="btn btn-ghost">Annuler</a>
+      </div>
+    {{ end }}
 
     <p class="muted">
       Les valeurs vivent en base ; les défauts sont codés dans le serveur.
@@ -65,6 +78,7 @@
             <td>
               {{ .Affichage }}
               {{ if not .AuDefaut }}<span class="badge">modifié</span>{{ end }}
+              {{ if .Avertissement }}<p class="small alert alert-warning">⚠ {{ .Avertissement }}</p>{{ end }}
             </td>
             <td class="muted">{{ .Defaut }} {{ .Unite }}</td>
             <td class="muted small">{{ .BornesLisibles }}</td>

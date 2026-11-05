@@ -3,7 +3,6 @@ package dnsdatabase
 import (
 	"database/sql"
 	"fmt"
-	"log"
 	"time"
 	"vaultaire/core/logs"
 	"vaultaire/core/storage"
@@ -44,7 +43,9 @@ func InitDatabase() bool {
 
 	_, err = tempDB.Exec(createQuery)
 	if err != nil {
-		log.Fatalf("❌ Erreur création base de données : %v", err)
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "dnsdb : création de la base "+storage.Database_databaseName+"_dns impossible : "+err.Error())
+		_ = tempDB.Close()
+		return false
 	}
 	defer func() {
 		if err := tempDB.Close(); err != nil {

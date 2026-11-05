@@ -97,6 +97,9 @@ var actionsFormulaire = map[string]string{
 	"export_client": "client.export",
 	"update_client": "client.update",
 	"delete_client": "client.delete",
+	// Relancer la mise à jour d'un agent depuis la liste des clients (TO-DO
+	// 205) : la même action que « vlt agent update », write:server.
+	"relaunch_agent_update": "agent.update",
 
 	// permissions
 	"create_permission":        "permission.create",
@@ -124,6 +127,11 @@ var actionsFormulaire = map[string]string{
 	// Formulaire séparé de « update_gpo » : le mode se règle seul, sans
 	// réécrire au passage la description et l'activation.
 	"set_gpo_mode": "gpo.set_drift_mode",
+	// Demander un cycle à UNE machine, depuis sa fiche de conformité
+	// (TO-DO 169). Le bouton de la fiche d'une GPO — toutes ses machines —
+	// n'est pas ici : il fait une boucle sur cette même action, voir
+	// adminGPODetail.
+	"refresh_gpo": "gpo.refresh",
 
 	// certificats
 	"delete_certificate": "certificate.delete",
@@ -143,6 +151,10 @@ var actionsFormulaire = map[string]string{
 	// cluster
 	"set_node_exposure": "cluster.set_node_exposure",
 	"set_node_groups":   "cluster.set_node_groups",
+	// Maintenance, purge, oubli (TO-DO 146, 147).
+	"set_maintenance": "cluster.set_maintenance",
+	"purge_node":      "cluster.purge",
+	"forget_node":     "cluster.forget",
 
 	// Les relais d'un proxy (TO-DO 141). Les mêmes actions que
 	// « vlt cluster relais » : c'est le registre qui contrôle write:relay.

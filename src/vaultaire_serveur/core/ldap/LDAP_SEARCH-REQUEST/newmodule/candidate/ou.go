@@ -44,19 +44,10 @@ func (ou OUEntry) GetAttributes(requested []string, typesOnly bool) map[string][
 		"ou":          {ou.Name},
 		"cn":          {ou.Name},
 		"objectclass": ou.ObjectClasses(),
+		// Une OU porte les comptes ou les groupes (TO-DO 245).
+		AttrHasSubordinates: {"TRUE"},
 	}
-	result := make(map[string][]string)
-	includeAll := len(requested) == 0 || contains(requested, "*")
-	for k, v := range all {
-		if includeAll || contains(requested, k) {
-			if typesOnly {
-				result[k] = []string{}
-			} else {
-				result[k] = v
-			}
-		}
-	}
-	return result
+	return selectionner(all, requested, typesOnly)
 }
 
 func (ou OUEntry) GetAttribute(attr string) []string {

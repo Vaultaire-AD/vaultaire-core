@@ -36,10 +36,21 @@ create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
 2. Créez trois comptes :
 
    ```bash
-   vlt create -u alice.martin infra.acme.lan 'Alice-2026!' 14/03/1990
-   vlt create -u bob.durand   dev.acme.lan   'Bob-2026!'   02/11/1994
-   vlt create -u chloe.petit  rh.acme.lan    'Chloe-2026!' 21/07/1988
+   vlt create -u alice.martin infra.acme.lan 'Lune-Orange-Velo-42'   14/03/1990
+   vlt create -u bob.durand   dev.acme.lan   'Pluie-Sapin-Train-17'  02/11/1994
+   vlt create -u chloe.petit  rh.acme.lan    'Cerise-Nuage-Phare-63' 21/07/1988
    ```
+
+   > 🔑 **La politique de mots de passe** refuse un mot de passe de moins de
+   > **12 caractères**, ou qui contient le nom du compte, un libellé de son
+   > domaine (`infra`, `acme`…), « vaultaire » ou un grand classique
+   > (« password », « azerty »…). D'où ces phrases de passe : quatre mots sans
+   > rapport avec le compte. « Alice-2026! » serait refusé deux fois.
+   >
+   > Ils sont aussi **provisoires** : ils ouvrent la session pendant **24 h**,
+   > puis cessent de fonctionner tant que le titulaire ne l'a pas changé sur le
+   > portail. Si vous reprenez la formation un autre jour, reposez-en un avec
+   > `vlt update -u <compte> -p '<phrase de passe>'` (provisoire lui aussi).
 
 3. Vérifiez :
 
@@ -62,7 +73,7 @@ prénom « David » et le nom « Le Roy », puis retrouvez-le.
 <details><summary>Solution</summary>
 
 ```bash
-vlt create -u david.leroy web.dev.acme.lan 'David-2026!' 05/05/1996 David 'Le Roy'
+vlt create -u david.leroy web.dev.acme.lan 'Tulipe-Canal-Brume-58' 05/05/1996 David 'Le Roy'
 vlt get -u david.leroy
 ```
 </details>

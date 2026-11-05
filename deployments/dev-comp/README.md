@@ -26,9 +26,9 @@ release installée par la préprod ne sont pas touchés.
 
 | Option | Effet |
 |---|---|
-| *(aucune)* | compile dans un conteneur Rocky 9, puis `up -d` et redémarrage du core |
+| *(aucune)* | compile dans un conteneur Rocky 9 (et les modules Debian dans Ubuntu 22.04), puis `up -d` et redémarrage du core |
 | `--version X.Y.Z` | impose la version injectée dans les binaires |
-| `--local` | compile sur l'hôte avec `auto-compil.sh` (plus rapide ; hôte Rocky/RHEL 9 seulement, sinon glibc différente) |
+| `--local` | compile sur l'hôte avec `auto-compil.sh` (plus rapide ; hôte Rocky/RHEL 9 seulement, sinon glibc différente ; modules d'une seule famille) |
 | `--no-build` | redémarre sans recompiler |
 | `--proxy` | démarre aussi un proxy (relais Ducky) |
 | `--nexus` | démarre aussi un Nexus (dépôt de paquets) |
@@ -40,6 +40,7 @@ release installée par la préprod ne sont pas touchés.
 | `--add-core [nom]` | **un core de plus**, sur la même base |
 | `--noeuds` | liste les nœuds ajoutés après coup |
 | `--rm-noeud <nom>` | retire un nœud ajouté : son conteneur, et son identité enrôlée s'il en a une |
+| `--port <hôte>:<conteneur>[/udp]` | publie un port de plus (répétable), avec `--proxy`, `--add-proxy` ou `--add-core` — voir plus bas |
 
 ## La version affichée
 
@@ -53,9 +54,28 @@ calcul voie les dernières releases.)
 ## La compilation
 
 Dans un conteneur `rockylinux:9` (`Dockerfile.build`) avec la recette de la CI de
-release : gcc, `pam-devel`, `libcurl-devel`, `libxcrypt-devel`, Go épinglé
+release : gcc, `pam-devel`, `libxcrypt-devel`, Go épinglé
 (`GO_VERSION`, 1.26.5). Le serveur (cgo) et les modules PAM sont ainsi liés à la
-glibc de Rocky 9, celle de l'image d'exécution et du parc. Le cache Go vit dans
+glibc de Rocky 9, celle de l'image d'exécution et du parc.
+
+Les modules natifs sortent **par famille**, comme ceux d'une release (TO-DO
+193) :
+
+| Répertoire | Compilé dans | Pour |
+|---|---|---|
+| `vaultaire_client/rocky/` | le conteneur ci-dessus, glibc bornée à 2.34 | Rocky, RHEL, Alma 9 |
+| `vaultaire_client/debian/` | `ubuntu:22.04` (`Dockerfile.build-debian`, service `builder-debian`), glibc bornée à 2.35 | Debian 12 et 13, Ubuntu 22.04 et 24.04 |
+
+Les deux familles ne lient pas la même `libcrypt` (`.so.2` côté Rocky, `.so.1`
+côté Debian) : un seul jeu ne peut pas servir les deux. Avant le 193, dev-comp
+ne produisait que celui de Rocky, non classé, et un `-join` vers une Debian
+s'arrêtait sur `libcrypt.so.2 => not found`.
+
+`--local` compile toujours sur l'hôte, sans conteneur : **une seule** famille,
+celle de l'hôte, non classée — le script le rappelle à la fin de la
+compilation, et `debian.sh` dit quoi faire s'il la reçoit.
+
+Le cache Go vit dans
 le volume `devcomp_gocache` : seule la première compilation est longue.
 
 La sortie est rendue à votre utilisateur (`chown` en fin de compilation).
@@ -101,6 +121,34 @@ docker exec vlt-dev-ad /opt/vaultaire/bin/vaultaire_cli cluster expose <proxy> <
 ```
 
 Voir [`docs/proxy/`](../../docs/proxy/README.md).
+
+## Publier des ports en plus — `--port` *(TO-DO 185)*
+
+Un proxy ne publie que son port Ducky. Ses relais pilotés (`https`, `ldaps`,
+TO-DO 141) écoutent **dans** le conteneur : sans publication, rien ne les joint
+depuis l'hôte, et éprouver un relais demandait de retoucher le compose ou le
+script.
+
+```bash
+# le proxy du compose, avec un relais ldaps sur :1636 et https sur :8443
+./deployments/dev-comp/dev-comp.sh --no-build --proxy --port 636:1636 --port 8443:8443
+# un proxy ajouté
+./deployments/dev-comp/dev-comp.sh --add-proxy lyon --port 9443:8443
+```
+
+- forme `<hôte>:<conteneur>`, `/udp` en option ; répétable ;
+- avec `--add-proxy` et `--add-core` : un `-p` de plus au `docker run`, et le
+  port de l'hôte est contrôlé comme ceux que le script choisit (pris : refus
+  avant de créer quoi que ce soit) ;
+- avec `--proxy` : un fichier de surcharge, `build/ports-en-plus.yml`, ajouté au
+  compose. Il est réécrit à chaque lancement : relancer **sans** `--port` rend au
+  proxy ses seuls ports du compose ;
+- refusé ailleurs (`--down`, un lancement sans `--proxy`…) : l'option ne
+  s'appliquerait à rien.
+
+Le port publié sur l'hôte n'est pas celui que le proxy annonce : pour qu'un
+client passe par le relais, déclarez l'adresse de l'hôte
+(`cluster expose`) — et voyez le TO-DO 184 pour LDAPS derrière ce NAT.
 
 ## Agrandir la pile sans la relancer
 

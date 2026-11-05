@@ -12,8 +12,7 @@ import "fmt"
 // Elle échoue franchement plutôt que de ne rien faire : un provisionnement
 // silencieusement sauté rendrait un « succès » à l'écran de connexion, pour une
 // session que Windows refuserait ensuite d'ouvrir.
-func Provisionner(utilisateur, motDePasse string, administrateur bool) (string, error) {
-	_ = motDePasse
+func Provisionner(utilisateur string, administrateur bool) (string, string, error) {
 	_ = administrateur
-	return "", fmt.Errorf("provisionnement de compte local : Windows uniquement (demandé pour %s)", utilisateur)
+	return "", "", fmt.Errorf("provisionnement de compte local : Windows uniquement (demandé pour %s)", utilisateur)
 }

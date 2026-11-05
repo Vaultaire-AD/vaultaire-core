@@ -19,6 +19,33 @@ type Result struct {
 
 // Run exécute la suite de tests critiques et retourne le code de sortie (0 = succès, 1 = échec).
 func Run() int {
+	results := Resultats()
+
+	// Affichage et code de sortie
+	passed := 0
+	for _, r := range results {
+		if r.OK {
+			passed++
+			fmt.Printf("  [PASS] %s\n", r.Name)
+		} else {
+			fmt.Printf("  [FAIL] %s: %s\n", r.Name, r.Msg)
+		}
+	}
+	fmt.Printf("\n--- %d/%d tests passés ---\n", passed, len(results))
+	if passed < len(results) {
+		return 1
+	}
+	return 0
+}
+
+// Resultats joue la suite et rend un résultat par contrôle, sans rien
+// afficher.
+//
+// Séparée de Run pour que `go test ./...` la joue aussi (suite_test.go,
+// TO-DO 150). `--test` n'était lancé par rien : ni l'intégration continue, ni
+// l'habitude de quiconque. Dix contrôles y échouaient depuis des mois, et une
+// suite qui échoue « comme d'habitude » ne signale plus rien.
+func Resultats() []Result {
 	var results []Result
 
 	// --- Unit: SanitizeInput ---
@@ -79,22 +106,7 @@ func Run() int {
 	if db := database.GetDatabase(); db != nil {
 		results = append(results, testDatabase(db)...)
 	}
-
-	// Affichage et code de sortie
-	passed := 0
-	for _, r := range results {
-		if r.OK {
-			passed++
-			fmt.Printf("  [PASS] %s\n", r.Name)
-		} else {
-			fmt.Printf("  [FAIL] %s: %s\n", r.Name, r.Msg)
-		}
-	}
-	fmt.Printf("\n--- %d/%d tests passés ---\n", passed, len(results))
-	if passed < len(results) {
-		return 1
-	}
-	return 0
+	return results
 }
 
 func testSanitizeInput() Result {

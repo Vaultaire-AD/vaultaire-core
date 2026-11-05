@@ -51,6 +51,7 @@ gopkg.in/yaml.v3 = la lecture et l'écriture des fichiers de configuration du co
 # --- Images de base ----------------------------------------------------------
 
 rockylinux:9 = l'image des conteneurs de production et de préproduction. Choisie pour coller à la distribution du parc visé : ce que l'image contient est ce que l'agent trouvera sur une vraie machine.
+ubuntu:22.04 = l'image où dev-comp compile les modules PAM et NSS de la famille Debian (TO-DO 193) : la plus ancienne version prise en charge de cette famille (glibc 2.35, libcrypt.so.1), comme le job « modules-debian » de la release.
 debian:12-slim = l'image de l'environnement de compilation croisée et des essais Debian, pour vérifier que l'agent ne suppose pas une Rocky.
 
 # --- Divergences de version acceptées ---------------------------------------

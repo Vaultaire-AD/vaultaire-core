@@ -33,6 +33,7 @@ Ce document est rédigé pour alimenter un **wiki** : il regroupe les commandes 
 22. [settings — Durées d'exploitation](#22-settings--durées-dexploitation)
 23. [version — Version du core](#23-version--version-du-core)
 24. [logs — Journal commun des cores](#24-logs--journal-commun-des-cores)
+25. [agent — Version attendue des agents](#25-agent--version-attendue-des-agents)
 
 ---
 
@@ -220,6 +221,7 @@ Pour plus de détails et d’exemples : [vaultaireLDAP.md](./vaultaireLDAP.md).
 | `cluster`| Nœuds enregistrés et délai de purge — voir [§21](#21-cluster--nœuds-du-parc) |
 | `settings`| Durées d'exploitation du serveur — voir [§22](#22-settings--durées-dexploitation) |
 | `logs`   | Journal commun des cores, filtré et paginé — voir [§24](#24-logs--journal-commun-des-cores) |
+| `agent`  | Version déclarée et version attendue des agents — voir [§25](#25-agent--version-attendue-des-agents) |
 | `help`   | Liste les commandes. Chaque commande accepte `-h`. |
 
 > Chaque commande répond à `-h` avec sa syntaxe à jour. En cas de désaccord entre ce manuel et `vlt <commande> -h`, **c’est l’aide qui fait foi** : elle vit dans le même fichier que le code qui l’applique.
@@ -350,18 +352,32 @@ Exemple : `create -g "IT_Group" "it.company.com"`
 ### 5.4 Utilisateur
 
 ```bash
-create -u username domain password birthdate(JJ/MM/AAAA) email
-# Option : firstname.lastname pour remplir prénom/nom
-create -u user.name domain password birthdate email
-# Option : firstname lastname en fin pour priorité
-create -u user.name domain password birthdate email firstname lastname
+create -u <identifiant> <domaine> <motdepasse> <JJ/MM/AAAA> [prénom] [nom] [--permanent]
 ```
+
+Sans prénom ni nom, ils se déduisent d'un identifiant `prénom.nom`. Il n'y a
+**pas** d'argument e-mail : un cinquième mot serait lu comme le prénom.
+
+Le mot de passe passe la politique de robustesse : **12 caractères** au moins
+par défaut, et ni le nom du compte, ni un libellé de son domaine, ni
+« vaultaire », ni un grand classique (« password », « azerty »…). Il est
+**provisoire** : valable 24 h, à changer par son titulaire sur le portail.
+
+**`--permanent`** crée un mot de passe **définitif** : c'est celui d'un **compte
+de service** — le compte avec lequel Keycloak, GitLab ou une sonde se lient à
+l'annuaire. Provisoire, il cesserait de fonctionner le lendemain, et personne ne
+viendrait le changer sur le portail. L'option se place n'importe où après
+`-u` ; c'est une dérogation, et le journal la porte en `SECURITY`, avec
+l'administrateur qui l'a faite (`logs --level WARNING`). Sur le portail : la
+liste **Nature du mot de passe** du formulaire de création, sur **Provisoire**
+par défaut.
 
 Exemples :
 
 ```bash
-create -u alice company.com secret123 06/02/1992 alice@company.com
-create -u bob.lenon company.com strongpass 09/12/1988 bob@company.com
+create -u alice company.com 'Galet-Hibou-Sapin-24' 06/02/1992
+create -u bob.lenon company.com 'Brume-Violon-Canal-73' 09/12/1988 Bob Lenon
+create -u svc_gitlab company.com 'Rivet-Cobalt-Phare-57' 01/01/2000 --permanent
 ```
 
 ### 5.5 Client
@@ -380,8 +396,10 @@ create -export <computeur_id> <fichier.zip> --os <linux|windows>
 
 `--export` écrit un zip portant **tout** ce dont l'agent a besoin :
 `client_software.yaml`, `private_key.pem`, `core_key_fingerprint`,
-`client_conf.json`, et `gpo_signing_key.pem` sous Linux seulement — l'agent
-Windows ignore les trames de politique. Un `LISEZ-MOI.txt` dit ce que l'archive
+`client_conf.json`, et sous Linux seulement `gpo_signing_key.pem` et
+`pkg_signing_key.pem` (la clé des paquets d'agent, TO-DO 113 — voir
+[`Releases.md`](../exploitation/Releases.md)) — l'agent Windows ignore les
+trames de politique, et sa mise à jour est un lot à part. Un `LISEZ-MOI.txt` dit ce que l'archive
 contient, et nomme ce qui manque si le core n'a pas su le produire.
 
 Le fichier est écrit en **0600**, et il contient la **clé privée de la machine** :
@@ -412,6 +430,21 @@ seulement un tunnel machine en plus.
 > ⚠️ Ce manuel écrivait `<yes|not>`. `not` **n'est pas accepté** — les valeurs booléennes reconnues sont `oui|non`, `yes|no`, `true|false`, `on|off`, `1|0`.
 
 Le port de `-join` est facultatif et vaut 22. Une adresse IPv6 suivie d'un port s'écrit entre crochets.
+
+**Distributions installées par `-join`** *(TO-DO 71)* : Rocky Linux (`rocky.sh`),
+**Debian et Ubuntu** (`debian.sh`, depuis la 2.3). La distribution est lue sur
+la ligne `ID=` de `/etc/os-release` ; toute autre est refusée en la nommant —
+une distribution « voisine » ne reçoit pas le script d'une autre, il touche à
+PAM. Sur Debian et Ubuntu, `openssh-server` doit être installé, les piles PAM de
+la distribution sont **gardées** (une ligne y est insérée, l'original copié sous
+`.avant-vaultaire`). Sur Rocky, les piles sont réécrites, mais les originales
+sont copiées sous `.avant-vaultaire` *(2.3)*. Les deux scripts s'arrêtent **avant**
+de toucher à NSS, SSH et PAM si les modules envoyés ne se chargent pas sur le
+poste, et remettent `sshd_config` si `sshd -t` le refuse. Le core envoie un jeu
+de modules par famille (`rocky/`, `debian/`), compilé sur sa plus ancienne
+version prise en charge *(TO-DO 173)*. Chaque fichier de configuration qu'ils
+écrivent porte un marqueur `# vaultaire-conf v<N>` : l'agent le tient ensuite à
+jour avec **sa** version (voir `agent`, colonne CONFIGURATION) *(TO-DO 117)*.
 
 **Le type de client n'est plus demandé.** Cette commande ne peut créer qu'un
 **agent** — un programme installé sur une machine du parc, dont le core génère la
@@ -805,10 +838,21 @@ delete -gpo "gpo_name"
 ### 12.1 Changer le mot de passe d’un utilisateur
 
 ```bash
-update -u "username" -p <nouveau mot de passe>
+update -u "username" [--permanent] -p <nouveau mot de passe>
 ```
 
 Le mot de passe occupe **tous les arguments restants** : les espaces qu’il contient sont conservés.
+
+Posé par un administrateur, le nouveau mot de passe est **provisoire** (24 h, à
+changer par le titulaire). **`--permanent`** le rend **définitif** et lève un
+éventuel provisoire en cours : c'est ainsi qu'on renouvelle le secret d'un
+compte de service sans le recasser le lendemain. L'option se place **avant**
+`-p` — après, elle ferait partie du mot de passe. Journalisé en `SECURITY`.
+Sur le portail : la liste **Nature du mot de passe** de la fiche du compte.
+
+```bash
+update -u svc_gitlab --permanent -p 'Orage-Tilleul-Vague-84'
+```
 
 > ⚠️ Ce manuel documentait `update -u "username" -uu "new_username"`. Le renommage **n’existe pas en ligne de commande** ; il se fait depuis la page profil ou l’administration web, qui reporte le nom sur les sessions ouvertes et émet un jeton neuf — ce qu’un simple `UPDATE` ne ferait pas.
 
@@ -1039,7 +1083,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 
 | Besoin | Commande type |
 |--------|----------------|
-| Créer un user | `create -u user domain pass JJ/MM/AAAA email` |
+| Créer un user | `create -u <id> <domaine> <motdepasse> JJ/MM/AAAA [prénom] [nom] [--permanent]` |
 | Créer un groupe | `create -g "Nom" "domain"` |
 | Voir les sessions | `status -u` / `status -c` |
 | Détail d’un groupe | `get -g "group_name"` |
@@ -1066,9 +1110,12 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 | Imposer le second facteur à un groupe | `mfa -g IT_Group --require` |
 | Émettre une clé d'enrôlement de service | `enroll create --type proxy --uses 1 --expires 30m` |
 | Machines en écart de conformité GPO | `gpo drift` |
-| Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --all` |
+| Forcer un cycle GPO maintenant | `gpo refresh <computeur_id>` ; `gpo refresh --gpo <nom>` ; `gpo refresh --all` |
 | Voir les durées d'exploitation | `settings list` |
 | Changer une cadence sans redémarrer | `settings set check_online_minutes 5` |
+| Agents en retard sur leur version attendue | `agent` ; `agent -g <groupe>` |
+| Poser une version attendue | `agent target 2.3.1` ; `agent target -g pilote 2.4.0` ; `agent pin <id> 2.2.0` |
+| Relancer une machine en échec | `agent update <id>` ; rétrograder : `agent pin <id> <version> --downgrade` (durable) ou `agent update <id> --downgrade` (poussé maintenant) |
 | Arborescence LDAP | `eyes -g` |
 | Zone DNS | `dns create_zone example.com` ; `dns get_zone` ; `dns get_zone example.com` |
 | Enregistrement DNS | `dns add_record www.example.com A 192.168.1.1 300` |
@@ -1122,6 +1169,7 @@ kill -u <username>                  # verrouille (mode par défaut)
 kill -u <username> --unlock         # lève le verrouillage
 kill -u <username> --hard           # SUPPRIME le compte de l'annuaire et des machines
 kill -u <username> --reason <code>  # compromised (défaut) | offboarding | admin_request
+kill -u <username> --status         # où en est l'ordre, machine par machine (lecture)
 ```
 
 > `--hard` est irréversible : il ne verrouille pas, il supprime.
@@ -1146,21 +1194,72 @@ Ordre 12 — verrouillage du compte sur bob.durand
   Machines visées : 5 — dont 2 où une session du compte est ouverte
   Ordre remis immédiatement : 3 machine(s) en ligne
     chacune verrouille le compte local, puis ferme ses sessions et tue ses processus ;
-    son acquittement — ou son échec — s'inscrit au journal du core (logs --since 10m)
-  En attente (machines hors ligne) : 2 — l'ordre sera rejoué à leur reconnexion
+    son acquittement — ou son échec — se lit avec « kill -u bob.durand --status » ;
+    un ordre en échec ou resté sans réponse est rejoué par le core, de plus en plus espacé
+  En attente (machines hors ligne) : 2 — l'ordre leur sera remis dès leur retour
   Réversible : kill -u bob.durand --unlock
 ```
 
 > ⚠️ **« Remis » n'est pas « appliqué ».** Le core sait qu'il a transmis l'ordre ;
 > c'est l'agent qui verrouille et coupe, puis acquitte. Tant que la ligne « En
 > attente » n'est pas à zéro, le compte travaille peut-être encore sur une
-> machine hors ligne : l'ordre y sera appliqué à son retour. Un agent connecté
-> redemande ses ordres en attente à chaque tunnel rétabli et toutes les dix
-> minutes (TO-DO 134).
+> machine hors ligne : l'ordre y sera appliqué à son retour.
 >
-> L'acquittement de chaque machine se lit aujourd'hui dans le journal du core —
-> `revocation: ordre 12 acquitté par <machine> (applied)`, ou `EN ÉCHEC` s'il
-> reste des processus. Aucune commande ne le montre encore (TO-DO 164).
+> **Le core rejoue de lui-même** *(TO-DO 49)* : un ordre qui n'a pas abouti du
+> premier coup — envoi perdu, processus qui refusent de mourir — repart dix
+> secondes plus tard, puis de plus en plus espacé, jusqu'à toutes les cinq
+> minutes, **sans jamais renoncer**. Au cinquième essai sans réponse, le journal
+> du core le dit en WARNING : la révocation n'est pas effective sur cette
+> machine. De son côté, un agent connecté redemande ses ordres à chaque tunnel
+> rétabli et toutes les dix minutes (TO-DO 134).
+>
+> **`--unlock` annule ce qui n'était pas encore appliqué.** Une machine restée
+> hors ligne pendant tout le verrouillage ne recevra que la levée ; et la levée
+> atteint aussi une machine verrouillée que le compte ne partage plus par aucun
+> groupe.
+>
+> **Postes Windows** : le client Windows n'acquitte aucun ordre. Un poste
+> Windows visé reste « en attente » indéfiniment *(TO-DO 167)*.
+
+### Où en est l'ordre — `kill -u <compte> --status` *(TO-DO 164)*
+
+Le compte rendu de `kill` dit combien de machines ont **reçu** l'ordre. Ce
+qu'elles en ont fait se lit ici, et sur la **fiche du compte** du portail :
+
+```text
+Compte bob.durand — VERROUILLÉ
+
+Ordre 20 — verrouillage du compte (compte compromis), par vaultaire le 2026-10-07 17:11:25
+  2 machine(s) : 1 en échec, 1 en attente
+  MACHINE   ÉTAT        REMISES  DERNIER ÉCHANGE  DÉTAIL
+  web01     en échec    2        il y a 13 s      command_failed : bob.durand@acme.lan : verrouillage du mot de passe : …
+  poste-42  en attente  0        —                jamais remis : machine hors ligne depuis l'ordre
+```
+
+| État | Ce qu'il veut dire |
+|---|---|
+| **en échec** | la machine a répondu qu'elle n'a pas pu : le compte y est **peut-être encore ouvert**. Le détail est le motif qu'elle a rendu. Le core rejoue |
+| **en attente**, 0 remise | la machine est hors ligne depuis l'ordre : il lui sera remis à son retour |
+| **en attente**, N remises | la machine est **là, et ne répond pas** — ce n'est pas le même incident : agent bloqué, à aller voir |
+| **non pris en charge** | le client de la machine ne sait pas révoquer (agent Windows V1) : le compte y est refusé à la prochaine authentification, mais une session **ouverte** n'y est pas fermée. L'ordre ne lui est plus remis *(TO-DO 167)* |
+| **levé avant application** | le verrouillage a été levé avant que la machine ne l'applique : il ne lui sera pas remis |
+| **appliqué** | la machine a acquitté |
+
+Un **service** (proxy, Nexus) rangé dans un groupe du compte n'est pas visé : il
+ne porte aucun compte local. Seuls les types qui savent acquitter une
+révocation le sont — le journal du core nomme les machines écartées.
+
+Ce qui n'est pas réglé est en tête. Les cinq derniers ordres sont détaillés ; un
+ordre ancien et réglé tient en une ligne.
+
+- **`--status` est une lecture** et ne se combine avec aucune autre option :
+  `kill -u bob --hard --status` est refusé, et rien ne part.
+- **Droit** : `read:status:user` sur un domaine du compte — la clé de
+  `status -u`, pas `write:killswitch`. Voir où en est un ordre ne donne pas le
+  pouvoir d'en émettre un.
+- **Périmètre** : seules les machines que vous avez le droit de voir sont
+  listées ; les autres sont **comptées**, ordre par ordre. Tant qu'il en reste,
+  la commande ne dit pas « réglé partout ».
 
 > ⚠️ **Agents antérieurs à ce correctif** : ils ne verrouillent rien quand le nom
 > est donné sans domaine, et ne coupent aucune session. Tant que le parc n'est
@@ -1287,11 +1386,12 @@ naissance ») et `enroll show <id>`, comme sur la page web.
 ## 20. gpo — Application et conformité
 
 ```bash
-gpo status                 # état d'application et de conformité du parc
-gpo status <computeur_id>  # détail d'une machine : modules en échec, écarts
-gpo drift                  # uniquement les machines en écart
+gpo status [--par-nom]     # état d'application et de conformité du parc
+gpo status <computeur_id|nom>   # détail d'une machine : modules en échec, écarts
+gpo drift [--par-nom]      # uniquement les machines en écart
 gpo mode <nom_gpo> <enforce|audit>   # ce qui est fait d'un écart
 gpo refresh <computeur_id>           # cycle immédiat sur une machine
+gpo refresh --gpo <nom_gpo>          # cycle immédiat sur les machines liées à cette GPO
 gpo refresh --all                    # cycle immédiat sur tout le parc connecté
 gpo signature                        # les politiques non signées sont-elles refusées ?
 gpo signature <on|off>               # les refuser, ou non
@@ -1305,7 +1405,34 @@ gpo signature <on|off>               # les refuser, ou non
 | **APPLICATION** | le dernier rapport de l’agent — la politique a-t-elle **pu être posée** ? |
 | **CONFORMITÉ**  | le dernier scan de l’agent — est-elle **encore en place** ? |
 
-> « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié.
+> « non vérifié » ne veut pas dire conforme : il veut dire que l’agent n’a pas encore rapporté de scan, ou qu’il n’a aucun fichier inventorié. « rien à vérifier » : la portée n'applique plus aucun module.
+
+**Une ligne par machine** *(TO-DO 143)*. Elle porte l'état de sa portée
+**machine** ; les comptes passés sur le poste sont résumés dans la colonne
+COMPTES. Un compte n'a sa propre ligne, sous sa machine (`↳`), que s'il y a
+quelque chose à y lire : un écart, un module en échec, ou une politique jamais
+vérifiée.
+
+```text
+MACHINE            SUIVI   APPLICATION  MODULES  CONFORMITÉ  COMPTES           VU
+PC-02              à jour  applied      3/3      ok (7)      1 en écart sur 2  à l'instant
+  ↳ dora@acme.lan          applied      4/4      2 écart(s)                    à l'instant
+PC-01              à jour  applied      3/3      ok (7)      2 ok              à l'instant
+
+2 machine(s) sur 2 suivie(s).
+2 machine(s) : 1 avec écarts.
+```
+
+Il y avait une ligne par **portée** : une machine et trois comptes en faisaient
+quatre, et le résumé comptait quatre « machines ». Tous les comptes restent
+dans le détail, `gpo status <computeur_id>`.
+
+**SUIVI se juge sur la machine**, pas sur ses comptes : une personne qui ne s'est
+pas connectée depuis une semaine n'est pas une machine muette. Et une machine
+dont la politique **ne change pas** parle quand même *(TO-DO 166)* : à chaque
+cycle elle annonce l'empreinte qu'elle applique, et le core, qui lui répond
+« rien à faire », date sa ligne. Jusque-là seule une application la datait — un
+parc stable finissait tout entier « en retard », agents en marche.
 
 **Les deux scopes sont vérifiés.** La machine l'est avant chaque cycle machine ;
 un compte l'est à sa connexion, au plus une fois par `gpo_user_check_minutes` —
@@ -1375,9 +1502,22 @@ ou une fenêtre de maintenance coûtent un cycle et ne remontent pas.
 ### Déclencher un cycle tout de suite — `gpo refresh`
 
 ```bash
-gpo refresh poste-42     # cette machine redemande sa politique maintenant
-gpo refresh --all        # toutes les machines connectées
+gpo refresh poste-42          # cette machine redemande sa politique maintenant
+gpo refresh --gpo ssh-baseline   # les machines des groupes liés à cette GPO
+gpo refresh --all             # toutes les machines connectées
 ```
+
+*(TO-DO 169.)* Le même geste est sur le **portail** : un bouton « Demander un
+cycle » sur la fiche d'une machine (**Admin → Conformité → la machine**) et sur
+la fiche d'une GPO de portée machine. Les trois formes passent par la même
+boucle, et chaque machine par **son** contrôle de droits
+(`write:update:client` sur **tous** ses domaines — un seul suffisait avant la
+2.3, TO-DO 150) : celles que vous n'avez pas le droit de toucher sont
+comptées, jamais nommées.
+
+Une GPO de **compte** n'a pas de cycle à demander — elle s'applique à
+l'ouverture de session. La page le dit à la place du bouton, et
+`gpo refresh --gpo` le refuse sans solliciter aucune machine.
 
 Entre la correction d'une GPO et son application, il s'écoule sinon jusqu'à une
 cadence entière. `gpo refresh` supprime cette attente : le core pousse une
@@ -1415,10 +1555,20 @@ gpo mode durcissement_ssh enforce   # les écarts sont corrigés au cycle suivan
 ```
 
 **La détection ne change jamais.** Un écart est constaté, journalisé et remonté
-dans les deux modes ; il apparaît dans `gpo drift` de la même façon. Seule change
-la suite : en `enforce`, le module dérivé est réappliqué au cycle suivant de la
-machine — jamais immédiatement, pour ne pas relancer un service pendant qu'on le
-débogue. En `audit`, rien n'est corrigé.
+dans les deux modes. Seule change la suite : en `enforce`, le module dérivé est
+réappliqué au cycle suivant de la machine — jamais immédiatement, pour ne pas
+relancer un service pendant qu'on le débogue. En `audit`, rien n'est corrigé.
+
+**Et cela se lit** *(TO-DO 86)* :
+
+| | Dans `gpo status` après le cycle | Dans le détail de la machine |
+|---|---|---|
+| `enforce` | `ok (N)` — l'écart a été corrigé, l'agent l'a constaté ; il reste au **journal du core** | plus d'écart |
+| `audit` | `N écart(s)`, tant qu'il n'est pas réparé à la main | le détail de l'écart commence par `[audit : signale, non corrige]` |
+
+Un écart qui **reste** affiché est donc en `audit`, ou n'a pas pu être corrigé.
+Les deux modes affichaient la même ligne : en `enforce`, la machine restait à
+« 1 écart(s) » une cadence entière après l'avoir réparé. *(Agent à jour requis.)*
 
 Le mode est porté par la **GPO** et hérité par ses modules. Une machine qui reçoit
 une GPO en audit et une autre en enforce applique la règle de chacune sur les
@@ -1439,11 +1589,49 @@ réglage.
 Le mode se **relit** dans `get -gpo` (colonne « Dérive ») et sur la fiche
 `get -gpo "nom"`, comme dans l'onglet Réglages de la page web.
 
+### Quand une GPO modifiée atteint le parc *(TO-DO 86)*
+
+Rien ne part quand on modifie une GPO, un module ou un mode :
+
+| Portée | La modification est appliquée |
+|---|---|
+| machine | au **prochain cycle** de chaque machine liée — `gpo_refresh_minutes` au plus, une heure par défaut. Ou tout de suite : le bouton « Demander un cycle » de la fiche de la GPO, ou `gpo refresh --gpo <nom>` |
+| compte | à la **prochaine ouverture de session** de chaque compte. Une session déjà ouverte ne change pas |
+
+Chaque écriture le rappelle, avec la cadence réellement en vigueur, sur la ligne
+de commande comme sur le portail :
+
+```text
+Module file_deploy mis à jour. Les machines liées l'appliqueront à leur prochain
+cycle, dans 1 h au plus — ou tout de suite : « Demander un cycle » sur la fiche
+de la GPO, ou « vlt gpo refresh --gpo ssh-baseline ».
+```
+
+**Retirer un module ne défait rien** : ce qu'il avait posé reste sur les postes.
+Pour le retirer, passez d'abord le module à l'état `absent`, laissez un cycle
+passer, puis retirez-le.
+
 ### La même vue sur le portail
 
 **Admin → Conformité** (`/admin/gpo/compliance`) affiche exactement le même état :
-résumé du parc, tableau trié dans le même ordre, détail d'une machine au clic, et
-un filtre « écarts seulement » équivalent à `gpo drift`.
+résumé du parc, une ligne par machine triée dans le même ordre, les comptes à
+signaler en retrait sous la leur, détail d'une machine au clic, et un filtre
+« écarts seulement » équivalent à `gpo drift`.
+
+**Le nom d'hôte d'abord** *(2.3, TO-DO 215)*. Chaque machine est désignée par le
+nom qu'elle a déclaré à son inventaire, l'identifiant en second — colonne
+`NOM` en ligne de commande. Un nom générique (`localhost.localdomain`) ne
+désigne aucun poste : il s'affiche « nom par défaut (localhost.localdomain) »,
+trié après les vrais noms ; `hostnamectl set-hostname` sur le poste, et il
+change au rapport suivant. Une machine qui n'a pas encore envoyé d'inventaire
+est « nom inconnu ».
+
+- `gpo status <nom>` accepte un nom d'hôte exact, cherché dans le périmètre de
+  l'appelant. Porté par plusieurs postes, ou générique : la commande liste les
+  identifiants au lieu de choisir.
+- `--par-nom` (portail : **Trier par nom**) range le parc par nom ; sans lui, ce
+  qui va mal vient en tête.
+- Le portail a une recherche (`?q=`) sur le nom et l'identifiant.
 
 Le tri, les états de fraîcheur et les libellés viennent du **même code** que la
 ligne de commande — c'est délibéré. Deux vues qui les recalculeraient séparément
@@ -1454,11 +1642,12 @@ Droit : `read:get:gpo`, comme en ligne de commande. La vue est réduite au
 périmètre de l'appelant, et le nombre de lignes masquées est annoncé.
 
 Le tri place devant ce dont on ne sait rien — les muettes —, puis les modules en
-échec, puis les écarts. Un échec est visible et chiffré ; un silence ne dit rien,
+échec, puis les écarts ; ceux d'un compte font remonter sa machine. Un échec est visible et chiffré ; un silence ne dit rien,
 et c’est pour cela qu’il passe en premier.
 
 `gpo drift` ne masque **pas** les machines muettes : elles ont zéro écart
-constaté parce que plus personne ne regarde, pas parce qu’elles sont saines.
+constaté parce que plus personne ne regarde, pas parce qu’elles sont saines. Il
+retient aussi une machine dont **seul un compte** a un écart.
 
 ### Les GPO d'un compte : vérifiées à sa connexion *(TO-DO 135, 142)*
 
@@ -1483,12 +1672,35 @@ Ce qui est vérifié dans un dossier personnel :
 | `file_deploy`, `templated_file_deploy` | le fichier entier : contenu et droits | supprimé, modifié, droits changés, remplacé par un lien |
 | `user_env` | `.vaultaire_env` en entier, et **le bloc** de chargement dans `.bashrc`, `.profile`… | fichier modifié ; bloc retiré ou modifié |
 | `user_ssh_client_config` | **le bloc** de l'alias dans `~/.ssh/config` | bloc retiré ou modifié |
-| `user_cron` | les deux unités systemd | supprimées, modifiées |
+| `user_cron` | les deux unités systemd, et **l'activation** du timer | supprimées, modifiées ; timer désactivé ou masqué |
+| `user_git_config` | **les clés** posées dans `~/.gitconfig`, une à une | clé retirée, valeur changée |
+| `user_password_policy` | la durée maximale et le délai d'avertissement (`chage`) | valeurs changées |
 | `file_acl`, `user_shell`, `user_group_membership` | l'état, par la commande système | ACL retirée, shell changé, groupe quitté |
 
-Le reste d'un `.bashrc` ou d'un `~/.ssh/config` appartient à la personne : y
-ajouter un alias ou un hôte **n'est pas un écart**. `user_git_config` et
-`user_password_policy` ne sont pas encore vérifiés (TO-DO 163).
+Le reste d'un `.bashrc`, d'un `~/.ssh/config` ou d'un `~/.gitconfig` appartient à
+la personne : y ajouter un alias, un hôte ou une clé **n'est pas un écart**.
+
+**Une valeur par personne** *(2.3, TO-DO 211)*. Dans la valeur d'un module
+`user_git_config` ou `user_env`, ces marqueurs sont remplacés sur le poste,
+pour chaque compte : `%u` (compte court, `alice`), `%U` (`alice@acme.lan`),
+`%d` (domaine), `%n` (prénom et nom de l'annuaire), `%m` (adresse de
+messagerie), `%%` (un `%`). Exemple : `user.name` = `%n`, `user.email` = `%m`.
+Un autre marqueur, ou un `%` final, est refusé à l'enregistrement. Un compte
+sans nom ou sans adresse dans l'annuaire fait échouer le module qui demande
+`%n` ou `%m` — rien n'est écrit. Changer le nom ou l'adresse d'un compte lui
+redistribue la politique.
+
+**Un module sans objet sur le poste** *(2.3)* : `selinux_mode` sur Debian ou
+Ubuntu est rapporté **ignoré**, pas en échec. Un module dont l'effet n'existe
+pas (règle d'audit sans auditd, serveurs NTP sur une machine à chrony) est en
+**échec**, avec la raison — jamais « appliqué ».
+
+*(TO-DO 163.)* `user_git_config`, `user_password_policy` et l'activation de
+`user_cron` n'étaient pas vérifiés. Deux limites voulues : le **changement forcé**
+du mot de passe à la prochaine connexion n'est pas surveillé — il s'éteint quand
+la personne obéit, ce ne serait pas un écart ; et pour un timer, seul ce dont on
+est sûr est un écart (lien disparu, ou masqué). Autre chose à sa place est
+« non vérifiable ».
 
 **Dans `gpo status`**, la ligne d'un compte passe à `ok (N)` dès sa première
 connexion, et y revient après chaque correction. Le résumé du parc ne dit plus
@@ -1501,7 +1713,8 @@ connexion, et y revient après chaque correction. Le résumé du parc ne dit plu
 > **Après la mise à jour de l'agent**, la première connexion de chaque compte
 > rejoue une fois tous ses modules — c'est ce qui fait entrer ses fichiers dans
 > l'inventaire. Le journal de l'agent le dit. Les modules d'une GPO en `audit`
-> ne sont pas rejoués.
+> ne sont pas rejoués. Cela s'est produit en 2.2, et se reproduit **une fois** en
+> 2.3 pour les trois modules ci-dessus.
 
 La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’interface web.
 
@@ -1512,6 +1725,10 @@ La création et l’édition des GPO restent en [§5.6](#56-gpo) et dans l’int
 ```bash
 cluster list                  # tous les nœuds enregistrés
 cluster list <role>           # nœuds actifs d'un rôle
+cluster show <nœud>           # la fiche d'un nœud : accès, rotation, sessions d'un core
+cluster maintenance <nœud> <on|off> [--confirm]   # hors de toutes les listes, sans quitter le cluster
+cluster purge <nœud> [--etalement <s>]           # vide un core ou un proxy en maintenance de ses sessions
+cluster forget <nœud>         # oublie un nœud hors ligne, sans attendre le délai de purge
 cluster purge-delay           # délai avant suppression d'un service ou d'un nœud parti
 cluster purge-delay <heures>  # règle ce délai (0 désactive la purge)
 
@@ -1560,6 +1777,77 @@ les agents. `cluster list` montre les deux : **ACCÈS AGENTS** est ce qui est
 distribué, **VU PAR LE NŒUD** ce que la machine rapporte — renseigné seulement
 quand il diffère, parce que c'est leur écart qu'on cherche quand une connexion ne
 passe pas.
+
+### Ce que porte un core *(TO-DO 148)*
+
+La colonne **SESSIONS** de `cluster list` porte ce qu'un **core** publie de
+lui-même, à chacun de ses battements : ses sessions vivent dans sa mémoire, et
+aucun autre core ne les voit.
+
+```
+SESSIONS   42 m · 3 c · 2 p   42 machines au tunnel ouvert (une machine compte une fois),
+                              3 sessions de compte de l'annuaire, 2 poignées de main en cours
+```
+
+`cluster show <nœud>` en donne le détail — dont le nombre de **tunnels**, plus
+grand que celui des machines quand des `--fetch-key` de sshd sont en cours — et
+l'**âge** de la mesure. Les sessions SSH ouvertes sur les postes ne sont pas des
+« sessions de compte » : elles passent dans le tunnel de leur machine.
+
+La colonne est vide pour un proxy, et pour un core qui n'a rien publié depuis
+trois battements (trois minutes au moins) : un core arrêté, ou d'une version
+antérieure. Jamais zéro par défaut — un nœud qu'on croirait vide est celui
+qu'on purgerait. Mesure **déclarative**, comme celle des relais : elle
+s'affiche, elle n'ordonne pas la liste servie aux agents. Les lignes vont dans
+la même table que les mesures des proxies, purgée par `cluster
+metrics-retention`.
+
+### Maintenance, purge, oubli *(TO-DO 146 et 147)*
+
+**`cluster maintenance <nœud> on`** retire le nœud de **toutes** les listes : celle
+des agents, celle des proxies (et donc les cibles `source: cores` de leurs relais),
+celle des services. Il reste dans le cluster, continue de battre, et `cluster
+list` le marque `· maint.`. Sa rotation et sa priorité ne sont pas touchées : `off`
+le rend tel qu'il était.
+
+> ⚠️ Le **dernier core** servi ne passe en maintenance qu'avec `--confirm` (ou le
+> bouton Confirmer de la page) : sans lui, un poste qui redemande sa liste n'a
+> plus que son fichier de configuration.
+
+Les sessions déjà ouvertes **restent** sur un nœud en maintenance. **`cluster
+purge <nœud>`** les déplace — sur un core ou un proxy en maintenance :
+
+1. à son prochain battement, le core demande à chaque machine connectée de
+   redemander sa liste, en **nommant** le nœud à quitter *(TO-DO 216)* : un agent
+   à jour le quitte dans les 20 s (délai tiré au hasard, pour ne pas faire
+   reconnecter tout un site d'un coup) et le place en dernier de sa liste
+   pendant 15 minutes — il y revient seulement s'il n'a rien d'autre ;
+2. une minute après, le reste est fermé, étalé sur 60 s (`--etalement <s>`, de 0
+   à 3600) pour ne pas faire reconnecter un site dans la même seconde.
+
+Les sessions du **portail** et de l'**API** ne sont pas touchées : on purge depuis
+la page du core qu'on vide. Suivi : `cluster show <nœud>` (purge en cours, puis
+terminée avec le nombre de sessions fermées ; le compteur SESSIONS descend). Un
+agent qui ne connaît que son fichier de configuration peut revenir : il se voit
+dans le compteur.
+
+**Sur un proxy** *(TO-DO 176)*, ce sont les **cores** qui purgent : les sessions
+relayées vivent chez eux, avec pour source l'adresse du proxy. Chaque core fait
+les deux temps ci-dessus sur la part qui lui arrive par ce proxy — reconnue par
+l'adresse que le proxy déclare **et** celle que le core voit à son battement. La
+session du proxy lui-même reste ouverte : il bat toujours. `cluster show
+<proxy>` cumule les sessions fermées par tous les cores.
+
+> ⚠️ Derrière un **NAT**, d'autres machines qui sortent par la même adresse que le
+> proxy sont fermées aussi. Elles se reconnectent aussitôt, à un nœud de leur
+> liste.
+
+**`cluster forget <nœud>`** retire un nœud parti sans attendre le délai de purge
+(24 h) : un proxy de test démonté, par exemple. Refusé tant que le nœud est en
+ligne ou a battu depuis moins de trois minutes. Partent avec lui : son adresse
+déclarée, sa priorité, son affinité, sa maintenance et les relais que le core lui
+demandait — le compte rendu les nomme. S'il revient, il se réinscrit seul, aux
+valeurs par défaut.
 
 ### Ce qu'un proxy relaie
 
@@ -1749,6 +2037,7 @@ session web, synchronisation des groupes.
 ```bash
 settings list                  # les durées, leur valeur et leur défaut
 settings set <clé> <valeur>    # règle une durée
+settings set <clé> <valeur> --confirm   # la pose malgré un avertissement (ci-dessous)
 settings reset <clé>           # la ramène à son défaut codé
 ```
 
@@ -1796,6 +2085,24 @@ question qu'on se pose devant un serveur qu'on ne connaît pas.
 > (5 et 10 min) : un battement de six minutes ou plus coupait tout le parc en
 > boucle. **Un agent antérieur à la 2.2 garde ses dix minutes** : ne dépassez pas
 > 8 tant que le parc n'est pas à jour.
+>
+> **Au-delà de 8, le réglage le vérifie** *(TO-DO 161)*. `settings set
+> check_online_minutes 10` compte les machines dont la version déclarée est
+> antérieure à la 2.2, ou inconnue (jamais déclarée, illisible), en nomme cinq
+> avec leur version, et **ne change rien** :
+>
+> ```
+> ⚠ Confirmation requise — check_online_minutes à 10 min : RIEN n'a été changé.
+> 2 machine(s) : pc-b (2.1.4), pc-c (jamais déclarée) ne suivent pas cette cadence — …
+> Mettez ces machines à jour, ou confirmez : « settings set check_online_minutes 10 --confirm ».
+> ```
+>
+> Ce n'est pas un refus : `--confirm` (ou le bouton de la page des durées) pose
+> la valeur, et une ligne `WARNING` du journal dit qui l'a assumée. Une base
+> illisible demande aussi confirmation — ne pas pouvoir compter n'est pas
+> compter zéro. `settings list` répète l'avertissement sous la valeur, tant que
+> des machines ne suivent pas. Proxies et Nexus sont comptés comme les postes :
+> ils emploient le même tunnel.
 
 ### Ce qui n'est pas ici
 
@@ -1837,6 +2144,7 @@ droit est une commande qu'on ne peut pas taper au moment où on en a besoin.
 | | |
 |---|---|
 | une machine | `get -c <machine>` — agent et SDK |
+| tous les agents, face à leur version attendue | `agent` — voir [§25](#25-agent--version-attendue-des-agents) |
 | les nœuds du cluster | `cluster list` |
 
 ### `(build local)`
@@ -1845,11 +2153,14 @@ Un binaire compilé à la main, hors du script de build, l'affiche. Il ne porte 
 commit ni date, et **se reconnaît** ainsi dans l'inventaire du parc — c'est le
 premier binaire qu'on cherche devant une machine qui se comporte mal.
 
-### Aucune comparaison
+### Aucun refus
 
-Le core n'annonce ni « à jour » ni « obsolète », et ne refuse aucun agent sur sa
-version. Il ne connaît aucune référence — il ne sait pas ce qui existe ailleurs,
-et l'inventer serait pire que se taire.
+Le core ne refuse aucun agent sur sa version. Il compare en deux endroits, pour
+**prévenir**, jamais pour fermer : `settings set check_online_minutes` compte
+les machines qui ne suivraient pas la cadence (TO-DO 161), et `agent` situe
+chaque agent par rapport à la version **qu'on lui a fixée** (§25). Sans cible
+posée, il n'annonce ni « à jour » ni « obsolète » : il ne sait pas ce qui existe
+ailleurs, et l'inventer serait pire que se taire.
 
 Une règle de comparaison de versions se trompe sur les cas limites, et se
 tromper ici voudrait dire fermer la porte à un parc dont le seul outil de
@@ -1934,3 +2245,195 @@ l'annuaire avec elle.
 La sortie standard des cores (`docker logs`, `journalctl`) et les fichiers de
 `/var/log/vaultaire/` ne sont **pas** concernés : ils gardent leur propre
 rétention.
+
+---
+
+## 25. agent — Version attendue des agents
+
+*(TO-DO 111.)* Ce que chaque agent **déclare** (`02_12`), face à ce qu'on
+**attend** de lui.
+
+```bash
+agent                                    # tout le parc (read:log)
+agent -g <groupe>                        # les agents d'un groupe (read:log)
+agent target <version|none>              # défaut du parc (write:server)
+agent target -g <groupe> <version|none>  # cible d'un groupe — un anneau (write:server)
+agent pin <computeur_id> <version|none> [--downgrade]  # dérogation d'une machine ; --downgrade : rétrogradation durable (write:server)
+agent update <computeur_id> [--downgrade] # relance une machine (write:server)
+agent depot <nom|none>                   # dépôt Nexus nommé dans les ordres (write:server)
+```
+
+`agent` tapé seul affiche la vue — c'est la seule commande dont la forme nue
+n'est pas l'aide ; `agent -h` donne l'aide.
+
+```
+Défaut du parc   : 2.3.0
+Cibles de groupe : pilote 2.4.0
+
+MACHINE    COMPUTEUR ID  DÉCLARÉE  ATTENDUE                ÉTAT
+pilote-1   a1b2…         2.3.0     2.4.0 (groupe pilote)   ⚠ en retard
+web01      c3d4…         2.3.0     2.3.0 (parc)            à jour
+fragile    e5f6…         2.3.0     2.2.0 (dérogation)      en avance
+
+3 agent(s) : 1 en retard, 1 en avance, 1 à jour
+```
+
+### D'où vient la version attendue
+
+| Niveau | Où | Rôle |
+|---|---|---|
+| machine | `agent pin` → `id_logiciels.agent_target_version` | dérogation : le poste qu'on fige |
+| groupe | `agent target -g` → `groups.agent_target_version` | **le niveau ordinaire** — les anneaux |
+| parc | `agent target` → `server_settings` | le défaut |
+
+Pour chaque agent : sa **dérogation**, sinon **la plus haute** des cibles de
+ses groupes, sinon le **défaut du parc**, sinon **aucune**. La plus haute
+l'emporte entre groupes : une machine du groupe pilote et du groupe général
+doit recevoir la version du pilote. Le cas inverse — le poste qu'on laisse
+derrière — est celui de `pin`. Pour figer une machine là où elle est :
+`agent pin <id> <sa version actuelle>`.
+
+**Sans cible, aucune mise à jour.** C'est le défaut : une installation en
+service ne voit rien changer tant que personne n'a posé de cible.
+
+### Les états
+
+| État | Sens |
+|---|---|
+| **en retard** | la version déclarée précède l'attendue |
+| **inconnue** | une cible s'applique, mais la version déclarée est vide ou illisible — comptée avec ce qui est à traiter |
+| **en avance** | la machine déclare plus récent : elle ne sera jamais rétrogradée sans ordre explicite |
+| **à jour** | |
+| **sans cible** | rien ne s'applique, rien ne sera fait |
+
+### Les versions acceptées
+
+Trois nombres : `2.3.1`, ou `v2.3.1` (rangée `2.3.1`). Refusées : `2.3`
+(2.3.0, ou une saisie tronquée ?), `2.3.1-rc1` (une pré-version se lirait
+comme la version finale), `2.3.1+g…`. `none` (ou `--none`) retire la cible.
+
+### Droits
+
+`read:log` pour lire, `write:server` pour écrire, **portée globale** — les clés
+de `gpo signature` et de `mfa ducky`. Une machine appartient à des groupes de
+plusieurs domaines, et la plus haute de leurs cibles l'emporte : un délégué qui
+poserait une cible sur son groupe déciderait aussi pour les machines qu'un
+autre domaine partage avec lui.
+
+### L'ordre, et le compte rendu *(TO-DO 115, 116)*
+
+Chaque agent qui a un ordre le reçoit : il le **demande** à chaque connexion, et
+le core qui le tient le lui **pousse** dans la minute qui suit une écriture de
+cible. Il en **rend compte** — colonne `DERNIER COMPTE RENDU` :
+
+| Compte rendu | Sens |
+|---|---|
+| `installe` | la version est en place — porte de santé franchie |
+| `echec` | tentée, revenue en arrière (le motif dit pourquoi) |
+| `refuse` | rien touché — rétrogradation non demandée, signature, empreinte, module qui ne se charge pas, nouveau binaire qui refuse de démarrer |
+| `non_pris_en_charge` | l'agent ne sait pas se mettre à jour : agent Windows (TO-DO 118), ou agent Linux hors systemd |
+
+**Ce que fait un agent Linux** qui reçoit l'ordre : il attend un tirage de 0 à
+2 min (pour que le parc ne télécharge pas d'un coup), télécharge le paquet de sa
+famille dans le dépôt, vérifie la signature du cluster et chaque empreinte,
+éprouve les modules (`ldd`) et le nouveau binaire (`--check`), puis bascule par
+un programme détaché, redémarre, et passe une **porte de santé** de 3 min au
+plus — service stable, tunnel rétabli, socket PAM qui répond. Sinon il remet
+l'ancienne version. Le compte rendu arrive **à la fin**, quelques minutes après
+l'ordre ; un dépôt injoignable n'en donne aucun, et l'ordre sera redonné. Détail
+et journaux :
+[Agent_configuration_et_debug.md § 4](../exploitation/Agent_configuration_et_debug.md).
+
+Une machine dont le dernier compte rendu **pour cette version** est un échec ne
+reçoit plus l'ordre : elle retenterait à chaque reconnexion. **`agent update
+<machine>`** efface le compte rendu et pousse l'ordre — le geste « j'ai corrigé,
+réessaie ».
+
+**Rétrograder** — une machine en avance n'est jamais ramenée d'office, et
+l'agent refuse toute version inférieure à la sienne sans ordre explicite. Deux
+chemins :
+
+- **`agent pin <machine> <version> --downgrade`**, durable *(TO-DO 204)* : la
+  dérogation porte le drapeau, et la machine reçoit l'ordre de rétrograder à
+  sa **prochaine demande**, quel que soit le core qui la tient — même
+  déconnectée au moment où on le tape. Le drapeau tombe quand elle rend
+  `installe` pour cette version ; une rétrogradation en échec n'est pas
+  retentée à chaque connexion (`agent update` la relance). `vlt agent` marque
+  la ligne « ↓ rétrogradation ». **Jamais** par une cible de groupe ni de parc :
+  ramener un anneau entier par erreur ne doit pas tenir en une commande.
+- `agent update <machine> --downgrade` : poussé **maintenant**, à une machine
+  connectée au core où on le tape (`status -c`).
+
+Chaque ordre de rétrogradation est journalisé en `SECURITY`, côté core et côté
+agent.
+
+**Le dépôt** nommé dans les ordres : `releases` par défaut, `agent depot <nom>`
+pour un autre. Il doit exister, de type `vaultaire` et public, sur chaque Nexus.
+Le paquet signé s'y verse depuis le binaire du core, sur chaque Nexus enrôlé
+d'un geste : `vaultaire_serveur --publish-package <archive>`, avec un jeton
+`nxs_` passé par `VAULTAIRE_NEXUS_TOKEN` *(TO-DO 206)* — voir
+`docs/exploitation/Releases.md`, « Le dépôt du parc ».
+
+**Clés des paquets** *(TO-DO 207)* : la ligne d'en-tête « Clés des paquets : jeu
+n°3 (2 clé(s)), rotation ajoutée — 37 agent(s) Linux sur 40 le tiennent » suit
+une rotation de la clé de signature. La rotation se fait avec le binaire du
+core (`--pkg-key rotate-add`, `rotate-switch`, `rotate-retire`) — voir
+`docs/exploitation/Releases.md`, « Faire tourner la clé ».
+
+### La configuration système *(TO-DO 117)*
+
+À chaque démarrage — et après la porte de santé d'une mise à jour, jamais
+pendant —, un agent Linux remet à la version de son code les fichiers que
+l'installation a écrits : les piles PAM `login`, `sshd` et `gdm-password`,
+`sshd_config`, `nsswitch.conf` et la liste masquée de l'écran de connexion.
+Chaque fichier porte un marqueur `# vaultaire-conf v<N>` ; à jour ou **en
+avance** (après une rétrogradation), il n'est pas touché. Sinon : sauvegarde
+`<fichier>.vaultaire-bak-<horodatage>` à côté de lui, contrôle — `sshd -t` pour
+`sshd_config`, la porte de secours des comptes locaux pour une pile PAM —, puis
+écriture atomique. Les trois piles sont écrites toutes ou aucune ; les autres
+fichiers, chacun pour soi.
+
+Colonne **CONFIGURATION** de `agent` :
+
+| Valeur | Sens |
+|---|---|
+| `conforme` | tous les fichiers à la version de l'agent |
+| `réconciliée` | des fichiers ont été réécrits au dernier démarrage (le motif les nomme) |
+| `⚠ écart` | un contrôle a refusé : **rien n'a été écrit** pour le fichier en cause — détail sous la table |
+| `désactivée` | `"reconcile_system_config": false` dans `client_conf.json` de la machine |
+| `—` | aucun compte rendu : agent d'avant le 117 |
+
+Un écart peut aussi venir de ce que **sshd applique** *(TO-DO 209)* : après
+chaque passage, l'agent compare `sshd -T` au bloc de Vaultaire. Une ligne lue
+avant le bloc (un `UsePAM no` ou un `Include` remis en tête de `sshd_config`)
+l'emporte sur lui ; le motif la nomme — « usepam no (attendu yes) — imposé par
+sshd_config:1 » — et rien n'est écrit.
+
+Sur la machine : `vaultaire_client --config-status` dit, sans rien écrire, où en
+est chaque fichier, et ce que sshd applique.
+
+### Ce qui n'est pas encore là
+
+L'agent **Windows** répond `non_pris_en_charge` (TO-DO 118). En SELinux
+**enforcing**, la préparation d'une mise à jour et la réconciliation seraient
+refusées (TO-DO 203) : laisser le domaine de l'agent permissif, le défaut.
+
+Ni les proxies, ni Nexus, ni l'interface web n'y figurent : ils déclarent une
+version (`cluster list`, `get -c`), mais ne demanderont jamais d'ordre de mise à
+jour. `agent pin` refuse de les viser.
+
+### Sur le portail
+
+**Clients** : la colonne **Version** donne la version déclarée et, pour un
+agent, un badge « état · version attendue », rouge sur un écart. En dessous,
+le dernier compte rendu de mise à jour et un badge **configuration :
+conforme / réconciliée / écart** (rouge sur un écart), le motif au survol
+*(TO-DO 205)*. Sans `read:log` sur `*`, la colonne montre la version déclarée
+seule.
+
+Un agent **en retard** (ou de version illisible) porte un bouton **Relancer** :
+c'est `agent update <machine>` — le dernier compte rendu est effacé, l'ordre
+poussé si la machine est connectée à ce core, sinon donné à sa prochaine
+connexion. Le bouton n'apparaît qu'à qui porte `write:server` sur tout le parc
+(l'action est de portée globale). Pas de rétrogradation depuis le portail :
+`agent pin <machine> <version> --downgrade` en ligne de commande.
