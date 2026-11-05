@@ -8,13 +8,15 @@ func TestHasSubordinatesEstOperationnel(t *testing.T) {
 	u := UserEntry{BaseDN: "acme.lan"}
 	u.User.Username = "alice"
 	entrees := map[string]struct {
-		e       interface{ GetAttributes([]string, bool) map[string][]string }
+		e interface {
+			GetAttributes([]string, bool) map[string][]string
+		}
 		attendu string
 	}{
-		"compte":  {u, "FALSE"},
-		"groupe":  {GroupEntry{Name: "g", BaseDN: "acme.lan"}, "FALSE"},
-		"OU":      {OUEntry{Name: "users", BaseDN: "acme.lan"}, "TRUE"},
-		"domaine": {DomainEntry{DNName: "acme.lan"}, "TRUE"},
+		"compte":              {u, "FALSE"},
+		"groupe":              {GroupEntry{Name: "g", BaseDN: "acme.lan"}, "FALSE"},
+		"OU":                  {OUEntry{Name: "users", BaseDN: "acme.lan"}, "TRUE"},
+		"domaine":             {DomainEntry{DNName: "acme.lan"}, "TRUE"},
 		"domaine sans enfant": {DomainEntry{DNName: "svc.acme.lan", Feuille: true}, "FALSE"},
 	}
 	for nom, c := range entrees {

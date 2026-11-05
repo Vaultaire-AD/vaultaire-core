@@ -48,16 +48,35 @@
 
     {{ if .Resume }}<p><strong>{{ .Resume }}</strong></p>{{ end }}
 
+    <form method="get" action="/admin/gpo/compliance" style="display:flex;gap:0.5rem;flex-wrap:wrap;align-items:center">
+      {{ if .EcartsSeuls }}<input type="hidden" name="ecarts" value="1">{{ end }}
+      {{ if .TriParNom }}<input type="hidden" name="tri" value="nom">{{ end }}
+      <input type="search" name="q" value="{{ .Recherche }}" placeholder="Nom d'hôte ou identifiant…" aria-label="Rechercher une machine">
+      <button type="submit" class="btn btn-secondary">Rechercher</button>
+      {{ if .Recherche }}<a class="btn btn-ghost" href="/admin/gpo/compliance?{{ if .EcartsSeuls }}ecarts=1&amp;{{ end }}{{ if .TriParNom }}tri=nom{{ end }}">Effacer</a>{{ end }}
+    </form>
+
     <p>
       {{ if .EcartsSeuls }}
-        <a class="btn btn-ghost" href="/admin/gpo/compliance">Tout le parc</a>
+        <a class="btn btn-ghost" href="/admin/gpo/compliance?{{ if .TriParNom }}tri=nom&amp;{{ end }}q={{ .Recherche }}">Tout le parc</a>
         <span class="badge">écarts et machines muettes seulement</span>
       {{ else }}
-        <a class="btn btn-ghost" href="/admin/gpo/compliance?ecarts=1">Écarts seulement</a>
+        <a class="btn btn-ghost" href="/admin/gpo/compliance?ecarts=1&amp;{{ if .TriParNom }}tri=nom&amp;{{ end }}q={{ .Recherche }}">Écarts seulement</a>
+      {{ end }}
+      {{ if .TriParNom }}
+        <a class="btn btn-ghost" href="/admin/gpo/compliance?{{ if .EcartsSeuls }}ecarts=1&amp;{{ end }}q={{ .Recherche }}">Trier par gravité</a>
+        <span class="badge">triées par nom</span>
+      {{ else }}
+        <a class="btn btn-ghost" href="/admin/gpo/compliance?{{ if .EcartsSeuls }}ecarts=1&amp;{{ end }}tri=nom&amp;q={{ .Recherche }}">Trier par nom</a>
       {{ end }}
     </p>
 
-    {{ if not .Lignes }}
+    {{ if and (not .Lignes) .Recherche }}
+      <div class="alert alert-info">
+        Aucune machine ne correspond à « {{ .Recherche }} » sur les
+        {{ .Total }} machine(s) suivie(s).
+      </div>
+    {{ else if not .Lignes }}
       <div class="alert alert-success">
         Aucun écart de conformité, et aucune machine muette, sur les
         {{ .Total }} machine(s) suivie(s).
@@ -80,8 +99,11 @@
         {{ range .Lignes }}
           <tr class="row-context"
               data-href="/admin/gpo/compliance?machine={{ .ComputeurID }}"
-              data-label="Machine {{ .ComputeurID }}">
-            <td><a href="/admin/gpo/compliance?machine={{ .ComputeurID }}">{{ .ComputeurID }}</a></td>
+              data-label="Machine {{ .Nom }} ({{ .ComputeurID }})">
+            <td>
+              <a href="/admin/gpo/compliance?machine={{ .ComputeurID }}">{{ if .NomIdentifiant }}<strong>{{ .Nom }}</strong>{{ else }}<span class="muted">{{ .Nom }}</span>{{ end }}</a>
+              <br><span class="muted small">{{ .ComputeurID }}</span>
+            </td>
             <td>
               {{ if eq .Etat "à jour" }}<span class="badge">{{ .Etat }}</span>
               {{ else }}<span class="badge badge-danger">{{ .Etat }}</span>{{ end }}
@@ -129,7 +151,10 @@
 
     <hr>
     <p class="muted small">
-      <strong>Une ligne par machine.</strong> Elle porte l'état de sa portée
+      <strong>Une ligne par machine</strong>, sous son nom d'hôte — celui que
+      l'agent déclare. « nom par défaut (localhost…) » ne désigne aucun poste :
+      donnez-lui un nom (<code>hostnamectl set-hostname</code>) et il apparaîtra
+      au rapport suivant. Elle porte l'état de sa portée
       <em>machine</em> ; « suivi » dit si l'agent rapporte encore. Les comptes
       qui s'y sont connectés sont dans la fiche de la machine, et ne remontent
       ici, sous elle, que lorsqu'il y a quelque chose à y lire : un écart, un
@@ -143,7 +168,8 @@
     </p>
     <p class="muted small">
       Le même état en ligne de commande : <code>vlt gpo status</code>,
-      <code>vlt gpo drift</code>, <code>vlt gpo status &lt;computeur_id&gt;</code>.
+      <code>vlt gpo drift</code>, <code>--par-nom</code> pour le tri par nom,
+      <code>vlt gpo status &lt;computeur_id|nom&gt;</code>.
     </p>
         </div>
       </div>

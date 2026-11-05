@@ -46,7 +46,7 @@ func lignesDe(sortie, motif string) []string {
 
 func TestStatusAUneLigneParMachine(t *testing.T) {
 	maintenant := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	sortie := rendreConformiteA(parcDEssai(maintenant), false, maintenant)
+	sortie := rendreConformiteA(parcDEssai(maintenant), false, false, maintenant)
 
 	for _, machine := range []string{"PC-01", "PC-02"} {
 		if n := len(lignesDe(sortie, machine)); n != 1 {
@@ -84,7 +84,7 @@ func TestStatusAUneLigneParMachine(t *testing.T) {
 // `gpo drift` : la machine dont SEUL un compte a dérivé y figure.
 func TestDriftRetientLaMachineDontUnCompteADerive(t *testing.T) {
 	maintenant := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
-	sortie := rendreConformiteA(parcDEssai(maintenant), true, maintenant)
+	sortie := rendreConformiteA(parcDEssai(maintenant), true, false, maintenant)
 	if len(lignesDe(sortie, "PC-02")) != 1 || !strings.Contains(sortie, "dora@acme.lan") {
 		t.Fatalf("PC-02 est absente de la vue des écarts alors qu'un dossier personnel y a dérivé :\n%s", sortie)
 	}
@@ -99,7 +99,7 @@ func TestDriftRetientLaMachineDontUnCompteADerive(t *testing.T) {
 func TestDriftSansRienASignaler(t *testing.T) {
 	maintenant := time.Date(2026, 10, 7, 12, 0, 0, 0, time.UTC)
 	sain := parcDEssai(maintenant)[:3]
-	sortie := rendreConformiteA(sain, true, maintenant)
+	sortie := rendreConformiteA(sain, true, false, maintenant)
 	if !strings.Contains(sortie, "sur les 1 machine(s) suivie(s)") {
 		t.Errorf("message inattendu : %q", sortie)
 	}
@@ -144,5 +144,27 @@ func TestLesConflitsSeVoient(t *testing.T) {
 	}
 	if rendreConflitsDuParc(rows, nil) != "" {
 		t.Error("pied sans conflit non vide")
+	}
+}
+
+// TO-DO 215 : le nom d'hôte en première colonne, et le tri par nom.
+func TestStatusMontreLeNomEtTrieParNom(t *testing.T) {
+	maintenant := time.Now()
+	verifiee := sql.NullTime{Time: maintenant, Valid: true}
+	rows := []dbgpo.ComplianceRow{
+		{ComputeurID: "ID-Z", Hostname: "zeta", Scope: "machine", Status: "applied", ModulesTotal: 1,
+			ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 1},
+		{ComputeurID: "ID-A", Hostname: "alpha", Scope: "machine", Status: "applied", ModulesTotal: 1,
+			ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 1, DriftCount: 1},
+		{ComputeurID: "ID-L", Hostname: "localhost.localdomain", Scope: "machine", Status: "applied",
+			ModulesTotal: 1, ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 1},
+	}
+	sortie := rendreConformiteA(rows, false, true, maintenant)
+	if !strings.Contains(sortie, "NOM") || !strings.Contains(sortie, "nom par défaut (localhost.localdomain)") {
+		t.Fatalf("colonne NOM absente ou nom générique non signalé :\n%s", sortie)
+	}
+	ia, iz, il := strings.Index(sortie, "ID-A"), strings.Index(sortie, "ID-Z"), strings.Index(sortie, "ID-L")
+	if !(ia < iz && iz < il) {
+		t.Errorf("--par-nom : attendu alpha, zeta, puis le sans-nom :\n%s", sortie)
 	}
 }

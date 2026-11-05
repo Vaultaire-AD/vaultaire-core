@@ -44,12 +44,16 @@ import (
 // demanderait d'y injecter l'heure, donc d'y faire entrer une décision.
 type conformiteVue struct {
 	ComputeurID string
-	Etat        string
-	Application string
-	Modules     string
-	Conformite  string
-	Comptes     string
-	VuIlYA      string
+	// Nom : le nom d'hôte à afficher, ou « nom inconnu » / « nom par défaut
+	// (…) » (TO-DO 215) ; NomIdentifiant dit si c'est un vrai nom.
+	Nom            string
+	NomIdentifiant bool
+	Etat           string
+	Application    string
+	Modules        string
+	Conformite     string
+	Comptes        string
+	VuIlYA         string
 
 	// NonVerifiee fait ressortir la cellule : « non vérifié » en texte nu se
 	// lisait comme une valeur parmi d'autres, entre deux « ok » (TO-DO 135).
@@ -111,8 +115,11 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// « ?ecarts=1 » reproduit `vlt gpo drift`.
+	// « ?ecarts=1 » reproduit `vlt gpo drift`, « ?tri=nom » `--par-nom`.
+	// « ?q= » cherche dans le nom d'hôte et l'identifiant (TO-DO 215).
 	ecartsSeuls := r.URL.Query().Get("ecarts") == "1"
+	triParNom := r.URL.Query().Get("tri") == "nom"
+	recherche := strings.TrimSpace(r.URL.Query().Get("q"))
 
 	res, err := act.Executer("gpo.list_compliance", appelant, act.Params{})
 	if err != nil {
@@ -137,9 +144,15 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 		Total       int
 		EcartsSeuls bool
 		Vide        bool
+		TriParNom   bool
+		Recherche   string
 	}{
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "conformite",
 		Message: res.Message, EcartsSeuls: ecartsSeuls, Total: len(machines),
+		TriParNom: triParNom, Recherche: recherche,
+	}
+	if triParNom {
+		dbgpo.TrierParNom(machines)
 	}
 
 	for _, machine := range machines {
@@ -147,6 +160,9 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 		// alors qu'elle a zéro écart constaté — non parce qu'elle est saine,
 		// mais parce que plus personne ne regarde.
 		if ecartsSeuls && !machine.ARetenirDansLaVueDesEcarts(maintenant) {
+			continue
+		}
+		if !machine.Correspond(recherche) {
 			continue
 		}
 		data.Lignes = append(data.Lignes, vueDeMachine(machine, maintenant))
@@ -168,13 +184,15 @@ func AdminGPOComplianceHandler(w http.ResponseWriter, r *http.Request) {
 // vueDeMachine met une machine en forme pour la liste.
 func vueDeMachine(m dbgpo.LigneMachine, maintenant time.Time) conformiteVue {
 	v := conformiteVue{
-		ComputeurID: m.ComputeurID,
-		Etat:        string(m.Fraicheur(maintenant)),
-		Application: "—",
-		Modules:     "—",
-		Conformite:  "—",
-		Comptes:     m.EtatDesComptes(),
-		VuIlYA:      dbgpo.AgeRelatif(m.VuLe(), maintenant),
+		ComputeurID:    m.ComputeurID,
+		Nom:            m.Nom(),
+		NomIdentifiant: m.NomIdentifiant(),
+		Etat:           string(m.Fraicheur(maintenant)),
+		Application:    "—",
+		Modules:        "—",
+		Conformite:     "—",
+		Comptes:        m.EtatDesComptes(),
+		VuIlYA:         dbgpo.AgeRelatif(m.VuLe(), maintenant),
 	}
 	if m.AMachine {
 		v.Modules = m.Machine.ModulesAppliques()
@@ -251,14 +269,17 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 	}
 
 	data := struct {
-		Username   string
-		DnsEnable  bool
-		Section    string
-		Machine    string
-		Etats      []etatVue
-		Echecs     []dbgpo.ModuleReportRow
-		Ecarts     []dbgpo.DriftRow
-		Historique []transitionVue
+		Username  string
+		DnsEnable bool
+		Section   string
+		Machine   string
+		// Le nom d'hôte de la machine (TO-DO 215), mis en forme.
+		Nom            string
+		NomIdentifiant bool
+		Etats          []etatVue
+		Echecs         []dbgpo.ModuleReportRow
+		Ecarts         []dbgpo.DriftRow
+		Historique     []transitionVue
 		// Les lectures secondaires peuvent échouer sans faire échouer la
 		// fiche : l'état par portée suffit à répondre à « cette machine est-elle
 		// conforme ». Refuser toute la page parce que le détail des modules
@@ -277,6 +298,7 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 		Username: username, DnsEnable: storage.Dns_Enable, Section: "conformite",
 		Message: actions.Message, Error: actions.Erreur, PeutDemanderUnCycle: actions.PeutDemanderUnCycle,
 		Machine: d.ComputeurID, Echecs: d.Echecs, Ecarts: d.Ecarts,
+		Nom: nomDe(d.Hostname), NomIdentifiant: nomIdentifiant(d.Hostname),
 		ModulesIllisibles: d.ModulesIllisibles, EcartsIllisibles: d.EcartsIllisibles,
 		HistoriqueIllisible: d.HistoriqueIllisible,
 		Conflits:            d.Conflits, ConflitsIllisibles: d.ConflitsIllisibles,
@@ -310,4 +332,20 @@ func detailConformite(w http.ResponseWriter, appelant act.Appelant, username, ma
 	if err := executeAdminPage(w, "admin_gpo_compliance_detail.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 	}
+}
+
+// nomDe et nomIdentifiant : NomDeMachine en deux temps, pour le gabarit.
+func nomDe(hostname string) string {
+	// Vide quand la machine n'a rien déclaré : la fiche garde alors son titre
+	// par identifiant, sans « nom inconnu » en gros.
+	if strings.TrimSpace(hostname) == "" {
+		return ""
+	}
+	n, _ := dbgpo.NomDeMachine(hostname)
+	return n
+}
+
+func nomIdentifiant(hostname string) bool {
+	_, ok := dbgpo.NomDeMachine(hostname)
+	return ok
 }

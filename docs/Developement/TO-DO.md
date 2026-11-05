@@ -12,7 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **246**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **262**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
@@ -34,11 +34,14 @@ Trois gestes, dans le même passage que le code :
 | 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
 | 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
 | 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
-| 182 | GPO          | Audit : un `sshd_config` non conforme n'est pas signalé     | À faire — à reproduire                  |
-| 211 | GPO          | Modules de compte : une valeur par compte (`%u`)            | À faire                                 |
-| 219 | NEXUS        | Import GitHub : accepter un tag sans `v`, dire les tags existants | À faire — petit, cause trouvée     |
-| 215 | PORTAIL      | Conformité : le nom d'hôte des machines n'apparaît pas      | À faire                                 |
-| 218 | DEV          | `dev-comp.sh --add-proxy` ne publie pas LDAP/LDAPS          | À faire — petit                         |
+| 247 | SSH          | L'`Include` des fragments en fin de bloc : `sshd_config` masque les GPO SSH | À trancher — recette du 28/10 |
+| 249 | GPO          | `ntp_config` : prendre en charge chrony (Rocky, Ubuntu 26.04) | À faire — recette du 29/10            |
+| 250 | GPO          | Un agent mis à jour ne réévalue pas un module inchangé      | À trancher — recette du 29/10           |
+| 251 | GPO          | `file_deploy` réécrit le fichier et efface son ACL          | À faire — petit                         |
+| 252 | GPO          | `{{fqdn}}` vaut le nom court sur Debian                     | À faire — petit                         |
+| 253 | SÉCURITÉ     | L'identité des marqueurs voyage hors de la signature des modules | À cadrer                           |
+| 256 | CLI          | La clé publique de déploiement (`-join`) ne se lit que sur le portail | À faire — petit, utile en Kubernetes |
+| 260 | DÉPLOIEMENT  | Plusieurs cores en Kubernetes : un Service par pod pour l'exposition | À faire — après 2.3.0 |
 | 217 | AUTH         | Aucun service Vaultaire joignable : comment se connecter ?  | Idée — à cadrer                         |
 | 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
 | 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
@@ -176,39 +179,86 @@ passage (DO 229) : la liste « vide » du 25/10 venait d'un arrêt du script.
    y est connu.
 
 
-### 182. [GPO] Audit : un `sshd_config` non conforme n'est pas signalé
+### 247. [SSH] L'`Include` des fragments est en fin du bloc de l'agent
 
-**Constat** (recette du 12/10, `A_TESTER.md`), § 7d. Le mode audit ne corrige pas — c'est validé —,
-mais un `sshd_config` rendu non conforme à la main n'est **pas** remonté en
-écart, malgré plusieurs cycles et rafraîchissements.
+**Constat** (28/10, poste Rocky 10.1). Dans le `sshd_config` que l'agent
+réconcilie (TO-DO 117), la ligne `Include /etc/ssh/sshd_config.d/*.conf` est la
+**dernière** de son bloc. Tout ce qui la précède l'emporte donc sur les GPO :
+les directives de l'agent lui-même (`PubkeyAuthentication yes`,
+`KbdInteractiveAuthentication yes`, `AuthenticationMethods …`) et toute ligne
+qu'un administrateur ajoute plus haut. Une GPO `pubkey_authentication: no` ne
+peut jamais prendre effet — ce que le 182 rend maintenant visible (le module
+échoue, « sans effet »), sans le résoudre.
 
-**À faire.** Reproduire avec le module SSH de la formation ; regarder si son
-contrôle relit vraiment le fichier (ou seulement l'empreinte de ce qu'il a
-posé), et si l'écart est perdu à l'agent ou au core (`gpo drift`). Un test qui
-casse le fichier et attend l'écart.
+**À trancher.** Placer l'`Include` en **tête** du fichier (ce que font Rocky
+et Debian d'origine), pour que les fragments — GPO comprises — passent avant
+le reste ; ou garder les directives de l'agent prioritaires, et refuser à
+l'enregistrement d'une GPO celles qu'il fixe déjà. Lié au **241**
+(`AuthenticationMethods` global posé par `-join`).
 
-### 211. [GPO] Modules de compte : une valeur par compte
+### 256. [CLI] La clé publique de déploiement ne se lit que sur le portail
 
-**Demande** (recette du 22/10, § 63). Un `user_git_config` pose la **même**
-valeur à tous les comptes visés : `user.name` vaut la même chose pour chaque
-membre du groupe, ce qui n'a pas de sens. Il faut des marqueurs remplacés au
-moment d'appliquer, pour chaque compte — comme `%h` (le dossier personnel)
-l'est déjà dans les chemins (`gpo/registry.go`, `expandHome`).
+En Kubernetes, sans shell dans l'image, la clé à poser dans
+`/root/.ssh/authorized_keys` d'un poste avant `-join` ne se lit que sur le
+tableau de bord du portail (section « Client -join »). Ajouter
+`vlt certificate show login-client` (ou équivalent) qui rend la clé publique.
 
-**À faire.**
+### 260. [DÉPLOIEMENT] Plusieurs cores en Kubernetes
 
-1. Trancher la liste et la syntaxe : `%u` (nom du compte, `alice`), et sans
-   doute `%U` (`alice@acme.lan`), `%d` (domaine), `%n` (nom complet tiré de
-   l'annuaire), `%m` (adresse de messagerie si l'annuaire la porte), `%%`
-   (un `%` littéral). Une valeur sans marqueur ne change pas.
-2. Où : dans les **valeurs** des modules de compte (`user_git_config` d'abord ;
-   regarder `user_env`, `user_cron` et les autres), côté **agent**, qui
-   connaît le compte — la politique signée reste la même pour tout le groupe.
-3. Le contrôle de dérive compare à la valeur **remplacée** ; un marqueur
-   inconnu est refusé à l'enregistrement de la GPO (core), pas découvert sur
-   le poste.
-4. Docs : la référence des modules, la formation (chapitre 6, GPO de compte),
-   un exemple `user.name = %n`, `user.email = %m`.
+`replicaCount > 1` fonctionne (StatefulSet, base commune), mais chaque core doit
+être exposé séparément aux agents. Ajouter à la chart un Service par pod
+(`statefulset.kubernetes.io/pod-name`) et, si possible, l'appel automatique à
+`vlt cluster expose`.
+
+### 249. [GPO] `ntp_config` : prendre en charge chrony
+
+**Constat** (recette du 29/10). Rocky 10.1 et Ubuntu 26.04 synchronisent avec
+**chronyd**, pas `systemd-timesyncd`. Le module n'écrit que le fragment
+timesyncd ; il échoue désormais (« sans effet : chronyd actif »), au lieu de
+se dire appliqué. Rocky n'a pas de `confdir` (`pool 2.rocky.pool.ntp.org` dans
+`/etc/chrony.conf`) ; Ubuntu lit `/etc/chrony/conf.d` et `sources.d`.
+
+**À faire.** Écrire les serveurs pour chrony (fragment dans `sources.d` /
+`conf.d` quand il existe, sinon trancher : réécrire `chrony.conf` ou
+y ajouter un `confdir`) ; retirer ou garder les `pool` d'origine (« servers »
+veut-il dire *remplacer* ?) ; `chronyc reload sources` ; vérifier par
+`chronyc -n sources`. Le vérificateur `ntp_servers` lit aujourd'hui timesyncd.
+
+### 250. [GPO] Un agent mis à jour ne réévalue pas un module inchangé
+
+**Constat** (recette du 29/10). Après le déploiement d'un agent corrigé, les
+modules dont l'empreinte n'a pas bougé ne sont pas rejoués : un
+`ntp_config` « appliqué » par l'ancien agent (à tort) le restait. Il a fallu
+vider les empreintes de `/var/lib/vaultaire/applied_policies.json` pour voir
+le vrai résultat.
+
+**À trancher.** Rejouer une fois tous les modules quand la version de l'agent
+change (comme `versionInventaire` le fait pour l'inventaire), ou seulement les
+types dont l'appliqueur a changé (un numéro par type).
+
+### 251. [GPO] `file_deploy` réécrit le fichier et efface son ACL
+
+**Constat** (recette du 29/10, Rocky). Une GPO qui dépose un fichier et lui
+pose une ACL (`file_acl`) : quand `file_deploy` réécrit le fichier (écriture
+atomique, nouveau fichier), l'ACL disparaît ; le scan suivant la voit et
+`file_acl` la repose. Entre les deux, l'accès voulu n'existe pas.
+
+**À faire.** Recopier l'ACL d'accès du fichier remplacé, ou rejouer les
+`file_acl` du même chemin dans le même cycle après un `file_deploy` appliqué.
+
+### 252. [GPO] `{{fqdn}}` vaut le nom court sur Debian
+
+**Constat** (recette du 29/10). `templated_file_deploy` avec `{{fqdn}}` rend
+`debian-vlt-test`, comme `{{hostname}}`. Le poste n'a pas de domaine dans
+`/etc/hosts` ; vérifier ce que lit l'agent (`hostname -f` ? résolution ?) et
+documenter la règle.
+
+### 253. [SÉCURITÉ] [GPO] L'identité des marqueurs hors de la signature
+
+**Constat** (211). L'identité (nom complet, adresse, domaine) qui remplace
+`%n`, `%m`, `%d` voyage dans la politique de compte, à côté des modules : elle
+entre dans l'empreinte de la politique, pas dans la signature des modules.
+Vérifier ce que couvre la signature et, si besoin, y faire entrer l'identité.
 
 ### 196. [AGENT] [SSH] `--fetch-key` : une session Ducky neuve à chaque appel de sshd
 
@@ -439,51 +489,6 @@ jour réelle, en permissif, puis en enforcing.
 
 
 ## Portail et outillage
-
-### 215. [PORTAIL] La page Conformité ne montre pas le nom d'hôte des machines
-
-**Constat** (recette du 25/10, § 94). La page **Admin → Conformité** liste les
-machines sans leur nom d'hôte : il faut retrouver chaque identifiant
-(`svmAFOFVMs2n-25-10-2026`) ailleurs. Le 191 l'a fait pour les clients d'un
-groupe.
-
-**À faire.** Ajouter le nom d'hôte (celui de l'inventaire `02_12`) à la liste
-et à la fiche, avec l'identifiant en second ; le tri et la recherche sur le
-nom. Un nom d'hôte `localhost.localdomain` ne désigne rien : le dire plutôt
-que l'afficher tel quel.
-
-### 218. [DEV] `dev-comp.sh --add-proxy` ne publie pas LDAP/LDAPS
-
-**Constat** (recette du 25/10, § 101). Un proxy ajouté par `--add-proxy` ne
-publie que son port Ducky : le relais LDAPS n'est joignable de nulle part, et
-le § 101 ne peut pas se jouer. `--port 636:1636` le permet déjà, mais rien ne
-le dit au moment où on en a besoin.
-
-**À faire.** Au choix : publier d'office LDAP/LDAPS (décalés comme les autres
-ports, `1636 → 1636 + N`) quand un relais `ldaps` est piloté ; ou, plus
-simple, que `--add-proxy` **affiche** la commande `--port` et la commande
-`cluster relais … set ldaps` à la fin, comme il affiche déjà `cluster expose`.
-La recette M3 d'`A_TESTER.md` donne la marche à suivre en attendant.
-
-### 219. [NEXUS] Import GitHub : accepter un tag sans `v`, dire les tags existants
-
-**Constat** (recette du 25/10). « Importer depuis GitHub » rendait une **404** :
-le tag saisi était `2.2.0`, et la release s'appelle `v2.2.0`. Vérifié le 25/10
-depuis le poste : le dépôt est public, `tags/v2.2.0` et `latest` rendent 200,
-`tags/2.2.0` et `tags/v2.3.0` (pas encore publiée) 404. Ce n'est pas un défaut
-de Nexus ; la forme attendue est maintenant écrite dans
-`src/vaultaire_nexus/README.md` et `Releases.md`.
-
-**À faire** (`src/vaultaire_nexus/internal/files/github.go`, `Import`) :
-
-1. un tag qui commence par un chiffre est essayé tel quel, puis avec un `v`
-   devant ;
-2. sur une 404, lire `GET /repos/<dépôt>/releases?per_page=10` et le dire :
-   « release 2.3.0 introuvable sur Vaultaire-AD/vaultaire-core — disponibles :
-   v2.2.0, v2.1.0 » ; si le dépôt lui-même rend 404, « dépôt introuvable (ou
-   privé : NEXUS_GITHUB_TOKEN) » ;
-3. une aide sous le champ tag de la page du dépôt : « v2.2.0, ou vide pour la
-   dernière ».
 
 ---
 

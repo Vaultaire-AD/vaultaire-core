@@ -44,6 +44,10 @@ import (
 type LigneMachine struct {
 	ComputeurID string
 
+	// Hostname : le nom d'hôte déclaré par la machine (TO-DO 215). Brut —
+	// NomDeMachine le met en forme.
+	Hostname string
+
 	// Machine est la portée machine. Sans valeur (AMachine faux) tant que le
 	// poste n'a rapporté que pour des comptes — le temps d'un premier cycle.
 	Machine  ComplianceRow
@@ -63,6 +67,9 @@ func RegrouperParMachine(rows []ComplianceRow, maintenant time.Time) []LigneMach
 			i = len(out)
 			rang[r.ComputeurID] = i
 			out = append(out, LigneMachine{ComputeurID: r.ComputeurID})
+		}
+		if out[i].Hostname == "" {
+			out[i].Hostname = r.Hostname
 		}
 		// Tout ce qui n'est pas une portée utilisateur tient lieu de portée
 		// machine : la portée machine elle-même, et la ligne « ? » d'une machine

@@ -50,6 +50,10 @@ func ecrireFichierUtilisateur(_, chemin, _ string, _ os.FileMode, _, _ int) erro
 	return fmt.Errorf("%s (%s)", indisponible, chemin)
 }
 
+func lierSousHome(_, chemin, _ string, _, _ int) error {
+	return fmt.Errorf("%s (%s)", indisponible, chemin)
+}
+
 func preparerRepertoireUtilisateur(_, chemin string, _ os.FileMode, _, _ int) error {
 	return fmt.Errorf("%s (%s)", indisponible, chemin)
 }

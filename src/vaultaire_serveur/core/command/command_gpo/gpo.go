@@ -1,7 +1,7 @@
 // Package commandgpo expose l'état d'application des GPO sur le parc.
 //
 //	vlt gpo status                 vue d'ensemble
-//	vlt gpo status <computeur_id>  détail d'une machine
+//	vlt gpo status <computeur_id|nom>  détail d'une machine
 //	vlt gpo drift                  uniquement ce qui a dérivé
 //	vlt gpo mode <gpo> <valeur>    enforce ou audit — ce qu'on fait d'un écart
 //
@@ -77,13 +77,21 @@ func GPO_Command(commandList []string, senderGroupIDs []int, senderUsername stri
 	appelant := action.Appelant{Username: senderUsername, GroupIDs: senderGroupIDs}
 
 	switch sub {
-	case "status":
-		if len(commandList) > 1 {
-			return conformiteMachine(appelant, strings.TrimSpace(commandList[1]))
+	case "status", "drift":
+		// `--par-nom` range la vue d'ensemble par nom d'hôte (TO-DO 215) ;
+		// sans lui, ce qui va mal vient en tête.
+		parNom, args := false, []string{}
+		for _, a := range commandList[1:] {
+			if strings.EqualFold(strings.TrimSpace(a), "--par-nom") {
+				parNom = true
+				continue
+			}
+			args = append(args, a)
 		}
-		return conformiteParc(appelant, false)
-	case "drift":
-		return conformiteParc(appelant, true)
+		if sub == "status" && len(args) > 0 {
+			return conformiteMachine(appelant, strings.TrimSpace(args[0]))
+		}
+		return conformiteParc(appelant, sub == "drift", parNom)
 	case "mode":
 		return reglerMode(appelant, commandList[1:])
 	case "refresh":
@@ -246,14 +254,14 @@ func rafraichirGPO(appelant action.Appelant, nom string) string {
 //
 // driftOnly restreint aux machines en écart : sur un parc conforme, la commande
 // répond alors « rien à signaler », ce qui est l'information utile.
-func conformiteParc(appelant action.Appelant, driftOnly bool) string {
+func conformiteParc(appelant action.Appelant, driftOnly, parNom bool) string {
 	res, err := action.Executer("gpo.list_compliance", appelant, action.Params{})
 	if err != nil {
 		return commandaction.MessageDErreur(err)
 	}
 	rows, _ := res.Donnees.([]dbgpo.ComplianceRow)
 	conflits, errC := dbgpo.ConflitsDuParc(database.GetDatabase())
-	sortie := res.Message + "\n\n" + rendreConformite(rows, driftOnly)
+	sortie := res.Message + "\n\n" + rendreConformite(rows, driftOnly, parNom)
 	if errC != nil {
 		return sortie + "Conflits entre GPO illisibles : " + errC.Error() + "\n"
 	}
@@ -289,6 +297,49 @@ func conformiteMachine(appelant action.Appelant, computeurID string) string {
 	if computeurID == "" {
 		return "Identifiant de machine manquant."
 	}
+	// Un NOM D'HÔTE est accepté à la place de l'identifiant (TO-DO 215).
+	//
+	// Résolu sur la vue d'ensemble, donc dans le PÉRIMÈTRE de l'appelant : un
+	// délégué ne peut pas apprendre qu'un poste hors de ses domaines porte tel
+	// nom. Un identifiant connu passe tel quel ; un nom porté par plusieurs
+	// postes n'est pas deviné.
+	if liste, err := action.Executer("gpo.list_compliance", appelant, action.Params{}); err == nil {
+		rows, _ := liste.Donnees.([]dbgpo.ComplianceRow)
+		connu := false
+		for _, r := range rows {
+			if r.ComputeurID == computeurID {
+				connu = true
+				break
+			}
+		}
+		if !connu && dbgpo.NomGenerique(computeurID) {
+			var ids []string
+			vus := map[string]bool{}
+			for _, r := range rows {
+				if strings.EqualFold(strings.TrimSpace(r.Hostname), computeurID) && !vus[r.ComputeurID] {
+					vus[r.ComputeurID] = true
+					ids = append(ids, r.ComputeurID)
+				}
+			}
+			msg := fmt.Sprintf("« %s » est un nom par défaut : il ne désigne aucun poste en propre.\n", computeurID)
+			if len(ids) > 0 {
+				msg += fmt.Sprintf("Postes qui le portent : %s.\n", strings.Join(ids, ", "))
+			}
+			return msg + "Précisez l'identifiant : vlt gpo status <computeur_id> — et donnez un nom au poste\n" +
+				"(hostnamectl set-hostname <nom>) : il apparaîtra au rapport suivant."
+		}
+		if !connu {
+			switch ids := dbgpo.MachinesNommees(rows, computeurID); len(ids) {
+			case 0:
+			case 1:
+				computeurID = ids[0]
+			default:
+				return fmt.Sprintf("Plusieurs machines s'appellent « %s » : %s.\n"+
+					"Précisez l'identifiant : vlt gpo status <computeur_id>",
+					computeurID, strings.Join(ids, ", "))
+			}
+		}
+	}
 	res, err := action.Executer("gpo.get_compliance", appelant,
 		action.Params{"computeur_id": computeurID})
 	if err != nil {
@@ -305,8 +356,8 @@ func conformiteMachine(appelant action.Appelant, computeurID string) string {
 //
 // Ne lit plus la base et ne contrôle plus rien : l'action a fait les deux, et
 // les lignes reçues sont DÉJÀ réduites au périmètre de l'appelant.
-func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly bool) string {
-	return rendreConformiteA(rows, driftOnly, time.Now())
+func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly, parNom bool) string {
+	return rendreConformiteA(rows, driftOnly, parNom, time.Now())
 }
 
 // rendreConformiteA prend l'instant en paramètre, pour être éprouvable.
@@ -314,7 +365,7 @@ func rendreConformite(rows []dbgpo.ComplianceRow, driftOnly bool) string {
 // La fraîcheur d'un rapport se juge par rapport à MAINTENANT. Un rendu qui
 // appelle time.Now() en son sein ne se teste qu'en attendant trois heures,
 // c'est-à-dire jamais.
-func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant time.Time) string {
+func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly, parNom bool, maintenant time.Time) string {
 	if len(rows) == 0 {
 		// Le message a changé de sens avec la vue.
 		//
@@ -337,9 +388,12 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 	// le choix de ceux qui remontent viennent de db_gpo : le portail emprunte
 	// les mêmes fonctions, et les deux vues disent donc la même chose.
 	tb := display.NouvelleTable(
-		"MACHINE", "SUIVI", "APPLICATION", "MODULES", "CONFORMITÉ", "COMPTES", "VU")
+		"NOM", "MACHINE", "SUIVI", "APPLICATION", "MODULES", "CONFORMITÉ", "COMPTES", "VU")
 
 	machines := dbgpo.RegrouperParMachine(rows, maintenant)
+	if parNom {
+		dbgpo.TrierParNom(machines)
+	}
 	affichées := 0
 	for _, m := range machines {
 		// Le filtre « écarts seulement » ne masque PAS les machines muettes.
@@ -357,6 +411,7 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 			application, modules, conformite = orDash(m.Machine.Status), m.Machine.ModulesAppliques(), m.Machine.EtatConformite()
 		}
 		tb.Ajouter(
+			m.Nom(),
 			m.ComputeurID,
 			string(m.Fraicheur(maintenant)),
 			application,
@@ -370,6 +425,7 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 		for _, c := range m.ARemonter() {
 			tb.Ajouter(
 				"  ↳ "+orDash(c.TargetUser),
+				"",
 				"",
 				orDash(c.Status),
 				c.ModulesAppliques(),
@@ -391,7 +447,7 @@ func rendreConformiteA(rows []dbgpo.ComplianceRow, driftOnly bool, maintenant ti
 	// rien dire sans savoir si le parc en compte 4 ou 4000.
 	fmt.Fprintf(&b, "\n%d machine(s) sur %d suivie(s).\n", affichées, len(machines))
 	b.WriteString(dbgpo.ResumerParc(rows, maintenant).Lisible() + "\n")
-	fmt.Fprintf(&b, "Détail d'une machine, tous ses comptes compris : vlt gpo status <computeur_id>\n")
+	fmt.Fprintf(&b, "Détail d'une machine, tous ses comptes compris : vlt gpo status <computeur_id|nom>\n")
 	return b.String()
 }
 
@@ -414,7 +470,11 @@ func rendreConformiteMachineA(d action.ConformiteMachine, maintenant time.Time) 
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Machine %s\n\n", d.ComputeurID)
+	if nom, vrai := dbgpo.NomDeMachine(d.Hostname); vrai || d.Hostname != "" {
+		fmt.Fprintf(&b, "Machine %s — %s\n\n", nom, d.ComputeurID)
+	} else {
+		fmt.Fprintf(&b, "Machine %s\n\n", d.ComputeurID)
+	}
 
 	for _, r := range d.Etats {
 		fmt.Fprintf(&b, "  %s%s\n", r.Scope, userSuffix(r.TargetUser))
@@ -556,9 +616,10 @@ func unLigne(s string) string {
 func helpText() string {
 	return `Utilisation : vlt gpo <sous-commande>
 
-  status                 état d'application et de conformité du parc
-  status <computeur_id>  détail d'une machine : modules en échec, écarts
-  drift                  machines en écart, et machines muettes
+  status [--par-nom]     état d'application et de conformité du parc
+  status <computeur_id|nom>
+                         détail d'une machine : modules en échec, écarts
+  drift [--par-nom]      machines en écart, et machines muettes
   mode <gpo> <valeur>    enforce | audit — ce qui est fait d'un écart
   refresh <id> | --gpo <nom> | --all
                          demande un cycle maintenant, sans attendre le tour :
@@ -570,6 +631,8 @@ une GPO en audit et une autre en enforce applique la règle de chacune. Un écar
 est signalé dans les deux cas ; seul le fait de le corriger change.
 
 UNE LIGNE PAR MACHINE, qui porte l'état de sa portée machine :
+  NOM          le nom d'hôte déclaré ; « nom par défaut (localhost…) » ne désigne
+               aucun poste : hostnamectl set-hostname sur la machine
   SUIVI        la machine parle-t-elle encore ? à jour / en retard / jamais
   APPLICATION  le dernier rapport de l'agent — la politique a-t-elle pu être posée ?
   CONFORMITÉ   le dernier scan de l'agent    — est-elle encore en place ?

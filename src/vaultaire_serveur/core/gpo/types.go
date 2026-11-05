@@ -76,6 +76,12 @@ type FieldSchema struct {
 	MaxLen int    `json:"max_len,omitempty"`
 	Help   string `json:"help,omitempty"`
 
+	// Marqueurs : la valeur accepte les marqueurs par compte (%u, %U, %d, %n,
+	// %m, %%), remplacés par l'agent au moment d'appliquer — TO-DO 211. Un
+	// marqueur inconnu est refusé ICI, à l'enregistrement, et non découvert
+	// sur le poste. Voir marqueurs.go.
+	Marqueurs bool `json:"marqueurs,omitempty"`
+
 	// Scope restreint le champ à un scope, dans un module qui vit dans les
 	// deux. Vide = le champ vaut partout, ce qui est le cas de presque tous.
 	//

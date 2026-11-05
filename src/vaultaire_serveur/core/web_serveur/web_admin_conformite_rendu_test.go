@@ -29,6 +29,8 @@ func rendreLaPage(t *testing.T, rows []dbgpo.ComplianceRow, maintenant time.Time
 		Total       int
 		EcartsSeuls bool
 		Vide        bool
+		TriParNom   bool
+		Recherche   string
 	}{Username: "root", Section: "conformite", Total: len(machines),
 		Resume: dbgpo.ResumerParc(rows, maintenant).Lisible()}
 	for _, m := range machines {
@@ -132,5 +134,29 @@ func TestLaPageConformiteAUneLigneParMachine(t *testing.T) {
 	}
 	if !strings.Contains(html, "2 machine(s) sur 2 suivie(s)") {
 		t.Error("le pied de tableau ne compte pas des machines")
+	}
+}
+
+// TO-DO 215 : la liste montre le nom d'hôte, l'identifiant en second.
+func TestLaPageConformiteMontreLeNomDHote(t *testing.T) {
+	maintenant := time.Now()
+	verifiee := sql.NullTime{Time: maintenant, Valid: true}
+	html := rendreLaPage(t, []dbgpo.ComplianceRow{
+		{ComputeurID: "svmAFOFVMs2n-25-10-2026", Hostname: "web01", Scope: "machine", Status: "applied",
+			ModulesTotal: 1, ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 1},
+		{ComputeurID: "tWsljHj66fCD-28-10-2026", Hostname: "localhost.localdomain", Scope: "machine",
+			Status: "applied", ModulesTotal: 1, ReportedAt: maintenant, DriftAt: verifiee, DriftChecked: 1},
+	}, maintenant)
+	for _, attendu := range []string{
+		"<strong>web01</strong>",
+		"svmAFOFVMs2n-25-10-2026",
+		"nom par défaut (localhost.localdomain)",
+		"tWsljHj66fCD-28-10-2026",
+		`name="q"`,
+		"Trier par nom",
+	} {
+		if !strings.Contains(html, attendu) {
+			t.Errorf("la page ne contient pas %q", attendu)
+		}
 	}
 }

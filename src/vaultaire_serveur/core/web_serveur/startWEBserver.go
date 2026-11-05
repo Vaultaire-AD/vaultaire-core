@@ -76,6 +76,9 @@ func StartWebServer() {
 
 	VerifierRessourcesWeb()
 	http.Handle("/static/", http.StripPrefix("/static/", http.FileServer(http.Dir(RepertoireStatiques()))))
+	// Point de santé pour les sondes (TO-DO 258) : sans authentification, sans
+	// journal, et ne dit rien d'autre que « ok » ou « indisponible ».
+	http.HandleFunc("/healthz", SanteHandler)
 	http.HandleFunc("/", LoginPageHandler)
 	http.HandleFunc("/login", LoginHandler)
 	// Étape du second facteur : atteignable uniquement avec le cookie

@@ -1,0 +1,38 @@
+# Argo CD : la chart publiée sur GHCR (OCI), les valeurs dans votre dépôt.
+#
+# Argo CD ≥ 2.8 lit les charts OCI. Le dépôt OCI doit être déclaré une fois
+# (Settings → Repositories, type Helm, « Enable OCI », URL ghcr.io/vaultaire-ad/charts).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vaultaire
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: vaultaire
+  sources:
+    - repoURL: ghcr.io/vaultaire-ad/charts
+      chart: vaultaire
+      targetRevision: 2.3.0
+      helm:
+        releaseName: vaultaire
+        valueFiles:
+          - $values/clusters/prod/vaultaire/values.yaml
+    # Votre dépôt GitOps, qui porte values.yaml (et l'ExternalSecret).
+    - repoURL: https://git.example.com/infra/gitops.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://git.example.com/infra/gitops.git
+      targetRevision: main
+      path: clusters/prod/vaultaire/manifests
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

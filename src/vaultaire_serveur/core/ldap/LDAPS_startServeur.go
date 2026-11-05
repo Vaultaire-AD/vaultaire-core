@@ -38,7 +38,9 @@ func HandleLDAPSserveur() {
 	// On ne remplace RIEN automatiquement : changer un certificat sans qu'on le
 	// demande casserait tous les clients qui l'ont importé dans leur magasin de
 	// confiance. On dit ce qui ne va pas, et comment le corriger.
-	attendus := ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs())
+	attendus := ldaptools.AttendusPourAudit(
+		ldaptools.BuildSANSet(ldaptools.ConfiguredDNSNames(), ldaptools.ConfiguredIPs()),
+		ldaptools.ConfiguredIPs())
 	logs.Write_Log("INFO", "ldaps: "+ldaptools.CertSummary(certPEM))
 	for _, issue := range ldaptools.AuditServedCertificate(certPEM, attendus) {
 		niveau := "WARNING"

@@ -36,7 +36,8 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
 3. Vérifiez côté machine :
 
    ```bash
-   cat /etc/ssh/sshd_config.d/99-vaultaire-gpo.conf
+   cat /etc/ssh/sshd_config.d/00-vaultaire-gpo.conf
+   sudo sshd -T | grep -E '^(maxauthtries|banner) '   # ce que sshd applique vraiment
    cat /etc/ssh/vaultaire-banner
    ```
 
@@ -53,13 +54,16 @@ Appliquer la GPO aux machines du groupe `Infra` et le vérifier.
 
 | Colonne | Question |
 |---|---|
+| **Nom** | le nom d'hôte de la machine ; « nom par défaut » : donnez-lui un nom (`hostnamectl set-hostname`) |
 | **Suivi** | la machine parle-t-elle encore ? `à jour`, `en retard`, `jamais` |
 | **Application** | la politique a-t-elle **pu être posée** ? |
 | **Conformité** | est-elle **encore en place** ? |
 | **Comptes** | les comptes passés sur le poste : `2 ok`, `1 en écart sur 3` |
 
 Une ligne par **machine**. Un compte n'apparaît sous la sienne (`↳`) que s'il y
-a quelque chose à y lire ; tous sont dans `vlt gpo status <computeur_id>`.
+a quelque chose à y lire ; tous sont dans `vlt gpo status <computeur_id>`, ou
+`vlt gpo status web01` : le nom d'hôte suffit. `--par-nom` range le parc par
+nom, et le portail cherche une machine par son nom.
 
 ## ✅ Vous avez réussi si
 

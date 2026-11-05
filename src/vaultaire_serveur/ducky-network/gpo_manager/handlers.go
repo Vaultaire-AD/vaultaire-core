@@ -1,10 +1,12 @@
 package gpomanager
 
 import (
+	"database/sql"
 	"fmt"
 	"strconv"
 	"strings"
 	dbgpo "vaultaire/core/database/db_gpo"
+	dbldap "vaultaire/core/database/db_ldap"
 	dbusers "vaultaire/core/database/db_users"
 
 	"vaultaire/core/database"
@@ -51,7 +53,7 @@ func handleAskMachine(trames storage.Trames_struct_client) string {
 		return replyScopeError(trames.SessionIntegritykey, gpo.ScopeMachine, "", code, message)
 	}
 
-	return serveScope(trames, gpo.ScopeMachine, "", policy, appliedFingerprint)
+	return serveScope(trames, gpo.ScopeMachine, "", policy, appliedFingerprint, nil)
 }
 
 // handleAskUser traite 05_05 et répond 05_06, 05_07 ou 05_08.
@@ -129,17 +131,18 @@ func handleAskUser(trames storage.Trames_struct_client) string {
 
 	// requestedUser et non directoryUser : c'est la clé de corrélation du client,
 	// et c'est aussi le nom du compte local que l'agent doit configurer.
-	return serveScope(trames, gpo.ScopeUser, requestedUser, policy, appliedFingerprint)
+	return serveScope(trames, gpo.ScopeUser, requestedUser, policy, appliedFingerprint,
+		identiteDuCompte(db, directoryUser, requestedUser))
 }
 
 // serveScope compare l'empreinte annoncée par le client à celle de la politique
 // résolue, et répond soit « rien à faire », soit un manifeste.
 func serveScope(trames storage.Trames_struct_client, scope gpo.Scope, targetUser string,
-	policy gpo.Policy, appliedFingerprint string) string {
+	policy gpo.Policy, appliedFingerprint string, identite *gpo.Identite) string {
 
 	clientID := trames.ClientSoftwareID
 
-	transfer, err := gpo.PrepareTransfer(policy, targetUser)
+	transfer, err := gpo.PrepareTransferPour(policy, targetUser, identite)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeGPOTransport, fmt.Sprintf(
 			"gpo: préparation du transfert %s échouée pour %s : %v", scope, clientID, err))
@@ -495,4 +498,27 @@ func userSuffix(username string) string {
 		return ""
 	}
 	return "/" + username
+}
+
+// identiteDuCompte lit dans l'annuaire ce que les marqueurs %n et %m
+// demandent (TO-DO 211). Une lecture en échec rend nil : la politique part
+// sans identité, et l'agent refuse alors les seuls modules qui portent %n ou
+// %m — plutôt que de poser un nom vide.
+func identiteDuCompte(db *sql.DB, directoryUser, requestedUser string) *gpo.Identite {
+	u, err := dbldap.GetUserByUsername(directoryUser, db)
+	if err != nil {
+		logs.Write_LogCode("WARNING", logs.CodeGPOResolve, fmt.Sprintf(
+			"gpo: identité de %s illisible, politique livrée sans (%%n, %%m indisponibles) : %v",
+			directoryUser, err))
+		return nil
+	}
+	_, domaine := domain.ExctractDomainFromUsername(requestedUser)
+	if domaine == "" {
+		_, domaine, _ = strings.Cut(u.Email, "@")
+	}
+	return &gpo.Identite{
+		NomComplet: strings.TrimSpace(u.Firstname + " " + u.Lastname),
+		Mail:       strings.TrimSpace(u.Email),
+		Domaine:    domaine,
+	}
 }

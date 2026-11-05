@@ -1,0 +1,81 @@
+# ====================================================================
+# Configuration du core — image conteneur (rootless)
+# ====================================================================
+#
+# Ce fichier est celui de l'IMAGE. En Kubernetes, la chart le remplace par une
+# ConfigMap (values.yaml → config). Il ne porte AUCUN secret : la base, le
+# compte d'amorçage et sa clé arrivent par l'environnement —
+#
+#   VAULTAIRE_DB_PASSWORD     ou VAULTAIRE_DB_PASSWORD_FILE
+#   VAULTAIRE_ADMIN_PASSWORD  ou VAULTAIRE_ADMIN_PASSWORD_FILE
+#   VAULTAIRE_ADMIN_PUBLIC_KEY (facultative)
+#
+# et toute clé ci-dessous peut être remplacée par sa variable VAULTAIRE_*
+# (docs/Installation/Variables_environnement.md). Le core REFUSE de démarrer
+# tant que les deux mots de passe valent CHANGEZ_MOI.
+#
+# Référence commentée de chaque clé : deployments/configs/serveur_conf.yaml.
+
+# Ducky : le port où les agents et les proxies joignent le core.
+serveurlistenport: "6666"
+
+file-path:
+  socketpath: "/run/vaultaire/vaultaire.sock"
+  # Clés exportées de la base, configurations des postes à installer.
+  clientconfpath: "/var/lib/vaultaire/"
+  logpath: "/var/log/vaultaire/"
+
+ldap:
+  ldap_enable: true
+  ldaps_enable: true
+  # Au-dessus de 1024 : aucun privilège requis. Republiés en 389/636 par le
+  # Service Kubernetes ou « docker run -p 389:3389 -p 636:3636 ».
+  ldap_port: 3389
+  ldaps_port: 3636
+  mfa_bypass: false
+  onelevel_subtree: false
+  # Production : le mot de passe ne traverse pas le réseau en clair.
+  require_tls_for_bind: true
+  ldaps_tls_dns_names: []
+  ldaps_tls_ip_addresses: []
+
+dns:
+  dns_enable: false
+  dns_port: 5353
+
+database:
+  username: vaultaire
+  password: CHANGEZ_MOI
+  ip_database: "vaultaire-db"
+  port_database: "3306"
+  databaseName: "vaultaire"
+
+website:
+  website_enable: true
+  website_port: 4443
+  web_tls_dns_names: []
+  web_tls_ip_addresses: []
+  web_trusted_proxies: []
+
+automatisation:
+  sh_folder_path: "/opt/vaultaire/automatisation/"
+  agent_package_path: "/opt/vaultaire/vaultaire_client/"
+
+api:
+  api_enable: true
+  api_port: 6643
+  limite_rafale: 100
+  limite_par_seconde: 20
+
+debug:
+  debug: false
+  detail: {}
+
+administrateur:
+  enable: true
+  username: admin
+  password: CHANGEZ_MOI
+  # Aucune clé par défaut. La clé de démonstration du dépôt
+  # (deployments/configs/demo_admin_key) a sa partie PRIVÉE publiée : elle n'a
+  # rien à faire sur une installation réelle.
+  public_key: ""

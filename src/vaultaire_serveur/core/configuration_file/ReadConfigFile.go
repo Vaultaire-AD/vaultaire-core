@@ -74,16 +74,12 @@ func LoadConfig(filePath string) error {
 		return err
 	}
 
-	// Load configuration with env overrides for sensitive data
-	if val := os.Getenv("VAULTAIRE_DB_USERNAME"); val != "" {
-		storage.Database_username = val
-	} else if config.Database.Database_username != nil {
+	// Les variables d'environnement l'emportent sur le fichier : voir
+	// AppliquerEnvironnement, appelée en fin de lecture.
+	if config.Database.Database_username != nil {
 		storage.Database_username = *config.Database.Database_username
 	}
-
-	if val := os.Getenv("VAULTAIRE_DB_PASSWORD"); val != "" {
-		storage.Database_password = val
-	} else if config.Database.Database_password != nil {
+	if config.Database.Database_password != nil {
 		storage.Database_password = *config.Database.Database_password
 	}
 
@@ -118,6 +114,15 @@ func LoadConfig(filePath string) error {
 	}
 	if config.Dns.Dns_Enable != nil {
 		storage.Dns_Enable = *config.Dns.Dns_Enable
+	}
+	if config.Dns.Dns_Port != nil {
+		storage.Dns_Port = *config.Dns.Dns_Port
+	}
+	if config.Automatisation.Sh_folder_path != nil {
+		storage.Sh_folder_path = *config.Automatisation.Sh_folder_path
+	}
+	if config.Automatisation.Agent_Package_path != nil {
+		storage.Agent_Package_path = *config.Automatisation.Agent_Package_path
 	}
 	if config.Ldap.Ldaps_Enable != nil {
 		storage.Ldaps_Enable = *config.Ldap.Ldaps_Enable
@@ -218,23 +223,20 @@ func LoadConfig(filePath string) error {
 		storage.Administrateur_Enable = *config.Administrateur.Enable
 	}
 
-	if val := os.Getenv("VAULTAIRE_ADMIN_USERNAME"); val != "" {
-		storage.Administrateur_Username = val
-	} else if config.Administrateur.Username != nil {
+	if config.Administrateur.Username != nil {
 		storage.Administrateur_Username = *config.Administrateur.Username
 	}
-
-	if val := os.Getenv("VAULTAIRE_ADMIN_PASSWORD"); val != "" {
-		storage.Administrateur_Password = val
-	} else if config.Administrateur.Password != nil {
+	if config.Administrateur.Password != nil {
 		storage.Administrateur_Password = *config.Administrateur.Password
 	}
-
 	if config.Administrateur.PublicKey != nil {
 		storage.Administrateur_PublicKey = *config.Administrateur.PublicKey
 	}
 
-	// Retourner la configuration lue
+	// En dernier : l'environnement l'emporte sur le fichier, secrets compris.
+	if err := AppliquerEnvironnement(os.LookupEnv); err != nil {
+		return &ErreurDeValeur{Cause: err}
+	}
 	return nil
 }
 
