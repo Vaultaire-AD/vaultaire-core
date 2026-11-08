@@ -271,6 +271,13 @@ jobs:
           echo "charts=oci://ghcr.io/$OWNER/charts"             >> "$GITHUB_OUTPUT"
           echo "serie=${VERSION%.*}"                            >> "$GITHUB_OUTPUT"
           echo "date=$(git show -s --format=%cI "$SHA")"        >> "$GITHUB_OUTPUT"
+          # Identité de build COURTE, comme auto-compil.sh (« g<commit> »,
+          # « AAAA-MM-JJ ») : elle entre dans la version que le core et les
+          # agents écrivent en base. Le SHA complet et l'horodatage ISO la
+          # portaient à ~74 caractères (TO-DO 264). Le SHA complet reste dans
+          # le label org.opencontainers.image.revision.
+          echo "commit=g${SHA:0:7}"                             >> "$GITHUB_OUTPUT"
+          echo "jour=$(git show -s --format=%cs "$SHA")"        >> "$GITHUB_OUTPUT"
 
       - uses: docker/setup-buildx-action@v3
 
@@ -291,8 +298,8 @@ jobs:
           tags: vaultaire-server:scan
           build-args: |
             VAULTAIRE_VERSION=${{ env.VERSION }}
-            VCS_COMMIT=${{ env.SHA }}
-            VCS_DATE=${{ steps.noms.outputs.date }}
+            VCS_COMMIT=${{ steps.noms.outputs.commit }}
+            VCS_DATE=${{ steps.noms.outputs.jour }}
 
       - name: Trivy — l'image ne part pas avec une faille critique corrigeable
         uses: aquasecurity/trivy-action@0.35.0
@@ -322,8 +329,8 @@ jobs:
             org.opencontainers.image.revision=${{ env.SHA }}
           build-args: |
             VAULTAIRE_VERSION=${{ env.VERSION }}
-            VCS_COMMIT=${{ env.SHA }}
-            VCS_DATE=${{ steps.noms.outputs.date }}
+            VCS_COMMIT=${{ steps.noms.outputs.commit }}
+            VCS_DATE=${{ steps.noms.outputs.jour }}
 
       - uses: sigstore/cosign-installer@v3
 
