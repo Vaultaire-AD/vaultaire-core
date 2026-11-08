@@ -138,3 +138,44 @@ func EnsureUniqueIndex(db *sql.DB, sujet, table, index string, columns ...string
 	logs.Write_Log("INFO", sujet+": index unique "+table+"."+index+" ajouté")
 	return nil
 }
+
+// EnsureColumnWidth élargit une colonne VARCHAR trop étroite — TO-DO 264.
+//
+// Même raison qu'EnsureColumn : le CREATE TABLE d'une base en service ne suit
+// pas le texte du schéma. Une colonne élargie dans le texte resterait à son
+// ancienne largeur sur toute installation existante.
+//
+// Ne fait que GRANDIR : une colonne absente n'est pas créée (c'est le rôle
+// d'EnsureColumn), une colonne déjà assez large n'est pas touchée — un
+// ALTER … MODIFY réécrit toute la table, inutile à chaque démarrage.
+func EnsureColumnWidth(db *sql.DB, sujet, table, column string, largeur int, definition string) error {
+	if !identifierPattern.MatchString(table) || !identifierPattern.MatchString(column) {
+		return fmt.Errorf("identifiant de schéma refusé : %s.%s", table, column)
+	}
+
+	var actuelle sql.NullInt64
+	err := db.QueryRow(`SELECT CHARACTER_MAXIMUM_LENGTH FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?`,
+		table, column).Scan(&actuelle)
+	if err == sql.ErrNoRows {
+		return nil
+	}
+	if err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			sujet+": inspection de "+table+"."+column+" échouée : "+err.Error())
+		return fmt.Errorf("inspection de %s.%s : %w", table, column, err)
+	}
+	if !actuelle.Valid || actuelle.Int64 >= int64(largeur) {
+		return nil
+	}
+
+	if _, err := db.Exec("ALTER TABLE `" + table + "` MODIFY COLUMN `" + column + "` " + definition); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			sujet+": élargissement de "+table+"."+column+" échoué : "+err.Error())
+		return fmt.Errorf("élargissement de %s.%s : %w", table, column, err)
+	}
+
+	logs.Write_Log("INFO", fmt.Sprintf("%s: colonne %s.%s élargie de %d à %d caractères",
+		sujet, table, column, actuelle.Int64, largeur))
+	return nil
+}

@@ -117,8 +117,8 @@ func Create_DataBase(db *sql.DB) {
 			-- Vide = jamais déclaré. Un agent d'une version antérieure n'envoie
 			-- pas ces lignes ; il apparaît « inconnue » dans les vues, ce qui est
 			-- exactement l'information utile pour un déploiement.
-			agent_version VARCHAR(64) NOT NULL DEFAULT '',
-			sdk_version VARCHAR(64) NOT NULL DEFAULT ''
+			agent_version VARCHAR(128) NOT NULL DEFAULT '',
+			sdk_version VARCHAR(128) NOT NULL DEFAULT ''
 		);`,
 
 		// Logiciels ↔ groupes
@@ -249,7 +249,7 @@ func Create_DataBase(db *sql.DB) {
     		ip_address VARCHAR(45) NOT NULL,
     		role VARCHAR(50) NOT NULL,            -- ex: 'proxy', 'api', 'core', 'dashboard'
     		status VARCHAR(20) DEFAULT 'offline',  -- 'online', 'offline', 'maintenance'
-    		version_code VARCHAR(50) NOT NULL,     -- Pour le versionning / hot-patching
+    		version_code VARCHAR(128) NOT NULL,     -- Pour le versionning / hot-patching
     		capabilities JSON,                     -- Pour les spécificités (ex: {"protocol": "https"})
     		last_heartbeat DATETIME DEFAULT CURRENT_TIMESTAMP,
     		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -288,7 +288,7 @@ func Create_DataBase(db *sql.DB) {
     		-- construire cette image ». Vide pour le core, qui n'embarque pas
     		-- le SDK — c'est lui qui juge les clients, il ne partage pas leur
     		-- socle.
-    		sdk_version VARCHAR(64) NOT NULL DEFAULT '',
+    		sdk_version VARCHAR(128) NOT NULL DEFAULT '',
 
     		-- Le SEUL client autorisé à modifier cette ligne.
     		--
@@ -531,6 +531,14 @@ func Create_DataBase(db *sql.DB) {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
 			"database: complément du schéma cluster_nodes échoué : "+err.Error())
 		log.Fatalf("Erreur lors du complément du schéma cluster_nodes : %v", err)
+	}
+
+	// Colonnes de version élargies (TO-DO 264). Non fatal : une version trop
+	// longue ferait échouer l'inscription d'un nœud ou l'inventaire d'un poste,
+	// pas le démarrage — et le core le journalise alors à chaque écriture.
+	if err := EnsureLargeurVersions(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: élargissement des colonnes de version échoué : "+err.Error())
 	}
 
 	// Les horodatages de l'annuaire (TO-DO 126).
