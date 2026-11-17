@@ -14,7 +14,7 @@ Toutes les variables : [`docs/Installation/Variables_environnement.md`](../../do
 
 ```bash
 # Construire (depuis la racine du dépôt)
-docker build -f deployments/docker/Dockerfile --build-arg VAULTAIRE_VERSION=2.3.0 -t vaultaire-server:2.3.0 .
+docker build -f deployments/docker/Dockerfile --build-arg VAULTAIRE_VERSION=2.3.1 -t vaultaire-server:2.3.1 .
 
 # Lancer, au plus strict
 docker run -d --name vaultaire --read-only --cap-drop ALL --security-opt no-new-privileges \
@@ -26,7 +26,7 @@ docker run -d --name vaultaire --read-only --cap-drop ALL --security-opt no-new-
   -e VAULTAIRE_ADMIN_PASSWORD_FILE=/run/secrets/admin-password \
   -v "$PWD/secrets:/run/secrets:ro" \
   -p 389:3389 -p 636:3636 -p 6666:6666 -p 443:4443 -p 6643:6643 \
-  vaultaire-server:2.3.0
+  vaultaire-server:2.3.1
 
 # Administrer
 docker exec -it vaultaire /opt/vaultaire/bin/vaultaire_cli

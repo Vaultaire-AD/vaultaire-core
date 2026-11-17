@@ -7,7 +7,7 @@ serveur, construire l'annuaire d'une entreprise fictive, intégrer une machine,
 lui appliquer des politiques, brancher DNS et LDAP, tenir le parc à jour par
 Nexus, puis passer en production dans Kubernetes.
 
-12 chapitres, 39 jalons. Chaque jalon tient en 15 à 30 minutes.
+12 chapitres, 40 jalons. Chaque jalon tient en 15 à 30 minutes.
 
 ---
 
@@ -69,7 +69,7 @@ acme.lan
 |---|---|---|
 | 1 | [Installer le serveur](./01-installation-serveur/README.md) | 1.1 [Préparer l'hôte](./01-installation-serveur/01-preparer-l-hote.md)<br>1.2 [Démarrer la pile](./01-installation-serveur/02-demarrer-la-pile.md)<br>1.3 [Premier accès et sécurisation](./01-installation-serveur/03-premier-acces.md) |
 | 2 | [Premiers groupes et utilisateurs](./02-groupes-et-utilisateurs/README.md) | 2.1 [Penser l'arborescence de domaines](./02-groupes-et-utilisateurs/01-arborescence-de-domaines.md)<br>2.2 [Créer groupes et comptes](./02-groupes-et-utilisateurs/02-creer-groupes-et-comptes.md)<br>2.3 [Rattacher, consulter, retirer](./02-groupes-et-utilisateurs/03-rattacher-et-consulter.md) |
-| 3 | [Administrer Vaultaire via vlt](./03-administrer-avec-vlt/README.md) | 3.1 [La CLI locale](./03-administrer-avec-vlt/01-cli-locale.md)<br>3.2 [vlt à distance par l'API](./03-administrer-avec-vlt/02-vlt-a-distance.md)<br>3.3 [Le portail web](./03-administrer-avec-vlt/03-portail-web.md) |
+| 3 | [Administrer Vaultaire via vlt](./03-administrer-avec-vlt/README.md) | 3.1 [La CLI locale](./03-administrer-avec-vlt/01-cli-locale.md)<br>3.2 [vlt à distance par l'API](./03-administrer-avec-vlt/02-vlt-a-distance.md)<br>3.3 [Le portail web](./03-administrer-avec-vlt/03-portail-web.md)<br>3.4 [L'API REST](./03-administrer-avec-vlt/04-api-rest.md) |
 | 4 | [Permissions et délégation](./04-permissions-et-delegation/README.md) | 4.1 [Une permission utilisateur](./04-permissions-et-delegation/01-permission-utilisateur.md)<br>4.2 [Déléguer un domaine](./04-permissions-et-delegation/02-deleguer-un-domaine.md)<br>4.3 [Droits sur les machines](./04-permissions-et-delegation/03-droits-sur-les-machines.md) |
 | 5 | [Ajouter un client](./05-ajouter-un-client/README.md) | 5.1 [Préparer la machine](./05-ajouter-un-client/01-preparer-la-machine.md)<br>5.2 [Intégrer la machine](./05-ajouter-un-client/02-integrer-la-machine.md)<br>5.3 [Première connexion d'un utilisateur](./05-ajouter-un-client/03-premiere-connexion.md) |
 | 6 | [Première GPO](./06-premiere-gpo/README.md) | 6.1 [Créer une GPO machine](./06-premiere-gpo/01-creer-une-gpo-machine.md)<br>6.2 [Lier et appliquer](./06-premiere-gpo/02-lier-et-appliquer.md)<br>6.3 [Dérive, audit, et GPO utilisateur](./06-premiere-gpo/03-derive-et-gpo-utilisateur.md) |

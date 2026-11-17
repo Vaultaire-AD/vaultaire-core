@@ -6,8 +6,8 @@ description: >-
   seule ; secrets par Secret Kubernetes.
 type: application
 # Version de la chart (SemVer). Elle suit la release du produit.
-version: 2.3.0
-appVersion: "2.3.0"
+version: 2.3.2
+appVersion: "2.3.2"
 kubeVersion: ">=1.25.0-0"
 home: https://github.com/Vaultaire-AD/vaultaire-core
 sources:
@@ -23,4 +23,4 @@ annotations:
   artifacthub.io/license: "see repository"
   artifacthub.io/images: |
     - name: vaultaire-server
-      image: ghcr.io/vaultaire-ad/vaultaire-server:2.3.0
+      image: ghcr.io/vaultaire-ad/vaultaire-server:2.3.2

@@ -13,6 +13,7 @@ func Command_GET_AllUsers(db *sql.DB) ([]storage.GetUsers, error) {
 		SELECT 
 			u.id_user, 
 			u.username, 
+			u.email, 
 			u.date_naissance, 
 			u.created_at
 		FROM 
@@ -38,7 +39,7 @@ func Command_GET_AllUsers(db *sql.DB) ([]storage.GetUsers, error) {
 		// Structure pour stocker un utilisateur
 		var user storage.GetUsers
 		// Scan des résultats de la requête dans la structure
-		if err := rows.Scan(&user.ID, &user.Username, &user.DateNaissance, &user.CreatedAt); err != nil {
+		if err := rows.Scan(&user.ID, &user.Username, &user.Email, &user.DateNaissance, &user.CreatedAt); err != nil {
 			logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur lors du scan des résultats : "+err.Error())
 			return nil, fmt.Errorf("erreur lors du scan des résultats : %v", err)
 		}

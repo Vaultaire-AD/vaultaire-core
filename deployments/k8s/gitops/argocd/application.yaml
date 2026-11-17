@@ -17,7 +17,7 @@ spec:
   sources:
     - repoURL: ghcr.io/vaultaire-ad/charts
       chart: vaultaire
-      targetRevision: 2.3.0
+      targetRevision: 2.3.1
       helm:
         releaseName: vaultaire
         valueFiles:

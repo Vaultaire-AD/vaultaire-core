@@ -48,10 +48,14 @@ func EnregistrerActionsUtilisateur(r *Registre) {
 		Nom:     "user.create",
 		CleRBAC: "write:create:user",
 		// Création : la cible n'existe pas encore, elle n'a donc aucun domaine
-		// dont on pourrait déduire une portée. Le droit global est exigé.
-		Portee:   PorteeGlobale,
-		Resume:   "crée un compte utilisateur",
-		Executer: creerUtilisateur,
+		// dont on pourrait déduire une portée. Sans groupe, le droit global est
+		// exigé. AVEC un groupe (TO-DO 265), le compte naît dans les domaines
+		// de ce groupe : le droit y est exigé, et sur le domaine du compte —
+		// voir PorteeCreationUtilisateur.
+		Portee:    PorteeCreationUtilisateur,
+		ClesAussi: clesCreationUtilisateur,
+		Resume:    "crée un compte utilisateur",
+		Executer:  creerUtilisateur,
 	})
 
 	r.MustEnregistrer(Definition{
@@ -70,6 +74,66 @@ func EnregistrerActionsUtilisateur(r *Registre) {
 		Executer: changerMotDePasse,
 	})
 }
+
+// PorteeCreationUtilisateur — création déléguée, TO-DO 265.
+//
+// # Le besoin
+//
+// « Qui administre users.admin.local peut y créer des comptes. » Jusqu'ici
+// impossible sans le droit GLOBAL : un compte neuf n'appartient à aucun
+// groupe, donc à aucun domaine — les domaines d'un compte sont ceux de ses
+// groupes. Le délégué n'aurait d'ailleurs rien pu faire du compte ensuite, puisque
+// toutes les autres actions exigent le droit sur les domaines de la cible, et
+// qu'un compte sans domaine exige « * ».
+//
+// # La règle
+//
+// Sans groupe : « * », comme avant.
+//
+// Avec un groupe, le compte naît DANS ce groupe, donc dans ses domaines, et
+// le droit est exigé sur l'UNION :
+//
+//   - des domaines du groupe — c'est là que le compte vivra, et c'est là que
+//     le délégué devra pouvoir l'administrer ;
+//   - du domaine du compte (« alice@users.admin.local ») — sans quoi un délégué
+//     de users.admin.local pourrait fabriquer des comptes « @autre.fr » ;
+//
+// et ClesAussi y ajoute write:add:user : rattacher est un second geste, qui a
+// sa propre clé (voir group.add_user).
+//
+// Un groupe inconnu, ou sans domaine, exige « * » : ne rien savoir ne doit
+// rien accorder à un délégué.
+func PorteeCreationUtilisateur(p Params) ([]string, error) {
+	groupe := p.Get("group")
+	if groupe == "" {
+		return PorteeGlobale(p)
+	}
+	domainesGroupe, err := domainesDuGroupe(groupe)
+	if err != nil || len(domainesGroupe) == 0 {
+		return domainesOuGlobal(nil, err)
+	}
+	return unionDomaines(domainesGroupe, []string{p.Get("domain")}), nil
+}
+
+// clesCreationUtilisateur : avec un groupe, le rattachement est exigé aussi.
+func clesCreationUtilisateur(p Params) []string {
+	if p.Get("group") != "" {
+		return []string{"write:add:user"}
+	}
+	return nil
+}
+
+// Accès à la base du rattachement à la création, substituables pour les tests.
+var (
+	groupeExistePourCreation = func(groupe string) (bool, error) {
+		_, trouve, err := database.LookupGroupID(database.GetDatabase(), groupe)
+		return trouve, err
+	}
+	rattacherCompteNeuf = ajouterUtilisateurAuGroupe
+	annulerCompteNeuf   = func(username string) error {
+		return dbusers.Command_DELETE_UserWithUsername(database.GetDatabase(), username)
+	}
+)
 
 // nomsReserves liste les identifiants que le service s'attribue.
 //
@@ -94,6 +158,18 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 
 	if username == "" || domain == "" {
 		return Resultat{}, fmt.Errorf("identifiant et domaine requis")
+	}
+	// Le groupe est vérifié AVANT la création : un groupe mal orthographié ne
+	// doit pas laisser derrière lui un compte créé puis supprimé.
+	groupe := p.Get("group")
+	if groupe != "" {
+		existe, err := groupeExistePourCreation(groupe)
+		if err != nil {
+			return Resultat{}, fmt.Errorf("groupe %s : lecture impossible : %w", groupe, err)
+		}
+		if !existe {
+			return Resultat{}, fmt.Errorf("groupe %s introuvable : aucun compte créé", groupe)
+		}
 	}
 	// Venait du web seulement. La ligne de commande acceptait un mot de passe
 	// vide, ce qui produisait un compte dont le haché était celui de la chaîne
@@ -148,6 +224,24 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 		return Resultat{}, fmt.Errorf("erreur lors de la création : %w", err)
 	}
 
+	// Le rattachement fait partie de la création (TO-DO 265) : un compte créé
+	// par un délégué et resté hors du groupe serait hors de son périmètre —
+	// ni lui ni personne d'autre que l'administrateur global ne pourrait plus
+	// le modifier. Un échec ANNULE donc la création.
+	if groupe != "" {
+		if err := rattacherCompteNeuf(username, groupe); err != nil {
+			if errAnnul := annulerCompteNeuf(username); errAnnul != nil {
+				logs.Write_Log("ERROR", fmt.Sprintf(
+					"user.create: %s créé mais NI rattaché à %s (%v) NI supprimé (%v) — "+
+						"compte sans groupe, à supprimer par un administrateur global",
+					username, groupe, err, errAnnul))
+				return Resultat{}, fmt.Errorf("rattachement à %s impossible (%v) et annulation impossible (%v) : "+
+					"le compte %s existe sans groupe", groupe, err, errAnnul, username)
+			}
+			return Resultat{}, fmt.Errorf("rattachement à %s impossible, création annulée : %w", groupe, err)
+		}
+	}
+
 	// LE MOT DE PASSE D'UN COMPTE NEUF EST PROVISOIRE — TO-DO 99.
 	//
 	// Par défaut, et c'est le point : celui qui crée le compte a choisi ce mot de
@@ -175,6 +269,9 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 	}
 
 	message := fmt.Sprintf("Utilisateur %s@%s créé.", username, domain)
+	if groupe != "" {
+		message = fmt.Sprintf("Utilisateur %s@%s créé dans le groupe %s.", username, domain, groupe)
+	}
 	if provisoire {
 		message += " Son mot de passe est PROVISOIRE : il devra être changé sur le portail" +
 			" sous " + passwordpolicy.DureeProvisoireDefaut.String() + "."
@@ -197,6 +294,7 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 			"email":     username + "@" + domain,
 			"firstname": firstname,
 			"lastname":  lastname,
+			"group":     groupe,
 		},
 	}, nil
 }
