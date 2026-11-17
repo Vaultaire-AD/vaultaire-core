@@ -149,7 +149,19 @@ func commandHandler(w http.ResponseWriter, r *http.Request) {
 // lue deux fois, la signature est vérifiée (contre une clé-leurre si le compte
 // n'en a pas, voir leurre.go), et le refus n'est décidé qu'à la fin.
 func authentifier(req *CommandRequest) (int, error) {
-	nom := strings.TrimSpace(req.Username)
+	bodyToVerify, err := buildSignedBody(req)
+	if err != nil {
+		return 0, err
+	}
+	return verifierIdentite(req.Username, bodyToVerify, req.Signature)
+}
+
+// verifierIdentite vérifie qu'un message est signé par une clé du compte.
+//
+// Partagée par /api/command et l'API REST (TO-DO 270) : les deux portes
+// doivent refuser les mêmes comptes, de la même façon, au même coût.
+func verifierIdentite(compte string, bodyToVerify []byte, signature string) (int, error) {
+	nom := strings.TrimSpace(compte)
 
 	// KILL SWITCH. Un compte révoqué conserve ses clés SSH en base : sans ce
 	// refus, sa signature resterait parfaitement valide et l'API continuerait
@@ -167,11 +179,7 @@ func authentifier(req *CommandRequest) (int, error) {
 		pubKeys = nil
 	}
 
-	bodyToVerify, err := buildSignedBody(req)
-	if err != nil {
-		return userID, err
-	}
-	signee := verifySignature(pubKeys, bodyToVerify, req.Signature)
+	signee := verifySignature(pubKeys, bodyToVerify, signature)
 
 	switch {
 	case errCompte != nil:
@@ -207,7 +215,10 @@ func logRequest(requestID string, userID int, req *CommandRequest, result string
 	commandStr := "<empty>"
 	if req != nil {
 		username = req.Username
-		commandStr = req.Command
+		// Caviardée comme le journal des commandes (DO 236) : /api/command
+		// écrivait la ligne BRUTE, et « update -u x -p <mot de passe> » envoyé
+		// par vlt à distance partait en clair — trouvé en recette le 17/11.
+		commandStr = command.CommandePourJournal(req.Command)
 	}
 	level := "INFO"
 	msg := "api: command user=" + username + " command=" + commandStr + " status=success"
@@ -327,6 +338,11 @@ func StartAPI() {
 	debitAPI.Regler(storage.API_Limite_Rafale, storage.API_Limite_Par_Seconde)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/command", commandHandler)
+	// L'API REST (TO-DO 270) : une interface sur le même registre d'actions.
+	EnregistrerREST(mux)
+	if err := verifierRoutesREST(); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeAPITLS, "api: "+err.Error())
+	}
 
 	// Certificat importé (TO-DO 262) : servi depuis son fichier, relu à chaud.
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
@@ -378,4 +394,19 @@ func StartAPI() {
 	if err := server.Serve(listener); err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeAPITLS, "api: server serve failed: "+err.Error())
 	}
+}
+
+// verifierRoutesREST : chaque route ressource nomme une action du registre.
+// Une faute de frappe dans la table échouerait sinon au premier appel.
+func verifierRoutesREST() error {
+	var manquantes []string
+	for _, nom := range RoutesActionsREST() {
+		if _, ok := definitionREST(nom); !ok {
+			manquantes = append(manquantes, nom)
+		}
+	}
+	if len(manquantes) > 0 {
+		return fmt.Errorf("routes REST vers des actions absentes du registre : %s", strings.Join(manquantes, ", "))
+	}
+	return nil
 }

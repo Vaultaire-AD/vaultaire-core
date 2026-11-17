@@ -56,7 +56,7 @@ func nomDeFonction(f PorteeFunc) string {
 // porteesAttendues : nom d'action → nom de la fonction de portée.
 var porteesAttendues = map[string]string{
 	// Créations : la cible n'existe pas encore, elle n'a aucun domaine.
-	"user.create":   "PorteeGlobale",
+	"user.create":   "PorteeCreationUtilisateur",
 	"group.create":  "PorteeGlobale",
 	"client.create": "PorteeGlobale",
 	// Globale comme la création : l'archive ne dépend d'aucun domaine, et une

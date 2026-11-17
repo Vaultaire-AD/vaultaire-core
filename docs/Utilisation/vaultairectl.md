@@ -92,6 +92,20 @@ Les droits sont les mêmes que sur le serveur : `vaultaire_ctl` n'accorde rien,
 il transporte. Une commande refusée en local l'est aussi à distance, et
 réciproquement.
 
+### `vlt api` — l'API REST *(2.3.2)*
+
+Pour un script, des réponses en JSON plutôt que du texte mis en forme :
+
+```sh
+vlt api GET /api/v1/users
+vlt api POST /api/v1/groups '{"group":"Labo","domain":"infra.acme.lan"}'
+vlt api POST /api/v1/users @compte.json          # corps lu dans un fichier (@- : l'entrée standard)
+vlt api --headers GET /api/v1/users              # en-têtes signés, pour curl
+```
+
+Même configuration, même clé ; code de retour 0 quand la réponse porte
+`"ok": true`. Référence : [`API_REST.md`](./API_REST.md).
+
 ---
 
 ## Refus et freinage

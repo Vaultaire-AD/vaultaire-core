@@ -6,9 +6,9 @@
 # Construite depuis la racine du dépôt :
 #
 #   docker build -f deployments/docker/Dockerfile \
-#     --build-arg VAULTAIRE_VERSION=2.3.0 \
+#     --build-arg VAULTAIRE_VERSION=2.3.1 \
 #     --build-arg VCS_COMMIT=$(git rev-parse --short HEAD) \
-#     -t ghcr.io/vaultaire-ad/vaultaire-server:2.3.0 .
+#     -t ghcr.io/vaultaire-ad/vaultaire-server:2.3.1 .
 #
 # Ce qu'elle garantit (voir deployments/docker/README.md) :
 #

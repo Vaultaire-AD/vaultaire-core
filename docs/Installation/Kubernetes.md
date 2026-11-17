@@ -37,13 +37,13 @@ publiée par la CI à chaque release (`release.yaml`, job « Image et chart »).
 
 ```bash
 IMAGE=ghcr.io/vaultaire-ad/vaultaire-server
-cosign verify "$IMAGE:2.3.0" \
+cosign verify "$IMAGE:2.3.1" \
   --certificate-identity-regexp '^https://github.com/Vaultaire-AD/vaultaire-core/.github/workflows/release.yaml@' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 
 # Provenance et SBOM
-docker buildx imagetools inspect "$IMAGE:2.3.0" --format '{{ json .Provenance }}'
-docker buildx imagetools inspect "$IMAGE:2.3.0" --format '{{ json .SBOM }}'
+docker buildx imagetools inspect "$IMAGE:2.3.1" --format '{{ json .Provenance }}'
+docker buildx imagetools inspect "$IMAGE:2.3.1" --format '{{ json .SBOM }}'
 ```
 
 En production, déployez par **empreinte** (`image.digest` dans la chart) : la
@@ -53,9 +53,9 @@ chart publiée la porte déjà.
 
 ```bash
 docker build -f deployments/docker/Dockerfile \
-  --build-arg VAULTAIRE_VERSION=2.3.0 \
+  --build-arg VAULTAIRE_VERSION=2.3.1 \
   --build-arg VCS_COMMIT=$(git rev-parse --short HEAD) \
-  -t vaultaire-server:2.3.0 .
+  -t vaultaire-server:2.3.1 .
 ```
 
 Prévoir ~6 Go de disque pour les étages de compilation (Go, Rocky 9, Ubuntu
@@ -81,7 +81,7 @@ kubectl -n vaultaire create secret generic vaultaire-secrets \
   --from-literal=db-password="$(openssl rand -base64 24)" \
   --from-literal=db-root-password="$(openssl rand -base64 24)" \
   --from-literal=admin-password='Un-mot-de-passe-de-12-caracteres'
-helm install vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire --version 2.3.0 \
+helm install vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire --version 2.3.1 \
   -n vaultaire --set auth.existingSecret=vaultaire-secrets --set service.type=LoadBalancer
 ```
 
@@ -237,7 +237,7 @@ conditions :
 ### Mise à jour
 
 ```bash
-helm upgrade vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire --version 2.3.1 \
+helm upgrade vaultaire oci://ghcr.io/vaultaire-ad/charts/vaultaire --version 2.3.2 \
   -n vaultaire --reuse-values
 ```
 
@@ -246,7 +246,7 @@ base avant (`mariadb-dump`), comme pour toute mise à jour.
 
 ---
 
-## 3. Limites connues de la 2.3.0
+## 3. Limites connues de la 2.3
 
 - **Image `linux/amd64` seulement** : le paquet d'agent est compilé pour amd64.
 - **Windows** : le client Windows reste une démonstration ; l'image ne l'embarque

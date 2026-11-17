@@ -142,7 +142,16 @@ func TestLeCycleMachineConstateApresAvoirCorrige(t *testing.T) {
 	if !(scan < cycle && cycle < constat) {
 		t.Fatal("ordre attendu : scan, cycle, constat. Constater avant le cycle, c'est constater l'écart qu'on va corriger.")
 	}
-	if !strings.Contains(corps, "corriges > 0 || rapport.Counts()[ResultApplied] > 0") {
+	// La condition peut gagner d'autres déclencheurs (les rattrapages, depuis le
+	// TO-DO 215) ; elle doit garder ces deux-là, sur la même ligne que le if.
+	condition := ""
+	for _, ligne := range strings.Split(corps[cycle:], "\n") {
+		if strings.HasPrefix(strings.TrimSpace(ligne), "if ") && strings.Contains(ligne, "corriges > 0") {
+			condition = ligne
+			break
+		}
+	}
+	if !strings.Contains(condition, "corriges > 0") || !strings.Contains(condition, "rapport.Counts()[ResultApplied] > 0") {
 		t.Error("le constat n'est plus conditionné à une correction ou à une application : " +
 			"il partirait à chaque cycle, ou jamais")
 	}

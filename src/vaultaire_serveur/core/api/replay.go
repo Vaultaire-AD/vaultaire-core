@@ -77,15 +77,21 @@ func (r *nonceRegistry) remember(nonce string, now time.Time) bool {
 // tout aussi suspecte qu'une trop ancienne. Une horloge client en avance est un
 // symptôme de désynchronisation, pas une raison d'être plus permissif.
 func checkFreshness(req *CommandRequest) error {
-	if req.Nonce == "" {
+	return verifierFraicheur(req.Username, req.Nonce, req.Timestamp)
+}
+
+// verifierFraicheur : la même règle pour /api/command et l'API REST
+// (TO-DO 270) — un seul registre de nonces, une seule fenêtre.
+func verifierFraicheur(compte, nonce string, horodatage int64) error {
+	if nonce == "" {
 		return fmt.Errorf("nonce manquant")
 	}
-	if req.Timestamp == 0 {
+	if horodatage == 0 {
 		return fmt.Errorf("horodatage manquant")
 	}
 
 	now := time.Now()
-	sent := time.Unix(req.Timestamp, 0)
+	sent := time.Unix(horodatage, 0)
 	drift := now.Sub(sent)
 	if drift < 0 {
 		drift = -drift
@@ -95,12 +101,12 @@ func checkFreshness(req *CommandRequest) error {
 			drift.Round(time.Second), replayWindow)
 	}
 
-	if !seenNonces.remember(req.Nonce, now) {
+	if !seenNonces.remember(nonce, now) {
 		// Ce cas n'arrive pas par accident : les nonces sont tirés
 		// aléatoirement côté client. Une collision dans une fenêtre de deux
 		// minutes signale un rejeu, d'où le niveau SECURITY.
 		logs.Write_Log("SECURITY", fmt.Sprintf(
-			"api: rejeu détecté pour l'utilisateur %s (nonce déjà utilisé)", req.Username))
+			"api: rejeu détecté pour l'utilisateur %s (nonce déjà utilisé)", compte))
 		return fmt.Errorf("nonce déjà utilisé")
 	}
 

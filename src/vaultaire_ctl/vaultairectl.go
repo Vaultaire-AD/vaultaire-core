@@ -129,8 +129,12 @@ func generateNonce() string {
 
 func main() {
 	if len(os.Args) < 2 {
-		fmt.Println("Usage: vaultairectl <commande>")
+		fmt.Println("Usage: vaultairectl <commande>   |   vaultairectl api <MÉTHODE> <chemin> [corps]")
 		os.Exit(1)
+	}
+	// L'API REST (TO-DO 270) : voir api_rest.go.
+	if os.Args[1] == "api" {
+		os.Exit(lancerAPI(os.Args[2:]))
 	}
 
 	command := strings.Join(os.Args[1:], " ")

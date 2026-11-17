@@ -352,7 +352,7 @@ Exemple : `create -g "IT_Group" "it.company.com"`
 ### 5.4 Utilisateur
 
 ```bash
-create -u <identifiant> <domaine> <motdepasse> <JJ/MM/AAAA> [prénom] [nom] [--permanent]
+create -u <identifiant> <domaine> <motdepasse> <JJ/MM/AAAA> [prénom] [nom] [--permanent] [-g <groupe>]
 ```
 
 Sans prénom ni nom, ils se déduisent d'un identifiant `prénom.nom`. Il n'y a
@@ -378,7 +378,17 @@ Exemples :
 create -u alice company.com 'Galet-Hibou-Sapin-24' 06/02/1992
 create -u bob.lenon company.com 'Brume-Violon-Canal-73' 09/12/1988 Bob Lenon
 create -u svc_gitlab company.com 'Rivet-Cobalt-Phare-57' 01/01/2000 --permanent
+create -u carla.martin users.admin.local 'Sable-Lynx-Fjord-38' 03/04/1991 -g admin-users
 ```
+
+**`-g <groupe>`** *(2.3.2)* crée le compte **dans** ce groupe, en un seul geste.
+C'est ce qui permet à un administrateur **délégué** de créer des comptes : sans
+groupe, il faut `write:create:user` global (un compte sans groupe n'a pas de
+domaine) ; avec `-g`, il suffit de `write:create:user` et `write:add:user` sur
+les domaines du groupe **et** sur le domaine du compte. Un délégué de
+`users.admin.local` crée donc `…@users.admin.local` dans ses groupes, et rien
+d'autre. Groupe inconnu : rien n'est créé. Rattachement en échec : la création
+est annulée. Sur le portail : le champ **Groupe** du formulaire de création.
 
 ### 5.5 Client
 
@@ -1083,7 +1093,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 
 | Besoin | Commande type |
 |--------|----------------|
-| Créer un user | `create -u <id> <domaine> <motdepasse> JJ/MM/AAAA [prénom] [nom] [--permanent]` |
+| Créer un user | `create -u <id> <domaine> <motdepasse> JJ/MM/AAAA [prénom] [nom] [--permanent] [-g <groupe>]` |
 | Créer un groupe | `create -g "Nom" "domain"` |
 | Voir les sessions | `status -u` / `status -c` |
 | Détail d’un groupe | `get -g "group_name"` |
