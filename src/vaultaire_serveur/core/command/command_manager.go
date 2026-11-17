@@ -197,7 +197,7 @@ func CommandePourJournal(input string) string {
 	// « create -u bob --permanent paris.fr <secret> … » sont écrits ainsi par
 	// l'aide et le MAN, et le secret, décalé d'un rang, partait EN CLAIR dans
 	// le journal. On caviarde sur les mots sans drapeaux, puis on les remet.
-	if sansDrapeaux, ou := retirerDrapeaux(mots); len(ou) > 0 {
+	if sansDrapeaux, ou := retirerDrapeaux(mots, estCreationUtilisateur(mots)); len(ou) > 0 {
 		caviardes := strings.Fields(CommandePourJournal(strings.Join(sansDrapeaux, " ")))
 		return remettreDrapeaux(caviardes, mots, ou)
 	}
@@ -219,12 +219,31 @@ func CommandePourJournal(input string) string {
 	return strings.Join(mots, " ")
 }
 
+// estCreationUtilisateur : « create -u … », la seule commande dont une
+// option prend une VALEUR (-g <groupe>, TO-DO 265).
+func estCreationUtilisateur(mots []string) bool {
+	return len(mots) >= 2 && mots[0] == "create" && mots[1] == "-u"
+}
+
 // retirerDrapeaux rend les mots sans ceux qui commencent par « -- », et les
 // rangs où ils étaient.
-func retirerDrapeaux(mots []string) ([]string, []int) {
+//
+// avecValeur : « -g <groupe> » et « --group <groupe> » de create -u sont
+// retirés avec leur valeur — sinon, placés avant le mot de passe, ils le
+// décaleraient et il partirait en clair (recette du 17/11).
+func retirerDrapeaux(mots []string, avecValeur bool) ([]string, []int) {
 	var garde []string
 	var ou []int
-	for i, m := range mots {
+	for i := 0; i < len(mots); i++ {
+		m := mots[i]
+		if avecValeur && i >= 2 && (m == "-g" || strings.EqualFold(m, "--group")) {
+			ou = append(ou, i)
+			if i+1 < len(mots) {
+				ou = append(ou, i+1)
+				i++
+			}
+			continue
+		}
 		if strings.HasPrefix(m, "--") {
 			ou = append(ou, i)
 			continue

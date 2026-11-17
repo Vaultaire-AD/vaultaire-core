@@ -12,8 +12,7 @@ Trois gestes, dans le même passage que le code :
 
 `DO/` est l'archive, `Version/` le compte rendu, ce fichier la liste de courses.
 
-**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **265**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
-
+**Numérotation.** Les numéros sont uniques et croissants : le prochain libre est **271**. Avant la 49, des numéros ont servi plusieurs fois (par exemple trois « 12 » dans `DO/2.1/2.1.md`) ; pour les citer sans ambiguïté, écrire la version et le titre : « 2.1 #12 — create permission ».
 
 **Statut.** « FAIT-IA » veut dire *écrit*, pas *validé*. Tant qu'un point figure dans `docs/exploitation/A_TESTER.md`, il n'a pas été compilé ni exécuté sur une vraie machine.
 
@@ -21,295 +20,52 @@ Trois gestes, dans le même passage que le code :
 
 ## Vue d'ensemble
 
-| #   | Domaine      | Sujet                                                      | État                                    |
-| --- | ------------ | ---------------------------------------------------------- | --------------------------------------- |
-| 98  | SÉCURITÉ     | Chiffrer les secrets au repos (clés privées, secrets TOTP)  | À faire — **critique**, à cadrer        |
-| 210 | SÉCURITÉ     | L'identité d'une machine ne s'exporte qu'à sa création      | À faire — **sécurité**, à cadrer (réinstallation) |
-| 241 | SSH          | `-join` coupe l'accès de root par clé seule (`AuthenticationMethods` global) | À trancher — recette du 28/10 |
-| 243 | AGENT-UPDATE | Porte de santé : un tunnel établi puis perdu la franchit    | À trancher — recette du 28/10           |
-| 242 | AGENT        | Première connexion d'un compte : sans ses groupes du domaine | À faire — petit, Debian et Ubuntu      |
-| 244 | WINDOWS      | Journal « SSH » pour une connexion Windows, expiration en UTC | À faire — petit                        |
-| 201 | AGENT        | `SystemCallFilter` de l'agent, d'après le relevé sur un poste | À faire — Rocky 10 relevé « (aucun) » le 27/10 ; compléter |
-| 194 | WINDOWS      | La connexion par RDP ne marche pas                          | À faire — à diagnostiquer               |
-| 79  | WINDOWS      | GPO et révocations sur les postes Windows                  | À faire — gros chantier                 |
-| 67  | CLUSTER      | Restreindre les nœuds qu'un client ou un proxy voit        | À faire — gros chantier                 |
-| 196 | AGENT        | `--fetch-key` : une session Ducky neuve et 1 s d'attente à chaque appel de sshd | **En pause** (14/10) — plan écrit |
-| 247 | SSH          | L'`Include` des fragments en fin de bloc : `sshd_config` masque les GPO SSH | À trancher — recette du 28/10 |
-| 249 | GPO          | `ntp_config` : prendre en charge chrony (Rocky, Ubuntu 26.04) | À faire — recette du 29/10            |
-| 250 | GPO          | Un agent mis à jour ne réévalue pas un module inchangé      | À trancher — recette du 29/10           |
-| 251 | GPO          | `file_deploy` réécrit le fichier et efface son ACL          | À faire — petit                         |
-| 252 | GPO          | `{{fqdn}}` vaut le nom court sur Debian                     | À faire — petit                         |
-| 253 | SÉCURITÉ     | L'identité des marqueurs voyage hors de la signature des modules | À cadrer                           |
-| 256 | CLI          | La clé publique de déploiement (`-join`) ne se lit que sur le portail | À faire — petit, utile en Kubernetes |
-| 260 | DÉPLOIEMENT  | Plusieurs cores en Kubernetes : un Service par pod pour l'exposition | À faire — après 2.3.0 |
-| 217 | AUTH         | Aucun service Vaultaire joignable : comment se connecter ?  | Idée — à cadrer                         |
-| 202 | CI           | Release : produire les manifestes du paquet d'agent      | À faire — bloc prêt, à coller           |
-| 118 | AGENT-UPDATE | Mise à jour du client Windows                               | À faire — après la mise en production   |
-| 180 | SELINUX      | Confiner l'agent : règles des GPO, puis enforcing          | À faire — 1re collecte le 27/10 (Rocky 10) |
-| 203 | SELINUX      | Règles de `vaultaire_t` pour la mise à jour et la configuration système | À faire — avec le 180, sur un poste |
-| 200 | WINDOWS      | Pourquoi le Credential Provider V2 vide l'écran de connexion | Idée — utile seulement pour énumérer les comptes |
-| 8   | LDAP         | Mode synchro avec un annuaire existant                     | Idée                                    |
-| 40  | AGENT-UPDATE | Mettre à jour le parc de clients                           | Idée — à trancher                       |
+> Classée par priorité (revue du 10/11/2026). Le détail de chaque point est plus
+> bas, rangé par domaine. Ce qui est écrit mais pas encore validé sur une vraie
+> machine est dans [`A_TESTER.md`](../exploitation/A_TESTER.md), pas ici —
+> en ce moment : § 129 (création déléguée, 265) et § 130 (API REST, 270).
+
+| #   | Domaine      | Sujet | État |
+| --- | ------------ | ----- | ---- |
+| | | **Priorité 1 — à faire pour la prochaine version** | |
+| 241 | SSH | `-join` coupe l'accès de root par clé seule | À trancher — bloque l'enrôlement de serveurs |
+| 247 | SSH | L'`Include` des fragments en fin de bloc masque les GPO SSH | À trancher — avec le 241 |
+| 242 | AGENT | Première connexion d'un compte : sans ses groupes du domaine | À faire — petit, Debian et Ubuntu |
+| 202 | CI | Release : produire les manifestes du paquet d'agent | À faire — bloc prêt, à coller |
+| 256 | CLI | La clé de déploiement (`-join`) ne se lit que sur le portail | À faire — petit, utile en Kubernetes |
+| 269 | CI | Épingler les actions GitHub par empreinte | À faire — petit, sécurité |
+| 266 | LDAP | Une connexion fermée sans `unbind` journalisée en ERROR | À faire — petit |
+| | | **Priorité 2 — sécurité, à cadrer avant d'écrire** | |
+| 98 | SÉCURITÉ | Chiffrer les secrets au repos (clés privées, secrets TOTP) | À cadrer — **critique** |
+| 210 | SÉCURITÉ | L'identité d'une machine ne s'exporte qu'à sa création | À cadrer — réinstallation |
+| 253 | SÉCURITÉ | L'identité des marqueurs hors de la signature des modules | À cadrer |
+| 243 | AGENT-UPDATE | Porte de santé : un tunnel établi puis perdu la franchit | À trancher |
+| | | **Priorité 3 — qualité, quand la priorité 1 est faite** | |
+| 249 | GPO | `ntp_config` : prendre en charge chrony | À faire |
+| 250 | GPO | Un agent mis à jour ne réévalue pas un module inchangé | À trancher |
+| 251 | GPO | `file_deploy` réécrit le fichier et efface son ACL | À faire — petit |
+| 252 | GPO | `{{fqdn}}` vaut le nom court sur Debian | À faire — petit |
+| 268 | CLUSTER | `rotation out` ne prévient pas les agents connectés | À faire |
+| 260 | DÉPLOIEMENT | Plusieurs cores en Kubernetes : un Service par pod | À faire |
+| 267 | PORTAIL | La page « Certificats » ignore les certificats importés | À faire — petit |
+| 196 | AGENT | `--fetch-key` : une session Ducky neuve à chaque appel de sshd | **En pause** (14/10) — plan écrit |
+| 201 | AGENT | `SystemCallFilter` sur l'unité de l'agent | À faire — relevé à compléter |
+| | | **Chantiers longs** | |
+| 180 | SELINUX | Confiner l'agent : règles des GPO, puis enforcing | À faire — 1re collecte le 27/10 |
+| 203 | SELINUX | Règles de `vaultaire_t` pour la mise à jour et la configuration système | À faire — avec le 180 |
+| 67 | CLUSTER | Restreindre les nœuds qu'un client ou un proxy voit | À cadrer — gros chantier |
+| | | **Windows** — en démonstration, hors périmètre de la production | |
+| 194 | WINDOWS | La connexion par RDP ne marche pas | À diagnostiquer |
+| 244 | WINDOWS | Journal « SSH » pour une connexion Windows, expiration en UTC | À faire — petit |
+| 79 | WINDOWS | GPO et révocations sur les postes Windows | Gros chantier |
+| 118 | AGENT-UPDATE | Mise à jour du client Windows | Après la production Linux |
+| | | **Idées** | |
+| 217 | AUTH | Aucun service Vaultaire joignable : comment se connecter ? | À cadrer |
+| 200 | WINDOWS | Pourquoi le Credential Provider V2 vide l'écran de connexion | Seulement pour énumérer les comptes |
+| 8 | LDAP | Mode synchro avec un annuaire existant | Idée |
+| 40 | AGENT-UPDATE | Mettre à jour le parc de clients | Cadré — trace, travail fait (111 à 117) |
 
 ---
-
-## Réseau Ducky
-
-### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
-
-**Demande de Lorens** (point 15 de la liste du 21/09) : « la liste des services
-joignables doit être écrite quelque part, et on doit pouvoir filtrer : qu'un
-client ne voie que X proxies ou X cores ; et même un proxy, qu'il ne voie pas
-tous les cores mais seulement une liste ».
-
-**Aujourd'hui.** La trame `04_04` sert à chaque agent **tous** les nœuds exposés
-(`cluster_nodes.expose_aux_agents`), triés par rôle, affinité (TO-DO 38, lot 6)
-puis priorité. L'affinité est une **préférence**, jamais une exclusion : c'est
-voulu, pour qu'un site dont le proxy tombe se rabatte sur un core. Un proxy, lui,
-connaît ses cores par sa configuration.
-
-**Ce qu'il faut trancher avant d'écrire.**
-
-- Un filtre est une **exclusion** : un client limité à « proxy-lyon » n'a plus
-  de repli. Faut-il garder toujours au moins un core en queue, ou laisser
-  l'administrateur couper délibérément ?
-- Où se pose la règle : sur le **groupe** du client (comme l'affinité), sur la
-  **clé d'enrôlement**, ou sur le nœud (« ne me sers qu'à ces groupes ») ?
-- Pour un proxy, la liste de cores doit-elle venir du core (trame dédiée) ou
-  rester dans sa configuration, le core ne faisant que la valider ?
-- « Écrite quelque part » : la liste reçue doit-elle être persistée côté agent —
-  la liste reçue est déjà persistée (point 61, fait en 2.2 : section `learned`
-  de `client_conf.json`) ; un filtre devra s'y appliquer aussi.
-
-**Dépendances.** Le relais (points 38 et 72, faits : Ducky, HTTPS, LDAPS) change ce qu'un proxy
-fait pour un client ; le filtrage change qui il sert. Le 72 a déjà donné au proxy une vue
-qui lui est propre — les services d'un type, par la `04_15` (proxy, et agent pour les Nexus seulement) : un filtre
-des nœuds servis à un proxy pourrait passer par une trame de la même famille.
-
-**Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
-
-### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
-
-**Contexte.** La V1 Windows (voir `DO/2.2/2.2.md`, entrée 77) reçoit les trames `05` (GPO) et `06` (révocation) et les journalise **sans les appliquer**. C'est assumé : les modules GPO existants posent des fichiers, des unités systemd et des réglages PAM, dont aucun n'a d'équivalent direct.
-
-**Ce qu'il faut trancher avant d'écrire.**
-
-- Quel est l'équivalent Windows d'un module GPO : stratégie locale (`secedit`), clé de registre, script ? Le catalogue doit-il être commun aux deux systèmes, avec des modules marqués par plateforme, ou séparé ?
-- La conformité et la dérive (`05_15` à `05_17`) supposent de pouvoir RELIRE l'état posé. Le registre s'y prête, un réglage d'interface moins.
-- **Révocation** : que fait-on d'une session ouverte ? Fermer une session interactive fait perdre le travail en cours ; ne rien faire laisse un compte révoqué travailler jusqu'à sa déconnexion. Et le mot de passe du compte local reste valable tant qu'il n'est pas changé — la révocation devrait au minimum le rendre inutilisable.
-- Les groupes du domaine n'ont pas d'équivalent local posé par l'agent : faut-il créer des groupes Windows locaux, comme on crée les comptes ?
-
-**Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
-
-**Recette du 12/10.** `kill` ne ferme pas la session d'un compte sur un poste
-Windows — c'est l'état attendu tant que ce point n'est pas fait (le 167 dit
-« non pris en charge »), mais c'est ce qu'un administrateur remarque en premier.
-
-### 194. [WINDOWS] La connexion par RDP ne marche pas
-
-**Constat** (recette du 12/10, `A_TESTER.md`). La connexion d'un compte du domaine par le Bureau à
-distance échoue ; seule la connexion à la console a été validée (avec
-`ModeV1`, devenu le comportement par défaut au 179).
-
-**À faire.** Un fournisseur doit accepter
-`CPUS_LOGON` **et** `CPUS_CREDUI` (l'invite du client RDP avec la NLA), et le
-sérialiser pour `CredUIPromptForWindowsCredentials` ; sans NLA, c'est LogonUI
-sur le poste distant, comme à la console. Relever avec le témoin de trace quel
-scénario `SetUsageScenario` reçoit, et ce que rend `GetSerialization`.
-Vérifier aussi que le compte local créé par l'agent est dans « Utilisateurs du
-Bureau à distance ».
-
----
-
-## Agent
-
-### 242. [AGENT] Première connexion d'un compte : sans ses groupes du domaine
-
-**Constat** (recette du 28/10, Debian 13 et Ubuntu 26.04, agent 2.3.3).
-`bob.recette@acme.lan`, membre d'`Infra`, se connecte en SSH pour la première
-fois sur le poste : `id` ne montre que son groupe personnel. À la deuxième
-connexion, `Infra` est là. Sur Rocky 10, déjà connu du poste, il l'avait
-d'emblée.
-
-**À faire.** Reproduire sur un compte jamais vu du poste : regarder ce que
-`getent group Infra` et `id <compte>` rendent avant, pendant et après la
-première ouverture — vraisemblablement la liste des groupes est remplie par le
-provisionnement de la session, après que `initgroups` a été appelé. Un test
-d'intégration NSS : un compte neuf a ses groupes dès la première session.
-
-### 244. [WINDOWS] Journal « SSH » pour une connexion Windows, expiration en UTC
-
-**Constat** (recette du 28/10, Windows Server 2022, agent 2.3.3). Deux défauts
-mineurs vus avec `vaultaire_login` :
-
-1. le journal du core range l'authentification d'un poste Windows sous
-   l'étiquette « SSH » — trompeur pour qui cherche une connexion SSH ;
-2. l'expiration d'un mot de passe provisoire est affichée en **UTC**, sans le
-   dire, sur un poste réglé à l'heure de Paris.
-
-**À faire.** Une étiquette par chemin (SSH, Windows, LDAP…) ; l'heure locale du
-poste, ou l'UTC écrit en clair. Le tester avec le 14 (A_TESTER) en même temps.
-
-### 201. [AGENT] Poser `SystemCallFilter` sur l'unité de l'agent
-
-**Origine** (reste du **181**). L'outil du relevé existe :
-`automatisation/releve-appels-agent.sh` (voir
-`docs/exploitation/Agent_configuration_et_debug.md`, « Relever les appels
-système »). Il rend les appels que l'agent et ses commandes font hors de
-`@system-service`.
-
-**Relevé du 27/10** (Rocky 10.1, agent 2.3.0, `auditd` en marche ; un cycle
-GPO avec correction d'un `file_deploy`, deux connexions SSH d'un compte du
-domaine) : **« (aucun) »** — l'agent tiendrait sous `@system-service`. Le
-mécanisme lui-même a été éprouvé à côté (`mount --bind` dans une unité
-transitoire : `open_tree`, `move_mount` relevés). Le script a été corrigé au
-passage (DO 229) : la liste « vide » du 25/10 venait d'un arrêt du script.
-
-**À faire.**
-
-1. Compléter le relevé : Rocky 9 et Debian 13, et sur Rocky 10 la suite de GPO
-   **complète** de la formation (chapitre 6 : paquets, services, sysctl,
-   pare-feu…) et une révocation — le 27/10 n'a appliqué qu'un module.
-2. Poser `SystemCallFilter=@system-service <ajouts>` et
-   `SystemCallErrorNumber=EPERM` dans `unite.Cloisonnement` (un refus qui se
-   lit, plutôt qu'un processus tué), retirer l'entrée de `unite.Exclues`.
-3. Rejouer la suite de GPO avec le filtre posé ; tout « Operation not
-   permitted » nouveau est un appel oublié.
-4. Rocky 8 (systemd 239) : le relevé passe par `strace` ; le filtre, lui,
-   y est connu.
-
-
-### 247. [SSH] L'`Include` des fragments est en fin du bloc de l'agent
-
-**Constat** (28/10, poste Rocky 10.1). Dans le `sshd_config` que l'agent
-réconcilie (TO-DO 117), la ligne `Include /etc/ssh/sshd_config.d/*.conf` est la
-**dernière** de son bloc. Tout ce qui la précède l'emporte donc sur les GPO :
-les directives de l'agent lui-même (`PubkeyAuthentication yes`,
-`KbdInteractiveAuthentication yes`, `AuthenticationMethods …`) et toute ligne
-qu'un administrateur ajoute plus haut. Une GPO `pubkey_authentication: no` ne
-peut jamais prendre effet — ce que le 182 rend maintenant visible (le module
-échoue, « sans effet »), sans le résoudre.
-
-**À trancher.** Placer l'`Include` en **tête** du fichier (ce que font Rocky
-et Debian d'origine), pour que les fragments — GPO comprises — passent avant
-le reste ; ou garder les directives de l'agent prioritaires, et refuser à
-l'enregistrement d'une GPO celles qu'il fixe déjà. Lié au **241**
-(`AuthenticationMethods` global posé par `-join`).
-
-### 256. [CLI] La clé publique de déploiement ne se lit que sur le portail
-
-En Kubernetes, sans shell dans l'image, la clé à poser dans
-`/root/.ssh/authorized_keys` d'un poste avant `-join` ne se lit que sur le
-tableau de bord du portail (section « Client -join »). Ajouter
-`vlt certificate show login-client` (ou équivalent) qui rend la clé publique.
-
-### 260. [DÉPLOIEMENT] Plusieurs cores en Kubernetes
-
-`replicaCount > 1` fonctionne (StatefulSet, base commune), mais chaque core doit
-être exposé séparément aux agents. Ajouter à la chart un Service par pod
-(`statefulset.kubernetes.io/pod-name`) et, si possible, l'appel automatique à
-`vlt cluster expose`.
-
-### 249. [GPO] `ntp_config` : prendre en charge chrony
-
-**Constat** (recette du 29/10). Rocky 10.1 et Ubuntu 26.04 synchronisent avec
-**chronyd**, pas `systemd-timesyncd`. Le module n'écrit que le fragment
-timesyncd ; il échoue désormais (« sans effet : chronyd actif »), au lieu de
-se dire appliqué. Rocky n'a pas de `confdir` (`pool 2.rocky.pool.ntp.org` dans
-`/etc/chrony.conf`) ; Ubuntu lit `/etc/chrony/conf.d` et `sources.d`.
-
-**À faire.** Écrire les serveurs pour chrony (fragment dans `sources.d` /
-`conf.d` quand il existe, sinon trancher : réécrire `chrony.conf` ou
-y ajouter un `confdir`) ; retirer ou garder les `pool` d'origine (« servers »
-veut-il dire *remplacer* ?) ; `chronyc reload sources` ; vérifier par
-`chronyc -n sources`. Le vérificateur `ntp_servers` lit aujourd'hui timesyncd.
-
-### 250. [GPO] Un agent mis à jour ne réévalue pas un module inchangé
-
-**Constat** (recette du 29/10). Après le déploiement d'un agent corrigé, les
-modules dont l'empreinte n'a pas bougé ne sont pas rejoués : un
-`ntp_config` « appliqué » par l'ancien agent (à tort) le restait. Il a fallu
-vider les empreintes de `/var/lib/vaultaire/applied_policies.json` pour voir
-le vrai résultat.
-
-**À trancher.** Rejouer une fois tous les modules quand la version de l'agent
-change (comme `versionInventaire` le fait pour l'inventaire), ou seulement les
-types dont l'appliqueur a changé (un numéro par type).
-
-### 251. [GPO] `file_deploy` réécrit le fichier et efface son ACL
-
-**Constat** (recette du 29/10, Rocky). Une GPO qui dépose un fichier et lui
-pose une ACL (`file_acl`) : quand `file_deploy` réécrit le fichier (écriture
-atomique, nouveau fichier), l'ACL disparaît ; le scan suivant la voit et
-`file_acl` la repose. Entre les deux, l'accès voulu n'existe pas.
-
-**À faire.** Recopier l'ACL d'accès du fichier remplacé, ou rejouer les
-`file_acl` du même chemin dans le même cycle après un `file_deploy` appliqué.
-
-### 252. [GPO] `{{fqdn}}` vaut le nom court sur Debian
-
-**Constat** (recette du 29/10). `templated_file_deploy` avec `{{fqdn}}` rend
-`debian-vlt-test`, comme `{{hostname}}`. Le poste n'a pas de domaine dans
-`/etc/hosts` ; vérifier ce que lit l'agent (`hostname -f` ? résolution ?) et
-documenter la règle.
-
-### 253. [SÉCURITÉ] [GPO] L'identité des marqueurs hors de la signature
-
-**Constat** (211). L'identité (nom complet, adresse, domaine) qui remplace
-`%n`, `%m`, `%d` voyage dans la politique de compte, à côté des modules : elle
-entre dans l'empreinte de la politique, pas dans la signature des modules.
-Vérifier ce que couvre la signature et, si besoin, y faire entrer l'identité.
-
-### 196. [AGENT] [SSH] `--fetch-key` : une session Ducky neuve à chaque appel de sshd
-
-**Origine** (rapport du **190**, [`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 2.1). À chaque appel,
-`sshd` lance un processus `vaultaire_client --fetch-key` qui refait toute la
-connexion — TCP, poignée de main, authentification machine, inventaire `02_12`
-— puis **attend une seconde sans condition** (`time.Sleep` dans
-`WaitForSSHFetch`) avant de demander les clés. Soit **≈ 1,2 s par appel au
-minimum**, et `sshd` appelle d'ordinaire deux fois pour la clé acceptée, plus
-une fois par clé refusée présentée avant elle.
-
-**Mesuré** (recette du 25/10, `strace`, agent d'avant le 197) : deux appels,
-**1,7 s** et **3,0 s** ; `time --fetch-key` à la main : **1,3 s**. Chaque appel
-lance aussi `who`, `free -h`, `nproc` et `cat /etc/os-release` — l'inventaire
-`02_12` de la session qu'il ouvre. Avec l'agent à jour, la clé est dans
-`authorized_keys` et sshd **ne lance plus** `--fetch-key` pour une clé déjà
-connue : le coût ne reste que pour une clé nouvelle ou retirée.
-
-**À faire.**
-
-1. Que `--fetch-key` demande les clés **au démon**, par son socket local (une
-   requête de plus à côté de `AUTH` et `CHECK`), qui les obtient par le tunnel
-   machine déjà ouvert. Plus de session Ducky par appel, plus de `02_05`.
-2. Retirer l'attente fixe ; garder une borne totale courte (sshd attend).
-3. Démon arrêté : ne rien rendre, vite — c'est le comportement d'aujourd'hui
-   quand le core est injoignable.
-4. Mesurer avant et après (protocole de `Analyse_ouverture_session_ssh_2026-10-14.md` § 5 — le journal de debug des
-   connexions du 199 donne la ligne `fetch-key` de chaque appel).
-
-**Mis en pause le 14/10**, au profit de 197, 198 et 199. Le plan proposé, à
-reprendre tel quel ou à revoir :
-
-- une requête `{"fetch":{"user":…}}` sur le socket du démon, à côté de `auth`
-  et `check` ; le démon envoie `03_06` par son tunnel et attend `03_07` 3 s au
-  plus (le core ne répond **rien** sur un refus : c'est l'attente de 10 s
-  d'aujourd'hui) ; il rend `{"status":"success","ssh_keys":[…]}` ou un refus ;
-- `--fetch-key` ne fait plus que vérifier le domaine, joindre le socket, lire
-  la réponse 4 s au plus et écrire les clés — plus de configuration, d'identité
-  ni de réseau ; démon arrêté : rien, tout de suite ;
-- **défaut à corriger au passage** : `sshreq` n'a qu'une entrée par compte,
-  partagée par `auth` et `fetch` — une demande de clés et une authentification
-  du même compte qui se croisent prennent la réponse l'une de l'autre. Deux
-  registres, et les demandes de clés simultanées d'un même compte attendent la
-  même réponse ;
-- `WaitForSSHFetch.go` disparaît ; SELinux n'a rien à accorder (sshd joint
-  déjà le socket de l'agent).
-
-**À trancher à la reprise : une mémoire de 5 s** des clés rendues, par compte,
-pour que le second appel de sshd (la signature) ne refasse pas l'aller-retour —
-effacée dès qu'un ordre de révocation arrive pour ce compte. Laissée en
-suspens le 14/10.
 
 ## Sécurité et authentification
 
@@ -385,6 +141,314 @@ machine créée, **aucun** chemin du serveur central ne rend sa clé privée.
 5. Docs : MAN § 5.5 (« L'archive d'installation »), `Actions_et_Permissions.md`,
    `Client_Windows.md`, la formation (chapitre 5), `Releases.md` (clé
    compromise).
+
+### 253. [SÉCURITÉ] [GPO] L'identité des marqueurs hors de la signature
+
+**Constat** (211). L'identité (nom complet, adresse, domaine) qui remplace
+`%n`, `%m`, `%d` voyage dans la politique de compte, à côté des modules : elle
+entre dans l'empreinte de la politique, pas dans la signature des modules.
+Vérifier ce que couvre la signature et, si besoin, y faire entrer l'identité.
+
+---
+
+## Agent Linux et SSH
+
+### 242. [AGENT] Première connexion d'un compte : sans ses groupes du domaine
+
+**Constat** (recette du 28/10, Debian 13 et Ubuntu 26.04, agent 2.3.3).
+`bob.recette@acme.lan`, membre d'`Infra`, se connecte en SSH pour la première
+fois sur le poste : `id` ne montre que son groupe personnel. À la deuxième
+connexion, `Infra` est là. Sur Rocky 10, déjà connu du poste, il l'avait
+d'emblée.
+
+**À faire.** Reproduire sur un compte jamais vu du poste : regarder ce que
+`getent group Infra` et `id <compte>` rendent avant, pendant et après la
+première ouverture — vraisemblablement la liste des groupes est remplie par le
+provisionnement de la session, après que `initgroups` a été appelé. Un test
+d'intégration NSS : un compte neuf a ses groupes dès la première session.
+
+### 247. [SSH] L'`Include` des fragments est en fin du bloc de l'agent
+
+**Constat** (28/10, poste Rocky 10.1). Dans le `sshd_config` que l'agent
+réconcilie (TO-DO 117), la ligne `Include /etc/ssh/sshd_config.d/*.conf` est la
+**dernière** de son bloc. Tout ce qui la précède l'emporte donc sur les GPO :
+les directives de l'agent lui-même (`PubkeyAuthentication yes`,
+`KbdInteractiveAuthentication yes`, `AuthenticationMethods …`) et toute ligne
+qu'un administrateur ajoute plus haut. Une GPO `pubkey_authentication: no` ne
+peut jamais prendre effet — ce que le 182 rend maintenant visible (le module
+échoue, « sans effet »), sans le résoudre.
+
+**À trancher.** Placer l'`Include` en **tête** du fichier (ce que font Rocky
+et Debian d'origine), pour que les fragments — GPO comprises — passent avant
+le reste ; ou garder les directives de l'agent prioritaires, et refuser à
+l'enregistrement d'une GPO celles qu'il fixe déjà. Lié au **241**
+(`AuthenticationMethods` global posé par `-join`).
+
+### 196. [AGENT] [SSH] `--fetch-key` : une session Ducky neuve à chaque appel de sshd
+
+**Origine** (rapport du **190**, [`Analyse_ouverture_session_ssh_2026-10-14.md`](./Analyse_ouverture_session_ssh_2026-10-14.md), § 2.1). À chaque appel,
+`sshd` lance un processus `vaultaire_client --fetch-key` qui refait toute la
+connexion — TCP, poignée de main, authentification machine, inventaire `02_12`
+— puis **attend une seconde sans condition** (`time.Sleep` dans
+`WaitForSSHFetch`) avant de demander les clés. Soit **≈ 1,2 s par appel au
+minimum**, et `sshd` appelle d'ordinaire deux fois pour la clé acceptée, plus
+une fois par clé refusée présentée avant elle.
+
+**Mesuré** (recette du 25/10, `strace`, agent d'avant le 197) : deux appels,
+**1,7 s** et **3,0 s** ; `time --fetch-key` à la main : **1,3 s**. Chaque appel
+lance aussi `who`, `free -h`, `nproc` et `cat /etc/os-release` — l'inventaire
+`02_12` de la session qu'il ouvre. Avec l'agent à jour, la clé est dans
+`authorized_keys` et sshd **ne lance plus** `--fetch-key` pour une clé déjà
+connue : le coût ne reste que pour une clé nouvelle ou retirée.
+
+**À faire.**
+
+1. Que `--fetch-key` demande les clés **au démon**, par son socket local (une
+   requête de plus à côté de `AUTH` et `CHECK`), qui les obtient par le tunnel
+   machine déjà ouvert. Plus de session Ducky par appel, plus de `02_05`.
+2. Retirer l'attente fixe ; garder une borne totale courte (sshd attend).
+3. Démon arrêté : ne rien rendre, vite — c'est le comportement d'aujourd'hui
+   quand le core est injoignable.
+4. Mesurer avant et après (protocole de `Analyse_ouverture_session_ssh_2026-10-14.md` § 5 — le journal de debug des
+   connexions du 199 donne la ligne `fetch-key` de chaque appel).
+
+**Mis en pause le 14/10**, au profit de 197, 198 et 199. Le plan proposé, à
+reprendre tel quel ou à revoir :
+
+- une requête `{"fetch":{"user":…}}` sur le socket du démon, à côté de `auth`
+  et `check` ; le démon envoie `03_06` par son tunnel et attend `03_07` 3 s au
+  plus (le core ne répond **rien** sur un refus : c'est l'attente de 10 s
+  d'aujourd'hui) ; il rend `{"status":"success","ssh_keys":[…]}` ou un refus ;
+- `--fetch-key` ne fait plus que vérifier le domaine, joindre le socket, lire
+  la réponse 4 s au plus et écrire les clés — plus de configuration, d'identité
+  ni de réseau ; démon arrêté : rien, tout de suite ;
+- **défaut à corriger au passage** : `sshreq` n'a qu'une entrée par compte,
+  partagée par `auth` et `fetch` — une demande de clés et une authentification
+  du même compte qui se croisent prennent la réponse l'une de l'autre. Deux
+  registres, et les demandes de clés simultanées d'un même compte attendent la
+  même réponse ;
+- `WaitForSSHFetch.go` disparaît ; SELinux n'a rien à accorder (sshd joint
+  déjà le socket de l'agent).
+
+**À trancher à la reprise : une mémoire de 5 s** des clés rendues, par compte,
+pour que le second appel de sshd (la signature) ne refasse pas l'aller-retour —
+effacée dès qu'un ordre de révocation arrive pour ce compte. Laissée en
+suspens le 14/10.
+
+### 201. [AGENT] Poser `SystemCallFilter` sur l'unité de l'agent
+
+**Origine** (reste du **181**). L'outil du relevé existe :
+`automatisation/releve-appels-agent.sh` (voir
+`docs/exploitation/Agent_configuration_et_debug.md`, « Relever les appels
+système »). Il rend les appels que l'agent et ses commandes font hors de
+`@system-service`.
+
+**Relevé du 27/10** (Rocky 10.1, agent 2.3.0, `auditd` en marche ; un cycle
+GPO avec correction d'un `file_deploy`, deux connexions SSH d'un compte du
+domaine) : **« (aucun) »** — l'agent tiendrait sous `@system-service`. Le
+mécanisme lui-même a été éprouvé à côté (`mount --bind` dans une unité
+transitoire : `open_tree`, `move_mount` relevés). Le script a été corrigé au
+passage (DO 229) : la liste « vide » du 25/10 venait d'un arrêt du script.
+
+**À faire.**
+
+1. Compléter le relevé : Rocky 9 et Debian 13, et sur Rocky 10 la suite de GPO
+   **complète** de la formation (chapitre 6 : paquets, services, sysctl,
+   pare-feu…) et une révocation — le 27/10 n'a appliqué qu'un module.
+2. Poser `SystemCallFilter=@system-service <ajouts>` et
+   `SystemCallErrorNumber=EPERM` dans `unite.Cloisonnement` (un refus qui se
+   lit, plutôt qu'un processus tué), retirer l'entrée de `unite.Exclues`.
+3. Rejouer la suite de GPO avec le filtre posé ; tout « Operation not
+   permitted » nouveau est un appel oublié.
+4. Rocky 8 (systemd 239) : le relevé passe par `strace` ; le filtre, lui,
+   y est connu.
+
+---
+
+## GPO
+
+### 249. [GPO] `ntp_config` : prendre en charge chrony
+
+**Constat** (recette du 29/10). Rocky 10.1 et Ubuntu 26.04 synchronisent avec
+**chronyd**, pas `systemd-timesyncd`. Le module n'écrit que le fragment
+timesyncd ; il échoue désormais (« sans effet : chronyd actif »), au lieu de
+se dire appliqué. Rocky n'a pas de `confdir` (`pool 2.rocky.pool.ntp.org` dans
+`/etc/chrony.conf`) ; Ubuntu lit `/etc/chrony/conf.d` et `sources.d`.
+
+**À faire.** Écrire les serveurs pour chrony (fragment dans `sources.d` /
+`conf.d` quand il existe, sinon trancher : réécrire `chrony.conf` ou
+y ajouter un `confdir`) ; retirer ou garder les `pool` d'origine (« servers »
+veut-il dire *remplacer* ?) ; `chronyc reload sources` ; vérifier par
+`chronyc -n sources`. Le vérificateur `ntp_servers` lit aujourd'hui timesyncd.
+
+### 250. [GPO] Un agent mis à jour ne réévalue pas un module inchangé
+
+**Constat** (recette du 29/10). Après le déploiement d'un agent corrigé, les
+modules dont l'empreinte n'a pas bougé ne sont pas rejoués : un
+`ntp_config` « appliqué » par l'ancien agent (à tort) le restait. Il a fallu
+vider les empreintes de `/var/lib/vaultaire/applied_policies.json` pour voir
+le vrai résultat.
+
+**À trancher.** Rejouer une fois tous les modules quand la version de l'agent
+change (comme `versionInventaire` le fait pour l'inventaire), ou seulement les
+types dont l'appliqueur a changé (un numéro par type).
+
+### 251. [GPO] `file_deploy` réécrit le fichier et efface son ACL
+
+**Constat** (recette du 29/10, Rocky). Une GPO qui dépose un fichier et lui
+pose une ACL (`file_acl`) : quand `file_deploy` réécrit le fichier (écriture
+atomique, nouveau fichier), l'ACL disparaît ; le scan suivant la voit et
+`file_acl` la repose. Entre les deux, l'accès voulu n'existe pas.
+
+**À faire.** Recopier l'ACL d'accès du fichier remplacé, ou rejouer les
+`file_acl` du même chemin dans le même cycle après un `file_deploy` appliqué.
+
+### 252. [GPO] `{{fqdn}}` vaut le nom court sur Debian
+
+**Constat** (recette du 29/10). `templated_file_deploy` avec `{{fqdn}}` rend
+`debian-vlt-test`, comme `{{hostname}}`. Le poste n'a pas de domaine dans
+`/etc/hosts` ; vérifier ce que lit l'agent (`hostname -f` ? résolution ?) et
+documenter la règle.
+
+---
+
+## Annuaire LDAP
+
+> Constats détaillés : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md).
+> Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
+> scénario.
+>
+> **Tous les points de l'audit sont traités dans la 2.2** : 119 à 132. Ce qui
+> reste ici en est sorti en chemin.
+
+### 266. [LDAP] Une connexion fermée sans `unbind` est journalisée en ERROR
+
+**Constat** (recettes du 05 et du 08/11, k3s). Chaque connexion LDAPS fermée
+sans `unbind` — une sonde `openssl s_client`, un client qui abandonne la
+poignée de main, un répartiteur qui teste le port — écrit une ligne `ERROR`
+« ldap conn=N lecture du paquet en échec depuis … : unexpected EOF » (ou
+« tls: bad record MAC »). Ces lignes noient les vraies erreurs et comptent
+dans les alertes.
+
+**À faire.** Une fin de connexion (EOF, reset, échec de poignée de main TLS)
+avant ou entre deux requêtes : `DEBUG` ; seule une trame illisible au milieu
+d'une requête reste une erreur. Garder un compteur, visible dans le journal
+de fin de connexion.
+
+---
+
+## Réseau Ducky et cluster
+
+### 268. [CLUSTER] `rotation out` ne prévient pas les agents connectés
+
+**Constat** (255). Un core mis hors rotation ne pousse pas la nouvelle liste
+de nœuds aux agents qui lui sont connectés : ils ne basculent sur un proxy ou
+un autre core qu'à leur prochain tour de découverte (30 min par défaut) ou à
+leur reconnexion. Pour une maintenance, c'est une demi-heure d'attente.
+
+**À faire.** À `rotation out`, envoyer la `04_04` à jour aux agents connectés
+(ou leur demander un tour de découverte), puis les laisser basculer d'eux-mêmes ;
+`vlt cluster list` montre le relais se vider.
+
+### 67. [CLUSTER] [DUCKY] Restreindre les nœuds qu'un client ou un proxy voit
+
+**Demande de Lorens** (point 15 de la liste du 21/09) : « la liste des services
+joignables doit être écrite quelque part, et on doit pouvoir filtrer : qu'un
+client ne voie que X proxies ou X cores ; et même un proxy, qu'il ne voie pas
+tous les cores mais seulement une liste ».
+
+**Aujourd'hui.** La trame `04_04` sert à chaque agent **tous** les nœuds exposés
+(`cluster_nodes.expose_aux_agents`), triés par rôle, affinité (TO-DO 38, lot 6)
+puis priorité. L'affinité est une **préférence**, jamais une exclusion : c'est
+voulu, pour qu'un site dont le proxy tombe se rabatte sur un core. Un proxy, lui,
+connaît ses cores par sa configuration.
+
+**Ce qu'il faut trancher avant d'écrire.**
+
+- Un filtre est une **exclusion** : un client limité à « proxy-lyon » n'a plus
+  de repli. Faut-il garder toujours au moins un core en queue, ou laisser
+  l'administrateur couper délibérément ?
+- Où se pose la règle : sur le **groupe** du client (comme l'affinité), sur la
+  **clé d'enrôlement**, ou sur le nœud (« ne me sers qu'à ces groupes ») ?
+- Pour un proxy, la liste de cores doit-elle venir du core (trame dédiée) ou
+  rester dans sa configuration, le core ne faisant que la valider ?
+- « Écrite quelque part » : la liste reçue doit-elle être persistée côté agent —
+  la liste reçue est déjà persistée (point 61, fait en 2.2 : section `learned`
+  de `client_conf.json`) ; un filtre devra s'y appliquer aussi.
+
+**Dépendances.** Le relais (points 38 et 72, faits : Ducky, HTTPS, LDAPS) change ce qu'un proxy
+fait pour un client ; le filtrage change qui il sert. Le 72 a déjà donné au proxy une vue
+qui lui est propre — les services d'un type, par la `04_15` (proxy, et agent pour les Nexus seulement) : un filtre
+des nœuds servis à un proxy pourrait passer par une trame de la même famille.
+
+**Spécification à écrire** dans `how it work/ducky-network/04-cluster/`.
+
+---
+
+## Déploiement, CI et outillage
+
+### 202. [CI] [AGENT-UPDATE] La release produit les manifestes du paquet d'agent
+
+**Origine** (reste du **113**). Le bloc n'a pas pu être écrit par l'IA :
+`.github/` lui est fermé. Dans `.github/workflows/release.yaml`, étape
+« Paquets », remplacer la ligne `(cd "$O" && sha256sum *.tar.gz > SHA256SUMS)`
+par :
+
+```bash
+          # Les manifestes du paquet d'agent, NON signés (TO-DO 113) : un par
+          # famille de modules. Produits par le binaire du core lui-même — le
+          # même code qui les recalculera et les signera sur le site —, pour
+          # que la CI et le core ne puissent pas diverger sur le format. La
+          # CI ne détient la clé d'aucun cluster : chaque core signe ce qu'il
+          # adopte (« vaultaire_serveur --sign-package »).
+          "$B/vaultaire_server/vaultaire_serveur" --package-manifest \
+            "$O/vaultaire_client-${TAG}-linux-amd64.tar.gz"
+          (cd "$O" && sha256sum *.tar.gz *.manifest > SHA256SUMS)
+```
+
+`release/*` les publie avec le reste. Vérifier sur la release suivante :
+`vaultaire_client-vX.Y.Z-linux-amd64.tar.gz.{rocky,debian}.manifest` présents
+et dans `SHA256SUMS`. `docker-update.sh` n'a rien à changer : il ne vérifie
+que les archives qu'il installe.
+
+### 269. [CI] Épingler les actions GitHub par empreinte
+
+**Constat** (release 2.3.0). `release.yaml` et `dev.yaml` appellent leurs
+actions par étiquette (`docker/build-push-action@v6`, `aquasecurity/trivy-action@0.35.0`,
+`sigstore/cosign-installer@v3`…). Une étiquette se déplace : c'est par là
+qu'est passé l'incident de la chaîne Trivy de 2026 (CVE-2026-33634). Le job
+qui signe l'image détient un jeton OIDC et `packages: write`.
+
+**À faire.** Épingler chaque action tierce par SHA de commit (avec la
+version en commentaire), et Dependabot pour les tenir à jour.
+
+### 256. [CLI] La clé publique de déploiement ne se lit que sur le portail
+
+En Kubernetes, sans shell dans l'image, la clé à poser dans
+`/root/.ssh/authorized_keys` d'un poste avant `-join` ne se lit que sur le
+tableau de bord du portail (section « Client -join »). Ajouter
+`vlt certificate show login-client` (ou équivalent) qui rend la clé publique.
+
+### 260. [DÉPLOIEMENT] Plusieurs cores en Kubernetes
+
+`replicaCount > 1` fonctionne (StatefulSet, base commune), mais chaque core doit
+être exposé séparément aux agents. Ajouter à la chart un Service par pod
+(`statefulset.kubernetes.io/pod-name`) et, si possible, l'appel automatique à
+`vlt cluster expose`.
+
+### 267. [PORTAIL] La page « Certificats » ignore les certificats importés
+
+**Constat** (262). Quand LDAPS, le portail ou l'API servent un certificat
+fourni par fichier (cert-manager, PKI), la page « Certificats » du portail
+continue d'afficher l'auto-signé gardé en base, qui n'est plus servi.
+`vlt certificate list` et `show` le disent déjà.
+
+**À faire.** Sur la page : la source (fichier ou base), l'émetteur, la date
+de la dernière relecture et une relecture refusée, comme `certificate show`.
+
+---
+
+## SELinux
 
 ### 180. [SELINUX] Confiner l'agent : règles des GPO, puis enforcing
 
@@ -478,17 +542,132 @@ jour réelle, en permissif, puis en enforcing.
 
 ---
 
-## Annuaire LDAP
+## Mise à jour du parc
 
-> Constats détaillés : [`Audit_LDAP_2026-09-28.md`](./Audit_LDAP_2026-09-28.md).
-> Chaque entrée renvoie à la section qui porte le fichier, la ligne et le
-> scénario.
+> Découpage du point 40, arrêté le 28/09. La conception, les arbitrages et ce
+> qui a été écarté sont dans [`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md) —
+> le lire **avant** d'ouvrir l'un de ces points.
 >
-> **Tous les points de l'audit sont traités dans la 2.2** : 119 à 132. Ce qui
-> reste ici en est sorti en chemin.
+> **L'ordre compte.** Le 112 était le préalable de sûreté : il est **traité**
+> (voir `DO/2.3/2.3.md`) — l'unité de l'agent a une relance bornée, un contrôle
+> avant démarrage (`vaultaire_client --check`), et c'est le binaire qui la pose
+> (`--install-unit`). Le 111, le socle, est **traité** aussi : la version
+> attendue par machine, groupe et parc, et la vue `vlt agent`. Le 116, le cœur
+> du lot, est **traité** : l'agent Linux télécharge, vérifie, bascule, passe la
+> porte de santé et revient en arrière seul. Le 117 est **traité** : la
+> configuration système (piles PAM, `sshd_config`, `nsswitch.conf`) suit la
+> version de l'agent. Reste Windows (118) : les limites relevées en faisant
+> le lot (204 à 209) sont traitées.
 
+### 243. [AGENT-UPDATE] Porte de santé : un tunnel établi puis perdu la franchit
 
-## Portail et outillage
+**Constat** (recette du 28/10, § 114). La porte de santé d'une mise à jour
+demande que la nouvelle version établisse son tunnel avec le core. Un tunnel
+établi juste avant une coupure du réseau, puis perdu, compte comme franchi :
+la version est gardée alors qu'elle ne joint plus le core. L'échec attendu ne
+se reproduit qu'en coupant **dès la réception de l'ordre**, plus de 3 minutes.
+
+**À trancher.** Exiger que le tunnel soit **encore** ouvert à la fin de la
+fenêtre (ou un échange réussi — une trame 09 répondue — plutôt qu'une
+connexion) ; mesurer le risque inverse : une coupure du core pendant la
+fenêtre ferait revenir en arrière une version saine. Lire
+`Mise_a_jour_du_parc.md` (porte de santé) avant.
+
+### 118. [AGENT-UPDATE] [WINDOWS] La mise à jour du client Windows
+
+**Après que le mécanisme Linux aura tourné en production.**
+
+**Constat.** La DLL du Credential Provider est chargée par Winlogon, et Windows
+**verrouille le fichier** : elle ne peut pas être remplacée à chaud. Il faut
+déposer à côté et basculer au redémarrage, ou au minimum hors session. Le service,
+lui, se remplace comme sous Linux — mais `install.ps1` est manuel et interactif,
+et il n'y a aucun équivalent de `rocky.sh` côté core.
+
+Mêler les deux systèmes produirait une conception qui ne conviendrait bien à
+aucun des deux. Reprendre alors : la version attendue (111), la signature (113),
+le dépôt (114) et les trames (115), qui sont communs — seul le basculement change.
+
+### 40. [AGENT-UPDATE] Mettre à jour le parc de clients
+
+**Cadré le 28/09/2026.** La question est tranchée, la stratégie est écrite dans
+[`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md), et le travail est découpé
+en **points 111 à 118** (cette section).
+
+Ce qui a été décidé, en quatre lignes :
+
+- **Nexus** sert les artefacts, en **lecture anonyme** — l'intégrité vient de la
+  signature, pas du transport. `vlt-upm` disparaît : un site sans Internet verse
+  les archives dans son Nexus local, et la signature rend le canal indifférent ;
+- une clé **`pkg_signing`** distincte de celle des GPO, déposée à l'installation
+  comme elle, avec son propre domaine de signature ;
+- une **version attendue portée par le groupe**, pour un déploiement par anneaux,
+  et l'agent qui s'y conforme à son rythme ;
+- la mise à jour remplace **le binaire et les modules natifs ensemble**, et la
+  **configuration système est réconciliée par l'agent**, versionnée avec le code
+  qui en a besoin.
+
+Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 118.
+
+---
+
+## Windows
+
+### 194. [WINDOWS] La connexion par RDP ne marche pas
+
+**Constat** (recette du 12/10, `A_TESTER.md`). La connexion d'un compte du domaine par le Bureau à
+distance échoue ; seule la connexion à la console a été validée (avec
+`ModeV1`, devenu le comportement par défaut au 179).
+
+**À faire.** Un fournisseur doit accepter
+`CPUS_LOGON` **et** `CPUS_CREDUI` (l'invite du client RDP avec la NLA), et le
+sérialiser pour `CredUIPromptForWindowsCredentials` ; sans NLA, c'est LogonUI
+sur le poste distant, comme à la console. Relever avec le témoin de trace quel
+scénario `SetUsageScenario` reçoit, et ce que rend `GetSerialization`.
+Vérifier aussi que le compte local créé par l'agent est dans « Utilisateurs du
+Bureau à distance ».
+
+### 244. [WINDOWS] Journal « SSH » pour une connexion Windows, expiration en UTC
+
+**Constat** (recette du 28/10, Windows Server 2022, agent 2.3.3). Deux défauts
+mineurs vus avec `vaultaire_login` :
+
+1. le journal du core range l'authentification d'un poste Windows sous
+   l'étiquette « SSH » — trompeur pour qui cherche une connexion SSH ;
+2. l'expiration d'un mot de passe provisoire est affichée en **UTC**, sans le
+   dire, sur un poste réglé à l'heure de Paris.
+
+**À faire.** Une étiquette par chemin (SSH, Windows, LDAP…) ; l'heure locale du
+poste, ou l'UTC écrit en clair. Le tester avec le 14 (A_TESTER) en même temps.
+
+### 79. [WINDOWS] [GPO] Appliquer les politiques et les révocations sur un poste Windows
+
+**Contexte.** La V1 Windows (voir `DO/2.2/2.2.md`, entrée 77) reçoit les trames `05` (GPO) et `06` (révocation) et les journalise **sans les appliquer**. C'est assumé : les modules GPO existants posent des fichiers, des unités systemd et des réglages PAM, dont aucun n'a d'équivalent direct.
+
+**Ce qu'il faut trancher avant d'écrire.**
+
+- Quel est l'équivalent Windows d'un module GPO : stratégie locale (`secedit`), clé de registre, script ? Le catalogue doit-il être commun aux deux systèmes, avec des modules marqués par plateforme, ou séparé ?
+- La conformité et la dérive (`05_15` à `05_17`) supposent de pouvoir RELIRE l'état posé. Le registre s'y prête, un réglage d'interface moins.
+- **Révocation** : que fait-on d'une session ouverte ? Fermer une session interactive fait perdre le travail en cours ; ne rien faire laisse un compte révoqué travailler jusqu'à sa déconnexion. Et le mot de passe du compte local reste valable tant qu'il n'est pas changé — la révocation devrait au minimum le rendre inutilisable.
+- Les groupes du domaine n'ont pas d'équivalent local posé par l'agent : faut-il créer des groupes Windows locaux, comme on crée les comptes ?
+
+**Dépendance.** À concevoir avec le point 78 : les deux touchent au même agent, et un module GPO qui décrit une machine a besoin de l'inventaire.
+
+**Recette du 12/10.** `kill` ne ferme pas la session d'un compte sur un poste
+Windows — c'est l'état attendu tant que ce point n'est pas fait (le 167 dit
+« non pris en charge »), mais c'est ce qu'un administrateur remarque en premier.
+
+### 200. [WINDOWS] Pourquoi le Credential Provider V2 vide l'écran de connexion
+
+**Origine** (reste du **179**). Le 179 a fait de la DLL un fournisseur V1 :
+c'est ce qui rétablit l'écran, constaté à la recette du 12/10. Le V2
+(`ICredentialProviderCredential2`, `ICredentialProviderSetUserArray`) le vide,
+sans que l'on sache pourquoi — toutes les méthodes répondent juste sous le faux
+LogonUI.
+
+**À cadrer, seulement si** l'on veut un jour que la tuile Vaultaire s'attache
+aux comptes déjà affichés (énumération, `GetUserSid`). Le code V2 est toujours
+là, derrière la variante d'essai `ModeV2` (README du client Windows) : poser
+la valeur, le témoin de trace, et lire où LogonUI s'arrête.
 
 ---
 
@@ -511,111 +690,6 @@ révocation devient tant que le poste est coupé ; le réglage par GPO
 (activé ou non, durée, nombre de comptes). Rien n'est à écrire avant la
 décision : c'est un compromis de sécurité, pas un détail.
 
-### 200. [WINDOWS] Pourquoi le Credential Provider V2 vide l'écran de connexion
-
-**Origine** (reste du **179**). Le 179 a fait de la DLL un fournisseur V1 :
-c'est ce qui rétablit l'écran, constaté à la recette du 12/10. Le V2
-(`ICredentialProviderCredential2`, `ICredentialProviderSetUserArray`) le vide,
-sans que l'on sache pourquoi — toutes les méthodes répondent juste sous le faux
-LogonUI.
-
-**À cadrer, seulement si** l'on veut un jour que la tuile Vaultaire s'attache
-aux comptes déjà affichés (énumération, `GetUserSid`). Le code V2 est toujours
-là, derrière la variante d'essai `ModeV2` (README du client Windows) : poser
-la valeur, le témoin de trace, et lire où LogonUI s'arrête.
-
 ### 8. [LDAP] Mode synchro avec un annuaire existant
 
 Relier Vaultaire à un AD déjà en place pour bénéficier de ses fonctionnalités sans migrer l'annuaire.
-
-### 40. [AGENT-UPDATE] Mettre à jour le parc de clients
-
-**Cadré le 28/09/2026.** La question est tranchée, la stratégie est écrite dans
-[`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md), et le travail est découpé
-en **points 111 à 118** (section « Mise à jour du parc » ci-dessous).
-
-Ce qui a été décidé, en quatre lignes :
-
-- **Nexus** sert les artefacts, en **lecture anonyme** — l'intégrité vient de la
-  signature, pas du transport. `vlt-upm` disparaît : un site sans Internet verse
-  les archives dans son Nexus local, et la signature rend le canal indifférent ;
-- une clé **`pkg_signing`** distincte de celle des GPO, déposée à l'installation
-  comme elle, avec son propre domaine de signature ;
-- une **version attendue portée par le groupe**, pour un déploiement par anneaux,
-  et l'agent qui s'y conforme à son rythme ;
-- la mise à jour remplace **le binaire et les modules natifs ensemble**, et la
-  **configuration système est réconciliée par l'agent**, versionnée avec le code
-  qui en a besoin.
-
-Cette entrée reste pour la trace du cadrage. Le travail est aux points 111 à 118.
-
----
-
-## Mise à jour du parc
-
-### 243. [AGENT-UPDATE] Porte de santé : un tunnel établi puis perdu la franchit
-
-**Constat** (recette du 28/10, § 114). La porte de santé d'une mise à jour
-demande que la nouvelle version établisse son tunnel avec le core. Un tunnel
-établi juste avant une coupure du réseau, puis perdu, compte comme franchi :
-la version est gardée alors qu'elle ne joint plus le core. L'échec attendu ne
-se reproduit qu'en coupant **dès la réception de l'ordre**, plus de 3 minutes.
-
-**À trancher.** Exiger que le tunnel soit **encore** ouvert à la fin de la
-fenêtre (ou un échange réussi — une trame 09 répondue — plutôt qu'une
-connexion) ; mesurer le risque inverse : une coupure du core pendant la
-fenêtre ferait revenir en arrière une version saine. Lire
-`Mise_a_jour_du_parc.md` (porte de santé) avant.
-
-> Découpage du point 40, arrêté le 28/09. La conception, les arbitrages et ce
-> qui a été écarté sont dans [`Mise_a_jour_du_parc.md`](./Mise_a_jour_du_parc.md) —
-> le lire **avant** d'ouvrir l'un de ces points.
->
-> **L'ordre compte.** Le 112 était le préalable de sûreté : il est **traité**
-> (voir `DO/2.3/2.3.md`) — l'unité de l'agent a une relance bornée, un contrôle
-> avant démarrage (`vaultaire_client --check`), et c'est le binaire qui la pose
-> (`--install-unit`). Le 111, le socle, est **traité** aussi : la version
-> attendue par machine, groupe et parc, et la vue `vlt agent`. Le 116, le cœur
-> du lot, est **traité** : l'agent Linux télécharge, vérifie, bascule, passe la
-> porte de santé et revient en arrière seul. Le 117 est **traité** : la
-> configuration système (piles PAM, `sshd_config`, `nsswitch.conf`) suit la
-> version de l'agent. Reste Windows (118) : les limites relevées en faisant
-> le lot (204 à 209) sont traitées.
-
-### 202. [CI] [AGENT-UPDATE] La release produit les manifestes du paquet d'agent
-
-**Origine** (reste du **113**). Le bloc n'a pas pu être écrit par l'IA :
-`.github/` lui est fermé. Dans `.github/workflows/release.yaml`, étape
-« Paquets », remplacer la ligne `(cd "$O" && sha256sum *.tar.gz > SHA256SUMS)`
-par :
-
-```bash
-          # Les manifestes du paquet d'agent, NON signés (TO-DO 113) : un par
-          # famille de modules. Produits par le binaire du core lui-même — le
-          # même code qui les recalculera et les signera sur le site —, pour
-          # que la CI et le core ne puissent pas diverger sur le format. La
-          # CI ne détient la clé d'aucun cluster : chaque core signe ce qu'il
-          # adopte (« vaultaire_serveur --sign-package »).
-          "$B/vaultaire_server/vaultaire_serveur" --package-manifest \
-            "$O/vaultaire_client-${TAG}-linux-amd64.tar.gz"
-          (cd "$O" && sha256sum *.tar.gz *.manifest > SHA256SUMS)
-```
-
-`release/*` les publie avec le reste. Vérifier sur la release suivante :
-`vaultaire_client-vX.Y.Z-linux-amd64.tar.gz.{rocky,debian}.manifest` présents
-et dans `SHA256SUMS`. `docker-update.sh` n'a rien à changer : il ne vérifie
-que les archives qu'il installe.
-
-### 118. [AGENT-UPDATE] [WINDOWS] La mise à jour du client Windows
-
-**Après que le mécanisme Linux aura tourné en production.**
-
-**Constat.** La DLL du Credential Provider est chargée par Winlogon, et Windows
-**verrouille le fichier** : elle ne peut pas être remplacée à chaud. Il faut
-déposer à côté et basculer au redémarrage, ou au minimum hors session. Le service,
-lui, se remplace comme sous Linux — mais `install.ps1` est manuel et interactif,
-et il n'y a aucun équivalent de `rocky.sh` côté core.
-
-Mêler les deux systèmes produirait une conception qui ne conviendrait bien à
-aucun des deux. Reprendre alors : la version attendue (111), la signature (113),
-le dépôt (114) et les trames (115), qui sont communs — seul le basculement change.

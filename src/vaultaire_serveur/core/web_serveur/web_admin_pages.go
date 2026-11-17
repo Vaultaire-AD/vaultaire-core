@@ -254,6 +254,10 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		Error     string
 		DnsEnable bool
 		Section   string
+		// Groupes proposés pour créer un compte DANS un groupe (TO-DO 265) :
+		// ceux que l'appelant voit. Vide sans read:get:group — le champ reste
+		// saisissable à la main.
+		Groupes []storage.GroupDetails
 	}{Username: username, DnsEnable: storage.Dns_Enable, Section: "users"}
 
 	if r.Method == http.MethodPost {
@@ -284,6 +288,10 @@ func AdminUsersHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	data.Users, _ = resUsers.Donnees.([]storage.GetUsers)
+	// Facultatif : un refus ici ne doit pas empêcher d'afficher la page.
+	if resGroupes, errG := ExecuterLecture("group.list", username, groupIDs, act.Params{}); errG == nil {
+		data.Groupes, _ = resGroupes.Donnees.([]storage.GroupDetails)
+	}
 	if err := executeAdminPage(w, "admin_users.html", data); err != nil {
 		http.Error(w, "Template manquant", http.StatusInternalServerError)
 		return

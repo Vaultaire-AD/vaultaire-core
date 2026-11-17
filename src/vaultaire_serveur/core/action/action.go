@@ -247,6 +247,23 @@ type Definition struct {
 	// domaine », donc aucun contrôle effectif.
 	Portee PorteeFunc
 
+	// ClesAussi ajoute des clés RBAC, exigées SUR LES MÊMES DOMAINES que
+	// CleRBAC, selon les paramètres de l'appel — TO-DO 265.
+	//
+	// # Pourquoi
+	//
+	// Une action qui fait deux gestes doit exiger les deux droits. Créer un
+	// compte DANS un groupe, c'est créer un compte et le rattacher : sans la
+	// seconde clé, un délégué qui peut créer des comptes dans son domaine
+	// pourrait les placer dans un groupe porteur de permissions sans détenir
+	// write:add:user — c'est-à-dire distribuer des droits qu'il ne peut pas
+	// distribuer autrement.
+	//
+	// Même sémantique que CleRBAC : Autorise, le droit sur TOUS les domaines.
+	// Réservé aux écritures (refusé avec UnDomaineSuffit ou PorteeOuverte), et
+	// sans effet sans CleRBAC.
+	ClesAussi func(p Params) []string
+
 	// UnDomaineSuffit assouplit l'exigence de portée : le droit sur UN SEUL
 	// des domaines de la cible suffit, au lieu de tous.
 	//
@@ -390,6 +407,11 @@ func (r *Registre) Enregistrer(d Definition) error {
 				"Une action qui ne déclare aucun contrôle s'exécuterait sans vérification — "+
 				"c'est précisément le défaut que ce registre corrige. "+
 				"ExigeSuperadminSi ne suffit pas : sa condition peut être fausse", d.Nom)
+	}
+	if d.ClesAussi != nil && (d.UnDomaineSuffit || d.PorteeOuverte || strings.TrimSpace(d.CleRBAC) == "") {
+		return fmt.Errorf(
+			"action %q : ClesAussi ajoute des droits à une ÉCRITURE qui a déjà sa clé ; "+
+				"elle ne se combine ni avec UnDomaineSuffit, ni avec PorteeOuverte, ni sans CleRBAC", d.Nom)
 	}
 	if d.Portee == nil {
 		return fmt.Errorf(
@@ -807,6 +829,21 @@ func (e *Executeur) Controler(nom string, a Appelant, p Params) (Definition, err
 					nom, a.Username, d.CleRBAC, exige, motif))
 			}
 			return Definition{}, refus
+		}
+
+		// Les clés supplémentaires, sur les mêmes domaines (TO-DO 265).
+		if d.ClesAussi != nil {
+			for _, cle := range d.ClesAussi(p) {
+				if ok, motifCle := e.Droits.Autorise(a.GroupIDs, cle, domaines); !ok {
+					refus := &ErrRefusee{Action: nom, Cle: cle, Motif: motifCle}
+					if e.Journal != nil {
+						e.Journal.Refus(fmt.Sprintf(
+							"action %s refusée à %s : droit %s exigé aussi sur %v — %s",
+							nom, a.Username, cle, domaines, motifCle))
+					}
+					return Definition{}, refus
+				}
+			}
 		}
 	}
 

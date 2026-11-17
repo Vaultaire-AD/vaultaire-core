@@ -24,8 +24,11 @@ du tout : `web_admin`, `read:log`, `read:dns`, `write:dns`, `read:cluster`,
 `write:cluster`, `write:relay`, `read:certificate`, `write:certificate`,
 `write:server`.
 
-La **création** d'un compte exige un droit global : le compte n'a encore aucun
-domaine, il ne peut donc pas être rattaché au périmètre d'un délégué.
+La **création** d'un compte seul exige un droit global : le compte n'a encore
+aucun domaine (les domaines d'un compte sont ceux de ses groupes). Créé **dans
+un groupe** (`create -u … -g <groupe>`), il naît dans les domaines de ce
+groupe : `write:create:user` et `write:add:user` sur ces domaines — et sur le
+domaine du compte — suffisent alors.
 
 ## Étapes
 
@@ -34,7 +37,7 @@ domaine, il ne peut donc pas être rattaché au périmètre d'un délégué.
    ```bash
    vlt create -p admin-infra oui --desc "Administration de infra.acme.lan"
    for a in read:get:user read:get:group read:get:client \
-            write:add:user write:update:user write:add:client; do
+            write:create:user write:add:user write:update:user write:add:client; do
      vlt update -pu admin-infra "$a" -a 1 infra.acme.lan
    done
    vlt add -gu Infra -p admin-infra
@@ -49,9 +52,23 @@ domaine, il ne peut donc pas être rattaché au périmètre d'un délégué.
    vlt get -u bob.durand            # refusé : Bob n'est pas dans son périmètre
    ```
 
+3. Alice crée un compte **dans son groupe** — la création déléguée :
+
+   ```bash
+   vlt create -u carla.martin infra.acme.lan 'Sable-Lynx-Fjord-38' 03/04/1991 -g Infra
+   vlt create -u dan.roux infra.acme.lan 'Brise-Ocre-Pivot-61' 05/06/1990
+   #   refusé : sans groupe, le compte n'aurait aucun domaine — droit global exigé
+   vlt create -u eve.leroy acme.lan 'Givre-Tamis-Orbe-27' 07/08/1989 -g Infra
+   #   refusé : le compte serait « @acme.lan », hors de son domaine
+   ```
+
+   Sur le portail, c'est le champ **Groupe** du formulaire « Créer un
+   utilisateur ».
+
 ## ✅ Vous avez réussi si
 
-Alice voit son périmètre, et seulement lui — y compris sur le portail.
+Alice voit son périmètre, et seulement lui — y compris sur le portail ; elle crée
+`carla.martin` dans `Infra`, et les deux autres créations sont refusées.
 
 ## 🧪 Exercice
 

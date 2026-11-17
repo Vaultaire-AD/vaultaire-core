@@ -60,6 +60,7 @@ qui rend la délégation possible. Détenir `write:create:user` sur le domaine
 | **Utilisateur** | les domaines du compte visé |
 | **Groupe** | les domaines du groupe visé |
 | **Groupe + utilisateur** | l'union des deux |
+| **Création dans un groupe** | les domaines du groupe **et** le domaine du compte créé — avec `write:add:user` en plus *(2.3.2)* |
 | **Groupe + machine** | l'union des deux |
 | **Machine** | les domaines de la machine visée |
 | **Permission** | les domaines de la permission visée |
@@ -67,6 +68,14 @@ qui rend la délégation possible. Détenir `write:create:user` sur le domaine
 Pour une **écriture**, le droit est exigé sur **tous** les domaines listés. Un
 délégué de `paris` seul ne peut pas modifier une entité présente dans `paris` et
 `lyon`.
+
+**Créer un compte en délégué** *(2.3.2)*. Un compte neuf n'a pas de domaine :
+ses domaines sont ceux de ses groupes. Créé seul, il exige donc le droit global.
+Créé **dans un groupe** (`create -u … -g <groupe>`, ou le champ « Groupe » du
+portail), il naît dans les domaines de ce groupe : le délégué qui détient
+`write:create:user` **et** `write:add:user` sur ces domaines — et sur le domaine
+du compte, `alice@<domaine>` — peut le créer. Si le rattachement échoue, la
+création est annulée : aucun compte ne reste hors de tout groupe.
 
 Pour une **lecture d'entité**, un seul suffit — la même entité lui est visible.
 Voir « Voir et agir ne s'exigent pas pareil » plus bas : c'est la nuance qui rend
@@ -138,7 +147,7 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | Action | Droit exigé | Portée | Groupe protégé | CLI | Web |
 |---|---|---|---|---|---|
 | **Utilisateurs** |
-| `user.create` | `write:create:user` | Globale | — | Registre — `create -u` | **Registre** |
+| `user.create` | `write:create:user` (+ `write:add:user` avec un groupe) | Globale ; **création dans un groupe** avec `-g` | — | Registre — `create -u … [-g groupe]` | **Registre** |
 | `user.update` | `write:update:user` | Utilisateur | — | — | **Registre** |
 | `user.change_password` | `write:update:user` | Utilisateur | — | Registre — `update -u -p` | **Registre** |
 | `user.delete` | `write:delete:user` + `write:killswitch` | Utilisateur | — | Registre — `delete -u` | **Registre** |

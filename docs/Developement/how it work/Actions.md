@@ -152,6 +152,18 @@ pas.
 > domaines vaut `["*"]`, et « au moins un de cette liste » n'a qu'un candidat.
 > C'est le piège du §9.
 
+**Une action qui fait deux gestes exige deux clés** *(TO-DO 265)*. `ClesAussi`
+rend, selon les paramètres, des clés supplémentaires exigées **sur les mêmes
+domaines** que `CleRBAC`, avec la sémantique stricte. Seul cas aujourd'hui :
+`user.create` avec un `group` — créer un compte *dans* un groupe, c'est aussi
+l'y rattacher, donc `write:add:user`. Le registre refuse `ClesAussi` sur une
+lecture (`UnDomaineSuffit`, `PorteeOuverte`) ou sans `CleRBAC`.
+
+```go
+Portee:    PorteeCreationUtilisateur, // « * » sans groupe ; sinon groupe ∪ domaine du compte
+ClesAussi: clesCreationUtilisateur,   // + write:add:user quand un groupe est donné
+```
+
 ---
 
 ## 5. Le filtrage des listes

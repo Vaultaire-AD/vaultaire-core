@@ -9,7 +9,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 
 | Fichier | Contenu |
 | --- | --- |
-| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 11 chapitres, 35 jalons avec exercices — installation, annuaire, `vlt`, permissions, clients, GPO, DNS, LDAP, sécurité, cluster, Nexus et mises à jour |
+| [`training/README.md`](./training/README.md) | **Apprendre Vaultaire pas à pas** : 12 chapitres, 40 jalons avec exercices — installation, annuaire, `vlt`, API REST, permissions, clients, GPO, DNS, LDAP, sécurité, cluster, Nexus, mises à jour et Kubernetes |
 
 ---
 
@@ -38,7 +38,8 @@ intégrateurs. Elle répond à « que taper » et « quel droit accorder », jam
 | [`Utilisation/MAN.md`](./Utilisation/MAN.md) | Manuel des commandes `vlt` : create, get, add, remove, delete, update, status, clear, eyes, DNS, certificate, kill, mfa, enroll, gpo, cluster |
 | [`Utilisation/Group-Permission.md`](./Utilisation/Group-Permission.md) | Groupes et permissions au quotidien : ce que donne un droit sur un domaine |
 | [`Utilisation/Actions_et_Permissions.md`](./Utilisation/Actions_et_Permissions.md) | **Quel droit pour quelle opération** — la référence à consulter avant de déléguer |
-| [`Utilisation/vaultairectl.md`](./Utilisation/vaultairectl.md) | `vaultaire_ctl` — administration distante via l'API REST signée |
+| [`Utilisation/vaultairectl.md`](./Utilisation/vaultairectl.md) | `vaultaire_ctl` — administration distante via l'API signée |
+| [`Utilisation/API_REST.md`](./Utilisation/API_REST.md) | **API REST** *(2.3.2)* — routes, réponses JSON, codes d'erreur, signature ; `vlt api` |
 | [`Utilisation/vaultaireLDAP.md`](./Utilisation/vaultaireLDAP.md) | Module LDAP : arborescence, filtres, intégrations |
 | [`Utilisation/DNS.md`](./Utilisation/DNS.md) | Commandes DNS : zones, enregistrements, PTR |
 

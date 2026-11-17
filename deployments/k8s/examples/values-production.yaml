@@ -1,7 +1,7 @@
 # Production : base gérée, image épinglée par empreinte, secrets externes,
 # LDAPS seulement, sorties réseau restreintes.
 image:
-  tag: "2.3.0"
+  tag: "2.3.1"
   # digest: sha256:…   (empreinte signée : cosign verify, voir la doc)
 
 auth:

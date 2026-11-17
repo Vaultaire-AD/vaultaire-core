@@ -166,3 +166,18 @@ func TestUpdatePermanentParLeDecoupageDeLaConsole(t *testing.T) {
 		t.Fatalf("%q -> %v (ok %v)", args, p, ok)
 	}
 }
+
+// -g <groupe> (TO-DO 265) ne décale pas le mot de passe, où qu'il soit.
+func TestCommandePourJournalAvecGroupe(t *testing.T) {
+	for _, c := range []string{
+		"create -u bob -g admin-users users.admin.local Sable-Lynx-Fjord-38 01/01/1990",
+		"create -u bob users.admin.local -g admin-users Sable-Lynx-Fjord-38 01/01/1990",
+		"create -u bob users.admin.local Sable-Lynx-Fjord-38 01/01/1990 -g admin-users",
+		"create -u bob --group admin-users users.admin.local Sable-Lynx-Fjord-38 01/01/1990 --permanent",
+	} {
+		got := CommandePourJournal(c)
+		if strings.Contains(got, "Sable-Lynx") || !strings.Contains(got, "***") || !strings.Contains(got, "admin-users") {
+			t.Errorf("%q\n  → %q", c, got)
+		}
+	}
+}

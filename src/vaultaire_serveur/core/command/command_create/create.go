@@ -1,6 +1,7 @@
 package commandcreate
 
 import (
+	"fmt"
 	"os"
 	"strconv"
 	"strings"
@@ -72,10 +73,20 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		// un compte de service. Retiré AVANT la lecture des positions, sans quoi
 		// il serait pris pour le prénom ou le nom.
 		args, permanent := ExtrairePermanent(command_list[1:])
+		// -g <groupe>, où qu'il soit (TO-DO 265) : le compte naît dans ce
+		// groupe. C'est ce qui permet la création DÉLÉGUÉE — le droit est alors
+		// exigé sur les domaines du groupe et non plus sur « * ».
+		args, groupe, errGroupe := ExtraireGroupe(args)
+		if errGroupe != nil {
+			return errGroupe.Error()
+		}
 		p := commandaction.ParamsDepuisPositionnels(args,
 			"username", "domain", "password", "birthdate", "firstname", "lastname")
 		if permanent {
 			p["temporary"] = "non"
+		}
+		if groupe != "" {
+			p["group"] = groupe
 		}
 		return commandaction.ExecuterAction("user.create", p, sender_groupsIDs, sender_Username)
 
@@ -348,7 +359,7 @@ func aide() string {
 	// raison de soupçonner l'aide elle-même.
 	return `create — crée des utilisateurs, groupes, machines, permissions et GPO.
 
-  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom] [--permanent]
+  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom] [--permanent] [-g <groupe>]
   create -g <nom> <domaine>
   create -c <oui|non> [-join <hôte[:port]> <user>] [--os <linux|windows>] [--export <fichier>]
   create -export <computeur_id> <fichier> [--os <linux|windows>]
@@ -363,6 +374,12 @@ Notes :
        portail) ; --permanent le pose DÉFINITIF, pour un compte de service
        qu'aucune personne n'ouvrira — Keycloak, GitLab… La dérogation est
        journalisée.
+       -g <groupe> crée le compte DANS ce groupe. Sans -g, il faut le droit
+       write:create:user global. Avec -g, il suffit de write:create:user et
+       write:add:user sur les domaines du groupe et sur le domaine du compte :
+       c'est la création déléguée (un administrateur de users.admin.local
+       crée ses comptes dans ses groupes). Si le rattachement échoue, la
+       création est annulée.
   -c   crée un agent. Un client service ne se crée pas ici, il s'enrôle seul :
        voir « enroll -h ». Avec -join, l'agent est installé à distance par SSH.
   -p   permission UTILISATEUR. Le second argument accorde ou non l'accès à
@@ -389,6 +406,34 @@ Les valeurs booléennes acceptées sont oui|non, yes|no, true|false, on|off, 1|0
 // Un mot de passe littéralement « --permanent » est perdu au passage : il
 // ferait onze caractères, et la politique en exige douze — il serait refusé de
 // toute façon.
+// ExtraireGroupe retire « -g <groupe> » (ou « --group <groupe> ») des
+// arguments de « create -u » — TO-DO 265.
+//
+// Retiré AVANT la lecture des positions, comme --permanent : sinon le
+// groupe serait pris pour le prénom ou le nom. Une option sans valeur, ou
+// donnée deux fois, est une erreur et non un silence : le compte serait
+// sinon créé hors du groupe que l'on croyait demander.
+func ExtraireGroupe(args []string) ([]string, string, error) {
+	reste := make([]string, 0, len(args))
+	groupe := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a != "-g" && !strings.EqualFold(a, "--group") {
+			reste = append(reste, a)
+			continue
+		}
+		if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") || strings.TrimSpace(args[i+1]) == "" {
+			return nil, "", fmt.Errorf("option %s : nom de groupe manquant", a)
+		}
+		if groupe != "" {
+			return nil, "", fmt.Errorf("option %s donnée deux fois : un seul groupe à la création", a)
+		}
+		groupe = args[i+1]
+		i++
+	}
+	return reste, groupe, nil
+}
+
 func ExtrairePermanent(args []string) ([]string, bool) {
 	reste := make([]string, 0, len(args))
 	trouve := false

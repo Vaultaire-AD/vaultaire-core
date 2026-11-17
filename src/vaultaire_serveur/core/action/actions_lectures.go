@@ -223,6 +223,14 @@ func lireUtilisateur(_ Appelant, p Params) (Resultat, error) {
 	if nom == "" {
 		return Resultat{}, fmt.Errorf("nom d'utilisateur requis")
 	}
+	// L'existence d'abord (TO-DO 270) : Command_GET_UserInfo rend une fiche
+	// VIDE pour un nom inconnu, et « get -u nimporte » comme
+	// GET /api/v1/users/nimporte affichaient un compte qui n'existe pas.
+	if _, trouve, err := database.LookupUserID(database.GetDatabase(), nom); err != nil {
+		return Resultat{}, fmt.Errorf("utilisateur %q : lecture impossible : %w", nom, err)
+	} else if !trouve {
+		return Resultat{}, fmt.Errorf("utilisateur %q introuvable", nom)
+	}
 	info, err := dbusers.Command_GET_UserInfo(database.GetDatabase(), nom)
 	if err != nil {
 		return Resultat{}, fmt.Errorf("utilisateur %q introuvable : %w", nom, err)

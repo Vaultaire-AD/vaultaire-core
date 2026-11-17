@@ -94,7 +94,7 @@ docker run -d --name vaultaire \
   -e VAULTAIRE_ADMIN_PASSWORD_FILE=/run/secrets/admin-password \
   -v ./secrets:/run/secrets:ro \
   -p 389:3389 -p 636:3636 -p 6666:6666 -p 443:4443 -p 6643:6643 \
-  ghcr.io/vaultaire-ad/vaultaire-server:2.3.0
+  ghcr.io/vaultaire-ad/vaultaire-server:2.3.1
 ```
 
 ## Certificats TLS importés *(TO-DO 262)*

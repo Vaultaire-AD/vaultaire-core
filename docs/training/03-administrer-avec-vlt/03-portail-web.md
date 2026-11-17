@@ -2,7 +2,7 @@
 
 # Jalon 3.3 — Le portail web
 
-[← vlt à distance par l'API](./02-vlt-a-distance.md) · [Chapitre 4 — Permissions et délégation →](../04-permissions-et-delegation/README.md)
+[← vlt à distance par l'API](./02-vlt-a-distance.md) · [L'API REST →](./04-api-rest.md)
 
 ---
 
@@ -68,4 +68,4 @@ catalogue.
 
 ---
 
-[← vlt à distance par l'API](./02-vlt-a-distance.md) · [Chapitre 4 — Permissions et délégation →](../04-permissions-et-delegation/README.md)
+[← vlt à distance par l'API](./02-vlt-a-distance.md) · [L'API REST →](./04-api-rest.md)

@@ -6,8 +6,9 @@
 
 ---
 
-Maîtriser les trois façons de piloter Vaultaire — la CLI locale, `vlt` à
-distance par l'API, et le portail web — et savoir laquelle choisir.
+Maîtriser les façons de piloter Vaultaire — la CLI locale, `vlt` à distance
+par l'API, le portail web et l'API REST pour les scripts — et savoir laquelle
+choisir.
 
 ## Prérequis
 
@@ -22,6 +23,7 @@ distance par l'API, et le portail web — et savoir laquelle choisir.
 | 3.1 | [La CLI locale](./01-cli-locale.md) | ☐ |
 | 3.2 | [vlt à distance par l'API](./02-vlt-a-distance.md) | ☐ |
 | 3.3 | [Le portail web](./03-portail-web.md) | ☐ |
+| 3.4 | [L'API REST](./04-api-rest.md) | ☐ |
 
 Chaque jalon suit le même plan : **objectif**, **étapes**, **vous avez réussi
 si**, puis un **exercice** avec sa solution repliée.
