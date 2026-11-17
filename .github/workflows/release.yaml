@@ -144,7 +144,12 @@ jobs:
     name: "🛠️ Compilation (Rocky 9)"
     needs: [version, modules-debian]
     runs-on: ubuntu-latest
-    container: rockylinux:9
+    # L'image rockylinux:9 ne déclare aucun PATH (Env = container=oci seul) :
+    # après setup-go, le runner ne garderait que les dossiers de Go et perdrait sh.
+    container:
+      image: rockylinux:9
+      env:
+        PATH: /usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
     env:
       VAULTAIRE_VERSION: ${{ needs.version.outputs.version }}
       TAG: ${{ needs.version.outputs.tag }}
