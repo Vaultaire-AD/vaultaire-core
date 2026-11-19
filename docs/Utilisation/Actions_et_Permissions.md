@@ -147,8 +147,8 @@ catalogue GPO et le profil personnel restent à part, chacune pour une raison
 | Action | Droit exigé | Portée | Groupe protégé | CLI | Web |
 |---|---|---|---|---|---|
 | **Utilisateurs** |
-| `user.create` | `write:create:user` (+ `write:add:user` avec un groupe) | Globale ; **création dans un groupe** avec `-g` | — | Registre — `create -u … [-g groupe]` | **Registre** |
-| `user.update` | `write:update:user` | Utilisateur | — | — | **Registre** |
+| `user.create` | `write:create:user` (+ `write:add:user` avec un groupe) | Globale ; **création dans un groupe** avec `-g` | — | Registre — `create -u … [-g groupe] [--email adresse]` | **Registre** |
+| `user.update` | `write:update:user` | Utilisateur | — | Registre — `update -u … --email` (identifiant, prénom, nom : portail et API) | **Registre** |
 | `user.change_password` | `write:update:user` | Utilisateur | — | Registre — `update -u -p` | **Registre** |
 | `user.delete` | `write:delete:user` + `write:killswitch` | Utilisateur | — | Registre — `delete -u` | **Registre** |
 | `user.add_key` | `write:update:user` | Utilisateur | — | Registre — `add -u -k` | — |

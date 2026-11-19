@@ -1,7 +1,7 @@
 package storage
 
 var Host_Type string = "core"
-var Host_Version string = "2.3.2"
+var Host_Version string = "2.3.3"
 
 type Config struct {
 	ServerListenPort *string `yaml:"serveurlistenport"`

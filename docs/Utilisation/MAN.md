@@ -352,11 +352,11 @@ Exemple : `create -g "IT_Group" "it.company.com"`
 ### 5.4 Utilisateur
 
 ```bash
-create -u <identifiant> <domaine> <motdepasse> <JJ/MM/AAAA> [prénom] [nom] [--permanent] [-g <groupe>]
+create -u <identifiant> <domaine> <motdepasse> <JJ/MM/AAAA> [prénom] [nom] [--permanent] [-g <groupe>] [--email <adresse>]
 ```
 
-Sans prénom ni nom, ils se déduisent d'un identifiant `prénom.nom`. Il n'y a
-**pas** d'argument e-mail : un cinquième mot serait lu comme le prénom.
+Sans prénom ni nom, ils se déduisent d'un identifiant `prénom.nom`. Sans
+`--email`, l'adresse est `identifiant@domaine`.
 
 Le mot de passe passe la politique de robustesse : **12 caractères** au moins
 par défaut, et ni le nom du compte, ni un libellé de son domaine, ni
@@ -379,7 +379,14 @@ create -u alice company.com 'Galet-Hibou-Sapin-24' 06/02/1992
 create -u bob.lenon company.com 'Brume-Violon-Canal-73' 09/12/1988 Bob Lenon
 create -u svc_gitlab company.com 'Rivet-Cobalt-Phare-57' 01/01/2000 --permanent
 create -u carla.martin users.admin.local 'Sable-Lynx-Fjord-38' 03/04/1991 -g admin-users
+create -u emma.roux company.com 'Ardoise-Merle-Canot-36' 08/09/1993 --email emma.roux@acme.fr
 ```
+
+**`--email <adresse>`** *(2.3.3)* choisit l'adresse du compte, au lieu de
+`identifiant@domaine`. Une adresse nue (`nom@domaine`), rangée en minuscules,
+et qui n'appartient à aucun autre compte — sinon rien n'est créé. Elle se change
+ensuite par `update -u … --email` (§ 12.1). Sur le portail : le champ
+**Adresse e-mail** du formulaire de création.
 
 **`-g <groupe>`** *(2.3.2)* crée le compte **dans** ce groupe, en un seul geste.
 C'est ce qui permet à un administrateur **délégué** de créer des comptes : sans
@@ -864,6 +871,27 @@ Sur le portail : la liste **Nature du mot de passe** de la fiche du compte.
 update -u svc_gitlab --permanent -p 'Orage-Tilleul-Vague-84'
 ```
 
+**Changer l'adresse e-mail** *(2.3.3)* :
+
+```bash
+update -u <username> --email <adresse>     # adresse CHOISIE
+update -u <username> --email auto          # retour à username@domaine
+```
+
+Une adresse **automatique** (`identifiant@domaine`, celle de la création) suit
+le compte quand il est renommé ; une adresse **choisie** ne bouge plus, jusqu'au
+prochain `--email`. `get -u` dit laquelle des deux (« (automatique) » ou
+« (choisie) »). `auto` prend le **premier domaine des groupes** du compte : un
+compte sans groupe n'en a pas, il faut alors donner une adresse. Même droit que
+pour un renommage, `write:update:user` sur les domaines du compte. Sur le
+portail : le champ **Adresse e-mail** de la fiche du compte. C'est l'adresse que
+l'annuaire sert (`mail`) et que reprend le marqueur `%m` des GPO.
+
+> Jusqu'en 2.3.2, **tout** changement de mot de passe réécrivait l'adresse en
+> `identifiant@<deux derniers labels du domaine>` (`alice@users.admin.local`
+> devenait `alice@admin.local`), et échouait pour un compte sans groupe. Ce
+> n'est plus le cas : le mot de passe ne touche plus à l'adresse.
+
 > ⚠️ Ce manuel documentait `update -u "username" -uu "new_username"`. Le renommage **n’existe pas en ligne de commande** ; il se fait depuis la page profil ou l’administration web, qui reporte le nom sur les sessions ouvertes et émet un jeton neuf — ce qu’un simple `UPDATE` ne ferait pas.
 
 ### 12.2 Mode debug et détail du journal
@@ -1093,7 +1121,7 @@ Les lectures — `zone list`, `zone show`, `ptr list` — exigent la même clé,
 
 | Besoin | Commande type |
 |--------|----------------|
-| Créer un user | `create -u <id> <domaine> <motdepasse> JJ/MM/AAAA [prénom] [nom] [--permanent] [-g <groupe>]` |
+| Créer un user | `create -u <id> <domaine> <motdepasse> JJ/MM/AAAA [prénom] [nom] [--permanent] [-g <groupe>] [--email <adresse>]` |
 | Créer un groupe | `create -g "Nom" "domain"` |
 | Voir les sessions | `status -u` / `status -c` |
 | Détail d’un groupe | `get -g "group_name"` |

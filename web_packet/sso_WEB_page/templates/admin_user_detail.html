@@ -48,6 +48,12 @@
         <input name="firstname" value="{{ .User.Firstname }}">
         <label>Nom</label>
         <input name="lastname" value="{{ .User.Lastname }}">
+        <!--
+          TO-DO 271. Renvoyée telle quelle, l'adresse est inchangée ;
+          « auto » la ramène à identifiant@domaine.
+        -->
+        <label>Adresse e-mail — {{ if .User.EmailPersonnalise }}choisie{{ else }}automatique{{ end }} (« auto » : identifiant@domaine)</label>
+        <input name="email" value="{{ .User.Email }}" autocomplete="off">
         <div style="margin-top:0.75rem"><button type="submit" class="btn btn-primary">Mettre à jour</button></div>
       </form>
     </section>

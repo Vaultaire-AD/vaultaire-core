@@ -49,6 +49,18 @@ vlt api POST /api/v1/users '{
 }'
 ```
 
+Choisir l'adresse e-mail *(2.3.3)* — à la création (`"email"` dans le corps
+ci-dessus), ou ensuite :
+
+```bash
+vlt api PATCH /api/v1/users/carla.martin '{"email": "carla.martin@acme.fr"}'
+vlt api PATCH /api/v1/users/carla.martin '{"email": "auto"}'   # retour à compte@domaine
+```
+
+`GET /api/v1/users/{username}` rend l'adresse (`email`) et sa nature
+(`email_custom` : `true` si elle a été choisie). Une adresse déjà portée par un
+autre compte est refusée (**422** `action_failed`, sans nommer ce compte).
+
 Les paramètres portent **les mêmes noms** que les champs du portail et les
 paramètres des actions. Un booléen JSON vaut `oui`/`non` (`"temporary": false`
 pour un mot de passe définitif).
@@ -101,9 +113,9 @@ Le `code` est stable : c'est lui qu'un programme aiguille ; le `message` est pou
 | Méthode | Chemin | Action |
 |---|---|---|
 | GET | `/api/v1/users` | `user.list` |
-| POST | `/api/v1/users` | `user.create` — `username`, `domain`, `password`, `birthdate`, [`firstname`, `lastname`, `temporary`, `group`] |
+| POST | `/api/v1/users` | `user.create` — `username`, `domain`, `password`, `birthdate`, [`firstname`, `lastname`, `temporary`, `group`, `email`] |
 | GET | `/api/v1/users/{username}` | `user.get` |
-| PATCH | `/api/v1/users/{username}` | `user.update` — `new_username`, `firstname`, `lastname` |
+| PATCH | `/api/v1/users/{username}` | `user.update` — `new_username`, `firstname`, `lastname`, `email` (`"auto"` : retour à `compte@domaine`) |
 | DELETE | `/api/v1/users/{username}` | `user.delete` |
 | PUT | `/api/v1/users/{username}/password` | `user.change_password` — `password`, [`temporary`] |
 | DELETE | `/api/v1/users/{username}/mfa` | `user.reset_mfa` |

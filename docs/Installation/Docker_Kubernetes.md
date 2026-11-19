@@ -1,7 +1,7 @@
 # Déploiement conteneurisé
 
-**Production** : l'image rootless publiée sur GHCR et la chart Helm — voir
-[`Kubernetes.md`](./Kubernetes.md) (2.3). Les piles Compose ci-dessous sont des
+**Production** : l'image rootless publiée sur GHCR — avec Docker Compose, voir
+[`Docker.md`](../../deployments/prod/Docker.md) ; avec la chart Helm, [`Kubernetes.md`](./Kubernetes.md) (2.3). Les piles Compose ci-dessous sont des
 environnements de **développement et de test** : conteneur root, binaires
 montés, clé de démonstration. Ne les exposez pas.
 

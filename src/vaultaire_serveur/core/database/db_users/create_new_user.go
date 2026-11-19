@@ -10,6 +10,14 @@ import (
 )
 
 func Create_New_User(db *sql.DB, username, firstname, lastname, email, password, salt, birthdate, createdAt string) error {
+	return CreerUtilisateur(db, username, firstname, lastname, email, false, password, salt, birthdate, createdAt)
+}
+
+// CreerUtilisateur crée un compte ; emailPersonnalise dit si l'adresse a été
+// CHOISIE (TO-DO 271) plutôt que déduite de « compte@domaine ». Posé dans la
+// même insertion : un compte créé avec une adresse choisie ne doit pas exister,
+// même un instant, avec le drapeau qui la laisserait réécrire.
+func CreerUtilisateur(db *sql.DB, username, firstname, lastname, email string, emailPersonnalise bool, password, salt, birthdate, createdAt string) error {
 	// Le nom d'utilisateur nomme une entité : liste blanche. Le mot de passe est
 	// du texte libre et doit le rester — y interdire espaces et parenthèses
 	// affaiblirait les mots de passe au lieu de protéger la base.
@@ -59,8 +67,8 @@ func Create_New_User(db *sql.DB, username, firstname, lastname, email, password,
 		return fmt.Errorf("identifiant du compte : %v", err)
 	}
 	_, err = tx.Exec(`
-		INSERT INTO users (username, firstname, lastname, email, password, salt, date_naissance, created_at, password_changed_at, entry_uuid)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, username, firstname, lastname, email, password, salt, birthdate, createdAt, createdAt, entryUUID)
+		INSERT INTO users (username, firstname, lastname, email, email_personnalise, password, salt, date_naissance, created_at, password_changed_at, entry_uuid)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, username, firstname, lastname, email, emailPersonnalise, password, salt, birthdate, createdAt, createdAt, entryUUID)
 	if err != nil {
 		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"erreur lors de l'insertion de l'utilisateur: "+err.Error())
 		return fmt.Errorf("erreur lors de l'insertion de l'utilisateur: %v", err)
