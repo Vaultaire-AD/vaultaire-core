@@ -1,6 +1,7 @@
 package commandupdate
 
 import (
+	"fmt"
 	"strings"
 
 	"vaultaire/core/action"
@@ -22,6 +23,7 @@ import (
 // ActionsUtilisees liste les actions du registre appelées ici.
 var ActionsUtilisees = []string{
 	"user.change_password",
+	"user.update",
 	"server.get_debug",
 	"server.set_debug",
 }
@@ -37,6 +39,13 @@ func Update_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		return aide()
 
 	case "-u":
+		// update -u <username> --email <adresse|auto> — TO-DO 271.
+		if p, ok, err := ParamsChangementEmail(command_list); ok {
+			if err != nil {
+				return err.Error()
+			}
+			return commandaction.ExecuterAction("user.update", p, sender_groupsIDs, sender_Username)
+		}
 		// update -u <username> -p <nouveau mot de passe>
 		//
 		// Le mot de passe occupe tous les arguments restants : un mot de passe
@@ -74,6 +83,8 @@ func aide() string {
 
   update -u <username> -p <nouveau mot de passe>        mot de passe PROVISOIRE (24 h)
   update -u <username> --permanent -p <mot de passe>    DÉFINITIF : compte de service
+  update -u <username> --email <adresse>                adresse e-mail choisie
+  update -u <username> --email auto                     retour à « username@domaine »
   update -pu <permission> <clé d'action> nil|all|deny|-a|-r [portée] [domaine]
   update -debug                                     affiche l'état du journal de détail
   update -debug <true|false>                        tout le serveur
@@ -81,6 +92,23 @@ func aide() string {
                                                     un sous-système : ldap, ducky, gpo, base
 
 Note : le mot de passe peut contenir des espaces, ils sont conservés.`
+}
+
+// ParamsChangementEmail lit « update -u <username> --email <adresse|auto> »
+// — TO-DO 271. ok=false : la commande n'est pas un changement d'adresse (le
+// mot de passe est essayé ensuite). err : c'en est un, mal formé.
+//
+// Remis en mots comme ParamsChangementMotDePasse : la console colle à
+// « --email » tout ce qui le suit.
+func ParamsChangementEmail(command_list []string) (action.Params, bool, error) {
+	args := strings.Fields(strings.Join(command_list, " "))
+	if len(args) < 3 || !strings.EqualFold(args[2], "--email") {
+		return nil, false, nil
+	}
+	if len(args) != 4 {
+		return nil, true, fmt.Errorf("Requête invalide : update -u <username> --email <adresse|auto>")
+	}
+	return action.Params{"username": args[1], "email": args[3]}, true, nil
 }
 
 // ParamsChangementMotDePasse lit « update -u <username> [--permanent] -p <mot

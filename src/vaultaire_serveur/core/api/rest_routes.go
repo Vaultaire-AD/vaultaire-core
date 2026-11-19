@@ -36,9 +36,9 @@ type routeREST struct {
 var routesREST = []routeREST{
 	// --- Comptes -----------------------------------------------------------
 	{"GET", "/users", "user.list", 0, "liste les comptes (réduite au périmètre de l'appelant)", "users"},
-	{"POST", "/users", "user.create", http.StatusCreated, "crée un compte ; « group » pour le créer dans un groupe (création déléguée)", "users"},
+	{"POST", "/users", "user.create", http.StatusCreated, "crée un compte ; « group » pour le créer dans un groupe (création déléguée), « email » pour choisir son adresse", "users"},
 	{"GET", "/users/{username}", "user.get", 0, "détail d'un compte", "users"},
-	{"PATCH", "/users/{username}", "user.update", 0, "modifie identifiant, prénom ou nom (new_username, firstname, lastname)", "users"},
+	{"PATCH", "/users/{username}", "user.update", 0, "modifie identifiant, prénom, nom ou adresse (new_username, firstname, lastname, email — « auto » : compte@domaine)", "users"},
 	{"DELETE", "/users/{username}", "user.delete", 0, "supprime un compte et le retire du parc", "users"},
 	{"PUT", "/users/{username}/password", "user.change_password", 0, "change le mot de passe (password, temporary)", "users"},
 	{"DELETE", "/users/{username}/mfa", "user.reset_mfa", 0, "réinitialise le second facteur", "users"},

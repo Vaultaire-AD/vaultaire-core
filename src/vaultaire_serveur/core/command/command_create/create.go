@@ -72,7 +72,13 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		// --permanent, où qu'il soit (TO-DO 144) : mot de passe DÉFINITIF, pour
 		// un compte de service. Retiré AVANT la lecture des positions, sans quoi
 		// il serait pris pour le prénom ou le nom.
-		args, permanent := ExtrairePermanent(command_list[1:])
+		//
+		// Les arguments sont REMIS en mots : le découpage de la console
+		// (SplitArgsPreserveBlocks) colle à un « --drapeau » tout ce qui le
+		// suit jusqu'au suivant — « --email a@b.fr -g x » arrivait en un seul
+		// argument « a@b.fr -g x ». Aucun argument de « create -u » ne contient
+		// d'espace : les remettre en mots ne coûte rien.
+		args, permanent := ExtrairePermanent(strings.Fields(strings.Join(command_list[1:], " ")))
 		// -g <groupe>, où qu'il soit (TO-DO 265) : le compte naît dans ce
 		// groupe. C'est ce qui permet la création DÉLÉGUÉE — le droit est alors
 		// exigé sur les domaines du groupe et non plus sur « * ».
@@ -80,8 +86,17 @@ func Create_Command(command_list []string, sender_groupsIDs []int, sender_Userna
 		if errGroupe != nil {
 			return errGroupe.Error()
 		}
+		// --email <adresse>, où qu'il soit (TO-DO 271) : l'adresse du compte,
+		// au lieu de « compte@domaine ».
+		args, email, errEmail := ExtraireEmail(args)
+		if errEmail != nil {
+			return errEmail.Error()
+		}
 		p := commandaction.ParamsDepuisPositionnels(args,
 			"username", "domain", "password", "birthdate", "firstname", "lastname")
+		if email != "" {
+			p["email"] = email
+		}
 		if permanent {
 			p["temporary"] = "non"
 		}
@@ -359,7 +374,7 @@ func aide() string {
 	// raison de soupçonner l'aide elle-même.
 	return `create — crée des utilisateurs, groupes, machines, permissions et GPO.
 
-  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom] [--permanent] [-g <groupe>]
+  create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom] [--permanent] [-g <groupe>] [--email <adresse>]
   create -g <nom> <domaine>
   create -c <oui|non> [-join <hôte[:port]> <user>] [--os <linux|windows>] [--export <fichier>]
   create -export <computeur_id> <fichier> [--os <linux|windows>]
@@ -374,6 +389,9 @@ Notes :
        portail) ; --permanent le pose DÉFINITIF, pour un compte de service
        qu'aucune personne n'ouvrira — Keycloak, GitLab… La dérogation est
        journalisée.
+       --email <adresse> donne l'adresse du compte ; sans elle, c'est
+       « identifiant@domaine ». Elle se change ensuite par
+       « update -u <identifiant> --email ».
        -g <groupe> crée le compte DANS ce groupe. Sans -g, il faut le droit
        write:create:user global. Avec -g, il suffit de write:create:user et
        write:add:user sur les domaines du groupe et sur le domaine du compte :
@@ -406,6 +424,31 @@ Les valeurs booléennes acceptées sont oui|non, yes|no, true|false, on|off, 1|0
 // Un mot de passe littéralement « --permanent » est perdu au passage : il
 // ferait onze caractères, et la politique en exige douze — il serait refusé de
 // toute façon.
+// ExtraireEmail retire « --email <adresse> » des arguments de « create -u »
+// — TO-DO 271. Mêmes règles que ExtraireGroupe : une option sans valeur, ou
+// donnée deux fois, est une erreur. L'adresse elle-même est vérifiée par
+// l'action.
+func ExtraireEmail(args []string) ([]string, string, error) {
+	reste := make([]string, 0, len(args))
+	email := ""
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if !strings.EqualFold(a, "--email") {
+			reste = append(reste, a)
+			continue
+		}
+		if i+1 >= len(args) || strings.HasPrefix(args[i+1], "-") || strings.TrimSpace(args[i+1]) == "" {
+			return nil, "", fmt.Errorf("option %s : adresse manquante", a)
+		}
+		if email != "" {
+			return nil, "", fmt.Errorf("option %s donnée deux fois", a)
+		}
+		email = args[i+1]
+		i++
+	}
+	return reste, email, nil
+}
+
 // ExtraireGroupe retire « -g <groupe> » (ou « --group <groupe> ») des
 // arguments de « create -u » — TO-DO 265.
 //

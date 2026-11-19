@@ -567,6 +567,14 @@ func Create_DataBase(db *sql.DB) {
 		log.Fatalf("Erreur lors de la pose des identifiants de l'annuaire : %v", err)
 	}
 
+	// L'adresse e-mail choisie (TO-DO 271). FATALE comme les deux précédentes :
+	// la fiche d'un compte et la création nomment la colonne.
+	if err := EnsureEmailPersonnalise(db); err != nil {
+		logs.Write_LogCode("ERROR", logs.CodeDBQuery,
+			"database: colonne email_personnalise non posée : "+err.Error())
+		log.Fatalf("Erreur lors de la pose de users.email_personnalise : %v", err)
+	}
+
 	// Les versions attendues des agents (TO-DO 111) et le compte rendu de leur
 	// mise à jour (TO-DO 115).
 	//

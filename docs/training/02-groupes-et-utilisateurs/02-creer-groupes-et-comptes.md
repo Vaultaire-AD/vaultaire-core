@@ -14,11 +14,11 @@ Créer les groupes et les premiers utilisateurs d'Acme.
 
 ```text
 create -g <nom> <domaine>
-create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
+create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom] [--email <adresse>]
 ```
 
 - le domaine d'un utilisateur sert à construire son adresse
-  (`identifiant@domaine`) ;
+  (`identifiant@domaine`), sauf si vous la choisissez avec `--email` ;
 - avec un identifiant `prénom.nom`, prénom et nom sont déduits ;
 - la date de naissance est vérifiée.
 
@@ -60,10 +60,27 @@ create -u <identifiant> <domaine> <motdepasse> <jj/mm/aaaa> [prénom] [nom]
    vlt eyes -g
    ```
 
+4. Choisissez l'adresse e-mail d'un compte *(2.3.3)* — à la création, ou après
+   coup :
+
+   ```bash
+   vlt create -u emma.roux rh.acme.lan 'Ardoise-Merle-Canot-36' 08/09/1993 --email emma.roux@acme.fr
+   vlt update -u chloe.petit --email chloe.petit@acme.fr
+   vlt get -u chloe.petit            # Adresse : chloe.petit@acme.fr (choisie)
+   vlt update -u chloe.petit --email auto
+   vlt get -u chloe.petit            # Adresse : chloe.petit@rh.acme.lan (automatique)
+   ```
+
+   > 📧 Une adresse **automatique** suit le compte s'il est renommé ; une adresse
+   > **choisie** ne bouge plus. C'est elle que l'annuaire sert dans l'attribut
+   > `mail`, et que reprend une GPO qui pose `%m` (adresse Git, par exemple).
+   > Une même adresse ne peut appartenir qu'à un compte.
+
 ## ✅ Vous avez réussi si
 
 - `eyes -g` montre l'arbre `acme.lan` du jalon précédent ;
-- `get -u` liste les trois comptes.
+- `get -u` liste les quatre comptes, et `get -u emma.roux` montre l'adresse
+  choisie.
 
 ## 🧪 Exercice
 

@@ -9,7 +9,7 @@ package version
 import "fmt"
 
 // Version du dépôt Vaultaire Nexus.
-var Version = "2.3.2"
+var Version = "2.3.3"
 
 var (
 	Commit = "dev"
