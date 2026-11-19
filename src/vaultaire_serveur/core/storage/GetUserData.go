@@ -25,6 +25,10 @@ type GetUserInfoSingle struct {
 	DateOfBirth string   `json:"date_naissance"`
 	Groups      []string `json:"groups"`
 	Connected   bool     `json:"connected"`
+
+	// EmailPersonnalise : l'adresse a été choisie, et non déduite de
+	// « compte@domaine » (TO-DO 271).
+	EmailPersonnalise bool `json:"email_custom"`
 }
 
 // PublicKey représente une clé publique d'un utilisateur

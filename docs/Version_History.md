@@ -12,7 +12,7 @@ version majeure et un fichier par version mineure.
 
 Cycle ouvert le 07/10/2026, après la publication de `v2.2.0`.
 
-Contient : Alpha 2.3.0, Alpha 2.3.1 (08/11/2026) ; 🚧 2.3.2 en cours.
+Contient : Alpha 2.3.0, Alpha 2.3.1 (08/11/2026), Alpha 2.3.2 (17/11/2026) ; 🚧 2.3.3 en cours.
 
 ## [Alpha 2.2.0 — 07/10/2026](./Version/2.0/2.2.md)
 

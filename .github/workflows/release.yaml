@@ -220,7 +220,12 @@ jobs:
             printf '%s\n' "$VAULTAIRE_VERSION" > "$tmp/VERSION"
             tar -C dist/pkg -czf "$O/${nom}-${TAG}-linux-amd64.tar.gz" "$nom"
           }
-          paquet vaultaire_server "$B/vaultaire_server/vaultaire_serveur" "$B/vaultaire_server/vaultaire_cli"
+          # web_packet : les gabarits du portail. Sans eux, le core s'arrête au
+          # démarrage (« Gabarit de connexion illisible ») — Setup.md le fait
+          # placer dans /opt/vaultaire, à côté du binaire.
+          test -s web_packet/sso_WEB_page/templates/sso_login.html \
+            || { echo "::error::web_packet absent : le core ne démarrerait pas"; exit 1; }
+          paquet vaultaire_server "$B/vaultaire_server/vaultaire_serveur" "$B/vaultaire_server/vaultaire_cli" web_packet
           paquet vaultaire_client "$B"/vaultaire_client/*
           paquet vaultaire_ctl    "$B/vaultaire_ctl/vaultaire_ctl"
           paquet vaultaire_proxy  "$B"/vaultaire_proxy/*

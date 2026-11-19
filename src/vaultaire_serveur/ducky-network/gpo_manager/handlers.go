@@ -513,6 +513,12 @@ func identiteDuCompte(db *sql.DB, directoryUser, requestedUser string) *gpo.Iden
 		return nil
 	}
 	_, domaine := domain.ExctractDomainFromUsername(requestedUser)
+	// Le domaine d'un compte est celui de ses GROUPES, plus celui de son
+	// adresse : depuis le TO-DO 271, une adresse peut être choisie hors de
+	// l'annuaire (alice@gmail.com), et %d vaudrait alors « gmail.com ».
+	if domaine == "" {
+		domaine = u.GroupDomain
+	}
 	if domaine == "" {
 		_, domaine, _ = strings.Cut(u.Email, "@")
 	}

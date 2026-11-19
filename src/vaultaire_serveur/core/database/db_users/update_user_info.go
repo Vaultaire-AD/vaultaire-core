@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"vaultaire/core/auth/passwordpolicy"
 	database "vaultaire/core/database"
-	dbdomains "vaultaire/core/database/db_domains"
 	guardprotected "vaultaire/core/database/guard_protected"
 	"vaultaire/core/logs"
 )
@@ -50,14 +50,27 @@ func Update_User_Info(db *sql.DB, userID int, username, firstname, lastname, pas
 		}
 	}()
 
-	// Récupérer domaine principal depuis les groupes de l'utilisateur
-	mainDomain, err := dbdomains.GetUserMainDomain(db, userID)
+	// L'ADRESSE N'EST TOUCHÉE QUE PAR UN RENOMMAGE (TO-DO 271).
+	//
+	// Elle était recalculée à CHAQUE appel — changement de mot de passe
+	// compris — en « compte@domaine principal », le domaine principal étant les
+	// deux derniers labels du premier domaine des groupes. D'où deux défauts
+	// (recette du 19/11) : changer le mot de passe de alice@users.admin.local
+	// la renommait alice@admin.local, et celui d'un compte sans groupe échouait
+	// sur « aucun domaine trouvé ».
+	//
+	// Désormais : une adresse CHOISIE ne bouge pas ; une adresse automatique
+	// suit le renommage, en gardant son domaine (alice@x → alicia@x). Le
+	// changement d'adresse proprement dit est DefinirEmail.
+	email, emailPerso, err := lireEmail(tx, userID)
 	if err != nil {
-		logs.Write_LogCode("ERROR", logs.CodeDBQuery, "database: "+"Erreur récupération domaine principal: "+err.Error())
-		return fmt.Errorf("erreur récupération domaine principal: %v", err)
+		return err
 	}
-
-	email := fmt.Sprintf("%s@%s", username, mainDomain)
+	if username != currentUsername && !emailPerso {
+		if _, domaine, ok := strings.Cut(email, "@"); ok && domaine != "" {
+			email = username + "@" + domaine
+		}
+	}
 
 	var (
 		hashHex string

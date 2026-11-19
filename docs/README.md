@@ -19,6 +19,7 @@ Pour la structure du dépôt et la compilation, voir le [README racine](../READM
 | --- | --- |
 | [`Installation/Requirements.md`](./Installation/Requirements.md) | Prérequis système, versions, dépendances |
 | [`Installation/Setup.md`](./Installation/Setup.md) | Installation complète : base de données, service systemd, configuration YAML, poste client |
+| [`../deployments/prod/Docker.md`](../deployments/prod/Docker.md) | Déployer en production avec Docker Compose (image GHCR) |
 | [`Installation/Docker_Kubernetes.md`](./Installation/Docker_Kubernetes.md) | Déploiement conteneurisé |
 | [`Installation/Kubernetes.md`](./Installation/Kubernetes.md) | **Production** : image rootless signée (GHCR), chart Helm, GitOps, secrets |
 | [`Installation/Variables_environnement.md`](./Installation/Variables_environnement.md) | Toutes les variables `VAULTAIRE_*` et leurs variantes `_FILE` |

@@ -1,6 +1,7 @@
 package action
 
 import (
+	"database/sql"
 	"fmt"
 	"strings"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"vaultaire/core/database"
 	dbusers "vaultaire/core/database/db_users"
 	"vaultaire/core/logs"
+	"vaultaire/core/storage"
 	"vaultaire/core/tools"
 )
 
@@ -62,7 +64,7 @@ func EnregistrerActionsUtilisateur(r *Registre) {
 		Nom:      "user.update",
 		CleRBAC:  "write:update:user",
 		Portee:   PorteeUtilisateur,
-		Resume:   "modifie l'identifiant, le prénom ou le nom d'un compte",
+		Resume:   "modifie l'identifiant, le prénom, le nom ou l'adresse e-mail d'un compte",
 		Executer: modifierUtilisateur,
 	})
 
@@ -208,15 +210,33 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 		}
 	}
 
+	// L'ADRESSE (TO-DO 271) : choisie si « email » est donné, sinon
+	// « compte@domaine » comme avant. Vérifiée AVANT la création, comme le
+	// groupe : une adresse refusée ne laisse pas de compte derrière elle.
+	email := strings.ToLower(username + "@" + domain)
+	emailChoisi := false
+	if v := p.Get("email"); v != "" && !strings.EqualFold(v, EmailAuto) {
+		normalisee, err := NormaliserEmail(v)
+		if err != nil {
+			return Resultat{}, err
+		}
+		email, emailChoisi = normalisee, true
+	}
+	if pris, err := dbusers.EmailUtiliseParAutre(database.GetDatabase(), email, 0); err != nil {
+		return Resultat{}, err
+	} else if pris {
+		return Resultat{}, fmt.Errorf("%s : %w — aucun compte créé", email, dbusers.ErrEmailUtilise)
+	}
+
 	saltHex, hashHex, err := hacherMotDePasse(username+"@"+domain, password)
 	if err != nil {
 		return Resultat{}, err
 	}
 
-	err = dbusers.Create_New_User(
+	err = dbusers.CreerUtilisateur(
 		database.GetDatabase(),
 		username, firstname, lastname,
-		username+"@"+domain,
+		email, emailChoisi,
 		hashHex, saltHex, birthdate,
 		time.Now().Format("2006-01-02 15:04:05"),
 	)
@@ -272,6 +292,9 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 	if groupe != "" {
 		message = fmt.Sprintf("Utilisateur %s@%s créé dans le groupe %s.", username, domain, groupe)
 	}
+	if emailChoisi {
+		message += " Adresse : " + email + "."
+	}
 	if provisoire {
 		message += " Son mot de passe est PROVISOIRE : il devra être changé sur le portail" +
 			" sous " + passwordpolicy.DureeProvisoireDefaut.String() + "."
@@ -291,7 +314,7 @@ func creerUtilisateur(a Appelant, p Params) (Resultat, error) {
 		Message: message,
 		Donnees: map[string]string{
 			"username":  username,
-			"email":     username + "@" + domain,
+			"email":     email,
 			"firstname": firstname,
 			"lastname":  lastname,
 			"group":     groupe,
@@ -399,25 +422,80 @@ func modifierUtilisateur(_ Appelant, p Params) (Resultat, error) {
 		nom = p.Get("lastname")
 	}
 
+	// L'ADRESSE (TO-DO 271), préparée AVANT toute écriture : une adresse
+	// refusée ne doit pas laisser derrière elle un renommage à moitié fait.
+	//
+	//   absente, vide, ou égale à l'actuelle → inchangée (le formulaire du
+	//                                          portail la renvoie telle quelle)
+	//   « auto »                              → compte@premier domaine des groupes
+	//   autre                                 → choisie, après contrôle
+	nouvelEmail, emailChoisi, changerEmail, err := preparerEmail(db, uid, nouveauNom, courant, p)
+	if err != nil {
+		return Resultat{}, err
+	}
+
 	// Mot de passe et date vides : Update_User_Info les interprète comme
 	// « ne pas changer ». Cette action ne touche pas au mot de passe — c'est le
 	// rôle de user.change_password, qui exige de le nommer explicitement.
 	if err := dbusers.Update_User_Info(db, uid, nouveauNom, prenom, nom, "", ""); err != nil {
 		return Resultat{}, fmt.Errorf("erreur lors de la mise à jour : %w", err)
 	}
+	if changerEmail {
+		if err := dbusers.DefinirEmail(db, uid, nouvelEmail, emailChoisi); err != nil {
+			return Resultat{}, fmt.Errorf("adresse %s : %w", nouvelEmail, err)
+		}
+	}
 
 	message := fmt.Sprintf("Profil de %s mis à jour.", cible)
 	if nouveauNom != cible {
 		message = fmt.Sprintf("Profil mis à jour, %s renommé en %s.", cible, nouveauNom)
 	}
-	return Resultat{
-		Message: message,
-		Donnees: map[string]string{
-			"username":  nouveauNom,
-			"firstname": prenom,
-			"lastname":  nom,
-		},
-	}, nil
+	donnees := map[string]string{
+		"username":  nouveauNom,
+		"firstname": prenom,
+		"lastname":  nom,
+	}
+	if changerEmail {
+		nature := "choisie"
+		if !emailChoisi {
+			nature = "automatique"
+		}
+		message += fmt.Sprintf(" Adresse : %s (%s).", nouvelEmail, nature)
+		donnees["email"] = nouvelEmail
+	}
+	return Resultat{Message: message, Donnees: donnees}, nil
+}
+
+// preparerEmail lit le paramètre « email » de user.update — voir
+// modifierUtilisateur. changer=false : rien à écrire.
+func preparerEmail(db *sql.DB, uid int, nouveauNom string, courant *storage.GetUserInfoSingle, p Params) (email string, choisi, changer bool, err error) {
+	v := p.Get("email")
+	if v == "" {
+		return "", false, false, nil
+	}
+	if strings.EqualFold(v, EmailAuto) {
+		if !courant.EmailPersonnalise && nouveauNom == courant.Username {
+			return "", false, false, nil // déjà automatique
+		}
+		auto, err := dbusers.AdresseAutomatique(db, uid, nouveauNom)
+		if err != nil {
+			return "", false, false, err
+		}
+		return auto, false, true, nil
+	}
+	normalisee, err := NormaliserEmail(v)
+	if err != nil {
+		return "", false, false, err
+	}
+	if normalisee == strings.ToLower(courant.Email) {
+		return "", false, false, nil
+	}
+	if pris, err := dbusers.EmailUtiliseParAutre(db, normalisee, uid); err != nil {
+		return "", false, false, err
+	} else if pris {
+		return "", false, false, fmt.Errorf("%s : %w", normalisee, dbusers.ErrEmailUtilise)
+	}
+	return normalisee, true, true, nil
 }
 
 // changerMotDePasse remplace le mot de passe d'un compte.

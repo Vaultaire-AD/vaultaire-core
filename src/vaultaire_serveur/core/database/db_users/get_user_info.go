@@ -20,6 +20,7 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 			u.firstname,
 			u.lastname,
 			u.email,
+			u.email_personnalise,
 			COALESCE(DATE_FORMAT(u.date_naissance, '%Y-%m-%d'), '') AS date_naissance, 
 			COALESCE(g.group_name, '') AS group_name, 
 			CASE WHEN dl.d_id_user IS NOT NULL OR us.d_id_user IS NOT NULL
@@ -64,6 +65,7 @@ func Command_GET_UserInfo(db *sql.DB, username string) (*storage.GetUserInfoSing
 			&userInfo.Firstname,
 			&userInfo.Lastname,
 			&userInfo.Email,
+			&userInfo.EmailPersonnalise,
 			&dateNaissance,
 			&groupName,
 			&connected,

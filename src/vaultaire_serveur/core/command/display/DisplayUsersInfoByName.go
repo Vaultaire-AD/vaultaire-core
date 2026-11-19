@@ -18,7 +18,13 @@ func DisplayUsersInfoByName(user *storage.GetUserInfoSingle) string {
 	f.Ajouter("Identifiant", user.Username)
 	f.Ajouter("Prénom", user.Firstname)
 	f.Ajouter("Nom", user.Lastname)
-	f.Ajouter("Adresse", user.Email)
+	// La nature de l'adresse est dite (TO-DO 271) : une adresse automatique
+	// suit un renommage, une adresse choisie ne bouge plus.
+	nature := " (automatique)"
+	if user.EmailPersonnalise {
+		nature = " (choisie)"
+	}
+	f.Ajouter("Adresse", user.Email+nature)
 	f.Ajouter("Naissance", user.DateOfBirth)
 	f.Ajouter("Session ouverte", OuiNon(user.Connected))
 

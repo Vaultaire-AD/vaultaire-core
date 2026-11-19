@@ -201,7 +201,12 @@ fi
 # il refuse de construire quand l'arbre git n'est pas lisible, ce qui casse la
 # compilation en conteneur. On fournit donc l'information nous-mêmes, et son
 # absence n'empêche rien.
-if VCS_COMMIT="$(git -C "$ROOT_DIR" describe --always --dirty --tags 2>/dev/null)" && [ -n "$VCS_COMMIT" ]; then
+#
+# Le commit seul, comme l'image (release.yaml) : `git describe` partait du tag
+# PRÉCÉDENT — celui de la version n'existe pas encore quand la release compile —
+# et les binaires des archives affichaient « 2.3.2+gv2.3.1-4-g84db619 ».
+if VCS_COMMIT="$(git -C "$ROOT_DIR" rev-parse --short=7 HEAD 2>/dev/null)" && [ -n "$VCS_COMMIT" ]; then
+    git -C "$ROOT_DIR" diff --quiet HEAD 2>/dev/null || VCS_COMMIT="${VCS_COMMIT}-dirty"
     VCS_COMMIT="g${VCS_COMMIT}"
 else
     # Pas de dépôt git — archive, conteneur de build. La valeur de repli est

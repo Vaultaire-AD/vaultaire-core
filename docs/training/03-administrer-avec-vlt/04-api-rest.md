@@ -80,7 +80,7 @@ comment la corriger ?
 Statut **403**, `error.code` = `forbidden`, `error.key` = `write:create:user` :
 sans groupe, le compte n'aurait aucun domaine, et le droit est exigé sur `*`.
 Ajouter `"group": "Infra"` (un groupe de son domaine) : la création devient
-déléguée, comme `vlt create -u … -g Infra`. L'API n'ouvre aucun droit que la
+déléguée, comme avec l'option `-g Infra` de la commande. L'API n'ouvre aucun droit que la
 commande n'ouvrait pas.
 </details>
 
